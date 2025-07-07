@@ -3,390 +3,367 @@
 namespace App\Traits;
 
 use App\Models\User;
-use Illuminate\Database\Eloquent\Builder;
+use App\Models\Company;
+use App\Models\Operator;
+use Illuminate\Support\Facades\Auth;
 
 trait UserHelper
 {
     /**
-     * Get the company of the authenticated user
+     * Obtener el usuario actual.
      */
-    public function getUserCompany(): ?\App\Models\Company
+    protected function getCurrentUser(): ?User
     {
-        return auth()->user()?->company;
+        return Auth::user();
     }
 
     /**
-     * Get the ID of the authenticated user's company
+     * Verificar si el usuario actual tiene una empresa asociada.
      */
-    public function getUserCompanyId(): ?int
+    protected function hasUserCompany(): bool
     {
-        return $this->getUserCompany()?->id;
-    }
-
-    /**
-     * Check if user can view data from a specific company
-     */
-    public function canViewCompany($companyId): bool
-    {
-        $user = auth()->user();
+        $user = $this->getCurrentUser();
 
         if (!$user) {
             return false;
         }
 
-        // Super admin and internal operators can view everything
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
-            return true;
-        }
-
-        // Company users can only view their own company
-        return $user->belongsToCompany($companyId);
+        return $user->userable_type === 'App\\Models\\Company' && $user->userable_id;
     }
 
     /**
-     * Apply company filters based on user permissions
+     * Obtener la empresa del usuario actual.
      */
-    public function scopeVisibleToUser(Builder $query, User $user = null): Builder
+    protected function getUserCompany(): ?Company
     {
-        $user = $user ?? auth()->user();
+        $user = $this->getCurrentUser();
 
         if (!$user) {
-            return $query->whereRaw('1 = 0'); // Show nothing if no user
+            return null;
         }
 
-        // Super admin and internal operators see everything
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
-            return $query;
+        // Si el usuario es directamente una empresa
+        if ($user->userable_type === 'App\\Models\\Company' && $user->userable_id) {
+            return $user->userable;
         }
 
-        // Company users only see data from their company
-        $companyId = $user->company?->id;
-        if ($companyId) {
-            return $query->where('company_id', $companyId);
+        // Si el usuario es un operador con empresa
+        if ($user->userable_type === 'App\\Models\\Operator' && $user->userable_id) {
+            $operator = $user->userable;
+            return $operator?->company;
         }
 
-        return $query->whereRaw('1 = 0'); // Show nothing if no company
+        return null;
     }
 
     /**
-     * Get all users from a specific company
+     * Verificar si el usuario actual es un operador.
      */
-    public function getCompanyUsers($companyId): \Illuminate\Database\Eloquent\Collection
+    protected function isUserOperator(): bool
     {
-        return User::fromCompany($companyId)
-                   ->active()
-                   ->with(['userable', 'roles'])
-                   ->get();
-    }
-
-    /**
-     * Check if user can perform transfers between companies
-     */
-    public function canTransfer(): bool
-    {
-        $user = auth()->user();
+        $user = $this->getCurrentUser();
 
         if (!$user) {
             return false;
         }
 
-        // Super admin and internal operators can transfer
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
+        return $user->userable_type === 'App\\Models\\Operator' && $user->userable_id;
+    }
+
+    /**
+     * Obtener el operador del usuario actual.
+     */
+    protected function getUserOperator(): ?Operator
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return null;
+        }
+
+        if ($user->userable_type === 'App\\Models\\Operator' && $user->userable_id) {
+            return $user->userable;
+        }
+
+        return null;
+    }
+
+    /**
+     * Verificar si el usuario puede importar.
+     */
+    protected function canImport(): bool
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return false;
+        }
+
+        // Super admin puede todo
+        if ($user->hasRole('super-admin')) {
             return true;
         }
 
-        // Check if operator has specific permissions
-        if ($user->userable_type === 'App\Models\Operator') {
-            return $user->userable->can_transfer;
+        // Administradores de empresa pueden importar
+        if ($user->hasRole('company-admin')) {
+            return true;
         }
 
-        // Company admins can transfer
-        if ($user->isCompanyAdmin()) {
+        // Operadores internos pueden importar
+        if ($user->hasRole('internal-operator')) {
             return true;
+        }
+
+        // Operadores externos solo si tienen el permiso
+        if ($user->hasRole('external-operator')) {
+            $operator = $this->getUserOperator();
+            return $operator?->can_import ?? false;
         }
 
         return false;
     }
 
     /**
-     * Get companies that the user can view
+     * Verificar si el usuario puede exportar.
      */
-    public function getVisibleCompanies(): \Illuminate\Database\Eloquent\Collection
+    protected function canExport(): bool
     {
-        $user = auth()->user();
+        $user = $this->getCurrentUser();
 
         if (!$user) {
-            return collect();
+            return false;
         }
 
-        // Super admin and internal operators see all companies
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
-            return \App\Models\Company::active()->get();
+        // Super admin puede todo
+        if ($user->hasRole('super-admin')) {
+            return true;
         }
 
-        // Company users only see their company
-        $company = $user->company;
+        // Administradores de empresa pueden exportar
+        if ($user->hasRole('company-admin')) {
+            return true;
+        }
+
+        // Operadores internos pueden exportar
+        if ($user->hasRole('internal-operator')) {
+            return true;
+        }
+
+        // Operadores externos solo si tienen el permiso
+        if ($user->hasRole('external-operator')) {
+            $operator = $this->getUserOperator();
+            return $operator?->can_export ?? false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Verificar si el usuario puede transferir.
+     */
+    protected function canTransfer(): bool
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return false;
+        }
+
+        // Super admin puede todo
+        if ($user->hasRole('super-admin')) {
+            return true;
+        }
+
+        // Administradores de empresa pueden transferir
+        if ($user->hasRole('company-admin')) {
+            return true;
+        }
+
+        // Operadores internos pueden transferir
+        if ($user->hasRole('internal-operator')) {
+            return true;
+        }
+
+        // Operadores externos solo si tienen el permiso
+        if ($user->hasRole('external-operator')) {
+            $operator = $this->getUserOperator();
+            return $operator?->can_transfer ?? false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Aplicar filtro de propiedad a una consulta (para empresas).
+     */
+    protected function applyOwnershipFilter($query): void
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return;
+        }
+
+        // Super admin y operadores internos ven todo
+        if ($user->hasRole('super-admin') || $user->hasRole('internal-operator')) {
+            return;
+        }
+
+        // Administradores de empresa y operadores externos solo ven de su empresa
+        $company = $this->getUserCompany();
         if ($company) {
-            return collect([$company]);
+            $query->where('company_id', $company->id);
+        } else {
+            // Si no tiene empresa, no ve nada
+            $query->whereRaw('1 = 0');
         }
-
-        return collect();
     }
 
     /**
-     * Check if user can import data
+     * Verificar si el usuario puede acceder a una empresa específica.
      */
-    public function canImport(): bool
+    protected function canAccessCompany($companyId): bool
     {
-        $user = auth()->user();
+        $user = $this->getCurrentUser();
 
         if (!$user) {
             return false;
         }
 
-        // Super admin and internal operators can import
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
+        // Super admin y operadores internos pueden acceder a cualquier empresa
+        if ($user->hasRole('super-admin') || $user->hasRole('internal-operator')) {
             return true;
         }
 
-        // Check specific operator permissions
-        if ($user->userable_type === 'App\Models\Operator') {
-            return $user->userable->can_import;
-        }
-
-        // Company admins can import
-        if ($user->isCompanyAdmin()) {
-            return true;
-        }
-
-        return false;
+        // Otros usuarios solo pueden acceder a su propia empresa
+        $userCompany = $this->getUserCompany();
+        return $userCompany && $userCompany->id == $companyId;
     }
 
     /**
-     * Check if user can export data
+     * Obtener el ID de la empresa del usuario (para consultas).
      */
-    public function canExport(): bool
-    {
-        $user = auth()->user();
-
-        if (!$user) {
-            return false;
-        }
-
-        // Super admin and internal operators can export
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
-            return true;
-        }
-
-        // Check specific operator permissions
-        if ($user->userable_type === 'App\Models\Operator') {
-            return $user->userable->can_export;
-        }
-
-        // Company admins can export
-        if ($user->isCompanyAdmin()) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Update last access for the user
-     */
-    public function updateLastAccess(): void
-    {
-        $user = auth()->user();
-
-        if ($user) {
-            $user->updateLastAccess();
-
-            // Also update in related entity if necessary
-            if ($user->userable_type === 'App\Models\Company') {
-                $user->userable->update(['last_access' => now()]);
-            } elseif ($user->userable_type === 'App\Models\Operator') {
-                $user->userable->update(['last_access' => now()]);
-            }
-        }
-    }
-
-    /**
-     * Get user's full name
-     */
-    public function getUserFullName(): string
-    {
-        $user = auth()->user();
-
-        if (!$user) {
-            return 'Unknown User';
-        }
-
-        return $user->full_name;
-    }
-
-    /**
-     * Get user type description
-     */
-    public function getUserType(): string
-    {
-        $user = auth()->user();
-
-        if (!$user) {
-            return 'Unknown';
-        }
-
-        return $user->user_type;
-    }
-
-    /**
-     * Check if user can manage users
-     */
-    public function canManageUsers(): bool
-    {
-        $user = auth()->user();
-
-        if (!$user) {
-            return false;
-        }
-
-        return $user->can('users.create') || $user->can('users.edit') || $user->can('users.delete');
-    }
-
-    /**
-     * Check if user can manage companies
-     */
-    public function canManageCompanies(): bool
-    {
-        $user = auth()->user();
-
-        if (!$user) {
-            return false;
-        }
-
-        return $user->can('companies.create') || $user->can('companies.edit') || $user->can('companies.delete');
-    }
-
-    /**
-     * Check if user can access webservices
-     */
-    public function canAccessWebservices(): bool
-    {
-        $user = auth()->user();
-
-        if (!$user) {
-            return false;
-        }
-
-        // Must have webservice permissions
-        if (!$user->can('webservices.send')) {
-            return false;
-        }
-
-        // Must have a company with valid certificate
-        $company = $user->company;
-        if (!$company) {
-            return false;
-        }
-
-        return $company->canUseWebservices();
-    }
-
-    /**
-     * Get user's country based on company
-     */
-    public function getUserCountry(): ?string
+    protected function getUserCompanyId(): ?int
     {
         $company = $this->getUserCompany();
-        return $company?->country;
+        return $company?->id;
     }
 
     /**
-     * Check if user is from Argentina
+     * Verificar si el usuario tiene acceso administrativo.
      */
-    public function isFromArgentina(): bool
+    protected function hasAdminAccess(): bool
     {
-        return $this->getUserCountry() === 'AR';
-    }
-
-    /**
-     * Check if user is from Paraguay
-     */
-    public function isFromParaguay(): bool
-    {
-        return $this->getUserCountry() === 'PY';
-    }
-
-    /**
-     * Apply ownership filter to query based on user permissions
-     */
-    public function applyOwnershipFilter(Builder $query, string $companyField = 'company_id'): Builder
-    {
-        $user = auth()->user();
+        $user = $this->getCurrentUser();
 
         if (!$user) {
-            return $query->whereRaw('1 = 0');
+            return false;
         }
 
-        // Super admin and internal operators see everything
-        if ($user->isSuperAdmin() || $user->isInternalOperator()) {
-            return $query;
-        }
-
-        // Company users only see their own data
-        $companyId = $user->company?->id;
-        if ($companyId) {
-            return $query->where($companyField, $companyId);
-        }
-
-        return $query->whereRaw('1 = 0');
+        return $user->hasRole('super-admin') ||
+        $user->hasRole('company-admin') ||
+        $user->hasRole('internal-operator');
     }
 
     /**
-     * Get menu items based on user permissions
+     * Verificar si el usuario es super administrador.
      */
-    public function getMenuItems(): array
+    protected function isSuperAdmin(): bool
     {
-        $user = auth()->user();
+        $user = $this->getCurrentUser();
+        return $user && $user->hasRole('super-admin');
+    }
+
+    /**
+     * Verificar si el usuario es administrador de empresa.
+     */
+    protected function isCompanyAdmin(): bool
+    {
+        $user = $this->getCurrentUser();
+        return $user && $user->hasRole('company-admin');
+    }
+
+    /**
+     * Verificar si el usuario es operador interno.
+     */
+    protected function isInternalOperator(): bool
+    {
+        $user = $this->getCurrentUser();
+        return $user && $user->hasRole('internal-operator');
+    }
+
+    /**
+     * Verificar si el usuario es operador externo.
+     */
+    protected function isExternalOperator(): bool
+    {
+        $user = $this->getCurrentUser();
+        return $user && $user->hasRole('external-operator');
+    }
+
+    /**
+     * Obtener el tipo de usuario para mostrar en la interfaz.
+     */
+    protected function getUserType(): string
+    {
+        $user = $this->getCurrentUser();
 
         if (!$user) {
-            return [];
+            return 'Invitado';
         }
 
-        $menu = [];
-
-        // Dashboard (everyone)
-        $menu[] = ['name' => 'Dashboard', 'route' => 'dashboard', 'icon' => 'home'];
-
-        // Companies (if can view)
-        if ($user->can('companies.view')) {
-            $menu[] = ['name' => 'Companies', 'route' => 'companies.index', 'icon' => 'building'];
+        if ($user->hasRole('super-admin')) {
+            return 'Super Administrador';
         }
 
-        // Trips (if can view)
-        if ($user->can('trips.view')) {
-            $menu[] = ['name' => 'Trips', 'route' => 'trips.index', 'icon' => 'ship'];
+        if ($user->hasRole('company-admin')) {
+            return 'Administrador de Empresa';
         }
 
-        // Shipments (if can view)
-        if ($user->can('shipments.view')) {
-            $menu[] = ['name' => 'Shipments', 'route' => 'shipments.index', 'icon' => 'box'];
+        if ($user->hasRole('internal-operator')) {
+            return 'Operador Interno';
         }
 
-        // Reports (if can view)
-        if ($user->can('reports.manifests')) {
-            $menu[] = ['name' => 'Reports', 'route' => 'reports.index', 'icon' => 'document'];
+        if ($user->hasRole('external-operator')) {
+            return 'Operador Externo';
         }
 
-        // Users (if can manage)
-        if ($this->canManageUsers()) {
-            $menu[] = ['name' => 'Users', 'route' => 'users.index', 'icon' => 'users'];
+        return 'Usuario';
+    }
+
+    /**
+     * Obtener información resumida del usuario para mostrar en la interfaz.
+     */
+    protected function getUserInfo(): array
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return [
+                'name' => 'Invitado',
+                'type' => 'Invitado',
+                'company' => null,
+                'permissions' => [],
+            ];
         }
 
-        // Administration (if super admin)
-        if ($user->isSuperAdmin()) {
-            $menu[] = ['name' => 'Administration', 'route' => 'admin.index', 'icon' => 'cog'];
-        }
+        $company = $this->getUserCompany();
+        $operator = $this->getUserOperator();
 
-        return $menu;
+        return [
+            'name' => $user->name,
+            'email' => $user->email,
+            'type' => $this->getUserType(),
+            'company' => $company?->business_name,
+            'company_id' => $company?->id,
+            'operator' => $operator?->full_name,
+            'permissions' => [
+                'can_import' => $this->canImport(),
+                'can_export' => $this->canExport(),
+                'can_transfer' => $this->canTransfer(),
+                'has_admin_access' => $this->hasAdminAccess(),
+            ],
+            'roles' => $user->roles->pluck('name')->toArray(),
+        ];
     }
 }

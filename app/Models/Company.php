@@ -1,20 +1,22 @@
 <?php
-// app/Models/Company.php
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use OwenIt\Auditing\Contracts\Auditable;
-use OwenIt\Auditing\Auditable as AuditableTrait;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Support\Facades\Storage;
 
-class Company extends Model implements Auditable
+class Company extends Model
 {
     use HasFactory;
-    use AuditableTrait;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
         'business_name',
         'commercial_name',
@@ -37,25 +39,31 @@ class Company extends Model implements Auditable
         'last_access',
     ];
 
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
     protected $casts = [
+        'certificate_expires_at' => 'datetime',
         'ws_config' => 'array',
         'ws_active' => 'boolean',
         'active' => 'boolean',
         'created_date' => 'datetime',
         'last_access' => 'datetime',
-        'certificate_expires_at' => 'datetime',
     ];
 
     /**
-     * Inverse polymorphic relationship with User
+     * The attributes that should be hidden for serialization.
+     *
+     * @var array<int, string>
      */
-    public function user(): MorphOne
-    {
-        return $this->morphOne(User::class, 'userable');
-    }
+    protected $hidden = [
+        'certificate_password',
+    ];
 
     /**
-     * Operators that belong to this company
+     * Relación con operadores de la empresa.
      */
     public function operators(): HasMany
     {
@@ -63,82 +71,32 @@ class Company extends Model implements Auditable
     }
 
     /**
-     * Trips for this company
+     * Relación polimórfica inversa con User.
+     * Una empresa puede tener un usuario administrador.
      */
-    public function trips(): HasMany
+    public function user(): MorphOne
     {
-        return $this->hasMany(Trip::class);
+        return $this->morphOne(User::class, 'userable');
     }
 
     /**
-     * Shipments/loads for this company
+     * Relación con operadores activos.
      */
-    public function shipments(): HasMany
+    public function activeOperators(): HasMany
     {
-        return $this->hasMany(Shipment::class);
+        return $this->hasMany(Operator::class)->where('active', true);
     }
 
     /**
-     * Check if certificate is about to expire
+     * Relación con operadores externos.
      */
-    public function isCertificateExpiringSoon($days = 30): bool
+    public function externalOperators(): HasMany
     {
-        if (!$this->certificate_expires_at) {
-            return false;
-        }
-
-        return $this->certificate_expires_at->diffInDays(now()) <= $days;
+        return $this->hasMany(Operator::class)->where('type', 'external');
     }
 
     /**
-     * Check if certificate is expired
-     */
-    public function isCertificateExpired(): bool
-    {
-        if (!$this->certificate_expires_at) {
-            return true;
-        }
-
-        return $this->certificate_expires_at->isPast();
-    }
-
-    /**
-     * Get webservice configuration
-     */
-    public function getWebserviceConfig($service = null)
-    {
-        $config = $this->ws_config ?? [];
-
-        if ($service) {
-            return $config[$service] ?? null;
-        }
-
-        return $config;
-    }
-
-    /**
-     * Update webservice configuration
-     */
-    public function updateWebserviceConfig($service, $configuration)
-    {
-        $config = $this->ws_config ?? [];
-        $config[$service] = $configuration;
-
-        $this->update(['ws_config' => $config]);
-    }
-
-    /**
-     * Check if can use webservices
-     */
-    public function canUseWebservices(): bool
-    {
-        return $this->ws_active &&
-        $this->active &&
-        !$this->isCertificateExpired();
-    }
-
-    /**
-     * Scope for active companies
+     * Scope para empresas activas.
      */
     public function scopeActive($query)
     {
@@ -146,7 +104,33 @@ class Company extends Model implements Auditable
     }
 
     /**
-     * Scope for companies by country
+     * Scope para empresas con certificados válidos.
+     */
+    public function scopeWithValidCertificates($query)
+    {
+        return $query->whereNotNull('certificate_path')
+        ->where('certificate_expires_at', '>', now());
+    }
+
+    /**
+     * Scope para empresas con certificados vencidos.
+     */
+    public function scopeWithExpiredCertificates($query)
+    {
+        return $query->whereNotNull('certificate_expires_at')
+        ->where('certificate_expires_at', '<', now());
+    }
+
+    /**
+     * Scope para empresas sin certificados.
+     */
+    public function scopeWithoutCertificates($query)
+    {
+        return $query->whereNull('certificate_path');
+    }
+
+    /**
+     * Scope para empresas por país.
      */
     public function scopeByCountry($query, $country)
     {
@@ -154,68 +138,179 @@ class Company extends Model implements Auditable
     }
 
     /**
-     * Scope for companies with valid certificate
+     * Accessor para obtener el nombre completo de la empresa.
      */
-    public function scopeWithValidCertificate($query)
-    {
-        return $query->where('certificate_expires_at', '>', now())
-        ->whereNotNull('certificate_path');
-    }
-
-    /**
-     * Accessor for display name
-     */
-    public function getDisplayNameAttribute(): string
+    public function getFullNameAttribute()
     {
         return $this->commercial_name ?: $this->business_name;
     }
 
     /**
-     * Accessor for formatted country name
+     * Accessor para obtener el nombre del país.
      */
-    public function getCountryNameAttribute(): string
+    public function getCountryNameAttribute()
     {
-        return match($this->country) {
-            'AR' => 'Argentina',
-            'PY' => 'Paraguay',
-            default => $this->country
-        };
+        return $this->country === 'AR' ? 'Argentina' : 'Paraguay';
     }
 
     /**
-     * Accessor for certificate status
+     * Accessor para verificar si tiene certificado.
      */
-    public function getCertificateStatusAttribute(): string
+    public function getHasCertificateAttribute()
     {
-        if (!$this->certificate_path) {
-            return 'No certificate';
-        }
-
-        if ($this->isCertificateExpired()) {
-            return 'Expired';
-        }
-
-        if ($this->isCertificateExpiringSoon()) {
-            return 'Expiring soon';
-        }
-
-        return 'Valid';
+        return !empty($this->certificate_path);
     }
 
     /**
-     * Audit configuration
+     * Accessor para verificar si el certificado está vencido.
      */
-    protected $auditInclude = [
-        'business_name',
-        'tax_id',
-        'country',
-        'ws_active',
-        'ws_environment',
-        'active',
-    ];
-
-    public function getDescriptionForEvent(string $eventName): string
+    public function getIsCertificateExpiredAttribute()
     {
-        return "Company {$this->display_name} ({$this->tax_id}) was {$eventName}";
+        return $this->certificate_expires_at && $this->certificate_expires_at->isPast();
+    }
+
+    /**
+     * Accessor para verificar si el certificado vence pronto.
+     */
+    public function getIsCertificateExpiringSoonAttribute()
+    {
+        return $this->certificate_expires_at &&
+        $this->certificate_expires_at->isFuture() &&
+        $this->certificate_expires_at->diffInDays(now()) <= 30;
+    }
+
+    /**
+     * Accessor para obtener el estado del certificado.
+     */
+    public function getCertificateStatusAttribute()
+    {
+        if (!$this->has_certificate) {
+            return 'none';
+        }
+
+        if ($this->is_certificate_expired) {
+            return 'expired';
+        }
+
+        if ($this->is_certificate_expiring_soon) {
+            return 'warning';
+        }
+
+        return 'valid';
+    }
+
+    /**
+     * Accessor para obtener días hasta vencimiento del certificado.
+     */
+    public function getCertificateDaysToExpiryAttribute()
+    {
+        if (!$this->certificate_expires_at) {
+            return null;
+        }
+
+        return now()->diffInDays($this->certificate_expires_at, false);
+    }
+
+    /**
+     * Mutator para encriptar la contraseña del certificado.
+     */
+    public function setCertificatePasswordAttribute($value)
+    {
+        if ($value) {
+            $this->attributes['certificate_password'] = encrypt($value);
+        }
+    }
+
+    /**
+     * Accessor para desencriptar la contraseña del certificado.
+     */
+    public function getCertificatePasswordAttribute($value)
+    {
+        if ($value) {
+            try {
+                return decrypt($value);
+            } catch (\Exception $e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Verificar si la empresa tiene webservices activos.
+     */
+    public function hasActiveWebservices()
+    {
+        return $this->ws_active && $this->has_certificate && !$this->is_certificate_expired;
+    }
+
+    /**
+     * Obtener la ruta completa del certificado.
+     */
+    public function getCertificateFullPath()
+    {
+        if ($this->certificate_path) {
+            return Storage::path($this->certificate_path);
+        }
+        return null;
+    }
+
+    /**
+     * Verificar si el certificado existe físicamente.
+     */
+    public function certificateExists()
+    {
+        return $this->certificate_path && Storage::exists($this->certificate_path);
+    }
+
+    /**
+     * Eliminar el certificado físico.
+     */
+    public function deleteCertificate()
+    {
+        if ($this->certificate_path && Storage::exists($this->certificate_path)) {
+            Storage::delete($this->certificate_path);
+        }
+
+        $this->update([
+            'certificate_path' => null,
+            'certificate_password' => null,
+            'certificate_alias' => null,
+            'certificate_expires_at' => null,
+        ]);
+    }
+
+    /**
+     * Actualizar último acceso.
+     */
+    public function updateLastAccess()
+    {
+        $this->update(['last_access' => now()]);
+    }
+
+    /**
+     * Obtener configuración de webservices.
+     */
+    public function getWebserviceConfig($key = null, $default = null)
+    {
+        if ($key) {
+            return data_get($this->ws_config, $key, $default);
+        }
+        return $this->ws_config;
+    }
+
+    /**
+     * Establecer configuración de webservices.
+     */
+    public function setWebserviceConfig($key, $value = null)
+    {
+        if (is_array($key)) {
+            $this->ws_config = array_merge($this->ws_config ?? [], $key);
+        } else {
+            $config = $this->ws_config ?? [];
+            $config[$key] = $value;
+            $this->ws_config = $config;
+        }
+        $this->save();
     }
 }
