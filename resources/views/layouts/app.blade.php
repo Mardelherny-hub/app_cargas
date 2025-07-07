@@ -21,7 +21,8 @@
         <x-banner />
 
         <div class="min-h-screen bg-gray-100">
-            @livewire('navigation-menu')
+            {{-- Usar nuestro componente de navegación personalizado --}}
+            <x-navigation />
 
             <!-- Page Heading -->
             @if (isset($header))
@@ -39,6 +40,7 @@
         </div>
 
         @stack('modals')
+        @stack('scripts')
 
         @livewireScripts
     </body>
