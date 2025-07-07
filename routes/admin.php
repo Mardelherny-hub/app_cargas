@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\SystemController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\SettingsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -19,6 +20,18 @@ use App\Http\Controllers\Admin\ReportController;
 
 // Dashboard del Super Administrador
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('admin.dashboard');
+
+// Configuración general (vista + acciones)
+Route::get('/settings', [SettingsController::class, 'index'])->name('admin.settings');
+Route::put('/settings/general', [SettingsController::class, 'updateGeneral'])->name('settings.updateGeneral');
+Route::put('/settings/security', [SettingsController::class, 'updateSecurity'])->name('settings.updateSecurity');
+Route::patch('/settings/maintenance', [SettingsController::class, 'toggleMaintenance'])->name('settings.toggleMaintenance');
+
+// Configuración General tools
+Route::get('/tools', [SettingsController::class, 'index'])->name('admin.tools');
+
+// Mantenimiento
+Route::get('/maintenance', [SettingsController::class, 'maintenance'])->name('admin.maintenance');
 
 // Gestión de Usuarios
 Route::prefix('users')->name('admin.users.')->group(function () {

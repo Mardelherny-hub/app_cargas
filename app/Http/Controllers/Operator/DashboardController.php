@@ -19,13 +19,13 @@ class DashboardController extends Controller
      */
     public function index()
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
         $company = $this->getUserCompany();
         $operator = $this->getUserOperator();
 
         if (!$company || !$operator) {
             return redirect()->route('dashboard')
-            ->with('error', 'No se encontró la información del operador o empresa asociada.');
+                ->with('error', 'No se encontró la información del operador o empresa asociada.');
         }
 
         // Estadísticas personales del operador
@@ -41,9 +41,9 @@ class DashboardController extends Controller
 
         // Permisos del operador
         $permissions = [
-            'can_import' => $operator->can_import,
-            'can_export' => $operator->can_export,
-            'can_transfer' => $operator->can_transfer,
+            'can_import' => $this->canImport(),
+            'can_export' => $this->canExport(),
+            'can_transfer' => $this->canTransfer(),
             'special_permissions' => $operator->special_permissions ?? [],
         ];
 
@@ -76,17 +76,115 @@ class DashboardController extends Controller
     }
 
     /**
-     * Obtener el operador del usuario actual.
+     * Configuración personal del operador.
      */
-    private function getUserOperator()
+    public function settings()
     {
-        $user = Auth::user();
+        $user = $this->getCurrentUser();
+        $operator = $this->getUserOperator();
+        $company = $this->getUserCompany();
 
-        if ($user->userable_type === 'App\\Models\\Operator') {
-            return $user->userable;
+        if (!$operator || !$company) {
+            return redirect()->route('operator.dashboard')
+                ->with('error', 'No se encontró la información del operador o empresa asociada.');
         }
 
-        return null;
+        return view('operator.settings', compact('user', 'operator', 'company'));
+    }
+
+    /**
+     * Actualizar perfil del operador.
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $this->getCurrentUser();
+        $operator = $this->getUserOperator();
+
+        if (!$operator) {
+            return redirect()->route('operator.dashboard')
+                ->with('error', 'No se encontró la información del operador.');
+        }
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255|unique:users,email,' . $user->id,
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:20',
+            'position' => 'nullable|string|max:255',
+        ]);
+
+        // Actualizar usuario
+        $user->update([
+            'name' => $request->name,
+            'email' => $request->email,
+        ]);
+
+        // Actualizar operador
+        $operator->update([
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'phone' => $request->phone,
+            'position' => $request->position,
+        ]);
+
+        return redirect()->route('operator.settings')
+            ->with('success', 'Perfil actualizado correctamente.');
+    }
+
+    /**
+     * Actualizar contraseña del operador.
+     */
+    public function updatePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $this->getCurrentUser();
+
+        if (!\Hash::check($request->current_password, $user->password)) {
+            return back()->withErrors(['current_password' => 'La contraseña actual es incorrecta.']);
+        }
+
+        $user->update([
+            'password' => \Hash::make($request->password),
+        ]);
+
+        return redirect()->route('operator.settings')
+            ->with('success', 'Contraseña actualizada correctamente.');
+    }
+
+    /**
+     * Actualizar preferencias del operador.
+     */
+    public function updatePreferences(Request $request)
+    {
+        $user = $this->getCurrentUser();
+
+        $request->validate([
+            'timezone' => 'required|string|max:50',
+            'language' => 'required|string|max:10',
+        ]);
+
+        $user->update([
+            'timezone' => $request->timezone,
+            // language se puede guardar en un campo adicional o en JSON
+        ]);
+
+        return redirect()->route('operator.settings')
+            ->with('success', 'Preferencias actualizadas correctamente.');
+    }
+
+    /**
+     * Actualizar configuración de notificaciones.
+     */
+    public function updateNotifications(Request $request)
+    {
+        // TODO: Implementar sistema de notificaciones
+        return redirect()->route('operator.settings')
+            ->with('success', 'Configuración de notificaciones actualizada.');
     }
 
     /**
@@ -195,7 +293,7 @@ class DashboardController extends Controller
         ];
 
         // Condicionales según permisos
-        if ($operator->can_import) {
+        if ($this->canImport()) {
             $actions[] = [
                 'name' => 'Importar Datos',
                 'description' => 'Importar desde Excel/XML',
@@ -206,7 +304,7 @@ class DashboardController extends Controller
             ];
         }
 
-        if ($operator->can_export) {
+        if ($this->canExport()) {
             $actions[] = [
                 'name' => 'Exportar Datos',
                 'description' => 'Exportar reportes',
@@ -217,7 +315,7 @@ class DashboardController extends Controller
             ];
         }
 
-        if ($operator->can_transfer) {
+        if ($this->canTransfer()) {
             $actions[] = [
                 'name' => 'Transferir Cargas',
                 'description' => 'Transferir cargas entre empresas',
@@ -278,7 +376,7 @@ class DashboardController extends Controller
         }
 
         // Permisos limitados
-        if (!$operator->can_import && !$operator->can_export && !$operator->can_transfer) {
+        if (!$this->canImport() && !$this->canExport() && !$this->canTransfer()) {
             $alerts[] = [
                 'type' => 'info',
                 'message' => 'Tiene permisos básicos. Contacte al administrador para más funcionalidades.',
@@ -305,117 +403,5 @@ class DashboardController extends Controller
             'reports_generated' => 0, // TODO: Implementar cuando esté el módulo de reportes
             'time_spent' => 0, // TODO: Implementar tracking de tiempo
         ];
-    }
-
-    /**
-     * Configuración personal del operador.
-     */
-    public function settings()
-    {
-        $user = Auth::user();
-        $operator = $this->getUserOperator();
-        $company = $this->getUserCompany();
-
-        if (!$operator || !$company) {
-            return redirect()->route('operator.dashboard')
-            ->with('error', 'No se encontró la información del operador o empresa asociada.');
-        }
-
-        return view('operator.settings', compact('user', 'operator', 'company'));
-    }
-
-    /**
-     * Actualizar perfil del operador.
-     */
-    public function updateProfile(Request $request)
-    {
-        $user = Auth::user();
-        $operator = $this->getUserOperator();
-
-        if (!$operator) {
-            return redirect()->route('operator.dashboard')
-            ->with('error', 'No se encontró la información del operador.');
-        }
-
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email,' . $user->id,
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:20',
-            'position' => 'nullable|string|max:255',
-        ]);
-
-        // Actualizar usuario
-        $user->update([
-            'name' => $request->name,
-            'email' => $request->email,
-        ]);
-
-        // Actualizar operador
-        $operator->update([
-            'first_name' => $request->first_name,
-            'last_name' => $request->last_name,
-            'phone' => $request->phone,
-            'position' => $request->position,
-        ]);
-
-        return redirect()->route('operator.settings')
-        ->with('success', 'Perfil actualizado correctamente.');
-    }
-
-    /**
-     * Actualizar contraseña del operador.
-     */
-    public function updatePassword(Request $request)
-    {
-        $request->validate([
-            'current_password' => 'required',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
-
-        $user = Auth::user();
-
-        if (!\Hash::check($request->current_password, $user->password)) {
-            return back()->withErrors(['current_password' => 'La contraseña actual es incorrecta.']);
-        }
-
-        $user->update([
-            'password' => \Hash::make($request->password),
-        ]);
-
-        return redirect()->route('operator.settings')
-        ->with('success', 'Contraseña actualizada correctamente.');
-    }
-
-    /**
-     * Actualizar preferencias del operador.
-     */
-    public function updatePreferences(Request $request)
-    {
-        $user = Auth::user();
-
-        $request->validate([
-            'timezone' => 'required|string|max:50',
-            'language' => 'required|string|max:10',
-        ]);
-
-        $user->update([
-            'timezone' => $request->timezone,
-            // language se puede guardar en un campo adicional o en JSON
-        ]);
-
-        return redirect()->route('operator.settings')
-        ->with('success', 'Preferencias actualizadas correctamente.');
-    }
-
-    /**
-     * Actualizar configuración de notificaciones.
-     */
-    public function updateNotifications(Request $request)
-    {
-        // TODO: Implementar sistema de notificaciones
-        return redirect()->route('operator.settings')
-        ->with('success', 'Configuración de notificaciones actualizada.');
     }
 }

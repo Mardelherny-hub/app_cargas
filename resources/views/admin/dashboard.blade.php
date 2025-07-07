@@ -331,6 +331,24 @@
                     </div>
                 </div>
             </div>
+            <div class="mt-6">
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Administración</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <x-button-link href="{{ route('admin.settings') }}">
+                                ⚙️ Configuración general
+                            </x-button-link>
+                            <x-button-link href="{{ route('admin.tools') }}">
+                                🧰 Herramientas
+                            </x-button-link>
+                            <x-button-link href="{{ route('admin.maintenance') }}">
+                                🛠 Mantenimiento
+                            </x-button-link>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </x-app-layout>
