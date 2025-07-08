@@ -4,18 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 class Operator extends Model
 {
     use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'first_name',
         'last_name',
@@ -33,11 +26,6 @@ class Operator extends Model
         'last_access',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
         'special_permissions' => 'array',
         'can_import' => 'boolean',
@@ -48,31 +36,333 @@ class Operator extends Model
         'last_access' => 'datetime',
     ];
 
-    /**
-     * The attributes that should be appended to the model's array form.
-     *
-     * @var array<int, string>
-     */
-    protected $appends = [
-        'full_name',
-    ];
+    // ========================================
+    // RELACIONES
+    // ========================================
 
     /**
-     * Relación con la empresa (para operadores externos).
+     * Usuario asociado al operador.
      */
-    public function company(): BelongsTo
+    public function user()
+    {
+        return $this->morphOne(User::class, 'userable');
+    }
+
+    /**
+     * Empresa asociada (solo para operadores externos).
+     */
+    public function company()
     {
         return $this->belongsTo(Company::class);
     }
 
+    // ========================================
+    // MÉTODOS ACTUALIZADOS PARA COMPANY ROLES (Roberto's requirements)
+    // ========================================
+
     /**
-     * Relación polimórfica inversa con User.
-     * Un operador puede tener un usuario asociado.
+     * Verificar si puede importar (considerando roles de empresa).
      */
-    public function user(): MorphOne
+    public function canImport(): bool
     {
-        return $this->morphOne(User::class, 'userable');
+        // Operadores internos pueden importar siempre
+        if ($this->type === 'internal') {
+            return $this->can_import;
+        }
+
+        // Operadores externos necesitan tanto permiso individual como que su empresa esté activa
+        if ($this->type === 'external') {
+            if (!$this->can_import) {
+                return false;
+            }
+
+            // Verificar que la empresa esté activa y tenga roles
+            $company = $this->company;
+            return $company &&
+                   $company->active &&
+                   !empty($company->getRoles());
+        }
+
+        return false;
     }
+
+    /**
+     * Verificar si puede exportar (considerando roles de empresa).
+     */
+    public function canExport(): bool
+    {
+        // Operadores internos pueden exportar siempre
+        if ($this->type === 'internal') {
+            return $this->can_export;
+        }
+
+        // Operadores externos necesitan tanto permiso individual como que su empresa esté activa
+        if ($this->type === 'external') {
+            if (!$this->can_export) {
+                return false;
+            }
+
+            // Verificar que la empresa esté activa y tenga roles
+            $company = $this->company;
+            return $company &&
+                   $company->active &&
+                   !empty($company->getRoles());
+        }
+
+        return false;
+    }
+
+    /**
+     * Verificar si puede transferir entre empresas (Roberto's requirement).
+     */
+    public function canTransferBetweenCompanies(): bool
+    {
+        // Operadores internos siempre pueden transferir (manejan múltiples empresas)
+        if ($this->type === 'internal') {
+            return $this->can_transfer;
+        }
+
+        // Operadores externos solo si tienen permiso Y su empresa permite transferencias
+        if ($this->type === 'external') {
+            if (!$this->can_transfer) {
+                return false;
+            }
+
+            $company = $this->company;
+            return $company && $company->canTransferToCompany();
+        }
+
+        return false;
+    }
+
+    /**
+     * Verificar si puede usar un webservice específico.
+     */
+    public function canUseWebservice(string $webservice): bool
+    {
+        // Operadores internos pueden usar cualquier webservice
+        if ($this->type === 'internal') {
+            return true;
+        }
+
+        // Operadores externos dependen de los roles de su empresa
+        if ($this->type === 'external') {
+            $company = $this->company;
+            return $company ? $company->canUseWebservice($webservice) : false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Obtener webservices disponibles según la empresa (Roberto's company roles).
+     */
+    public function getAvailableWebservices(): array
+    {
+        // Operadores internos pueden usar todos
+        if ($this->type === 'internal') {
+            return ['anticipada', 'micdta', 'desconsolidados', 'transbordos'];
+        }
+
+        // Operadores externos según su empresa
+        if ($this->type === 'external') {
+            $company = $this->company;
+            return $company ? $company->getAvailableWebservices() : [];
+        }
+
+        return [];
+    }
+
+    /**
+     * Obtener funcionalidades disponibles según la empresa.
+     */
+    public function getAvailableFeatures(): array
+    {
+        // Operadores internos pueden usar todas
+        if ($this->type === 'internal') {
+            return [
+                'shipments', 'containers', 'reports', 'manifests',
+                'deconsolidations', 'titulo_madre', 'titulo_hijos',
+                'transshipments', 'barges', 'position_tracking'
+            ];
+        }
+
+        // Operadores externos según su empresa
+        if ($this->type === 'external') {
+            $company = $this->company;
+            return $company ? $company->getAvailableFeatures() : [];
+        }
+
+        return [];
+    }
+
+    /**
+     * Verificar si puede acceder a una funcionalidad específica.
+     */
+    public function canUseFeature(string $feature): bool
+    {
+        $availableFeatures = $this->getAvailableFeatures();
+        return in_array($feature, $availableFeatures, true);
+    }
+
+    // ========================================
+    // MÉTODOS DE INFORMACIÓN Y DISPLAY
+    // ========================================
+
+    /**
+     * Obtener nombre completo del operador.
+     */
+    public function getFullNameAttribute(): string
+    {
+        return trim($this->first_name . ' ' . $this->last_name);
+    }
+
+    /**
+     * Obtener tipo de operador para mostrar.
+     */
+    public function getTypeDisplayAttribute(): string
+    {
+        return $this->type === 'internal' ? 'Operador Interno' : 'Operador Externo';
+    }
+
+    /**
+     * Obtener empresa para mostrar.
+     */
+    public function getCompanyDisplayAttribute(): string
+    {
+        if ($this->type === 'internal') {
+            return 'Sistema Central';
+        }
+
+        $company = $this->company;
+        return $company ? $company->full_name : 'Sin empresa';
+    }
+
+    /**
+     * Obtener roles de empresa para mostrar (solo operadores externos).
+     */
+    public function getCompanyRolesDisplayAttribute(): string
+    {
+        if ($this->type === 'internal') {
+            return 'Todos los roles';
+        }
+
+        $company = $this->company;
+        if (!$company) {
+            return 'Sin empresa';
+        }
+
+        $roles = $company->getRoles();
+        return empty($roles) ? 'Sin roles' : implode(', ', $roles);
+    }
+
+    /**
+     * Obtener permisos individuales para mostrar.
+     */
+    public function getIndividualPermissionsAttribute(): array
+    {
+        return [
+            'import' => $this->can_import,
+            'export' => $this->can_export,
+            'transfer' => $this->can_transfer,
+        ];
+    }
+
+    /**
+     * Obtener permisos efectivos (considerando empresa) para mostrar.
+     */
+    public function getEffectivePermissionsAttribute(): array
+    {
+        return [
+            'import' => $this->canImport(),
+            'export' => $this->canExport(),
+            'transfer' => $this->canTransferBetweenCompanies(),
+        ];
+    }
+
+    // ========================================
+    // MÉTODOS DE VALIDACIÓN
+    // ========================================
+
+    /**
+     * Verificar si el operador está configurado correctamente.
+     */
+    public function isProperlyConfigured(): bool
+    {
+        if (!$this->active) {
+            return false;
+        }
+
+        // Operadores internos solo necesitan estar activos
+        if ($this->type === 'internal') {
+            return true;
+        }
+
+        // Operadores externos necesitan empresa activa con roles
+        if ($this->type === 'external') {
+            $company = $this->company;
+            return $company &&
+                   $company->active &&
+                   !empty($company->getRoles()) &&
+                   $company->isReadyToOperate();
+        }
+
+        return false;
+    }
+
+    /**
+     * Obtener errores de configuración.
+     */
+    public function getConfigurationErrors(): array
+    {
+        $errors = [];
+
+        if (!$this->active) {
+            $errors[] = 'Operador inactivo';
+        }
+
+        // Verificaciones específicas para operadores externos
+        if ($this->type === 'external') {
+            if (!$this->company_id) {
+                $errors[] = 'Operador externo sin empresa asociada';
+                return $errors;
+            }
+
+            $company = $this->company;
+            if (!$company) {
+                $errors[] = 'Empresa no encontrada';
+                return $errors;
+            }
+
+            if (!$company->active) {
+                $errors[] = 'Empresa inactiva';
+            }
+
+            $companyRoles = $company->getRoles();
+            if (empty($companyRoles)) {
+                $errors[] = 'Empresa sin roles asignados';
+            }
+
+            // Agregar errores de configuración de empresa
+            $companyErrors = $company->validateRoleConfiguration();
+            $errors = array_merge($errors, $companyErrors);
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Verificar si tiene permisos especiales.
+     */
+    public function hasSpecialPermission(string $permission): bool
+    {
+        $specialPermissions = $this->special_permissions ?? [];
+        return in_array($permission, $specialPermissions, true);
+    }
+
+    // ========================================
+    // SCOPES
+    // ========================================
 
     /**
      * Scope para operadores activos.
@@ -80,6 +370,14 @@ class Operator extends Model
     public function scopeActive($query)
     {
         return $query->where('active', true);
+    }
+
+    /**
+     * Scope para operadores por tipo.
+     */
+    public function scopeOfType($query, string $type)
+    {
+        return $query->where('type', $type);
     }
 
     /**
@@ -99,208 +397,94 @@ class Operator extends Model
     }
 
     /**
-     * Scope para operadores por empresa.
+     * Scope para operadores de una empresa específica.
      */
-    public function scopeByCompany($query, $companyId)
+    public function scopeOfCompany($query, int $companyId)
     {
         return $query->where('company_id', $companyId);
     }
 
     /**
-     * Scope para operadores con permisos de importación.
+     * Scope para operadores con permisos específicos.
      */
-    public function scopeCanImport($query)
+    public function scopeWithPermission($query, string $permission)
     {
-        return $query->where('can_import', true);
+        return $query->where("can_{$permission}", true);
     }
 
     /**
-     * Scope para operadores con permisos de exportación.
+     * Scope para operadores configurados correctamente.
      */
-    public function scopeCanExport($query)
+    public function scopeProperlyConfigured($query)
     {
-        return $query->where('can_export', true);
+        return $query->where('active', true)
+            ->where(function ($q) {
+                // Operadores internos están siempre configurados si están activos
+                $q->where('type', 'internal')
+                  // O operadores externos con empresa activa
+                  ->orWhere(function ($subQ) {
+                      $subQ->where('type', 'external')
+                           ->whereHas('company', function ($companyQ) {
+                               $companyQ->where('active', true)
+                                        ->whereJsonLength('company_roles', '>', 0);
+                           });
+                  });
+            });
     }
 
-    /**
-     * Scope para operadores con permisos de transferencia.
-     */
-    public function scopeCanTransfer($query)
-    {
-        return $query->where('can_transfer', true);
-    }
-
-    /**
-     * Accessor para obtener el nombre completo.
-     */
-    public function getFullNameAttribute()
-    {
-        return trim($this->first_name . ' ' . $this->last_name);
-    }
-
-    /**
-     * Accessor para obtener las iniciales.
-     */
-    public function getInitialsAttribute()
-    {
-        return substr($this->first_name, 0, 1) . substr($this->last_name, 0, 1);
-    }
-
-    /**
-     * Accessor para verificar si es operador interno.
-     */
-    public function getIsInternalAttribute()
-    {
-        return $this->type === 'internal';
-    }
-
-    /**
-     * Accessor para verificar si es operador externo.
-     */
-    public function getIsExternalAttribute()
-    {
-        return $this->type === 'external';
-    }
-
-    /**
-     * Accessor para verificar si tiene empresa asociada.
-     */
-    public function getHasCompanyAttribute()
-    {
-        return !empty($this->company_id);
-    }
-
-    /**
-     * Accessor para obtener el tipo de operador en español.
-     */
-    public function getTypeNameAttribute()
-    {
-        return $this->type === 'internal' ? 'Interno' : 'Externo';
-    }
-
-    /**
-     * Verificar si el operador tiene un permiso especial.
-     */
-    public function hasSpecialPermission($permission)
-    {
-        return in_array($permission, $this->special_permissions ?? []);
-    }
-
-    /**
-     * Agregar un permiso especial.
-     */
-    public function addSpecialPermission($permission)
-    {
-        $permissions = $this->special_permissions ?? [];
-
-        if (!in_array($permission, $permissions)) {
-            $permissions[] = $permission;
-            $this->special_permissions = $permissions;
-            $this->save();
-        }
-    }
-
-    /**
-     * Remover un permiso especial.
-     */
-    public function removeSpecialPermission($permission)
-    {
-        $permissions = $this->special_permissions ?? [];
-
-        if (($key = array_search($permission, $permissions)) !== false) {
-            unset($permissions[$key]);
-            $this->special_permissions = array_values($permissions);
-            $this->save();
-        }
-    }
-
-    /**
-     * Obtener todos los permisos del operador.
-     */
-    public function getAllPermissions()
-    {
-        $permissions = [];
-
-        if ($this->can_import) {
-            $permissions[] = 'import';
-        }
-
-        if ($this->can_export) {
-            $permissions[] = 'export';
-        }
-
-        if ($this->can_transfer) {
-            $permissions[] = 'transfer';
-        }
-
-        return array_merge($permissions, $this->special_permissions ?? []);
-    }
-
-    /**
-     * Verificar si el operador tiene todos los permisos básicos.
-     */
-    public function hasAllBasicPermissions()
-    {
-        return $this->can_import && $this->can_export && $this->can_transfer;
-    }
-
-    /**
-     * Verificar si el operador puede acceder a una empresa específica.
-     */
-    public function canAccessCompany($companyId)
-    {
-        // Operadores internos pueden acceder a cualquier empresa
-        if ($this->is_internal) {
-            return true;
-        }
-
-        // Operadores externos solo pueden acceder a su propia empresa
-        return $this->company_id == $companyId;
-    }
+    // ========================================
+    // MÉTODOS DE AUDITORÍA Y ACTIVIDAD
+    // ========================================
 
     /**
      * Actualizar último acceso.
      */
-    public function updateLastAccess()
+    public function updateLastAccess(): void
     {
         $this->update(['last_access' => now()]);
     }
 
     /**
-     * Obtener estadísticas básicas del operador.
+     * Verificar si el operador ha estado activo recientemente.
      */
-    public function getStats()
+    public function isRecentlyActive(int $days = 30): bool
     {
-        return [
-            'total_permissions' => count($this->getAllPermissions()),
-            'has_company' => $this->has_company,
-            'is_active' => $this->active,
-            'last_access' => $this->last_access,
-            'days_since_last_access' => $this->last_access ? now()->diffInDays($this->last_access) : null,
-        ];
+        if (!$this->last_access) {
+            return false;
+        }
+
+        return $this->last_access->gte(now()->subDays($days));
     }
 
     /**
-     * Verificar si el operador ha accedido recientemente.
+     * Obtener días desde último acceso.
      */
-    public function hasRecentAccess($days = 30)
+    public function getDaysSinceLastAccessAttribute(): ?int
     {
-        return $this->last_access && $this->last_access->diffInDays(now()) <= $days;
+        if (!$this->last_access) {
+            return null;
+        }
+
+        return $this->last_access->diffInDays(now());
+    }
+
+    // ========================================
+    // FACTORY Y TESTING HELPERS
+    // ========================================
+
+    /**
+     * Crear operador interno de prueba.
+     */
+    public static function createInternalForTesting(array $attributes = []): self
+    {
+        return self::factory()->internal()->create($attributes);
     }
 
     /**
-     * Crear un resumen del operador.
+     * Crear operador externo de prueba.
      */
-    public function getSummary()
+    public static function createExternalForTesting(Company $company, array $attributes = []): self
     {
-        return [
-            'id' => $this->id,
-            'full_name' => $this->full_name,
-            'type' => $this->type_name,
-            'company' => $this->company?->business_name,
-            'permissions' => $this->getAllPermissions(),
-            'active' => $this->active,
-            'last_access' => $this->last_access?->format('d/m/Y H:i'),
-        ];
+        return self::factory()->forCompany($company)->create($attributes);
     }
 }

@@ -20,6 +20,10 @@ return new class extends Migration
             $table->string('city')->nullable();
             $table->string('postal_code', 10)->nullable();
 
+            // NUEVO: Roles de empresa (términos de Roberto)
+            $table->json('company_roles')->nullable(); // ["Cargas", "Transbordos", "Desconsolidador"]
+            $table->json('roles_config')->nullable(); // configuración específica por rol
+
             // Digital certificates for webservices
             $table->string('certificate_path')->nullable(); // .p12 file path
             $table->string('certificate_password')->nullable(); // encrypted
@@ -41,6 +45,7 @@ return new class extends Migration
             // Indexes
             $table->index(['tax_id', 'country']);
             $table->index(['active', 'country']);
+            // NOTA: No se puede indexar columnas JSON directamente en MySQL
         });
     }
 

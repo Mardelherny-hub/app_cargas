@@ -11,187 +11,201 @@ class TestUsersSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Super Admin
-        User::factory()->superAdmin()->create();
+        // 1. Super Admin (el único que puede crear empresas)
+        User::factory()->create([
+            'name' => 'Super Admin',
+            'email' => 'admin@cargas.com',
+            'userable_type' => null, // Super admin no tiene empresa asociada
+            'userable_id' => null,
+        ])->assignRole('super-admin');
 
-        // 2. Argentina Company with admin and operators
-        $companyAR = Company::factory()->argentina()->withValidCertificate()->create([
+        // 2. Empresa Argentina - CARGAS + TRANSBORDOS
+        $companyAR = Company::factory()->create([
             'business_name' => 'Rio de la Plata Transport S.A.',
             'commercial_name' => 'Rio Transport',
             'tax_id' => '20123456789',
+            'country' => 'AR',
             'email' => 'admin@riotransport.com.ar',
             'city' => 'Buenos Aires',
             'phone' => '+54 11 4567-8900',
             'address' => 'Av. Corrientes 1234, Buenos Aires',
+            // NUEVO: Roles de empresa (términos de Roberto) - SIMPLIFICADO
+            'company_roles' => ['Cargas', 'Transbordos'],
+            'roles_config' => [
+                'webservices' => ['anticipada', 'micdta', 'transbordos'],
+                'features' => ['contenedores', 'barcazas']
+            ],
+            'certificate_path' => storage_path('certificates/riotransport.p12'),
+            'certificate_password' => 'cert123', // Sin encrypt() - el mutator lo hace automáticamente
+            'certificate_expires_at' => now()->addYear(),
+            'ws_active' => true,
+            'ws_environment' => 'testing',
+            'active' => true,
         ]);
 
+        // Administrador de la empresa Argentina
         User::factory()->create([
-            'name' => 'Argentina Admin',
+            'name' => 'Carlos Rodriguez (Admin AR)',
             'email' => 'argentina@cargas.com',
             'userable_type' => 'App\Models\Company',
             'userable_id' => $companyAR->id,
         ])->assignRole('company-admin');
 
-        // 3. Paraguay Company with admin and operators
-        $companyPY = Company::factory()->paraguay()->withValidCertificate()->create([
+        // Usuario común de la empresa Argentina
+        User::factory()->create([
+            'name' => 'Maria Gonzalez',
+            'email' => 'maria@riotransport.com.ar',
+            'userable_type' => 'App\Models\Company',
+            'userable_id' => $companyAR->id,
+        ])->assignRole('user');
+
+        // 3. Empresa Paraguay - SOLO CARGAS
+        $companyPY = Company::factory()->create([
             'business_name' => 'Navegación Paraguay S.A.',
             'commercial_name' => 'NavePY',
             'tax_id' => '80987654321',
+            'country' => 'PY',
             'email' => 'admin@navegacionpy.com.py',
             'city' => 'Asunción',
             'phone' => '+595 21 567-890',
             'address' => 'Av. España 567, Asunción',
+            // NUEVO: Solo rol Cargas (término de Roberto) - SIMPLIFICADO
+            'company_roles' => ['Cargas'],
+            'roles_config' => [
+                'webservices' => ['anticipada', 'micdta'],
+                'features' => ['contenedores']
+            ],
+            'certificate_path' => storage_path('certificates/navegacionpy.p12'),
+            'certificate_password' => 'cert456', // Sin encrypt() - el mutator lo hace automáticamente
+            'certificate_expires_at' => now()->addMonths(6),
+            'ws_active' => true,
+            'ws_environment' => 'testing',
+            'active' => true,
         ]);
 
+        // Administrador de la empresa Paraguay
         User::factory()->create([
-            'name' => 'Paraguay Admin',
+            'name' => 'Roberto Silva (Admin PY)',
             'email' => 'paraguay@cargas.com',
             'userable_type' => 'App\Models\Company',
             'userable_id' => $companyPY->id,
         ])->assignRole('company-admin');
 
-        // 4. Internal Operator
-        $internalOperator = Operator::factory()->internal()->create([
-            'first_name' => 'Juan Carlos',
-            'last_name' => 'Rodriguez',
-            'document_number' => '12345678',
-            'position' => 'System Operator',
-            'phone' => '+54 11 9876-5432',
-        ]);
-
+        // Usuario común de la empresa Paraguay
         User::factory()->create([
-            'name' => 'Juan Carlos Rodriguez',
-            'email' => 'operator@cargas.com',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $internalOperator->id,
-        ])->assignRole('internal-operator');
-
-        // 5. External Operator for Argentina Company
-        $externalOperatorAR = Operator::factory()->external()->create([
-            'first_name' => 'Maria',
-            'last_name' => 'Garcia',
-            'document_number' => '23456789',
-            'position' => 'Cargo Operator',
-            'phone' => '+54 11 1234-5678',
-            'company_id' => $companyAR->id,
-            'can_import' => true,
-            'can_export' => true,
-            'can_transfer' => false,
-        ]);
-
-        User::factory()->create([
-            'name' => 'Maria Garcia',
-            'email' => 'maria@riotransport.com.ar',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $externalOperatorAR->id,
-        ])->assignRole('external-operator');
-
-        // 6. External Operator for Paraguay Company
-        $externalOperatorPY = Operator::factory()->external()->create([
-            'first_name' => 'Carlos',
-            'last_name' => 'Mendoza',
-            'document_number' => '34567890',
-            'position' => 'Cargo Operator',
-            'phone' => '+595 21 123-456',
-            'company_id' => $companyPY->id,
-            'can_import' => true,
-            'can_export' => false,
-            'can_transfer' => true,
-        ]);
-
-        User::factory()->create([
-            'name' => 'Carlos Mendoza',
+            'name' => 'Carlos Mendez',
             'email' => 'carlos@navegacionpy.com.py',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $externalOperatorPY->id,
-        ])->assignRole('external-operator');
+            'userable_type' => 'App\Models\Company',
+            'userable_id' => $companyPY->id,
+        ])->assignRole('user');
 
-        // 7. Additional Argentina Company Operator
-        $additionalOperatorAR = Operator::factory()->forCompany($companyAR)->create([
-            'first_name' => 'Ana',
-            'last_name' => 'Lopez',
-            'document_number' => '45678901',
-            'position' => 'Data Entry Operator',
-            'can_import' => true,
-            'can_export' => false,
-            'can_transfer' => false,
+        // 4. Empresa SOLO DESCONSOLIDADOR
+        $companyDescon = Company::factory()->create([
+            'business_name' => 'Consolidados del Sur S.A.',
+            'commercial_name' => 'ConsolSur',
+            'tax_id' => '30555666777',
+            'country' => 'AR',
+            'email' => 'admin@consolsur.com.ar',
+            'city' => 'Rosario',
+            'phone' => '+54 341 123-4567',
+            'address' => 'Av. Belgrano 890, Rosario',
+            // NUEVO: Solo Desconsolidador (término de Roberto) - SIMPLIFICADO
+            'company_roles' => ['Desconsolidador'],
+            'roles_config' => [
+                'webservices' => ['desconsolidados'],
+                'features' => ['titulos_madre', 'titulos_hijos']
+            ],
+            'certificate_path' => storage_path('certificates/consolsur.p12'),
+            'certificate_password' => 'cert789', // Sin encrypt() - el mutator lo hace automáticamente
+            'certificate_expires_at' => now()->addMonths(8),
+            'ws_active' => true,
+            'ws_environment' => 'production',
+            'active' => true,
         ]);
 
+        // Administrador desconsolidador
         User::factory()->create([
-            'name' => 'Ana Lopez',
-            'email' => 'ana@riotransport.com.ar',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $additionalOperatorAR->id,
-        ])->assignRole('external-operator');
+            'name' => 'Ana Martinez (Admin Descon)',
+            'email' => 'desconsolidador@cargas.com',
+            'userable_type' => 'App\Models\Company',
+            'userable_id' => $companyDescon->id,
+        ])->assignRole('company-admin');
 
-        // 8. Additional Paraguay Company Operator
-        $additionalOperatorPY = Operator::factory()->forCompany($companyPY)->create([
-            'first_name' => 'Roberto',
-            'last_name' => 'Silva',
-            'document_number' => '56789012',
-            'position' => 'Senior Operator',
-            'can_import' => true,
-            'can_export' => true,
-            'can_transfer' => true,
-            'special_permissions' => ['advanced_reports'],
+        // 5. Empresa SOLO TRANSBORDOS
+        $companyTransb = Company::factory()->create([
+            'business_name' => 'Transbordos Río S.A.',
+            'commercial_name' => 'TransRío',
+            'tax_id' => '30777888999',
+            'country' => 'AR',
+            'email' => 'admin@transrio.com.ar',
+            'city' => 'Zárate',
+            'phone' => '+54 3487 123-456',
+            'address' => 'Puerto de Zárate, Zárate',
+            // NUEVO: Solo Transbordos (término de Roberto) - SIMPLIFICADO
+            'company_roles' => ['Transbordos'],
+            'roles_config' => [
+                'webservices' => ['transbordos'],
+                'features' => ['division_barcazas', 'tracking_posicion']
+            ],
+            'certificate_path' => storage_path('certificates/transrio.p12'),
+            'certificate_password' => 'cert999', // Sin encrypt() - el mutator lo hace automáticamente
+            'certificate_expires_at' => now()->addMonths(10),
+            'ws_active' => true,
+            'ws_environment' => 'testing',
+            'active' => true,
         ]);
 
+        // Administrador transbordos
         User::factory()->create([
-            'name' => 'Roberto Silva',
-            'email' => 'roberto@navegacionpy.com.py',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $additionalOperatorPY->id,
-        ])->assignRole('external-operator');
+            'name' => 'Pedro Ramirez (Admin Trans)',
+            'email' => 'transbordos@cargas.com',
+            'userable_type' => 'App\Models\Company',
+            'userable_id' => $companyTransb->id,
+        ])->assignRole('company-admin');
 
-        // 9. Additional Internal Operator
-        $additionalInternalOperator = Operator::factory()->internal()->create([
-            'first_name' => 'Pedro',
-            'last_name' => 'Martinez',
-            'document_number' => '67890123',
-            'position' => 'Senior System Operator',
-            'phone' => '+54 11 8765-4321',
-        ]);
-
+        // Usuario común transbordos
         User::factory()->create([
-            'name' => 'Pedro Martinez',
-            'email' => 'pedro@cargas.com',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $additionalInternalOperator->id,
-        ])->assignRole('internal-operator');
+            'name' => 'Luis Gomez',
+            'email' => 'luis@transrio.com.ar',
+            'userable_type' => 'App\Models\Company',
+            'userable_id' => $companyTransb->id,
+        ])->assignRole('user');
 
-        // 10. Additional test companies and users
-        User::factory()->count(3)->companyAdmin()->create();
-        User::factory()->count(2)->internalOperator()->create();
-        User::factory()->count(5)->externalOperator()->create();
-
-        // 11. Inactive users for testing
-        User::factory()->inactive()->create([
-            'name' => 'Inactive User',
-            'email' => 'inactive@cargas.com',
+        // 6. Empresa inactiva para testing
+        $inactiveCompany = Company::factory()->create([
+            'business_name' => 'Empresa Inactiva S.A.',
+            'commercial_name' => 'Inactiva',
+            'tax_id' => '20999888777',
+            'country' => 'AR',
+            'company_roles' => ['Cargas'],
+            'active' => false, // Inactiva
         ]);
 
-        $this->command->info('Test users created successfully');
+        $this->command->info('✅ Test users and companies created successfully');
         $this->command->info('');
-        $this->command->info('=== LOGIN CREDENTIALS ===');
+        $this->command->info('=== 🔑 LOGIN CREDENTIALS ===');
         $this->command->info('Super Admin: admin@cargas.com / password');
         $this->command->info('Argentina Admin: argentina@cargas.com / password');
         $this->command->info('Paraguay Admin: paraguay@cargas.com / password');
-        $this->command->info('Internal Operator: operator@cargas.com / password');
-        $this->command->info('Argentina External Operator: maria@riotransport.com.ar / password');
-        $this->command->info('Paraguay External Operator: carlos@navegacionpy.com.py / password');
-        $this->command->info('Additional Argentina Operator: ana@riotransport.com.ar / password');
-        $this->command->info('Additional Paraguay Operator: roberto@navegacionpy.com.py / password');
-        $this->command->info('Additional Internal Operator: pedro@cargas.com / password');
+        $this->command->info('Desconsolidador Admin: desconsolidador@cargas.com / password');
+        $this->command->info('Transbordos Admin: transbordos@cargas.com / password');
         $this->command->info('');
-        $this->command->info('=== COMPANIES CREATED ===');
-        $this->command->info('Argentina: Rio de la Plata Transport S.A. (20123456789)');
-        $this->command->info('Paraguay: Navegación Paraguay S.A. (80987654321)');
-        $this->command->info('+ 3 additional random companies');
+        $this->command->info('=== 🏢 COMPANIES CREATED ===');
+        $this->command->info('🇦🇷 Rio de la Plata Transport (20123456789) - CARGAS + TRANSBORDOS');
+        $this->command->info('🇵🇾 Navegación Paraguay (80987654321) - SOLO CARGAS');
+        $this->command->info('🇦🇷 Consolidados del Sur (30555666777) - SOLO DESCONSOLIDADOR');
+        $this->command->info('🇦🇷 Transbordos Río (30777888999) - SOLO TRANSBORDOS');
+        $this->command->info('🇦🇷 Empresa Inactiva (20999888777) - INACTIVA');
         $this->command->info('');
-        $this->command->info('=== OPERATORS CREATED ===');
-        $this->command->info('Internal: 3 operators (Juan Carlos, Pedro, + 2 random)');
-        $this->command->info('External: 8 operators (2 per main company + 5 random)');
+        $this->command->info('=== 👥 USER TYPES ===');
+        $this->command->info('• Super Admin: 1 user (creates companies)');
+        $this->command->info('• Company Admins: 4 users (manage company users)');
+        $this->command->info('• Regular Users: 3 users (use company features)');
         $this->command->info('');
-        $this->command->info('All users have password: password');
+        $this->command->info('=== 🎯 COMPANY ROLES ===');
+        $this->command->info('• Cargas: anticipada + micdta webservices');
+        $this->command->info('• Desconsolidador: desconsolidados webservice');
+        $this->command->info('• Transbordos: transbordos webservice');
+        $this->command->info('• Companies can have multiple roles');
     }
 }

@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Models\User;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class CompanyController extends Controller
@@ -14,14 +16,51 @@ class CompanyController extends Controller
     use UserHelper;
 
     /**
-     * Mostrar lista de empresas.
+     * Mostrar lista de empresas con filtros actualizados para Roberto.
      */
     public function index(Request $request)
     {
-        $query = Company::with(['user', 'operators']);
+        $query = Company::withCount([
+            'users',
+            'users as admin_count' => function ($query) {
+                $query->whereHas('roles', function ($roleQuery) {
+                    $roleQuery->where('name', 'company-admin');
+                });
+            }
+        ]);
 
-        // Filtros
-        if ($request->has('filter')) {
+        // NUEVO: Filtro por roles de empresa (Roberto's key requirement)
+        if ($request->filled('role')) {
+            $query->whereJsonContains('company_roles', $request->role);
+        }
+
+        // Filtro por país
+        if ($request->filled('country')) {
+            $query->where('country', $request->country);
+        }
+
+        // Filtro por estado general
+        if ($request->filled('status')) {
+            switch ($request->status) {
+                case 'active':
+                    $query->where('active', true);
+                    break;
+                case 'inactive':
+                    $query->where('active', false);
+                    break;
+                case 'cert_expired':
+                    $query->whereNotNull('certificate_expires_at')
+                          ->where('certificate_expires_at', '<', now())
+                          ->where('active', true);
+                    break;
+                case 'no_cert':
+                    $query->where('active', true)->whereNull('certificate_path');
+                    break;
+            }
+        }
+
+        // Filtros legacy (para compatibilidad)
+        if ($request->filled('filter')) {
             switch ($request->filter) {
                 case 'expired_certificates':
                     $query->whereNotNull('certificate_expires_at')
@@ -36,12 +75,6 @@ class CompanyController extends Controller
                           ->where('certificate_expires_at', '>=', now())
                           ->where('certificate_expires_at', '<=', now()->addDays(30));
                     break;
-                case 'active':
-                    $query->where('active', true);
-                    break;
-                case 'inactive':
-                    $query->where('active', false);
-                    break;
                 case 'argentina':
                     $query->where('country', 'AR');
                     break;
@@ -51,8 +84,8 @@ class CompanyController extends Controller
             }
         }
 
-        // Búsqueda
-        if ($request->has('search') && !empty($request->search)) {
+        // Búsqueda general
+        if ($request->filled('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('business_name', 'like', "%{$search}%")
@@ -64,17 +97,70 @@ class CompanyController extends Controller
 
         $companies = $query->orderBy('created_at', 'desc')->paginate(15);
 
-        // Estadísticas para el header
-        $stats = [
-            'total' => Company::count(),
-            'active' => Company::where('active', true)->count(),
-            'with_certificates' => Company::whereNotNull('certificate_path')->count(),
-            'expired_certificates' => Company::whereNotNull('certificate_expires_at')
-                ->where('certificate_expires_at', '<', now())
-                ->count(),
-        ];
+        // NUEVO: Estadísticas actualizadas para Roberto
+        $stats = $this->getCompaniesStats();
 
         return view('admin.companies.index', compact('companies', 'stats'));
+    }
+
+    /**
+     * NUEVO: Obtener estadísticas de empresas para la vista.
+     */
+    private function getCompaniesStats(): array
+    {
+        return [
+            'total' => Company::count(),
+            'active' => Company::where('active', true)->count(),
+            'cert_expiring' => Company::whereNotNull('certificate_expires_at')
+                                     ->where('certificate_expires_at', '>=', now())
+                                     ->where('certificate_expires_at', '<=', now()->addDays(30))
+                                     ->count(),
+            'cert_expired' => Company::whereNotNull('certificate_expires_at')
+                                    ->where('certificate_expires_at', '<', now())
+                                    ->count(),
+            'with_certificates' => Company::whereNotNull('certificate_path')->count(),
+            'without_certificates' => Company::where('active', true)
+                                            ->whereNull('certificate_path')
+                                            ->count(),
+            'roles_stats' => $this->getRolesStats(),
+        ];
+    }
+
+    /**
+     * NUEVO: Obtener estadísticas por roles de empresa.
+     */
+    private function getRolesStats(): array
+    {
+        $companies = Company::where('active', true)->get();
+
+        $stats = [
+            'Cargas' => 0,
+            'Desconsolidador' => 0,
+            'Transbordos' => 0,
+            'multiple_roles' => 0,
+            'no_roles' => 0,
+        ];
+
+        foreach ($companies as $company) {
+            $roles = $company->getRoles();
+
+            if (empty($roles)) {
+                $stats['no_roles']++;
+                continue;
+            }
+
+            if (count($roles) > 1) {
+                $stats['multiple_roles']++;
+                continue;
+            }
+
+            $role = $roles[0];
+            if (isset($stats[$role])) {
+                $stats[$role]++;
+            }
+        }
+
+        return $stats;
     }
 
     /**
@@ -82,11 +168,12 @@ class CompanyController extends Controller
      */
     public function create()
     {
-        return view('admin.companies.create');
+        $availableRoles = Company::getAvailableRoles();
+        return view('admin.companies.create', compact('availableRoles'));
     }
 
     /**
-     * Crear nueva empresa.
+     * Crear nueva empresa con roles de negocio.
      */
     public function store(Request $request)
     {
@@ -100,12 +187,17 @@ class CompanyController extends Controller
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
+            'company_roles' => 'required|array|min:1',
+            'company_roles.*' => 'in:Cargas,Desconsolidador,Transbordos',
             'ws_environment' => 'required|in:testing,production',
             'ws_active' => 'boolean',
             'active' => 'boolean',
         ]);
 
         try {
+            // NUEVO: Configurar roles_config automáticamente según los roles seleccionados
+            $rolesConfig = $this->generateRolesConfig($request->company_roles);
+
             $company = Company::create([
                 'business_name' => $request->business_name,
                 'commercial_name' => $request->commercial_name,
@@ -116,6 +208,8 @@ class CompanyController extends Controller
                 'address' => $request->address,
                 'city' => $request->city,
                 'postal_code' => $request->postal_code,
+                'company_roles' => $request->company_roles,
+                'roles_config' => $rolesConfig,
                 'ws_environment' => $request->ws_environment,
                 'ws_active' => $request->boolean('ws_active', false),
                 'active' => $request->boolean('active', true),
@@ -123,7 +217,7 @@ class CompanyController extends Controller
             ]);
 
             return redirect()->route('admin.companies.index')
-                ->with('success', 'Empresa creada correctamente.');
+                ->with('success', 'Empresa creada correctamente con roles: ' . implode(', ', $request->company_roles));
 
         } catch (\Exception $e) {
             return back()->withInput()
@@ -132,21 +226,81 @@ class CompanyController extends Controller
     }
 
     /**
-     * Mostrar detalles de la empresa.
+     * NUEVO: Generar configuración automática según roles seleccionados.
+     */
+    private function generateRolesConfig(array $roles): array
+    {
+        $config = [
+            'webservices' => [],
+            'features' => [],
+        ];
+
+        foreach ($roles as $role) {
+            switch ($role) {
+                case 'Cargas':
+                    $config['webservices'] = array_merge($config['webservices'], ['anticipada', 'micdta']);
+                    $config['features'] = array_merge($config['features'], ['contenedores', 'manifiestos']);
+                    break;
+                case 'Desconsolidador':
+                    $config['webservices'][] = 'desconsolidados';
+                    $config['features'] = array_merge($config['features'], ['titulos_madre', 'titulos_hijos']);
+                    break;
+                case 'Transbordos':
+                    $config['webservices'][] = 'transbordos';
+                    $config['features'] = array_merge($config['features'], ['barcazas', 'tracking_posicion']);
+                    break;
+            }
+        }
+
+        $config['webservices'] = array_unique($config['webservices']);
+        $config['features'] = array_unique($config['features']);
+
+        return $config;
+    }
+
+    /**
+     * Mostrar detalles de la empresa con información de roles.
      */
     public function show(Company $company)
     {
-        $company->load(['user', 'operators.user']);
+        $company->load(['users.roles']);
 
-        // Estadísticas de la empresa
+        // Estadísticas de la empresa actualizadas
         $stats = [
-            'total_operators' => $company->operators()->count(),
-            'active_operators' => $company->operators()->where('active', true)->count(),
-            'recent_operators' => $company->operators()->where('created_at', '>=', now()->subDays(30))->count(),
+            'total_users' => $company->users()->count(),
+            'active_users' => $company->users()->where('active', true)->count(),
+            'admin_users' => $company->users()->whereHas('roles', function ($query) {
+                $query->where('name', 'company-admin');
+            })->count(),
+            'regular_users' => $company->users()->whereHas('roles', function ($query) {
+                $query->where('name', 'user');
+            })->count(),
             'certificate_status' => $this->getCertificateStatus($company),
+            'roles_info' => $this->getCompanyRolesInfo($company),
         ];
 
         return view('admin.companies.show', compact('company', 'stats'));
+    }
+
+    /**
+     * NUEVO: Obtener información detallada de los roles de la empresa.
+     */
+    private function getCompanyRolesInfo(Company $company): array
+    {
+        $roles = $company->getRoles();
+        $webservices = $company->getAvailableWebservices();
+        $features = $company->getAvailableFeatures();
+        $operations = $company->getAvailableOperations();
+
+        return [
+            'roles' => $roles,
+            'webservices' => $webservices,
+            'features' => $features,
+            'operations' => $operations,
+            'can_transfer' => $company->canTransferToCompany(),
+            'is_ready' => $company->isReadyToOperate(),
+            'errors' => $company->validateRoleConfiguration(),
+        ];
     }
 
     /**
@@ -154,11 +308,12 @@ class CompanyController extends Controller
      */
     public function edit(Company $company)
     {
-        return view('admin.companies.edit', compact('company'));
+        $availableRoles = Company::getAvailableRoles();
+        return view('admin.companies.edit', compact('company', 'availableRoles'));
     }
 
     /**
-     * Actualizar empresa.
+     * Actualizar empresa con soporte para roles.
      */
     public function update(Request $request, Company $company)
     {
@@ -172,12 +327,23 @@ class CompanyController extends Controller
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
+            'company_roles' => 'required|array|min:1',
+            'company_roles.*' => 'in:Cargas,Desconsolidador,Transbordos',
             'ws_environment' => 'required|in:testing,production',
             'ws_active' => 'boolean',
             'active' => 'boolean',
         ]);
 
         try {
+            // NUEVO: Actualizar roles_config si cambiaron los roles
+            $oldRoles = $company->getRoles();
+            $newRoles = $request->company_roles;
+
+            $rolesConfig = $company->roles_config;
+            if ($oldRoles !== $newRoles) {
+                $rolesConfig = $this->generateRolesConfig($newRoles);
+            }
+
             $company->update([
                 'business_name' => $request->business_name,
                 'commercial_name' => $request->commercial_name,
@@ -188,6 +354,8 @@ class CompanyController extends Controller
                 'address' => $request->address,
                 'city' => $request->city,
                 'postal_code' => $request->postal_code,
+                'company_roles' => $newRoles,
+                'roles_config' => $rolesConfig,
                 'ws_environment' => $request->ws_environment,
                 'ws_active' => $request->boolean('ws_active'),
                 'active' => $request->boolean('active'),
@@ -203,31 +371,26 @@ class CompanyController extends Controller
     }
 
     /**
-     * Eliminar empresa.
+     * Eliminar empresa (solo si no tiene usuarios).
      */
     public function destroy(Company $company)
     {
         try {
-            // Verificar que no tenga operadores activos
-            $activeOperators = $company->operators()->where('active', true)->count();
-            if ($activeOperators > 0) {
-                return back()->with('error', 'No se puede eliminar una empresa con operadores activos.');
+            // Verificar que no tenga usuarios asociados
+            if ($company->users()->count() > 0) {
+                return back()->with('error', 'No se puede eliminar una empresa con usuarios asociados.');
             }
 
-            // Verificar que no tenga un usuario administrador
-            if ($company->user) {
-                return back()->with('error', 'No se puede eliminar una empresa que tiene un usuario administrador. Elimine primero el usuario.');
-            }
-
-            // Eliminar certificado físico si existe
+            // Eliminar certificado si existe
             if ($company->certificate_path && Storage::exists($company->certificate_path)) {
                 Storage::delete($company->certificate_path);
             }
 
+            $companyName = $company->business_name;
             $company->delete();
 
             return redirect()->route('admin.companies.index')
-                ->with('success', 'Empresa eliminada correctamente.');
+                ->with('success', "Empresa '{$companyName}' eliminada correctamente.");
 
         } catch (\Exception $e) {
             return back()->with('error', 'Error al eliminar la empresa: ' . $e->getMessage());
@@ -235,27 +398,57 @@ class CompanyController extends Controller
     }
 
     /**
-     * Mostrar gestión de certificados.
+     * NUEVO: Cambiar estado activo/inactivo.
      */
-    public function certificates(Company $company)
+    public function toggleStatus(Company $company)
     {
-        $certificateInfo = null;
+        try {
+            $company->update(['active' => !$company->active]);
 
-        if ($company->certificate_path) {
-            $certificateInfo = [
-                'path' => $company->certificate_path,
-                'expires_at' => $company->certificate_expires_at,
-                'alias' => $company->certificate_alias,
-                'status' => $this->getCertificateStatus($company),
-                'exists' => Storage::exists($company->certificate_path),
-            ];
+            $status = $company->active ? 'activada' : 'desactivada';
+            return back()->with('success', "Empresa {$status} correctamente.");
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Error al cambiar el estado de la empresa.');
         }
-
-        return view('admin.companies.certificates', compact('company', 'certificateInfo'));
     }
 
     /**
-     * Subir certificado.
+     * NUEVO: Actualizar roles de empresa.
+     */
+    public function updateRoles(Request $request, Company $company)
+    {
+        $request->validate([
+            'company_roles' => 'required|array|min:1',
+            'company_roles.*' => 'in:Cargas,Desconsolidador,Transbordos',
+        ]);
+
+        try {
+            $newRoles = $request->company_roles;
+            $rolesConfig = $this->generateRolesConfig($newRoles);
+
+            $company->update([
+                'company_roles' => $newRoles,
+                'roles_config' => $rolesConfig,
+            ]);
+
+            return back()->with('success', 'Roles de empresa actualizados: ' . implode(', ', $newRoles));
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Error al actualizar los roles: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Gestión de certificados (mantener funcionalidad existente).
+     */
+    public function certificates(Company $company)
+    {
+        return view('admin.companies.certificates', compact('company'));
+    }
+
+    /**
+     * Subir certificado digital.
      */
     public function uploadCertificate(Request $request, Company $company)
     {
@@ -272,12 +465,12 @@ class CompanyController extends Controller
                 Storage::delete($company->certificate_path);
             }
 
-            // Subir nuevo certificado
-            $path = $request->file('certificate')->store('certificates', 'local');
+            // Guardar nuevo certificado
+            $path = $request->file('certificate')->store('certificates');
 
             $company->update([
                 'certificate_path' => $path,
-                'certificate_password' => $request->password, // Se encripta automáticamente en el mutator
+                'certificate_password' => $request->password, // Se encripta automáticamente
                 'certificate_alias' => $request->alias,
                 'certificate_expires_at' => $request->expires_at,
             ]);
@@ -290,13 +483,12 @@ class CompanyController extends Controller
     }
 
     /**
-     * Eliminar certificado.
+     * Eliminar certificado digital.
      */
     public function deleteCertificate(Company $company)
     {
         try {
             $company->deleteCertificate();
-
             return back()->with('success', 'Certificado eliminado correctamente.');
 
         } catch (\Exception $e) {
@@ -305,70 +497,17 @@ class CompanyController extends Controller
     }
 
     /**
-     * Obtener estado del certificado.
+     * Obtener estado del certificado (método helper).
      */
-    private function getCertificateStatus($company)
+    private function getCertificateStatus(Company $company): array
     {
-        if (!$company->certificate_path) {
-            return [
-                'status' => 'none',
-                'message' => 'Sin certificado',
-                'color' => 'gray',
-            ];
-        }
-
-        if (!$company->certificate_expires_at) {
-            return [
-                'status' => 'unknown',
-                'message' => 'Fecha de vencimiento desconocida',
-                'color' => 'yellow',
-            ];
-        }
-
-        $expiresAt = Carbon::parse($company->certificate_expires_at);
-        $now = Carbon::now();
-        $daysToExpiry = $now->diffInDays($expiresAt, false);
-
-        if ($daysToExpiry < 0) {
-            return [
-                'status' => 'expired',
-                'message' => 'Vencido hace ' . abs($daysToExpiry) . ' días',
-                'color' => 'red',
-                'days' => $daysToExpiry,
-            ];
-        } elseif ($daysToExpiry <= 30) {
-            return [
-                'status' => 'warning',
-                'message' => 'Vence en ' . $daysToExpiry . ' días',
-                'color' => 'yellow',
-                'days' => $daysToExpiry,
-            ];
-        } else {
-            return [
-                'status' => 'valid',
-                'message' => 'Válido por ' . $daysToExpiry . ' días',
-                'color' => 'green',
-                'days' => $daysToExpiry,
-            ];
-        }
-    }
-
-    /**
-     * Mostrar operadores de la empresa.
-     */
-    public function operators(Company $company)
-    {
-        $operators = $company->operators()->with('user')->paginate(15);
-
-        return view('admin.companies.operators', compact('company', 'operators'));
-    }
-
-    /**
-     * Probar webservice de la empresa.
-     */
-    public function testWebservice(Company $company)
-    {
-        // TODO: Implementar cuando esté el módulo de webservices
-        return back()->with('info', 'Funcionalidad de prueba de webservices en desarrollo.');
+        return [
+            'has_certificate' => $company->has_certificate,
+            'is_expired' => $company->is_certificate_expired,
+            'is_expiring_soon' => $company->is_certificate_expiring_soon,
+            'status' => $company->certificate_status,
+            'days_to_expiry' => $company->certificate_days_to_expiry,
+            'expires_at' => $company->certificate_expires_at,
+        ];
     }
 }

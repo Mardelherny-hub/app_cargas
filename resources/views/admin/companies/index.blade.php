@@ -5,133 +5,83 @@
                 {{ __('Gestión de Empresas') }}
             </h2>
             <a href="{{ route('admin.companies.create') }}"
-               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                Nueva Empresa
+               class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Crear Empresa
             </a>
         </div>
     </x-slot>
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-
-            <!-- Estadísticas -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-blue-500 rounded-md p-3">
-                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                                </svg>
-                            </div>
-                            <div class="ml-5">
-                                <dl>
-                                    <dt class="text-sm font-medium text-gray-500 truncate">Total</dt>
-                                    <dd class="text-lg font-medium text-gray-900">{{ $stats['total'] }}</dd>
-                                </dl>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-green-500 rounded-md p-3">
-                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                            </div>
-                            <div class="ml-5">
-                                <dl>
-                                    <dt class="text-sm font-medium text-gray-500 truncate">Activas</dt>
-                                    <dd class="text-lg font-medium text-gray-900">{{ $stats['active'] }}</dd>
-                                </dl>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-purple-500 rounded-md p-3">
-                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-                                </svg>
-                            </div>
-                            <div class="ml-5">
-                                <dl>
-                                    <dt class="text-sm font-medium text-gray-500 truncate">Con Certificados</dt>
-                                    <dd class="text-lg font-medium text-gray-900">{{ $stats['with_certificates'] }}</dd>
-                                </dl>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0 bg-red-500 rounded-md p-3">
-                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/>
-                                </svg>
-                            </div>
-                            <div class="ml-5">
-                                <dl>
-                                    <dt class="text-sm font-medium text-gray-500 truncate">Cert. Vencidos</dt>
-                                    <dd class="text-lg font-medium text-gray-900">{{ $stats['expired_certificates'] }}</dd>
-                                </dl>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Filtros y búsqueda -->
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
-                <div class="p-6">
-                    <form method="GET" action="{{ route('admin.companies.index') }}" class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <div>
-                            <input type="text"
-                                   name="search"
-                                   value="{{ request('search') }}"
-                                   placeholder="Buscar empresas..."
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <select name="filter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="">Todos los estados</option>
-                                <option value="active" {{ request('filter') === 'active' ? 'selected' : '' }}>Activas</option>
-                                <option value="inactive" {{ request('filter') === 'inactive' ? 'selected' : '' }}>Inactivas</option>
-                                <option value="expired_certificates" {{ request('filter') === 'expired_certificates' ? 'selected' : '' }}>Certificados vencidos</option>
-                                <option value="without_certificates" {{ request('filter') === 'without_certificates' ? 'selected' : '' }}>Sin certificados</option>
-                                <option value="expiring_soon" {{ request('filter') === 'expiring_soon' ? 'selected' : '' }}>Vencen pronto</option>
-                            </select>
-                        </div>
-                        <div>
-                            <select name="country" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="">Todos los países</option>
-                                <option value="argentina" {{ request('country') === 'argentina' ? 'selected' : '' }}>Argentina</option>
-                                <option value="paraguay" {{ request('country') === 'paraguay' ? 'selected' : '' }}>Paraguay</option>
-                            </select>
-                        </div>
-                        <div class="flex space-x-2">
-                            <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                Filtrar
-                            </button>
-                            <a href="{{ route('admin.companies.index') }}" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium text-center">
-                                Limpiar
-                            </a>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Lista de empresas -->
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6">
+                <div class="p-6 bg-white border-b border-gray-200">
+
+                    <!-- Filtros y búsqueda -->
+                    <div class="mb-6">
+                        <form method="GET" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <input type="text" name="search" value="{{ request('search') }}"
+                                           placeholder="Buscar empresa..."
+                                           class="w-full border-gray-300 rounded-md shadow-sm">
+                                </div>
+                                <div>
+                                    <select name="country" class="w-full border-gray-300 rounded-md shadow-sm">
+                                        <option value="">Todos los países</option>
+                                        <option value="AR" {{ request('country') === 'AR' ? 'selected' : '' }}>Argentina</option>
+                                        <option value="PY" {{ request('country') === 'PY' ? 'selected' : '' }}>Paraguay</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <select name="role" class="w-full border-gray-300 rounded-md shadow-sm">
+                                        <option value="">Todos los roles</option>
+                                        <option value="Cargas" {{ request('role') === 'Cargas' ? 'selected' : '' }}>Cargas</option>
+                                        <option value="Desconsolidador" {{ request('role') === 'Desconsolidador' ? 'selected' : '' }}>Desconsolidador</option>
+                                        <option value="Transbordos" {{ request('role') === 'Transbordos' ? 'selected' : '' }}>Transbordos</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <select name="status" class="w-full border-gray-300 rounded-md shadow-sm">
+                                        <option value="">Todos los estados</option>
+                                        <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Activas</option>
+                                        <option value="inactive" {{ request('status') === 'inactive' ? 'selected' : '' }}>Inactivas</option>
+                                        <option value="cert_expired" {{ request('status') === 'cert_expired' ? 'selected' : '' }}>Certificado Vencido</option>
+                                        <option value="no_cert" {{ request('status') === 'no_cert' ? 'selected' : '' }}>Sin Certificado</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                                    Filtrar
+                                </button>
+                                <a href="{{ route('admin.companies.index') }}" class="bg-gray-500 hover:bg-gray-700 text-white px-4 py-2 rounded">
+                                    Limpiar
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Estadísticas rápidas -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-blue-600">{{ $stats['total'] ?? 0 }}</div>
+                            <div class="text-sm text-blue-800">Total Empresas</div>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-green-600">{{ $stats['active'] ?? 0 }}</div>
+                            <div class="text-sm text-green-800">Activas</div>
+                        </div>
+                        <div class="bg-yellow-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-yellow-600">{{ $stats['cert_expiring'] ?? 0 }}</div>
+                            <div class="text-sm text-yellow-800">Cert. por Vencer</div>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-red-600">{{ $stats['cert_expired'] ?? 0 }}</div>
+                            <div class="text-sm text-red-800">Cert. Vencidos</div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de empresas -->
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
@@ -140,16 +90,19 @@
                                         Empresa
                                     </th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        País
+                                        País/CUIT
                                     </th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Estado
+                                        Roles de Negocio
                                     </th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Certificado
                                     </th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Operadores
+                                        Usuarios
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Estado
                                     </th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Acciones
@@ -158,70 +111,97 @@
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 @forelse($companies as $company)
-                                    <tr>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="flex items-center">
-                                                <div class="h-10 w-10 bg-{{ $company->country === 'AR' ? 'blue' : 'green' }}-500 rounded-full flex items-center justify-center">
-                                                    <span class="text-sm font-medium text-white">
-                                                        {{ $company->country }}
-                                                    </span>
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4">
+                                            <div>
+                                                <div class="text-sm font-medium text-gray-900">
+                                                    {{ $company->business_name }}
                                                 </div>
-                                                <div class="ml-4">
-                                                    <div class="text-sm font-medium text-gray-900">{{ $company->business_name }}</div>
-                                                    <div class="text-sm text-gray-500">{{ $company->tax_id }}</div>
-                                                    @if($company->commercial_name)
-                                                        <div class="text-xs text-gray-400">{{ $company->commercial_name }}</div>
-                                                    @endif
-                                                </div>
+                                                @if($company->commercial_name)
+                                                    <div class="text-sm text-gray-500">
+                                                        {{ $company->commercial_name }}
+                                                    </div>
+                                                @endif
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $company->country === 'AR' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800' }}">
-                                                {{ $company->country === 'AR' ? 'Argentina' : 'Paraguay' }}
-                                            </span>
+                                        <td class="px-6 py-4">
+                                            <div class="text-sm text-gray-900">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                    {{ $company->country === 'AR' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800' }}">
+                                                    {{ $company->country === 'AR' ? 'Argentina' : 'Paraguay' }}
+                                                </span>
+                                            </div>
+                                            <div class="text-sm text-gray-500">{{ $company->tax_id }}</div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $company->active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
-                                                {{ $company->active ? 'Activa' : 'Inactiva' }}
-                                            </span>
+                                        <td class="px-6 py-4">
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach($company->getRoles() as $role)
+                                                    @php
+                                                        $roleColor = match($role) {
+                                                            'Cargas' => 'bg-blue-100 text-blue-800',
+                                                            'Desconsolidador' => 'bg-yellow-100 text-yellow-800',
+                                                            'Transbordos' => 'bg-purple-100 text-purple-800',
+                                                            default => 'bg-gray-100 text-gray-800'
+                                                        };
+                                                    @endphp
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $roleColor }}">
+                                                        {{ $role }}
+                                                    </span>
+                                                @endforeach
+                                                @if(empty($company->getRoles()))
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                        Sin Roles
+                                                    </span>
+                                                @endif
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-1">
+                                                WS: {{ $company->webservices_display }}
+                                            </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            @if($company->certificate_path)
-                                                @php
-                                                    $daysToExpiry = $company->certificate_expires_at ? now()->diffInDays($company->certificate_expires_at, false) : null;
-                                                @endphp
-                                                @if($daysToExpiry !== null)
-                                                    @if($daysToExpiry < 0)
+                                        <td class="px-6 py-4">
+                                            @if($company->has_certificate)
+                                                <div class="text-sm">
+                                                    @if($company->is_certificate_expired)
                                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                                             Vencido
                                                         </span>
-                                                    @elseif($daysToExpiry <= 30)
+                                                    @elseif($company->is_certificate_expiring_soon)
                                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                            {{ $daysToExpiry }}d restantes
+                                                            Por Vencer
                                                         </span>
                                                     @else
                                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                             Válido
                                                         </span>
                                                     @endif
-                                                @else
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                        Sin fecha
-                                                    </span>
-                                                @endif
+                                                    <div class="text-xs text-gray-500 mt-1">
+                                                        {{ $company->certificate_expires_at?->format('d/m/Y') }}
+                                                    </div>
+                                                </div>
                                             @else
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                    Sin certificado
+                                                    Sin Certificado
                                                 </span>
                                             @endif
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            <div class="flex items-center space-x-2">
-                                                <span class="font-medium">{{ $company->operators_count ?? 0 }}</span>
-                                                <span class="text-gray-500">operadores</span>
-                                            </div>
+                                        <td class="px-6 py-4 text-sm text-gray-900">
+                                            <div>{{ $company->users_count ?? 0 }} usuarios</div>
+                                            @if($company->admin_count ?? 0 > 0)
+                                                <div class="text-xs text-green-600">{{ $company->admin_count }} admin(s)</div>
+                                            @else
+                                                <div class="text-xs text-red-600">Sin administrador</div>
+                                            @endif
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <td class="px-6 py-4">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                {{ $company->active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                                {{ $company->active ? 'Activa' : 'Inactiva' }}
+                                            </span>
+                                            @if(!$company->ws_active && $company->active)
+                                                <div class="text-xs text-yellow-600 mt-1">WS Inactivo</div>
+                                            @endif
+                                        </td>
+                                        <td class="px-6 py-4 text-sm font-medium">
                                             <div class="flex space-x-2">
                                                 <a href="{{ route('admin.companies.show', $company) }}"
                                                    class="text-blue-600 hover:text-blue-900">Ver</a>
@@ -229,13 +209,13 @@
                                                    class="text-green-600 hover:text-green-900">Editar</a>
                                                 <a href="{{ route('admin.companies.certificates', $company) }}"
                                                    class="text-purple-600 hover:text-purple-900">Certificados</a>
-                                                @if($company->operators_count === 0 && !$company->user)
+                                                @if($company->users_count === 0)
                                                     <form method="POST" action="{{ route('admin.companies.destroy', $company) }}" class="inline">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit"
                                                                 class="text-red-600 hover:text-red-900"
-                                                                onclick="return confirm('¿Está seguro de eliminar esta empresa?')">
+                                                                onclick="return confirm('¿Eliminar empresa {{ $company->business_name }}?')">
                                                             Eliminar
                                                         </button>
                                                     </form>
@@ -245,7 +225,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="px-6 py-4 text-center text-gray-500">
+                                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">
                                             No se encontraron empresas
                                         </td>
                                     </tr>
