@@ -1,5 +1,4 @@
 <?php
-// app/Http/Middleware/CompanyAccess.php
 
 namespace App\Http\Middleware;
 

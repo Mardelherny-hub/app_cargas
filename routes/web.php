@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WelcomeController;
+use App\Http\Middleware\CompanyAccess;
 
 /*
  | --*------------------------------------------------------------------------
@@ -45,12 +46,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Rutas del Operador Externo
     Route::prefix('operator')
-    ->middleware(['role:external-operator', 'company.access'])
+    ->middleware(['role:external-operator', \App\Http\Middleware\CompanyAccess::class])
     ->group(base_path('routes/operator.php'));
 });
 
 // Middleware personalizado para verificar acceso por empresa
-Route::middleware(['auth', 'verified', 'company.access'])->group(function () {
+Route::middleware(['auth', 'verified', \App\Http\Middleware\CompanyAccess::class])->group(function () {
     // Rutas que requieren verificación de empresa
     // Estas rutas serán agregadas en los archivos específicos por rol
 });
