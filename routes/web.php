@@ -5,15 +5,15 @@ use App\Http\Controllers\WelcomeController;
 use App\Http\Middleware\CompanyAccess;
 
 /*
- | --*------------------------------------------------------------------------
- | Web Routes
- |--------------------------------------------------------------------------
- |
- | Aquí se registran las rutas web para la aplicación. Estas rutas
- | son cargadas por el RouteServiceProvider dentro de un grupo que
- | contiene el middleware "web".
- |
- */
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Aquí se registran las rutas web para la aplicación. Estas rutas
+| son cargadas por el RouteServiceProvider dentro de un grupo que
+| contiene el middleware "web".
+|
+*/
 
 // Ruta pública de bienvenida
 Route::get('/', [WelcomeController::class, 'index'])->name('welcome');
@@ -31,27 +31,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Rutas del Super Administrador
     Route::prefix('admin')
-    ->middleware(['role:super-admin'])
-    ->group(base_path('routes/admin.php'));
+        ->middleware(['role:super-admin'])
+        ->group(base_path('routes/admin.php'));
 
-    // Rutas del Administrador de Empresa
+    // Rutas del Administrador de Empresa y Usuarios
+    // Tanto company-admin como user pueden acceder a estas rutas
+    // pero con diferentes niveles de permisos
     Route::prefix('company')
-    ->middleware(['role:company-admin'])
-    ->group(base_path('routes/company.php'));
-
-    // Rutas del Operador Interno
-    Route::prefix('internal')
-    ->middleware(['role:internal-operator'])
-    ->group(base_path('routes/internal.php'));
-
-    // Rutas del Operador Externo
-    Route::prefix('operator')
-    ->middleware(['role:external-operator', \App\Http\Middleware\CompanyAccess::class])
-    ->group(base_path('routes/operator.php'));
+        ->middleware(['role:company-admin|user', CompanyAccess::class])
+        ->group(base_path('routes/company.php'));
 });
 
-// Middleware personalizado para verificar acceso por empresa
-Route::middleware(['auth', 'verified', \App\Http\Middleware\CompanyAccess::class])->group(function () {
-    // Rutas que requieren verificación de empresa
-    // Estas rutas serán agregadas en los archivos específicos por rol
+// Rutas adicionales que requieren verificación de empresa
+Route::middleware(['auth', 'verified', CompanyAccess::class])->group(function () {
+    // Rutas específicas que requieren verificación de empresa
+    // Estas rutas serán manejadas dentro de los controladores específicos
 });

@@ -85,20 +85,22 @@ class LoginResponse implements LoginResponseContract
             return route('dashboard');
         }
 
-        if ($user->hasRole('internal-operator')) {
-            return route('internal.dashboard');
-        }
-
-        if ($user->hasRole('external-operator')) {
+        if ($user->hasRole('user')) {
             // Verificar que tenga empresa asociada
-            if ($user->userable_type === 'App\\Models\\Operator' && $user->userable->company_id) {
-                return route('operator.dashboard');
+            if ($user->userable_type === 'App\\Models\\Company') {
+                return route('company.dashboard');
             }
 
-            // Si no tiene empresa, es un problema de configuración
-            logger()->warning('External operator without company association', [
+            // Si es un operador asociado a empresa
+            if ($user->userable_type === 'App\\Models\\Operator' && $user->userable->company_id) {
+                return route('company.dashboard');
+            }
+
+            // Si no tiene empresa asociada, es un problema de configuración
+            logger()->warning('User without company association', [
                 'user_id' => $user->id,
-                'email' => $user->email
+                'email' => $user->email,
+                'userable_type' => $user->userable_type
             ]);
 
             return route('dashboard');

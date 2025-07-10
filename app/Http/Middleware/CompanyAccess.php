@@ -22,23 +22,23 @@ class CompanyAccess
         }
 
         // Super admin can access everything
-        if ($user->isSuperAdmin()) {
+        if ($user->hasRole('super-admin')) {
             return $next($request);
         }
 
-        // Internal operators can access everything
-        if ($user->isInternalOperator()) {
+        // Company admin and users need to verify company access
+        if ($user->hasRole('company-admin') || $user->hasRole('user')) {
+            $companyId = $this->getCompanyIdFromRequest($request, $companyParams);
+
+            if ($companyId && !$user->belongsToCompany($companyId)) {
+                abort(403, 'No tiene permisos para acceder a esta empresa.');
+            }
+
             return $next($request);
         }
 
-        // For company users, verify access
-        $companyId = $this->getCompanyIdFromRequest($request, $companyParams);
-
-        if ($companyId && !$user->belongsToCompany($companyId)) {
-            abort(403, 'You do not have permission to access this company.');
-        }
-
-        return $next($request);
+        // If user has no recognized role, deny access
+        abort(403, 'No tiene permisos para acceder a esta sección.');
     }
 
     /**

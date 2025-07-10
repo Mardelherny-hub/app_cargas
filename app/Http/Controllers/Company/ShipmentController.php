@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
+use App\Models\Shipment;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class ShipmentController extends Controller
 {
@@ -13,132 +15,297 @@ class ShipmentController extends Controller
     /**
      * Mostrar lista de cargas.
      */
-    public function index(Request $request)
+    public function index()
     {
+        // Verificar si el usuario puede ver cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para ver cargas.');
+        }
+
         $company = $this->getUserCompany();
 
         if (!$company) {
-            return redirect()->route('company.dashboard')
+            return redirect()->route('dashboard')
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // TODO: Implementar cuando esté el módulo de cargas
-        $shipments = collect(); // Colección vacía por ahora
+        // Construir consulta base
+        $query = Shipment::where('company_id', $company->id);
 
-        // Estadísticas temporales
-        $stats = [
-            'total' => 0,
-            'pending' => 0,
-            'completed' => 0,
-            'in_transit' => 0,
-        ];
+        // Aplicar filtros adicionales según el rol
+        if ($this->isUser() && $this->isOperator()) {
+            // Los usuarios operadores solo ven sus propias cargas
+            $query->where('created_by', Auth::id());
+        }
 
-        return view('company.shipments.index', compact('shipments', 'stats', 'company'));
+        $shipments = $query->with(['trip', 'containers'])
+            ->latest()
+            ->paginate(20);
+
+        return view('company.shipments.index', compact('shipments'));
     }
 
     /**
-     * Mostrar formulario para crear carga.
+     * Mostrar formulario para crear nueva carga.
      */
     public function create()
     {
+        // Verificar permisos para crear cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para crear cargas.');
+        }
+
         $company = $this->getUserCompany();
 
         if (!$company) {
-            return redirect()->route('company.dashboard')
+            return redirect()->route('company.shipments.index')
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        return view('company.shipments.create', compact('company'));
+        // Datos adicionales para el formulario
+        $data = [
+            'company' => $company,
+            'canManageAll' => $this->isCompanyAdmin(),
+            'userInfo' => $this->getUserInfo(),
+        ];
+
+        return view('company.shipments.create', $data);
     }
 
     /**
-     * Crear nueva carga.
+     * Almacenar nueva carga.
      */
     public function store(Request $request)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return redirect()->route('company.shipments.index')
-            ->with('info', 'Funcionalidad de creación de cargas en desarrollo.');
-    }
+        // Verificar permisos para crear cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para crear cargas.');
+        }
 
-    /**
-     * Mostrar detalles de la carga.
-     */
-    public function show($id)
-    {
         $company = $this->getUserCompany();
 
         if (!$company) {
-            return redirect()->route('company.dashboard')
+            return redirect()->route('company.shipments.index')
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // TODO: Implementar cuando esté el módulo de cargas
-        return view('company.shipments.show', compact('company'))
-            ->with('info', 'Funcionalidad de visualización de cargas en desarrollo.');
+        // Validar datos
+        $request->validate([
+            'shipment_number' => 'required|string|max:255',
+            'origin' => 'required|string|max:255',
+            'destination' => 'required|string|max:255',
+            'weight' => 'required|numeric|min:0',
+            'description' => 'required|string',
+            // Agregar más validaciones según necesidades
+        ]);
+
+        // Crear la carga
+        $shipment = Shipment::create([
+            'company_id' => $company->id,
+            'shipment_number' => $request->shipment_number,
+            'origin' => $request->origin,
+            'destination' => $request->destination,
+            'weight' => $request->weight,
+            'description' => $request->description,
+            'created_by' => Auth::id(),
+            'status' => 'draft',
+        ]);
+
+        return redirect()->route('company.shipments.show', $shipment)
+            ->with('success', 'Carga creada exitosamente.');
+    }
+
+    /**
+     * Mostrar detalles de una carga.
+     */
+    public function show(Shipment $shipment)
+    {
+        // Verificar permisos para ver cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para ver cargas.');
+        }
+
+        // Verificar que la carga pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($shipment->company_id)) {
+            abort(403, 'No tiene permisos para ver esta carga.');
+        }
+
+        // Verificar si el usuario puede ver esta carga específica
+        if ($this->isUser() && $this->isOperator() && $shipment->created_by !== Auth::id()) {
+            abort(403, 'No tiene permisos para ver esta carga.');
+        }
+
+        $shipment->load(['company', 'trip', 'containers', 'attachments']);
+
+        return view('company.shipments.show', compact('shipment'));
     }
 
     /**
      * Mostrar formulario para editar carga.
      */
-    public function edit($id)
+    public function edit(Shipment $shipment)
     {
-        $company = $this->getUserCompany();
-
-        if (!$company) {
-            return redirect()->route('company.dashboard')
-                ->with('error', 'No se encontró la empresa asociada.');
+        // Verificar permisos para editar cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para editar cargas.');
         }
 
-        // TODO: Implementar cuando esté el módulo de cargas
-        return view('company.shipments.edit', compact('company'))
-            ->with('info', 'Funcionalidad de edición de cargas en desarrollo.');
+        // Verificar que la carga pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($shipment->company_id)) {
+            abort(403, 'No tiene permisos para editar esta carga.');
+        }
+
+        // Verificar si el usuario puede editar esta carga específica
+        if ($this->isUser() && $this->isOperator() && $shipment->created_by !== Auth::id()) {
+            abort(403, 'No tiene permisos para editar esta carga.');
+        }
+
+        // Verificar estado de la carga
+        if (in_array($shipment->status, ['completed', 'cancelled'])) {
+            return redirect()->route('company.shipments.show', $shipment)
+                ->with('error', 'No se puede editar una carga completada o cancelada.');
+        }
+
+        $shipment->load(['company', 'trip', 'containers']);
+
+        return view('company.shipments.edit', compact('shipment'));
     }
 
     /**
      * Actualizar carga.
      */
-    public function update(Request $request, $id)
+    public function update(Request $request, Shipment $shipment)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return redirect()->route('company.shipments.index')
-            ->with('info', 'Funcionalidad de actualización de cargas en desarrollo.');
+        // Verificar permisos para editar cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para editar cargas.');
+        }
+
+        // Verificar que la carga pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($shipment->company_id)) {
+            abort(403, 'No tiene permisos para editar esta carga.');
+        }
+
+        // Verificar si el usuario puede editar esta carga específica
+        if ($this->isUser() && $this->isOperator() && $shipment->created_by !== Auth::id()) {
+            abort(403, 'No tiene permisos para editar esta carga.');
+        }
+
+        // Verificar estado de la carga
+        if (in_array($shipment->status, ['completed', 'cancelled'])) {
+            return redirect()->route('company.shipments.show', $shipment)
+                ->with('error', 'No se puede editar una carga completada o cancelada.');
+        }
+
+        // Validar datos
+        $request->validate([
+            'shipment_number' => 'required|string|max:255',
+            'origin' => 'required|string|max:255',
+            'destination' => 'required|string|max:255',
+            'weight' => 'required|numeric|min:0',
+            'description' => 'required|string',
+        ]);
+
+        // Actualizar la carga
+        $shipment->update([
+            'shipment_number' => $request->shipment_number,
+            'origin' => $request->origin,
+            'destination' => $request->destination,
+            'weight' => $request->weight,
+            'description' => $request->description,
+            'updated_by' => Auth::id(),
+        ]);
+
+        return redirect()->route('company.shipments.show', $shipment)
+            ->with('success', 'Carga actualizada exitosamente.');
     }
 
     /**
      * Eliminar carga.
      */
-    public function destroy($id)
+    public function destroy(Shipment $shipment)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
+        // Solo company-admin puede eliminar cargas
+        if (!$this->isCompanyAdmin()) {
+            abort(403, 'No tiene permisos para eliminar cargas.');
+        }
+
+        // Verificar que la carga pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($shipment->company_id)) {
+            abort(403, 'No tiene permisos para eliminar esta carga.');
+        }
+
+        // Verificar estado de la carga
+        if (in_array($shipment->status, ['completed', 'in_transit'])) {
+            return redirect()->route('company.shipments.show', $shipment)
+                ->with('error', 'No se puede eliminar una carga completada o en tránsito.');
+        }
+
+        $shipment->delete();
+
         return redirect()->route('company.shipments.index')
-            ->with('info', 'Funcionalidad de eliminación de cargas en desarrollo.');
+            ->with('success', 'Carga eliminada exitosamente.');
     }
 
     /**
      * Actualizar estado de la carga.
      */
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(Request $request, Shipment $shipment)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return back()->with('info', 'Funcionalidad de cambio de estado en desarrollo.');
+        // Verificar permisos básicos
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para modificar cargas.');
+        }
+
+        // Verificar que la carga pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($shipment->company_id)) {
+            abort(403, 'No tiene permisos para modificar esta carga.');
+        }
+
+        // Solo company-admin puede cambiar ciertos estados
+        $restrictedStatuses = ['completed', 'cancelled'];
+        if (in_array($request->status, $restrictedStatuses) && !$this->isCompanyAdmin()) {
+            abort(403, 'No tiene permisos para cambiar a este estado.');
+        }
+
+        $request->validate([
+            'status' => 'required|in:draft,pending,in_transit,completed,cancelled',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        $shipment->update([
+            'status' => $request->status,
+            'status_notes' => $request->notes,
+            'updated_by' => Auth::id(),
+        ]);
+
+        return redirect()->route('company.shipments.show', $shipment)
+            ->with('success', 'Estado de la carga actualizado exitosamente.');
     }
 
     /**
      * Duplicar carga.
      */
-    public function duplicate($id)
+    public function duplicate(Shipment $shipment)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return back()->with('info', 'Funcionalidad de duplicación de cargas en desarrollo.');
-    }
+        // Verificar permisos para crear cargas
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para crear cargas.');
+        }
 
-    /**
-     * Generar PDF de la carga.
-     */
-    public function generatePdf($id)
-    {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return back()->with('info', 'Funcionalidad de generación de PDF en desarrollo.');
+        // Verificar que la carga pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($shipment->company_id)) {
+            abort(403, 'No tiene permisos para duplicar esta carga.');
+        }
+
+        // Crear nueva carga basada en la existente
+        $newShipment = $shipment->replicate();
+        $newShipment->shipment_number = $shipment->shipment_number . '-COPY';
+        $newShipment->status = 'draft';
+        $newShipment->created_by = Auth::id();
+        $newShipment->save();
+
+        return redirect()->route('company.shipments.edit', $newShipment)
+            ->with('success', 'Carga duplicada exitosamente. Ajuste los datos según sea necesario.');
     }
 }

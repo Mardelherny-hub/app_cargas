@@ -10,18 +10,24 @@ use App\Http\Controllers\Company\CertificateController;
 use App\Http\Controllers\Company\WebserviceController;
 use App\Http\Controllers\Company\ImportController;
 use App\Http\Controllers\Company\ExportController;
+use App\Http\Controllers\Company\DeconsolidationController;
+use App\Http\Controllers\Company\TransferController;
+use App\Http\Controllers\Company\SettingsController;
 
 /*
 |--------------------------------------------------------------------------
-| Company Admin Routes
+| Company Routes
 |--------------------------------------------------------------------------
 |
-| Rutas para el Administrador de Empresa.
-| Middleware aplicado: ['auth', 'verified', 'role:company-admin']
+| Rutas para Administradores de Empresa y Usuarios regulares.
+| Middleware aplicado: ['auth', 'verified', 'role:company-admin|user', 'CompanyAccess']
+|
+| Los permisos específicos se manejan dentro de cada controlador
+| basándose en el rol del usuario y los roles de empresa.
 |
 */
 
-// Dashboard del Administrador de Empresa
+// Dashboard de Empresa
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('company.dashboard');
 
 // Gestión de Cargas
@@ -43,6 +49,14 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
     Route::get('/{shipment}/attachments', [ShipmentController::class, 'attachments'])->name('attachments');
     Route::post('/{shipment}/attachments', [ShipmentController::class, 'uploadAttachment'])->name('upload-attachment');
     Route::delete('/{shipment}/attachments/{attachment}', [ShipmentController::class, 'deleteAttachment'])->name('delete-attachment');
+
+    // Búsqueda y filtros
+    Route::get('/search', [ShipmentController::class, 'search'])->name('search');
+    Route::post('/search', [ShipmentController::class, 'searchResults'])->name('search-results');
+
+    // Historial y seguimiento
+    Route::get('/{shipment}/history', [ShipmentController::class, 'history'])->name('history');
+    Route::get('/{shipment}/tracking', [ShipmentController::class, 'tracking'])->name('tracking');
 });
 
 // Gestión de Viajes
@@ -56,15 +70,52 @@ Route::prefix('trips')->name('company.trips.')->group(function () {
     Route::delete('/{trip}', [TripController::class, 'destroy'])->name('destroy');
 
     // Acciones específicas de viajes
+    Route::patch('/{trip}/status', [TripController::class, 'updateStatus'])->name('update-status');
     Route::patch('/{trip}/close', [TripController::class, 'close'])->name('close');
-    Route::patch('/{trip}/reopen', [TripController::class, 'reopen'])->name('reopen');
+    Route::post('/{trip}/duplicate', [TripController::class, 'duplicate'])->name('duplicate');
+    Route::get('/{trip}/pdf', [TripController::class, 'generatePdf'])->name('pdf');
+
+    // Manifiestos
     Route::get('/{trip}/manifest', [TripController::class, 'manifest'])->name('manifest');
-    Route::get('/{trip}/shipments', [TripController::class, 'shipments'])->name('shipments');
-    Route::post('/{trip}/shipments', [TripController::class, 'addShipment'])->name('add-shipment');
-    Route::delete('/{trip}/shipments/{shipment}', [TripController::class, 'removeShipment'])->name('remove-shipment');
+    Route::get('/{trip}/manifest/pdf', [TripController::class, 'manifestPdf'])->name('manifest-pdf');
+
+    // Contenedores
+    Route::get('/{trip}/containers', [TripController::class, 'containers'])->name('containers');
+    Route::post('/{trip}/containers', [TripController::class, 'addContainer'])->name('add-container');
+    Route::delete('/{trip}/containers/{container}', [TripController::class, 'removeContainer'])->name('remove-container');
 });
 
-// Gestión de Operadores
+// Gestión de Desconsolidación (solo si la empresa tiene rol "Desconsolidador")
+Route::prefix('deconsolidation')->name('company.deconsolidation.')->group(function () {
+    Route::get('/', [DeconsolidationController::class, 'index'])->name('index');
+    Route::get('/create', [DeconsolidationController::class, 'create'])->name('create');
+    Route::post('/', [DeconsolidationController::class, 'store'])->name('store');
+    Route::get('/{deconsolidation}', [DeconsolidationController::class, 'show'])->name('show');
+    Route::get('/{deconsolidation}/edit', [DeconsolidationController::class, 'edit'])->name('edit');
+    Route::put('/{deconsolidation}', [DeconsolidationController::class, 'update'])->name('update');
+    Route::delete('/{deconsolidation}', [DeconsolidationController::class, 'destroy'])->name('destroy');
+
+    // Acciones específicas de desconsolidación
+    Route::patch('/{deconsolidation}/status', [DeconsolidationController::class, 'updateStatus'])->name('update-status');
+    Route::get('/{deconsolidation}/pdf', [DeconsolidationController::class, 'generatePdf'])->name('pdf');
+});
+
+// Gestión de Transbordos (solo si la empresa tiene rol "Transbordos")
+Route::prefix('transfers')->name('company.transfers.')->group(function () {
+    Route::get('/', [TransferController::class, 'index'])->name('index');
+    Route::get('/create', [TransferController::class, 'create'])->name('create');
+    Route::post('/', [TransferController::class, 'store'])->name('store');
+    Route::get('/{transfer}', [TransferController::class, 'show'])->name('show');
+    Route::get('/{transfer}/edit', [TransferController::class, 'edit'])->name('edit');
+    Route::put('/{transfer}', [TransferController::class, 'update'])->name('update');
+    Route::delete('/{transfer}', [TransferController::class, 'destroy'])->name('destroy');
+
+    // Acciones específicas de transbordos
+    Route::patch('/{transfer}/status', [TransferController::class, 'updateStatus'])->name('update-status');
+    Route::get('/{transfer}/pdf', [TransferController::class, 'generatePdf'])->name('pdf');
+});
+
+// Gestión de Operadores (solo company-admin)
 Route::prefix('operators')->name('company.operators.')->group(function () {
     Route::get('/', [OperatorController::class, 'index'])->name('index');
     Route::get('/create', [OperatorController::class, 'create'])->name('create');
@@ -74,56 +125,55 @@ Route::prefix('operators')->name('company.operators.')->group(function () {
     Route::put('/{operator}', [OperatorController::class, 'update'])->name('update');
     Route::delete('/{operator}', [OperatorController::class, 'destroy'])->name('destroy');
 
-    // Permisos del operador
-    Route::get('/{operator}/permissions', [OperatorController::class, 'permissions'])->name('permissions');
-    Route::put('/{operator}/permissions', [OperatorController::class, 'updatePermissions'])->name('update-permissions');
+    // Acciones específicas de operadores
     Route::patch('/{operator}/toggle-status', [OperatorController::class, 'toggleStatus'])->name('toggle-status');
+    Route::put('/{operator}/permissions', [OperatorController::class, 'updatePermissions'])->name('update-permissions');
 });
 
-// Gestión de Certificados
-Route::prefix('certificates')->name('company.certificates.')->group(function () {
-    Route::get('/', [CertificateController::class, 'index'])->name('index');
-    Route::post('/upload', [CertificateController::class, 'upload'])->name('upload');
-    Route::delete('/{certificate}', [CertificateController::class, 'destroy'])->name('destroy');
-    Route::post('/test', [CertificateController::class, 'test'])->name('test');
-    Route::get('/info', [CertificateController::class, 'info'])->name('info');
-});
-
-// Configuración de Webservices
-Route::prefix('webservices')->name('company.webservices.')->group(function () {
-    Route::get('/', [WebserviceController::class, 'index'])->name('index');
-    Route::put('/config', [WebserviceController::class, 'updateConfig'])->name('update-config');
-    Route::post('/test', [WebserviceController::class, 'test'])->name('test');
-    Route::get('/status', [WebserviceController::class, 'status'])->name('status');
-
-    // Envío de datos
-    Route::post('/send/{shipment}', [WebserviceController::class, 'sendShipment'])->name('send-shipment');
-    Route::post('/send/{trip}', [WebserviceController::class, 'sendTrip'])->name('send-trip');
-    Route::post('/rectify/{shipment}', [WebserviceController::class, 'rectifyShipment'])->name('rectify-shipment');
-    Route::post('/cancel/{shipment}', [WebserviceController::class, 'cancelShipment'])->name('cancel-shipment');
-
-    // Consultas
-    Route::get('/query/{shipment}', [WebserviceController::class, 'queryShipment'])->name('query-shipment');
-    Route::get('/logs', [WebserviceController::class, 'logs'])->name('logs');
-});
-
-// Importación y Exportación
+// Importación/Exportación (según permisos del operador)
 Route::prefix('import')->name('company.import.')->group(function () {
     Route::get('/', [ImportController::class, 'index'])->name('index');
-    Route::post('/excel', [ImportController::class, 'excel'])->name('excel');
-    Route::post('/xml', [ImportController::class, 'xml'])->name('xml');
-    Route::post('/edi', [ImportController::class, 'edi'])->name('edi');
-    Route::post('/cuscar', [ImportController::class, 'cuscar'])->name('cuscar');
-    Route::post('/txt', [ImportController::class, 'txt'])->name('txt');
-    Route::get('/templates', [ImportController::class, 'templates'])->name('templates');
+    Route::get('/excel', [ImportController::class, 'excel'])->name('excel');
+    Route::post('/excel', [ImportController::class, 'processExcel'])->name('process-excel');
+    Route::get('/xml', [ImportController::class, 'xml'])->name('xml');
+    Route::post('/xml', [ImportController::class, 'processXml'])->name('process-xml');
+    Route::get('/edi', [ImportController::class, 'edi'])->name('edi');
+    Route::post('/edi', [ImportController::class, 'processEdi'])->name('process-edi');
+
+    // Historial de importaciones
     Route::get('/history', [ImportController::class, 'history'])->name('history');
+    Route::get('/history/{import}', [ImportController::class, 'showImport'])->name('show-import');
 });
 
 Route::prefix('export')->name('company.export.')->group(function () {
     Route::get('/', [ExportController::class, 'index'])->name('index');
-    Route::post('/shipments', [ExportController::class, 'shipments'])->name('shipments');
-    Route::post('/trips', [ExportController::class, 'trips'])->name('trips');
-    Route::post('/custom', [ExportController::class, 'custom'])->name('custom');
+    Route::get('/excel', [ExportController::class, 'excel'])->name('excel');
+    Route::post('/excel', [ExportController::class, 'generateExcel'])->name('generate-excel');
+    Route::get('/xml', [ExportController::class, 'xml'])->name('xml');
+    Route::post('/xml', [ExportController::class, 'generateXml'])->name('generate-xml');
+    Route::get('/edi', [ExportController::class, 'edi'])->name('edi');
+    Route::post('/edi', [ExportController::class, 'generateEdi'])->name('generate-edi');
+
+    // Historial de exportaciones
+    Route::get('/history', [ExportController::class, 'history'])->name('history');
+    Route::get('/history/{export}', [ExportController::class, 'showExport'])->name('show-export');
+});
+
+// Webservices
+Route::prefix('webservices')->name('company.webservices.')->group(function () {
+    Route::get('/', [WebserviceController::class, 'index'])->name('index');
+    Route::get('/send', [WebserviceController::class, 'send'])->name('send');
+    Route::post('/send', [WebserviceController::class, 'processSend'])->name('process-send');
+    Route::get('/query', [WebserviceController::class, 'query'])->name('query');
+    Route::post('/query', [WebserviceController::class, 'processQuery'])->name('process-query');
+    Route::get('/rectify', [WebserviceController::class, 'rectify'])->name('rectify');
+    Route::post('/rectify', [WebserviceController::class, 'processRectify'])->name('process-rectify');
+    Route::get('/cancel', [WebserviceController::class, 'cancel'])->name('cancel');
+    Route::post('/cancel', [WebserviceController::class, 'processCancel'])->name('process-cancel');
+
+    // Historial de webservices
+    Route::get('/history', [WebserviceController::class, 'history'])->name('history');
+    Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
 });
 
 // Reportes
@@ -134,18 +184,32 @@ Route::prefix('reports')->name('company.reports.')->group(function () {
     Route::get('/micdta', [ReportController::class, 'micdta'])->name('micdta');
     Route::get('/arrival-notices', [ReportController::class, 'arrivalNotices'])->name('arrival-notices');
     Route::get('/customs', [ReportController::class, 'customs'])->name('customs');
-    Route::get('/statistics', [ReportController::class, 'statistics'])->name('statistics');
+    Route::get('/shipments', [ReportController::class, 'shipments'])->name('shipments');
+    Route::get('/trips', [ReportController::class, 'trips'])->name('trips');
+    Route::get('/operators', [ReportController::class, 'operators'])->name('operators');
 
-    // Generar reportes
-    Route::post('/generate/manifest', [ReportController::class, 'generateManifest'])->name('generate-manifest');
-    Route::post('/generate/bill-of-lading', [ReportController::class, 'generateBillOfLading'])->name('generate-bill-of-lading');
-    Route::post('/generate/micdta', [ReportController::class, 'generateMicdta'])->name('generate-micdta');
-    Route::post('/generate/arrival-notice', [ReportController::class, 'generateArrivalNotice'])->name('generate-arrival-notice');
+    // Exportación de reportes
+    Route::post('/export/{report}', [ReportController::class, 'export'])->name('export');
 });
 
-// Configuración de la Empresa
+// Certificados (solo company-admin)
+Route::prefix('certificates')->name('company.certificates.')->group(function () {
+    Route::get('/', [CertificateController::class, 'index'])->name('index');
+    Route::get('/upload', [CertificateController::class, 'upload'])->name('upload');
+    Route::post('/upload', [CertificateController::class, 'processUpload'])->name('process-upload');
+    Route::get('/{certificate}', [CertificateController::class, 'show'])->name('show');
+    Route::delete('/{certificate}', [CertificateController::class, 'destroy'])->name('destroy');
+
+    // Renovación de certificados
+    Route::get('/{certificate}/renew', [CertificateController::class, 'renew'])->name('renew');
+    Route::post('/{certificate}/renew', [CertificateController::class, 'processRenew'])->name('process-renew');
+});
+
+// Configuración (solo company-admin)
 Route::prefix('settings')->name('company.settings.')->group(function () {
-    Route::get('/', [DashboardController::class, 'settings'])->name('index');
-    Route::put('/company', [DashboardController::class, 'updateCompany'])->name('update-company');
-    Route::put('/preferences', [DashboardController::class, 'updatePreferences'])->name('update-preferences');
+    Route::get('/', [SettingsController::class, 'index'])->name('index');
+    Route::put('/general', [SettingsController::class, 'updateGeneral'])->name('update-general');
+    Route::put('/security', [SettingsController::class, 'updateSecurity'])->name('update-security');
+    Route::put('/notifications', [SettingsController::class, 'updateNotifications'])->name('update-notifications');
+    Route::put('/preferences', [SettingsController::class, 'updatePreferences'])->name('update-preferences');
 });
