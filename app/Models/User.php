@@ -315,4 +315,38 @@ class User extends Authenticatable implements Auditable
     {
         return "User {$this->email} was {$eventName}";
     }
+
+    /**
+     * Determina si el usuario está correctamente configurado según su tipo y rol.
+     */
+    public function isProperlyConfigured(): bool
+    {
+        // Debe estar activo y tener al menos un rol
+        if (!$this->active || $this->roles->isEmpty()) {
+            return false;
+        }
+
+        // Si es operador, debe tener datos completos y empresa activa
+        if ($this->isOperator()) {
+            $operator = $this->userable;
+            if (!$operator || !$operator->active) {
+                return false;
+            }
+            $company = $operator->company ?? null;
+            if (!$company || !$company->active) {
+                return false;
+            }
+        }
+
+        // Si es company-admin, debe tener empresa activa
+        if ($this->isCompanyAdmin()) {
+            $company = $this->company;
+            if (!$company || !$company->active) {
+                return false;
+            }
+        }
+
+        // Si es super-admin, solo debe estar activo
+        return true;
+    }
 }

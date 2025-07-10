@@ -11,7 +11,7 @@ class TestUsersSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Super Admin (sin empresa asociada)
+        // ===== SUPER ADMIN =====
         User::factory()->create([
             'name' => 'Super Admin',
             'email' => 'admin@cargas.com',
@@ -19,7 +19,7 @@ class TestUsersSeeder extends Seeder
             'userable_id' => null,
         ])->assignRole('super-admin');
 
-        // 2. AR Company with admin and operators
+        // ===== EMPRESA ARGENTINA - RIO DE LA PLATA =====
         $companyAR = Company::factory()->create([
             'business_name' => 'Rio de la Plata Transport S.A.',
             'commercial_name' => 'Rio Transport',
@@ -36,16 +36,16 @@ class TestUsersSeeder extends Seeder
             'company_roles' => ['Cargas', 'Desconsolidador'], // Roles de empresa
         ]);
 
-        // Admin de empresa AR
+        // Company Admin Argentina
         User::factory()->create([
-            'name' => 'AR Admin',
-            'email' => 'AR@cargas.com',
+            'name' => 'Argentina Admin',
+            'email' => 'argentina@cargas.com',
             'userable_type' => 'App\Models\Company',
             'userable_id' => $companyAR->id,
         ])->assignRole('company-admin');
 
-        // Operador externo AR (ahora es rol "user")
-        $operatorAR = Operator::factory()->create([
+        // Operador Externa AR - María (solo import)
+        $operatorMaria = Operator::factory()->create([
             'first_name' => 'María',
             'last_name' => 'González',
             'document_number' => '11223344',
@@ -63,84 +63,15 @@ class TestUsersSeeder extends Seeder
             'name' => 'María González',
             'email' => 'maria@riotransport.com.ar',
             'userable_type' => 'App\Models\Operator',
-            'userable_id' => $operatorAR->id,
+            'userable_id' => $operatorMaria->id,
         ])->assignRole('user');
 
-        // 3. PY Company with admin and operators
-        $companyPY = Company::factory()->create([
-            'business_name' => 'Navegación PY S.A.',
-            'commercial_name' => 'NavePY',
-            'tax_id' => '80987654321',
-            'email' => 'admin@navegacionpy.com.py',
-            'country' => 'PY',
-            'city' => 'Asunción',
-            'phone' => '+595 21 567-890',
-            'address' => 'Av. España 567, Asunción',
-            'active' => true,
-            'ws_active' => true,
-            'ws_environment' => 'production',
-            'certificate_expires_at' => now()->addMonths(3),
-            'company_roles' => ['Cargas', 'Transbordos'], // Roles de empresa
-        ]);
-
-        // Admin de empresa PY
-        User::factory()->create([
-            'name' => 'PY Admin',
-            'email' => 'PY@cargas.com',
-            'userable_type' => 'App\Models\Company',
-            'userable_id' => $companyPY->id,
-        ])->assignRole('company-admin');
-
-        // Operador externo PY (ahora es rol "user")
-        $operatorPY = Operator::factory()->create([
-            'first_name' => 'Carlos',
-            'last_name' => 'Fernández',
-            'document_number' => '44556677',
-            'position' => 'Operador de Transbordos',
-            'phone' => '+595 21 345-678',
-            'company_id' => $companyPY->id,
-            'type' => 'external',
-            'can_import' => false,
-            'can_export' => true,
-            'can_transfer' => true,
-            'active' => true,
-        ]);
-
-        User::factory()->create([
-            'name' => 'Carlos Fernández',
-            'email' => 'carlos@navegacionpy.com.py',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $operatorPY->id,
-        ])->assignRole('user');
-
-        // 4. Operador interno (ahora es rol "user" sin empresa específica)
-        $internalOperator = Operator::factory()->create([
-            'first_name' => 'Juan Carlos',
-            'last_name' => 'Rodriguez',
-            'document_number' => '12345678',
-            'position' => 'Operador del Sistema',
-            'phone' => '+54 11 9876-5432',
-            'company_id' => null, // Operador interno no tiene empresa
-            'type' => 'internal',
-            'can_import' => true,
-            'can_export' => true,
-            'can_transfer' => true,
-            'active' => true,
-        ]);
-
-        User::factory()->create([
-            'name' => 'Juan Carlos Rodriguez',
-            'email' => 'operator@cargas.com',
-            'userable_type' => 'App\Models\Operator',
-            'userable_id' => $internalOperator->id,
-        ])->assignRole('user');
-
-        // 5. Operador adicional AR
-        $additionalOperatorAR = Operator::factory()->create([
+        // Operador Externa AR - Ana (import y export)
+        $operatorAna = Operator::factory()->create([
             'first_name' => 'Ana',
             'last_name' => 'Martínez',
-            'document_number' => '33445566',
-            'position' => 'Operador Senior',
+            'document_number' => '22334455',
+            'position' => 'Operador de Cargas y Exportación',
             'phone' => '+54 11 8765-4321',
             'company_id' => $companyAR->id,
             'type' => 'external',
@@ -154,16 +85,63 @@ class TestUsersSeeder extends Seeder
             'name' => 'Ana Martínez',
             'email' => 'ana@riotransport.com.ar',
             'userable_type' => 'App\Models\Operator',
-            'userable_id' => $additionalOperatorAR->id,
+            'userable_id' => $operatorAna->id,
         ])->assignRole('user');
 
-        // 6. Operador adicional PY
-        $additionalOperatorPY = Operator::factory()->create([
+        // ===== EMPRESA PARAGUAY - NAVEGACIÓN PY =====
+        $companyPY = Company::factory()->create([
+            'business_name' => 'Navegación Paraguay S.A.',
+            'commercial_name' => 'NavePY',
+            'tax_id' => '80987654321',
+            'email' => 'admin@navegacionpy.com.py',
+            'country' => 'PY',
+            'city' => 'Asunción',
+            'phone' => '+595 21 567-890',
+            'address' => 'Av. España 456, Asunción',
+            'active' => true,
+            'ws_active' => true,
+            'ws_environment' => 'production',
+            'certificate_expires_at' => now()->addMonths(12),
+            'company_roles' => ['Cargas', 'Transbordos'], // Roles de empresa
+        ]);
+
+        // Company Admin Paraguay
+        User::factory()->create([
+            'name' => 'Paraguay Admin',
+            'email' => 'paraguay@cargas.com',
+            'userable_type' => 'App\Models\Company',
+            'userable_id' => $companyPY->id,
+        ])->assignRole('company-admin');
+
+        // Operador Externo PY - Carlos (export y transfer)
+        $operatorCarlos = Operator::factory()->create([
+            'first_name' => 'Carlos',
+            'last_name' => 'Rodríguez',
+            'document_number' => '33445566',
+            'position' => 'Operador de Exportación',
+            'phone' => '+595 21 654-321',
+            'company_id' => $companyPY->id,
+            'type' => 'external',
+            'can_import' => false,
+            'can_export' => true,
+            'can_transfer' => true,
+            'active' => true,
+        ]);
+
+        User::factory()->create([
+            'name' => 'Carlos Rodríguez',
+            'email' => 'carlos@navegacionpy.com.py',
+            'userable_type' => 'App\Models\Operator',
+            'userable_id' => $operatorCarlos->id,
+        ])->assignRole('user');
+
+        // Operador Externo PY - Roberto (todos los permisos)
+        $operatorRoberto = Operator::factory()->create([
             'first_name' => 'Roberto',
             'last_name' => 'Silva',
-            'document_number' => '56789012',
+            'document_number' => '44556677',
             'position' => 'Operador Senior',
-            'phone' => '+595 21 876-543',
+            'phone' => '+595 21 789-012',
             'company_id' => $companyPY->id,
             'type' => 'external',
             'can_import' => true,
@@ -176,17 +154,18 @@ class TestUsersSeeder extends Seeder
             'name' => 'Roberto Silva',
             'email' => 'roberto@navegacionpy.com.py',
             'userable_type' => 'App\Models\Operator',
-            'userable_id' => $additionalOperatorPY->id,
+            'userable_id' => $operatorRoberto->id,
         ])->assignRole('user');
 
-        // 7. Operador interno adicional
-        $additionalInternalOperator = Operator::factory()->create([
-            'first_name' => 'Pedro',
-            'last_name' => 'Martinez',
-            'document_number' => '67890123',
-            'position' => 'Operador Senior del Sistema',
-            'phone' => '+54 11 8765-4321',
-            'company_id' => null, // Operador interno
+        // ===== OPERADORES INTERNOS =====
+        // Operador Interno - Operator (todos los permisos)
+        $operatorInternal = Operator::factory()->create([
+            'first_name' => 'Operador',
+            'last_name' => 'Interno',
+            'document_number' => '55667788',
+            'position' => 'Operador Interno',
+            'phone' => '+54 11 5555-5555',
+            'company_id' => null, // Operador interno sin empresa específica
             'type' => 'internal',
             'can_import' => true,
             'can_export' => true,
@@ -195,13 +174,35 @@ class TestUsersSeeder extends Seeder
         ]);
 
         User::factory()->create([
-            'name' => 'Pedro Martinez',
-            'email' => 'pedro@cargas.com',
+            'name' => 'Operador Interno',
+            'email' => 'operator@cargas.com',
             'userable_type' => 'App\Models\Operator',
-            'userable_id' => $additionalInternalOperator->id,
+            'userable_id' => $operatorInternal->id,
         ])->assignRole('user');
 
-        // 8. Empresa adicional con rol "Desconsolidador"
+        // Operador Interno - Pedro (todos los permisos)
+        $operatorPedro = Operator::factory()->create([
+            'first_name' => 'Pedro',
+            'last_name' => 'López',
+            'document_number' => '66778899',
+            'position' => 'Operador Interno Senior',
+            'phone' => '+54 11 6666-6666',
+            'company_id' => null, // Operador interno sin empresa específica
+            'type' => 'internal',
+            'can_import' => true,
+            'can_export' => true,
+            'can_transfer' => true,
+            'active' => true,
+        ]);
+
+        User::factory()->create([
+            'name' => 'Pedro López',
+            'email' => 'pedro@cargas.com',
+            'userable_type' => 'App\Models\Operator',
+            'userable_id' => $operatorPedro->id,
+        ])->assignRole('user');
+
+        // ===== EMPRESA ESPECIALIZADA - DESCONSOLIDADOR =====
         $companyDesconsolidador = Company::factory()->create([
             'business_name' => 'Logística Integral S.A.',
             'commercial_name' => 'LogiIntegral',
@@ -225,7 +226,7 @@ class TestUsersSeeder extends Seeder
             'userable_id' => $companyDesconsolidador->id,
         ])->assignRole('company-admin');
 
-        // 9. Empresa adicional con rol "Transbordos"
+        // ===== EMPRESA ESPECIALIZADA - TRANSBORDOS =====
         $companyTransbordos = Company::factory()->create([
             'business_name' => 'Transbordos del Rio S.A.',
             'commercial_name' => 'TransRio',
@@ -249,7 +250,8 @@ class TestUsersSeeder extends Seeder
             'userable_id' => $companyTransbordos->id,
         ])->assignRole('company-admin');
 
-        // 10. Usuario inactivo para pruebas
+        // ===== DATOS PARA PRUEBAS NEGATIVAS =====
+        // Usuario inactivo
         User::factory()->create([
             'name' => 'Usuario Inactivo',
             'email' => 'inactive@cargas.com',
@@ -258,7 +260,7 @@ class TestUsersSeeder extends Seeder
             'active' => false,
         ])->assignRole('user');
 
-        // 11. Empresa inactiva para pruebas
+        // Empresa inactiva
         $inactiveCompany = Company::factory()->create([
             'business_name' => 'Empresa Inactiva S.A.',
             'commercial_name' => 'Inactiva',
@@ -283,17 +285,18 @@ class TestUsersSeeder extends Seeder
             'active' => false,
         ])->assignRole('company-admin');
 
-        $this->command->info('Test users created successfully with 3 simplified roles');
+        // ===== MENSAJES INFORMATIVOS =====
+        $this->command->info('✅ Test users created successfully with 3 simplified roles');
         $this->command->info('');
-        $this->command->info('=== LOGIN CREDENTIALS ===');
+        $this->command->info('=== 🔐 LOGIN CREDENTIALS ===');
         $this->command->info('All passwords: password');
         $this->command->info('');
         $this->command->info('SUPER ADMIN:');
         $this->command->info('  admin@cargas.com');
         $this->command->info('');
         $this->command->info('COMPANY ADMINS:');
-        $this->command->info('  AR@cargas.com (Rio de la Plata Transport - Cargas, Desconsolidador)');
-        $this->command->info('  PY@cargas.com (Navegación PY - Cargas, Transbordos)');
+        $this->command->info('  argentina@cargas.com (Rio de la Plata - Cargas, Desconsolidador)');
+        $this->command->info('  paraguay@cargas.com (Navegación PY - Cargas, Transbordos)');
         $this->command->info('  desconsolidador@cargas.com (Logística Integral - Desconsolidador)');
         $this->command->info('  transbordos@cargas.com (Transbordos del Rio - Transbordos)');
         $this->command->info('');
@@ -309,16 +312,16 @@ class TestUsersSeeder extends Seeder
         $this->command->info('  inactive@cargas.com (Inactive user)');
         $this->command->info('  admin.inactive@cargas.com (Inactive company admin)');
         $this->command->info('');
-        $this->command->info('=== COMPANIES CREATED ===');
+        $this->command->info('=== 🏢 COMPANIES CREATED ===');
         $this->command->info('Active:');
         $this->command->info('  Rio de la Plata Transport S.A. (AR) - Roles: Cargas, Desconsolidador');
-        $this->command->info('  Navegación PY S.A. (PY) - Roles: Cargas, Transbordos');
+        $this->command->info('  Navegación Paraguay S.A. (PY) - Roles: Cargas, Transbordos');
         $this->command->info('  Logística Integral S.A. (AR) - Roles: Desconsolidador');
         $this->command->info('  Transbordos del Rio S.A. (PY) - Roles: Transbordos');
         $this->command->info('Inactive:');
         $this->command->info('  Empresa Inactiva S.A. (AR) - Roles: Cargas');
         $this->command->info('');
-        $this->command->info('=== ROLES STRUCTURE ===');
+        $this->command->info('=== 📋 ROLES STRUCTURE ===');
         $this->command->info('1. super-admin: Full system access');
         $this->command->info('2. company-admin: Full company access');
         $this->command->info('3. user: Limited access based on:');

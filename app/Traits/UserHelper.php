@@ -290,4 +290,32 @@ trait UserHelper
             'can_transfer' => $user->userable->can_transfer ?? false,
         ];
     }
+
+
+    public function canImport()
+    {
+        $operator = $this->getUserOperator();
+        return $operator && $operator->can_import;
+    }
+
+    public function canExport()
+    {
+        $operator = $this->getUserOperator();
+        return $operator && $operator->can_export;
+    }
+
+    public function canTransfer()
+    {
+        $operator = $this->getUserOperator();
+        return $operator && $operator->can_transfer;
+    }
+
+    public function getUserOperator()
+    {
+        $user = $this->getCurrentUser();
+        if ($user && $user->userable_type === 'App\Models\Operator') {
+            return $user->userable;
+        }
+        return null;
+    }
 }
