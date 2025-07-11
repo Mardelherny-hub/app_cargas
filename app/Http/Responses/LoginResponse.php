@@ -2,8 +2,7 @@
 
 namespace App\Http\Responses;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
 
 class LoginResponse implements LoginResponseContract
@@ -16,36 +15,11 @@ class LoginResponse implements LoginResponseContract
      */
     public function toResponse($request)
     {
-        $user = Auth::user();
-
-        // Actualizar último acceso
-        $user->update([
-            'last_access' => now(),
-        ]);
-
-        // Verificar si el usuario está activo
-        if (!$user->active) {
-            Auth::logout();
-            return redirect()->route('login')->withErrors([
-                'email' => 'Su cuenta está desactivada. Contacte al administrador.'
-            ]);
-        }
-
-        // Si es una relación polimórfica, verificar que la entidad relacionada esté activa
-        if ($user->userable) {
-            if (method_exists($user->userable, 'active') && !$user->userable->active) {
-                Auth::logout();
-                return redirect()->route('login')->withErrors([
-                    'email' => 'Su perfil está desactivado. Contacte al administrador.'
-                ]);
-            }
-        }
-
-        // Redirigir según el rol del usuario
+        $user = auth()->user();
         $redirectUrl = $this->getRedirectUrl($user);
 
-        // Log del acceso exitoso
-        logger()->info('User logged in successfully', [
+        // Log del acceso para auditoría
+        logger('User login', [
             'user_id' => $user->id,
             'email' => $user->email,
             'role' => $user->roles->first()?->name ?? 'no-role',
@@ -86,13 +60,61 @@ class LoginResponse implements LoginResponseContract
         }
 
         if ($user->hasRole('user')) {
-            // Verificar que tenga empresa asociada
-            if ($user->userable_type === 'App\\Models\\Company') {
-                return route('company.dashboard');
+            // CORRECCIÓN: Verificación mejorada para usuarios operadores
+            if ($user->userable_type === 'App\\Models\\Operator') {
+                $operator = $user->userable;
+
+                // Verificar que el operador existe
+                if (!$operator) {
+                    logger()->error('User with operator type but no operator found', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'userable_id' => $user->userable_id
+                    ]);
+                    return route('dashboard');
+                }
+
+                // Verificar que el operador está activo
+                if (!$operator->active) {
+                    logger()->warning('User with inactive operator trying to login', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'operator_id' => $operator->id
+                    ]);
+                    return route('dashboard');
+                }
+
+                // CORRECCIÓN: Los operadores externos deben tener company_id
+                if ($operator->type === 'external' && $operator->company_id) {
+                    return route('company.dashboard');
+                }
+
+                // CORRECCIÓN: Los operadores internos también pueden acceder al dashboard de company
+                // si tienen una empresa asociada (aunque company_id sea null)
+                if ($operator->type === 'internal') {
+                    // Los operadores internos pueden trabajar con múltiples empresas
+                    // pero para el dashboard necesitan al menos una empresa disponible
+                    $availableCompanies = \App\Models\Company::where('active', true)->count();
+
+                    if ($availableCompanies > 0) {
+                        return route('company.dashboard');
+                    }
+                }
+
+                // Si el operador no tiene empresa asociada válida
+                logger()->warning('Operator without valid company association', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'operator_type' => $operator->type,
+                    'company_id' => $operator->company_id,
+                    'operator_active' => $operator->active
+                ]);
+
+                return route('dashboard');
             }
 
-            // Si es un operador asociado a empresa
-            if ($user->userable_type === 'App\\Models\\Operator' && $user->userable->company_id) {
+            // Si es usuario directo de empresa (poco común pero posible)
+            if ($user->userable_type === 'App\\Models\\Company') {
                 return route('company.dashboard');
             }
 

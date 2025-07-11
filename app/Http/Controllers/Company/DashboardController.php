@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
-use App\Models\Operator;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,22 +14,23 @@ class DashboardController extends Controller
     use UserHelper;
 
     /**
-     * Mostrar el dashboard de la empresa (company-admin o user).
+     * Mostrar dashboard de empresa para company-admin y user.
      */
     public function index()
     {
-        // 1. Verificar permisos básicos de acceso al dashboard
-        if (!$this->canPerform('dashboard_access')) {
+        $user = $this->getCurrentUser();
+
+        // 1. Verificar permisos básicos (company-admin o user)
+        if (!$this->isCompanyAdmin() && !$this->isUser()) {
             abort(403, 'No tiene permisos para acceder al dashboard de empresa.');
         }
 
-        $user = $this->getCurrentUser();
         $company = $this->getUserCompany();
 
         // 2. Verificar que el usuario tenga una empresa asociada
         if (!$company) {
             return redirect()->route('dashboard')
-                ->with('error', 'No se encontró la empresa asociada a su usuario.');
+                ->with('error', 'No se encontró la empresa asociada.');
         }
 
         // 3. Verificar acceso específico a esta empresa
@@ -75,10 +75,10 @@ class DashboardController extends Controller
             'isCompanyAdmin' => $this->isCompanyAdmin(),
             'isUser' => $this->isUser(),
 
-            // Verificaciones de capacidades empresariales
-            'canDoCargas' => $this->canDoCargas(),
-            'canDoDesconsolidacion' => $this->canDoDesconsolidacion(),
-            'canDoTransbordos' => $this->canDoTransbordos(),
+            // Verificaciones de capacidades empresariales (usando métodos reales)
+            'canDoCargas' => $this->hasCompanyRole('Cargas'),
+            'canDoDesconsolidacion' => $this->hasCompanyRole('Desconsolidador'),
+            'canDoTransbordos' => $this->hasCompanyRole('Transbordos'),
         ];
 
         // Agregar datos específicos del dashboard
@@ -108,80 +108,6 @@ class DashboardController extends Controller
 
         // Verificar que tenga al menos un permiso
         return $operator->can_import || $operator->can_export || $operator->can_transfer;
-    }
-
-    /**
-     * Obtener permisos específicos para elementos de la interfaz.
-     */
-    private function getUIPermissions(): array
-    {
-        return [
-            // Gestión de la empresa
-            'canManageOperators' => $this->canPerform('manage_operators'),
-            'canManageCertificates' => $this->canPerform('manage_certificates'),
-            'canManageSettings' => $this->canPerform('manage_settings'),
-            'canViewReports' => $this->canPerform('view_reports'),
-            'canManageWebservices' => $this->canPerform('manage_webservices'),
-
-            // Operaciones específicas por rol de empresa
-            'canManageCargas' => $this->canDoCargas(),
-            'canManageDesconsolidacion' => $this->canDoDesconsolidacion(),
-            'canManageTransbordos' => $this->canDoTransbordos(),
-
-            // Permisos granulares de operador (solo para users)
-            'canImport' => $this->canImport(),
-            'canExport' => $this->canExport(),
-            'canTransfer' => $this->canTransfer(),
-
-            // Navegación
-            'canAccessTrips' => $this->canPerform('access_trips'),
-            'canAccessShipments' => $this->canPerform('access_shipments'),
-            'canAccessImport' => $this->canPerform('access_import'),
-            'canAccessExport' => $this->canPerform('access_export'),
-        ];
-    }
-
-    /**
-     * Obtener estadísticas de la empresa.
-     */
-    private function getCompanyStats(Company $company): array
-    {
-        $stats = [
-            'total_operators' => $company->operators()->count(),
-            'active_operators' => $company->operators()->where('active', true)->count(),
-            'operators_with_import' => $company->operators()->where('can_import', true)->count(),
-            'operators_with_export' => $company->operators()->where('can_export', true)->count(),
-            'operators_with_transfer' => $company->operators()->where('can_transfer', true)->count(),
-            'last_activity' => $company->updated_at,
-        ];
-
-        // Estadísticas específicas por rol de empresa
-        $companyRoles = $company->company_roles ?? [];
-
-        if (in_array('Cargas', $companyRoles)) {
-            $stats['cargas_stats'] = [
-                'recent_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-                'pending_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-                'completed_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
-                'active_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
-            ];
-        }
-
-        if (in_array('Desconsolidador', $companyRoles)) {
-            $stats['desconsolidacion_stats'] = [
-                'pending_deconsolidations' => 0, // TODO: Implementar cuando esté el módulo
-                'completed_deconsolidations' => 0, // TODO: Implementar cuando esté el módulo
-            ];
-        }
-
-        if (in_array('Transbordos', $companyRoles)) {
-            $stats['transbordos_stats'] = [
-                'pending_transfers' => 0, // TODO: Implementar cuando esté el módulo
-                'completed_transfers' => 0, // TODO: Implementar cuando esté el módulo
-            ];
-        }
-
-        return $stats;
     }
 
     /**
@@ -221,10 +147,28 @@ class DashboardController extends Controller
                 ->latest()
                 ->take(5)
                 ->get(),
-            'operatorStats' => $this->getOperatorStats($company),
+            'operatorStats' => $this->getOperatorStatsForAdmin($company),
             'systemHealth' => $this->getSystemHealth($company),
             'recentActivity' => $this->getRecentActivity($company),
             'pendingTasks' => $this->getPendingTasks($company),
+        ];
+    }
+
+    /**
+     * Obtener estadísticas de operadores para admin (estructura específica para la vista).
+     */
+    private function getOperatorStatsForAdmin(Company $company): array
+    {
+        return [
+            'total' => $company->operators()->count(),
+            'active' => $company->operators()->where('active', true)->count(),
+            'inactive' => $company->operators()->where('active', false)->count(),
+            'with_import_permission' => $company->operators()->where('can_import', true)->count(),
+            'with_export_permission' => $company->operators()->where('can_export', true)->count(),
+            'with_transfer_permission' => $company->operators()->where('can_transfer', true)->count(),
+            'recent_logins' => $company->operators()->whereHas('user', function ($q) {
+                $q->where('last_access', '>=', now()->subDays(7));
+            })->count(),
         ];
     }
 
@@ -239,6 +183,126 @@ class DashboardController extends Controller
             'personalAlerts' => $this->getPersonalAlerts($user),
             'recentWork' => $this->getRecentWork($user),
         ];
+    }
+
+    /**
+     * Obtener estadísticas personales del usuario (estructura específica para la vista).
+     */
+    private function getPersonalStats($user): array
+    {
+        if (!$this->isUser()) {
+            return [
+                'my_shipments' => 0,
+                'pending_shipments' => 0,
+                'completed_shipments' => 0,
+                'my_trips' => 0,
+                'permissions_summary' => [
+                    'can_import' => false,
+                    'can_export' => false,
+                    'can_transfer' => false,
+                ]
+            ];
+        }
+
+        $operator = $this->getUserOperator();
+
+        return [
+            'my_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
+            'pending_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
+            'completed_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
+            'my_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
+            'last_activity' => $user->last_access,
+            'permissions_summary' => [
+                'can_import' => $operator ? $operator->can_import : false,
+                'can_export' => $operator ? $operator->can_export : false,
+                'can_transfer' => $operator ? $operator->can_transfer : false,
+            ]
+        ];
+    }
+
+    /**
+     * Obtener acciones disponibles para el usuario.
+     */
+    private function getAvailableActions($user): array
+    {
+        if (!$this->isUser()) {
+            return [];
+        }
+
+        $actions = [];
+        $operator = $this->getUserOperator();
+
+        if ($operator && $operator->can_import) {
+            $actions[] = [
+                'title' => 'Importar Datos',
+                'icon' => 'download',
+                'route' => route('company.import.index'),
+            ];
+        }
+
+        if ($operator && $operator->can_export) {
+            $actions[] = [
+                'title' => 'Exportar Datos',
+                'icon' => 'upload',
+                'route' => route('company.export.index'),
+            ];
+        }
+
+        if ($this->hasCompanyRole('Cargas')) {
+            $actions[] = [
+                'title' => 'Gestionar Cargas',
+                'icon' => 'box',
+                'route' => route('company.shipments.index'),
+            ];
+
+            $actions[] = [
+                'title' => 'Gestionar Viajes',
+                'icon' => 'truck',
+                'route' => route('company.trips.index'),
+            ];
+        }
+
+        return $actions;
+    }
+
+    /**
+     * Obtener alertas personales del usuario.
+     */
+    private function getPersonalAlerts($user): array
+    {
+        if (!$this->isUser()) {
+            return [];
+        }
+
+        $alerts = [];
+        $operator = $this->getUserOperator();
+
+        // Verificar si el operador está inactivo
+        if ($operator && !$operator->active) {
+            $alerts[] = [
+                'type' => 'warning',
+                'message' => 'Su cuenta de operador está desactivada. Contacte al administrador.',
+            ];
+        }
+
+        // Verificar si no tiene permisos
+        if ($operator && !$operator->can_import && !$operator->can_export && !$operator->can_transfer) {
+            $alerts[] = [
+                'type' => 'warning',
+                'message' => 'No tiene permisos asignados. Contacte al administrador para configurar sus permisos.',
+            ];
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * Obtener trabajo reciente del usuario.
+     */
+    private function getRecentWork($user): array
+    {
+        // TODO: Implementar cuando estén los módulos de cargas y viajes
+        return [];
     }
 
     /**
@@ -291,33 +355,41 @@ class DashboardController extends Controller
      */
     private function getCertificateStatus(Company $company): array
     {
-        $status = [
-            'has_certificate' => !empty($company->certificate_expires_at),
-            'expires_at' => $company->certificate_expires_at,
-            'is_expired' => false,
-            'expires_soon' => false,
-            'status' => 'none',
-            'days_remaining' => null,
-        ];
-
-        if ($company->certificate_expires_at) {
-            $expiresAt = Carbon::parse($company->certificate_expires_at);
-            $now = Carbon::now();
-
-            $status['is_expired'] = $expiresAt->isPast();
-            $status['expires_soon'] = $expiresAt->diffInDays($now) <= 30;
-            $status['days_remaining'] = $expiresAt->diffInDays($now);
-
-            if ($status['is_expired']) {
-                $status['status'] = 'expired';
-            } elseif ($status['expires_soon']) {
-                $status['status'] = 'expiring';
-            } else {
-                $status['status'] = 'valid';
-            }
+        if (!$company->certificate_expires_at) {
+            return [
+                'status' => 'none',
+                'expires_soon' => false,
+                'is_expired' => false,
+                'days_remaining' => null,
+            ];
         }
 
-        return $status;
+        $expiresAt = Carbon::parse($company->certificate_expires_at);
+        $now = Carbon::now();
+        $daysRemaining = $now->diffInDays($expiresAt, false);
+
+        if ($daysRemaining < 0) {
+            return [
+                'status' => 'expired',
+                'expires_soon' => false,
+                'is_expired' => true,
+                'days_remaining' => abs($daysRemaining),
+            ];
+        } elseif ($daysRemaining <= 30) {
+            return [
+                'status' => 'expiring',
+                'expires_soon' => true,
+                'is_expired' => false,
+                'days_remaining' => $daysRemaining,
+            ];
+        }
+
+        return [
+            'status' => 'valid',
+            'expires_soon' => false,
+            'is_expired' => false,
+            'days_remaining' => $daysRemaining,
+        ];
     }
 
     /**
@@ -326,15 +398,9 @@ class DashboardController extends Controller
     private function getWebserviceStatus(Company $company): array
     {
         return [
-            'active' => $company->ws_active ?? false,
-            'environment' => $company->ws_environment ?? 'test',
-            'can_use_production' => $company->ws_active && $company->ws_environment === 'production',
-            'requires_certificate' => true,
-            'certificate_valid' => $this->getCertificateStatus($company)['status'] === 'valid',
+            'active' => (bool) $company->ws_active,
+            'environment' => $company->ws_environment ?? 'testing',
             'last_connection' => null, // TODO: Implementar cuando esté el módulo de webservices
-            'pending_sends' => 0, // TODO: Implementar cuando esté el módulo de webservices
-            'failed_sends' => 0, // TODO: Implementar cuando esté el módulo de webservices
-            'success_rate' => 0, // TODO: Implementar cuando esté el módulo de webservices
         ];
     }
 
@@ -345,7 +411,7 @@ class DashboardController extends Controller
     {
         $alerts = [];
 
-        // Alerta de certificado expirado
+        // Verificar certificado
         $certStatus = $this->getCertificateStatus($company);
         if ($certStatus['is_expired']) {
             $alerts[] = [
@@ -361,65 +427,36 @@ class DashboardController extends Controller
             ];
         }
 
-        // Alerta de empresa inactiva
-        if (!$company->active) {
-            $alerts[] = [
-                'type' => 'error',
-                'message' => 'La empresa está inactiva. Contacte al administrador.',
-                'action' => null,
-            ];
-        }
-
-        // Alerta de falta de operadores activos (solo para company-admin)
+        // Verificar operadores activos
         if ($this->isCompanyAdmin()) {
             $activeOperators = $company->operators()->where('active', true)->count();
             if ($activeOperators === 0) {
                 $alerts[] = [
                     'type' => 'warning',
-                    'message' => 'No tiene operadores activos configurados.',
+                    'message' => 'No hay operadores activos configurados.',
                     'action' => route('company.operators.index'),
                 ];
             }
+        }
+
+        // Verificar webservices
+        if (!$company->ws_active && !empty($company->company_roles)) {
+            $alerts[] = [
+                'type' => 'info',
+                'message' => 'Los webservices están desactivados. Algunas funcionalidades no estarán disponibles.',
+                'action' => null,
+            ];
         }
 
         return $alerts;
     }
 
     /**
-     * Obtener estadísticas de operadores (solo para company-admin).
-     */
-    private function getOperatorStats(Company $company): array
-    {
-        if (!$this->isCompanyAdmin()) {
-            return [];
-        }
-
-        $operators = $company->operators()->with('user')->get();
-
-        return [
-            'total' => $operators->count(),
-            'active' => $operators->where('active', true)->count(),
-            'with_import_permission' => $operators->where('can_import', true)->count(),
-            'with_export_permission' => $operators->where('can_export', true)->count(),
-            'with_transfer_permission' => $operators->where('can_transfer', true)->count(),
-            'recent_logins' => $operators->filter(function ($operator) {
-                return $operator->user && $operator->user->last_access &&
-                       $operator->user->last_access >= Carbon::now()->subDays(7);
-            })->count(),
-        ];
-    }
-
-    /**
-     * Obtener salud del sistema para la empresa (solo para company-admin).
+     * Obtener estado de salud del sistema.
      */
     private function getSystemHealth(Company $company): array
     {
-        if (!$this->isCompanyAdmin()) {
-            return [];
-        }
-
         return [
-            'overall_status' => 'good', // TODO: Implementar lógica real
             'certificate_status' => $this->getCertificateStatus($company)['status'],
             'webservice_status' => $company->ws_active ? 'active' : 'inactive',
             'operators_status' => $company->operators()->where('active', true)->count() > 0 ? 'active' : 'inactive',
@@ -454,10 +491,13 @@ class DashboardController extends Controller
         // Verificar certificado
         $certStatus = $this->getCertificateStatus($company);
         if ($certStatus['expires_soon'] || $certStatus['is_expired']) {
+            $priority = $certStatus['is_expired'] ? 'high' : 'medium';
             $tasks[] = [
-                'priority' => 'high',
+                'priority' => $priority,
                 'title' => 'Renovar certificado digital',
-                'description' => 'El certificado digital necesita ser renovado',
+                'description' => $certStatus['is_expired']
+                    ? 'El certificado digital ha expirado'
+                    : "El certificado expira en {$certStatus['days_remaining']} días",
                 'action' => route('company.certificates.index'),
             ];
         }
@@ -473,180 +513,93 @@ class DashboardController extends Controller
             ];
         }
 
+        // Verificar roles de empresa
+        if (empty($company->company_roles)) {
+            $tasks[] = [
+                'priority' => 'medium',
+                'title' => 'Configurar roles de empresa',
+                'description' => 'No se han asignado roles específicos a la empresa',
+                'action' => null, // TODO: Agregar ruta cuando esté disponible
+            ];
+        }
+
         return $tasks;
     }
 
     /**
-     * Obtener estadísticas personales del usuario (solo para user).
+     * Obtener permisos específicos para elementos de la interfaz.
      */
-    private function getPersonalStats($user): array
+    private function getUIPermissions(): array
     {
-        if (!$this->isUser()) {
-            return [];
-        }
+        $user = $this->getCurrentUser();
+        $isCompanyAdmin = $this->isCompanyAdmin();
 
         return [
-            'my_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-            'pending_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-            'completed_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-            'my_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
-            'active_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
-            'last_activity' => $user->last_access,
-            'permissions_summary' => $this->getPersonalPermissionsSummary(),
+            // Gestión de la empresa (solo company-admin puede gestionar)
+            'canManageOperators' => $isCompanyAdmin,
+            'canManageCertificates' => $isCompanyAdmin,
+            'canManageSettings' => $isCompanyAdmin,
+            'canViewReports' => $this->canPerform('view_reports'),
+            'canManageWebservices' => $isCompanyAdmin,
+
+            // Operaciones específicas por rol de empresa (usando métodos reales)
+            'canManageCargas' => $this->hasCompanyRole('Cargas'),
+            'canManageDesconsolidacion' => $this->hasCompanyRole('Desconsolidador'),
+            'canManageTransbordos' => $this->hasCompanyRole('Transbordos'),
+
+            // Permisos granulares de operador (solo para users) - usando métodos reales
+            'canImport' => $this->canPerform('import'),
+            'canExport' => $this->canPerform('export'),
+            'canTransfer' => $this->canPerform('transfer'),
+
+            // Navegación (usando métodos reales de canPerform)
+            'canAccessTrips' => $this->canPerform('view_cargas'), // Los viajes requieren rol Cargas
+            'canAccessShipments' => $this->canPerform('view_cargas'), // Las cargas requieren rol Cargas
+            'canAccessImport' => $this->canPerform('import'),
+            'canAccessExport' => $this->canPerform('export'),
         ];
     }
 
     /**
-     * Obtener resumen de permisos personales.
+     * Obtener estadísticas de la empresa.
      */
-    private function getPersonalPermissionsSummary(): array
+    private function getCompanyStats(Company $company): array
     {
-        return [
-            'can_import' => $this->canImport(),
-            'can_export' => $this->canExport(),
-            'can_transfer' => $this->canTransfer(),
-            'company_roles' => $this->getUserCompanyRoles(),
-            'operator_type' => $this->getUserOperator()?->type ?? 'unknown',
+        $stats = [
+            'total_operators' => $company->operators()->count(),
+            'active_operators' => $company->operators()->where('active', true)->count(),
+            'operators_with_import' => $company->operators()->where('can_import', true)->count(),
+            'operators_with_export' => $company->operators()->where('can_export', true)->count(),
+            'operators_with_transfer' => $company->operators()->where('can_transfer', true)->count(),
+            'last_activity' => $company->updated_at,
         ];
+
+        // Estadísticas específicas por rol de empresa
+        $companyRoles = $company->company_roles ?? [];
+
+        if (in_array('Cargas', $companyRoles)) {
+            $stats['cargas_stats'] = [
+                'recent_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
+                'pending_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
+                'completed_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
+                'active_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
+            ];
+        }
+
+        if (in_array('Desconsolidador', $companyRoles)) {
+            $stats['desconsolidacion_stats'] = [
+                'pending_deconsolidations' => 0, // TODO: Implementar cuando esté el módulo
+                'completed_deconsolidations' => 0, // TODO: Implementar cuando esté el módulo
+            ];
+        }
+
+        if (in_array('Transbordos', $companyRoles)) {
+            $stats['transbordos_stats'] = [
+                'pending_transfers' => 0, // TODO: Implementar cuando esté el módulo
+                'completed_transfers' => 0, // TODO: Implementar cuando esté el módulo
+            ];
+        }
+
+        return $stats;
     }
-
-    /**
-     * Obtener acciones disponibles para el usuario (solo para user).
-     */
-    private function getAvailableActions($user): array
-    {
-        if (!$this->isUser()) {
-            return [];
-        }
-
-        $actions = [];
-
-        // Acciones según permisos de operador
-        if ($this->canImport()) {
-            $actions[] = [
-                'title' => 'Importar Cargas',
-                'description' => 'Importar información de cargas',
-                'icon' => 'download',
-                'route' => route('company.import.index'),
-            ];
-        }
-
-        if ($this->canExport()) {
-            $actions[] = [
-                'title' => 'Exportar Datos',
-                'description' => 'Exportar información de la empresa',
-                'icon' => 'upload',
-                'route' => route('company.export.index'),
-            ];
-        }
-
-        if ($this->canTransfer()) {
-            $actions[] = [
-                'title' => 'Gestionar Transbordos',
-                'description' => 'Administrar transbordos',
-                'icon' => 'truck',
-                'route' => route('company.transfers.index'),
-            ];
-        }
-
-        // Acciones según roles de empresa
-        if ($this->canDoCargas()) {
-            $actions[] = [
-                'title' => 'Gestionar Cargas',
-                'description' => 'Administrar cargas y viajes',
-                'icon' => 'box',
-                'route' => route('company.shipments.index'),
-            ];
-        }
-
-        return $actions;
-    }
-
-    /**
-     * Obtener alertas personales (solo para user).
-     */
-    private function getPersonalAlerts($user): array
-    {
-        if (!$this->isUser()) {
-            return [];
-        }
-
-        $alerts = [];
-
-        // Verificar estado del operador
-        $operator = $this->getUserOperator();
-        if ($operator && !$operator->active) {
-            $alerts[] = [
-                'type' => 'warning',
-                'message' => 'Su cuenta de operador está inactiva.',
-            ];
-        }
-
-        // Verificar permisos
-        if (!$this->canImport() && !$this->canExport() && !$this->canTransfer()) {
-            $alerts[] = [
-                'type' => 'warning',
-                'message' => 'No tiene permisos de operador configurados.',
-            ];
-        }
-
-        return $alerts;
-    }
-
-    /**
-     * Obtener trabajo reciente del usuario (solo para user).
-     */
-    private function getRecentWork($user): array
-    {
-        if (!$this->isUser()) {
-            return [];
-        }
-
-        return [
-            // TODO: Implementar cuando estén los módulos específicos
-            'recent_shipments' => [],
-            'recent_trips' => [],
-            'recent_imports' => [],
-            'recent_exports' => [],
-        ];
-    }
-
-        /**
-         * Verifica si la empresa tiene el rol "Cargas".
-         */
-        private function canDoCargas(): bool
-        {
-            $company = $this->getUserCompany();
-            if (!$company) {
-                return false;
-            }
-            $roles = $company->company_roles ?? [];
-            return in_array('Cargas', $roles);
-        }
-
-        /**
-         * Verifica si la empresa tiene el rol "Desconsolidador".
-         */
-        private function canDoDesconsolidacion(): bool
-        {
-            $company = $this->getUserCompany();
-            if (!$company) {
-                return false;
-            }
-            $roles = $company->company_roles ?? [];
-            return in_array('Desconsolidador', $roles);
-        }
-
-        /**
-         * Verifica si la empresa tiene el rol "Transbordos".
-         */
-        private function canDoTransbordos(): bool
-        {
-            $company = $this->getUserCompany();
-            if (!$company) {
-                return false;
-            }
-            $roles = $company->company_roles ?? [];
-            return in_array('Transbordos', $roles);
-        }
 }
