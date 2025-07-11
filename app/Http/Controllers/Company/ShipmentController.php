@@ -22,6 +22,11 @@ class ShipmentController extends Controller
             abort(403, 'No tiene permisos para ver cargas.');
         }
 
+        // Verificar que la empresa tenga rol "Cargas"
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
         $company = $this->getUserCompany();
 
         if (!$company) {
@@ -55,6 +60,10 @@ class ShipmentController extends Controller
             abort(403, 'No tiene permisos para crear cargas.');
         }
 
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
         $company = $this->getUserCompany();
 
         if (!$company) {
@@ -80,6 +89,10 @@ class ShipmentController extends Controller
         // Verificar permisos para crear cargas
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para crear cargas.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
         $company = $this->getUserCompany();
@@ -125,6 +138,10 @@ class ShipmentController extends Controller
             abort(403, 'No tiene permisos para ver cargas.');
         }
 
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
         // Verificar que la carga pertenece a la empresa del usuario
         if (!$this->canAccessCompany($shipment->company_id)) {
             abort(403, 'No tiene permisos para ver esta carga.');
@@ -148,6 +165,10 @@ class ShipmentController extends Controller
         // Verificar permisos para editar cargas
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para editar cargas.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
         // Verificar que la carga pertenece a la empresa del usuario
@@ -179,6 +200,10 @@ class ShipmentController extends Controller
         // Verificar permisos para editar cargas
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para editar cargas.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
         // Verificar que la carga pertenece a la empresa del usuario
@@ -230,6 +255,10 @@ class ShipmentController extends Controller
             abort(403, 'No tiene permisos para eliminar cargas.');
         }
 
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
         // Verificar que la carga pertenece a la empresa del usuario
         if (!$this->canAccessCompany($shipment->company_id)) {
             abort(403, 'No tiene permisos para eliminar esta carga.');
@@ -255,6 +284,10 @@ class ShipmentController extends Controller
         // Verificar permisos básicos
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para modificar cargas.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
         // Verificar que la carga pertenece a la empresa del usuario
@@ -291,6 +324,10 @@ class ShipmentController extends Controller
         // Verificar permisos para crear cargas
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para crear cargas.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
         // Verificar que la carga pertenece a la empresa del usuario
