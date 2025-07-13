@@ -2,42 +2,37 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Crear Nuevo Operador') }} - {{ $company->business_name }}
+                {{ __('Crear Operador') }} - {{ $company->business_name }}
             </h2>
-            <a href="{{ route('company.operators.index') }}"
-               class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium">
-                {{ __('Volver a Operadores') }}
-            </a>
+            <div class="text-sm text-gray-600">
+                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                    {{ implode(', ', $company->company_roles ?? []) }}
+                </span>
+            </div>
         </div>
     </x-slot>
 
     <div class="py-12">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
-            <!-- Mostrar errores de validación -->
-            @if ($errors->any())
-                <div class="bg-red-50 border border-red-200 rounded-md p-4">
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <svg class="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.996-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                            </svg>
-                        </div>
-                        <div class="ml-3">
-                            <h3 class="text-sm font-medium text-red-800">{{ __('Hay errores en el formulario:') }}</h3>
-                            <div class="mt-2 text-sm text-red-700">
-                                <ul role="list" class="list-disc pl-5 space-y-1">
-                                    @foreach ($errors->all() as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
+            <!-- Información Contextual -->
+            <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <div class="flex items-start">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-blue-800">{{ __('Crear Operador para') }} {{ $company->business_name }}</h3>
+                        <div class="mt-1 text-sm text-blue-700">
+                            <p>{{ __('Los operadores pueden realizar operaciones según los roles de empresa:') }} <strong>{{ implode(', ', $company->company_roles ?? []) }}</strong></p>
+                            <p class="mt-1">{{ __('Cada operador tendrá permisos específicos que puede configurar a continuación.') }}</p>
                         </div>
                     </div>
                 </div>
-            @endif
+            </div>
 
-            <!-- Formulario Principal -->
             <form method="POST" action="{{ route('company.operators.store') }}" class="space-y-6">
                 @csrf
 
@@ -45,10 +40,9 @@
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ __('Información Personal') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ __('Datos básicos del operador.') }}</p>
+                        <p class="mt-1 text-sm text-gray-600">{{ __('Datos personales del operador.') }}</p>
                     </div>
-
-                    <div class="p-6 space-y-6">
+                    <div class="px-6 py-4 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <!-- Nombre -->
                             <div>
@@ -61,7 +55,7 @@
                                        value="{{ old('first_name') }}"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('first_name') border-red-300 @enderror"
-                                       placeholder="Ingrese el nombre">
+                                       placeholder="{{ __('Ingrese el nombre') }}">
                                 @error('first_name')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -78,7 +72,7 @@
                                        value="{{ old('last_name') }}"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('last_name') border-red-300 @enderror"
-                                       placeholder="Ingrese el apellido">
+                                       placeholder="{{ __('Ingrese el apellido') }}">
                                 @error('last_name')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -86,7 +80,7 @@
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Documento -->
+                            <!-- Número de Documento -->
                             <div>
                                 <label for="document_number" class="block text-sm font-medium text-gray-700">
                                     {{ __('Número de Documento') }}
@@ -96,7 +90,7 @@
                                        id="document_number"
                                        value="{{ old('document_number') }}"
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('document_number') border-red-300 @enderror"
-                                       placeholder="DNI, Cédula, etc.">
+                                       placeholder="Ej: 12345678">
                                 @error('document_number')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -107,19 +101,19 @@
                                 <label for="phone" class="block text-sm font-medium text-gray-700">
                                     {{ __('Teléfono') }}
                                 </label>
-                                <input type="tel"
+                                <input type="text"
                                        name="phone"
                                        id="phone"
                                        value="{{ old('phone') }}"
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('phone') border-red-300 @enderror"
-                                       placeholder="+54 11 1234-5678">
+                                       placeholder="Ej: +54 11 1234-5678">
                                 @error('phone')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="grid grid-cols-1 gap-6">
                             <!-- Cargo/Posición -->
                             <div>
                                 <label for="position" class="block text-sm font-medium text-gray-700">
@@ -136,33 +130,25 @@
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
+                        </div>
 
-                            <!-- Tipo de Operador -->
-                            <div>
-                                <label for="type" class="block text-sm font-medium text-gray-700">
-                                    {{ __('Tipo de Operador') }} <span class="text-red-500">*</span>
-                                </label>
-                                <select name="type"
-                                        id="type"
-                                        required
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('type') border-red-300 @enderror">
-                                    <option value="">{{ __('Seleccione el tipo') }}</option>
-                                    <option value="external" {{ old('type', 'external') === 'external' ? 'selected' : '' }}>
-                                        {{ __('Externo - Empleado de esta empresa') }}
-                                    </option>
-                                    <option value="internal" {{ old('type') === 'internal' ? 'selected' : '' }}>
-                                        {{ __('Interno - Personal del sistema central') }}
-                                    </option>
-                                </select>
-                                <div class="mt-2 p-3 bg-blue-50 rounded-md">
-                                    <div class="text-xs text-blue-800 space-y-1">
-                                        <p><strong>• Externo:</strong> Empleado específico de {{ $company->business_name }}. Solo puede trabajar con esta empresa.</p>
-                                        <p><strong>• Interno:</strong> Personal del sistema central. Puede gestionar múltiples empresas y tiene acceso global.</p>
-                                    </div>
+                        <!-- CORREGIDO: Campo tipo oculto, siempre external -->
+                        <input type="hidden" name="type" value="external">
+
+                        <!-- Información del tipo (solo informativo) -->
+                        <div class="bg-green-50 border border-green-200 rounded-md p-4">
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                    </svg>
                                 </div>
-                                @error('type')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
+                                <div class="ml-3">
+                                    <h4 class="text-sm font-medium text-green-800">{{ __('Operador de Empresa') }}</h4>
+                                    <p class="mt-1 text-sm text-green-700">
+                                        {{ __('Este operador será empleado específico de') }} <strong>{{ $company->business_name }}</strong> {{ __('y solo podrá trabajar con esta empresa.') }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -172,28 +158,26 @@
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">{{ __('Acceso al Sistema') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ __('Credenciales para ingresar al sistema.') }}</p>
+                        <p class="mt-1 text-sm text-gray-600">{{ __('Configure las credenciales de acceso del operador.') }}</p>
                     </div>
-
-                    <div class="p-6 space-y-6">
-                        <!-- Email -->
-                        <div>
-                            <label for="email" class="block text-sm font-medium text-gray-700">
-                                {{ __('Correo Electrónico') }} <span class="text-red-500">*</span>
-                            </label>
-                            <input type="email"
-                                   name="email"
-                                   id="email"
-                                   value="{{ old('email') }}"
-                                   required
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('email') border-red-300 @enderror"
-                                   placeholder="operador@empresa.com">
-                            <p class="mt-1 text-xs text-gray-500">
-                                {{ __('Este email será usado para iniciar sesión en el sistema.') }}
-                            </p>
-                            @error('email')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
+                    <div class="px-6 py-4 space-y-6">
+                        <div class="grid grid-cols-1 gap-6">
+                            <!-- Email -->
+                            <div>
+                                <label for="email" class="block text-sm font-medium text-gray-700">
+                                    {{ __('Email') }} <span class="text-red-500">*</span>
+                                </label>
+                                <input type="email"
+                                       name="email"
+                                       id="email"
+                                       value="{{ old('email') }}"
+                                       required
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('email') border-red-300 @enderror"
+                                       placeholder="usuario@empresa.com">
+                                @error('email')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -206,9 +190,8 @@
                                        name="password"
                                        id="password"
                                        required
-                                       minlength="8"
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('password') border-red-300 @enderror"
-                                       placeholder="Mínimo 8 caracteres">
+                                       placeholder="{{ __('Mínimo 8 caracteres') }}">
                                 @error('password')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -223,82 +206,70 @@
                                        name="password_confirmation"
                                        id="password_confirmation"
                                        required
-                                       minlength="8"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                       placeholder="Repita la contraseña">
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Permisos Operativos -->
+                <!-- Permisos del Operador -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ __('Permisos Operativos') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ __('Defina qué operaciones puede realizar este operador.') }}</p>
+                        <h3 class="text-lg font-medium text-gray-900">{{ __('Permisos del Operador') }}</h3>
+                        <p class="mt-1 text-sm text-gray-600">{{ __('Configure qué operaciones puede realizar este operador.') }}</p>
                     </div>
-
-                    <div class="p-6">
-                        <div class="space-y-4">
-                            <div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
-                                <div class="flex">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.996-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-yellow-800">{{ __('Importante') }}</h3>
-                                        <div class="mt-1 text-sm text-yellow-700">
-                                            <p>{{ __('El operador debe tener al menos un permiso operativo para poder trabajar en el sistema.') }}</p>
-                                        </div>
-                                    </div>
+                    <div class="px-6 py-4 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <!-- Importar -->
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input type="checkbox"
+                                           name="can_import"
+                                           id="can_import"
+                                           value="1"
+                                           {{ old('can_import') ? 'checked' : '' }}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="can_import" class="font-medium text-gray-700">{{ __('Puede Importar') }}</label>
+                                    <p class="text-gray-500">{{ __('Crear y gestionar cargas de importación') }}</p>
                                 </div>
                             </div>
 
-                            <!-- Permisos disponibles -->
-                            @foreach($formData['permissions'] as $permission => $label)
-                                <div class="flex items-start">
-                                    <div class="flex items-center h-5">
-                                        <input type="checkbox"
-                                               name="{{ $permission }}"
-                                               id="{{ $permission }}"
-                                               value="1"
-                                               {{ old($permission) ? 'checked' : '' }}
-                                               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    </div>
-                                    <div class="ml-3">
-                                        <label for="{{ $permission }}" class="text-sm font-medium text-gray-700">
-                                            {{ $label }}
-                                        </label>
-                                        <p class="text-xs text-gray-500">
-                                            @switch($permission)
-                                                @case('can_import')
-                                                    {{ __('Puede crear y gestionar cargas de importación.') }}
-                                                    @break
-                                                @case('can_export')
-                                                    {{ __('Puede crear y gestionar cargas de exportación.') }}
-                                                    @break
-                                                @case('can_transfer')
-                                                    {{ __('Puede gestionar transbordos y transferencias entre puertos.') }}
-                                                    @break
-                                            @endswitch
-                                        </p>
-                                    </div>
+                            <!-- Exportar -->
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input type="checkbox"
+                                           name="can_export"
+                                           id="can_export"
+                                           value="1"
+                                           {{ old('can_export') ? 'checked' : '' }}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
                                 </div>
-                            @endforeach
+                                <div class="ml-3 text-sm">
+                                    <label for="can_export" class="font-medium text-gray-700">{{ __('Puede Exportar') }}</label>
+                                    <p class="text-gray-500">{{ __('Crear y gestionar cargas de exportación') }}</p>
+                                </div>
+                            </div>
+
+                            <!-- Transferir -->
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input type="checkbox"
+                                           name="can_transfer"
+                                           id="can_transfer"
+                                           value="1"
+                                           {{ old('can_transfer') ? 'checked' : '' }}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="can_transfer" class="font-medium text-gray-700">{{ __('Puede Transferir') }}</label>
+                                    <p class="text-gray-500">{{ __('Realizar transbordos entre empresas') }}</p>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- Estado del Operador -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900">{{ __('Estado') }}</h3>
-                        <p class="mt-1 text-sm text-gray-600">{{ __('Configure el estado inicial del operador.') }}</p>
-                    </div>
-
-                    <div class="p-6">
+                        <!-- Estado Activo -->
                         <div class="flex items-start">
                             <div class="flex items-center h-5">
                                 <input type="checkbox"
@@ -306,46 +277,31 @@
                                        id="active"
                                        value="1"
                                        {{ old('active', true) ? 'checked' : '' }}
-                                       class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded">
+                                       class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
                             </div>
-                            <div class="ml-3">
-                                <label for="active" class="text-sm font-medium text-gray-700">
-                                    {{ __('Operador Activo') }}
-                                </label>
-                                <p class="text-xs text-gray-500">
-                                    {{ __('Solo los operadores activos pueden acceder al sistema. Puede cambiar este estado después.') }}
-                                </p>
+                            <div class="ml-3 text-sm">
+                                <label for="active" class="font-medium text-gray-700">{{ __('Usuario Activo') }}</label>
+                                <p class="text-gray-500">{{ __('El operador puede acceder al sistema') }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Validación de Permisos -->
+                        <div id="permissions-warning" class="hidden bg-amber-50 border border-amber-200 rounded-md p-4">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <h3 class="text-sm font-medium text-amber-800">{{ __('Permisos Requeridos') }}</h3>
+                                    <p class="mt-1 text-sm text-amber-700">
+                                        {{ __('El operador debe tener al menos un permiso (importar, exportar o transferir).') }}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- Información Adicional -->
-                <div class="bg-gray-50 border border-gray-200 rounded-md p-4">
-                    <h4 class="text-sm font-medium text-gray-900 mb-2">{{ __('Información Importante') }}</h4>
-                    <div class="text-sm text-gray-600 space-y-1">
-                        <p>• {{ __('El operador recibirá acceso inmediato al sistema tras la creación.') }}</p>
-                        <p>• {{ __('Puede modificar los permisos en cualquier momento desde la gestión de operadores.') }}</p>
-                        <p>• <strong>{{ __('Operadores Externos:') }}</strong> {{ __('Pertenecen únicamente a') }} {{ $company->business_name }} {{ __('y solo pueden trabajar con esta empresa.') }}</p>
-                        <p>• <strong>{{ __('Operadores Internos:') }}</strong> {{ __('Son personal del sistema central con acceso global a múltiples empresas.') }}</p>
-                        <p>• {{ __('Se recomienda usar un email corporativo para mayor seguridad.') }}</p>
-                    </div>
-
-                    @if($company->company_roles && count($company->company_roles) > 0)
-                        <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                            <h5 class="text-sm font-medium text-blue-800 mb-1">{{ __('Roles disponibles en su empresa:') }}</h5>
-                            <div class="flex flex-wrap gap-1">
-                                @foreach($company->company_roles as $role)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                        {{ $role }}
-                                    </span>
-                                @endforeach
-                            </div>
-                            <p class="mt-1 text-xs text-blue-600">
-                                {{ __('Los operadores externos podrán trabajar con estas funcionalidades según sus permisos individuales.') }}
-                            </p>
-                        </div>
-                    @endif
                 </div>
 
                 <!-- Botones de Acción -->
@@ -369,101 +325,37 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.querySelector('form');
-            const passwordField = document.getElementById('password');
-            const confirmPasswordField = document.getElementById('password_confirmation');
-            const permissionCheckboxes = document.querySelectorAll('input[name$="_import"], input[name$="_export"], input[name$="_transfer"]');
-            const typeSelect = document.getElementById('type');
+            const permissionCheckboxes = document.querySelectorAll('input[name="can_import"], input[name="can_export"], input[name="can_transfer"]');
+            const permissionsWarning = document.getElementById('permissions-warning');
 
-            // Alerta para operadores internos
-            function showInternalOperatorWarning() {
-                if (typeSelect.value === 'internal') {
-                    // Crear alerta si no existe
-                    let existingAlert = document.getElementById('internal-operator-alert');
-                    if (!existingAlert) {
-                        const alertHtml = `
-                            <div id="internal-operator-alert" class="mb-6 bg-amber-50 border border-amber-200 rounded-md p-4">
-                                <div class="flex">
-                                    <div class="flex-shrink-0">
-                                        <svg class="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.996-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                        </svg>
-                                    </div>
-                                    <div class="ml-3">
-                                        <h3 class="text-sm font-medium text-amber-800">{{ __('Atención: Operador Interno') }}</h3>
-                                        <div class="mt-1 text-sm text-amber-700">
-                                            <p>{{ __('Está creando un operador INTERNO que tendrá acceso global al sistema y podrá gestionar múltiples empresas, no solo') }} {{ $company->business_name }}.</p>
-                                            <p class="mt-1"><strong>{{ __('¿Está seguro?') }}</strong> {{ __('Para empleados de su empresa, seleccione "Externo".') }}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-
-                        // Insertar antes del formulario
-                        const formContainer = document.querySelector('form').parentElement;
-                        const formElement = document.querySelector('form');
-                        formElement.insertAdjacentHTML('beforebegin', alertHtml);
-                    }
-                } else {
-                    // Remover alerta si existe
-                    const existingAlert = document.getElementById('internal-operator-alert');
-                    if (existingAlert) {
-                        existingAlert.remove();
-                    }
-                }
-            }
-
-            // Escuchar cambios en el tipo
-            typeSelect.addEventListener('change', showInternalOperatorWarning);
-
-            // Validación de contraseñas
-            function validatePasswords() {
-                if (passwordField.value !== confirmPasswordField.value) {
-                    confirmPasswordField.setCustomValidity('Las contraseñas no coinciden');
-                    confirmPasswordField.classList.add('border-red-300');
-                } else {
-                    confirmPasswordField.setCustomValidity('');
-                    confirmPasswordField.classList.remove('border-red-300');
-                }
-            }
-
-            passwordField.addEventListener('input', validatePasswords);
-            confirmPasswordField.addEventListener('input', validatePasswords);
-
-            // Validación de permisos (al menos uno debe estar seleccionado)
+            // Validar que al menos un permiso esté seleccionado
             function validatePermissions() {
                 const hasPermission = Array.from(permissionCheckboxes).some(checkbox => checkbox.checked);
 
-                permissionCheckboxes.forEach(checkbox => {
-                    if (!hasPermission) {
-                        checkbox.setCustomValidity('Debe seleccionar al menos un permiso operativo');
-                    } else {
-                        checkbox.setCustomValidity('');
-                    }
-                });
+                if (hasPermission) {
+                    permissionsWarning.classList.add('hidden');
+                } else {
+                    permissionsWarning.classList.remove('hidden');
+                }
+
+                return hasPermission;
             }
 
+            // Escuchar cambios en los checkboxes de permisos
             permissionCheckboxes.forEach(checkbox => {
                 checkbox.addEventListener('change', validatePermissions);
             });
 
-            // Validación del formulario
+            // Validar antes de enviar el formulario
             form.addEventListener('submit', function(e) {
-                validatePasswords();
-                validatePermissions();
-
-                // Verificar si hay algún error de validación
-                const invalidFields = form.querySelectorAll(':invalid');
-                if (invalidFields.length > 0) {
+                if (!validatePermissions()) {
                     e.preventDefault();
-                    invalidFields[0].focus();
-                    invalidFields[0].reportValidity();
+                    permissionsWarning.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             });
 
-            // Ejecutar validación inicial
+            // Validación inicial
             validatePermissions();
-            showInternalOperatorWarning(); // Verificar estado inicial
         });
     </script>
     @endpush

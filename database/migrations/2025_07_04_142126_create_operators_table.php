@@ -16,11 +16,11 @@ return new class extends Migration
             $table->string('phone')->nullable();
             $table->string('position')->nullable(); // cargo
 
-            // Relationship with company (only for external operators)
-            $table->foreignId('company_id')->nullable()->constrained('companies')->onDelete('cascade');
+            // CORREGIDO: Relationship with company (REQUIRED for all operators)
+            $table->foreignId('company_id')->constrained('companies')->onDelete('cascade');
 
-            // Operator type
-            $table->enum('type', ['internal', 'external'])->default('external');
+            // CORREGIDO: Operator type (solo external)
+            $table->enum('type', ['external'])->default('external');
 
             // Specific permissions
             $table->json('special_permissions')->nullable(); // additional permissions

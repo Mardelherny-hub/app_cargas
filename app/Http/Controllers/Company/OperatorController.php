@@ -112,19 +112,19 @@ class OperatorController extends Controller
     }
 
     /**
-     * Crear nuevo operador.
-     * SOLO COMPANY-ADMIN puede crear operadores.
+     * Actualizar operador existente.
+     * SOLO COMPANY-ADMIN puede actualizar operadores.
      */
-    public function store(Request $request)
+    public function update(Request $request, Operator $operator)
     {
         // 1. Verificar que sea company-admin
         if (!$this->isCompanyAdmin()) {
-            abort(403, 'Solo los administradores de empresa pueden crear operadores.');
+            abort(403, 'Solo los administradores de empresa pueden actualizar operadores.');
         }
 
         // 2. Verificar permisos específicos
-        if (!$this->canPerform('create_operators')) {
-            abort(403, 'No tiene permisos para crear operadores.');
+        if (!$this->canPerform('edit_operators')) {
+            abort(403, 'No tiene permisos para editar operadores.');
         }
 
         $company = $this->getUserCompany();
@@ -134,21 +134,32 @@ class OperatorController extends Controller
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        // Validar datos del request
-        $request->validate([
+        // 4. Verificar que el operador pertenece a la empresa
+        if ($operator->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para editar este operador.');
+        }
+
+        // CORREGIDO: Validar datos del request (solo external)
+        $validationRules = [
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'document_number' => 'nullable|string|max:50',
             'phone' => 'nullable|string|max:20',
             'position' => 'required|string|max:255',
-            'type' => 'required|in:internal,external',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+            'type' => 'required|in:external', // CORREGIDO: Solo external
+            'email' => 'required|email|unique:users,email,' . $operator->user->id,
             'can_import' => 'boolean',
             'can_export' => 'boolean',
             'can_transfer' => 'boolean',
             'active' => 'boolean',
-        ]);
+        ];
+
+        // Si se proporciona contraseña, validarla
+        if ($request->filled('password')) {
+            $validationRules['password'] = 'string|min:8|confirmed';
+        }
+
+        $request->validate($validationRules);
 
         // Validar que al menos tenga un permiso
         if (!$request->boolean('can_import') && !$request->boolean('can_export') && !$request->boolean('can_transfer')) {
@@ -159,46 +170,47 @@ class OperatorController extends Controller
         try {
             DB::beginTransaction();
 
-            // Crear operador
-            $operator = Operator::create([
+            // CORREGIDO: Actualizar operador (mantener external y company_id)
+            $operator->update([
                 'first_name' => $request->first_name,
                 'last_name' => $request->last_name,
                 'document_number' => $request->document_number,
                 'phone' => $request->phone,
                 'position' => $request->position,
-                'type' => $request->type,
-                'company_id' => $company->id,
+                'type' => 'external', // CORREGIDO: Mantener external
+                // company_id no se actualiza, debe mantenerse el mismo
                 'can_import' => $request->boolean('can_import', false),
                 'can_export' => $request->boolean('can_export', false),
                 'can_transfer' => $request->boolean('can_transfer', false),
                 'active' => $request->boolean('active', true),
             ]);
 
-            // Crear usuario asociado
-            $user = User::create([
+            // Actualizar usuario asociado
+            $userUpdateData = [
                 'name' => trim($request->first_name . ' ' . $request->last_name),
                 'email' => $request->email,
-                'password' => Hash::make($request->password),
-                'email_verified_at' => now(),
-                'userable_type' => 'App\Models\Operator',
-                'userable_id' => $operator->id,
                 'active' => $request->boolean('active', true),
-            ]);
+            ];
 
-            // Asignar rol 'user' (3 roles simplificados)
-            $user->assignRole('user');
+            // Solo actualizar contraseña si se proporciona
+            if ($request->filled('password')) {
+                $userUpdateData['password'] = Hash::make($request->password);
+            }
+
+            $operator->user->update($userUpdateData);
 
             DB::commit();
 
-            return redirect()->route('company.operators.index')
-                ->with('success', 'Operador creado exitosamente.');
+            return redirect()->route('company.operators.show', $operator)
+                ->with('success', 'Operador actualizado exitosamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withInput()
-                ->with('error', 'Error al crear el operador: ' . $e->getMessage());
+                ->with('error', 'Error al actualizar el operador: ' . $e->getMessage());
         }
     }
+
 
     /**
      * Mostrar detalles del operador.
@@ -285,20 +297,20 @@ class OperatorController extends Controller
         return view('company.operators.edit', compact('operator', 'company', 'formData'));
     }
 
-    /**
-     * Actualizar operador.
-     * SOLO COMPANY-ADMIN puede actualizar operadores.
+/**
+     * Crear nuevo operador.
+     * SOLO COMPANY-ADMIN puede crear operadores.
      */
-    public function update(Request $request, Operator $operator)
+    public function store(Request $request)
     {
         // 1. Verificar que sea company-admin
         if (!$this->isCompanyAdmin()) {
-            abort(403, 'Solo los administradores de empresa pueden actualizar operadores.');
+            abort(403, 'Solo los administradores de empresa pueden crear operadores.');
         }
 
         // 2. Verificar permisos específicos
-        if (!$this->canPerform('edit_operators')) {
-            abort(403, 'No tiene permisos para editar operadores.');
+        if (!$this->canPerform('create_operators')) {
+            abort(403, 'No tiene permisos para crear operadores.');
         }
 
         $company = $this->getUserCompany();
@@ -308,25 +320,16 @@ class OperatorController extends Controller
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        // 4. Verificar que el operador pertenece a la empresa
-        if ($operator->company_id !== $company->id) {
-            abort(403, 'No tiene permisos para editar este operador.');
-        }
-
-        // Validar datos del request
+        // CORREGIDO: Validar datos del request (solo external)
         $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'document_number' => 'nullable|string|max:50',
             'phone' => 'nullable|string|max:20',
             'position' => 'required|string|max:255',
-            'type' => 'required|in:internal,external',
-            'email' => [
-                'required',
-                'email',
-                Rule::unique('users', 'email')->ignore($operator->user?->id)
-            ],
-            'password' => 'nullable|string|min:8|confirmed',
+            'type' => 'required|in:external', // CORREGIDO: Solo external
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8|confirmed',
             'can_import' => 'boolean',
             'can_export' => 'boolean',
             'can_transfer' => 'boolean',
@@ -342,48 +345,46 @@ class OperatorController extends Controller
         try {
             DB::beginTransaction();
 
-            // Actualizar operador
-            $operator->update([
+            // CORREGIDO: Crear operador (siempre external con company_id)
+            $operator = Operator::create([
                 'first_name' => $request->first_name,
                 'last_name' => $request->last_name,
                 'document_number' => $request->document_number,
                 'phone' => $request->phone,
                 'position' => $request->position,
-                'type' => $request->type,
+                'type' => 'external', // CORREGIDO: Siempre external
+                'company_id' => $company->id, // CORREGIDO: Siempre tiene empresa
                 'can_import' => $request->boolean('can_import', false),
                 'can_export' => $request->boolean('can_export', false),
                 'can_transfer' => $request->boolean('can_transfer', false),
                 'active' => $request->boolean('active', true),
             ]);
 
-            // Actualizar usuario asociado
-            if ($operator->user) {
-                $userData = [
-                    'name' => trim($request->first_name . ' ' . $request->last_name),
-                    'email' => $request->email,
-                    'active' => $request->boolean('active', true),
-                ];
+            // Crear usuario asociado
+            $user = User::create([
+                'name' => trim($request->first_name . ' ' . $request->last_name),
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'email_verified_at' => now(),
+                'userable_type' => 'App\Models\Operator',
+                'userable_id' => $operator->id,
+                'active' => $request->boolean('active', true),
+            ]);
 
-                // Solo actualizar contraseña si se proporciona
-                if ($request->filled('password')) {
-                    $userData['password'] = Hash::make($request->password);
-                }
-
-                $operator->user->update($userData);
-            }
+            // Asignar rol 'user'
+            $user->assignRole('user');
 
             DB::commit();
 
             return redirect()->route('company.operators.index')
-                ->with('success', 'Operador actualizado exitosamente.');
+                ->with('success', 'Operador creado exitosamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withInput()
-                ->with('error', 'Error al actualizar el operador: ' . $e->getMessage());
+                ->with('error', 'Error al crear el operador: ' . $e->getMessage());
         }
     }
-
     /**
      * Eliminar operador.
      * SOLO COMPANY-ADMIN puede eliminar operadores.

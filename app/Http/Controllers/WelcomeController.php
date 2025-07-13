@@ -50,13 +50,40 @@ class WelcomeController extends Controller
         }
 
         if ($user->hasRole('user')) {
-            // Verificar que tenga empresa asociada
-            if ($user->userable_type === 'App\\Models\\Company') {
+            // CORREGIDO: Todos los usuarios operadores van al company dashboard
+            if ($user->userable_type === 'App\\Models\\Operator') {
+                $operator = $user->userable;
+
+                // Verificar que el operador existe y está activo
+                if (!$operator || !$operator->active) {
+                    logger()->warning('User with invalid or inactive operator in welcome redirect', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'operator_exists' => !!$operator,
+                        'operator_active' => $operator?->active ?? false
+                    ]);
+                    return redirect()->route('dashboard');
+                }
+
+                // CORREGIDO: Todos los operadores deben tener empresa
+                if (!$operator->company_id || !$operator->company || !$operator->company->active) {
+                    logger()->warning('User with operator without valid company in welcome redirect', [
+                        'user_id' => $user->id,
+                        'email' => $user->email,
+                        'operator_id' => $operator->id,
+                        'company_id' => $operator->company_id,
+                        'company_exists' => !!$operator->company,
+                        'company_active' => $operator->company?->active ?? false
+                    ]);
+                    return redirect()->route('dashboard');
+                }
+
+                // ÉXITO: Operador con empresa válida
                 return redirect()->route('company.dashboard');
             }
 
-            // Si es un operador asociado a empresa
-            if ($user->userable_type === 'App\\Models\\Operator' && $user->userable->company_id) {
+            // Si es usuario directo de empresa
+            if ($user->userable_type === 'App\\Models\\Company') {
                 return redirect()->route('company.dashboard');
             }
 

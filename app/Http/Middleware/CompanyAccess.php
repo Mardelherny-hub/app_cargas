@@ -30,7 +30,7 @@ class CompanyAccess
         if ($user->hasRole('company-admin') || $user->hasRole('user')) {
             $companyId = $this->getCompanyIdFromRequest($request, $companyParams);
 
-            // CORRECCIÓN: Si hay un companyId específico en la ruta, verificar acceso
+            // Si hay un companyId específico en la ruta, verificar acceso
             if ($companyId) {
                 if (!$user->belongsToCompany($companyId)) {
                     abort(403, 'No tiene permisos para acceder a esta empresa.');
@@ -38,7 +38,7 @@ class CompanyAccess
                 return $next($request);
             }
 
-            // CORRECCIÓN: Para rutas sin companyId específico (como /company/dashboard)
+            // CORREGIDO: Para rutas sin companyId específico (como /company/dashboard)
             // verificar que el usuario tenga acceso general a empresas
             if ($this->userHasCompanyAccess($user)) {
                 return $next($request);
@@ -54,7 +54,7 @@ class CompanyAccess
 
     /**
      * Verificar si el usuario tiene acceso general a empresas.
-     * NUEVO MÉTODO: Esta es la corrección principal
+     * CORREGIDO: Simplificado según el nuevo modelo de negocio.
      */
     private function userHasCompanyAccess($user): bool
     {
@@ -66,7 +66,7 @@ class CompanyAccess
             return false;
         }
 
-        // Users (operadores) deben tener empresa asociada válida
+        // CORREGIDO: Users (operadores) deben tener empresa asociada válida
         if ($user->hasRole('user')) {
             if ($user->userable_type === 'App\\Models\\Operator' && $user->userable) {
                 $operator = $user->userable;
@@ -76,21 +76,17 @@ class CompanyAccess
                     return false;
                 }
 
-                // Operadores externos deben tener company_id válido
-                if ($operator->type === 'external') {
-                    return $operator->company_id &&
-                           \App\Models\Company::where('id', $operator->company_id)
-                                             ->where('active', true)
-                                             ->exists();
+                // CORREGIDO: Todos los operadores deben tener company_id válido
+                if (!$operator->company_id) {
+                    return false;
                 }
 
-                // Operadores internos pueden acceder si hay empresas activas en el sistema
-                if ($operator->type === 'internal') {
-                    return \App\Models\Company::where('active', true)->exists();
-                }
+                // Verificar que la empresa existe y está activa
+                $company = $operator->company;
+                return $company && $company->active;
             }
 
-            // Usuario directo de empresa (raro pero posible)
+            // Si es usuario directo de empresa
             if ($user->userable_type === 'App\\Models\\Company' && $user->userable) {
                 return $user->userable->active;
             }
@@ -102,44 +98,20 @@ class CompanyAccess
     }
 
     /**
-     * Get company ID from request
-     * MÉTODO EXISTENTE: Se mantiene igual
+     * Obtener el ID de empresa desde la request.
      */
-    private function getCompanyIdFromRequest(Request $request, array $companyParams): ?int
+    private function getCompanyIdFromRequest($request, $companyParams): ?int
     {
-        // Search in route parameters
+        // Si hay parámetros específicos de empresa en la ruta
         foreach ($companyParams as $param) {
             if ($request->route($param)) {
                 return (int) $request->route($param);
             }
         }
 
-        // Search in query parameters
-        if ($request->has('company_id')) {
-            return (int) $request->get('company_id');
-        }
-
-        // Search in related models
-        $routeKeys = ['trip', 'shipment', 'container', 'company'];
-        foreach ($routeKeys as $key) {
-            if ($request->route($key)) {
-                $model = $request->route($key);
-
-                // Direct company_id property
-                if ($model && property_exists($model, 'company_id')) {
-                    return $model->company_id;
-                }
-
-                // Through company relationship
-                if ($model && method_exists($model, 'company') && $model->company) {
-                    return $model->company->id;
-                }
-
-                // If the model is a Company itself
-                if ($model && $model instanceof \App\Models\Company) {
-                    return $model->id;
-                }
-            }
+        // Si hay un parámetro 'company' en la ruta
+        if ($request->route('company')) {
+            return (int) $request->route('company');
         }
 
         return null;
