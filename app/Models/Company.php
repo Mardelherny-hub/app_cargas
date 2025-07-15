@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Collection;
 use Carbon\Carbon;
 
 class Company extends Model
@@ -466,7 +467,358 @@ class Company extends Model
     public function isReadyToOperate(): bool
     {
         return $this->active &&
-               !empty($this->getRoles()) &&
-               empty($this->validateRoleConfiguration());
+            !empty($this->getRoles()) &&
+            empty($this->validateRoleConfiguration());
+    }
+
+
+    /**
+     * FASE 1 - MÓDULO EMPRESAS Y CLIENTES
+     *
+     */
+
+    // =====================================================
+    // RELACIONES CON CLIENTES (FASE 1)
+    // =====================================================
+
+    /**
+     * Relación con clientes a través de la tabla pivote.
+     * Un cliente puede tener múltiples relaciones con empresas.
+     */
+    public function clients()
+    {
+        return $this->belongsToMany(Client::class, 'client_company_relations')
+            ->withPivot([
+                'relation_type',
+                'can_edit',
+                'active',
+                'credit_limit',
+                'internal_code',
+                'priority',
+                'relation_config',
+                'last_activity_at'
+            ])
+            ->withTimestamps()
+            ->using(ClientCompanyRelation::class);
+    }
+
+    /**
+     * Relaciones de clientes activas solamente.
+     */
+    public function activeClients()
+    {
+        return $this->clients()->wherePivot('active', true);
+    }
+
+    /**
+     * Clientes creados por esta empresa.
+     */
+    public function createdClients()
+    {
+        return $this->hasMany(Client::class, 'created_by_company_id');
+    }
+
+    // =====================================================
+    // MÉTODOS DE GESTIÓN DE CLIENTES (FASE 1)
+    // =====================================================
+
+    /**
+     * Verificar si la empresa puede gestionar un cliente específico.
+     * Implementa criterio de aceptación: "Solo empresas autorizadas pueden editar clientes"
+     */
+    public function canManageClient(Client $client): bool
+    {
+        // Verificar si existe relación activa con permisos de edición
+        $relation = ClientCompanyRelation::where('company_id', $this->id)
+            ->where('client_id', $client->id)
+            ->where('active', true)
+            ->where('can_edit', true)
+            ->first();
+
+        return $relation !== null;
+    }
+
+    /**
+     * Verificar si la empresa tiene relación con un cliente.
+     */
+    public function hasClientRelation(Client $client): bool
+    {
+        return ClientCompanyRelation::where('company_id', $this->id)
+            ->where('client_id', $client->id)
+            ->where('active', true)
+            ->exists();
+    }
+
+    /**
+     * Obtener clientes para webservices según tipo.
+     * Implementa criterio: "Clientes operativos para webservices"
+     */
+    public function getClientsForWebservice(string $wsType = null)
+    {
+        $query = $this->activeClients()
+            ->where('status', 'active')
+            ->whereNotNull('verified_at');
+
+        // Filtrar por tipo de webservice si se especifica
+        if ($wsType) {
+            switch ($wsType) {
+                case 'anticipada':
+                    // Solo clientes exportadores/importadores para información anticipada
+                    $query->whereIn('client_type', ['shipper', 'consignee']);
+                    break;
+
+                case 'micdta':
+                    // Todos los clientes verificados pueden usar MIC/DTA
+                    break;
+
+                case 'desconsolidados':
+                    // Solo si la empresa maneja desconsolidados
+                    if (!$this->hasCompanyRole('Desconsolidador')) {
+                        return collect(); // Retornar colección vacía
+                    }
+                    break;
+
+                case 'transbordos':
+                    // Solo si la empresa maneja transbordos
+                    if (!$this->hasCompanyRole('Transbordos')) {
+                        return collect();
+                    }
+                    break;
+            }
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Obtener clientes según rol de negocio de la empresa.
+     */
+    public function getClientsForRole(string $roleType)
+    {
+        // Verificar que la empresa tenga este rol
+        if (!$this->hasCompanyRole($roleType)) {
+            return collect();
+        }
+
+        $query = $this->activeClients()->where('status', 'active');
+
+        // Filtrar según el rol de negocio
+        switch ($roleType) {
+            case 'Cargas':
+                // Empresa de cargas puede manejar todos los tipos de cliente
+                break;
+
+            case 'Desconsolidador':
+                // Desconsolidadores principalmente manejan consignatarios
+                $query->whereIn('client_type', ['consignee', 'notify_party']);
+                break;
+
+            case 'Transbordos':
+                // Transbordos pueden manejar cargadores y propietarios
+                $query->whereIn('client_type', ['shipper', 'owner']);
+                break;
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Crear relación con un cliente.
+     */
+    public function addClient(Client $client, array $relationData = []): ClientCompanyRelation
+    {
+        $defaultData = [
+            'relation_type' => 'customer',
+            'can_edit' => true,
+            'active' => true,
+            'priority' => 'normal'
+        ];
+
+        $data = array_merge($defaultData, $relationData);
+
+        return ClientCompanyRelation::createOrUpdate($client->id, $this->id, $data);
+    }
+
+    /**
+     * Remover relación con un cliente (desactivar).
+     */
+    public function removeClient(Client $client): bool
+    {
+        $relation = ClientCompanyRelation::findRelation($client->id, $this->id);
+
+        if ($relation) {
+            $relation->update(['active' => false]);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Obtener estadísticas de clientes de la empresa.
+     */
+    public function getClientStats(): array
+    {
+        return ClientCompanyRelation::getCompanyStats($this->id);
+    }
+
+    // =====================================================
+    // MÉTODOS DE BÚSQUEDA Y FILTROS
+    // =====================================================
+
+    /**
+     * Buscar clientes por CUIT/RUC.
+     */
+    public function findClientByTaxId(string $taxId): ?Client
+    {
+        return $this->clients()
+            ->where('tax_id', $taxId)
+            ->wherePivot('active', true)
+            ->first();
+    }
+
+    /**
+     * Obtener clientes por país.
+     */
+    public function getClientsByCountry(string $countryCode)
+    {
+        return $this->activeClients()
+            ->whereHas('country', function ($query) use ($countryCode) {
+                $query->where('iso_code', $countryCode);
+            })
+            ->get();
+    }
+
+    /**
+     * Obtener clientes por tipo.
+     */
+    public function getClientsByType(string $clientType)
+    {
+        return $this->activeClients()
+            ->where('client_type', $clientType)
+            ->get();
+    }
+
+    /**
+     * Obtener clientes con actividad reciente.
+     */
+    public function getRecentClients(int $days = 30)
+    {
+        return $this->clients()
+            ->wherePivot('active', true)
+            ->wherePivot('last_activity_at', '>=', now()->subDays($days))
+            ->orderByPivot('last_activity_at', 'desc')
+            ->get();
+    }
+
+    /**
+     * Obtener clientes de alta prioridad.
+     */
+    public function getHighPriorityClients()
+    {
+        return $this->activeClients()
+            ->wherePivotIn('priority', ['high', 'critical'])
+            ->orderByPivot('priority', 'desc')
+            ->get();
+    }
+
+    // =====================================================
+    // MÉTODOS AUXILIARES PARA WEBSERVICES
+    // =====================================================
+
+    /**
+     * Verificar si tiene clientes compatibles para webservices.
+     */
+    public function hasWebserviceCompatibleClients(): bool
+    {
+        return $this->activeClients()
+            ->where('status', 'active')
+            ->whereNotNull('verified_at')
+            ->exists();
+    }
+
+    /**
+     * Obtener configuración de cliente para webservices.
+     */
+    public function getClientWebserviceConfig(Client $client): ?array
+    {
+        $relation = ClientCompanyRelation::findRelation($client->id, $this->id);
+
+        if (!$relation || !$relation->active) {
+            return null;
+        }
+
+        return [
+            'can_use_anticipada' => $this->ws_anticipada && $client->isVerified(),
+            'can_use_micdta' => $this->ws_micdta && $client->isVerified(),
+            'can_use_desconsolidados' => $this->ws_desconsolidados &&
+                $this->hasCompanyRole('Desconsolidador'),
+            'can_use_transbordos' => $this->ws_transbordos &&
+                $this->hasCompanyRole('Transbordos'),
+            'internal_code' => $relation->internal_code,
+            'priority' => $relation->priority,
+            'credit_limit' => $relation->credit_limit
+        ];
+    }
+
+    // =====================================================
+    // MÉTODOS AUXILIARES PARA EL NEGOCIO
+    // =====================================================
+
+    /**
+     * Verificar si la empresa tiene un rol de negocio específico.
+     */
+    public function hasCompanyRole(string $role): bool
+    {
+        $roles = $this->company_roles ?? [];
+        return in_array($role, $roles);
+    }
+
+    /**
+     * Obtener clientes que pueden ser usados en operaciones específicas.
+     */
+    public function getOperationalClients(array $operations = []): Collection
+    {
+        $query = $this->activeClients()
+            ->where('status', 'active');
+
+        if (in_array('export', $operations)) {
+            $query->whereIn('client_type', ['shipper', 'owner']);
+        }
+
+        if (in_array('import', $operations)) {
+            $query->whereIn('client_type', ['consignee', 'notify_party']);
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Verificar límites de crédito para un cliente.
+     */
+    public function checkClientCreditLimit(Client $client, float $amount): bool
+    {
+        $relation = ClientCompanyRelation::findRelation($client->id, $this->id);
+
+        if (!$relation || !$relation->credit_limit) {
+            return true; // Sin límite establecido
+        }
+
+        return $amount <= $relation->credit_limit;
+    }
+
+    /**
+     * Actualizar actividad de relación con cliente.
+     */
+    public function updateClientActivity(Client $client): bool
+    {
+        $relation = ClientCompanyRelation::findRelation($client->id, $this->id);
+
+        if ($relation) {
+            $relation->updateActivity();
+            return true;
+        }
+
+        return false;
     }
 }

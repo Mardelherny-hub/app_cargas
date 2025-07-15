@@ -36,8 +36,8 @@ class ClientsSeeder extends Seeder
         }
 
         // Get countries
-        $argentina = Country::where('iso_code', 'AR')->first();
-        $paraguay = Country::where('iso_code', 'PY')->first();
+        $argentina = Country::where('alpha2_code', 'AR')->first();
+        $paraguay = Country::where('alpha2_code', 'PY')->first();
 
         if (!$argentina || !$paraguay) {
             $this->command->error('❌ Countries not found. Please run catalogs seeder first.');
@@ -418,7 +418,7 @@ class ClientsSeeder extends Seeder
                         'active' => true,
                         'credit_limit' => $this->getRandomCreditLimit(),
                         'internal_code' => $this->generateInternalCode($relationCompany, $client),
-                        'priority' => rand(1, 10),
+                        'priority' => $this->getRandomPriority(),
                         'relation_config' => $this->getRandomRelationConfig(),
                         'created_by_user_id' => 1, // Assume admin user
                         'last_activity_at' => now()->subDays(rand(1, 30))
@@ -461,6 +461,15 @@ class ClientsSeeder extends Seeder
         $companyPrefix = strtoupper(substr($company->commercial_name, 0, 3));
         $clientNumber = str_pad($client->id, 4, '0', STR_PAD_LEFT);
         return $companyPrefix . '-' . $clientNumber;
+    }
+
+    /**
+     * Get random priority
+     */
+    private function getRandomPriority(): string
+    {
+        $priorities = ['low', 'normal', 'high', 'critical'];
+        return $priorities[array_rand($priorities)];
     }
 
     /**

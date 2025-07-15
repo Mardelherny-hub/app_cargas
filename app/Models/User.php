@@ -349,4 +349,397 @@ class User extends Authenticatable implements Auditable
         // Si es super-admin, solo debe estar activo
         return true;
     }
+
+
+/**
+ * FASE 1 - MÓDULO EMPRESAS Y CLIENTES
+ *
+ */
+
+// =====================================================
+// MÉTODOS DE ACCESO A CLIENTES (FASE 1)
+// =====================================================
+
+/**
+ * Obtener clientes accesibles según empresa y permisos del usuario.
+ * Implementa criterio: "Usuarios ven solo clientes de su empresa"
+ */
+public function getAccessibleClients()
+{
+    // Super admin ve todos los clientes
+    if ($this->hasRole('super-admin')) {
+        return Client::query();
+    }
+
+    // Company admin y users ven solo clientes de su empresa
+    if ($this->hasRole(['company-admin', 'user'])) {
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return Client::whereRaw('1 = 0'); // Query vacío
+        }
+
+        return Client::whereHas('companyRelations', function ($query) use ($company) {
+            $query->where('company_id', $company->id)
+                  ->where('active', true);
+        });
+    }
+
+    return Client::whereRaw('1 = 0'); // Query vacío por defecto
+}
+
+/**
+ * Verificar si el usuario puede editar un cliente específico.
+ * Implementa criterio: "Permisos de edición respetan relaciones empresa-cliente"
+ */
+public function canEditClient(Client $client): bool
+{
+    // Super admin puede editar todos los clientes
+    if ($this->hasRole('super-admin')) {
+        return true;
+    }
+
+    // Company admin puede editar si su empresa tiene permisos
+    if ($this->hasRole('company-admin')) {
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return false;
+        }
+
+        return $company->canManageClient($client);
+    }
+
+    // Users NO pueden editar clientes (solo usar)
+    return false;
+}
+
+/**
+ * Verificar si el usuario puede usar un cliente en operaciones.
+ */
+public function canUseClient(Client $client): bool
+{
+    // Super admin puede usar cualquier cliente
+    if ($this->hasRole('super-admin')) {
+        return true;
+    }
+
+    // Company admin y users pueden usar clientes de su empresa
+    if ($this->hasRole(['company-admin', 'user'])) {
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return false;
+        }
+
+        return $company->hasClientRelation($client);
+    }
+
+    return false;
+}
+
+/**
+ * Obtener clientes recientes del usuario (actividad reciente).
+ */
+public function getRecentClients(int $limit = 10)
+{
+    $accessibleClients = $this->getAccessibleClients();
+
+    return $accessibleClients
+        ->with(['country', 'companyRelations' => function ($query) {
+            $query->where('active', true)
+                  ->orderBy('last_activity_at', 'desc');
+        }])
+        ->orderBy('updated_at', 'desc')
+        ->limit($limit)
+        ->get();
+}
+
+// =====================================================
+// MÉTODOS ESPECÍFICOS POR ROL
+// =====================================================
+
+/**
+ * Obtener clientes editables para el usuario.
+ * Solo company-admin puede editar, users solo pueden usar.
+ */
+public function getEditableClients()
+{
+    // Super admin puede editar todos
+    if ($this->hasRole('super-admin')) {
+        return Client::query();
+    }
+
+    // Company admin puede editar clientes donde su empresa tiene permiso
+    if ($this->hasRole('company-admin')) {
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return Client::whereRaw('1 = 0');
+        }
+
+        return Client::whereHas('companyRelations', function ($query) use ($company) {
+            $query->where('company_id', $company->id)
+                  ->where('can_edit', true)
+                  ->where('active', true);
+        });
+    }
+
+    // Users no pueden editar
+    return Client::whereRaw('1 = 0');
+}
+
+/**
+ * Obtener clientes para operaciones específicas del usuario.
+ * Considera permisos de operador (can_import, can_export, can_transfer).
+ */
+public function getClientsForOperation(string $operation)
+{
+    $accessibleClients = $this->getAccessibleClients();
+
+    // Filtrar según la operación y permisos del usuario
+    if ($this->hasRole('user') && $this->isOperator()) {
+        $operator = $this->userable;
+
+        switch ($operation) {
+            case 'import':
+                if (!$operator->can_import) {
+                    return Client::whereRaw('1 = 0');
+                }
+                // Solo consignatarios y notificados para importación
+                $accessibleClients->whereIn('client_type', ['consignee', 'notify_party']);
+                break;
+
+            case 'export':
+                if (!$operator->can_export) {
+                    return Client::whereRaw('1 = 0');
+                }
+                // Solo cargadores y propietarios para exportación
+                $accessibleClients->whereIn('client_type', ['shipper', 'owner']);
+                break;
+
+            case 'transfer':
+                if (!$operator->can_transfer) {
+                    return Client::whereRaw('1 = 0');
+                }
+                // Todos los tipos para transferencia
+                break;
+        }
+    }
+
+    return $accessibleClients->where('status', 'active');
+}
+
+// =====================================================
+// MÉTODOS DE BÚSQUEDA Y FILTROS
+// =====================================================
+
+/**
+ * Buscar clientes accesibles por CUIT/RUC.
+ */
+public function findAccessibleClientByTaxId(string $taxId): ?Client
+{
+    return $this->getAccessibleClients()
+        ->where('tax_id', $taxId)
+        ->where('status', 'active')
+        ->first();
+}
+
+/**
+ * Obtener clientes por país (solo accesibles).
+ */
+public function getClientsByCountry(string $countryCode)
+{
+    return $this->getAccessibleClients()
+        ->whereHas('country', function ($query) use ($countryCode) {
+            $query->where('iso_code', $countryCode);
+        })
+        ->where('status', 'active')
+        ->get();
+}
+
+/**
+ * Obtener clientes por tipo (solo accesibles).
+ */
+public function getClientsByType(string $clientType)
+{
+    return $this->getAccessibleClients()
+        ->where('client_type', $clientType)
+        ->where('status', 'active')
+        ->get();
+}
+
+/**
+ * Buscar clientes con autocompletado.
+ */
+public function searchClients(string $search, int $limit = 10)
+{
+    return $this->getAccessibleClients()
+        ->where(function ($query) use ($search) {
+            $query->where('legal_name', 'like', "%{$search}%")
+                  ->orWhere('tax_id', 'like', "%{$search}%");
+        })
+        ->where('status', 'active')
+        ->limit($limit)
+        ->get(['id', 'tax_id', 'legal_name', 'client_type']);
+}
+
+// =====================================================
+// MÉTODOS PARA WEBSERVICES Y OPERACIONES
+// =====================================================
+
+/**
+ * Obtener clientes compatibles para webservices del usuario.
+ */
+public function getWebserviceCompatibleClients(string $wsType = null)
+{
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return collect();
+    }
+
+    return $company->getClientsForWebservice($wsType);
+}
+
+/**
+ * Verificar si el usuario puede usar un cliente para webservices.
+ */
+public function canUseClientForWebservice(Client $client, string $wsType): bool
+{
+    if (!$this->canUseClient($client)) {
+        return false;
+    }
+
+    $company = $this->getUserCompany();
+    if (!$company) {
+        return false;
+    }
+
+    $config = $company->getClientWebserviceConfig($client);
+
+    if (!$config) {
+        return false;
+    }
+
+    switch ($wsType) {
+        case 'anticipada':
+            return $config['can_use_anticipada'];
+        case 'micdta':
+            return $config['can_use_micdta'];
+        case 'desconsolidados':
+            return $config['can_use_desconsolidados'];
+        case 'transbordos':
+            return $config['can_use_transbordos'];
+        default:
+            return false;
+    }
+}
+
+// =====================================================
+// MÉTODOS DE ACTIVIDAD Y AUDITORÍA
+// =====================================================
+
+/**
+ * Registrar actividad con un cliente.
+ */
+public function logClientActivity(Client $client, string $action, array $details = []): bool
+{
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return false;
+    }
+
+    // Actualizar actividad en la relación empresa-cliente
+    $company->updateClientActivity($client);
+
+    // Opcionalmente guardar log detallado
+    logger()->info('Client activity', [
+        'user_id' => $this->id,
+        'company_id' => $company->id,
+        'client_id' => $client->id,
+        'action' => $action,
+        'details' => $details,
+        'timestamp' => now()->toISOString()
+    ]);
+
+    return true;
+}
+
+/**
+ * Obtener estadísticas de uso de clientes del usuario.
+ */
+public function getClientUsageStats(): array
+{
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return [
+            'total_accessible' => 0,
+            'total_editable' => 0,
+            'by_type' => [],
+            'by_country' => []
+        ];
+    }
+
+    $accessible = $this->getAccessibleClients()->get();
+    $editable = $this->getEditableClients()->get();
+
+    return [
+        'total_accessible' => $accessible->count(),
+        'total_editable' => $editable->count(),
+        'by_type' => $accessible->countBy('client_type'),
+        'by_country' => $accessible->countBy('country.iso_code'),
+        'verified' => $accessible->whereNotNull('verified_at')->count(),
+        'unverified' => $accessible->whereNull('verified_at')->count()
+    ];
+}
+
+// =====================================================
+// MÉTODOS AUXILIARES
+// =====================================================
+
+/**
+ * Verificar si el usuario tiene permisos específicos sobre clientes.
+ */
+public function hasClientPermission(string $permission, Client $client = null): bool
+{
+    switch ($permission) {
+        case 'view_any':
+            return $this->hasRole(['super-admin', 'company-admin', 'user']);
+
+        case 'create':
+            return $this->hasRole(['super-admin', 'company-admin']);
+
+        case 'edit':
+            return $client ? $this->canEditClient($client) :
+                   $this->hasRole(['super-admin', 'company-admin']);
+
+        case 'delete':
+            return $this->hasRole('super-admin') ||
+                   ($this->hasRole('company-admin') && $client &&
+                    $client->created_by_company_id === $this->getUserCompanyId());
+
+        case 'verify':
+            return $client ? $this->canEditClient($client) :
+                   $this->hasRole(['super-admin', 'company-admin']);
+
+        case 'use':
+            return $client ? $this->canUseClient($client) : true;
+
+        default:
+            return false;
+    }
+}
+
+/**
+ * Obtener clientes favoritos/más usados del usuario.
+ */
+public function getFavoriteClients(int $limit = 5)
+{
+    // Por ahora basado en actividad reciente
+    // En el futuro se puede implementar sistema de favoritos real
+    return $this->getRecentClients($limit);
+}
 }

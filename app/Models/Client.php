@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property string $client_type Rol del cliente (shipper, consignee, etc.)
  * @property string $legal_name Razón social oficial
  * @property int|null $primary_port_id Puerto principal
- * @property int|null $custom_office_id Aduana habitual
+ * @property int|null $customs_offices_id Aduana habitual
  * @property string $status Estado (active, inactive, suspended)
  * @property int $created_by_company_id Empresa creadora
  * @property Carbon|null $verified_at Fecha verificación CUIT

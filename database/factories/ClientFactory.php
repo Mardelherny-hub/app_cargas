@@ -35,9 +35,9 @@ class ClientFactory extends Factory
     public function definition(): array
     {
         // Obtener países disponibles (Argentina por defecto)
-        $country = Country::where('iso_code', 'AR')->first() ?? Country::first();
+        $country = Country::where('alpha2_code', 'AR')->first() ?? Country::first();
         $countryId = $country?->id ?? 1;
-        $isArgentina = $country?->iso_code === 'AR';
+        $isArgentina = $country?->alpha2_code === 'AR';
 
         // Generar tax_id válido según país
         $taxId = $isArgentina ? $this->generateValidCUIT() : $this->generateValidRUC();
@@ -94,7 +94,7 @@ class ClientFactory extends Factory
     public function argentina(): static
     {
         return $this->state(function (array $attributes) {
-            $country = Country::where('iso_code', 'AR')->first();
+            $country = Country::where('alpha2_code', 'AR')->first();
             $documentType = DocumentType::where('country_id', $country?->id)->first();
             $port = Port::where('country_id', $country?->id)->inRandomOrder()->first();
             $customOffice = CustomOffice::where('country_id', $country?->id)->inRandomOrder()->first();
@@ -125,7 +125,7 @@ class ClientFactory extends Factory
     public function paraguay(): static
     {
         return $this->state(function (array $attributes) {
-            $country = Country::where('iso_code', 'PY')->first();
+            $country = Country::where('alpha2_code', 'PY')->first();
             $documentType = DocumentType::where('country_id', $country?->id)->first();
             $port = Port::where('country_id', $country?->id)->inRandomOrder()->first();
             $customOffice = CustomOffice::where('country_id', $country?->id)->inRandomOrder()->first();

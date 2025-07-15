@@ -85,10 +85,10 @@ class ClientValidationService
         }
 
         // Validate customs office for country
-        if (!empty($data['$customs_offices'])) {
-            $customsValidation = $this->validateCustomOfficeForCountry($data['$customs_offices'], $data['country_id']);
+        if (!empty($data['custom_office_id'])) {
+            $customsValidation = $this->validateCustomOfficeForCountry($data['custom_office_id'], $data['country_id']);
             if (!$customsValidation['valid']) {
-                $errors['$customs_offices'] = $customsValidation['message'];
+                $errors['custom_office_id'] = $customsValidation['message'];
             }
         }
 
@@ -482,7 +482,7 @@ class ClientValidationService
         }
 
         // Must have customs office
-        if (!$client->$customs_offices) {
+        if (!$client->custom_office_id) {
             $errors[] = 'Aduana requerida para webservices';
         }
 
