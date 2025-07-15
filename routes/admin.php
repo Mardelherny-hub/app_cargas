@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\SystemController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\ClientController;
 
 /*
 |--------------------------------------------------------------------------
@@ -74,6 +75,46 @@ Route::prefix('companies')->name('admin.companies.')->group(function () {
     Route::get('/{company}/operators', [CompanyController::class, 'operators'])->name('operators');
 });
 
+// Gestión de Clientes - NUEVO MÓDULO FASE 4
+Route::prefix('clients')->name('admin.clients.')
+    ->middleware(['client.access:view'])
+    ->group(function () {
+        // Rutas básicas CRUD
+        Route::get('/', [ClientController::class, 'index'])->name('index');
+        Route::get('/create', [ClientController::class, 'create'])
+            ->middleware(['client.access:create'])
+            ->name('create');
+        Route::post('/', [ClientController::class, 'store'])
+            ->middleware(['client.access:create'])
+            ->name('store');
+        Route::get('/{client}', [ClientController::class, 'show'])
+            ->middleware(['client.access:view'])
+            ->name('show');
+        Route::get('/{client}/edit', [ClientController::class, 'edit'])
+            ->middleware(['client.access:edit'])
+            ->name('edit');
+        Route::put('/{client}', [ClientController::class, 'update'])
+            ->middleware(['client.access:edit'])
+            ->name('update');
+        Route::delete('/{client}', [ClientController::class, 'destroy'])
+            ->middleware(['client.access:delete'])
+            ->name('destroy');
+
+        // Acciones específicas
+        Route::patch('/{client}/verify', [ClientController::class, 'verify'])
+            ->middleware(['client.access:verify'])
+            ->name('verify');
+        Route::patch('/{client}/toggle-status', [ClientController::class, 'toggleStatus'])
+            ->middleware(['client.access:edit'])
+            ->name('toggle-status');
+        Route::post('/{client}/transfer', [ClientController::class, 'transfer'])
+            ->middleware(['client.access:transfer'])
+            ->name('transfer');
+        Route::post('/bulk-import', [ClientController::class, 'bulkImport'])
+            ->middleware(['client.access:create'])
+            ->name('bulk-import');
+    });
+
 // Configuración del Sistema
 Route::prefix('system')->name('admin.system.')->group(function () {
     Route::get('/settings', [SystemController::class, 'settings'])->name('settings');
@@ -110,6 +151,9 @@ Route::prefix('reports')->name('admin.reports.')->group(function () {
     Route::get('/export/users', [ReportController::class, 'exportUsers'])->name('export-users');
     Route::get('/export/companies', [ReportController::class, 'exportCompanies'])->name('export-companies');
     Route::get('/export/activity', [ReportController::class, 'exportActivity'])->name('export-activity');
+
+    Route::get('/clients', [ReportController::class, 'clients'])->name('clients');
+    Route::get('/export/clients', [ReportController::class, 'exportClients'])->name('export-clients');
 });
 
 // Gestión de Roles y Permisos
