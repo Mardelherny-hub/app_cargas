@@ -197,11 +197,6 @@ class ClientController extends Controller
     {
         $user = Auth::user();
 
-        // Verificar acceso usando UserHelper
-        if (!$this->isSuperAdmin() && !$user->canUseClient($client)) {
-            abort(403, 'No autorizado para ver este cliente');
-        }
-
         // Cargar relaciones necesarias
         $client->load([
             'country',
@@ -230,11 +225,6 @@ class ClientController extends Controller
      */
     public function edit(Client $client)
     {
-        // Verificar permisos usando UserHelper
-        if (!$this->isSuperAdmin() && !Auth::user()->canEditClient($client)) {
-            abort(403, 'No autorizado para editar este cliente');
-        }
-
         $user = Auth::user();
 
         // Cargar datos necesarios
@@ -260,11 +250,6 @@ class ClientController extends Controller
     public function update(UpdateClientRequest $request, Client $client)
     {
         try {
-            // Verificar permisos usando UserHelper
-            if (!$this->isSuperAdmin() && !Auth::user()->canEditClient($client)) {
-                abort(403, 'No autorizado para editar este cliente');
-            }
-
             DB::beginTransaction();
 
             $user = Auth::user();

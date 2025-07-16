@@ -77,41 +77,33 @@ Route::prefix('companies')->name('admin.companies.')->group(function () {
 
 // Gestión de Clientes - NUEVO MÓDULO FASE 4
 Route::prefix('clients')->name('admin.clients.')
-    //->middleware(['client.access:view'])
     ->group(function () {
         // Rutas básicas CRUD
         Route::get('/', [ClientController::class, 'index'])->name('index');
         Route::get('/create', [ClientController::class, 'create'])
-            ->middleware(['client.access:create'])
+            
             ->name('create');
         Route::post('/', [ClientController::class, 'store'])
-            ->middleware(['client.access:create'])
+            
             ->name('store');
-        Route::get('/{client}', [ClientController::class, 'show'])
-            ->middleware(['client.access:view'])
+        Route::get('/{client}', [ClientController::class, 'show'])            
             ->name('show');
         Route::get('/{client}/edit', [ClientController::class, 'edit'])
-            ->middleware(['client.access:edit'])
             ->name('edit');
         Route::put('/{client}', [ClientController::class, 'update'])
-            ->middleware(['client.access:edit'])
             ->name('update');
         Route::delete('/{client}', [ClientController::class, 'destroy'])
-            ->middleware(['client.access:delete'])
             ->name('destroy');
 
         // Acciones específicas
         Route::patch('/{client}/verify', [ClientController::class, 'verify'])
-            ->middleware(['client.access:verify'])
             ->name('verify');
         Route::patch('/{client}/toggle-status', [ClientController::class, 'toggleStatus'])
-            ->middleware(['client.access:edit'])
             ->name('toggle-status');
         Route::post('/{client}/transfer', [ClientController::class, 'transfer'])
-            ->middleware(['client.access:transfer'])
             ->name('transfer');
         Route::post('/bulk-import', [ClientController::class, 'bulkImport'])
-            ->middleware(['client.access:create'])
+            
             ->name('bulk-import');
     });
 
