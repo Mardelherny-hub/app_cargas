@@ -34,13 +34,12 @@ return new class extends Migration
             $table->string('call_sign', 20)->nullable()->comment('Señal de llamada');
             $table->string('mmsi_number', 20)->nullable()->comment('Número MMSI');
 
-            // Foreign keys to existing system tables
-            $table->foreignId('company_id')->constrained('companies')->comment('Empresa propietaria');
-            $table->foreignId('vessel_type_id')->constrained('vessel_types')->comment('Tipo de embarcación');
-            $table->foreignId('flag_country_id')->constrained('countries')->comment('País de bandera');
-            $table->foreignId('home_port_id')->nullable()->constrained('ports')->comment('Puerto base');
-            $table->foreignId('primary_captain_id')->nullable()->constrained('captains')->comment('Capitán principal');
-
+            // Foreign keys (definidos manualmente para evitar conflictos de nombres)
+            $table->unsignedBigInteger('company_id')->comment('Empresa propietaria');
+            $table->unsignedBigInteger('vessel_type_id')->comment('Tipo de embarcación');
+            $table->unsignedBigInteger('flag_country_id')->comment('País de bandera');
+            $table->unsignedBigInteger('home_port_id')->nullable()->comment('Puerto base');
+            $table->unsignedBigInteger('primary_captain_id')->nullable()->comment('Capitán principal');
             // Physical specifications (specific to this vessel)
             $table->decimal('length_meters', 8, 2)->comment('Longitud en metros');
             $table->decimal('beam_meters', 8, 2)->comment('Manga en metros');
@@ -214,14 +213,13 @@ return new class extends Migration
             $table->unique(['imo_number'], 'uk_vessels_imo');
             $table->unique(['call_sign'], 'uk_vessels_call_sign');
 
-            // Foreign key constraints (only to confirmed existing tables)
-            $table->foreign('company_id')->references('id')->on('companies')->onDelete('cascade');
-            $table->foreign('vessel_type_id')->references('id')->on('vessel_types')->onDelete('restrict');
-            $table->foreign('flag_country_id')->references('id')->on('countries')->onDelete('restrict');
-            $table->foreign('home_port_id')->references('id')->on('ports')->onDelete('set null');
-            $table->foreign('current_port_id')->references('id')->on('ports')->onDelete('set null');
-            $table->foreign('primary_captain_id')->references('id')->on('captains')->onDelete('set null');
-            // Audit FKs commented until user system is fully confirmed
+           // Foreign key constraints con nombres explícitos
+            $table->foreign('company_id', 'fk_vessels_company')->references('id')->on('companies')->onDelete('cascade');
+            $table->foreign('vessel_type_id', 'fk_vessels_type')->references('id')->on('vessel_types')->onDelete('restrict');
+            $table->foreign('flag_country_id', 'fk_vessels_flag_country')->references('id')->on('countries')->onDelete('restrict');
+            $table->foreign('home_port_id', 'fk_vessels_home_port')->references('id')->on('ports')->onDelete('set null');
+            $table->foreign('current_port_id', 'fk_vessels_current_port')->references('id')->on('ports')->onDelete('set null');
+            $table->foreign('primary_captain_id', 'fk_vessels_captain')->references('id')->on('captains')->onDelete('set null');// Audit FKs commented until user system is fully confirmed
             // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
             // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');
         });

@@ -23,33 +23,29 @@ return new class extends Migration
             $table->id();
 
             // Reference to shipment (confirmed table)
-            $table->foreignId('shipment_id')->constrained('shipments')->comment('Envío al que pertenece');
+           // $table->foreignId('shipment_id')->constrained('shipments')->comment('Envío al que pertenece');
 
             // Bill of lading identification
+            // Foreign keys definidos manualmente
+            $table->unsignedBigInteger('shipment_id')->comment('Envío al que pertenece');
+            $table->unsignedBigInteger('shipper_id')->comment('Cargador/Exportador');
+            $table->unsignedBigInteger('consignee_id')->comment('Consignatario/Importador');
+            $table->unsignedBigInteger('notify_party_id')->nullable()->comment('Parte a notificar');
+            $table->unsignedBigInteger('cargo_owner_id')->nullable()->comment('Propietario de la carga');
+            $table->unsignedBigInteger('loading_port_id')->comment('Puerto de carga');
+            $table->unsignedBigInteger('discharge_port_id')->comment('Puerto de descarga');
+            $table->unsignedBigInteger('transshipment_port_id')->nullable()->comment('Puerto transbordo');
+            $table->unsignedBigInteger('final_destination_port_id')->nullable()->comment('Destino final');
+            $table->unsignedBigInteger('loading_customs_id')->nullable()->comment('Aduana de carga');
+            $table->unsignedBigInteger('discharge_customs_id')->nullable()->comment('Aduana de descarga');
+            $table->unsignedBigInteger('primary_cargo_type_id')->comment('Tipo principal de carga');
+            $table->unsignedBigInteger('primary_packaging_type_id')->comment('Tipo principal embalaje');
+                    
+            // Bill of lading identification  
             $table->string('bill_number', 50)->unique()->comment('Número conocimiento embarque');
             $table->string('master_bill_number', 50)->nullable()->comment('Conocimiento madre (consolidados)');
             $table->string('house_bill_number', 50)->nullable()->comment('Conocimiento hijo');
             $table->string('internal_reference', 100)->nullable()->comment('Referencia interna empresa');
-
-            // Client references (confirmed table structure)
-            $table->foreignId('shipper_id')->constrained('clients')->comment('Cargador/Exportador');
-            $table->foreignId('consignee_id')->constrained('clients')->comment('Consignatario/Importador');
-            $table->foreignId('notify_party_id')->nullable()->constrained('clients')->comment('Parte a notificar');
-            $table->foreignId('cargo_owner_id')->nullable()->constrained('clients')->comment('Propietario de la carga');
-
-            // Port and customs information (confirmed tables)
-            $table->foreignId('loading_port_id')->constrained('ports')->comment('Puerto de carga');
-            $table->foreignId('discharge_port_id')->constrained('ports')->comment('Puerto de descarga');
-            $table->foreignId('transshipment_port_id')->nullable()->constrained('ports')->comment('Puerto transbordo');
-            $table->foreignId('final_destination_port_id')->nullable()->constrained('ports')->comment('Destino final');
-            
-            $table->foreignId('loading_customs_id')->nullable()->constrained('customs_offices')->comment('Aduana de carga');
-            $table->foreignId('discharge_customs_id')->nullable()->constrained('customs_offices')->comment('Aduana de descarga');
-
-            // Cargo classification (confirmed tables)
-            $table->foreignId('primary_cargo_type_id')->constrained('cargo_types')->comment('Tipo principal de carga');
-            $table->foreignId('primary_packaging_type_id')->constrained('packaging_types')->comment('Tipo principal embalaje');
-
             // Bill of lading dates
             $table->date('issue_date')->comment('Fecha emisión conocimiento');
             $table->date('loading_date')->comment('Fecha de carga');
@@ -217,20 +213,20 @@ return new class extends Migration
             $table->unique(['bill_number'], 'uk_bills_number');
 
             // Foreign key constraints (only to confirmed existing tables)
-            $table->foreign('shipment_id')->references('id')->on('shipments')->onDelete('cascade');
-            $table->foreign('shipper_id')->references('id')->on('clients')->onDelete('restrict');
-            $table->foreign('consignee_id')->references('id')->on('clients')->onDelete('restrict');
-            $table->foreign('notify_party_id')->references('id')->on('clients')->onDelete('set null');
-            $table->foreign('cargo_owner_id')->references('id')->on('clients')->onDelete('set null');
-            $table->foreign('loading_port_id')->references('id')->on('ports')->onDelete('restrict');
-            $table->foreign('discharge_port_id')->references('id')->on('ports')->onDelete('restrict');
-            $table->foreign('transshipment_port_id')->references('id')->on('ports')->onDelete('set null');
-            $table->foreign('final_destination_port_id')->references('id')->on('ports')->onDelete('set null');
-            $table->foreign('loading_customs_id')->references('id')->on('customs_offices')->onDelete('set null');
-            $table->foreign('discharge_customs_id')->references('id')->on('customs_offices')->onDelete('set null');
-            $table->foreign('primary_cargo_type_id')->references('id')->on('cargo_types')->onDelete('restrict');
-            $table->foreign('primary_packaging_type_id')->references('id')->on('packaging_types')->onDelete('restrict');
-            // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
+            // Foreign key constraints con nombres explícitos
+            $table->foreign('shipment_id', 'fk_bills_shipment')->references('id')->on('shipments')->onDelete('cascade');
+            $table->foreign('shipper_id', 'fk_bills_shipper')->references('id')->on('clients')->onDelete('restrict');
+            $table->foreign('consignee_id', 'fk_bills_consignee')->references('id')->on('clients')->onDelete('restrict');
+            $table->foreign('notify_party_id', 'fk_bills_notify_party')->references('id')->on('clients')->onDelete('set null');
+            $table->foreign('cargo_owner_id', 'fk_bills_cargo_owner')->references('id')->on('clients')->onDelete('set null');
+            $table->foreign('loading_port_id', 'fk_bills_loading_port')->references('id')->on('ports')->onDelete('restrict');
+            $table->foreign('discharge_port_id', 'fk_bills_discharge_port')->references('id')->on('ports')->onDelete('restrict');
+            $table->foreign('transshipment_port_id', 'fk_bills_transshipment_port')->references('id')->on('ports')->onDelete('set null');
+            $table->foreign('final_destination_port_id', 'fk_bills_final_destination_port')->references('id')->on('ports')->onDelete('set null');
+            $table->foreign('loading_customs_id', 'fk_bills_loading_customs')->references('id')->on('customs_offices')->onDelete('set null');
+            $table->foreign('discharge_customs_id', 'fk_bills_discharge_customs')->references('id')->on('customs_offices')->onDelete('set null');
+            $table->foreign('primary_cargo_type_id', 'fk_bills_cargo_type')->references('id')->on('cargo_types')->onDelete('restrict');
+            $table->foreign('primary_packaging_type_id', 'fk_bills_packaging_type')->references('id')->on('packaging_types')->onDelete('restrict');// $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
             // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');
         });
     }

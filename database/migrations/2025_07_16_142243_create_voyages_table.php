@@ -26,23 +26,18 @@ return new class extends Migration
             $table->string('voyage_number', 50)->unique()->comment('Número único del viaje');
             $table->string('internal_reference', 100)->nullable()->comment('Referencia interna empresa');
 
-            // Company and vessel information
-            $table->foreignId('company_id')->constrained('companies')->comment('Empresa organizadora');
-            $table->foreignId('lead_vessel_id')->constrained('vessels')->comment('Embarcación líder/principal');
-            $table->foreignId('captain_id')->nullable()->constrained('captains')->comment('Capitán principal del viaje');
-
-            // Route information
-            $table->foreignId('origin_country_id')->constrained('countries')->comment('País de origen');
-            $table->foreignId('origin_port_id')->constrained('ports')->comment('Puerto de origen');
-            $table->foreignId('destination_country_id')->constrained('countries')->comment('País de destino');
-            $table->foreignId('destination_port_id')->constrained('ports')->comment('Puerto de destino');
-            $table->foreignId('transshipment_port_id')->nullable()->constrained('ports')->comment('Puerto de transbordo');
-
-            // Customs offices
-            $table->foreignId('origin_customs_id')->nullable()->constrained('customs_offices')->comment('Aduana de origen');
-            $table->foreignId('destination_customs_id')->nullable()->constrained('customs_offices')->comment('Aduana de destino');
-            $table->foreignId('transshipment_customs_id')->nullable()->constrained('customs_offices')->comment('Aduana de transbordo');
-
+            // Foreign keys definidos manualmente
+            $table->unsignedBigInteger('company_id')->comment('Empresa organizadora');
+            $table->unsignedBigInteger('lead_vessel_id')->comment('Embarcación líder/principal');
+            $table->unsignedBigInteger('captain_id')->nullable()->comment('Capitán principal del viaje');
+            $table->unsignedBigInteger('origin_country_id')->comment('País de origen');
+            $table->unsignedBigInteger('origin_port_id')->comment('Puerto de origen');
+            $table->unsignedBigInteger('destination_country_id')->comment('País de destino');
+            $table->unsignedBigInteger('destination_port_id')->comment('Puerto de destino');
+            $table->unsignedBigInteger('transshipment_port_id')->nullable()->comment('Puerto de transbordo');
+            $table->unsignedBigInteger('origin_customs_id')->nullable()->comment('Aduana de origen');
+            $table->unsignedBigInteger('destination_customs_id')->nullable()->comment('Aduana de destino');
+            $table->unsignedBigInteger('transshipment_customs_id')->nullable()->comment('Aduana de transbordo');
             // Voyage dates
             $table->datetime('departure_date')->comment('Fecha/hora salida');
             $table->datetime('estimated_arrival_date')->comment('Fecha/hora llegada estimada');
@@ -168,19 +163,19 @@ return new class extends Migration
             $table->index(['active', 'archived'], 'idx_voyages_active');
             $table->index(['requires_follow_up'], 'idx_voyages_follow_up');
 
-            // Foreign key constraints
-            $table->foreign('company_id')->references('id')->on('companies')->onDelete('cascade');
-            $table->foreign('lead_vessel_id')->references('id')->on('vessels')->onDelete('restrict');
-            $table->foreign('captain_id')->references('id')->on('captains')->onDelete('set null');
-            $table->foreign('origin_country_id')->references('id')->on('countries')->onDelete('restrict');
-            $table->foreign('destination_country_id')->references('id')->on('countries')->onDelete('restrict');
-            $table->foreign('origin_port_id')->references('id')->on('ports')->onDelete('restrict');
-            $table->foreign('destination_port_id')->references('id')->on('ports')->onDelete('restrict');
-            $table->foreign('transshipment_port_id')->references('id')->on('ports')->onDelete('set null');
-            $table->foreign('origin_customs_id')->references('id')->on('customs_offices')->onDelete('set null');
-            $table->foreign('destination_customs_id')->references('id')->on('customs_offices')->onDelete('set null');
-            $table->foreign('transshipment_customs_id')->references('id')->on('customs_offices')->onDelete('set null');
-            // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
+            // Foreign key constraints con nombres explícitos
+            $table->foreign('company_id', 'fk_voyages_company')->references('id')->on('companies')->onDelete('cascade');
+            $table->foreign('lead_vessel_id', 'fk_voyages_lead_vessel')->references('id')->on('vessels')->onDelete('restrict');
+            $table->foreign('captain_id', 'fk_voyages_captain')->references('id')->on('captains')->onDelete('set null');
+            $table->foreign('origin_country_id', 'fk_voyages_origin_country')->references('id')->on('countries')->onDelete('restrict');
+            $table->foreign('destination_country_id', 'fk_voyages_destination_country')->references('id')->on('countries')->onDelete('restrict');
+            $table->foreign('origin_port_id', 'fk_voyages_origin_port')->references('id')->on('ports')->onDelete('restrict');
+            $table->foreign('destination_port_id', 'fk_voyages_destination_port')->references('id')->on('ports')->onDelete('restrict');
+            $table->foreign('transshipment_port_id', 'fk_voyages_transshipment_port')->references('id')->on('ports')->onDelete('set null');
+            $table->foreign('origin_customs_id', 'fk_voyages_origin_customs')->references('id')->on('customs_offices')->onDelete('set null');
+            $table->foreign('destination_customs_id', 'fk_voyages_destination_customs')->references('id')->on('customs_offices')->onDelete('set null');
+            $table->foreign('transshipment_customs_id', 'fk_voyages_transshipment_customs')->references('id')->on('customs_offices')->onDelete('set null');
+// $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
             // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');
         });
     }

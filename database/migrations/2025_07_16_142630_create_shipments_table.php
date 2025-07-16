@@ -21,10 +21,10 @@ return new class extends Migration
             $table->id();
 
             // References to confirmed system tables
-            $table->foreignId('voyage_id')->constrained('voyages')->comment('Viaje al que pertenece');
-            $table->foreignId('vessel_id')->constrained('vessels')->comment('Embarcación de este envío');
-            $table->foreignId('captain_id')->nullable()->constrained('captains')->comment('Capitán específico');
-
+            // Foreign keys definidos manualmente
+            $table->unsignedBigInteger('voyage_id')->comment('Viaje al que pertenece');
+            $table->unsignedBigInteger('vessel_id')->comment('Embarcación de este envío');
+            $table->unsignedBigInteger('captain_id')->nullable()->comment('Capitán de esta embarcación');
             // Shipment identification
             $table->string('shipment_number', 50)->comment('Número del envío');
             $table->integer('sequence_in_voyage')->comment('Secuencia en el viaje');
@@ -139,9 +139,10 @@ return new class extends Migration
             $table->unique(['voyage_id', 'sequence_in_voyage'], 'uk_shipments_voyage_sequence');
 
             // Foreign key constraints
-            $table->foreign('voyage_id')->references('id')->on('voyages')->onDelete('cascade');
-            $table->foreign('vessel_id')->references('id')->on('vessels')->onDelete('restrict');
-            $table->foreign('captain_id')->references('id')->on('captains')->onDelete('set null');
+            // Foreign key constraints con nombres explícitos
+            $table->foreign('voyage_id', 'fk_shipments_voyage')->references('id')->on('voyages')->onDelete('cascade');
+            $table->foreign('vessel_id', 'fk_shipments_vessel')->references('id')->on('vessels')->onDelete('restrict');
+            $table->foreign('captain_id', 'fk_shipments_captain')->references('id')->on('captains')->onDelete('set null');
             // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
         });
     }
