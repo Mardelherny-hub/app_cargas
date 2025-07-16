@@ -119,7 +119,7 @@ class CreateClientRequest extends FormRequest
                 Rule::in(['shipper', 'consignee', 'notify_party', 'owner'])
             ],
 
-            'legal_name' => [
+            'business_name' => [
                 'required',
                 'string',
                 'max:255',
@@ -162,8 +162,8 @@ class CreateClientRequest extends FormRequest
             'tax_id.unique' => 'Ya existe un cliente con este CUIT/RUC en este país.',
             'country_id.required' => 'El país es obligatorio.',
             'client_type.required' => 'El tipo de cliente es obligatorio.',
-            'legal_name.required' => 'La razón social es obligatoria.',
-            'legal_name.min' => 'La razón social debe tener al menos 3 caracteres.'
+            'business_name.required' => 'La razón social es obligatoria.',
+            'business_name.min' => 'La razón social debe tener al menos 3 caracteres.'
         ];
     }
 

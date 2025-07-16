@@ -125,9 +125,9 @@ class ClientSuggestionService
         }
 
         // Check by similar legal name
-        if (!empty($clientData['legal_name'])) {
+        if (!empty($clientData['business_name'])) {
             $nameMatches = $this->findSimilarNameMatches(
-                $clientData['legal_name'],
+                $clientData['business_name'],
                 $clientData['country_id'] ?? null,
                 $excludeId
             );
@@ -199,7 +199,7 @@ class ClientSuggestionService
                 'client_id' => $client->id,
                 'tax_id' => $client->tax_id,
                 'formatted_tax_id' => $client->getFormattedTaxId(),
-                'legal_name' => $client->legal_name,
+                'business_name' => $client->business_name,
                 'country_name' => $client->country->name,
                 'country_code' => $client->country->iso_code,
                 'client_type' => $client->client_type,
@@ -281,8 +281,8 @@ class ClientSuggestionService
             }
 
             // Search by name if available
-            if (!empty($record['name']) || !empty($record['legal_name'])) {
-                $nameField = $record['name'] ?? $record['legal_name'];
+            if (!empty($record['name']) || !empty($record['business_name'])) {
+                $nameField = $record['name'] ?? $record['business_name'];
                 $nameSuggestions = $this->suggestFromName($nameField, $companyId);
                 $recordSuggestions = $recordSuggestions->merge($nameSuggestions);
             }
@@ -330,8 +330,8 @@ class ClientSuggestionService
         }
 
         // Legal name corrections
-        if (!empty($clientData['legal_name'])) {
-            $nameCorrections = $this->suggestNameCorrections($clientData['legal_name']);
+        if (!empty($clientData['business_name'])) {
+            $nameCorrections = $this->suggestNameCorrections($clientData['business_name']);
             $corrections = $corrections->merge($nameCorrections);
         }
 
@@ -379,7 +379,7 @@ class ClientSuggestionService
                 'client_id' => $client->id,
                 'tax_id' => $client->tax_id,
                 'formatted_tax_id' => $client->getFormattedTaxId(),
-                'legal_name' => $client->legal_name,
+                'business_name' => $client->business_name,
                 'country_name' => $client->country->name,
                 'country_code' => $client->country->iso_code,
                 'client_type' => $client->client_type,
@@ -396,7 +396,7 @@ class ClientSuggestionService
     private function searchByLegalName(string $query, ?int $companyId = null): Collection
     {
         $clients = Client::query()
-            ->where('legal_name', 'LIKE', '%' . $query . '%')
+            ->where('business_name', 'LIKE', '%' . $query . '%')
             ->where('status', 'active')
             ->with(['country', 'createdByCompany'])
             ->when($companyId, function ($q) use ($companyId) {
@@ -412,13 +412,13 @@ class ClientSuggestionService
                 'client_id' => $client->id,
                 'tax_id' => $client->tax_id,
                 'formatted_tax_id' => $client->getFormattedTaxId(),
-                'legal_name' => $client->legal_name,
+                'business_name' => $client->business_name,
                 'country_name' => $client->country->name,
                 'country_code' => $client->country->iso_code,
                 'client_type' => $client->client_type,
                 'suggestion_type' => 'name_match',
                 'match_text' => $query,
-                'confidence' => $this->calculateNameMatchConfidence($query, $client->legal_name),
+                'confidence' => $this->calculateNameMatchConfidence($query, $client->business_name),
             ];
         });
     }
@@ -448,7 +448,7 @@ class ClientSuggestionService
                     'client_id' => $client->id,
                     'tax_id' => $client->tax_id,
                     'formatted_tax_id' => $client->getFormattedTaxId(),
-                    'legal_name' => $client->legal_name,
+                    'business_name' => $client->business_name,
                     'country_name' => $client->country->name,
                     'country_code' => $client->country->iso_code,
                     'client_type' => $client->client_type,
@@ -483,7 +483,7 @@ class ClientSuggestionService
             return [
                 'client_id' => $client->id,
                 'tax_id' => $client->tax_id,
-                'legal_name' => $client->legal_name,
+                'business_name' => $client->business_name,
                 'country_name' => $client->country->name,
                 'duplicate_type' => 'exact_tax_id',
                 'confidence' => 1.0,
@@ -522,14 +522,14 @@ class ClientSuggestionService
         $clients = $query->get();
 
         foreach ($clients as $client) {
-            $normalizedClientName = $this->normalizeName($client->legal_name);
+            $normalizedClientName = $this->normalizeName($client->business_name);
             $similarity = $this->calculateNameSimilarity($normalizedName, $normalizedClientName);
 
             if ($similarity >= self::SIMILARITY_THRESHOLD) {
                 $suggestions->push([
                     'client_id' => $client->id,
                     'tax_id' => $client->tax_id,
-                    'legal_name' => $client->legal_name,
+                    'business_name' => $client->business_name,
                     'country_name' => $client->country->name,
                     'duplicate_type' => 'similar_name',
                     'confidence' => $similarity,
@@ -563,7 +563,7 @@ class ClientSuggestionService
                 $suggestions->push([
                     'client_id' => $client->id,
                     'tax_id' => $client->tax_id,
-                    'legal_name' => $client->legal_name,
+                    'business_name' => $client->business_name,
                     'country_name' => $client->country->name,
                     'duplicate_type' => 'normalized_tax_id',
                     'confidence' => 0.9,
@@ -584,7 +584,7 @@ class ClientSuggestionService
     private function findExactNameMatches(string $name, ?int $companyId = null): Collection
     {
         $clients = Client::query()
-            ->where('legal_name', $name)
+            ->where('business_name', $name)
             ->where('status', 'active')
             ->when($companyId, function ($q) use ($companyId) {
                 $q->whereHas('companyRelations', function ($subQ) use ($companyId) {
@@ -598,7 +598,7 @@ class ClientSuggestionService
             return [
                 'client_id' => $client->id,
                 'tax_id' => $client->tax_id,
-                'legal_name' => $client->legal_name,
+                'business_name' => $client->business_name,
                 'country_name' => $client->country->name,
                 'suggestion_type' => 'exact_name',
                 'confidence' => 1.0,
@@ -625,14 +625,14 @@ class ClientSuggestionService
             ->get();
 
         foreach ($clients as $client) {
-            $normalizedClientName = $this->normalizeName($client->legal_name);
+            $normalizedClientName = $this->normalizeName($client->business_name);
             $similarity = $this->calculateNameSimilarity($normalizedName, $normalizedClientName);
 
             if ($similarity >= self::SIMILARITY_THRESHOLD) {
                 $suggestions->push([
                     'client_id' => $client->id,
                     'tax_id' => $client->tax_id,
-                    'legal_name' => $client->legal_name,
+                    'business_name' => $client->business_name,
                     'country_name' => $client->country->name,
                     'suggestion_type' => 'fuzzy_name',
                     'confidence' => $similarity,
@@ -668,7 +668,7 @@ class ClientSuggestionService
             if (stripos($name, $abbr) !== false) {
                 $corrected = str_ireplace($abbr, $full, $name);
                 $corrections->push([
-                    'field' => 'legal_name',
+                    'field' => 'business_name',
                     'original' => $name,
                     'suggestion' => $corrected,
                     'type' => 'name_expansion',
@@ -682,7 +682,7 @@ class ClientSuggestionService
         if ($name === strtoupper($name)) {
             $titleCase = ucwords(strtolower($name));
             $corrections->push([
-                'field' => 'legal_name',
+                'field' => 'business_name',
                 'original' => $name,
                 'suggestion' => $titleCase,
                 'type' => 'case_correction',

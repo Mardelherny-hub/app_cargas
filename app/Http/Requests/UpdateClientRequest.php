@@ -126,7 +126,7 @@ class UpdateClientRequest extends FormRequest
                 Rule::in(['shipper', 'consignee', 'notify_party', 'owner'])
             ],
 
-            'legal_name' => [
+            'business_name' => [
                 'sometimes',
                 'required',
                 'string',
@@ -177,9 +177,9 @@ class UpdateClientRequest extends FormRequest
             'country_id.exists' => 'El país seleccionado no es válido.',
             'client_type.required' => 'El tipo de cliente es obligatorio.',
             'client_type.in' => 'El tipo de cliente seleccionado no es válido.',
-            'legal_name.required' => 'La razón social es obligatoria.',
-            'legal_name.min' => 'La razón social debe tener al menos 3 caracteres.',
-            'legal_name.max' => 'La razón social no puede tener más de 255 caracteres.',
+            'business_name.required' => 'La razón social es obligatoria.',
+            'business_name.min' => 'La razón social debe tener al menos 3 caracteres.',
+            'business_name.max' => 'La razón social no puede tener más de 255 caracteres.',
             'primary_port_id.exists' => 'El puerto seleccionado no es válido.',
             'customs_offices_id.exists' => 'La aduana seleccionada no es válida.',
             'notes.max' => 'Las observaciones no pueden tener más de 1000 caracteres.',
@@ -197,7 +197,7 @@ class UpdateClientRequest extends FormRequest
             'country_id' => 'país',
             'document_type_id' => 'tipo de documento',
             'client_type' => 'tipo de cliente',
-            'legal_name' => 'razón social',
+            'business_name' => 'razón social',
             'primary_port_id' => 'puerto principal',
             'customs_offices_id' => 'aduana',
             'notes' => 'observaciones',

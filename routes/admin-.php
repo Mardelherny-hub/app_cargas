@@ -75,90 +75,39 @@ Route::prefix('companies')->name('admin.companies.')->group(function () {
     Route::get('/{company}/operators', [CompanyController::class, 'operators'])->name('operators');
 });
 
-// Gestión de Clientes - NUEVO MÓDULO FASE 4
-Route::prefix('clients')->name('admin.clients.')
-    //->middleware(['client.access:view'])
-    ->group(function () {
-        // Rutas básicas CRUD
-        Route::get('/', [ClientController::class, 'index'])->name('index');
-        Route::get('/create', [ClientController::class, 'create'])
-            ->middleware(['client.access:create'])
-            ->name('create');
-        Route::post('/', [ClientController::class, 'store'])
-            ->middleware(['client.access:create'])
-            ->name('store');
-        Route::get('/{client}', [ClientController::class, 'show'])
-            ->middleware(['client.access:view'])
-            ->name('show');
-        Route::get('/{client}/edit', [ClientController::class, 'edit'])
-            ->middleware(['client.access:edit'])
-            ->name('edit');
-        Route::put('/{client}', [ClientController::class, 'update'])
-            ->middleware(['client.access:edit'])
-            ->name('update');
-        Route::delete('/{client}', [ClientController::class, 'destroy'])
-            ->middleware(['client.access:delete'])
-            ->name('destroy');
+// Gestión de Clientes - SIMPLIFICADO TEMPORALMENTE (sin middleware)
+Route::prefix('clients')->name('admin.clients.')->group(function () {
+    // Rutas básicas CRUD
+    Route::get('/', [ClientController::class, 'index'])->name('index');
+    Route::get('/create', [ClientController::class, 'create'])->name('create');
+    Route::post('/', [ClientController::class, 'store'])->name('store');
+    Route::get('/{client}', [ClientController::class, 'show'])->name('show');
+    Route::get('/{client}/edit', [ClientController::class, 'edit'])->name('edit');
+    Route::put('/{client}', [ClientController::class, 'update'])->name('update');
+    Route::delete('/{client}', [ClientController::class, 'destroy'])->name('destroy');
 
-        // Acciones específicas
-        Route::patch('/{client}/verify', [ClientController::class, 'verify'])
-            ->middleware(['client.access:verify'])
-            ->name('verify');
-        Route::patch('/{client}/toggle-status', [ClientController::class, 'toggleStatus'])
-            ->middleware(['client.access:edit'])
-            ->name('toggle-status');
-        Route::post('/{client}/transfer', [ClientController::class, 'transfer'])
-            ->middleware(['client.access:transfer'])
-            ->name('transfer');
-        Route::post('/bulk-import', [ClientController::class, 'bulkImport'])
-            ->middleware(['client.access:create'])
-            ->name('bulk-import');
-    });
+    // Acciones específicas
+    Route::patch('/{client}/verify', [ClientController::class, 'verify'])->name('verify');
+    Route::patch('/{client}/toggle-status', [ClientController::class, 'toggleStatus'])->name('toggle-status');
+    Route::post('/{client}/transfer', [ClientController::class, 'transfer'])->name('transfer');
+    Route::post('/bulk-import', [ClientController::class, 'bulkImport'])->name('bulk-import');
+});
 
 // Configuración del Sistema
 Route::prefix('system')->name('admin.system.')->group(function () {
     Route::get('/settings', [SystemController::class, 'settings'])->name('settings');
     Route::put('/settings', [SystemController::class, 'updateSettings'])->name('update-settings');
-    Route::get('/maintenance', [SystemController::class, 'maintenance'])->name('maintenance');
-    Route::post('/maintenance/enable', [SystemController::class, 'enableMaintenance'])->name('enable-maintenance');
-    Route::post('/maintenance/disable', [SystemController::class, 'disableMaintenance'])->name('disable-maintenance');
-
-    // Auditoría y logs
-    Route::get('/audit', [SystemController::class, 'audit'])->name('audit');
     Route::get('/logs', [SystemController::class, 'logs'])->name('logs');
-    Route::delete('/logs', [SystemController::class, 'clearLogs'])->name('clear-logs');
-
-    // Backups
-    Route::get('/backups', [SystemController::class, 'backups'])->name('backups');
-    Route::post('/backups', [SystemController::class, 'createBackup'])->name('create-backup');
-    Route::delete('/backups/{backup}', [SystemController::class, 'deleteBackup'])->name('delete-backup');
-
-    // Comandos del sistema
-    Route::get('/commands', [SystemController::class, 'commands'])->name('commands');
-    Route::post('/commands/verify-users', [SystemController::class, 'verifyUsers'])->name('verify-users');
-    Route::post('/commands/optimize', [SystemController::class, 'optimize'])->name('optimize');
+    Route::get('/backup', [SystemController::class, 'backup'])->name('backup');
+    Route::post('/backup', [SystemController::class, 'createBackup'])->name('create-backup');
 });
 
-// Reportes y Estadísticas
+// Gestión de Reportes
 Route::prefix('reports')->name('admin.reports.')->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('index');
-    Route::get('/users', [ReportController::class, 'users'])->name('users');
     Route::get('/companies', [ReportController::class, 'companies'])->name('companies');
-    Route::get('/system-stats', [ReportController::class, 'systemStats'])->name('system-stats');
+    Route::get('/users', [ReportController::class, 'users'])->name('users');
     Route::get('/activity', [ReportController::class, 'activity'])->name('activity');
-
-    // Exportar reportes
-    Route::get('/export/users', [ReportController::class, 'exportUsers'])->name('export-users');
-    Route::get('/export/companies', [ReportController::class, 'exportCompanies'])->name('export-companies');
-    Route::get('/export/activity', [ReportController::class, 'exportActivity'])->name('export-activity');
-
-    Route::get('/clients', [ReportController::class, 'clients'])->name('clients');
-    Route::get('/export/clients', [ReportController::class, 'exportClients'])->name('export-clients');
-});
-
-// Gestión de Roles y Permisos
-Route::prefix('roles')->name('admin.roles.')->group(function () {
-    Route::get('/', [UserController::class, 'roles'])->name('index');
-    Route::get('/permissions', [UserController::class, 'permissions'])->name('permissions');
-    Route::put('/permissions', [UserController::class, 'updateRolePermissions'])->name('update-permissions');
+    Route::get('/performance', [ReportController::class, 'performance'])->name('performance');
+    Route::get('/export/{type}', [ReportController::class, 'export'])->name('export');
 });

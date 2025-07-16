@@ -78,7 +78,7 @@ class ClientFactory extends Factory
             'country_id' => $countryId,
             'document_type_id' => $documentType?->id ?? 1,
             'client_type' => $this->faker->randomElement(['shipper', 'consignee', 'notify_party', 'owner']),
-            'legal_name' => $this->faker->randomElement($companyNames),
+            'business_name' => $this->faker->randomElement($companyNames),
             'primary_port_id' => $port?->id,
             'customs_offices_id' => $customOffice?->id,
             'status' => $this->faker->randomElement(['active', 'active', 'active', 'inactive']), // 75% activos
@@ -105,7 +105,7 @@ class ClientFactory extends Factory
                 'document_type_id' => $documentType?->id ?? 1,
                 'primary_port_id' => $port?->id,
                 'customs_offices_id' => $customOffice?->id,
-                'legal_name' => $this->faker->randomElement([
+                'business_name' => $this->faker->randomElement([
                     'ALUAR SOCIEDAD ANONIMA',
                     'SIDERAR S.A.I.C.',
                     'TENARIS S.A.',
@@ -136,7 +136,7 @@ class ClientFactory extends Factory
                 'document_type_id' => $documentType?->id ?? 2,
                 'primary_port_id' => $port?->id,
                 'customs_offices_id' => $customOffice?->id,
-                'legal_name' => $this->faker->randomElement([
+                'business_name' => $this->faker->randomElement([
                     'PETROPAR S.A.',
                     'COPACO S.A.',
                     'INC S.A.',

@@ -63,7 +63,7 @@ class ClientController extends Controller
             $search = $request->get('search');
             $query->where(function ($q) use ($search) {
                 $q->where('tax_id', 'like', "%{$search}%")
-                  ->orWhere('legal_name', 'like', "%{$search}%");
+                  ->orWhere('business_name', 'like', "%{$search}%");
             });
         }
 
@@ -103,7 +103,7 @@ class ClientController extends Controller
         // Datos auxiliares para filtros
         $countries = Country::where('active', true)->orderBy('name')->get();
         $companies = $user->hasRole('super-admin')
-            ? Company::where('active', true)->orderBy('legal_name')->get()
+            ? Company::where('active', true)->orderBy('business_name')->get()
             : collect([$this->getUserCompany()])->filter();
 
         // Estadísticas rápidas
@@ -124,7 +124,7 @@ class ClientController extends Controller
         // Datos para formulario
         $countries = Country::where('active', true)->orderBy('name')->get();
         $companies = $user->hasRole('super-admin')
-            ? Company::where('active', true)->orderBy('legal_name')->get()
+            ? Company::where('active', true)->orderBy('business_name')->get()
             : collect([$this->getUserCompany()])->filter();
 
         return view('admin.clients.create', compact('countries', 'companies'));
@@ -167,7 +167,7 @@ class ClientController extends Controller
             // Log de actividad
             $user->logClientActivity($client, 'created', [
                 'tax_id' => $client->tax_id,
-                'legal_name' => $client->legal_name
+                'business_name' => $client->business_name
             ]);
 
             DB::commit();
@@ -246,7 +246,7 @@ class ClientController extends Controller
         $customsOffices = CustomOffice::where('active', true)->orderBy('name')->get();
 
         $companies = $user->hasRole('super-admin')
-            ? Company::where('active', true)->orderBy('legal_name')->get()
+            ? Company::where('active', true)->orderBy('business_name')->get()
             : collect([$this->getUserCompany()])->filter();
 
         return view('admin.clients.edit', compact(
@@ -330,7 +330,7 @@ class ClientController extends Controller
             // Log de actividad
             $user->logClientActivity($client, 'deleted', [
                 'tax_id' => $client->tax_id,
-                'legal_name' => $client->legal_name
+                'business_name' => $client->business_name
             ]);
 
             DB::commit();

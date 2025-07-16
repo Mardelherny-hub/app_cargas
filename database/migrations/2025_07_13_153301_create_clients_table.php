@@ -42,7 +42,7 @@ return new class extends Migration
             ->comment('Rol principal del cliente en operaciones');
 
             // Datos oficiales del cliente
-            $table->string('legal_name', 255)
+            $table->string('business_name', 255)
                 ->comment('Razón social oficial registrada');
 
             // Referencias opcionales a catálogos operativos
@@ -108,7 +108,7 @@ return new class extends Migration
             $table->index(['status', 'verified_at', 'country_id'], 'idx_webservice_ready');
 
             // Índice para búsquedas por nombre (útil para autocompletado)
-            $table->index('legal_name', 'idx_legal_name_search');
+            $table->index('business_name', 'idx_business_name_search');
         });
     }
 

@@ -576,12 +576,12 @@ public function searchClients(string $search, int $limit = 10)
 {
     return $this->getAccessibleClients()
         ->where(function ($query) use ($search) {
-            $query->where('legal_name', 'like', "%{$search}%")
+            $query->where('business_name', 'like', "%{$search}%")
                   ->orWhere('tax_id', 'like', "%{$search}%");
         })
         ->where('status', 'active')
         ->limit($limit)
-        ->get(['id', 'tax_id', 'legal_name', 'client_type']);
+        ->get(['id', 'tax_id', 'business_name', 'client_type']);
 }
 
 // =====================================================

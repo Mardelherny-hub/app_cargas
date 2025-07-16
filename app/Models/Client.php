@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property int $country_id País del cliente
  * @property int $document_type_id Tipo de documento
  * @property string $client_type Rol del cliente (shipper, consignee, etc.)
- * @property string $legal_name Razón social oficial
+ * @property string $business_name Razón social oficial
  * @property int|null $primary_port_id Puerto principal
  * @property int|null $customs_offices_id Aduana habitual
  * @property string $status Estado (active, inactive, suspended)
@@ -47,7 +47,7 @@ class Client extends Model
         'country_id',
         'document_type_id',
         'client_type',
-        'legal_name',
+        'business_name',
         'primary_port_id',
         'customs_offices_id',
         'status',
@@ -231,7 +231,7 @@ class Client extends Model
      */
     public function scopeByName(Builder $query, string $name): Builder
     {
-        return $query->where('legal_name', 'LIKE', "%{$name}%");
+        return $query->where('business_name', 'LIKE', "%{$name}%");
     }
 
     /**

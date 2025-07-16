@@ -22,7 +22,7 @@ class ClientAccess
      * Handle an incoming request.
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     * @param  string  $permission  Tipo de acceso requerido: 'view', 'edit', 'use'
+     * @param  string  $permission  Tipo de acceso requerido: 'view', 'edit', 'create', 'delete', 'verify', 'transfer'
      */
     public function handle(Request $request, Closure $next, string $permission = 'view'): Response
     {
@@ -72,6 +72,10 @@ class ClientAccess
 
             case 'edit':
                 return $user->canEditClient($client);
+
+            case 'create':
+                // Pueden crear clientes los company-admin y super-admin
+                return $user->hasRole(['super-admin', 'company-admin']);
 
             case 'delete':
                 // Solo super admin o company admin que creó el cliente puede eliminar
@@ -182,6 +186,9 @@ class ClientAccess
             case 'edit':
                 return 'No tiene permisos para editar este cliente.';
 
+            case 'create':
+                return 'No tiene permisos para crear clientes.';
+
             case 'delete':
                 return 'No tiene permisos para eliminar este cliente.';
 
@@ -193,73 +200,6 @@ class ClientAccess
 
             default:
                 return 'No tiene permisos para realizar esta acción sobre el cliente.';
-        }
-    }
-
-    /**
-     * Verificar si el usuario tiene permisos específicos para operaciones de clientes.
-     */
-    public static function checkClientPermission($user, string $action, Client $client = null): bool
-    {
-        if (!$user) {
-            return false;
-        }
-
-        // Super admin puede hacer todo
-        if ($user->hasRole('super-admin')) {
-            return true;
-        }
-
-        // Verificar acceso general a clientes
-        if (!$user->hasRole(['company-admin', 'user'])) {
-            return false;
-        }
-
-        // Si no hay cliente específico, verificar permisos generales
-        if (!$client) {
-            switch ($action) {
-                case 'view_any':
-                    return $user->getUserCompany() !== null;
-
-                case 'create':
-                    return $user->hasRole(['company-admin']); // Solo company-admin puede crear
-
-                case 'bulk_import':
-                    return $user->hasRole(['company-admin']); // Solo company-admin puede importar
-
-                default:
-                    return false;
-            }
-        }
-
-        // Para cliente específico, usar métodos del usuario
-        switch ($action) {
-            case 'view':
-            case 'use':
-                return $user->canUseClient($client);
-
-            case 'edit':
-            case 'update':
-                return $user->canEditClient($client);
-
-            case 'delete':
-                if ($user->hasRole('super-admin')) {
-                    return true;
-                }
-                if ($user->hasRole('company-admin')) {
-                    $userCompany = $user->getUserCompany();
-                    return $userCompany && $client->created_by_company_id === $userCompany->id;
-                }
-                return false;
-
-            case 'verify':
-                return $user->canEditClient($client);
-
-            case 'transfer':
-                return $user->hasRole('super-admin');
-
-            default:
-                return false;
         }
     }
 }
