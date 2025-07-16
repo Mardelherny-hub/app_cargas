@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\ClientContactData;
+
 
 /**
  * FASE 1 - MÓDULO EMPRESAS Y CLIENTES
@@ -64,6 +67,11 @@ class Client extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+ 
+    protected $with = [
+            'primaryContact',  
+        ];
+
 
     /**
      * Tipos de cliente disponibles.
@@ -83,6 +91,30 @@ class Client extends Model
         'inactive' => 'Inactivo',
         'suspended' => 'Suspendido',
     ];
+
+    /**
+     * Relación con datos de contacto.
+     */
+    public function contactData(): HasMany
+    {
+        return $this->hasMany(ClientContactData::class)->orderBy('is_primary', 'desc');
+    }
+
+    /**
+     * Contacto principal del cliente.
+     */
+    public function primaryContact(): HasOne
+    {
+        return $this->hasOne(ClientContactData::class)->where('is_primary', true);
+    }
+
+    /**
+     * Contactos activos.
+     */
+    public function activeContacts(): HasMany
+    {
+        return $this->hasMany(ClientContactData::class)->where('active', true);
+    }
 
     // =====================================================
     // RELACIONES CON CATÁLOGOS (FASE 0)
@@ -256,6 +288,30 @@ class Client extends Model
     public function scopeByPort(Builder $query, int $portId): Builder
     {
         return $query->where('primary_port_id', $portId);
+    }
+
+    /**
+     * Email principal del cliente.
+     */
+    public function getPrimaryEmailAttribute(): ?string
+    {
+        return $this->primaryContact?->email;
+    }
+
+    /**
+     * Teléfono principal del cliente.
+     */
+    public function getPrimaryPhoneAttribute(): ?string
+    {
+        return $this->primaryContact?->phone ?: $this->primaryContact?->mobile_phone;
+    }
+
+    /**
+     * Dirección principal del cliente.
+     */
+    public function getPrimaryAddressAttribute(): ?string
+    {
+        return $this->primaryContact?->full_address;
     }
 
     // =====================================================
@@ -470,5 +526,55 @@ class Client extends Model
         static::saving(function (Client $client) {
             $client->tax_id = preg_replace('/[^0-9]/', '', $client->tax_id);
         });
+    }
+
+    /**
+     * Verificar si el cliente tiene información de contacto completa.
+     */
+    public function hasCompleteContactInfo(): bool
+    {
+        $primary = $this->primaryContact;
+        return $primary && $primary->isComplete();
+    }
+
+    /**
+     * Obtener métodos de notificación del cliente.
+     */
+    public function getNotificationMethods(): array
+    {
+        return $this->primaryContact?->notification_methods ?: [];
+    }
+
+    /**
+     * Crear contacto principal para el cliente.
+     */
+    public function createPrimaryContact(array $data): ClientContactData
+    {
+        $data['is_primary'] = true;
+        $data['active'] = true;
+        
+        return $this->contactData()->create($data);
+    }
+
+    /**
+     * Verificar si puede recibir notificaciones por email.
+     */
+    public function canReceiveEmailNotifications(): bool
+    {
+        $primary = $this->primaryContact;
+        return $primary && 
+            $primary->accepts_email_notifications && 
+            !empty($primary->email);
+    }
+
+    /**
+     * Verificar si puede recibir notificaciones por SMS.
+     */
+    public function canReceiveSmsNotifications(): bool
+    {
+        $primary = $this->primaryContact;
+        return $primary && 
+            $primary->accepts_sms_notifications && 
+            !empty($primary->mobile_phone);
     }
 }
