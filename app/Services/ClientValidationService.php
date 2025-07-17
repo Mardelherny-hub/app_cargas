@@ -52,7 +52,7 @@ class ClientValidationService
         $errors = [];
 
         // Validate required fields
-        $requiredFields = ['tax_id', 'country_id', 'business_name'];
+        $requiredFields = ['tax_id', 'country_id', 'legal_name'];
         foreach ($requiredFields as $field) {
             if (empty($data[$field])) {
                 $errors[$field] = "El campo {$field} es obligatorio";

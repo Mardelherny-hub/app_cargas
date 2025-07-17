@@ -70,105 +70,105 @@ class ClientsSeeder extends Seeder
         // Major Argentine shipping/cargo companies
         $argentineClients = [
             [
-                'business_name' => 'ALUAR ALUMINIO ARGENTINO S.A.I.C.',
+                'legal_name' => 'ALUAR ALUMINIO ARGENTINO S.A.I.C.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subMonths(6),
                 'notes' => 'Principal exportador de aluminio de Argentina'
             ],
             [
-                'business_name' => 'SIDERAR S.A.I.C.',
+                'legal_name' => 'SIDERAR S.A.I.C.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subMonths(3),
                 'notes' => 'Siderúrgica - exportación de acero'
             ],
             [
-                'business_name' => 'TENARIS S.A.',
+                'legal_name' => 'TENARIS S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subMonth(),
                 'notes' => 'Tubos de acero sin costura para petróleo'
             ],
             [
-                'business_name' => 'MOLINOS RIO DE LA PLATA S.A.',
+                'legal_name' => 'MOLINOS RIO DE LA PLATA S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subWeeks(2),
                 'notes' => 'Productos alimentarios y oleaginosas'
             ],
             [
-                'business_name' => 'BUNGE ARGENTINA S.A.',
+                'legal_name' => 'BUNGE ARGENTINA S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subWeek(),
                 'notes' => 'Aceites vegetales y commodities'
             ],
             [
-                'business_name' => 'CARGILL S.A.C.I.',
+                'legal_name' => 'CARGILL S.A.C.I.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subDays(3),
                 'notes' => 'Trading de granos y oleaginosas'
             ],
             [
-                'business_name' => 'DREYFUS ARGENTINA S.A.',
+                'legal_name' => 'DREYFUS ARGENTINA S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subDays(5),
                 'notes' => 'Commodities agrícolas'
             ],
             [
-                'business_name' => 'ARCELOR MITTAL ACINDAR S.A.',
+                'legal_name' => 'ARCELOR MITTAL ACINDAR S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subDays(10),
                 'notes' => 'Productos siderúrgicos'
             ],
             [
-                'business_name' => 'TERMINAL 6 S.A.',
+                'legal_name' => 'TERMINAL 6 S.A.',
                 'client_type' => 'consignee',
                 'status' => 'active',
                 'verified_at' => now()->subDays(15),
                 'notes' => 'Terminal portuaria Buenos Aires'
             ],
             [
-                'business_name' => 'EXOLGAN S.A.',
+                'legal_name' => 'EXOLGAN S.A.',
                 'client_type' => 'consignee',
                 'status' => 'active',
                 'verified_at' => now()->subDays(20),
                 'notes' => 'Terminal de contenedores'
             ],
             [
-                'business_name' => 'SERVICIOS PORTUARIOS S.A.',
+                'legal_name' => 'SERVICIOS PORTUARIOS S.A.',
                 'client_type' => 'notify_party',
                 'status' => 'active',
                 'verified_at' => now()->subMonth(),
                 'notes' => 'Servicios de handling portuario'
             ],
             [
-                'business_name' => 'LOGISTICA INTEGRAL S.R.L.',
+                'legal_name' => 'LOGISTICA INTEGRAL S.R.L.',
                 'client_type' => 'owner',
                 'status' => 'active',
                 'verified_at' => now()->subDays(7),
                 'notes' => 'Servicios logísticos integrales'
             ],
             [
-                'business_name' => 'TRANSPORTES FLUVIALES DEL PLATA S.A.',
+                'legal_name' => 'TRANSPORTES FLUVIALES DEL PLATA S.A.',
                 'client_type' => 'owner',
                 'status' => 'active',
                 'verified_at' => now()->subDays(12),
                 'notes' => 'Transporte fluvial de cargas'
             ],
             [
-                'business_name' => 'MULTIMODAL S.A.',
+                'legal_name' => 'MULTIMODAL S.A.',
                 'client_type' => 'consignee',
                 'status' => 'suspended',
                 'verified_at' => null,
                 'notes' => 'Suspendido por verificación de documentación'
             ],
             [
-                'business_name' => 'DEPOSITOS FISCALES S.A.',
+                'legal_name' => 'DEPOSITOS FISCALES S.A.',
                 'client_type' => 'notify_party',
                 'status' => 'inactive',
                 'verified_at' => now()->subYear(),
@@ -184,7 +184,7 @@ class ClientsSeeder extends Seeder
                     'created_by_company_id' => $companies->random()->id
                 ]);
 
-            $this->command->line("  ✓ {$client->business_name} ({$client->tax_id})");
+            $this->command->line("  ✓ {$client->legal_name} ({$client->tax_id})");
         }
     }
 
@@ -198,105 +198,105 @@ class ClientsSeeder extends Seeder
         // Major Paraguayan shipping/cargo companies
         $paraguayanClients = [
             [
-                'business_name' => 'PETROPAR S.A.',
+                'legal_name' => 'PETROPAR S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subMonths(4),
                 'notes' => 'Petróleos del Paraguay - combustibles'
             ],
             [
-                'business_name' => 'COPACO S.A.',
+                'legal_name' => 'COPACO S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subMonths(2),
                 'notes' => 'Compañía Paraguaya de Comunicaciones'
             ],
             [
-                'business_name' => 'INC S.A.',
+                'legal_name' => 'INC S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subMonth(),
                 'notes' => 'Industrias Nucleares del Paraguay'
             ],
             [
-                'business_name' => 'ACEPAR S.A.',
+                'legal_name' => 'ACEPAR S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subWeeks(3),
                 'notes' => 'Aceros del Paraguay'
             ],
             [
-                'business_name' => 'CAPIATÁ S.A.',
+                'legal_name' => 'CAPIATÁ S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subWeek(),
                 'notes' => 'Productos textiles'
             ],
             [
-                'business_name' => 'FRIGOMERC S.A.',
+                'legal_name' => 'FRIGOMERC S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subDays(4),
                 'notes' => 'Frigorífico y productos cárnicos'
             ],
             [
-                'business_name' => 'CONTI PARAGUAY S.A.',
+                'legal_name' => 'CONTI PARAGUAY S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subDays(8),
                 'notes' => 'Grupo Continental - oleaginosas'
             ],
             [
-                'business_name' => 'MINERVA FOODS PARAGUAY S.A.',
+                'legal_name' => 'MINERVA FOODS PARAGUAY S.A.',
                 'client_type' => 'shipper',
                 'status' => 'active',
                 'verified_at' => now()->subDays(12),
                 'notes' => 'Frigorífico exportador de carne'
             ],
             [
-                'business_name' => 'TERMINAL PORTUARIA ASUNCION S.A.',
+                'legal_name' => 'TERMINAL PORTUARIA ASUNCION S.A.',
                 'client_type' => 'consignee',
                 'status' => 'active',
                 'verified_at' => now()->subDays(16),
                 'notes' => 'Terminal de contenedores Asunción'
             ],
             [
-                'business_name' => 'PUERTO LIBRE CDE S.A.',
+                'legal_name' => 'PUERTO LIBRE CDE S.A.',
                 'client_type' => 'consignee',
                 'status' => 'active',
                 'verified_at' => now()->subDays(20),
                 'notes' => 'Puerto libre Ciudad del Este'
             ],
             [
-                'business_name' => 'NAVEGACION PARAGUAYA S.A.',
+                'legal_name' => 'NAVEGACION PARAGUAYA S.A.',
                 'client_type' => 'owner',
                 'status' => 'active',
                 'verified_at' => now()->subDays(25),
                 'notes' => 'Armador nacional paraguayo'
             ],
             [
-                'business_name' => 'SERVICIOS LOGISTICOS DEL ESTE S.R.L.',
+                'legal_name' => 'SERVICIOS LOGISTICOS DEL ESTE S.R.L.',
                 'client_type' => 'notify_party',
                 'status' => 'active',
                 'verified_at' => now()->subDays(6),
                 'notes' => 'Servicios de logística y almacenaje'
             ],
             [
-                'business_name' => 'TRANSPORTES MULTIMODALES PY S.A.',
+                'legal_name' => 'TRANSPORTES MULTIMODALES PY S.A.',
                 'client_type' => 'owner',
                 'status' => 'active',
                 'verified_at' => now()->subDays(18),
                 'notes' => 'Transporte terrestre y fluvial'
             ],
             [
-                'business_name' => 'ZONA FRANCA GLOBAL S.A.',
+                'legal_name' => 'ZONA FRANCA GLOBAL S.A.',
                 'client_type' => 'consignee',
                 'status' => 'suspended',
                 'verified_at' => null,
                 'notes' => 'Suspendido por renovación de permisos'
             ],
             [
-                'business_name' => 'COMERCIAL DEL PARANA S.A.',
+                'legal_name' => 'COMERCIAL DEL PARANA S.A.',
                 'client_type' => 'notify_party',
                 'status' => 'inactive',
                 'verified_at' => now()->subMonths(8),
@@ -312,7 +312,7 @@ class ClientsSeeder extends Seeder
                     'created_by_company_id' => $companies->random()->id
                 ]);
 
-            $this->command->line("  ✓ {$client->business_name} ({$client->tax_id})");
+            $this->command->line("  ✓ {$client->legal_name} ({$client->tax_id})");
         }
     }
 
@@ -329,12 +329,12 @@ class ClientsSeeder extends Seeder
             ->shipper()
             ->verified()
             ->create([
-                'business_name' => 'ALUAR S.A.',
+                'legal_name' => 'ALUAR S.A.',
                 'notes' => 'Cliente de prueba para datos variables de documentos',
                 'created_by_company_id' => $companies->first()->id
             ]);
 
-        $this->command->line("  ✓ Test case: {$aluar->business_name} (document data variations)");
+        $this->command->line("  ✓ Test case: {$aluar->legal_name} (document data variations)");
 
         // Test case 2: Recently created, unverified client
         $newClient = Client::factory()
@@ -342,13 +342,13 @@ class ClientsSeeder extends Seeder
             ->consignee()
             ->unverified()
             ->create([
-                'business_name' => 'NUEVA EMPRESA TEST S.A.',
+                'legal_name' => 'NUEVA EMPRESA TEST S.A.',
                 'status' => 'active',
                 'notes' => 'Cliente recién creado sin verificar',
                 'created_by_company_id' => $companies->last()->id
             ]);
 
-        $this->command->line("  ✓ Test case: {$newClient->business_name} (unverified)");
+        $this->command->line("  ✓ Test case: {$newClient->legal_name} (unverified)");
 
         // Test case 3: Client with multiple roles (via relations)
         $multiRole = Client::factory()
@@ -356,24 +356,24 @@ class ClientsSeeder extends Seeder
             ->owner()
             ->verified()
             ->create([
-                'business_name' => 'MULTIROL TRANSPORT S.A.',
+                'legal_name' => 'MULTIROL TRANSPORT S.A.',
                 'notes' => 'Cliente con múltiples roles en diferentes empresas',
                 'created_by_company_id' => $companies->random()->id
             ]);
 
-        $this->command->line("  ✓ Test case: {$multiRole->business_name} (multi-role)");
+        $this->command->line("  ✓ Test case: {$multiRole->legal_name} (multi-role)");
 
         // Test case 4: Suspended client with reason
         $suspended = Client::factory()
             ->argentina()
             ->suspended()
             ->create([
-                'business_name' => 'EMPRESA SUSPENDIDA S.R.L.',
+                'legal_name' => 'EMPRESA SUSPENDIDA S.R.L.',
                 'notes' => 'Suspendido por documentación vencida - caso de prueba',
                 'created_by_company_id' => $companies->random()->id
             ]);
 
-        $this->command->line("  ✓ Test case: {$suspended->business_name} (suspended)");
+        $this->command->line("  ✓ Test case: {$suspended->legal_name} (suspended)");
 
         // Test case 5: Client ready for webservices
         $webserviceReady = Client::factory()
@@ -382,12 +382,12 @@ class ClientsSeeder extends Seeder
             ->verified()
             ->active()
             ->create([
-                'business_name' => 'WEBSERVICE READY S.A.',
+                'legal_name' => 'WEBSERVICE READY S.A.',
                 'notes' => 'Cliente completamente configurado para webservices',
                 'created_by_company_id' => $companies->random()->id
             ]);
 
-        $this->command->line("  ✓ Test case: {$webserviceReady->business_name} (webservice ready)");
+        $this->command->line("  ✓ Test case: {$webserviceReady->legal_name} (webservice ready)");
     }
 
     /**

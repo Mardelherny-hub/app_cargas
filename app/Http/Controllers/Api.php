@@ -72,7 +72,7 @@ class ClientController extends Controller
                 'customOffice:id,name,code',
                 'companyRelations' => function ($q) {
                     $q->where('active', true)
-                      ->with('company:id,business_name,cuit')
+                      ->with('company:id,legal_name,cuit')
                       ->select('id', 'client_id', 'company_id', 'relation_type', 'can_edit');
                 }
             ])
@@ -468,7 +468,7 @@ class ClientController extends Controller
             $clients = $user->getAccessibleClients()
                 ->where(function ($q) use ($query) {
                     $q->where('tax_id', 'like', "%{$query}%")
-                      ->orWhere('business_name', 'like', "%{$query}%");
+                      ->orWhere('legal_name', 'like', "%{$query}%");
                 })
                 ->where('status', 'active')
                 ->with(['country:id,name,alpha2_code', 'documentType:id,name'])
@@ -505,7 +505,7 @@ class ClientController extends Controller
         try {
             $request->validate([
                 'q' => 'required|string|min:2|max:20',
-                'type' => 'in:tax_id,business_name,both'
+                'type' => 'in:tax_id,legal_name,both'
             ]);
 
             $user = Auth::user();
@@ -516,7 +516,7 @@ class ClientController extends Controller
             $suggestions = $user->searchClients($query, 10);
 
             // Si es específicamente por nombre, usar el servicio que existe
-            if ($type === 'business_name') {
+            if ($type === 'legal_name') {
                 $companyId = $user->hasRole('super-admin') ? null : $this->getUserCompanyId();
                 $nameMatches = $this->suggestionService->suggestFromName($query, $companyId);
 
@@ -525,7 +525,7 @@ class ClientController extends Controller
                     return [
                         'id' => $match['client_id'],
                         'tax_id' => $match['tax_id'],
-                        'business_name' => $match['business_name'],
+                        'legal_name' => $match['legal_name'],
                         'client_type' => $match['client_type'] ?? null
                     ];
                 });
@@ -586,13 +586,13 @@ class ClientController extends Controller
 
                 'companies' => $user->hasRole('super-admin')
                     ? Company::where('active', true)
-                        ->select('id', 'business_name', 'cuit')
-                        ->orderBy('business_name')
+                        ->select('id', 'legal_name', 'cuit')
+                        ->orderBy('legal_name')
                         ->get()
                     : collect([$this->getUserCompany()])->filter()->map(function ($company) {
                         return [
                             'id' => $company->id,
-                            'business_name' => $company->business_name,
+                            'legal_name' => $company->legal_name,
                             'cuit' => $company->cuit
                         ];
                     }),
@@ -682,7 +682,7 @@ class ClientController extends Controller
             $search = $request->get('search');
             $query->where(function ($q) use ($search) {
                 $q->where('tax_id', 'like', "%{$search}%")
-                  ->orWhere('business_name', 'like', "%{$search}%");
+                  ->orWhere('legal_name', 'like', "%{$search}%");
             });
         }
 
@@ -730,13 +730,13 @@ class ClientController extends Controller
 
             'companies' => $user->hasRole('super-admin')
                 ? Company::where('active', true)
-                    ->select('id', 'business_name')
-                    ->orderBy('business_name')
+                    ->select('id', 'legal_name')
+                    ->orderBy('legal_name')
                     ->get()
                 : collect([$this->getUserCompany()])->filter()->map(function ($company) {
                     return [
                         'id' => $company->id,
-                        'business_name' => $company->business_name
+                        'legal_name' => $company->legal_name
                     ];
                 })
         ];

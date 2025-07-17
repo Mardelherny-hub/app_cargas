@@ -43,7 +43,7 @@ class SettingsController extends Controller
         // Configuraciones actuales
         $currentSettings = [
             'general' => [
-                'business_name' => $company->business_name,
+                'legal_name' => $company->legal_name,
                 'commercial_name' => $company->commercial_name,
                 'tax_id' => $company->tax_id,
                 'country' => $company->country,
@@ -89,7 +89,7 @@ class SettingsController extends Controller
         }
 
         $request->validate([
-            'business_name' => 'required|string|max:255',
+            'legal_name' => 'required|string|max:255',
             'commercial_name' => 'nullable|string|max:255',
             'email' => [
                 'required',
@@ -105,7 +105,7 @@ class SettingsController extends Controller
 
         try {
             $company->update([
-                'business_name' => $request->business_name,
+                'legal_name' => $request->legal_name,
                 'commercial_name' => $request->commercial_name,
                 'email' => $request->email,
                 'phone' => $request->phone,
@@ -434,7 +434,7 @@ class SettingsController extends Controller
         try {
             $configuration = [
                 'company_info' => [
-                    'business_name' => $company->business_name,
+                    'legal_name' => $company->legal_name,
                     'commercial_name' => $company->commercial_name,
                     'tax_id' => $company->tax_id,
                     'country' => $company->country,

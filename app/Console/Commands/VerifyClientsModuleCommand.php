@@ -97,7 +97,7 @@ class VerifyClientsModuleCommand extends Command
             'clients' => [
                 'required_columns' => [
                     'id', 'tax_id', 'country_id', 'document_type_id',
-                    'client_type', 'business_name', 'status', 'created_by_company_id'
+                    'client_type', 'legal_name', 'status', 'created_by_company_id'
                 ]
             ],
             'client_company_relations' => [

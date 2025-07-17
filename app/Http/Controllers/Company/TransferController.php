@@ -182,7 +182,7 @@ class TransferController extends Controller
                         'idContenedores' => array_map(function($container) {
                             return $container['id'];
                         }, $emptyContainers),
-                        'remitente' => $company->business_name,
+                        'remitente' => $company->legal_name,
                         'consignatario' => $request->consignatario ?? 'TBD',
                         'destinatario' => $request->destinatario ?? 'TBD',
                         'origen' => $request->origen,

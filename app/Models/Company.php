@@ -13,7 +13,7 @@ class Company extends Model
     use HasFactory;
 
     protected $fillable = [
-        'business_name',
+        'legal_name',
         'commercial_name',
         'tax_id',
         'country',
@@ -310,7 +310,7 @@ class Company extends Model
 
     public function getFullNameAttribute()
     {
-        return $this->commercial_name ?: $this->business_name;
+        return $this->commercial_name ?: $this->legal_name;
     }
 
     public function getCountryNameAttribute()

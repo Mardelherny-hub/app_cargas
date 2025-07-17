@@ -174,7 +174,7 @@ trait UserHelper
             'name' => $user->name,
             'email' => $user->email,
             'type' => $this->getUserType(),
-            'company' => $company ? $company->business_name : null,
+            'company' => $company ? $company->legal_name : null,
             'roles' => $user->roles->pluck('name')->toArray(),
             'permissions' => $user->getAllPermissions()->pluck('name')->toArray()
         ];

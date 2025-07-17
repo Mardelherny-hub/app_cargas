@@ -21,7 +21,7 @@ class TestUsersSeeder extends Seeder
 
         // ===== EMPRESA ARGENTINA - RIO DE LA PLATA =====
         $companyAR = Company::factory()->create([
-            'business_name' => 'Rio de la Plata Transport S.A.',
+            'legal_name' => 'Rio de la Plata Transport S.A.',
             'commercial_name' => 'Rio Transport',
             'tax_id' => '20123456789',
             'email' => 'admin@riotransport.com.ar',
@@ -134,7 +134,7 @@ class TestUsersSeeder extends Seeder
 
         // ===== EMPRESA PARAGUAY - NAVEGACIÓN PY =====
         $companyPY = Company::factory()->create([
-            'business_name' => 'Navegación Paraguay S.A.',
+            'legal_name' => 'Navegación Paraguay S.A.',
             'commercial_name' => 'NavePY',
             'tax_id' => '80987654321',
             'email' => 'admin@navegacionpy.com.py',
@@ -203,7 +203,7 @@ class TestUsersSeeder extends Seeder
 
         // ===== EMPRESA ESPECIALIZADA - DESCONSOLIDADOR =====
         $companyDesconsolidador = Company::factory()->create([
-            'business_name' => 'Logística Integral S.A.',
+            'legal_name' => 'Logística Integral S.A.',
             'commercial_name' => 'LogiIntegral',
             'tax_id' => '30555666777',
             'email' => 'admin@logiintegral.com',
@@ -249,7 +249,7 @@ class TestUsersSeeder extends Seeder
 
         // ===== EMPRESA ESPECIALIZADA - TRANSBORDOS =====
         $companyTransbordos = Company::factory()->create([
-            'business_name' => 'Transbordos del Rio S.A.',
+            'legal_name' => 'Transbordos del Rio S.A.',
             'commercial_name' => 'TransRio',
             'tax_id' => '30777888999',
             'email' => 'admin@transrio.com',
@@ -305,7 +305,7 @@ class TestUsersSeeder extends Seeder
 
         // Empresa inactiva
         $inactiveCompany = Company::factory()->create([
-            'business_name' => 'Empresa Inactiva S.A.',
+            'legal_name' => 'Empresa Inactiva S.A.',
             'commercial_name' => 'Inactiva',
             'tax_id' => '30111222333',
             'email' => 'inactive@inactive.com',

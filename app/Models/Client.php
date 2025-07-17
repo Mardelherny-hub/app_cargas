@@ -11,7 +11,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\ClientContactData;
 
-
 /**
  * FASE 1 - MÓDULO EMPRESAS Y CLIENTES
  *
@@ -23,7 +22,7 @@ use App\Models\ClientContactData;
  * @property int $country_id País del cliente
  * @property int $document_type_id Tipo de documento
  * @property string $client_type Rol del cliente (shipper, consignee, etc.)
- * @property string $business_name Razón social oficial
+ * @property string $legal_name Razón social oficial
  * @property int|null $primary_port_id Puerto principal
  * @property int|null $customs_offices_id Aduana habitual
  * @property string $status Estado (active, inactive, suspended)
@@ -50,7 +49,7 @@ class Client extends Model
         'country_id',
         'document_type_id',
         'client_type',
-        'business_name',
+        'legal_name',
         'primary_port_id',
         'customs_offices_id',
         'status',
@@ -68,18 +67,21 @@ class Client extends Model
         'updated_at' => 'datetime',
     ];
  
+    /**
+     * Cargar automáticamente relaciones.
+     */
     protected $with = [
-            'primaryContact',  
-        ];
-
+        'primaryContact',  
+    ];
 
     /**
      * Tipos de cliente disponibles.
+     * ACTUALIZADO: Cambio de nomenclatura según feedback del cliente
      */
     public const CLIENT_TYPES = [
         'shipper' => 'Cargador/Exportador',
         'consignee' => 'Consignatario/Importador',
-        'notify_party' => 'Parte a Notificar',
+        'notify_party' => 'Notificatario',  // ← CAMBIADO
         'owner' => 'Propietario de la Carga',
     ];
 
@@ -92,20 +94,30 @@ class Client extends Model
         'suspended' => 'Suspendido',
     ];
 
+    // =====================================================
+    // RELACIONES CON CLIENT_CONTACT_DATA
+    // =====================================================
+
     /**
      * Relación con datos de contacto.
+     * Ordenados por prioridad (primario primero)
      */
     public function contactData(): HasMany
     {
-        return $this->hasMany(ClientContactData::class)->orderBy('is_primary', 'desc');
+        return $this->hasMany(ClientContactData::class)
+                   ->orderBy('is_primary', 'desc')
+                   ->orderBy('active', 'desc');
     }
 
     /**
      * Contacto principal del cliente.
+     * Solo retorna el contacto marcado como primario y activo
      */
     public function primaryContact(): HasOne
     {
-        return $this->hasOne(ClientContactData::class)->where('is_primary', true);
+        return $this->hasOne(ClientContactData::class)
+                   ->where('is_primary', true)
+                   ->where('active', true);
     }
 
     /**
@@ -113,11 +125,105 @@ class Client extends Model
      */
     public function activeContacts(): HasMany
     {
-        return $this->hasMany(ClientContactData::class)->where('active', true);
+        return $this->hasMany(ClientContactData::class)
+                   ->where('active', true)
+                   ->orderBy('is_primary', 'desc');
     }
 
     // =====================================================
-    // RELACIONES CON CATÁLOGOS (FASE 0)
+    // MÉTODOS AUXILIARES PARA DATOS DE CONTACTO
+    // =====================================================
+
+    /**
+     * Obtener email principal del cliente.
+     */
+    public function getPrimaryEmail(): ?string
+    {
+        return $this->primaryContact?->email;
+    }
+
+    /**
+     * Obtener teléfono principal del cliente.
+     */
+    public function getPrimaryPhone(): ?string
+    {
+        return $this->primaryContact?->phone ?: $this->primaryContact?->mobile_phone;
+    }
+
+    /**
+     * Obtener dirección principal formateada.
+     */
+    public function getPrimaryAddress(): ?string
+    {
+        $contact = $this->primaryContact;
+        if (!$contact) return null;
+
+        $parts = array_filter([
+            $contact->address_line_1,
+            $contact->address_line_2,
+            $contact->city,
+            $contact->state_province,
+            $contact->postal_code
+        ]);
+
+        return implode(', ', $parts) ?: null;
+    }
+
+    /**
+     * Verificar si el cliente tiene información de contacto completa.
+     */
+    public function hasCompleteContactInfo(): bool
+    {
+        $contact = $this->primaryContact;
+        return $contact && 
+               !empty($contact->email) && 
+               !empty($contact->address_line_1) && 
+               !empty($contact->city);
+    }
+
+    /**
+     * Verificar si puede recibir notificaciones por email.
+     */
+    public function canReceiveEmailNotifications(): bool
+    {
+        $contact = $this->primaryContact;
+        return $contact && 
+               $contact->accepts_email_notifications && 
+               !empty($contact->email);
+    }
+
+    /**
+     * Crear contacto principal para el cliente.
+     */
+    public function createPrimaryContact(array $data): ClientContactData
+    {
+        // Asegurar que sea el contacto principal
+        $data['is_primary'] = true;
+        $data['active'] = true;
+        
+        // Desactivar otros contactos primarios si existen
+        $this->contactData()->where('is_primary', true)->update(['is_primary' => false]);
+        
+        return $this->contactData()->create($data);
+    }
+
+    /**
+     * Actualizar o crear contacto principal.
+     */
+    public function updateOrCreatePrimaryContact(array $data): ClientContactData
+    {
+        $contact = $this->primaryContact;
+        
+        if ($contact) {
+            $contact->update($data);
+            return $contact;
+        }
+        
+        return $this->createPrimaryContact($data);
+    }
+
+    // =====================================================
+    // RELACIONES EXISTENTES
     // =====================================================
 
     /**
@@ -129,7 +235,7 @@ class Client extends Model
     }
 
     /**
-     * Tipo de documento según país.
+     * Tipo de documento.
      */
     public function documentType(): BelongsTo
     {
@@ -137,7 +243,7 @@ class Client extends Model
     }
 
     /**
-     * Puerto principal de operaciones.
+     * Puerto principal.
      */
     public function primaryPort(): BelongsTo
     {
@@ -145,15 +251,15 @@ class Client extends Model
     }
 
     /**
-     * Aduana habitual de operaciones.
+     * Aduana habitual.
      */
     public function customOffice(): BelongsTo
     {
-        return $this->belongsTo(CustomOffice::class);
+        return $this->belongsTo(CustomOffice::class, 'customs_offices_id');
     }
 
     /**
-     * Empresa que creó el registro.
+     * Empresa que creó el cliente.
      */
     public function createdByCompany(): BelongsTo
     {
@@ -161,320 +267,11 @@ class Client extends Model
     }
 
     /**
-     * Relaciones del cliente con empresas (futuro FASE 1).
-     * Preparado para tabla client_company_relations.
+     * Relaciones con empresas.
      */
     public function companyRelations(): HasMany
     {
         return $this->hasMany(ClientCompanyRelation::class);
-    }
-
-    /**
-     * Datos variables del cliente (futuro FASE 2).
-     * Preparado para tabla client_document_data.
-     */
-    public function documentData(): HasMany
-    {
-        return $this->hasMany(ClientDocumentData::class);
-    }
-
-    // =====================================================
-    // SCOPES ESPECIALIZADOS PARA CONSULTAS FRECUENTES
-    // =====================================================
-
-    /**
-     * Solo clientes activos.
-     */
-    public function scopeActive(Builder $query): Builder
-    {
-        return $query->where('status', 'active');
-    }
-
-    /**
-     * Filtrar por país.
-     */
-    public function scopeByCountry(Builder $query, string $countryCode): Builder
-    {
-        return $query->whereHas('country', function ($q) use ($countryCode) {
-            $q->where('iso_code', $countryCode);
-        });
-    }
-
-    /**
-     * Clientes argentinos.
-     */
-    public function scopeArgentina(Builder $query): Builder
-    {
-        return $query->byCountry('AR');
-    }
-
-    /**
-     * Clientes paraguayos.
-     */
-    public function scopeParaguay(Builder $query): Builder
-    {
-        return $query->byCountry('PY');
-    }
-
-    /**
-     * Filtrar por tipo de cliente.
-     */
-    public function scopeByType(Builder $query, string $type): Builder
-    {
-        return $query->where('client_type', $type);
-    }
-
-    /**
-     * Solo cargadores/exportadores.
-     */
-    public function scopeShippers(Builder $query): Builder
-    {
-        return $query->byType('shipper');
-    }
-
-    /**
-     * Solo consignatarios/importadores.
-     */
-    public function scopeConsignees(Builder $query): Builder
-    {
-        return $query->byType('consignee');
-    }
-
-    /**
-     * Filtrar por empresa creadora.
-     */
-    public function scopeByCompany(Builder $query, int $companyId): Builder
-    {
-        return $query->where('created_by_company_id', $companyId);
-    }
-
-    /**
-     * Búsqueda por CUIT/RUC.
-     */
-    public function scopeByTaxId(Builder $query, string $taxId): Builder
-    {
-        // Limpiar caracteres no numéricos para búsqueda flexible
-        $cleanTaxId = preg_replace('/[^0-9]/', '', $taxId);
-        return $query->where('tax_id', 'LIKE', "%{$cleanTaxId}%");
-    }
-
-    /**
-     * Búsqueda por nombre (parcial, insensible a mayúsculas).
-     */
-    public function scopeByName(Builder $query, string $name): Builder
-    {
-        return $query->where('business_name', 'LIKE', "%{$name}%");
-    }
-
-    /**
-     * Clientes verificados (CUIT validado).
-     */
-    public function scopeVerified(Builder $query): Builder
-    {
-        return $query->whereNotNull('verified_at');
-    }
-
-    /**
-     * Clientes pendientes de verificación.
-     */
-    public function scopePendingVerification(Builder $query): Builder
-    {
-        return $query->whereNull('verified_at');
-    }
-
-    /**
-     * Filtrar por puerto principal.
-     */
-    public function scopeByPort(Builder $query, int $portId): Builder
-    {
-        return $query->where('primary_port_id', $portId);
-    }
-
-    /**
-     * Email principal del cliente.
-     */
-    public function getPrimaryEmailAttribute(): ?string
-    {
-        return $this->primaryContact?->email;
-    }
-
-    /**
-     * Teléfono principal del cliente.
-     */
-    public function getPrimaryPhoneAttribute(): ?string
-    {
-        return $this->primaryContact?->phone ?: $this->primaryContact?->mobile_phone;
-    }
-
-    /**
-     * Dirección principal del cliente.
-     */
-    public function getPrimaryAddressAttribute(): ?string
-    {
-        return $this->primaryContact?->full_address;
-    }
-
-    // =====================================================
-    // MÉTODOS DE NEGOCIO ESPECÍFICOS DEL DOMINIO
-    // =====================================================
-
-    /**
-     * Verifica si el cliente está activo y verificado.
-     */
-    public function isOperational(): bool
-    {
-        return $this->status === 'active' && $this->isVerified();
-    }
-
-    /**
-     * Verifica si el CUIT/RUC ha sido validado.
-     */
-    public function isVerified(): bool
-    {
-        return !is_null($this->verified_at);
-    }
-
-    /**
-     * Verifica si es cliente argentino.
-     */
-    public function isArgentinian(): bool
-    {
-        return $this->country->iso_code === 'AR';
-    }
-
-    /**
-     * Verifica si es cliente paraguayo.
-     */
-    public function isParaguayan(): bool
-    {
-        return $this->country->iso_code === 'PY';
-    }
-
-    /**
-     * Obtiene el formato correcto del CUIT/RUC según país.
-     */
-    public function getFormattedTaxId(): string
-    {
-        if ($this->isArgentinian()) {
-            // Formato CUIT argentino: XX-XXXXXXXX-X
-            return preg_replace('/(\d{2})(\d{8})(\d{1})/', '$1-$2-$3', $this->tax_id);
-        }
-
-        if ($this->isParaguayan()) {
-            // Formato RUC paraguayo: XXXXXXX-X
-            return preg_replace('/(\d{7})(\d{1})/', '$1-$2', $this->tax_id);
-        }
-
-        return $this->tax_id;
-    }
-
-    /**
-     * Valida el formato del CUIT/RUC según el país.
-     */
-    public function validateTaxIdFormat(): bool
-    {
-        if ($this->isArgentinian()) {
-            return $this->validateArgentinianCuit();
-        }
-
-        if ($this->isParaguayan()) {
-            return $this->validateParaguayanRuc();
-        }
-
-        return false;
-    }
-
-    /**
-     * Validación específica CUIT argentino (algoritmo mod11).
-     */
-    protected function validateArgentinianCuit(): bool
-    {
-        $cuit = preg_replace('/[^0-9]/', '', $this->tax_id);
-
-        if (strlen($cuit) !== 11) {
-            return false;
-        }
-
-        // Algoritmo de validación CUIT argentino
-        $multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-        $sum = 0;
-
-        for ($i = 0; $i < 10; $i++) {
-            $sum += intval($cuit[$i]) * $multipliers[$i];
-        }
-
-        $remainder = $sum % 11;
-        $checkDigit = $remainder < 2 ? $remainder : 11 - $remainder;
-
-        return intval($cuit[10]) === $checkDigit;
-    }
-
-    /**
-     * Validación específica RUC paraguayo.
-     */
-    protected function validateParaguayanRuc(): bool
-    {
-        $ruc = preg_replace('/[^0-9]/', '', $this->tax_id);
-
-        if (strlen($ruc) < 6 || strlen($ruc) > 8) {
-            return false;
-        }
-
-        // Validación básica RUC paraguayo
-        // TODO: Implementar algoritmo específico si está disponible
-        return is_numeric($ruc);
-    }
-
-    /**
-     * Marca el cliente como verificado.
-     */
-    public function markAsVerified(): bool
-    {
-        $this->verified_at = now();
-        return $this->save();
-    }
-
-    /**
-     * Obtiene el tipo de cliente en formato legible.
-     */
-    public function getClientTypeLabel(): string
-    {
-        return self::CLIENT_TYPES[$this->client_type] ?? $this->client_type;
-    }
-
-    /**
-     * Obtiene el estado en formato legible.
-     */
-    public function getStatusLabel(): string
-    {
-        return self::STATUSES[$this->status] ?? $this->status;
-    }
-
-    /**
-     * Verifica si puede operar en un puerto específico.
-     */
-    public function canOperateInPort(int $portId): bool
-    {
-        // El cliente puede operar en su puerto principal
-        if ($this->primary_port_id === $portId) {
-            return true;
-        }
-
-        // También puede operar en puertos del mismo país
-        if ($this->primaryPort) {
-            $targetPort = Port::find($portId);
-            return $targetPort && $targetPort->country_id === $this->country_id;
-        }
-
-        return false;
-    }
-
-    /**
-     * Genera identificador único para webservices.
-     */
-    public function getWebserviceIdentifier(): string
-    {
-        return $this->country->iso_code . '_' . $this->tax_id;
     }
 
     // =====================================================
@@ -528,53 +325,37 @@ class Client extends Model
         });
     }
 
+    // =====================================================
+    // MÉTODOS DE NEGOCIO
+    // =====================================================
+
     /**
-     * Verificar si el cliente tiene información de contacto completa.
+     * Verificar si el cliente está verificado.
      */
-    public function hasCompleteContactInfo(): bool
+    public function isVerified(): bool
     {
-        $primary = $this->primaryContact;
-        return $primary && $primary->isComplete();
+        return !is_null($this->verified_at);
     }
 
     /**
-     * Obtener métodos de notificación del cliente.
+     * Obtener CUIT/RUC formateado.
      */
-    public function getNotificationMethods(): array
+    public function getFormattedTaxId(): string
     {
-        return $this->primaryContact?->notification_methods ?: [];
-    }
-
-    /**
-     * Crear contacto principal para el cliente.
-     */
-    public function createPrimaryContact(array $data): ClientContactData
-    {
-        $data['is_primary'] = true;
-        $data['active'] = true;
+        if ($this->country_id == 1) { // Argentina
+            return substr($this->tax_id, 0, 2) . '-' . 
+                   substr($this->tax_id, 2, 8) . '-' . 
+                   substr($this->tax_id, 10, 1);
+        }
         
-        return $this->contactData()->create($data);
+        return $this->tax_id;
     }
 
     /**
-     * Verificar si puede recibir notificaciones por email.
+     * Obtener identificador para webservices.
      */
-    public function canReceiveEmailNotifications(): bool
+    public function getWebserviceIdentifier(): string
     {
-        $primary = $this->primaryContact;
-        return $primary && 
-            $primary->accepts_email_notifications && 
-            !empty($primary->email);
-    }
-
-    /**
-     * Verificar si puede recibir notificaciones por SMS.
-     */
-    public function canReceiveSmsNotifications(): bool
-    {
-        $primary = $this->primaryContact;
-        return $primary && 
-            $primary->accepts_sms_notifications && 
-            !empty($primary->mobile_phone);
+        return $this->country->alpha2_code . '_' . $this->tax_id;
     }
 }

@@ -364,7 +364,7 @@ class ClientCompanyRelationFactory extends Factory
      */
     private function getCompanyPrefix(Company $company): string
     {
-        $commercialName = strtolower($company->commercial_name ?? $company->business_name);
+        $commercialName = strtolower($company->commercial_name ?? $company->legal_name);
 
         // Try to match with known business types
         foreach (self::CODE_PREFIXES as $type => $prefix) {
@@ -374,7 +374,7 @@ class ClientCompanyRelationFactory extends Factory
         }
 
         // Default to first 3 letters of commercial name
-        return strtoupper(substr($company->commercial_name ?? $company->business_name, 0, 3));
+        return strtoupper(substr($company->commercial_name ?? $company->legal_name, 0, 3));
     }
 
     /**

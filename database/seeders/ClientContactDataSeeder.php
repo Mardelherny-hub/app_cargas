@@ -26,14 +26,14 @@ class ClientContactDataSeeder extends Seeder
     {
         $this->command->info('📞 Creando información de contacto para clientes...');
 
-        // Verificar que existan clientes con business_name válido
+        // Verificar que existan clientes con legal_name válido
         $clients = Client::with('country')
-                        ->whereNotNull('business_name')
-                        ->where('business_name', '!=', '')
+                        ->whereNotNull('legal_name')
+                        ->where('legal_name', '!=', '')
                         ->get();
         
         if ($clients->isEmpty()) {
-            $this->command->error('❌ No se encontraron clientes con business_name válido. Ejecute ClientsSeeder primero.');
+            $this->command->error('❌ No se encontraron clientes con legal_name válido. Ejecute ClientsSeeder primero.');
             return;
         }
 
@@ -66,9 +66,9 @@ class ClientContactDataSeeder extends Seeder
      */
     private function createContactDataForClient(Client $client, User $user): void
     {
-        // Validar que el cliente tenga business_name
-        if (empty($client->business_name)) {
-            $this->command->warn("  ⚠️ Cliente ID {$client->id} sin business_name - omitido");
+        // Validar que el cliente tenga legal_name
+        if (empty($client->legal_name)) {
+            $this->command->warn("  ⚠️ Cliente ID {$client->id} sin legal_name - omitido");
             return;
         }
 
@@ -78,15 +78,15 @@ class ClientContactDataSeeder extends Seeder
         // Crear contacto principal
         try {
             $primaryContact = $this->createPrimaryContact($client, $user, $isArgentinian, $isParaguayan);
-            $this->command->line("  ✓ Contacto principal: {$client->business_name}");
+            $this->command->line("  ✓ Contacto principal: {$client->legal_name}");
 
             // 70% de probabilidad de tener contacto secundario para empresas grandes
-            if ($this->isLargeCompany($client->business_name) && rand(1, 100) <= 70) {
+            if ($this->isLargeCompany($client->legal_name) && rand(1, 100) <= 70) {
                 $this->createSecondaryContact($client, $user, $isArgentinian, $isParaguayan);
                 $this->command->line("    + Contacto secundario agregado");
             }
         } catch (\Exception $e) {
-            $this->command->error("  ❌ Error al crear contacto para {$client->business_name}: " . $e->getMessage());
+            $this->command->error("  ❌ Error al crear contacto para {$client->legal_name}: " . $e->getMessage());
         }
     }
 
@@ -129,7 +129,7 @@ class ClientContactDataSeeder extends Seeder
      */
     private function generateContactData(Client $client, bool $isArgentinian, bool $isParaguayan, bool $isPrimary): array
     {
-        $companyName = $client->business_name;
+        $companyName = $client->legal_name;
         $clientType = $client->client_type;
 
         if ($isArgentinian) {

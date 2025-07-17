@@ -47,7 +47,7 @@
                 <div class="p-6 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h1 class="text-2xl font-bold">{{ $company->commercial_name ?? $company->business_name }}</h1>
+                            <h1 class="text-2xl font-bold">{{ $company->commercial_name ?? $company->legal_name }}</h1>
                             <p class="text-blue-100 mt-1">CUIT: {{ $company->tax_id }} | {{ $company->country === 'AR' ? 'Argentina' : 'Paraguay' }}</p>
                             <p class="text-blue-100 text-sm">{{ $company->city }}, {{ $company->address }}</p>
 

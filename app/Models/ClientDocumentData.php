@@ -313,7 +313,7 @@ class ClientDocumentData extends Model
         // Si no hay datos de display, usar datos oficiales
         if (!$displayData) {
             $displayData = [
-                'name' => $client->business_name,
+                'name' => $client->legal_name,
                 'address' => null,
                 'city' => null,
                 'postal_code' => null,

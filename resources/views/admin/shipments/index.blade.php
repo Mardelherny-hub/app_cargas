@@ -5,7 +5,7 @@
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                     {{ __('Gestión de Cargas') }}
                 </h2>
-                <p class="text-sm text-gray-600 mt-1">{{ $company->business_name }}</p>
+                <p class="text-sm text-gray-600 mt-1">{{ $company->legal_name }}</p>
             </div>
             <a href="{{ route('company.shipments.create') }}"
                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">

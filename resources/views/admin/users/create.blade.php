@@ -167,7 +167,7 @@
                                         <option value="">Selecciona una empresa</option>
                                         @foreach($companies as $company)
                                             <option value="{{ $company->id }}" {{ old('company_id') == $company->id ? 'selected' : '' }}>
-                                                {{ $company->business_name }} ({{ $company->tax_id }})
+                                                {{ $company->legal_name }} ({{ $company->tax_id }})
                                             </option>
                                         @endforeach
                                     </select>
@@ -252,7 +252,7 @@
                                         <option value="">Selecciona una empresa</option>
                                         @foreach($companies as $company)
                                             <option value="{{ $company->id }}" {{ old('operator_company_id') == $company->id ? 'selected' : '' }}>
-                                                {{ $company->business_name }} ({{ $company->tax_id }})
+                                                {{ $company->legal_name }} ({{ $company->tax_id }})
                                             </option>
                                         @endforeach
                                     </select>

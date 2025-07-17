@@ -636,7 +636,7 @@ class ExportController extends Controller
             ];
         });
 
-        return $this->generateCsvDownload($data, 'operadores_' . $company->business_name, $options['format']);
+        return $this->generateCsvDownload($data, 'operadores_' . $company->legal_name, $options['format']);
     }
 
     /**
@@ -661,7 +661,7 @@ class ExportController extends Controller
             ]
         ]);
 
-        return $this->generateCsvDownload($data, 'cargas_' . $company->business_name, $options['format']);
+        return $this->generateCsvDownload($data, 'cargas_' . $company->legal_name, $options['format']);
     }
 
     /**
@@ -684,7 +684,7 @@ class ExportController extends Controller
             ]
         ]);
 
-        return $this->generateCsvDownload($data, 'contenedores_' . $company->business_name, $options['format']);
+        return $this->generateCsvDownload($data, 'contenedores_' . $company->legal_name, $options['format']);
     }
 
     /**
@@ -707,7 +707,7 @@ class ExportController extends Controller
             ]
         ]);
 
-        return $this->generateCsvDownload($data, 'viajes_' . $company->business_name, $options['format']);
+        return $this->generateCsvDownload($data, 'viajes_' . $company->legal_name, $options['format']);
     }
 
     /**
@@ -729,7 +729,7 @@ class ExportController extends Controller
             ]
         ]);
 
-        return $this->generateCsvDownload($data, 'manifiestos_' . $company->business_name, $options['format']);
+        return $this->generateCsvDownload($data, 'manifiestos_' . $company->legal_name, $options['format']);
     }
 
     /**
@@ -869,7 +869,7 @@ class ExportController extends Controller
         $xmlContent = '<?xml version="1.0" encoding="utf-8"?>
 <Manifest xmlns="un.edifact.cuscar">
     <Header>
-        <Company>' . htmlspecialchars($company->business_name) . '</Company>
+        <Company>' . htmlspecialchars($company->legal_name) . '</Company>
         <GeneratedAt>' . Carbon::now()->toISOString() . '</GeneratedAt>
     </Header>
     <Shipments>
@@ -895,7 +895,7 @@ class ExportController extends Controller
         // TODO: Implementar generación de manifiesto real
         $xmlContent = '<?xml version="1.0" encoding="utf-8"?>
 <Manifest version="1.0">
-    <Company>' . htmlspecialchars($company->business_name) . '</Company>
+    <Company>' . htmlspecialchars($company->legal_name) . '</Company>
     <Generated>' . Carbon::now()->toISOString() . '</Generated>
     <Shipments>
         <!-- Lista de cargas del manifiesto -->

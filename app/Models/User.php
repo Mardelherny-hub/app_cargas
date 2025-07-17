@@ -157,7 +157,7 @@ class User extends Authenticatable implements Auditable
         }
 
         if ($this->userable_type === 'App\Models\Company') {
-            return $this->userable->business_name;
+            return $this->userable->legal_name;
         }
 
         return $this->name;
@@ -280,7 +280,7 @@ class User extends Authenticatable implements Auditable
         if ($company) {
             $info['company'] = [
                 'id' => $company->id,
-                'name' => $company->business_name,
+                'name' => $company->legal_name,
                 'roles' => $company->company_roles ?? [],
                 'active' => $company->active,
             ];
@@ -576,12 +576,12 @@ public function searchClients(string $search, int $limit = 10)
 {
     return $this->getAccessibleClients()
         ->where(function ($query) use ($search) {
-            $query->where('business_name', 'like', "%{$search}%")
+            $query->where('legal_name', 'like', "%{$search}%")
                   ->orWhere('tax_id', 'like', "%{$search}%");
         })
         ->where('status', 'active')
         ->limit($limit)
-        ->get(['id', 'tax_id', 'business_name', 'client_type']);
+        ->get(['id', 'tax_id', 'legal_name', 'client_type']);
 }
 
 // =====================================================

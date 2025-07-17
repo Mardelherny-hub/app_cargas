@@ -6,7 +6,7 @@
                     {{ __('Editar Operador') }}
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    {{ $operator->full_name }} - {{ $company->business_name }}
+                    {{ $operator->full_name }} - {{ $company->legal_name }}
                 </p>
             </div>
             <div class="flex space-x-3">
@@ -156,7 +156,7 @@
                                     <h4 class="text-sm font-medium text-blue-800">{{ __('Operador de Empresa') }}</h4>
                                     <p class="mt-1 text-sm text-blue-700">
                                         {{ __('Este operador es empleado específico de') }}
-                                        <strong>{{ $company->business_name }}</strong>
+                                        <strong>{{ $company->legal_name }}</strong>
                                         {{ __('y solo puede trabajar con esta empresa.') }}
                                     </p>
                                 </div>
@@ -441,7 +441,7 @@
                                     <div class="ml-3">
                                         <h3 class="text-sm font-medium text-amber-800">{{ __('Atención: Operador Interno') }}</h3>
                                         <div class="mt-1 text-sm text-amber-700">
-                                            <p>{{ __('Está cambiando a operador INTERNO que tendrá acceso global al sistema y podrá gestionar múltiples empresas, no solo') }} {{ $company->business_name }}.</p>
+                                            <p>{{ __('Está cambiando a operador INTERNO que tendrá acceso global al sistema y podrá gestionar múltiples empresas, no solo') }} {{ $company->legal_name }}.</p>
                                             <p class="mt-1"><strong>{{ __('¿Está seguro del cambio?') }}</strong></p>
                                         </div>
                                     </div>

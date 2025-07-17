@@ -61,12 +61,12 @@
                             <!-- Logo/Avatar de la empresa -->
                             <div class="h-20 w-20 bg-gradient-to-br from-green-500 to-blue-600 rounded-lg flex items-center justify-center">
                                 <span class="text-2xl font-bold text-white">
-                                    {{ strtoupper(substr($company->business_name, 0, 2)) }}
+                                    {{ strtoupper(substr($company->legal_name, 0, 2)) }}
                                 </span>
                             </div>
                             <!-- Información básica -->
                             <div>
-                                <h1 class="text-2xl font-bold text-gray-900">{{ $company->business_name }}</h1>
+                                <h1 class="text-2xl font-bold text-gray-900">{{ $company->legal_name }}</h1>
                                 @if($company->commercial_name)
                                     <p class="text-lg text-gray-600">{{ $company->commercial_name }}</p>
                                 @endif

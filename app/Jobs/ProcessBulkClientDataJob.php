@@ -268,7 +268,7 @@ class ProcessBulkClientDataJob implements ShouldQueue
     {
         $clientData = [
             'tax_id' => null,
-            'business_name' => null,
+            'legal_name' => null,
             'country_id' => null,
             'document_type_id' => null,
             'client_type' => 'consignee',
@@ -296,7 +296,7 @@ class ProcessBulkClientDataJob implements ShouldQueue
         // Extract other fields from record
         $fieldMappings = [
             'tax_id' => ['tax_id', 'cuit', 'ruc', 'documento_fiscal', 'documento'],
-            'business_name' => ['business_name', 'razon_social', 'nombre', 'company_name', 'empresa'],
+            'legal_name' => ['legal_name', 'razon_social', 'nombre', 'company_name', 'empresa'],
             'client_type' => ['client_type', 'tipo_cliente', 'tipo', 'role'],
             'notes' => ['notes', 'observaciones', 'comentarios', 'notas'],
         ];
@@ -315,8 +315,8 @@ class ProcessBulkClientDataJob implements ShouldQueue
             $clientData['tax_id'] = $record['tax_id'];
         }
 
-        if (empty($clientData['business_name']) && isset($record['name'])) {
-            $clientData['business_name'] = $record['name'];
+        if (empty($clientData['legal_name']) && isset($record['name'])) {
+            $clientData['legal_name'] = $record['name'];
         }
 
         // Set country and document type if not already set
@@ -425,7 +425,7 @@ class ProcessBulkClientDataJob implements ShouldQueue
             'record' => $record,
             'client_id' => $client->id,
             'tax_id' => $client->tax_id,
-            'business_name' => $client->business_name,
+            'legal_name' => $client->legal_name,
             'action' => $client->wasRecentlyCreated ? 'created' : 'updated',
         ];
     }

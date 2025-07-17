@@ -2,7 +2,7 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Crear Operador') }} - {{ $company->business_name }}
+                {{ __('Crear Operador') }} - {{ $company->legal_name }}
             </h2>
             <div class="text-sm text-gray-600">
                 <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
@@ -24,7 +24,7 @@
                         </svg>
                     </div>
                     <div class="ml-3">
-                        <h3 class="text-sm font-medium text-blue-800">{{ __('Crear Operador para') }} {{ $company->business_name }}</h3>
+                        <h3 class="text-sm font-medium text-blue-800">{{ __('Crear Operador para') }} {{ $company->legal_name }}</h3>
                         <div class="mt-1 text-sm text-blue-700">
                             <p>{{ __('Los operadores pueden realizar operaciones según los roles de empresa:') }} <strong>{{ implode(', ', $company->company_roles ?? []) }}</strong></p>
                             <p class="mt-1">{{ __('Cada operador tendrá permisos específicos que puede configurar a continuación.') }}</p>
@@ -146,7 +146,7 @@
                                 <div class="ml-3">
                                     <h4 class="text-sm font-medium text-green-800">{{ __('Operador de Empresa') }}</h4>
                                     <p class="mt-1 text-sm text-green-700">
-                                        {{ __('Este operador será empleado específico de') }} <strong>{{ $company->business_name }}</strong> {{ __('y solo podrá trabajar con esta empresa.') }}
+                                        {{ __('Este operador será empleado específico de') }} <strong>{{ $company->legal_name }}</strong> {{ __('y solo podrá trabajar con esta empresa.') }}
                                     </p>
                                 </div>
                             </div>

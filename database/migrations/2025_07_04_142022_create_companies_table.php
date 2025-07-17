@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('companies', function (Blueprint $table) {
             $table->id();
-            $table->string('business_name'); // razón social
+            $table->string('legal_name'); // razón social
             $table->string('commercial_name')->nullable(); // nombre comercial
             $table->string('tax_id', 11)->unique(); // CUIT
             $table->string('country', 2); // AR, PY

@@ -128,7 +128,7 @@ class BulkClientImportRequest extends FormRequest
             // Field mapping (optional)
             'field_mapping' => ['nullable', 'array'],
             'field_mapping.tax_id' => ['nullable', 'string', 'max:50'],
-            'field_mapping.business_name' => ['nullable', 'string', 'max:50'],
+            'field_mapping.legal_name' => ['nullable', 'string', 'max:50'],
             'field_mapping.country' => ['nullable', 'string', 'max:50'],
             'field_mapping.client_type' => ['nullable', 'string', 'max:50'],
 
@@ -429,7 +429,7 @@ class BulkClientImportRequest extends FormRequest
         if ($this->has('field_mapping') && $this->input('field_mapping') !== null) {
             $mapping = $this->input('field_mapping', []);
 
-            if (empty($mapping['tax_id']) && empty($mapping['business_name'])) {
+            if (empty($mapping['tax_id']) && empty($mapping['legal_name'])) {
                 $validator->errors()->add('field_mapping',
                     'Debe mapear al menos el campo CUIT/RUC o Razón Social.');
             }
@@ -539,7 +539,7 @@ class BulkClientImportRequest extends FormRequest
     {
         return [
             'tax_id' => 'cuit',
-            'business_name' => 'razon_social',
+            'legal_name' => 'razon_social',
             'country' => 'pais',
             'client_type' => 'tipo_cliente',
         ];

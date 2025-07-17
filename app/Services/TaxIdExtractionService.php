@@ -236,7 +236,7 @@ class TaxIdExtractionService
             foreach ($existingClients as $client) {
                 $suggestions->push([
                     'client_id' => $client->id,
-                    'business_name' => $client->business_name,
+                    'legal_name' => $client->legal_name,
                     'tax_id' => $client->tax_id,
                     'country' => $client->country->name,
                     'found_in_text' => $taxIdData['original_text'],
@@ -249,7 +249,7 @@ class TaxIdExtractionService
             if ($existingClients->isEmpty()) {
                 $suggestions->push([
                     'client_id' => null,
-                    'business_name' => null,
+                    'legal_name' => null,
                     'tax_id' => $taxIdData['tax_id'],
                     'country' => $this->guessCountryFromTaxId($taxIdData['tax_id']),
                     'found_in_text' => $taxIdData['original_text'],

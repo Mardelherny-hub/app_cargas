@@ -357,7 +357,7 @@ class ReportController extends Controller
         $data = $companies->map(function($company) {
             return [
                 'ID' => $company->id,
-                'Razón Social' => $company->business_name,
+                'Razón Social' => $company->legal_name,
                 'Nombre Comercial' => $company->commercial_name,
                 'CUIT' => $company->tax_id,
                 'País' => $company->country === 'AR' ? 'Argentina' : 'Paraguay',

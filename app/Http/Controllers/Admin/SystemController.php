@@ -206,7 +206,7 @@ class SystemController extends Controller
 
         // Auditoría de empresas (últimos cambios)
         $companyAudit = DB::table('companies')
-            ->select('business_name', 'tax_id', 'created_date', 'last_access', 'active')
+            ->select('legal_name', 'tax_id', 'created_date', 'last_access', 'active')
             ->orderBy('created_date', 'desc')
             ->take(20)
             ->get();

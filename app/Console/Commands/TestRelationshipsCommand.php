@@ -42,7 +42,7 @@ class TestRelationshipsCommand extends Command
             foreach ($companies as $company) {
                 $hasUser = $company->user ? 'SÍ' : 'NO';
                 $userName = $company->user ? $company->user->name : 'N/A';
-                $this->info("    - {$company->business_name}: Usuario: {$hasUser} ({$userName})");
+                $this->info("    - {$company->legal_name}: Usuario: {$hasUser} ({$userName})");
             }
         } catch (\Exception $e) {
             $this->error("  ❌ Error: {$e->getMessage()}");
@@ -58,7 +58,7 @@ class TestRelationshipsCommand extends Command
             foreach ($operators as $operator) {
                 $hasUser = $operator->user ? 'SÍ' : 'NO';
                 $userName = $operator->user ? $operator->user->name : 'N/A';
-                $companyName = $operator->company ? $operator->company->business_name : 'Sin empresa';
+                $companyName = $operator->company ? $operator->company->legal_name : 'Sin empresa';
                 $this->info("    - {$operator->full_name} ({$operator->type_name}): Usuario: {$hasUser} ({$userName}) | Empresa: {$companyName}");
             }
         } catch (\Exception $e) {
@@ -80,7 +80,7 @@ class TestRelationshipsCommand extends Command
             $this->info("  ✅ Usuarios inactivos con empresas activas: {$inactiveUsersWithActiveCompanies->count()}");
 
             foreach ($inactiveUsersWithActiveCompanies as $user) {
-                $companyName = $user->userable ? $user->userable->business_name : 'N/A';
+                $companyName = $user->userable ? $user->userable->legal_name : 'N/A';
                 $this->info("    - {$user->name}: {$companyName}");
             }
         } catch (\Exception $e) {
@@ -100,7 +100,7 @@ class TestRelationshipsCommand extends Command
 
             foreach ($expiredCertificates as $company) {
                 $daysExpired = now()->diffInDays($company->certificate_expires_at);
-                $this->info("    - {$company->business_name}: Vencido hace {$daysExpired} días");
+                $this->info("    - {$company->legal_name}: Vencido hace {$daysExpired} días");
             }
         } catch (\Exception $e) {
             $this->error("  ❌ Error: {$e->getMessage()}");

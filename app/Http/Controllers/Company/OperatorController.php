@@ -677,7 +677,7 @@ private function getOperatorDetailStats($operator): array
         'has_permissions' => ($operator->can_import || $operator->can_export || $operator->can_transfer),
 
         // Información de empresa
-        'company_name' => $operator->company?->business_name ?? 'Sin empresa',
+        'company_name' => $operator->company?->legal_name ?? 'Sin empresa',
         'company_id' => $operator->company_id,
         'company_active' => $operator->company?->active ?? false,
 

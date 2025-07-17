@@ -125,7 +125,7 @@ class CompanyFactory extends Factory
     public function definition(): array
     {
         return [
-            'business_name' => fake()->company(),
+            'legal_name' => fake()->company(),
             'commercial_name' => fake()->companySuffix(),
             'tax_id' => fake()->numerify('###########'),
             'country' => fake()->randomElement(['AR', 'PY']),

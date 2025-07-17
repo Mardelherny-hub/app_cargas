@@ -396,7 +396,7 @@
                                 @foreach($companiesNeedingSetup as $item)
                                     <div class="bg-red-50 border border-red-200 rounded-lg p-3">
                                         <div class="font-medium text-sm text-red-800">
-                                            {{ $item['company']->business_name }}
+                                            {{ $item['company']->legal_name }}
                                         </div>
                                         <div class="text-xs text-red-600 mt-1">
                                             @foreach($item['errors'] as $error)
@@ -440,7 +440,7 @@
                                 <div class="flex items-center justify-between border-b pb-2">
                                     <div>
                                         <div class="text-sm font-medium text-gray-900">
-                                            {{ $company->business_name }}
+                                            {{ $company->legal_name }}
                                         </div>
                                         <div class="text-xs text-gray-500">
                                             {{ $company->country === 'AR' ? 'Argentina' : 'Paraguay' }}
@@ -511,7 +511,7 @@
                                 @foreach($expiringCertificates as $company)
                                     <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                                         <div class="font-medium text-sm text-yellow-800">
-                                            {{ $company->business_name }}
+                                            {{ $company->legal_name }}
                                         </div>
                                         <div class="text-xs text-yellow-600 mt-1">
                                             Vence: {{ $company->certificate_expires_at->format('d/m/Y') }}

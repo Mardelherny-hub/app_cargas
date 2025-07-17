@@ -76,7 +76,7 @@ class UserController extends Controller
     public function create()
     {
         $roles = Role::all();
-        $companies = Company::where('active', true)->orderBy('business_name')->get();
+        $companies = Company::where('active', true)->orderBy('legal_name')->get();
 
         return view('admin.users.create', compact('roles', 'companies'));
     }
@@ -191,7 +191,7 @@ class UserController extends Controller
     {
         $user->load(['roles', 'userable']);
         $roles = Role::all();
-        $companies = Company::where('active', true)->orderBy('business_name')->get();
+        $companies = Company::where('active', true)->orderBy('legal_name')->get();
 
         return view('admin.users.edit', compact('user', 'roles', 'companies'));
     }

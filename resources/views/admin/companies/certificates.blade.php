@@ -8,7 +8,7 @@
                     </svg>
                 </a>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ __('Gestión de Certificados') }} - {{ $company->business_name }}
+                    {{ __('Gestión de Certificados') }} - {{ $company->legal_name }}
                 </h2>
             </div>
             @if($company->certificate_path)

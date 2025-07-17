@@ -115,7 +115,7 @@
                                         <td class="px-6 py-4">
                                             <div>
                                                 <div class="text-sm font-medium text-gray-900">
-                                                    {{ $company->business_name }}
+                                                    {{ $company->legal_name }}
                                                 </div>
                                                 @if($company->commercial_name)
                                                     <div class="text-sm text-gray-500">
@@ -215,7 +215,7 @@
                                                         @method('DELETE')
                                                         <button type="submit"
                                                                 class="text-red-600 hover:text-red-900"
-                                                                onclick="return confirm('¿Eliminar empresa {{ $company->business_name }}?')">
+                                                                onclick="return confirm('¿Eliminar empresa {{ $company->legal_name }}?')">
                                                             Eliminar
                                                         </button>
                                                     </form>

@@ -113,7 +113,7 @@ class LoginResponse implements LoginResponseContract
                         'email' => $user->email,
                         'operator_id' => $operator->id,
                         'company_id' => $company->id,
-                        'company_name' => $company->business_name
+                        'company_name' => $company->legal_name
                     ]);
                     return route('dashboard');
                 }

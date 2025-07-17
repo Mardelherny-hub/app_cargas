@@ -37,7 +37,7 @@ class ClientController extends Controller
 
         // Datos auxiliares
         $countries = Country::where('active', true)->orderBy('name')->get();
-        $companies = Company::where('active', true)->orderBy('business_name')->get();
+        $companies = Company::where('active', true)->orderBy('legal_name')->get();
         
         // Estadísticas básicas
         $stats = [
@@ -56,7 +56,7 @@ class ClientController extends Controller
     public function create()
     {
         $countries = Country::where('active', true)->orderBy('name')->get();
-        $companies = Company::where('active', true)->orderBy('business_name')->get();
+        $companies = Company::where('active', true)->orderBy('legal_name')->get();
 
         return view('admin.clients.create', compact('countries', 'companies'));
     }
@@ -68,7 +68,7 @@ class ClientController extends Controller
     {
         $validatedData = $request->validate([
             'tax_id' => 'required|string|max:11',
-            'business_name' => 'required|string|max:255',
+            'legal_name' => 'required|string|max:255',
             'country_id' => 'required|exists:countries,id',
             'client_type' => 'required|in:shipper,consignee,notify_party,owner',
             'status' => 'sometimes|in:active,inactive',
@@ -101,7 +101,7 @@ class ClientController extends Controller
         $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
         $ports = Port::where('active', true)->orderBy('name')->get();
         $customsOffices = CustomOffice::where('active', true)->orderBy('name')->get();
-        $companies = Company::where('active', true)->orderBy('business_name')->get();
+        $companies = Company::where('active', true)->orderBy('legal_name')->get();
 
         return view('admin.clients.edit', compact('client', 'countries', 'documentTypes', 'ports', 'customsOffices', 'companies'));
     }
@@ -113,7 +113,7 @@ class ClientController extends Controller
     {
         $validatedData = $request->validate([
             'tax_id' => 'required|string|max:11',
-            'business_name' => 'required|string|max:255',
+            'legal_name' => 'required|string|max:255',
             'country_id' => 'required|exists:countries,id',
             'client_type' => 'required|in:shipper,consignee,notify_party,owner',
             'status' => 'sometimes|in:active,inactive,suspended',

@@ -194,8 +194,8 @@
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">{{ __('Empresa') }}</label>
                                     <div class="mt-1">
-                                        <p class="text-sm text-gray-900">{{ $operator->company->business_name }}</p>
-                                        @if($operator->company->commercial_name && $operator->company->commercial_name !== $operator->company->business_name)
+                                        <p class="text-sm text-gray-900">{{ $operator->company->legal_name }}</p>
+                                        @if($operator->company->commercial_name && $operator->company->commercial_name !== $operator->company->legal_name)
                                             <p class="text-xs text-gray-500">{{ __('Nombre comercial:') }} {{ $operator->company->commercial_name }}</p>
                                         @endif
                                         <p class="text-xs text-gray-500">{{ __('CUIT:') }} {{ $operator->company->tax_id }} ({{ $operator->company->country }})</p>

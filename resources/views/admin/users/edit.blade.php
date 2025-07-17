@@ -151,7 +151,7 @@
                                 <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <dt class="text-sm font-medium text-gray-500">Razón Social</dt>
-                                        <dd class="text-sm text-gray-900">{{ $user->userable->business_name }}</dd>
+                                        <dd class="text-sm text-gray-900">{{ $user->userable->legal_name }}</dd>
                                     </div>
                                     <div>
                                         <dt class="text-sm font-medium text-gray-500">CUIT</dt>
@@ -202,7 +202,7 @@
                                             <dd class="text-sm text-gray-900">
                                                 <a href="{{ route('admin.companies.show', $user->userable->company->id) }}"
                                                    class="text-blue-600 hover:text-blue-500">
-                                                    {{ $user->userable->company->business_name }}
+                                                    {{ $user->userable->company->legal_name }}
                                                 </a>
                                             </dd>
                                         </div>

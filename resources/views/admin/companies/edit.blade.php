@@ -8,7 +8,7 @@
                     </svg>
                 </a>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ __('Editar Empresa') }} - {{ $company->business_name }}
+                    {{ __('Editar Empresa') }} - {{ $company->legal_name }}
                 </h2>
             </div>
         </div>
@@ -28,16 +28,16 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <!-- Razón Social -->
                             <div class="md:col-span-2">
-                                <label for="business_name" class="block text-sm font-medium text-gray-700">
+                                <label for="legal_name" class="block text-sm font-medium text-gray-700">
                                     Razón Social *
                                 </label>
                                 <input type="text"
-                                       name="business_name"
-                                       id="business_name"
-                                       value="{{ old('business_name', $company->business_name) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('business_name') border-red-300 @enderror"
+                                       name="legal_name"
+                                       id="legal_name"
+                                       value="{{ old('legal_name', $company->legal_name) }}"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('legal_name') border-red-300 @enderror"
                                        required>
-                                @error('business_name')
+                                @error('legal_name')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>

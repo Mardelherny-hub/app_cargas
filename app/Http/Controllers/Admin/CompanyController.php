@@ -88,7 +88,7 @@ class CompanyController extends Controller
         if ($request->filled('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('business_name', 'like', "%{$search}%")
+                $q->where('legal_name', 'like', "%{$search}%")
                   ->orWhere('commercial_name', 'like', "%{$search}%")
                   ->orWhere('tax_id', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%");
@@ -178,7 +178,7 @@ class CompanyController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'business_name' => 'required|string|max:255',
+            'legal_name' => 'required|string|max:255',
             'commercial_name' => 'nullable|string|max:255',
             'tax_id' => 'required|string|size:11|unique:companies,tax_id',
             'country' => 'required|in:AR,PY',
@@ -199,7 +199,7 @@ class CompanyController extends Controller
             $rolesConfig = $this->generateRolesConfig($request->company_roles);
 
             $company = Company::create([
-                'business_name' => $request->business_name,
+                'legal_name' => $request->legal_name,
                 'commercial_name' => $request->commercial_name,
                 'tax_id' => $request->tax_id,
                 'country' => $request->country,
@@ -318,7 +318,7 @@ class CompanyController extends Controller
     public function update(Request $request, Company $company)
     {
         $request->validate([
-            'business_name' => 'required|string|max:255',
+            'legal_name' => 'required|string|max:255',
             'commercial_name' => 'nullable|string|max:255',
             'tax_id' => 'required|string|size:11|unique:companies,tax_id,' . $company->id,
             'country' => 'required|in:AR,PY',
@@ -345,7 +345,7 @@ class CompanyController extends Controller
             }
 
             $company->update([
-                'business_name' => $request->business_name,
+                'legal_name' => $request->legal_name,
                 'commercial_name' => $request->commercial_name,
                 'tax_id' => $request->tax_id,
                 'country' => $request->country,
@@ -386,7 +386,7 @@ class CompanyController extends Controller
                 Storage::delete($company->certificate_path);
             }
 
-            $companyName = $company->business_name;
+            $companyName = $company->legal_name;
             $company->delete();
 
             return redirect()->route('admin.companies.index')
