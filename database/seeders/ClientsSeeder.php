@@ -7,16 +7,21 @@ use Illuminate\Database\Seeder;
 use App\Models\Client;
 use App\Models\Company;
 use App\Models\Country;
-use App\Models\DocumentsType;
-use App\Models\CustomOffice;
+use App\Models\DocumentType;
 use App\Models\Port;
-use App\Models\ClientCompanyRelation;
+use App\Models\CustomOffice;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Seeder for creating realistic client data for Argentina and Paraguay
- *
- * Creates clients representing real shipping companies, cargo owners,
- * consignees and notify parties commonly found in river and maritime transport
+ * CORRECCIÓN 2 - SEEDER DE CLIENTES MODIFICADO
+ * 
+ * Cambios realizados:
+ * - ❌ REMOVIDO: client_type 'owner' 
+ * - ❌ REMOVIDO: relaciones ClientCompanyRelation (base compartida)
+ * - ✅ MANTIENE: shipper, consignee, notify_party
+ * - ✅ CONVIERTE: clientes en base de datos compartida
+ * - ✅ COMPATIBLE: con VesselOwner separado
  */
 class ClientsSeeder extends Seeder
 {
@@ -25,533 +30,371 @@ class ClientsSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->command->info('🚀 Creating clients for Argentina and Paraguay...');
+        $this->command->info('🚢 Creando clientes de carga (sin propietarios de embarcaciones)...');
 
-        // Get existing companies for relationships
+        // Verificar datos relacionados necesarios
+        if (!$this->checkRequiredData()) {
+            return;
+        }
+
+        // Obtener datos relacionados
+        $argentinaCountry = Country::where('iso_code', 'AR')->first();
+        $paraguayCountry = Country::where('iso_code', 'PY')->first();
+        $documentTypes = DocumentType::all();
+        $ports = Port::all();
+        $customs = CustomOffice::all();
+        $users = User::where('active', true)->get();
         $companies = Company::where('active', true)->get();
 
-        if ($companies->isEmpty()) {
-            $this->command->error('❌ No active companies found. Please run TestUsersSeeder first.');
-            return;
-        }
+        DB::transaction(function () use (
+            $argentinaCountry, 
+            $paraguayCountry, 
+            $documentTypes, 
+            $ports, 
+            $customs, 
+            $users, 
+            $companies
+        ) {
+            // Crear clientes argentinos realistas
+            $this->createArgentinianClients($argentinaCountry, $documentTypes, $ports, $customs, $users, $companies);
+            
+            // Crear clientes paraguayos realistas
+            $this->createParaguayanClients($paraguayCountry, $documentTypes, $ports, $customs, $users, $companies);
+            
+            // Crear casos de prueba específicos
+            $this->createTestCases($argentinaCountry, $paraguayCountry, $documentTypes, $ports, $customs, $users, $companies);
+        });
 
-        // Get countries
-        $argentina = Country::where('alpha2_code', 'AR')->first();
-        $paraguay = Country::where('alpha2_code', 'PY')->first();
-
-        if (!$argentina || !$paraguay) {
-            $this->command->error('❌ Countries not found. Please run catalogs seeder first.');
-            return;
-        }
-
-        // Create Argentine clients
-        $this->createArgentineClients($companies);
-
-        // Create Paraguayan clients
-        $this->createParaguayanClients($companies);
-
-        // Create special test cases
-        $this->createTestCaseClients($companies);
-
-        // Create company-client relationships
-        $this->createClientCompanyRelations();
-
-        $this->command->info('✅ Clients seeder completed successfully!');
-        $this->displaySummary();
+        $this->command->info('✅ Clientes de carga creados exitosamente (base de datos compartida)');
     }
 
     /**
-     * Create realistic Argentine clients
+     * Verificar que existan los datos relacionados necesarios.
      */
-    private function createArgentineClients($companies): void
+    private function checkRequiredData(): bool
     {
-        $this->command->info('📍 Creating Argentine clients...');
+        $argentinaCountry = Country::where('iso_code', 'AR')->first();
+        $paraguayCountry = Country::where('iso_code', 'PY')->first();
+        $users = User::where('active', true)->get();
+        $companies = Company::where('active', true)->get();
 
-        // Major Argentine shipping/cargo companies
-        $argentineClients = [
+        if (!$argentinaCountry || !$paraguayCountry) {
+            $this->command->error('❌ Países Argentina/Paraguay no encontrados. Ejecute BaseCatalogsSeeder primero.');
+            return false;
+        }
+
+        if ($users->isEmpty()) {
+            $this->command->error('❌ No hay usuarios activos. Ejecute TestUsersSeeder primero.');
+            return false;
+        }
+
+        if ($companies->isEmpty()) {
+            $this->command->error('❌ No hay empresas activas. Datos requeridos para auditoría.');
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Crear clientes argentinos realistas.
+     */
+    private function createArgentinianClients($country, $documentTypes, $ports, $customs, $users, $companies): void
+    {
+        $this->command->info('🇦🇷 Creando clientes argentinos...');
+
+        // Grandes exportadores de granos
+        $argentinianClients = [
             [
-                'legal_name' => 'ALUAR ALUMINIO ARGENTINO S.A.I.C.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subMonths(6),
-                'notes' => 'Principal exportador de aluminio de Argentina'
-            ],
-            [
-                'legal_name' => 'SIDERAR S.A.I.C.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subMonths(3),
-                'notes' => 'Siderúrgica - exportación de acero'
-            ],
-            [
-                'legal_name' => 'TENARIS S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subMonth(),
-                'notes' => 'Tubos de acero sin costura para petróleo'
-            ],
-            [
-                'legal_name' => 'MOLINOS RIO DE LA PLATA S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subWeeks(2),
-                'notes' => 'Productos alimentarios y oleaginosas'
-            ],
-            [
-                'legal_name' => 'BUNGE ARGENTINA S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subWeek(),
-                'notes' => 'Aceites vegetales y commodities'
-            ],
-            [
+                'tax_id' => '30123456789',
                 'legal_name' => 'CARGILL S.A.C.I.',
                 'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subDays(3),
-                'notes' => 'Trading de granos y oleaginosas'
+                'verified' => true,
+                'notes' => 'Exportador principal de granos y oleaginosas'
             ],
             [
-                'legal_name' => 'DREYFUS ARGENTINA S.A.',
+                'tax_id' => '30234567890',
+                'legal_name' => 'BUNGE ARGENTINA S.A.',
                 'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subDays(5),
-                'notes' => 'Commodities agrícolas'
+                'verified' => true,
+                'notes' => 'Procesamiento y exportación de soja'
             ],
             [
-                'legal_name' => 'ARCELOR MITTAL ACINDAR S.A.',
+                'tax_id' => '30345678901',
+                'legal_name' => 'MOLINOS RÍO DE LA PLATA S.A.',
                 'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subDays(10),
-                'notes' => 'Productos siderúrgicos'
+                'verified' => true,
+                'notes' => 'Alimentos y aceites vegetales'
             ],
             [
+                'tax_id' => '30456789012',
                 'legal_name' => 'TERMINAL 6 S.A.',
                 'client_type' => 'consignee',
-                'status' => 'active',
-                'verified_at' => now()->subDays(15),
-                'notes' => 'Terminal portuaria Buenos Aires'
+                'verified' => true,
+                'notes' => 'Terminal portuaria especializada en granos'
             ],
             [
-                'legal_name' => 'EXOLGAN S.A.',
+                'tax_id' => '30567890123',
+                'legal_name' => 'RENOVA S.A.',
+                'client_type' => 'shipper',
+                'verified' => true,
+                'notes' => 'Aceites vegetales y biocombustibles'
+            ],
+            [
+                'tax_id' => '30678901234',
+                'legal_name' => 'DREYFUS ARGENTINA S.A.',
+                'client_type' => 'shipper',
+                'verified' => true,
+                'notes' => 'Trading y procesamiento de commodities'
+            ],
+            [
+                'tax_id' => '30789012345',
+                'legal_name' => 'NIDERA S.A.',
                 'client_type' => 'consignee',
-                'status' => 'active',
-                'verified_at' => now()->subDays(20),
-                'notes' => 'Terminal de contenedores'
+                'verified' => true,
+                'notes' => 'Importación de fertilizantes'
             ],
             [
-                'legal_name' => 'SERVICIOS PORTUARIOS S.A.',
-                'client_type' => 'notify_party',
-                'status' => 'active',
-                'verified_at' => now()->subMonth(),
-                'notes' => 'Servicios de handling portuario'
-            ],
-            [
-                'legal_name' => 'LOGISTICA INTEGRAL S.R.L.',
-                'client_type' => 'owner',
-                'status' => 'active',
-                'verified_at' => now()->subDays(7),
-                'notes' => 'Servicios logísticos integrales'
-            ],
-            [
-                'legal_name' => 'TRANSPORTES FLUVIALES DEL PLATA S.A.',
-                'client_type' => 'owner',
-                'status' => 'active',
-                'verified_at' => now()->subDays(12),
-                'notes' => 'Transporte fluvial de cargas'
-            ],
-            [
-                'legal_name' => 'MULTIMODAL S.A.',
-                'client_type' => 'consignee',
-                'status' => 'suspended',
-                'verified_at' => null,
-                'notes' => 'Suspendido por verificación de documentación'
-            ],
-            [
-                'legal_name' => 'DEPOSITOS FISCALES S.A.',
-                'client_type' => 'notify_party',
-                'status' => 'inactive',
-                'verified_at' => now()->subYear(),
-                'notes' => 'Inactivo - empresa cesó operaciones'
+                'tax_id' => '30890123456',
+                'legal_name' => 'VICENTÍN S.A.I.C.',
+                'client_type' => 'shipper',
+                'verified' => false,
+                'notes' => 'Aceites y subproductos - pendiente verificación'
             ]
         ];
 
-        foreach ($argentineClients as $clientData) {
-            $client = Client::factory()
-                ->argentina()
-                ->state($clientData)
-                ->create([
-                    'created_by_company_id' => $companies->random()->id
-                ]);
+        foreach ($argentinianClients as $clientData) {
+            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $users, $companies);
+        }
 
-            $this->command->line("  ✓ {$client->legal_name} ({$client->tax_id})");
+        // Notificatarios argentinos
+        $notifyParties = [
+            [
+                'tax_id' => '27123456789',
+                'legal_name' => 'DESPACHANTE ADUANERO BUENOS AIRES S.R.L.',
+                'client_type' => 'notify_party',
+                'verified' => true,
+                'notes' => 'Servicios aduaneros especializados'
+            ],
+            [
+                'tax_id' => '27234567890',
+                'legal_name' => 'FORWARDER INTERNACIONAL S.A.',
+                'client_type' => 'notify_party',
+                'verified' => true,
+                'notes' => 'Agente de cargas internacional'
+            ]
+        ];
+
+        foreach ($notifyParties as $clientData) {
+            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $users, $companies);
         }
     }
 
     /**
-     * Create realistic Paraguayan clients
+     * Crear clientes paraguayos realistas.
      */
-    private function createParaguayanClients($companies): void
+    private function createParaguayanClients($country, $documentTypes, $ports, $customs, $users, $companies): void
     {
-        $this->command->info('📍 Creating Paraguayan clients...');
+        $this->command->info('🇵🇾 Creando clientes paraguayos...');
 
-        // Major Paraguayan shipping/cargo companies
         $paraguayanClients = [
             [
-                'legal_name' => 'PETROPAR S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subMonths(4),
-                'notes' => 'Petróleos del Paraguay - combustibles'
-            ],
-            [
-                'legal_name' => 'COPACO S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subMonths(2),
-                'notes' => 'Compañía Paraguaya de Comunicaciones'
-            ],
-            [
-                'legal_name' => 'INC S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subMonth(),
-                'notes' => 'Industrias Nucleares del Paraguay'
-            ],
-            [
-                'legal_name' => 'ACEPAR S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subWeeks(3),
-                'notes' => 'Aceros del Paraguay'
-            ],
-            [
-                'legal_name' => 'CAPIATÁ S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subWeek(),
-                'notes' => 'Productos textiles'
-            ],
-            [
-                'legal_name' => 'FRIGOMERC S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subDays(4),
-                'notes' => 'Frigorífico y productos cárnicos'
-            ],
-            [
-                'legal_name' => 'CONTI PARAGUAY S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subDays(8),
-                'notes' => 'Grupo Continental - oleaginosas'
-            ],
-            [
-                'legal_name' => 'MINERVA FOODS PARAGUAY S.A.',
-                'client_type' => 'shipper',
-                'status' => 'active',
-                'verified_at' => now()->subDays(12),
-                'notes' => 'Frigorífico exportador de carne'
-            ],
-            [
-                'legal_name' => 'TERMINAL PORTUARIA ASUNCION S.A.',
+                'tax_id' => '80012345-7',
+                'legal_name' => 'CARGILL DEL PARAGUAY S.A.',
                 'client_type' => 'consignee',
-                'status' => 'active',
-                'verified_at' => now()->subDays(16),
-                'notes' => 'Terminal de contenedores Asunción'
+                'verified' => true,
+                'notes' => 'Importación de granos y fertilizantes'
             ],
             [
-                'legal_name' => 'PUERTO LIBRE CDE S.A.',
+                'tax_id' => '80023456-8',
+                'legal_name' => 'TERMINAL PORTUARIA ASUNCIÓN S.A.',
                 'client_type' => 'consignee',
-                'status' => 'active',
-                'verified_at' => now()->subDays(20),
-                'notes' => 'Puerto libre Ciudad del Este'
+                'verified' => true,
+                'notes' => 'Terminal de contenedores'
             ],
             [
-                'legal_name' => 'NAVEGACION PARAGUAYA S.A.',
-                'client_type' => 'owner',
-                'status' => 'active',
-                'verified_at' => now()->subDays(25),
-                'notes' => 'Armador nacional paraguayo'
+                'tax_id' => '80034567-9',
+                'legal_name' => 'AGRO SERVICIOS DEL ESTE S.A.',
+                'client_type' => 'shipper',
+                'verified' => true,
+                'notes' => 'Exportación de productos agrícolas'
             ],
             [
-                'legal_name' => 'SERVICIOS LOGISTICOS DEL ESTE S.R.L.',
-                'client_type' => 'notify_party',
-                'status' => 'active',
-                'verified_at' => now()->subDays(6),
-                'notes' => 'Servicios de logística y almacenaje'
-            ],
-            [
-                'legal_name' => 'TRANSPORTES MULTIMODALES PY S.A.',
-                'client_type' => 'owner',
-                'status' => 'active',
-                'verified_at' => now()->subDays(18),
-                'notes' => 'Transporte terrestre y fluvial'
-            ],
-            [
-                'legal_name' => 'ZONA FRANCA GLOBAL S.A.',
+                'tax_id' => '80045678-0',
+                'legal_name' => 'FERTILIZANTES PARAGUAY S.R.L.',
                 'client_type' => 'consignee',
-                'status' => 'suspended',
-                'verified_at' => null,
-                'notes' => 'Suspendido por renovación de permisos'
+                'verified' => true,
+                'notes' => 'Importación y distribución de fertilizantes'
             ],
             [
-                'legal_name' => 'COMERCIAL DEL PARANA S.A.',
-                'client_type' => 'notify_party',
-                'status' => 'inactive',
-                'verified_at' => now()->subMonths(8),
-                'notes' => 'Inactivo - cambio de razón social'
+                'tax_id' => '80056789-1',
+                'legal_name' => 'SOJERO EXPORT S.A.',
+                'client_type' => 'shipper',
+                'verified' => false,
+                'notes' => 'Nuevo exportador de soja - verificación pendiente'
             ]
         ];
 
         foreach ($paraguayanClients as $clientData) {
-            $client = Client::factory()
-                ->paraguay()
-                ->state($clientData)
-                ->create([
-                    'created_by_company_id' => $companies->random()->id
-                ]);
-
-            $this->command->line("  ✓ {$client->legal_name} ({$client->tax_id})");
-        }
-    }
-
-    /**
-     * Create special test case clients
-     */
-    private function createTestCaseClients($companies): void
-    {
-        $this->command->info('🧪 Creating test case clients...');
-
-        // Test case 1: Client with document data variations
-        $aluar = Client::factory()
-            ->argentina()
-            ->shipper()
-            ->verified()
-            ->create([
-                'legal_name' => 'ALUAR S.A.',
-                'notes' => 'Cliente de prueba para datos variables de documentos',
-                'created_by_company_id' => $companies->first()->id
-            ]);
-
-        $this->command->line("  ✓ Test case: {$aluar->legal_name} (document data variations)");
-
-        // Test case 2: Recently created, unverified client
-        $newClient = Client::factory()
-            ->argentina()
-            ->consignee()
-            ->unverified()
-            ->create([
-                'legal_name' => 'NUEVA EMPRESA TEST S.A.',
-                'status' => 'active',
-                'notes' => 'Cliente recién creado sin verificar',
-                'created_by_company_id' => $companies->last()->id
-            ]);
-
-        $this->command->line("  ✓ Test case: {$newClient->legal_name} (unverified)");
-
-        // Test case 3: Client with multiple roles (via relations)
-        $multiRole = Client::factory()
-            ->paraguay()
-            ->owner()
-            ->verified()
-            ->create([
-                'legal_name' => 'MULTIROL TRANSPORT S.A.',
-                'notes' => 'Cliente con múltiples roles en diferentes empresas',
-                'created_by_company_id' => $companies->random()->id
-            ]);
-
-        $this->command->line("  ✓ Test case: {$multiRole->legal_name} (multi-role)");
-
-        // Test case 4: Suspended client with reason
-        $suspended = Client::factory()
-            ->argentina()
-            ->suspended()
-            ->create([
-                'legal_name' => 'EMPRESA SUSPENDIDA S.R.L.',
-                'notes' => 'Suspendido por documentación vencida - caso de prueba',
-                'created_by_company_id' => $companies->random()->id
-            ]);
-
-        $this->command->line("  ✓ Test case: {$suspended->legal_name} (suspended)");
-
-        // Test case 5: Client ready for webservices
-        $webserviceReady = Client::factory()
-            ->argentina()
-            ->shipper()
-            ->verified()
-            ->active()
-            ->create([
-                'legal_name' => 'WEBSERVICE READY S.A.',
-                'notes' => 'Cliente completamente configurado para webservices',
-                'created_by_company_id' => $companies->random()->id
-            ]);
-
-        $this->command->line("  ✓ Test case: {$webserviceReady->legal_name} (webservice ready)");
-    }
-
-    /**
-     * Create client-company relationships
-     */
-    private function createClientCompanyRelations(): void
-    {
-        $this->command->info('🔗 Creating client-company relationships...');
-
-        $clients = Client::all();
-        $companies = Company::where('active', true)->get();
-
-        $relationshipCount = 0;
-
-        foreach ($clients->take(20) as $client) { // First 20 clients for relationships
-            // 70% chance of additional company relationship
-            if (rand(1, 100) <= 70) {
-                $otherCompanies = $companies->where('id', '!=', $client->created_by_company_id);
-
-                if ($otherCompanies->isNotEmpty()) {
-                    $relationCompany = $otherCompanies->random();
-
-                    ClientCompanyRelation::create([
-                        'client_id' => $client->id,
-                        'company_id' => $relationCompany->id,
-                        'relation_type' => $this->getRandomRelationType(),
-                        'can_edit' => rand(1, 100) <= 60, // 60% can edit
-                        'active' => true,
-                        'credit_limit' => $this->getRandomCreditLimit(),
-                        'internal_code' => $this->generateInternalCode($relationCompany, $client),
-                        'priority' => $this->getRandomPriority(),
-                        'relation_config' => $this->getRandomRelationConfig(),
-                        'created_by_user_id' => 1, // Assume admin user
-                        'last_activity_at' => now()->subDays(rand(1, 30))
-                    ]);
-
-                    $relationshipCount++;
-                }
-            }
+            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $users, $companies);
         }
 
-        $this->command->line("  ✓ Created {$relationshipCount} client-company relationships");
-    }
-
-    /**
-     * Get random relation type
-     */
-    private function getRandomRelationType(): string
-    {
-        $types = ['customer', 'provider', 'both'];
-        return $types[array_rand($types)];
-    }
-
-    /**
-     * Get random credit limit
-     */
-    private function getRandomCreditLimit(): ?float
-    {
-        // 50% chance of having credit limit
-        if (rand(1, 100) <= 50) {
-            return rand(10000, 500000);
-        }
-        return null;
-    }
-
-    /**
-     * Generate internal code for company-client relation
-     */
-    private function generateInternalCode(Company $company, Client $client): string
-    {
-        $companyPrefix = strtoupper(substr($company->commercial_name, 0, 3));
-        $clientNumber = str_pad($client->id, 4, '0', STR_PAD_LEFT);
-        return $companyPrefix . '-' . $clientNumber;
-    }
-
-    /**
-     * Get random priority
-     */
-    private function getRandomPriority(): string
-    {
-        $priorities = ['low', 'normal', 'high', 'critical'];
-        return $priorities[array_rand($priorities)];
-    }
-
-    /**
-     * Get random relation configuration
-     */
-    private function getRandomRelationConfig(): array
-    {
-        $configs = [
-            ['auto_approve' => true, 'notification_email' => true],
-            ['auto_approve' => false, 'requires_authorization' => true],
-            ['billing_contact' => 'financiero@empresa.com', 'payment_terms' => 30],
-            ['preferred_port' => 'ARBUE', 'special_handling' => true],
-            []
+        // Notificatarios paraguayos
+        $notifyParties = [
+            [
+                'tax_id' => '80067890-2',
+                'legal_name' => 'DESPACHANTES PARAGUAY S.A.',
+                'client_type' => 'notify_party',
+                'verified' => true,
+                'notes' => 'Agente aduanero nacional'
+            ]
         ];
 
-        return $configs[array_rand($configs)];
+        foreach ($notifyParties as $clientData) {
+            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $users, $companies);
+        }
     }
 
     /**
-     * Display summary of created data
+     * Crear casos de prueba específicos.
      */
-    private function displaySummary(): void
+    private function createTestCases($argentinaCountry, $paraguayCountry, $documentTypes, $ports, $customs, $users, $companies): void
     {
-        $this->command->info('');
-        $this->command->info('=== 📊 CLIENTS SUMMARY ===');
+        $this->command->info('🧪 Creando casos de prueba...');
 
-        $totalClients = Client::count();
-        $argentineClients = Client::whereHas('country', fn($q) => $q->where('iso_code', 'AR'))->count();
-        $paraguayanClients = Client::whereHas('country', fn($q) => $q->where('iso_code', 'PY'))->count();
+        // Test case 1: Cliente con datos mínimos (solo CUIT)
+        $minimalClient = [
+            'tax_id' => '20999888777',
+            'legal_name' => 'CLIENTE MÍNIMO S.A.',
+            'client_type' => 'shipper',
+            'verified' => false,
+            'notes' => 'Caso de prueba: datos mínimos requeridos'
+        ];
+        $this->createClient($minimalClient, $argentinaCountry, $documentTypes, $ports, $customs, $users, $companies);
 
-        $activeClients = Client::where('status', 'active')->count();
-        $verifiedClients = Client::whereNotNull('verified_at')->count();
-        $suspendedClients = Client::where('status', 'suspended')->count();
-        $inactiveClients = Client::where('status', 'inactive')->count();
+        // Test case 2: Cliente recién creado sin verificar
+        $newClient = [
+            'tax_id' => '30999888777',
+            'legal_name' => 'NUEVA EMPRESA TEST S.A.',
+            'client_type' => 'consignee',
+            'verified' => false,
+            'notes' => 'Cliente recién creado sin verificar'
+        ];
+        $this->createClient($newClient, $argentinaCountry, $documentTypes, $ports, $customs, $users, $companies);
 
-        $shippers = Client::where('client_type', 'shipper')->count();
-        $consignees = Client::where('client_type', 'consignee')->count();
-        $notifyParties = Client::where('client_type', 'notify_party')->count();
-        $owners = Client::where('client_type', 'owner')->count();
+        // Test case 3: Cliente de múltiples roles (misma empresa, diferentes documentos)
+        $multiRole = [
+            'tax_id' => '80999888-7',
+            'legal_name' => 'MULTIROL TRANSPORT S.A.',
+            'client_type' => 'shipper', // En base compartida, el tipo es orientativo
+            'verified' => true,
+            'notes' => 'Cliente que actúa como shipper/consignee según el documento'
+        ];
+        $this->createClient($multiRole, $paraguayCountry, $documentTypes, $ports, $customs, $users, $companies);
 
-        $totalRelations = ClientCompanyRelation::count();
+        // Test case 4: Cliente suspendido
+        $suspended = [
+            'tax_id' => '20888777666',
+            'legal_name' => 'EMPRESA SUSPENDIDA S.R.L.',
+            'client_type' => 'shipper',
+            'verified' => true,
+            'status' => 'suspended',
+            'notes' => 'Suspendido por documentación vencida - caso de prueba'
+        ];
+        $this->createClient($suspended, $argentinaCountry, $documentTypes, $ports, $customs, $users, $companies);
 
-        $this->command->info("Total Clients Created: {$totalClients}");
-        $this->command->info("  🇦🇷 Argentina: {$argentineClients}");
-        $this->command->info("  🇵🇾 Paraguay: {$paraguayanClients}");
-        $this->command->info('');
+        // Test case 5: Cliente listo para webservices
+        $webserviceReady = [
+            'tax_id' => '30777666555',
+            'legal_name' => 'WEBSERVICE READY S.A.',
+            'client_type' => 'shipper',
+            'verified' => true,
+            'notes' => 'Cliente completamente configurado para webservices'
+        ];
+        $this->createClient($webserviceReady, $argentinaCountry, $documentTypes, $ports, $customs, $users, $companies);
 
-        $this->command->info('By Status:');
-        $this->command->info("  ✅ Active: {$activeClients}");
-        $this->command->info("  ✅ Verified: {$verifiedClients}");
-        $this->command->info("  ⏸️  Suspended: {$suspendedClients}");
-        $this->command->info("  ❌ Inactive: {$inactiveClients}");
-        $this->command->info('');
+        $this->command->info('✓ Casos de prueba creados');
+    }
 
-        $this->command->info('By Type:');
-        $this->command->info("  📦 Shippers: {$shippers}");
-        $this->command->info("  📥 Consignees: {$consignees}");
-        $this->command->info("  📧 Notify Parties: {$notifyParties}");
-        $this->command->info("  🚢 Owners: {$owners}");
-        $this->command->info('');
+    /**
+     * Crear un cliente individual.
+     */
+    private function createClient(array $clientData, $country, $documentTypes, $ports, $customs, $users, $companies): void
+    {
+        // Verificar si ya existe
+        $existing = Client::where('tax_id', $clientData['tax_id'])->first();
+        if ($existing) {
+            $this->command->warn("⚠️  Cliente {$clientData['legal_name']} ya existe");
+            return;
+        }
 
-        $this->command->info("Client-Company Relations: {$totalRelations}");
-        $this->command->info('');
+        // Seleccionar datos relacionados aleatorios
+        $documentType = $documentTypes->random();
+        $primaryPort = $ports->where('country_id', $country->id)->random();
+        $customOffice = $customs->where('country_id', $country->id)->random();
+        $user = $users->random();
+        $company = $companies->random(); // Para auditoría de creación
 
-        $this->command->info('=== 🧪 TEST CASES CREATED ===');
-        $this->command->info('• ALUAR S.A. - Document data variations');
-        $this->command->info('• NUEVA EMPRESA TEST S.A. - Unverified client');
-        $this->command->info('• MULTIROL TRANSPORT S.A. - Multi-role client');
-        $this->command->info('• EMPRESA SUSPENDIDA S.R.L. - Suspended client');
-        $this->command->info('• WEBSERVICE READY S.A. - Ready for webservices');
-        $this->command->info('');
+        // Crear cliente
+        $client = Client::create([
+            'tax_id' => $clientData['tax_id'],
+            'country_id' => $country->id,
+            'document_type_id' => $documentType->id,
+            'client_type' => $clientData['client_type'],
+            'legal_name' => $clientData['legal_name'],
+            'primary_port_id' => $primaryPort?->id,
+            'customs_offices_id' => $customOffice?->id,
+            'status' => $clientData['status'] ?? 'active',
+            'created_by_company_id' => $company->id, // Solo para auditoría
+            'verified_at' => $clientData['verified'] ? now()->subDays(rand(30, 365)) : null,
+            'notes' => $clientData['notes'],
+        ]);
 
-        $this->command->info('=== 🔧 USAGE EXAMPLES ===');
-        $this->command->info('# Find Argentine shippers:');
-        $this->command->info('Client::argentina()->shippers()->get()');
-        $this->command->info('');
-        $this->command->info('# Find verified clients:');
-        $this->command->info('Client::verified()->get()');
-        $this->command->info('');
-        $this->command->info('# Find clients by company:');
-        $this->command->info('$company->clients()->get()');
-        $this->command->info('');
-        $this->command->info('✅ Clients seeder completed successfully!');
+        $this->command->line("  ✓ {$client->legal_name} ({$client->client_type})");
+    }
+
+    /**
+     * Crear clientes adicionales usando factory (sin owner).
+     */
+    private function createFactoryClients($countries): void
+    {
+        $this->command->info('🏭 Creando clientes adicionales con factory...');
+
+        // Solo usar tipos permitidos: shipper, consignee, notify_party
+        $allowedTypes = ['shipper', 'consignee', 'notify_party'];
+
+        // Crear clientes argentinos adicionales
+        for ($i = 0; $i < 5; $i++) {
+            $client = Client::create([
+                'tax_id' => '20' . str_pad(rand(100000000, 999999999), 9, '0', STR_PAD_LEFT),
+                'country_id' => $countries['argentina']->id,
+                'document_type_id' => 1, // Asumiendo que existe
+                'client_type' => $allowedTypes[array_rand($allowedTypes)],
+                'legal_name' => 'EMPRESA FACTORY ' . ($i + 1) . ' S.A.',
+                'status' => 'active',
+                'verified_at' => rand(0, 1) ? now()->subDays(rand(10, 100)) : null,
+                'notes' => 'Cliente generado por factory',
+                'created_by_company_id' => 1, // Empresa por defecto
+            ]);
+
+            $this->command->line("  ✓ Factory: {$client->legal_name}");
+        }
+
+        // Crear clientes paraguayos adicionales
+        for ($i = 0; $i < 3; $i++) {
+            $client = Client::create([
+                'tax_id' => '80' . str_pad(rand(100000, 999999), 6, '0', STR_PAD_LEFT) . '-' . rand(0, 9),
+                'country_id' => $countries['paraguay']->id,
+                'document_type_id' => 1,
+                'client_type' => $allowedTypes[array_rand($allowedTypes)],
+                'legal_name' => 'EMPRESA FACTORY PY ' . ($i + 1) . ' S.A.',
+                'status' => 'active',
+                'verified_at' => rand(0, 1) ? now()->subDays(rand(10, 100)) : null,
+                'notes' => 'Cliente paraguayo generado por factory',
+                'created_by_company_id' => 1,
+            ]);
+
+            $this->command->line("  ✓ Factory PY: {$client->legal_name}");
+        }
     }
 }

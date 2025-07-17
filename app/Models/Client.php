@@ -17,16 +17,21 @@ use App\Models\ClientContactData;
  * Modelo Client para gestión de clientes con CUIT/RUC
  * Resuelve la problemática de registro simple y datos variables
  *
+ * CORRECCIÓN APLICADA: 
+ * - ❌ REMOVIDO: client_type 'owner' (ahora en VesselOwner)
+ * - ❌ REMOVIDO: relación companyRelations (base de datos compartida)
+ * - ✅ MANTIENE: created_by_company_id (solo para auditoría)
+ *
  * @property int $id
  * @property string $tax_id CUIT/RUC del cliente
  * @property int $country_id País del cliente
  * @property int $document_type_id Tipo de documento
- * @property string $client_type Rol del cliente (shipper, consignee, etc.)
+ * @property string $client_type Rol del cliente (shipper, consignee, notify_party)
  * @property string $legal_name Razón social oficial
  * @property int|null $primary_port_id Puerto principal
  * @property int|null $customs_offices_id Aduana habitual
  * @property string $status Estado (active, inactive, suspended)
- * @property int $created_by_company_id Empresa creadora
+ * @property int $created_by_company_id Empresa creadora (solo auditoría)
  * @property Carbon|null $verified_at Fecha verificación CUIT
  * @property string|null $notes Observaciones
  * @property Carbon $created_at
@@ -76,13 +81,12 @@ class Client extends Model
 
     /**
      * Tipos de cliente disponibles.
-     * ACTUALIZADO: Cambio de nomenclatura según feedback del cliente
+     * CORRECCIÓN: Removido 'owner' - ahora gestionado por VesselOwner
      */
     public const CLIENT_TYPES = [
         'shipper' => 'Cargador/Exportador',
         'consignee' => 'Consignatario/Importador',
-        'notify_party' => 'Notificatario',  // ← CAMBIADO
-        'owner' => 'Propietario de la Carga',
+        'notify_party' => 'Notificatario',
     ];
 
     /**
@@ -259,19 +263,12 @@ class Client extends Model
     }
 
     /**
-     * Empresa que creó el cliente.
+     * Empresa que creó el cliente (solo para auditoría).
+     * NOTA: Los clientes son ahora base de datos compartida.
      */
     public function createdByCompany(): BelongsTo
     {
         return $this->belongsTo(Company::class, 'created_by_company_id');
-    }
-
-    /**
-     * Relaciones con empresas.
-     */
-    public function companyRelations(): HasMany
-    {
-        return $this->hasMany(ClientCompanyRelation::class);
     }
 
     // =====================================================
