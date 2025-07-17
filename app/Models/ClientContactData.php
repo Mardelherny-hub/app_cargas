@@ -56,6 +56,7 @@ use Carbon\Carbon;
  * @property-read string $full_address
  * @property-read string $primary_contact_info
  * @property-read array $notification_methods
+ * @property string $contact_type Tipo de contacto (general, afip, manifests, etc.)
  */
 class ClientContactData extends Model
 {
@@ -65,6 +66,19 @@ class ClientContactData extends Model
      * The table associated with the model.
      */
     protected $table = 'client_contact_data';
+
+    /**
+     * Tipos de contacto disponibles según su uso.
+     */
+    public const CONTACT_TYPES = [
+        'general' => 'Contacto General',
+        'afip' => 'AFIP/Webservices',
+        'manifests' => 'Manifiestos',
+        'arrival_notices' => 'Cartas de Arribo',
+        'emergency' => 'Emergencias',
+        'billing' => 'Facturación',
+        'operations' => 'Operaciones',
+    ];
 
     /**
      * The attributes that are mass assignable.
@@ -100,6 +114,7 @@ class ClientContactData extends Model
         'verified_at',
         'created_by_user_id',
         'updated_by_user_id',
+        'contact_type'
     ];
 
     /**
@@ -574,5 +589,77 @@ class ClientContactData extends Model
             'contacto' => $this->contact_person_name,
             'cargo_contacto' => $this->contact_person_position,
         ];
+    }
+
+    // ===============================================
+    // SCOPES PARA TIPOS DE CONTACTO
+    // ===============================================
+
+    /**
+     * Scope para contactos por tipo.
+     */
+    public function scopeByType(Builder $query, string $type): Builder
+    {
+        return $query->where('contact_type', $type);
+    }
+
+    /**
+     * Scope para contactos de AFIP/Webservices.
+     */
+    public function scopeAfipContacts(Builder $query): Builder
+    {
+        return $query->where('contact_type', 'afip')->where('active', true);
+    }
+
+    /**
+     * Scope para contactos de manifiestos.
+     */
+    public function scopeManifestContacts(Builder $query): Builder
+    {
+        return $query->where('contact_type', 'manifests')->where('active', true);
+    }
+
+    /**
+     * Scope para contactos de cartas de arribo.
+     */
+    public function scopeArrivalNoticeContacts(Builder $query): Builder
+    {
+        return $query->where('contact_type', 'arrival_notices')->where('active', true);
+    }
+
+    // ===============================================
+    // MÉTODOS DE UTILIDAD POR TIPO
+    // ===============================================
+
+    /**
+     * Obtener todos los emails para cartas de arribo.
+     * Retorna array con todos los emails de contactos tipo 'arrival_notices'
+     */
+    public function getArrivalNoticeEmailsAttribute(): array
+    {
+        return $this->where('client_id', $this->client_id)
+                    ->arrivalNoticeContacts()
+                    ->whereNotNull('email')
+                    ->pluck('email')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+    }
+
+    /**
+     * Verificar si es contacto de un tipo específico.
+     */
+    public function isContactType(string $type): bool
+    {
+        return $this->contact_type === $type;
+    }
+
+    /**
+     * Obtener label del tipo de contacto.
+     */
+    public function getContactTypeLabel(): string
+    {
+        return self::CONTACT_TYPES[$this->contact_type] ?? 'Desconocido';
     }
 }

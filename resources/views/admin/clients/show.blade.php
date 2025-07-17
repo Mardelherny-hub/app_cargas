@@ -231,109 +231,213 @@
                     </div>
 
                     <!-- Información de Contacto Detallada -->
-                    @if($client->activeContacts->count() > 0)
-                        <div class="bg-white overflow-hidden shadow rounded-lg">
-                            <div class="px-4 py-5 sm:p-6">
-                                <div class="flex items-center justify-between mb-4">
-                                    <div class="flex items-center">
-                                        <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {{-- SECCIÓN DE CONTACTOS POR TIPO --}}
+                        <!-- Información de Contacto por Tipo -->
+                        @if($client->contactData->count() > 0)
+                            <div class="bg-white overflow-hidden shadow rounded-lg">
+                                <div class="px-4 py-5 sm:p-6">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <div class="flex items-center">
+                                            <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
+                                            </svg>
+                                            <h3 class="text-lg leading-6 font-medium text-gray-900">Contactos por Tipo</h3>
+                                            <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                {{ $client->contactData->count() }} contactos
+                                            </span>
+                                        </div>
+                                        @if(auth()->user()->hasRole(['super-admin', 'company-admin']))
+                                            <a href="{{ route('admin.clients.edit', $client) }}" 
+                                            class="text-sm bg-blue-100 text-blue-800 hover:bg-blue-200 px-3 py-1 rounded-md font-medium">
+                                                Editar Contactos
+                                            </a>
+                                        @endif
+                                    </div>
+
+                                    <!-- Estadísticas rápidas -->
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                                        <div class="bg-gray-50 p-4 rounded-lg">
+                                            <div class="flex items-center">
+                                                <svg class="w-5 h-5 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
+                                                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
+                                                </svg>
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Cartas de Arribo</p>
+                                                    <p class="text-lg font-medium text-gray-900">{{ count($client->getArrivalNoticeEmails()) }} emails</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="bg-gray-50 p-4 rounded-lg">
+                                            <div class="flex items-center">
+                                                <svg class="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+                                                </svg>
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Contacto AFIP</p>
+                                                    <p class="text-lg font-medium text-gray-900">
+                                                        @if($client->hasContactType('afip'))
+                                                            Configurado
+                                                        @else
+                                                            Sin configurar
+                                                        @endif
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="bg-gray-50 p-4 rounded-lg">
+                                            <div class="flex items-center">
+                                                <svg class="w-5 h-5 text-purple-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Contacto Principal</p>
+                                                    <p class="text-lg font-medium text-gray-900">
+                                                        {{ $client->primaryContact ? 'Definido' : 'Sin definir' }}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Contactos por tipo -->
+                                    <div class="space-y-6">
+                                        @foreach($contactsByType as $type => $contacts)
+                                            <div class="border border-gray-200 rounded-lg">
+                                                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                                    <div class="flex items-center justify-between">
+                                                        <h4 class="text-sm font-medium text-gray-900 flex items-center">
+                                                            @if($type === 'afip')
+                                                                <svg class="w-4 h-4 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/>
+                                                                </svg>
+                                                            @elseif($type === 'arrival_notices')
+                                                                <svg class="w-4 h-4 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+                                                                </svg>
+                                                            @else
+                                                                <svg class="w-4 h-4 text-gray-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/>
+                                                                </svg>
+                                                            @endif
+                                                            {{ $contactTypes[$type] ?? ucfirst($type) }}
+                                                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                                {{ $contacts->count() }}
+                                                            </span>
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="px-4 py-4">
+                                                    <div class="space-y-4">
+                                                        @foreach($contacts as $contact)
+                                                            <div class="flex items-start space-x-4 p-3 bg-white border rounded-lg {{ $contact->is_primary ? 'border-blue-300 bg-blue-50' : 'border-gray-200' }}">
+                                                                @if($contact->is_primary)
+                                                                    <div class="flex-shrink-0">
+                                                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                                            Principal
+                                                                        </span>
+                                                                    </div>
+                                                                @endif
+                                                                
+                                                                <div class="flex-1 min-w-0">
+                                                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                        <div>
+                                                                            @if($contact->contact_person_name)
+                                                                                <p class="text-sm font-medium text-gray-900">
+                                                                                    {{ $contact->contact_person_name }}
+                                                                                    @if($contact->contact_person_position)
+                                                                                        <span class="text-gray-500 font-normal">({{ $contact->contact_person_position }})</span>
+                                                                                    @endif
+                                                                                </p>
+                                                                            @endif
+                                                                            
+                                                                            @if($contact->email)
+                                                                                <p class="text-sm text-gray-600">
+                                                                                    <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
+                                                                                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
+                                                                                    </svg>
+                                                                                    <a href="mailto:{{ $contact->email }}" class="text-blue-600 hover:text-blue-500">{{ $contact->email }}</a>
+                                                                                </p>
+                                                                            @endif
+                                                                            
+                                                                            @if($contact->phone)
+                                                                                <p class="text-sm text-gray-600">
+                                                                                    <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                                        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/>
+                                                                                    </svg>
+                                                                                    {{ $contact->phone }}
+                                                                                </p>
+                                                                            @endif
+                                                                            
+                                                                            @if($contact->mobile_phone)
+                                                                                <p class="text-sm text-gray-600">
+                                                                                    <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                                        <path d="M7 2a2 2 0 00-2 2v12a2 2 0 002 2h6a2 2 0 002-2V4a2 2 0 00-2-2H7zM8 14a1 1 0 100 2h4a1 1 0 100-2H8z"/>
+                                                                                    </svg>
+                                                                                    {{ $contact->mobile_phone }}
+                                                                                </p>
+                                                                            @endif
+                                                                        </div>
+                                                                        
+                                                                        <div>
+                                                                            @if($contact->address_line_1)
+                                                                                <p class="text-sm text-gray-600">
+                                                                                    <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                                        <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z"/>
+                                                                                    </svg>
+                                                                                    {{ $contact->address_line_1 }}
+                                                                                    @if($contact->address_line_2), {{ $contact->address_line_2 }}@endif
+                                                                                    @if($contact->city)<br>{{ $contact->city }}@endif
+                                                                                    @if($contact->state_province), {{ $contact->state_province }}@endif
+                                                                                </p>
+                                                                            @endif
+                                                                            
+                                                                            @if($contact->notes)
+                                                                                <p class="text-xs text-gray-500 mt-2 italic">
+                                                                                    {{ $contact->notes }}
+                                                                                </p>
+                                                                            @endif
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <!-- Sin contactos -->
+                            <div class="bg-white overflow-hidden shadow rounded-lg">
+                                <div class="px-4 py-5 sm:p-6">
+                                    <div class="text-center">
+                                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                                         </svg>
-                                        <h3 class="text-lg leading-6 font-medium text-gray-900">Información de Contacto</h3>
-                                    </div>
-                                    @if(auth()->user()->hasRole(['super-admin', 'company-admin']))
-                                        <a href="{{ route('admin.clients.edit', $client) }}" 
-                                           class="text-sm bg-blue-100 text-blue-800 hover:bg-blue-200 px-3 py-1 rounded-md font-medium">
-                                            Editar Contactos
-                                        </a>
-                                    @endif
-                                </div>
-                                
-                                <div class="space-y-4">
-                                    @foreach($client->activeContacts as $contact)
-                                        <div class="border rounded-lg p-4 {{ $contact->is_primary ? 'border-blue-200 bg-blue-50' : 'border-gray-200' }}">
-                                            <div class="flex items-center justify-between mb-2">
-                                                <div class="flex items-center">
-                                                    @if($contact->is_primary)
-                                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                                                            Principal
-                                                        </span>
-                                                    @endif
-                                                    <span class="text-sm font-medium text-gray-900">
-                                                        {{ $contact->contact_name ?: 'Contacto' }}
-                                                    </span>
-                                                </div>
-                                                <span class="text-xs text-gray-500">
-                                                    {{ $contact->active ? 'Activo' : 'Inactivo' }}
-                                                </span>
+                                        <h3 class="mt-2 text-sm font-medium text-gray-900">Sin contactos registrados</h3>
+                                        <p class="mt-1 text-sm text-gray-500">
+                                            Este cliente no tiene contactos registrados.
+                                        </p>
+                                        @if(auth()->user()->hasRole(['super-admin', 'company-admin']))
+                                            <div class="mt-6">
+                                                <a href="{{ route('admin.clients.edit', $client) }}" 
+                                                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                                    Agregar Contactos
+                                                </a>
                                             </div>
-                                            
-                                            <dl class="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-                                                @if($contact->email)
-                                                    <div>
-                                                        <dt class="text-xs font-medium text-gray-500">Email</dt>
-                                                        <dd class="text-sm text-gray-900">{{ $contact->email }}</dd>
-                                                    </div>
-                                                @endif
-                                                
-                                                @if($contact->phone)
-                                                    <div>
-                                                        <dt class="text-xs font-medium text-gray-500">Teléfono</dt>
-                                                        <dd class="text-sm text-gray-900">{{ $contact->phone }}</dd>
-                                                    </div>
-                                                @endif
-                                                
-                                                @if($contact->mobile_phone)
-                                                    <div>
-                                                        <dt class="text-xs font-medium text-gray-500">Móvil</dt>
-                                                        <dd class="text-sm text-gray-900">{{ $contact->mobile_phone }}</dd>
-                                                    </div>
-                                                @endif
-                                                
-                                                @if($contact->address_line_1)
-                                                    <div class="sm:col-span-2">
-                                                        <dt class="text-xs font-medium text-gray-500">Dirección</dt>
-                                                        <dd class="text-sm text-gray-900">
-                                                            {{ $contact->address_line_1 }}
-                                                            @if($contact->address_line_2), {{ $contact->address_line_2 }}@endif
-                                                            @if($contact->city), {{ $contact->city }}@endif
-                                                            @if($contact->state_province), {{ $contact->state_province }}@endif
-                                                            @if($contact->postal_code) ({{ $contact->postal_code }})@endif
-                                                        </dd>
-                                                    </div>
-                                                @endif
-                                            </dl>
-                                        </div>
-                                    @endforeach
+                                        @endif
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    @else
-                        <!-- Sin información de contacto -->
-                        <div class="bg-white overflow-hidden shadow rounded-lg">
-                            <div class="px-4 py-5 sm:p-6">
-                                <div class="text-center">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                                    </svg>
-                                    <h3 class="mt-2 text-sm font-medium text-gray-900">Sin información de contacto</h3>
-                                    <p class="mt-1 text-sm text-gray-500">
-                                        Este cliente no tiene información de contacto registrada.
-                                        Es recomendable agregar al menos un email y dirección.
-                                    </p>
-                                    @if(auth()->user()->hasRole(['super-admin', 'company-admin']))
-                                        <div class="mt-4">
-                                            <a href="{{ route('admin.clients.edit', $client) }}" 
-                                               class="text-sm bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-3 py-2 rounded-md font-medium">
-                                                Agregar Información de Contacto
-                                            </a>
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
-                        </div>
-                    @endif
-                </div>
+                        @endif
+                    </div>
 
                 <!-- Columna Lateral: Metadatos y Acciones -->
                 <div class="space-y-6">

@@ -28,6 +28,8 @@ class VesselOwnersSeeder extends Seeder
         $companies = Company::where('active', true)->get();
         $argentinaCountry = Country::where('iso_code', 'AR')->first();
         $paraguayCountry = Country::where('iso_code', 'PY')->first();
+        $argentinaCountry = Country::where('alpha2_code', 'AR')->first();
+        $paraguayCountry = Country::where('alpha2_code', 'PY')->first();
         $users = User::where('active', true)->limit(5)->get();
 
         if ($companies->isEmpty()) {
@@ -51,7 +53,7 @@ class VesselOwnersSeeder extends Seeder
         $argentinianOwners = [
             [
                 'tax_id' => '20123456789',
-                'business_name' => 'Armadores del Río de la Plata S.A.',
+                'legal_name' => 'Armadores del Río de la Plata S.A.',
                 'commercial_name' => 'ARP Navegación',
                 'transportista_type' => 'O',
                 'email' => 'info@arpnavegacion.com.ar',
@@ -65,7 +67,7 @@ class VesselOwnersSeeder extends Seeder
             ],
             [
                 'tax_id' => '20234567890',
-                'business_name' => 'Navegación Fluvial del Paraná S.R.L.',
+                'legal_name' => 'Navegación Fluvial del Paraná S.R.L.',
                 'commercial_name' => 'NavParaná',
                 'transportista_type' => 'R',
                 'email' => 'operaciones@navparana.com.ar',
@@ -79,7 +81,7 @@ class VesselOwnersSeeder extends Seeder
             ],
             [
                 'tax_id' => '20345678901',
-                'business_name' => 'Transportes Marítimos del Sur S.A.',
+                'legal_name' => 'Transportes Marítimos del Sur S.A.',
                 'commercial_name' => 'TMS Logística',
                 'transportista_type' => 'O',
                 'email' => 'contacto@tmslogistica.com.ar',
@@ -97,7 +99,7 @@ class VesselOwnersSeeder extends Seeder
         $paraguayanOwners = [
             [
                 'tax_id' => '80012345',
-                'business_name' => 'Navegación Paraguay S.A.',
+                'legal_name' => 'Navegación Paraguay S.A.',
                 'commercial_name' => 'NavPy',
                 'transportista_type' => 'O',
                 'email' => 'info@navpy.com.py',
@@ -111,7 +113,7 @@ class VesselOwnersSeeder extends Seeder
             ],
             [
                 'tax_id' => '80023456',
-                'business_name' => 'Hidrovía del Paraguay S.R.L.',
+                'legal_name' => 'Hidrovía del Paraguay S.R.L.',
                 'commercial_name' => 'HidroParaguay',
                 'transportista_type' => 'R',
                 'email' => 'operaciones@hidroparaguay.com.py',
@@ -163,13 +165,13 @@ class VesselOwnersSeeder extends Seeder
         // Verificar si ya existe
         $existing = VesselOwner::where('tax_id', $ownerData['tax_id'])->first();
         if ($existing) {
-            $this->command->warn("⚠️  Propietario {$ownerData['business_name']} ya existe");
+            $this->command->warn("⚠️  Propietario {$ownerData['legal_name']} ya existe");
             return;
         }
 
         VesselOwner::create([
             'tax_id' => $ownerData['tax_id'],
-            'business_name' => $ownerData['business_name'],
+            'legal_name' => $ownerData['legal_name'],
             'commercial_name' => $ownerData['commercial_name'] ?? null,
             'company_id' => $company->id,
             'country_id' => $country->id,
@@ -188,7 +190,7 @@ class VesselOwnersSeeder extends Seeder
             'last_activity_at' => now()->subDays(rand(1, 30)),
         ]);
 
-        $this->command->info("✓ Creado: {$ownerData['business_name']} ({$ownerData['transportista_type']})");
+        $this->command->info("✓ Creado: {$ownerData['legal_name']} ({$ownerData['transportista_type']})");
     }
 
     /**
@@ -204,7 +206,7 @@ class VesselOwnersSeeder extends Seeder
             // Argentina
             [
                 'tax_id' => '20456789012',
-                'business_name' => 'Barcazas Argentinas S.A.',
+                'legal_name' => 'Barcazas Argentinas S.A.',
                 'transportista_type' => 'O',
                 'country' => $argentina,
                 'phone' => '+54 11 5555-9999',
@@ -212,7 +214,7 @@ class VesselOwnersSeeder extends Seeder
             ],
             [
                 'tax_id' => '20567890123',
-                'business_name' => 'Fluvial Paraná S.R.L.',
+                'legal_name' => 'Fluvial Paraná S.R.L.',
                 'transportista_type' => 'R',
                 'country' => $argentina,
                 'phone' => '+54 341 777-8888',
@@ -221,7 +223,7 @@ class VesselOwnersSeeder extends Seeder
             // Paraguay
             [
                 'tax_id' => '80034567',
-                'business_name' => 'Transporte Fluvial del Este S.A.',
+                'legal_name' => 'Transporte Fluvial del Este S.A.',
                 'transportista_type' => 'O',
                 'country' => $paraguay,
                 'phone' => '+595 61 666-777',
@@ -234,12 +236,12 @@ class VesselOwnersSeeder extends Seeder
             
             VesselOwner::create([
                 'tax_id' => $ownerData['tax_id'],
-                'business_name' => $ownerData['business_name'],
+                'legal_name' => $ownerData['legal_name'],
                 'commercial_name' => null,
                 'company_id' => $company->id,
                 'country_id' => $ownerData['country']->id,
                 'transportista_type' => $ownerData['transportista_type'],
-                'email' => 'info' . ($index + 1) . '@' . strtolower(str_replace(' ', '', $ownerData['business_name'])) . '.com',
+                'email' => 'info' . ($index + 1) . '@' . strtolower(str_replace(' ', '', $ownerData['legal_name'])) . '.com',
                 'phone' => $ownerData['phone'],
                 'address' => 'Dirección ' . ($index + 1),
                 'city' => $ownerData['city'],
@@ -253,7 +255,7 @@ class VesselOwnersSeeder extends Seeder
                 'last_activity_at' => now()->subDays(rand(1, 15)),
             ]);
 
-            $this->command->info("✓ Creado adicional: {$ownerData['business_name']}");
+            $this->command->info("✓ Creado adicional: {$ownerData['legal_name']}");
         }
     }
 

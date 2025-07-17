@@ -21,13 +21,8 @@
         </div>
     </x-slot>
 
-    <!-- Meta tag CSRF para peticiones AJAX -->
-    @push('meta')
-        <meta name="csrf-token" content="{{ csrf_token() }}">
-    @endpush
-
     <div class="py-12">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
             @if ($errors->any())
                 <div class="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
@@ -38,9 +33,11 @@
                             </svg>
                         </div>
                         <div class="ml-3">
-                            <h3 class="text-sm font-medium text-red-800">Errores en el formulario:</h3>
+                            <h3 class="text-sm font-medium text-red-800">
+                                Hay errores en el formulario
+                            </h3>
                             <div class="mt-2 text-sm text-red-700">
-                                <ul class="list-disc list-inside space-y-1">
+                                <ul class="list-disc pl-5 space-y-1">
                                     @foreach ($errors->all() as $error)
                                         <li>{{ $error }}</li>
                                     @endforeach
@@ -51,36 +48,47 @@
                 </div>
             @endif
 
-            <form method="POST" action="{{ route('admin.clients.store') }}" id="clientForm" class="space-y-6">
+            <form method="POST" action="{{ route('admin.clients.store') }}" id="clientForm">
                 @csrf
-
-                <!-- Información Básica Requerida -->
-                <div class="bg-white overflow-hidden shadow rounded-lg">
+                
+                <!-- Información Básica del Cliente -->
+                <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
                     <div class="px-4 py-5 sm:p-6">
                         <div class="flex items-center mb-6">
                             <svg class="w-6 h-6 text-blue-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                             </svg>
-                            <h3 class="text-lg leading-6 font-medium text-gray-900">Información Básica (Requerida)</h3>
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">Información Legal</h3>
                         </div>
 
                         <div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                            
-                            <!-- País (Requerido) -->
+                            <!-- CUIT/RUC -->
+                            <div class="sm:col-span-1">
+                                <label for="tax_id" class="block text-sm font-medium text-gray-700">
+                                    CUIT/RUC <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="tax_id" name="tax_id" required maxlength="15"
+                                       value="{{ old('tax_id') }}"
+                                       placeholder="Ej: 20123456789"
+                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                @error('tax_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">Solo números, sin guiones ni espacios</p>
+                            </div>
+
+                            <!-- País -->
                             <div class="sm:col-span-1">
                                 <label for="country_id" class="block text-sm font-medium text-gray-700">
                                     País <span class="text-red-500">*</span>
                                 </label>
-                                <select id="country_id" 
-                                        name="country_id" 
-                                        required
+                                <select id="country_id" name="country_id" required
                                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Seleccione un país</option>
+                                    <option value="">Seleccionar país</option>
                                     @foreach($countries as $country)
                                         <option value="{{ $country->id }}" 
-                                                data-iso="{{ $country->iso_code }}"
                                                 {{ old('country_id') == $country->id ? 'selected' : '' }}>
-                                            {{ $country->name }} ({{ $country->iso_code }})
+                                            {{ $country->name }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -89,68 +97,35 @@
                                 @enderror
                             </div>
 
-                            <!-- CUIT/RUC (Requerido) -->
-                            <div class="sm:col-span-1">
-                                <label for="tax_id" class="block text-sm font-medium text-gray-700">
-                                    <span id="tax_id_label">CUIT/RUC</span> <span class="text-red-500">*</span>
-                                </label>
-                                <div class="mt-1 relative">
-                                    <input type="text" 
-                                           id="tax_id" 
-                                           name="tax_id" 
-                                           value="{{ old('tax_id') }}"
-                                           required
-                                           maxlength="15"
-                                           placeholder="Ingrese CUIT/RUC"
-                                           class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <div id="tax_id_validation" class="hidden absolute right-2 top-2">
-                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                                        </svg>
-                                    </div>
-                                </div>
-                                <p id="tax_id_help" class="mt-1 text-xs text-gray-500"></p>
-                                @error('tax_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Razón Social (Requerida) -->
+                            <!-- Razón Social -->
                             <div class="sm:col-span-2">
                                 <label for="legal_name" class="block text-sm font-medium text-gray-700">
                                     Razón Social <span class="text-red-500">*</span>
                                 </label>
-                                <input type="text" 
-                                       id="legal_name" 
-                                       name="legal_name" 
+                                <input type="text" id="legal_name" name="legal_name" required maxlength="255"
                                        value="{{ old('legal_name') }}"
-                                       required
-                                       minlength="3"
-                                       maxlength="255"
-                                       placeholder="Nombre legal de la empresa"
+                                       placeholder="Ej: EMPRESA TRANSPORTADORA S.A."
                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                 @error('legal_name')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            <!-- Tipo de Cliente (Requerido) -->
+                            <!-- Tipo de Cliente -->
                             <div class="sm:col-span-1">
                                 <label for="client_type" class="block text-sm font-medium text-gray-700">
                                     Tipo de Cliente <span class="text-red-500">*</span>
                                 </label>
-                                <select id="client_type" 
-                                        name="client_type" 
-                                        required
+                                <select id="client_type" name="client_type" required
                                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Seleccione el tipo</option>
-                                    <option value="shipper" {{ old('client_type') === 'shipper' ? 'selected' : '' }}>
+                                    <option value="">Seleccionar tipo</option>
+                                    <option value="shipper" {{ old('client_type') == 'shipper' ? 'selected' : '' }}>
                                         Cargador/Exportador
                                     </option>
-                                    <option value="consignee" {{ old('client_type') === 'consignee' ? 'selected' : '' }}>
+                                    <option value="consignee" {{ old('client_type') == 'consignee' ? 'selected' : '' }}>
                                         Consignatario/Importador
                                     </option>
-                                    <option value="notify_party" {{ old('client_type') === 'notify_party' ? 'selected' : '' }}>
+                                    <option value="notify_party" {{ old('client_type') == 'notify_party' ? 'selected' : '' }}>
                                         Notificatario
                                     </option>
                                 </select>
@@ -164,14 +139,13 @@
                                 <label for="document_type_id" class="block text-sm font-medium text-gray-700">
                                     Tipo de Documento
                                 </label>
-                                <select id="document_type_id" 
-                                        name="document_type_id"
+                                <select id="document_type_id" name="document_type_id"
                                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Seleccione tipo</option>
-                                    @foreach($documentTypes as $type)
-                                        <option value="{{ $type->id }}" 
-                                                {{ old('document_type_id') == $type->id ? 'selected' : '' }}>
-                                            {{ $type->name }}
+                                    <option value="">Sin especificar</option>
+                                    @foreach($documentTypes as $docType)
+                                        <option value="{{ $docType->id }}" 
+                                                {{ old('document_type_id') == $docType->id ? 'selected' : '' }}>
+                                            {{ $docType->name }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -179,32 +153,15 @@
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Información Complementaria -->
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center mb-6">
-                            <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            </svg>
-                            <h3 class="text-lg leading-6 font-medium text-gray-900">Información Complementaria</h3>
-                        </div>
-
-                        <div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                            
                             <!-- Puerto Principal -->
                             <div class="sm:col-span-1">
                                 <label for="primary_port_id" class="block text-sm font-medium text-gray-700">
                                     Puerto Principal
                                 </label>
-                                <select id="primary_port_id" 
-                                        name="primary_port_id"
+                                <select id="primary_port_id" name="primary_port_id"
                                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Seleccione puerto</option>
+                                    <option value="">Sin especificar</option>
                                     @foreach($ports as $port)
                                         <option value="{{ $port->id }}" 
                                                 {{ old('primary_port_id') == $port->id ? 'selected' : '' }}>
@@ -217,15 +174,14 @@
                                 @enderror
                             </div>
 
-                            <!-- Aduana Habitual -->
+                            <!-- Aduana -->
                             <div class="sm:col-span-1">
                                 <label for="customs_offices_id" class="block text-sm font-medium text-gray-700">
                                     Aduana Habitual
                                 </label>
-                                <select id="customs_offices_id" 
-                                        name="customs_offices_id"
+                                <select id="customs_offices_id" name="customs_offices_id"
                                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Seleccione aduana</option>
+                                    <option value="">Sin especificar</option>
                                     @foreach($customOffices as $office)
                                         <option value="{{ $office->id }}" 
                                                 {{ old('customs_offices_id') == $office->id ? 'selected' : '' }}>
@@ -243,13 +199,9 @@
                                 <label for="notes" class="block text-sm font-medium text-gray-700">
                                     Observaciones
                                 </label>
-                                <textarea id="notes" 
-                                          name="notes" 
-                                          rows="3"
-                                          maxlength="1000"
-                                          placeholder="Información adicional sobre el cliente"
+                                <textarea id="notes" name="notes" rows="3" maxlength="1000"
+                                          placeholder="Observaciones adicionales sobre el cliente..."
                                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ old('notes') }}</textarea>
-                                <p class="mt-1 text-xs text-gray-500">Máximo 1000 caracteres</p>
                                 @error('notes')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -258,325 +210,371 @@
                     </div>
                 </div>
 
-                <!-- Información de Contacto -->
-                <div class="bg-white overflow-hidden shadow rounded-lg">
+                <!-- Contactos Múltiples -->
+                <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
                     <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center mb-6">
-                            <svg class="w-6 h-6 text-purple-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                            </svg>
-                            <h3 class="text-lg leading-6 font-medium text-gray-900">Información de Contacto (Opcional)</h3>
-                            <span class="ml-2 text-sm text-gray-500">Recomendado para notificaciones</span>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="flex items-center">
+                                <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
+                                </svg>
+                                <h3 class="text-lg leading-6 font-medium text-gray-900">Contactos por Tipo de Uso</h3>
+                                <span class="ml-2 text-sm text-gray-500">(Opcional - puede agregarse después)</span>
+                            </div>
+                            <button type="button" id="addContactBtn" 
+                                    class="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md text-sm font-medium">
+                                <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Agregar Contacto
+                            </button>
                         </div>
 
-                        <div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                            
-                            <!-- Email Principal -->
-                            <div class="sm:col-span-1">
-                                <label for="contact_email" class="block text-sm font-medium text-gray-700">
-                                    Email Principal
-                                </label>
-                                <input type="email" 
-                                       id="contact_email" 
-                                       name="contact_email" 
-                                       value="{{ old('contact_email') }}"
-                                       maxlength="100"
-                                       placeholder="correo@empresa.com"
-                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                @error('contact_email')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                        <div id="contactsContainer">
+                            <!-- Los contactos se agregarán dinámicamente aquí -->
+                        </div>
 
-                            <!-- Teléfono -->
-                            <div class="sm:col-span-1">
-                                <label for="contact_phone" class="block text-sm font-medium text-gray-700">
-                                    Teléfono
-                                </label>
-                                <input type="tel" 
-                                       id="contact_phone" 
-                                       name="contact_phone" 
-                                       value="{{ old('contact_phone') }}"
-                                       maxlength="50"
-                                       placeholder="+54 11 1234-5678"
-                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                @error('contact_phone')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                        <div id="noContactsMessage" class="text-center py-8 text-gray-500">
+                            <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
+                            </svg>
+                            <p class="text-sm">No hay contactos agregados</p>
+                            <p class="text-xs text-gray-400 mt-1">Puedes agregar contactos ahora o después de crear el cliente</p>
+                        </div>
 
-                            <!-- Dirección -->
-                            <div class="sm:col-span-1">
-                                <label for="contact_address" class="block text-sm font-medium text-gray-700">
-                                    Dirección
-                                </label>
-                                <textarea id="contact_address" 
-                                          name="contact_address" 
-                                          rows="2"
-                                          maxlength="500"
-                                          placeholder="Dirección completa"
-                                          class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ old('contact_address') }}</textarea>
-                                @error('contact_address')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Ciudad -->
-                            <div class="sm:col-span-1">
-                                <label for="contact_city" class="block text-sm font-medium text-gray-700">
-                                    Ciudad
-                                </label>
-                                <input type="text" 
-                                       id="contact_city" 
-                                       name="contact_city" 
-                                       value="{{ old('contact_city') }}"
-                                       maxlength="100"
-                                       placeholder="Ciudad"
-                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                @error('contact_city')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
+                        <!-- Información de tipos de contacto -->
+                        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                                    </svg>
+                                </div>
+                                <div class="ml-3 text-sm text-blue-700">
+                                    <p class="font-medium">Tipos de contacto disponibles:</p>
+                                    <ul class="mt-1 list-disc list-inside space-y-1">
+                                        <li><strong>AFIP/Webservices:</strong> Para trámites oficiales y webservices</li>
+                                        <li><strong>Cartas de Arribo:</strong> Para envío de avisos de llegada de barcos</li>
+                                        <li><strong>Manifiestos:</strong> Para envío de manifiestos y documentación</li>
+                                        <li><strong>Operaciones:</strong> Para coordinación operativa</li>
+                                        <li><strong>Facturación:</strong> Para temas comerciales y cobranzas</li>
+                                        <li><strong>Emergencias:</strong> Para situaciones urgentes</li>
+                                        <li><strong>General:</strong> Contacto administrativo general</li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Botones de Acción -->
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex space-x-3">
-                                <a href="{{ route('admin.clients.index') }}" 
-                                   class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-md text-sm font-medium">
-                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                    </svg>
-                                    Cancelar
-                                </a>
-                            </div>
-                            
-                            <div class="flex space-x-3">
-                                <button type="submit" 
-                                        id="submitBtn"
-                                        class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-md text-sm font-medium">
-                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                    </svg>
-                                    <span id="submitText">Crear Cliente</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                <div class="flex justify-end space-x-3">
+                    <a href="{{ route('admin.clients.index') }}" 
+                       class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-6 py-2 rounded-md text-sm font-medium">
+                        Cancelar
+                    </a>
+                    <button type="submit" 
+                            class="bg-blue-600 text-white hover:bg-blue-700 px-6 py-2 rounded-md text-sm font-medium">
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                        </svg>
+                        Crear Cliente
+                    </button>
                 </div>
-
             </form>
         </div>
     </div>
 
-    <!-- JavaScript para Validaciones -->
+    <!-- Template para nuevos contactos -->
+    <template id="contactTemplate">
+        <div class="contact-item border border-gray-200 rounded-lg p-4 mb-4" data-index="__INDEX__">
+            <div class="flex items-center justify-between mb-4">
+                <h4 class="text-md font-medium text-gray-900">
+                    <span class="contact-number">__NUMBER__</span>. Nuevo Contacto
+                    <span class="contact-type-label ml-2 text-sm text-gray-500"></span>
+                </h4>
+                <button type="button" class="remove-contact text-red-600 hover:text-red-800 text-sm font-medium">
+                    <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Eliminar
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-y-4 gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
+                <!-- Tipo de Contacto -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Tipo de Uso <span class="text-red-500">*</span>
+                    </label>
+                    <select name="contacts[__INDEX__][contact_type]" required
+                            class="contact-type-select mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">Seleccionar tipo</option>
+                        @foreach(\App\Models\ClientContactData::CONTACT_TYPES as $key => $label)
+                            <option value="{{ $key }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <!-- Es Principal -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Contacto Principal
+                    </label>
+                    <div class="mt-1">
+                        <label class="inline-flex items-center">
+                            <input type="checkbox" name="contacts[__INDEX__][is_primary]" value="1"
+                                   class="form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out">
+                            <span class="ml-2 text-sm text-gray-700">Es el contacto principal</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Nombre de la Persona -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Nombre de Contacto
+                    </label>
+                    <input type="text" name="contacts[__INDEX__][contact_person_name]" maxlength="150"
+                           placeholder="Ej: Juan Pérez"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Posición/Cargo -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Cargo/Posición
+                    </label>
+                    <input type="text" name="contacts[__INDEX__][contact_person_position]" maxlength="100"
+                           placeholder="Ej: Gerente de Operaciones"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Email -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Email
+                    </label>
+                    <input type="email" name="contacts[__INDEX__][email]" maxlength="255"
+                           placeholder="Ej: contacto@empresa.com"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Teléfono Fijo -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Teléfono Fijo
+                    </label>
+                    <input type="tel" name="contacts[__INDEX__][phone]" maxlength="20"
+                           placeholder="Ej: +54 11 4555-1234"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Teléfono Móvil -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Teléfono Móvil
+                    </label>
+                    <input type="tel" name="contacts[__INDEX__][mobile_phone]" maxlength="20"
+                           placeholder="Ej: +54 9 11 1234-5678"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Dirección Línea 1 -->
+                <div class="sm:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Dirección Principal
+                    </label>
+                    <input type="text" name="contacts[__INDEX__][address_line_1]" maxlength="255"
+                           placeholder="Ej: Av. Corrientes 1234"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Dirección Línea 2 -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Dirección Complementaria
+                    </label>
+                    <input type="text" name="contacts[__INDEX__][address_line_2]" maxlength="255"
+                           placeholder="Ej: Piso 5, Oficina 12"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Ciudad -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Ciudad
+                    </label>
+                    <input type="text" name="contacts[__INDEX__][city]" maxlength="100"
+                           placeholder="Ej: Buenos Aires"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Provincia/Estado -->
+                <div class="sm:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Provincia/Estado
+                    </label>
+                    <input type="text" name="contacts[__INDEX__][state_province]" maxlength="100"
+                           placeholder="Ej: CABA"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <!-- Observaciones -->
+                <div class="sm:col-span-3">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Observaciones
+                    </label>
+                    <textarea name="contacts[__INDEX__][notes]" rows="2" maxlength="500"
+                              placeholder="Observaciones adicionales sobre este contacto..."
+                              class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></textarea>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('clientForm');
-            const countrySelect = document.getElementById('country_id');
-            const taxIdInput = document.getElementById('tax_id');
-            const taxIdLabel = document.getElementById('tax_id_label');
-            const taxIdHelp = document.getElementById('tax_id_help');
-            const taxIdValidation = document.getElementById('tax_id_validation');
-            const submitBtn = document.getElementById('submitBtn');
-            const submitText = document.getElementById('submitText');
-
-            // Configuración de validación por país
-            const validationRules = {
-                'AR': {
-                    label: 'CUIT',
-                    pattern: /^\d{11}$/,
-                    format: 'XX-XXXXXXXX-X',
-                    help: 'Formato: 11 dígitos sin guiones (20-12345678-9)',
-                    placeholder: 'Ej: 20123456789'
-                },
-                'PY': {
-                    label: 'RUC',
-                    pattern: /^\d{8}-?\d$/,
-                    format: 'XXXXXXXX-X',
-                    help: 'Formato: 8 dígitos + dígito verificador (12345678-9)',
-                    placeholder: 'Ej: 12345678-9'
-                }
-            };
-
-            // Actualizar validación según país seleccionado
-            function updateTaxIdValidation() {
-                const selectedOption = countrySelect.options[countrySelect.selectedIndex];
-                const isoCode = selectedOption.getAttribute('data-iso');
-                
-                if (isoCode && validationRules[isoCode]) {
-                    const rules = validationRules[isoCode];
-                    taxIdLabel.textContent = rules.label;
-                    taxIdInput.placeholder = rules.placeholder;
-                    taxIdHelp.textContent = rules.help;
-                    taxIdInput.dataset.pattern = rules.pattern.source;
-                } else {
-                    taxIdLabel.textContent = 'CUIT/RUC';
-                    taxIdInput.placeholder = 'Ingrese CUIT/RUC';
-                    taxIdHelp.textContent = 'Seleccione primero un país para ver el formato requerido';
-                    taxIdInput.dataset.pattern = '';
-                }
-                
-                validateTaxId();
+    document.addEventListener('DOMContentLoaded', function() {
+        let contactIndex = 0;
+        
+        // Botón para agregar contacto
+        document.getElementById('addContactBtn').addEventListener('click', function() {
+            addNewContact();
+            hideNoContactsMessage();
+        });
+        
+        // Event delegation para botones de eliminar
+        document.getElementById('contactsContainer').addEventListener('click', function(e) {
+            if (e.target.closest('.remove-contact')) {
+                e.preventDefault();
+                removeContact(e.target.closest('.contact-item'));
             }
-
-            // Validar formato de CUIT/RUC
-            function validateTaxId() {
-                const taxIdValue = taxIdInput.value.replace(/[^0-9]/g, '');
-                const pattern = taxIdInput.dataset.pattern;
-                
-                if (!pattern || !taxIdValue) {
-                    taxIdValidation.classList.add('hidden');
-                    taxIdInput.classList.remove('border-green-500', 'border-red-500');
-                    return;
-                }
-
-                const regex = new RegExp(pattern);
-                const isValid = regex.test(taxIdValue);
-                
-                if (isValid) {
-                    taxIdValidation.classList.remove('hidden', 'text-red-500');
-                    taxIdValidation.classList.add('text-green-500');
-                    taxIdInput.classList.remove('border-red-500');
-                    taxIdInput.classList.add('border-green-500');
-                    taxIdInput.setCustomValidity('');
-                } else {
-                    taxIdValidation.classList.remove('hidden', 'text-green-500');
-                    taxIdValidation.classList.add('text-red-500');
-                    taxIdInput.classList.remove('border-green-500');
-                    taxIdInput.classList.add('border-red-500');
-                    taxIdInput.setCustomValidity('Formato de CUIT/RUC inválido');
-                }
+        });
+        
+        // Event delegation para cambios en tipo de contacto
+        document.getElementById('contactsContainer').addEventListener('change', function(e) {
+            if (e.target.classList.contains('contact-type-select')) {
+                updateContactTypeLabel(e.target);
             }
-
-            // Formatear automáticamente el CUIT/RUC mientras se escribe
-            function formatTaxId() {
-                const selectedOption = countrySelect.options[countrySelect.selectedIndex];
-                const isoCode = selectedOption.getAttribute('data-iso');
-                let value = taxIdInput.value.replace(/[^0-9]/g, '');
-                
-                // Formateo específico por país
-                if (isoCode === 'AR' && value.length <= 11) {
-                    // Argentina: XX-XXXXXXXX-X
-                    if (value.length > 2 && value.length <= 10) {
-                        value = value.slice(0, 2) + '-' + value.slice(2);
-                    }
-                    if (value.length > 11) {
-                        value = value.slice(0, 2) + '-' + value.slice(2, 10) + '-' + value.slice(10, 11);
-                    }
-                } else if (isoCode === 'PY' && value.length <= 9) {
-                    // Paraguay: XXXXXXXX-X
-                    if (value.length > 8) {
-                        value = value.slice(0, 8) + '-' + value.slice(8, 9);
-                    }
-                }
-                
-                taxIdInput.value = value;
-                validateTaxId();
-            }
-
-            // Verificar si ya existe el CUIT/RUC usando la API (opcional)
-            let checkTimeout;
-            function checkDuplicateTaxId() {
-                clearTimeout(checkTimeout);
-                
-                const taxIdValue = taxIdInput.value.replace(/[^0-9]/g, '');
-                const countryId = countrySelect.value;
-                
-                if (taxIdValue.length < 8 || !countryId) return;
-                
-                checkTimeout = setTimeout(() => {
-                    // Validación opcional - si falla, la validación principal se hace en el backend
-                    fetch(`/api/v1/clients/search?q=${taxIdValue}`, {
-                        method: 'GET',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+            
+            // Control de contacto principal único
+            if (e.target.name && e.target.name.includes('[is_primary]')) {
+                if (e.target.checked) {
+                    // Desmarcar otros checkboxes de contacto principal
+                    const otherCheckboxes = document.querySelectorAll('input[name*="[is_primary]"]');
+                    otherCheckboxes.forEach(checkbox => {
+                        if (checkbox !== e.target) {
+                            checkbox.checked = false;
                         }
-                    })
-                        .then(response => {
-                            if (!response.ok) throw new Error('API no disponible');
-                            return response.json();
-                        })
-                        .then(data => {
-                            // La API devuelve array de clientes, verificar si hay coincidencias
-                            const existingClient = Array.isArray(data) ? data.find(client => 
-                                client.tax_id.replace(/[^0-9]/g, '') === taxIdValue && 
-                                client.country_id == countryId
-                            ) : null;
-                            
-                            if (existingClient) {
-                                taxIdInput.setCustomValidity('Ya existe un cliente con este CUIT/RUC en el país seleccionado');
-                                taxIdHelp.textContent = `⚠️ Cliente existente: ${existingClient.legal_name}`;
-                                taxIdHelp.classList.add('text-yellow-600');
-                            } else {
-                                if (taxIdInput.checkValidity()) {
-                                    taxIdInput.setCustomValidity('');
-                                }
-                                taxIdHelp.classList.remove('text-yellow-600');
-                                updateTaxIdValidation(); // Restaurar help text original
-                            }
-                        })
-                        .catch(() => {
-                            // Error en la consulta o sin permisos API
-                            // Limpiar validaciones previas y continuar
-                            if (taxIdInput.checkValidity()) {
-                                taxIdInput.setCustomValidity('');
-                            }
-                            taxIdHelp.classList.remove('text-yellow-600');
-                            updateTaxIdValidation();
-                        });
-                }, 800); // Delay más largo para evitar spam a la API
+                    });
+                }
             }
-
-            // Event Listeners
-            countrySelect.addEventListener('change', updateTaxIdValidation);
-            taxIdInput.addEventListener('input', formatTaxId);
-            taxIdInput.addEventListener('input', checkDuplicateTaxId);
-
-            // Validación del formulario antes del envío
-            form.addEventListener('submit', function(e) {
-                // Verificar campos requeridos
-                const requiredFields = form.querySelectorAll('[required]');
-                let isValid = true;
+        });
+        
+        function addNewContact() {
+            const template = document.getElementById('contactTemplate');
+            const clone = template.content.cloneNode(true);
+            
+            // Reemplazar placeholders
+            const html = clone.querySelector('.contact-item').outerHTML
+                .replace(/__INDEX__/g, contactIndex)
+                .replace(/__NUMBER__/g, contactIndex + 1);
+            
+            // Agregar al contenedor
+            document.getElementById('contactsContainer').insertAdjacentHTML('beforeend', html);
+            
+            contactIndex++;
+            updateContactNumbers();
+        }
+        
+        function removeContact(contactItem) {
+            if (confirm('¿Está seguro de eliminar este contacto?')) {
+                contactItem.remove();
+                updateContactNumbers();
                 
-                requiredFields.forEach(field => {
-                    if (!field.value.trim()) {
-                        field.reportValidity();
-                        if (isValid) {
-                            field.focus();
-                            isValid = false;
-                        }
+                // Mostrar mensaje si no hay contactos
+                if (document.querySelectorAll('.contact-item').length === 0) {
+                    showNoContactsMessage();
+                }
+            }
+        }
+        
+        function updateContactNumbers() {
+            const contactItems = document.querySelectorAll('.contact-item');
+            contactItems.forEach((item, index) => {
+                const numberSpan = item.querySelector('.contact-number');
+                if (numberSpan) {
+                    numberSpan.textContent = index + 1;
+                }
+                
+                // Actualizar atributo data-index
+                item.setAttribute('data-index', index);
+                
+                // Actualizar nombres de campos
+                const inputs = item.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => {
+                    if (input.name) {
+                        input.name = input.name.replace(/\[\d+\]/, `[${index}]`);
+                    }
+                });
+            });
+        }
+        
+        function updateContactTypeLabel(selectElement) {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            const label = selectedOption.text;
+            const contactItem = selectElement.closest('.contact-item');
+            const labelElement = contactItem.querySelector('.contact-type-label');
+            
+            if (labelElement) {
+                labelElement.textContent = selectedOption.value ? `(${label})` : '';
+            }
+        }
+        
+        function hideNoContactsMessage() {
+            const message = document.getElementById('noContactsMessage');
+            if (message) {
+                message.style.display = 'none';
+            }
+        }
+        
+        function showNoContactsMessage() {
+            const message = document.getElementById('noContactsMessage');
+            if (message) {
+                message.style.display = 'block';
+            }
+        }
+        
+        // Validación del formulario
+        document.getElementById('clientForm').addEventListener('submit', function(e) {
+            const contactItems = document.querySelectorAll('.contact-item');
+            let hasValidContact = true;
+            
+            // Si hay contactos, al menos uno debe tener email o teléfono
+            if (contactItems.length > 0) {
+                hasValidContact = false;
+                contactItems.forEach(item => {
+                    const email = item.querySelector('input[name*="[email]"]').value;
+                    const phone = item.querySelector('input[name*="[phone]"]').value;
+                    const mobile = item.querySelector('input[name*="[mobile_phone]"]').value;
+                    
+                    if (email || phone || mobile) {
+                        hasValidContact = true;
                     }
                 });
                 
-                if (!isValid) {
+                if (!hasValidContact) {
                     e.preventDefault();
-                    return;
+                    alert('Si agrega contactos, debe incluir al menos un email o teléfono en algún contacto.');
+                    return false;
                 }
-                
-                // Validación específica del CUIT/RUC
-                if (!taxIdInput.checkValidity()) {
-                    e.preventDefault();
-                    taxIdInput.focus();
-                    taxIdInput.reportValidity();
-                    return;
-                }
-                
-                // Deshabilitar botón de envío para evitar doble click
-                submitBtn.disabled = true;
-                submitText.textContent = 'Creando...';
-            });
-
-            // Inicializar validaciones si hay valores pre-cargados
-            if (countrySelect.value) {
-                updateTaxIdValidation();
             }
         });
+
+        // Agregar primer contacto automáticamente si el usuario lo desea
+        // Opcional: descomenta estas líneas si quieres que aparezca un contacto por defecto
+        // addNewContact();
+        // hideNoContactsMessage();
+    });
     </script>
 </x-app-layout>

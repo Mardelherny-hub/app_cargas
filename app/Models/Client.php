@@ -355,4 +355,47 @@ class Client extends Model
     {
         return $this->country->alpha2_code . '_' . $this->tax_id;
     }
+
+    /**
+     * Obtener contactos por tipo.
+     */
+    public function getContactsByType(string $type)
+    {
+        return $this->contactData()->byType($type)->get();
+    }
+
+    /**
+     * Obtener todos los emails para cartas de arribo.
+     */
+    public function getArrivalNoticeEmails(): array
+    {
+        return $this->contactData()
+                    ->arrivalNoticeContacts()
+                    ->whereNotNull('email')
+                    ->pluck('email')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+    }
+
+    /**
+     * Verificar si tiene contactos de un tipo específico.
+     */
+    public function hasContactType(string $type): bool
+    {
+        return $this->contactData()->byType($type)->exists();
+    }
+
+    /**
+     * Obtener contacto principal de un tipo específico.
+     */
+    public function getPrimaryContactOfType(string $type): ?ClientContactData
+    {
+        return $this->contactData()
+                    ->byType($type)
+                    ->where('active', true)
+                    ->orderBy('is_primary', 'desc')
+                    ->first();
+    }
 }

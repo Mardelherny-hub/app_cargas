@@ -40,6 +40,8 @@ class ClientsSeeder extends Seeder
         // Obtener datos relacionados
         $argentinaCountry = Country::where('iso_code', 'AR')->first();
         $paraguayCountry = Country::where('iso_code', 'PY')->first();
+        $argentinaCountry = Country::where('alpha2_code', 'AR')->first();
+        $paraguayCountry = Country::where('alpha2_code', 'PY')->first();
         $documentTypes = DocumentType::all();
         $ports = Port::all();
         $customs = CustomOffice::all();
@@ -75,6 +77,8 @@ class ClientsSeeder extends Seeder
     {
         $argentinaCountry = Country::where('iso_code', 'AR')->first();
         $paraguayCountry = Country::where('iso_code', 'PY')->first();
+        $argentinaCountry = Country::where('alpha2_code', 'AR')->first();
+        $paraguayCountry = Country::where('alpha2_code', 'PY')->first();
         $users = User::where('active', true)->get();
         $companies = Company::where('active', true)->get();
 

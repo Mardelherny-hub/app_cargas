@@ -155,11 +155,20 @@ class ClientController extends Controller
             'status' => 'sometimes|in:active,inactive,suspended',
             'notes' => 'nullable|string|max:1000',
             // Datos de contacto opcionales
-            'contact_email' => 'nullable|email|max:100',
-            'contact_phone' => 'nullable|string|max:50',
-            'contact_address' => 'nullable|string|max:500',
-            'contact_city' => 'nullable|string|max:100',
-        ]);
+            // Múltiples contactos con tipos
+            'contacts' => 'nullable|array|max:10',
+            'contacts.*.contact_type' => 'required_with:contacts.*|in:general,afip,manifests,arrival_notices,emergency,billing,operations',
+            'contacts.*.email' => 'nullable|email|max:255',
+            'contacts.*.phone' => 'nullable|string|max:20',
+            'contacts.*.mobile_phone' => 'nullable|string|max:20',
+            'contacts.*.address_line_1' => 'nullable|string|max:255',
+            'contacts.*.address_line_2' => 'nullable|string|max:255',
+            'contacts.*.city' => 'nullable|string|max:100',
+            'contacts.*.state_province' => 'nullable|string|max:100',
+            'contacts.*.contact_person_name' => 'nullable|string|max:150',
+            'contacts.*.contact_person_position' => 'nullable|string|max:100',
+            'contacts.*.notes' => 'nullable|string|max:500',
+            'contacts.*.is_primary' => 'nullable|boolean',        ]);
 
         try {
             DB::beginTransaction();
@@ -174,15 +183,9 @@ class ClientController extends Controller
             $client = Client::create($validatedData);
 
             // Crear contacto principal si se proporcionaron datos
-            if ($request->filled('contact_email') || $request->filled('contact_phone')) {
-                $client->createPrimaryContact([
-                    'email' => $request->contact_email,
-                    'phone' => $request->contact_phone,
-                    'address_line_1' => $request->contact_address,
-                    'city' => $request->contact_city,
-                    'is_primary' => true,
-                    'active' => true,
-                ]);
+            // Crear múltiples contactos si se proporcionaron
+            if ($request->has('contacts') && is_array($request->contacts)) {
+                $this->createMultipleContacts($client, $request->contacts);
             }
 
             DB::commit();
@@ -214,17 +217,26 @@ class ClientController extends Controller
     public function show(Client $client)
     {
         // Cargar relaciones (sin companyRelations)
-        $client->load([
+                $client->load([
             'country', 
             'documentType', 
             'primaryPort',
             'customOffice',
-            'primaryContact',
-            'activeContacts',
-            'createdByCompany:id,legal_name,commercial_name'
+            'createdByCompany:id,legal_name,commercial_name',
+            'contactData' => function($query) {
+                $query->where('active', true)
+                    ->orderBy('is_primary', 'desc')
+                    ->orderBy('contact_type')
+                    ->orderBy('created_at');
+            }
         ]);
 
-        return view('admin.clients.show', compact('client'));
+        // Organizar contactos por tipo para la vista
+        $contactsByType = $client->contactData->groupBy('contact_type');
+        $contactTypes = \App\Models\ClientContactData::CONTACT_TYPES;
+
+        return view('admin.clients.show', compact('client', 'contactsByType', 'contactTypes'));
+
     }
 
     /**
@@ -238,7 +250,9 @@ class ClientController extends Controller
         $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
 
         // Cargar contacto principal para edición
-        $client->load('primaryContact');
+        $client->load(['contactData' => function($query) {
+            $query->where('active', true)->orderBy('is_primary', 'desc')->orderBy('contact_type');
+        }]);
 
         return view('admin.clients.edit', compact('client', 'countries', 'documentTypes', 'ports', 'customOffices'));
     }
@@ -282,13 +296,9 @@ class ClientController extends Controller
             $client->update($validatedData);
 
             // Actualizar o crear contacto principal
-            if ($request->filled('contact_email') || $request->filled('contact_phone')) {
-                $client->updateOrCreatePrimaryContact([
-                    'email' => $request->contact_email,
-                    'phone' => $request->contact_phone,
-                    'address_line_1' => $request->contact_address,
-                    'city' => $request->contact_city,
-                ]);
+            // Actualizar múltiples contactos
+            if ($request->has('contacts') && is_array($request->contacts)) {
+                $this->updateMultipleContacts($client, $request->contacts);
             }
 
             DB::commit();
@@ -449,5 +459,116 @@ class ClientController extends Controller
             ->get(['id', 'legal_name', 'tax_id', 'client_type', 'country_id']);
 
         return response()->json($clients);
+    }
+
+    /**
+     * Crear múltiples contactos para un cliente.
+     */
+    private function createMultipleContacts(Client $client, array $contacts): void
+    {
+        $hasPrimary = false;
+        
+        foreach ($contacts as $index => $contactData) {
+            // Validar que tenga al menos email o teléfono
+            if (empty($contactData['email']) && empty($contactData['phone']) && empty($contactData['mobile_phone'])) {
+                continue;
+            }
+            
+            // Solo un contacto puede ser primario
+            $isPrimary = !$hasPrimary && ($contactData['is_primary'] ?? $index === 0);
+            if ($isPrimary) {
+                $hasPrimary = true;
+            }
+            
+            $client->contactData()->create([
+                'contact_type' => $contactData['contact_type'] ?? 'general',
+                'email' => $contactData['email'] ?? null,
+                'phone' => $contactData['phone'] ?? null,
+                'mobile_phone' => $contactData['mobile_phone'] ?? null,
+                'address_line_1' => $contactData['address_line_1'] ?? null,
+                'address_line_2' => $contactData['address_line_2'] ?? null,
+                'city' => $contactData['city'] ?? null,
+                'state_province' => $contactData['state_province'] ?? null,
+                'contact_person_name' => $contactData['contact_person_name'] ?? null,
+                'contact_person_position' => $contactData['contact_person_position'] ?? null,
+                'notes' => $contactData['notes'] ?? null,
+                'is_primary' => $isPrimary,
+                'active' => true,
+                'created_by_user_id' => auth()->id(),
+            ]);
+        }
+    }
+
+    /**
+     * Actualizar múltiples contactos de un cliente.
+     */
+    private function updateMultipleContacts(Client $client, array $contacts): void
+    {
+        // Remover contactos existentes que no estén en la nueva lista
+        $keepIds = collect($contacts)->pluck('id')->filter();
+        $client->contactData()->whereNotIn('id', $keepIds)->delete();
+        
+        $hasPrimary = false;
+        
+        foreach ($contacts as $index => $contactData) {
+            // Validar que tenga al menos email o teléfono
+            if (empty($contactData['email']) && empty($contactData['phone']) && empty($contactData['mobile_phone'])) {
+                continue;
+            }
+            
+            // Solo un contacto puede ser primario
+            $isPrimary = !$hasPrimary && ($contactData['is_primary'] ?? false);
+            if ($isPrimary) {
+                $hasPrimary = true;
+            }
+            
+            $contactAttributes = [
+                'contact_type' => $contactData['contact_type'] ?? 'general',
+                'email' => $contactData['email'] ?? null,
+                'phone' => $contactData['phone'] ?? null,
+                'mobile_phone' => $contactData['mobile_phone'] ?? null,
+                'address_line_1' => $contactData['address_line_1'] ?? null,
+                'address_line_2' => $contactData['address_line_2'] ?? null,
+                'city' => $contactData['city'] ?? null,
+                'state_province' => $contactData['state_province'] ?? null,
+                'contact_person_name' => $contactData['contact_person_name'] ?? null,
+                'contact_person_position' => $contactData['contact_person_position'] ?? null,
+                'notes' => $contactData['notes'] ?? null,
+                'is_primary' => $isPrimary,
+                'active' => true,
+                'updated_by_user_id' => auth()->id(),
+            ];
+            
+            if (!empty($contactData['id'])) {
+                // Actualizar contacto existente
+                $client->contactData()->where('id', $contactData['id'])->update($contactAttributes);
+            } else {
+                // Crear nuevo contacto
+                $contactAttributes['created_by_user_id'] = auth()->id();
+                $client->contactData()->create($contactAttributes);
+            }
+        }
+    }
+
+    /**
+     * Obtener tipos de contacto para formularios.
+     */
+    public function getContactTypes(): array
+    {
+        return \App\Models\ClientContactData::CONTACT_TYPES;
+    }
+
+    /**
+     * Obtener estadísticas de contactos para la vista.
+     */
+    private function getContactStats(Client $client): array
+    {
+        return [
+            'total_contacts' => $client->contactData()->where('active', true)->count(),
+            'has_afip_contact' => $client->hasContactType('afip'),
+            'has_arrival_notices' => $client->hasContactType('arrival_notices'),
+            'arrival_notice_emails' => $client->getArrivalNoticeEmails(),
+            'primary_contact' => $client->primaryContact,
+        ];
     }
 }
