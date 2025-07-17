@@ -13,6 +13,8 @@ use App\Http\Controllers\Company\ExportController;
 use App\Http\Controllers\Company\DeconsolidationController;
 use App\Http\Controllers\Company\TransferController;
 use App\Http\Controllers\Company\SettingsController;
+use App\Http\Controllers\Company\ClientController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -203,6 +205,31 @@ Route::prefix('certificates')->name('company.certificates.')->group(function () 
     // Renovación de certificados
     Route::get('/{certificate}/renew', [CertificateController::class, 'renew'])->name('renew');
     Route::post('/{certificate}/renew', [CertificateController::class, 'processRenew'])->name('process-renew');
+});
+
+// Gestión de Clientes (base compartida)
+Route::prefix('clients')->name('company.clients.')->group(function () {
+    
+    // Rutas accesibles para company-admin y user
+    Route::get('/', [ClientController::class, 'index'])->name('index');
+    Route::get('/{client}', [ClientController::class, 'show'])->name('show');
+    Route::get('/search', [ClientController::class, 'search'])->name('search');
+    Route::get('/suggestions', [ClientController::class, 'suggestions'])->name('suggestions');
+    Route::post('/validate-tax-id', [ClientController::class, 'validateTaxId'])->name('validate-tax-id');
+    Route::get('/{client}/contacts', [ClientController::class, 'contacts'])->name('contacts');
+    
+    // Rutas SOLO para company-admin
+    Route::middleware(['role:company-admin'])->group(function () {
+        Route::get('/create', [ClientController::class, 'create'])->name('create');
+        Route::post('/', [ClientController::class, 'store'])->name('store');
+        Route::get('/{client}/edit', [ClientController::class, 'edit'])->name('edit');
+        Route::put('/{client}', [ClientController::class, 'update'])->name('update');
+        Route::delete('/{client}', [ClientController::class, 'destroy'])->name('destroy');
+        Route::post('/{client}/contacts', [ClientController::class, 'storeContact'])->name('store-contact');
+        Route::put('/{client}/contacts/{contact}', [ClientController::class, 'updateContact'])->name('update-contact');
+        Route::delete('/{client}/contacts/{contact}', [ClientController::class, 'destroyContact'])->name('destroy-contact');
+        Route::patch('/{client}/toggle-status', [ClientController::class, 'toggleStatus'])->name('toggle-status');
+    });
 });
 
 // Configuración (solo company-admin)

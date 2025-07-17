@@ -76,6 +76,9 @@
                                 <x-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')">
                                     {{ __('Viajes') }}
                                 </x-nav-link>
+                                <x-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')">
+                                    {{ __('Clientes') }}
+                                </x-nav-link>
                                 <x-nav-link :href="route('company.operators.index')" :active="request()->routeIs('company.operators.*')">
                                     {{ __('Operadores') }}
                                 </x-nav-link>
@@ -249,6 +252,9 @@
                         </x-responsive-nav-link>
                         <x-responsive-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')">
                             {{ __('Viajes') }}
+                        </x-responsive-nav-link>
+                        <x-responsive-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')">
+                            {{ __('Clientes') }}
                         </x-responsive-nav-link>
                         <x-responsive-nav-link :href="route('company.operators.index')" :active="request()->routeIs('company.operators.*')">
                             {{ __('Operadores') }}
