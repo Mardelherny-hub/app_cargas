@@ -16,70 +16,90 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * CONTROLADOR ACTUALIZADO CON INTEGRACIÓN CLIENT_CONTACT_DATA
- * Maneja clientes y sus datos de contacto (email, dirección, teléfono)
+ * CONTROLADOR CORREGIDO: BASE COMPARTIDA + SIN OWNER
+ * 
+ * Cambios aplicados:
+ * - ❌ REMOVIDO: uso de companyRelations (base compartida)
+ * - ❌ REMOVIDO: client_type 'owner' de validaciones
+ * - ✅ ADAPTADO: control de acceso para base compartida
+ * - ✅ MANTIENE: funcionalidad de datos de contacto
  */
 class ClientController extends Controller
 {
     /**
-     * Listar clientes con datos de contacto
+     * Listar clientes con datos de contacto.
+     * 
+     * CORRECCIÓN: Adaptado para base de datos compartida
      */
     public function index(Request $request)
     {
         $user = Auth::user();
         
-        // Query base con contacto principal incluido
+        // Query base con contacto principal incluido (sin companyRelations)
         $query = Client::with([
             'country',
-            'primaryContact',  // ← NUEVO: Incluir contacto principal
-            'companyRelations.company'
+            'primaryContact',  // Mantener datos de contacto
+            'createdByCompany:id,legal_name,commercial_name' // Solo para auditoría
         ]);
 
-        // Control de acceso
+        // Control de acceso adaptado para base compartida
         if ($user->hasRole('super-admin')) {
-            // Super admin ve todos
+            // Super admin ve todos los clientes
         } else {
-            // Otros usuarios ven solo sus clientes accesibles
-            $userCompanies = $user->companies->pluck('id')->toArray();
-            $query->whereHas('companyRelations', function($q) use ($userCompanies) {
-                $q->whereIn('company_id', $userCompanies)
-                  ->where('active', true);
-            });
+            // Base compartida: todos los usuarios pueden ver todos los clientes activos
+            // Se puede implementar filtros adicionales según necesidades de negocio
+            $query->where('status', 'active')
+                  ->whereNotNull('verified_at');
         }
 
         // Filtros de búsqueda
         if ($request->filled('search')) {
-            $search = $request->search;
+            $search = $request->get('search');
             $query->where(function($q) use ($search) {
                 $q->where('legal_name', 'like', "%{$search}%")
                   ->orWhere('tax_id', 'like', "%{$search}%")
-                  ->orWhereHas('primaryContact', function($contactQuery) use ($search) {
-                      $contactQuery->where('email', 'like', "%{$search}%")
-                               ->orWhere('phone', 'like', "%{$search}%")
-                               ->orWhere('city', 'like', "%{$search}%");
+                  ->orWhereHas('primaryContact', function($contact) use ($search) {
+                      $contact->where('email', 'like', "%{$search}%");
                   });
             });
         }
 
-        // Filtro por país
-        if ($request->filled('country_id')) {
-            $query->where('country_id', $request->country_id);
+        // Filtro por tipo de cliente (sin 'owner')
+        if ($request->filled('client_type')) {
+            $validTypes = ['shipper', 'consignee', 'notify_party'];
+            if (in_array($request->get('client_type'), $validTypes)) {
+                $query->where('client_type', $request->get('client_type'));
+            }
         }
 
-        // Filtro por tipo de cliente
-        if ($request->filled('client_type')) {
-            $query->where('client_type', $request->client_type);
+        // Filtro por país
+        if ($request->filled('country_id')) {
+            $query->where('country_id', $request->get('country_id'));
         }
 
         // Filtro por estado
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            $query->where('status', $request->get('status'));
         }
 
-        // Paginación
-        $clients = $query->orderBy('updated_at', 'desc')->paginate(25);
+        // Filtro por verificación
+        if ($request->filled('verified')) {
+            if ($request->get('verified') === 'yes') {
+                $query->whereNotNull('verified_at');
+            } else {
+                $query->whereNull('verified_at');
+            }
+        }
 
-        // Datos auxiliares para filtros
+        // Ordenamiento
+        $sortBy = $request->get('sort', 'updated_at');
+        $sortOrder = $request->get('order', 'desc');
+        $query->orderBy($sortBy, $sortOrder);
+
+        // Paginación
+        $clients = $query->paginate(25);
+
+        // Datos auxiliares
         $countries = Country::where('active', true)->orderBy('name')->get();
         $companies = Company::where('active', true)->orderBy('legal_name')->get();
         
@@ -89,124 +109,80 @@ class ClientController extends Controller
             'verified' => Client::whereNotNull('verified_at')->count(),
             'pending' => Client::whereNull('verified_at')->count(),
             'inactive' => Client::where('status', 'inactive')->count(),
-            'with_contact' => Client::whereHas('primaryContact')->count(), // ← NUEVO
+            'by_type' => Client::select('client_type', DB::raw('count(*) as count'))
+                              ->whereIn('client_type', ['shipper', 'consignee', 'notify_party'])
+                              ->groupBy('client_type')
+                              ->pluck('count', 'client_type')
+                              ->toArray(),
         ];
 
-        return view('admin.clients.index', compact(
-            'clients', 'countries', 'companies', 'stats'
-        ));
+        return view('admin.clients.index', compact('clients', 'countries', 'companies', 'stats'));
     }
 
     /**
-     * Mostrar cliente específico con toda su información de contacto
-     */
-    public function show(Client $client)
-    {
-        // Cargar todas las relaciones necesarias
-        $client->load([
-            'country',
-            'documentType', 
-            'primaryPort',
-            'customOffice',
-            'createdByCompany',
-            'primaryContact',     // ← Contacto principal
-            'activeContacts',     // ← Todos los contactos activos
-            'companyRelations.company'
-        ]);
-
-        return view('admin.clients.show', compact('client'));
-    }
-
-    /**
-     * Mostrar formulario de creación
+     * Mostrar formulario de creación.
      */
     public function create()
     {
-        $user = Auth::user();
-
-        // Datos para selects
         $countries = Country::where('active', true)->orderBy('name')->get();
-        $documentTypes = DocumentType::where('active', true)->get();
+        $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
         $ports = Port::where('active', true)->orderBy('name')->get();
-        $customsOffices = CustomOffice::where('active', true)->orderBy('name')->get();
-        
-        // Empresas disponibles según permisos
-        $companies = $user->hasRole('super-admin') 
-            ? Company::where('active', true)->orderBy('legal_name')->get()
-            : $user->companies()->where('active', true)->get();
+        $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
 
-        return view('admin.clients.create', compact(
-            'countries', 'documentTypes', 'ports', 'customsOffices', 'companies'
-        ));
+        return view('admin.clients.create', compact('countries', 'documentTypes', 'ports', 'customOffices'));
     }
 
     /**
-     * Crear nuevo cliente con datos de contacto
+     * Crear nuevo cliente.
+     * 
+     * CORRECCIÓN: Removido 'owner' de tipos válidos
      */
     public function store(Request $request)
     {
         $validatedData = $request->validate([
-            // Datos básicos del cliente
-            'tax_id' => 'required|string|max:11',
-            'legal_name' => 'required|string|max:255',
+            'tax_id' => [
+                'required', 
+                'string', 
+                'max:15',
+                'unique:clients,tax_id,NULL,id,country_id,' . $request->country_id
+            ],
+            'legal_name' => 'required|string|min:3|max:255',
             'country_id' => 'required|exists:countries,id',
-            'document_type_id' => 'required|exists:document_types,id',
-            'client_type' => 'required|in:shipper,consignee,notify_party,owner',
+            'document_type_id' => 'nullable|exists:document_types,id',
+            'client_type' => 'required|in:shipper,consignee,notify_party', // ← REMOVIDO 'owner'
             'primary_port_id' => 'nullable|exists:ports,id',
-            'customs_offices_id' => 'nullable|exists:customs_offices,id',
-            'created_by_company_id' => 'required|exists:companies,id',
+            'customs_offices_id' => 'nullable|exists:custom_offices,id',
             'status' => 'sometimes|in:active,inactive,suspended',
             'notes' => 'nullable|string|max:1000',
-            
-            // Datos de contacto (nuevos)
-            'contact_email' => 'nullable|email|max:255',
-            'contact_phone' => 'nullable|string|max:20', 
-            'contact_mobile_phone' => 'nullable|string|max:20',
-            'contact_address_line_1' => 'nullable|string|max:255',
-            'contact_address_line_2' => 'nullable|string|max:255',
+            // Datos de contacto opcionales
+            'contact_email' => 'nullable|email|max:100',
+            'contact_phone' => 'nullable|string|max:50',
+            'contact_address' => 'nullable|string|max:500',
             'contact_city' => 'nullable|string|max:100',
-            'contact_state_province' => 'nullable|string|max:100',
-            'contact_postal_code' => 'nullable|string|max:20',
-            'contact_person_name' => 'nullable|string|max:255',
-            'contact_person_position' => 'nullable|string|max:255',
-            'contact_person_phone' => 'nullable|string|max:20',
-            'contact_person_email' => 'nullable|email|max:255',
-            'accepts_email_notifications' => 'nullable|boolean',
-            'accepts_sms_notifications' => 'nullable|boolean',
         ]);
 
         try {
             DB::beginTransaction();
 
+            // Limpiar CUIT/RUC
+            $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
+            
+            // Agregar auditoría
+            $validatedData['created_by_company_id'] = auth()->user()->companies()->first()?->id;
+
             // Crear cliente
-            $clientData = collect($validatedData)->only([
-                'tax_id', 'legal_name', 'country_id', 'document_type_id', 
-                'client_type', 'primary_port_id', 'customs_offices_id', 
-                'created_by_company_id', 'status', 'notes'
-            ])->toArray();
+            $client = Client::create($validatedData);
 
-            $client = Client::create($clientData);
-
-            // Crear datos de contacto si se proporcionaron
-            $contactData = collect($validatedData)
-                ->only([
-                    'contact_email', 'contact_phone', 'contact_mobile_phone',
-                    'contact_address_line_1', 'contact_address_line_2', 
-                    'contact_city', 'contact_state_province', 'contact_postal_code',
-                    'contact_person_name', 'contact_person_position',
-                    'contact_person_phone', 'contact_person_email',
-                    'accepts_email_notifications', 'accepts_sms_notifications'
-                ])
-                ->mapWithKeys(function ($value, $key) {
-                    // Remover prefijo 'contact_' de las claves
-                    return [str_replace('contact_', '', $key) => $value];
-                })
-                ->filter() // Remover valores vacíos
-                ->toArray();
-
-            if (!empty($contactData)) {
-                $contactData['created_by_user_id'] = Auth::id();
-                $client->createPrimaryContact($contactData);
+            // Crear contacto principal si se proporcionaron datos
+            if ($request->filled('contact_email') || $request->filled('contact_phone')) {
+                $client->createPrimaryContact([
+                    'email' => $request->contact_email,
+                    'phone' => $request->contact_phone,
+                    'address_line_1' => $request->contact_address,
+                    'city' => $request->contact_city,
+                    'is_primary' => true,
+                    'active' => true,
+                ]);
             }
 
             DB::commit();
@@ -217,10 +193,11 @@ class ClientController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            
             Log::error('Error creating client', [
+                'data' => $validatedData,
                 'error' => $e->getMessage(),
-                'user_id' => Auth::id(),
-                'data' => $validatedData
+                'user_id' => Auth::id()
             ]);
 
             return back()
@@ -230,100 +207,88 @@ class ClientController extends Controller
     }
 
     /**
-     * Mostrar formulario de edición
+     * Mostrar cliente específico.
+     * 
+     * CORRECCIÓN: Sin companyRelations
      */
-    public function edit(Client $client)
+    public function show(Client $client)
     {
-        $user = Auth::user();
+        // Cargar relaciones (sin companyRelations)
+        $client->load([
+            'country', 
+            'documentType', 
+            'primaryPort',
+            'customOffice',
+            'primaryContact',
+            'activeContacts',
+            'createdByCompany:id,legal_name,commercial_name'
+        ]);
 
-        // Verificar permisos
-        if (!$user->hasRole('super-admin') && !$user->canEditClient($client)) {
-            abort(403, 'No tienes permisos para editar este cliente');
-        }
-
-        // Cargar datos de contacto
-        $client->load('primaryContact');
-
-        // Datos para selects
-        $countries = Country::where('active', true)->orderBy('name')->get();
-        $documentTypes = DocumentType::where('active', true)->get();
-        $ports = Port::where('active', true)->orderBy('name')->get();
-        $customsOffices = CustomOffice::where('active', true)->orderBy('name')->get();
-        
-        $companies = $user->hasRole('super-admin') 
-            ? Company::where('active', true)->orderBy('legal_name')->get()
-            : collect([$user->companies()->where('active', true)->first()])->filter();
-
-        return view('admin.clients.edit', compact(
-            'client', 'countries', 'documentTypes', 'ports', 'customsOffices', 'companies'
-        ));
+        return view('admin.clients.show', compact('client'));
     }
 
     /**
-     * Actualizar cliente y datos de contacto
+     * Mostrar formulario de edición.
+     */
+    public function edit(Client $client)
+    {
+        $countries = Country::where('active', true)->orderBy('name')->get();
+        $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
+        $ports = Port::where('active', true)->orderBy('name')->get();
+        $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
+
+        // Cargar contacto principal para edición
+        $client->load('primaryContact');
+
+        return view('admin.clients.edit', compact('client', 'countries', 'documentTypes', 'ports', 'customOffices'));
+    }
+
+    /**
+     * Actualizar cliente.
+     * 
+     * CORRECCIÓN: Removido 'owner' de tipos válidos
      */
     public function update(Request $request, Client $client)
     {
         $validatedData = $request->validate([
-            // Datos básicos del cliente
-            'tax_id' => 'required|string|max:11',
-            'legal_name' => 'required|string|max:255',
+            'tax_id' => [
+                'required', 
+                'string', 
+                'max:15',
+                'unique:clients,tax_id,' . $client->id . ',id,country_id,' . $request->country_id
+            ],
+            'legal_name' => 'required|string|min:3|max:255',
             'country_id' => 'required|exists:countries,id',
-            'document_type_id' => 'required|exists:document_types,id',
-            'client_type' => 'required|in:shipper,consignee,notify_party,owner',
+            'document_type_id' => 'nullable|exists:document_types,id',
+            'client_type' => 'required|in:shipper,consignee,notify_party', // ← REMOVIDO 'owner'
             'primary_port_id' => 'nullable|exists:ports,id',
-            'customs_offices_id' => 'nullable|exists:customs_offices,id',
+            'customs_offices_id' => 'nullable|exists:custom_offices,id',
             'status' => 'sometimes|in:active,inactive,suspended',
             'notes' => 'nullable|string|max:1000',
-            
-            // Datos de contacto
-            'contact_email' => 'nullable|email|max:255',
-            'contact_phone' => 'nullable|string|max:20',
-            'contact_mobile_phone' => 'nullable|string|max:20',
-            'contact_address_line_1' => 'nullable|string|max:255',
-            'contact_address_line_2' => 'nullable|string|max:255',
+            // Datos de contacto opcionales
+            'contact_email' => 'nullable|email|max:100',
+            'contact_phone' => 'nullable|string|max:50',
+            'contact_address' => 'nullable|string|max:500',
             'contact_city' => 'nullable|string|max:100',
-            'contact_state_province' => 'nullable|string|max:100',
-            'contact_postal_code' => 'nullable|string|max:20',
-            'contact_person_name' => 'nullable|string|max:255',
-            'contact_person_position' => 'nullable|string|max:255',
-            'contact_person_phone' => 'nullable|string|max:20',
-            'contact_person_email' => 'nullable|email|max:255',
-            'accepts_email_notifications' => 'nullable|boolean',
-            'accepts_sms_notifications' => 'nullable|boolean',
         ]);
 
         try {
             DB::beginTransaction();
 
-            // Actualizar datos básicos del cliente
-            $clientData = collect($validatedData)->only([
-                'tax_id', 'legal_name', 'country_id', 'document_type_id',
-                'client_type', 'primary_port_id', 'customs_offices_id',
-                'status', 'notes'
-            ])->toArray();
+            // Limpiar CUIT/RUC
+            $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
+            
+            // Actualizar cliente
+            $client->update($validatedData);
 
-            $client->update($clientData);
-
-            // Actualizar datos de contacto
-            $contactData = collect($validatedData)
-                ->only([
-                    'contact_email', 'contact_phone', 'contact_mobile_phone',
-                    'contact_address_line_1', 'contact_address_line_2',
-                    'contact_city', 'contact_state_province', 'contact_postal_code',
-                    'contact_person_name', 'contact_person_position',
-                    'contact_person_phone', 'contact_person_email',
-                    'accepts_email_notifications', 'accepts_sms_notifications'
-                ])
-                ->mapWithKeys(function ($value, $key) {
-                    return [str_replace('contact_', '', $key) => $value];
-                })
-                ->filter()
-                ->toArray();
-
-            if (!empty($contactData)) {
-                $contactData['updated_by_user_id'] = Auth::id();
-                $client->updateOrCreatePrimaryContact($contactData);
+            // Actualizar o crear contacto principal
+            if ($request->filled('contact_email') || $request->filled('contact_phone')) {
+                $client->updateOrCreatePrimaryContact([
+                    'email' => $request->contact_email,
+                    'phone' => $request->contact_phone,
+                    'address_line_1' => $request->contact_address,
+                    'city' => $request->contact_city,
+                ]);
             }
 
             DB::commit();
@@ -334,8 +299,10 @@ class ClientController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            
             Log::error('Error updating client', [
                 'client_id' => $client->id,
+                'data' => $validatedData,
                 'error' => $e->getMessage(),
                 'user_id' => Auth::id()
             ]);
@@ -347,17 +314,18 @@ class ClientController extends Controller
     }
 
     /**
-     * Eliminar cliente
+     * Eliminar cliente.
      */
     public function destroy(Client $client)
     {
         try {
             // Los datos de contacto se eliminan automáticamente por cascade
+            $clientName = $client->legal_name;
             $client->delete();
 
             return redirect()
                 ->route('admin.clients.index')
-                ->with('success', 'Cliente eliminado exitosamente');
+                ->with('success', "Cliente '{$clientName}' eliminado exitosamente");
 
         } catch (\Exception $e) {
             Log::error('Error deleting client', [
@@ -367,59 +335,119 @@ class ClientController extends Controller
             ]);
 
             return back()
-                ->withErrors(['error' => 'Error al eliminar cliente']);
+                ->withErrors(['error' => 'Error al eliminar cliente: ' . $e->getMessage()]);
         }
     }
 
     /**
-     * Verificar cliente
+     * Verificar cliente.
      */
     public function verify(Client $client)
     {
-        $client->update(['verified_at' => now()]);
+        $client->update([
+            'verified_at' => now(),
+            'updated_at' => now()
+        ]);
         
         return back()->with('success', 'Cliente verificado exitosamente');
     }
 
     /**
-     * Cambiar estado del cliente
+     * Cambiar estado del cliente.
      */
     public function toggleStatus(Client $client)
     {
         $newStatus = $client->status === 'active' ? 'inactive' : 'active';
         $client->update(['status' => $newStatus]);
         
-        return back()->with('success', 'Estado del cliente actualizado');
+        $statusText = $newStatus === 'active' ? 'activado' : 'desactivado';
+        return back()->with('success', "Cliente {$statusText} exitosamente");
     }
 
     /**
-     * Transferir cliente (placeholder)
+     * Transferir cliente.
+     * 
+     * CORRECCIÓN: Adaptado para base compartida (sin transferencias entre empresas)
      */
-    public function transfer(Client $client)
+    public function transfer(Client $client, Request $request)
     {
-        return back()->with('info', 'Funcionalidad de transferencia en desarrollo');
+        // En base compartida, no hay transferencias entre empresas
+        // Solo cambio de empresa que creó el registro para auditoría
+        
+        if (!auth()->user()->hasRole('super-admin')) {
+            return back()->with('error', 'Solo super administradores pueden cambiar la empresa creadora');
+        }
+
+        $request->validate([
+            'new_company_id' => 'required|exists:companies,id'
+        ]);
+
+        $client->update([
+            'created_by_company_id' => $request->new_company_id,
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Empresa creadora actualizada exitosamente');
     }
 
     /**
-     * Importación masiva (placeholder)
+     * Importación masiva.
+     * 
+     * NOTA: Mantener funcionalidad básica, adaptar Jobs si es necesario
      */
     public function bulkImport(Request $request)
     {
-        return back()->with('info', 'Funcionalidad de importación masiva en desarrollo');
+        $request->validate([
+            'import_file' => 'required|file|mimes:csv,xlsx,xls|max:10240',
+            'import_type' => 'required|in:clients,client_data'
+        ]);
+
+        // TODO: Adaptar ProcessBulkClientDataJob para base compartida
+        return back()->with('info', 'Funcionalidad de importación masiva en desarrollo para base compartida');
     }
 
     /**
-     * API Helper: Obtener datos para formularios
+     * API Helper: Obtener datos para formularios.
+     * 
+     * CORRECCIÓN: Sin 'owner' en client_types
      */
     public function getFormData()
     {
         return response()->json([
-            'client_types' => Client::getClientTypeOptions(),
+            'client_types' => [
+                'shipper' => 'Cargador/Exportador',
+                'consignee' => 'Consignatario/Importador',
+                'notify_party' => 'Notificatario'
+            ], // ← REMOVIDO 'owner'
             'statuses' => Client::getStatusOptions(),
             'countries' => Country::where('active', true)->get(['id', 'name']),
             'document_types' => DocumentType::where('active', true)->get(['id', 'name']),
             'ports' => Port::where('active', true)->get(['id', 'name']),
             'customs_offices' => CustomOffice::where('active', true)->get(['id', 'name']),
         ]);
+    }
+
+    /**
+     * Búsqueda AJAX para autocompletado.
+     */
+    public function search(Request $request)
+    {
+        $query = $request->get('q', '');
+        
+        if (strlen($query) < 2) {
+            return response()->json([]);
+        }
+
+        $clients = Client::where('status', 'active')
+            ->where(function($q) use ($query) {
+                $q->where('legal_name', 'like', "%{$query}%")
+                  ->orWhere('tax_id', 'like', "%{$query}%");
+            })
+            ->whereIn('client_type', ['shipper', 'consignee', 'notify_party']) // ← REMOVIDO 'owner'
+            ->with('country:id,name')
+            ->limit(10)
+            ->get(['id', 'legal_name', 'tax_id', 'client_type', 'country_id']);
+
+        return response()->json($clients);
     }
 }

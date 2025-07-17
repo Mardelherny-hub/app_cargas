@@ -37,7 +37,6 @@ return new class extends Migration
                 'shipper',      // Cargador/Exportador
                 'consignee',    // Consignatario/Importador
                 'notify_party', // Parte a notificar
-                'owner'         // Propietario de la carga
             ])->default('consignee')
             ->comment('Rol principal del cliente en operaciones');
 

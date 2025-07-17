@@ -7,18 +7,31 @@
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
                     {{ $client->getFormattedTaxId() }} • {{ $client->country->name ?? 'País no definido' }}
+                    @if($client->verified_at)
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 ml-2">
+                            ✓ Verificado
+                        </span>
+                    @else
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 ml-2">
+                            ⚠ Pendiente
+                        </span>
+                    @endif
                 </p>
             </div>
             <div class="flex space-x-2">
                 <a href="{{ route('admin.clients.show', $client) }}" 
+                   class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                    Ver Cliente
+                </a>
+                <a href="{{ route('admin.clients.index') }}" 
                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                     <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                     </svg>
-                    Cancelar
-                </a>
-                <a href="{{ route('admin.clients.index') }}" 
-                   class="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-md text-sm font-medium">
                     Volver al Listado
                 </a>
             </div>
@@ -28,597 +41,457 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
-            <form method="POST" action="{{ route('admin.clients.update', $client) }}" class="space-y-8">
-                @csrf
-                @method('PUT')
-
-                <!-- Información Básica del Cliente -->
-                <div class="bg-white shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center justify-between mb-6">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900">
-                                Información Básica del Cliente
-                            </h3>
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                {{ $client->status === 'active' ? 'bg-green-100 text-green-800' : 
-                                   ($client->status === 'inactive' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800') }}">
-                                {{ \App\Models\Client::STATUSES[$client->status] ?? $client->status }}
-                            </span>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Razón Social -->
-                            <div>
-                                <label for="legal_name" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Razón Social *
-                                </label>
-                                <input type="text" 
-                                       name="legal_name" 
-                                       id="legal_name" 
-                                       value="{{ old('legal_name', $client->legal_name) }}"
-                                       required
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 @error('legal_name') border-red-500 @enderror">
-                                @error('legal_name')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- CUIT/RUC -->
-                            <div>
-                                <label for="tax_id" class="block text-sm font-medium text-gray-700 mb-2">
-                                    CUIT/RUC *
-                                </label>
-                                <input type="text" 
-                                       name="tax_id" 
-                                       id="tax_id" 
-                                       value="{{ old('tax_id', $client->tax_id) }}"
-                                       maxlength="11"
-                                       required
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 @error('tax_id') border-red-500 @enderror">
-                                @error('tax_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- País -->
-                            <div>
-                                <label for="country_id" class="block text-sm font-medium text-gray-700 mb-2">
-                                    País *
-                                </label>
-                                <select name="country_id" 
-                                        id="country_id" 
-                                        required
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 @error('country_id') border-red-500 @enderror">
-                                    <option value="">Seleccionar país</option>
-                                    @foreach($countries as $country)
-                                        <option value="{{ $country->id }}" 
-                                                {{ old('country_id', $client->country_id) == $country->id ? 'selected' : '' }}>
-                                            {{ $country->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('country_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Tipo de Documento -->
-                            <div>
-                                <label for="document_type_id" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Tipo de Documento *
-                                </label>
-                                <select name="document_type_id" 
-                                        id="document_type_id" 
-                                        required
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 @error('document_type_id') border-red-500 @enderror">
-                                    <option value="">Seleccionar tipo</option>
-                                    @foreach($documentTypes as $docType)
-                                        <option value="{{ $docType->id }}" 
-                                                {{ old('document_type_id', $client->document_type_id) == $docType->id ? 'selected' : '' }}>
-                                            {{ $docType->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('document_type_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Tipo de Cliente -->
-                            <div>
-                                <label for="client_type" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Tipo de Cliente *
-                                </label>
-                                <select name="client_type" 
-                                        id="client_type" 
-                                        required
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 @error('client_type') border-red-500 @enderror">
-                                    @foreach(\App\Models\Client::getClientTypeOptions() as $key => $label)
-                                        <option value="{{ $key }}" 
-                                                {{ old('client_type', $client->client_type) == $key ? 'selected' : '' }}>
-                                            {{ $label }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('client_type')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Estado -->
-                            @if(auth()->user()->hasRole('super-admin'))
-                                <div>
-                                    <label for="status" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Estado
-                                    </label>
-                                    <select name="status" 
-                                            id="status" 
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                        @foreach(\App\Models\Client::getStatusOptions() as $key => $label)
-                                            <option value="{{ $key }}" 
-                                                    {{ old('status', $client->status) == $key ? 'selected' : '' }}>
-                                                {{ $label }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                            @endif
-
-                            <!-- Puerto Principal -->
-                            <div>
-                                <label for="primary_port_id" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Puerto Principal
-                                </label>
-                                <select name="primary_port_id" 
-                                        id="primary_port_id" 
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Sin puerto principal</option>
-                                    @foreach($ports as $port)
-                                        <option value="{{ $port->id }}" 
-                                                {{ old('primary_port_id', $client->primary_port_id) == $port->id ? 'selected' : '' }}>
-                                            {{ $port->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            <!-- Aduana -->
-                            <div>
-                                <label for="customs_offices_id" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Aduana Habitual
-                                </label>
-                                <select name="customs_offices_id" 
-                                        id="customs_offices_id" 
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Sin aduana habitual</option>
-                                    @foreach($customsOffices as $customs)
-                                        <option value="{{ $customs->id }}" 
-                                                {{ old('customs_offices_id', $client->customs_offices_id) == $customs->id ? 'selected' : '' }}>
-                                            {{ $customs->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Observaciones -->
-                        <div class="mt-6">
-                            <label for="notes" class="block text-sm font-medium text-gray-700 mb-2">
-                                Observaciones
-                            </label>
-                            <textarea name="notes" 
-                                      id="notes" 
-                                      rows="3"
-                                      placeholder="Observaciones internas sobre el cliente..."
-                                      class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ old('notes', $client->notes) }}</textarea>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Información de Contacto -->
-                <div class="bg-white shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center justify-between mb-6">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900">
-                                Información de Contacto
-                            </h3>
-                            @if($client->primaryContact)
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
-                                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
-                                    </svg>
-                                    Contacto Registrado
-                                </span>
-                            @else
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                                    </svg>
-                                    Sin Contacto
-                                </span>
-                            @endif
-                        </div>
-
-                        <!-- Emails y Teléfonos -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <!-- Emails -->
-                            <div class="space-y-4">
-                                <h4 class="text-sm font-medium text-gray-900 border-b border-gray-200 pb-2">
-                                    📧 Emails
-                                </h4>
-                                
-                                <div>
-                                    <label for="contact_email" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Email Principal
-                                    </label>
-                                    <input type="email" 
-                                           name="contact_email" 
-                                           id="contact_email" 
-                                           value="{{ old('contact_email', $client->primaryContact?->email) }}"
-                                           placeholder="correo@empresa.com"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 @error('contact_email') border-red-500 @enderror">
-                                    @error('contact_email')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <div>
-                                    <label for="contact_secondary_email" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Email Secundario
-                                    </label>
-                                    <input type="email" 
-                                           name="contact_secondary_email" 
-                                           id="contact_secondary_email" 
-                                           value="{{ old('contact_secondary_email', $client->primaryContact?->secondary_email) }}"
-                                           placeholder="alternativo@empresa.com"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            <!-- Estado del Cliente -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                
+                <!-- Verificación -->
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="p-4">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div class="w-8 h-8 {{ $client->verified_at ? 'bg-green-500' : 'bg-yellow-500' }} rounded-full flex items-center justify-center">
+                                    @if($client->verified_at)
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                        </svg>
+                                    @else
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                        </svg>
+                                    @endif
                                 </div>
                             </div>
-
-                            <!-- Teléfonos -->
-                            <div class="space-y-4">
-                                <h4 class="text-sm font-medium text-gray-900 border-b border-gray-200 pb-2">
-                                    📞 Teléfonos
-                                </h4>
-                                
-                                <div>
-                                    <label for="contact_phone" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Teléfono Fijo
-                                    </label>
-                                    <input type="tel" 
-                                           name="contact_phone" 
-                                           id="contact_phone" 
-                                           value="{{ old('contact_phone', $client->primaryContact?->phone) }}"
-                                           placeholder="+54 11 4444-5555"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_mobile_phone" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Teléfono Móvil
-                                    </label>
-                                    <input type="tel" 
-                                           name="contact_mobile_phone" 
-                                           id="contact_mobile_phone" 
-                                           value="{{ old('contact_mobile_phone', $client->primaryContact?->mobile_phone) }}"
-                                           placeholder="+54 9 11 5555-6666"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_fax" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Fax
-                                    </label>
-                                    <input type="tel" 
-                                           name="contact_fax" 
-                                           id="contact_fax" 
-                                           value="{{ old('contact_fax', $client->primaryContact?->fax) }}"
-                                           placeholder="+54 11 4444-5556"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Dirección -->
-                        <div class="mb-6">
-                            <h4 class="text-sm font-medium text-gray-900 border-b border-gray-200 pb-2 mb-4">
-                                📍 Dirección
-                            </h4>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="md:col-span-2">
-                                    <label for="contact_address_line_1" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Dirección Principal *
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_address_line_1" 
-                                           id="contact_address_line_1" 
-                                           value="{{ old('contact_address_line_1', $client->primaryContact?->address_line_1) }}"
-                                           placeholder="Av. Corrientes 1234"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div class="md:col-span-2">
-                                    <label for="contact_address_line_2" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Dirección Complementaria
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_address_line_2" 
-                                           id="contact_address_line_2" 
-                                           value="{{ old('contact_address_line_2', $client->primaryContact?->address_line_2) }}"
-                                           placeholder="Piso 5, Oficina B"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_city" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Ciudad *
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_city" 
-                                           id="contact_city" 
-                                           value="{{ old('contact_city', $client->primaryContact?->city) }}"
-                                           placeholder="Buenos Aires"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_state_province" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Provincia/Estado
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_state_province" 
-                                           id="contact_state_province" 
-                                           value="{{ old('contact_state_province', $client->primaryContact?->state_province) }}"
-                                           placeholder="CABA"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_postal_code" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Código Postal
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_postal_code" 
-                                           id="contact_postal_code" 
-                                           value="{{ old('contact_postal_code', $client->primaryContact?->postal_code) }}"
-                                           placeholder="C1043AAZ"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Persona de Contacto -->
-                        <div class="mb-6">
-                            <h4 class="text-sm font-medium text-gray-900 border-b border-gray-200 pb-2 mb-4">
-                                👤 Persona de Contacto
-                            </h4>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label for="contact_person_name" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Nombre Completo
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_person_name" 
-                                           id="contact_person_name" 
-                                           value="{{ old('contact_person_name', $client->primaryContact?->contact_person_name) }}"
-                                           placeholder="Juan Pérez"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_person_position" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Cargo/Posición
-                                    </label>
-                                    <input type="text" 
-                                           name="contact_person_position" 
-                                           id="contact_person_position" 
-                                           value="{{ old('contact_person_position', $client->primaryContact?->contact_person_position) }}"
-                                           placeholder="Gerente de Operaciones"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_person_phone" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Teléfono Directo
-                                    </label>
-                                    <input type="tel" 
-                                           name="contact_person_phone" 
-                                           id="contact_person_phone" 
-                                           value="{{ old('contact_person_phone', $client->primaryContact?->contact_person_phone) }}"
-                                           placeholder="+54 9 11 1234-5678"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-
-                                <div>
-                                    <label for="contact_person_email" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Email Directo
-                                    </label>
-                                    <input type="email" 
-                                           name="contact_person_email" 
-                                           id="contact_person_email" 
-                                           value="{{ old('contact_person_email', $client->primaryContact?->contact_person_email) }}"
-                                           placeholder="juan.perez@empresa.com"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Preferencias de Notificación -->
-                        <div class="mb-6">
-                            <h4 class="text-sm font-medium text-gray-900 border-b border-gray-200 pb-2 mb-4">
-                                🔔 Preferencias de Notificación
-                            </h4>
-                            
-                            <div class="space-y-3">
-                                <div class="flex items-center">
-                                    <input type="checkbox" 
-                                           name="accepts_email_notifications" 
-                                           id="accepts_email_notifications" 
-                                           value="1"
-                                           {{ old('accepts_email_notifications', $client->primaryContact?->accepts_email_notifications) ? 'checked' : '' }}
-                                           class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                                    <label for="accepts_email_notifications" class="ml-2 text-sm text-gray-700">
-                                        Acepta notificaciones por email
-                                    </label>
-                                </div>
-
-                                <div class="flex items-center">
-                                    <input type="checkbox" 
-                                           name="accepts_sms_notifications" 
-                                           id="accepts_sms_notifications" 
-                                           value="1"
-                                           {{ old('accepts_sms_notifications', $client->primaryContact?->accepts_sms_notifications) ? 'checked' : '' }}
-                                           class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
-                                    <label for="accepts_sms_notifications" class="ml-2 text-sm text-gray-700">
-                                        Acepta notificaciones por SMS
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Notas de Contacto -->
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-900 border-b border-gray-200 pb-2 mb-4">
-                                📝 Notas de Contacto
-                            </h4>
-                            
-                            <div class="space-y-4">
-                                <div>
-                                    <label for="contact_notes" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Notas Generales
-                                    </label>
-                                    <textarea name="contact_notes" 
-                                              id="contact_notes" 
-                                              rows="3"
-                                              placeholder="Información adicional sobre el contacto..."
-                                              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ old('contact_notes', $client->primaryContact?->notes) }}</textarea>
-                                </div>
-
-                                @if(auth()->user()->hasRole('super-admin'))
-                                    <div>
-                                        <label for="contact_internal_notes" class="block text-sm font-medium text-red-700 mb-2">
-                                            Notas Internas (Solo Administradores)
-                                        </label>
-                                        <textarea name="contact_internal_notes" 
-                                                  id="contact_internal_notes" 
-                                                  rows="2"
-                                                  placeholder="Notas internas confidenciales..."
-                                                  class="w-full px-3 py-2 border border-red-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500 bg-red-50">{{ old('contact_internal_notes', $client->primaryContact?->internal_notes) }}</textarea>
-                                    </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-gray-900">
+                                    {{ $client->verified_at ? 'Cliente Verificado' : 'Verificación Pendiente' }}
+                                </p>
+                                @if($client->verified_at)
+                                    <p class="text-xs text-gray-500">{{ $client->verified_at->format('d/m/Y H:i') }}</p>
                                 @endif
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Botones de Acción -->
-                <div class="bg-white shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex space-x-3">
-                                <a href="{{ route('admin.clients.show', $client) }}" 
-                                   class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                    Cancelar
-                                </a>
-                                <a href="{{ route('admin.clients.index') }}" 
-                                   class="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                    Volver al Listado
-                                </a>
-                            </div>
-                            
-                            <div class="flex space-x-3">
-                                @if(auth()->user()->hasRole('super-admin'))
-                                    <button type="button" 
-                                            onclick="toggleClientStatus()"
-                                            class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                        {{ $client->status === 'active' ? 'Desactivar' : 'Activar' }} Cliente
-                                    </button>
-                                @endif
-                                
-                                <button type="submit" 
-                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                    </svg>
-                                    Guardar Cambios
-                                </button>
-                            </div>
-                        </div>
-
-                        @if($client->verified_at)
-                            <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                                <div class="flex">
-                                    <svg class="w-5 h-5 text-yellow-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                                    </svg>
-                                    <div class="text-sm text-yellow-700">
-                                        <p class="font-medium">Cliente verificado</p>
-                                        <p>Si modifica el CUIT/RUC, se deberá reverificar el cliente.</p>
-                                        @if(auth()->user()->hasRole('super-admin'))
-                                            <div class="mt-2">
-                                                <input type="checkbox" id="reverify" name="reverify" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
-                                                <label for="reverify" class="ml-2 text-sm">Reverificar CUIT/RUC</label>
-                                            </div>
+                <!-- Estado -->
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="p-4">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div class="w-8 h-8 {{ $client->status === 'active' ? 'bg-green-500' : 'bg-red-500' }} rounded-full flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        @if($client->status === 'active')
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                        @else
+                                            <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd"/>
                                         @endif
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-gray-900">
+                                    Estado: {{ \App\Models\Client::STATUSES[$client->status] ?? $client->status }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Acciones Rápidas -->
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="p-4">
+                        <div class="flex space-x-2">
+                            @if(auth()->user()->hasRole(['super-admin', 'company-admin']))
+                                @if($client->verified_at)
+                                    <form method="POST" action="{{ route('admin.clients.verify', $client) }}" class="inline">
+                                        @csrf
+                                        @method('PATCH')
+                                        <button type="submit" 
+                                                class="text-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-2 py-1 rounded font-medium"
+                                                onclick="return confirm('¿Desea reverificar este cliente?')"
+                                                title="Actualizar fecha de verificación">
+                                            🔄 Reverificar
+                                        </button>
+                                    </form>
+                                @endif
+                                
+                                <form method="POST" action="{{ route('admin.clients.toggle-status', $client) }}" class="inline">
+                                    @csrf
+                                    @method('PATCH')
+                                    <button type="submit" 
+                                            class="text-xs {{ $client->status === 'active' ? 'bg-red-100 text-red-800 hover:bg-red-200' : 'bg-green-100 text-green-800 hover:bg-green-200' }} px-2 py-1 rounded font-medium"
+                                            onclick="return confirm('¿Confirma cambiar el estado del cliente?')">
+                                        {{ $client->status === 'active' ? '🚫 Desactivar' : '✅ Activar' }}
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            @if ($errors->any())
+                <div class="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-red-800">Errores en el formulario:</h3>
+                            <div class="mt-2 text-sm text-red-700">
+                                <ul class="list-disc list-inside space-y-1">
+                                    @foreach ($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- Formulario de Edición -->
+                <div class="lg:col-span-2 space-y-6">
+                    
+                    <form method="POST" action="{{ route('admin.clients.update', $client) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <!-- Información Básica -->
+                        <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+                            <div class="px-4 py-5 sm:p-6">
+                                <div class="flex items-center mb-6">
+                                    <svg class="w-6 h-6 text-blue-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    <h3 class="text-lg leading-6 font-medium text-gray-900">Información Básica</h3>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                                    
+                                    <!-- País -->
+                                    <div class="sm:col-span-1">
+                                        <label for="country_id" class="block text-sm font-medium text-gray-700">
+                                            País <span class="text-red-500">*</span>
+                                        </label>
+                                        <select id="country_id" name="country_id" required
+                                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                            <option value="">Seleccione un país</option>
+                                            @foreach($countries as $country)
+                                                <option value="{{ $country->id }}" {{ old('country_id', $client->country_id) == $country->id ? 'selected' : '' }}>
+                                                    {{ $country->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('country_id')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- CUIT/RUC -->
+                                    <div class="sm:col-span-1">
+                                        <label for="tax_id" class="block text-sm font-medium text-gray-700">
+                                            CUIT/RUC <span class="text-red-500">*</span>
+                                        </label>
+                                        <input type="text" id="tax_id" name="tax_id" 
+                                               value="{{ old('tax_id', $client->tax_id) }}" required maxlength="15"
+                                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        @error('tax_id')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Razón Social -->
+                                    <div class="sm:col-span-2">
+                                        <label for="legal_name" class="block text-sm font-medium text-gray-700">
+                                            Razón Social <span class="text-red-500">*</span>
+                                        </label>
+                                        <input type="text" id="legal_name" name="legal_name" 
+                                               value="{{ old('legal_name', $client->legal_name) }}" required
+                                               minlength="3" maxlength="255"
+                                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        @error('legal_name')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Tipo de Cliente -->
+                                    <div class="sm:col-span-1">
+                                        <label for="client_type" class="block text-sm font-medium text-gray-700">
+                                            Tipo de Cliente <span class="text-red-500">*</span>
+                                        </label>
+                                        <select id="client_type" name="client_type" required
+                                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                            <option value="">Seleccione el tipo</option>
+                                            <option value="shipper" {{ old('client_type', $client->client_type) === 'shipper' ? 'selected' : '' }}>
+                                                Cargador/Exportador
+                                            </option>
+                                            <option value="consignee" {{ old('client_type', $client->client_type) === 'consignee' ? 'selected' : '' }}>
+                                                Consignatario/Importador
+                                            </option>
+                                            <option value="notify_party" {{ old('client_type', $client->client_type) === 'notify_party' ? 'selected' : '' }}>
+                                                Notificatario
+                                            </option>
+                                        </select>
+                                        @error('client_type')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Tipo de Documento -->
+                                    <div class="sm:col-span-1">
+                                        <label for="document_type_id" class="block text-sm font-medium text-gray-700">
+                                            Tipo de Documento
+                                        </label>
+                                        <select id="document_type_id" name="document_type_id"
+                                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                            <option value="">Seleccione tipo</option>
+                                            @foreach($documentTypes as $type)
+                                                <option value="{{ $type->id }}" {{ old('document_type_id', $client->document_type_id) == $type->id ? 'selected' : '' }}>
+                                                    {{ $type->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('document_type_id')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
                                     </div>
                                 </div>
                             </div>
-                        @endif
+                        </div>
+
+                        <!-- Información Complementaria -->
+                        <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+                            <div class="px-4 py-5 sm:p-6">
+                                <div class="flex items-center mb-6">
+                                    <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    </svg>
+                                    <h3 class="text-lg leading-6 font-medium text-gray-900">Información Complementaria</h3>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                                    
+                                    <!-- Puerto Principal -->
+                                    <div class="sm:col-span-1">
+                                        <label for="primary_port_id" class="block text-sm font-medium text-gray-700">
+                                            Puerto Principal
+                                        </label>
+                                        <select id="primary_port_id" name="primary_port_id"
+                                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                            <option value="">Seleccione puerto</option>
+                                            @foreach($ports as $port)
+                                                <option value="{{ $port->id }}" {{ old('primary_port_id', $client->primary_port_id) == $port->id ? 'selected' : '' }}>
+                                                    {{ $port->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('primary_port_id')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Aduana Habitual -->
+                                    <div class="sm:col-span-1">
+                                        <label for="customs_offices_id" class="block text-sm font-medium text-gray-700">
+                                            Aduana Habitual
+                                        </label>
+                                        <select id="customs_offices_id" name="customs_offices_id"
+                                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                            <option value="">Seleccione aduana</option>
+                                            @foreach($customOffices as $office)
+                                                <option value="{{ $office->id }}" {{ old('customs_offices_id', $client->customs_offices_id) == $office->id ? 'selected' : '' }}>
+                                                    {{ $office->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('customs_offices_id')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Observaciones -->
+                                    <div class="sm:col-span-2">
+                                        <label for="notes" class="block text-sm font-medium text-gray-700">
+                                            Observaciones
+                                        </label>
+                                        <textarea id="notes" name="notes" rows="3" maxlength="1000"
+                                                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ old('notes', $client->notes) }}</textarea>
+                                        @error('notes')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Información de Contacto -->
+                        <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+                            <div class="px-4 py-5 sm:p-6">
+                                <div class="flex items-center mb-6">
+                                    <svg class="w-6 h-6 text-purple-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                    <h3 class="text-lg leading-6 font-medium text-gray-900">Información de Contacto</h3>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                                    
+                                    <!-- Email -->
+                                    <div class="sm:col-span-1">
+                                        <label for="contact_email" class="block text-sm font-medium text-gray-700">
+                                            Email Principal
+                                        </label>
+                                        <input type="email" id="contact_email" name="contact_email" maxlength="100"
+                                               value="{{ old('contact_email', $client->primaryContact?->email) }}"
+                                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        @error('contact_email')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Teléfono -->
+                                    <div class="sm:col-span-1">
+                                        <label for="contact_phone" class="block text-sm font-medium text-gray-700">
+                                            Teléfono
+                                        </label>
+                                        <input type="tel" id="contact_phone" name="contact_phone" maxlength="50"
+                                               value="{{ old('contact_phone', $client->primaryContact?->phone) }}"
+                                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        @error('contact_phone')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Dirección -->
+                                    <div class="sm:col-span-1">
+                                        <label for="contact_address" class="block text-sm font-medium text-gray-700">
+                                            Dirección
+                                        </label>
+                                        <textarea id="contact_address" name="contact_address" rows="2" maxlength="500"
+                                                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ old('contact_address', $client->primaryContact?->address_line_1) }}</textarea>
+                                        @error('contact_address')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Ciudad -->
+                                    <div class="sm:col-span-1">
+                                        <label for="contact_city" class="block text-sm font-medium text-gray-700">
+                                            Ciudad
+                                        </label>
+                                        <input type="text" id="contact_city" name="contact_city" maxlength="100"
+                                               value="{{ old('contact_city', $client->primaryContact?->city) }}"
+                                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        @error('contact_city')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botones -->
+                        <div class="bg-white overflow-hidden shadow rounded-lg">
+                            <div class="px-4 py-5 sm:p-6">
+                                <div class="flex items-center justify-between">
+                                    <a href="{{ route('admin.clients.show', $client) }}" 
+                                       class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-md text-sm font-medium">
+                                        Cancelar
+                                    </a>
+                                    <button type="submit" 
+                                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md text-sm font-medium">
+                                        Guardar Cambios
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </form>
+                </div>
+
+                <!-- Panel Lateral -->
+                <div class="space-y-6">
+                    
+                    <!-- Información de Auditoría -->
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                                Información de Auditoría
+                            </h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <dt class="text-sm font-medium text-gray-500">Empresa Creadora</dt>
+                                    <dd class="mt-1 text-sm text-gray-900">
+                                        {{ $client->createdByCompany->commercial_name ?? $client->createdByCompany->legal_name ?? 'Sistema' }}
+                                    </dd>
+                                </div>
+                                
+                                <div>
+                                    <dt class="text-sm font-medium text-gray-500">Fecha de Creación</dt>
+                                    <dd class="mt-1 text-sm text-gray-900">{{ $client->created_at->format('d/m/Y H:i') }}</dd>
+                                </div>
+                                
+                                <div>
+                                    <dt class="text-sm font-medium text-gray-500">Última Modificación</dt>
+                                    <dd class="mt-1 text-sm text-gray-900">{{ $client->updated_at->format('d/m/Y H:i') }}</dd>
+                                </div>
+                                
+                                @if($client->verified_at)
+                                    <div>
+                                        <dt class="text-sm font-medium text-gray-500">Fecha de Verificación</dt>
+                                        <dd class="mt-1 text-sm text-gray-900">{{ $client->verified_at->format('d/m/Y H:i') }}</dd>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Estado para Webservices -->
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">Estado para Webservices</h3>
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm text-gray-700">Verificado</span>
+                                    <span class="text-sm {{ $client->verified_at ? 'text-green-600' : 'text-red-600' }}">
+                                        {{ $client->verified_at ? '✓' : '✗' }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm text-gray-700">Activo</span>
+                                    <span class="text-sm {{ $client->status === 'active' ? 'text-green-600' : 'text-red-600' }}">
+                                        {{ $client->status === 'active' ? '✓' : '✗' }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm text-gray-700">Contacto Completo</span>
+                                    <span class="text-sm {{ $client->hasCompleteContactInfo() ? 'text-green-600' : 'text-yellow-600' }}">
+                                        {{ $client->hasCompleteContactInfo() ? '✓' : '⚠' }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm text-gray-700">Notificaciones</span>
+                                    <span class="text-sm {{ $client->canReceiveEmailNotifications() ? 'text-green-600' : 'text-red-600' }}">
+                                        {{ $client->canReceiveEmailNotifications() ? '✓' : '✗' }}
+                                    </span>
+                                </div>
+                                
+                                <div class="mt-4 pt-3 border-t border-gray-200">
+                                    <span class="text-sm font-medium {{ $client->verified_at && $client->status === 'active' ? 'text-green-600' : 'text-yellow-600' }}">
+                                        {{ $client->verified_at && $client->status === 'active' ? 'Listo para Webservices' : 'Requiere verificación' }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
-
-    <script>
-        function toggleClientStatus() {
-            if (confirm('¿Está seguro de que desea cambiar el estado del cliente?')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = '{{ route("admin.clients.toggle-status", $client) }}';
-                
-                const csrfToken = document.createElement('input');
-                csrfToken.type = 'hidden';
-                csrfToken.name = '_token';
-                csrfToken.value = '{{ csrf_token() }}';
-                
-                const methodField = document.createElement('input');
-                methodField.type = 'hidden';
-                methodField.name = '_method';
-                methodField.value = 'PATCH';
-                
-                form.appendChild(csrfToken);
-                form.appendChild(methodField);
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-
-        // Validación del formulario
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.querySelector('form');
-            form.addEventListener('submit', function(e) {
-                const legalName = document.getElementById('legal_name').value.trim();
-                const taxId = document.getElementById('tax_id').value.trim();
-                const countryId = document.getElementById('country_id').value;
-                const clientType = document.getElementById('client_type').value;
-
-                if (!legalName || !taxId || !countryId || !clientType) {
-                    e.preventDefault();
-                    alert('Por favor complete todos los campos obligatorios marcados con *');
-                    return false;
-                }
-
-                // Validar formato de CUIT/RUC
-                if (taxId.length !== 11 || !/^\d+$/.test(taxId)) {
-                    e.preventDefault();
-                    alert('El CUIT/RUC debe tener exactamente 11 dígitos numéricos');
-                    return false;
-                }
-            });
-        });
-    </script>
 </x-app-layout>

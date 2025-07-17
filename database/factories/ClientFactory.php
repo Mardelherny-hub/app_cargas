@@ -77,7 +77,7 @@ class ClientFactory extends Factory
             'tax_id' => $taxId,
             'country_id' => $countryId,
             'document_type_id' => $documentType?->id ?? 1,
-            'client_type' => $this->faker->randomElement(['shipper', 'consignee', 'notify_party', 'owner']),
+            'client_type' => $this->faker->randomElement(['shipper', 'consignee', 'notify_party']),
             'legal_name' => $this->faker->randomElement($companyNames),
             'primary_port_id' => $port?->id,
             'customs_offices_id' => $customOffice?->id,
@@ -177,16 +177,6 @@ class ClientFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'client_type' => 'notify_party',
-        ]);
-    }
-
-    /**
-     * Indicate that the client is an owner
-     */
-    public function owner(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'client_type' => 'owner',
         ]);
     }
 

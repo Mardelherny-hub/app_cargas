@@ -34,7 +34,7 @@ return new class extends Migration
 
             // Foreign keys definidos manualmente
             $table->unsignedBigInteger('container_type_id')->comment('Tipo de contenedor');
-            $table->unsignedBigInteger('owner_client_id')->nullable()->comment('Propietario del contenedor');
+            $table->unsignedBigInteger('vessel_owner_id')->nullable()->comment('Propietario del contenedor');
             $table->unsignedBigInteger('lessee_client_id')->nullable()->comment('Arrendatario actual');
             $table->unsignedBigInteger('operator_client_id')->nullable()->comment('Operador responsable');
             $table->unsignedBigInteger('current_port_id')->nullable()->comment('Puerto actual');
@@ -141,7 +141,7 @@ return new class extends Migration
             $table->index(['container_type_id', 'condition'], 'idx_containers_type_condition');
             $table->index(['operational_status', 'active'], 'idx_containers_status_active');
             $table->index(['current_port_id', 'condition'], 'idx_containers_port_condition');
-            $table->index(['owner_client_id'], 'idx_containers_owner');
+            $table->index(['vessel_owner_id'], 'idx_containers_owner');
             $table->index(['lessee_client_id'], 'idx_containers_lessee');
             $table->index(['expiry_date'], 'idx_containers_expiry');
             $table->index(['next_inspection_date'], 'idx_containers_inspection');
@@ -155,7 +155,7 @@ return new class extends Migration
 
             // Foreign key constraints (only to confirmed existing tables)
             $table->foreign('container_type_id')->references('id')->on('container_types')->onDelete('restrict');
-            $table->foreign('owner_client_id')->references('id')->on('clients')->onDelete('set null');
+            $table->foreign('vessel_owner_id')->references('id')->on('clients')->onDelete('set null');
             $table->foreign('lessee_client_id')->references('id')->on('clients')->onDelete('set null');
             $table->foreign('operator_client_id')->references('id')->on('clients')->onDelete('set null');
             $table->foreign('current_port_id')->references('id')->on('ports')->onDelete('set null');
