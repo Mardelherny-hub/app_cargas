@@ -104,7 +104,13 @@ class ClientController extends Controller
             ],
         ];
 
-        return view('admin.clients.index', compact('clients', 'countries', 'companies', 'stats'));
+        $availableRoles = Client::getClientRoleOptions();
+
+        return view('admin.clients.index', compact('clients', 
+                                                    'countries', 
+                                                    'companies', 
+                                                    'stats',
+                                                    'availableRoles'));
     }
 
     /**
@@ -180,7 +186,21 @@ class ClientController extends Controller
             }
         ]);
 
-        return view('admin.clients.show', compact('client'));
+        // Agrupar contactos por tipo
+        $contactsByType = $client->contactData->groupBy('contact_type');
+
+        // Tipos de contacto para mostrar etiquetas
+        $contactTypes = [
+            'afip' => 'AFIP/Webservices',
+            'arrival_notice' => 'Cartas de Arribo',
+            'manifest' => 'Manifiestos',
+            'operations' => 'Operaciones',
+            'billing' => 'Facturación',
+            'emergencies' => 'Emergencias',
+            'general' => 'General',
+        ];
+
+        return view('admin.clients.show', compact('client', 'contactsByType', 'contactTypes'));
     }
 
     /**

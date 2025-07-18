@@ -104,29 +104,40 @@
                     </div>
                 </div>
 
-                <!-- Tipo de Cliente -->
+                <!-- Roles de Cliente -->
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="p-5">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <!-- CORRECCIÓN: Solo colores para tipos válidos (sin owner) -->
-                                <div class="w-8 h-8 {{ $client->client_type === 'shipper' ? 'bg-green-500' : ($client->client_type === 'consignee' ? 'bg-blue-500' : ($client->client_type === 'notify_party' ? 'bg-yellow-500' : 'bg-gray-500')) }} rounded-full flex items-center justify-center">
+                        <div class="flex items-center flex-wrap gap-2">
+                            @php
+                                $roleColors = [
+                                    'shipper' => 'bg-green-500',
+                                    'consignee' => 'bg-blue-500',
+                                    'notify_party' => 'bg-yellow-500',
+                                ];
+                                $clientRoles = $client->client_roles ?? [];
+                            @endphp
+                            @foreach($clientRoles as $role)
+                                <div class="w-8 h-8 {{ $roleColors[$role] ?? 'bg-gray-500' }} rounded-full flex items-center justify-center" title="{{ \App\Models\Client::CLIENT_ROLES[$role] ?? $role }}">
                                     <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                        @if($client->client_type === 'shipper')
+                                        @if($role === 'shipper')
                                             <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
-                                        @elseif($client->client_type === 'consignee')
+                                        @elseif($role === 'consignee')
                                             <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                        @else
+                                        @elseif($role === 'notify_party')
                                             <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9zM13.73 21a2 2 0 01-3.46 0"/>
+                                        @else
+                                            <path d="M10 10h0"/>
                                         @endif
                                     </svg>
                                 </div>
-                            </div>
-                            <div class="ml-5 w-0 flex-1">
+                            @endforeach
+                            <div class="ml-3">
                                 <dl>
-                                    <dt class="text-sm font-medium text-gray-500 truncate">Tipo de Cliente</dt>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">Roles de Cliente</dt>
                                     <dd class="text-lg font-medium text-gray-900">
-                                        {{ \App\Models\Client::CLIENT_TYPES[$client->client_type] ?? $client->client_type }}
+                                        @foreach($clientRoles as $role)
+                                            {{ \App\Models\Client::CLIENT_ROLES[$role] ?? $role }}@if(!$loop->last), @endif
+                                        @endforeach
                                     </dd>
                                 </dl>
                             </div>

@@ -154,7 +154,7 @@ trait UserHelper
     /**
      * Obtener información resumida del usuario para mostrar en la interfaz.
      */
-    protected function getUserInfo(): array
+    public function getUserSummaryInfo(): array
     {
         $user = $this->getCurrentUser();
         $company = $this->getUserCompany();

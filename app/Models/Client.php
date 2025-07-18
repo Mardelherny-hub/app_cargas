@@ -346,11 +346,22 @@ class Client extends Model
     {
         // Limpiar CUIT/RUC antes de guardar
         static::saving(function (Client $client) {
-            $client->tax_id = preg_replace('/[^0-9]/', '', $client->tax_id);
+            // Limpiar CUIT/RUC
+            if (!empty($client->tax_id)) {
+                $client->tax_id = preg_replace('/[^0-9]/', '', $client->tax_id);
+            }
             
-            // Asegurar que client_roles sea un array
-            if (empty($client->client_roles)) {
+            // CORRECCIÓN: Manejo seguro de client_roles
+            $roles = $client->client_roles;
+            
+            // Convertir a array si no lo es, o si está vacío
+            if (!is_array($roles) || empty($roles)) {
                 $client->client_roles = ['consignee']; // Rol por defecto
+            }
+            
+            // Limpiar duplicados si es array
+            if (is_array($client->client_roles)) {
+                $client->client_roles = array_values(array_unique($client->client_roles));
             }
         });
     }
@@ -388,4 +399,51 @@ class Client extends Model
     {
         return $this->country->alpha2_code . '_' . $this->tax_id;
     }
+
+        /**
+     * Obtener todos los emails para cartas de arribo.
+     */
+    public function getArrivalNoticeEmails(): array
+    {
+        return $this->contactData()
+                    ->arrivalNoticeContacts()
+                    ->whereNotNull('email')
+                    ->pluck('email')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+    }
+
+    /**
+     * Verificar si tiene contactos de un tipo específico.
+     */
+    public function hasContactType(string $type): bool
+    {
+        return $this->contactData()->byType($type)->exists();
+    }
+
+    /**
+     * Obtener contacto principal de un tipo específico.
+     */
+    public function getPrimaryContactOfType(string $type): ?ClientContactData
+    {
+        return $this->contactData()
+                    ->byType($type)
+                    ->where('active', true)
+                    ->orderBy('is_primary', 'desc')
+                    ->first();
+    }
+
+     /**
+     * Verificar si puede recibir notificaciones por email.
+     */
+    public function canReceiveEmailNotifications(): bool
+    {
+        $contact = $this->primaryContact;
+        return $contact && 
+               $contact->accepts_email_notifications && 
+               !empty($contact->email);
+    }
+
 }

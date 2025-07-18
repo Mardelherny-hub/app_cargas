@@ -10,12 +10,14 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Seeder para crear información de contacto realista para clientes existentes
+ * SEEDER CORREGIDO - Información de contacto para clientes
  * 
- * Se ejecuta después de ClientsSeeder para agregar emails, teléfonos,
- * direcciones y preferencias de comunicación a empresas argentinas y paraguayas
+ * CORRECCIÓN CRÍTICA:
+ * - ✅ CORREGIDO: client_type → client_roles (JSON array)
+ * - ✅ ADAPTADO: Manejo de múltiples roles de cliente
+ * - ✅ MANTIENE: Generación realista de datos de contacto AR/PY
  * 
- * Compatible con webservices AR/PY
+ * Compatible con webservices AR/PY y nueva estructura de roles
  */
 class ClientContactDataSeeder extends Seeder
 {
@@ -130,21 +132,23 @@ class ClientContactDataSeeder extends Seeder
     private function generateContactData(Client $client, bool $isArgentinian, bool $isParaguayan, bool $isPrimary): array
     {
         $companyName = $client->legal_name;
-        $clientType = $client->client_type;
+        // CORRECCIÓN: Usar client_roles en lugar de client_type
+        $clientRoles = $client->client_roles ?? [];
 
         if ($isArgentinian) {
-            return $this->generateArgentinianContactData($companyName, $clientType, $isPrimary);
+            return $this->generateArgentinianContactData($companyName, $clientRoles, $isPrimary);
         } elseif ($isParaguayan) {
-            return $this->generateParaguayanContactData($companyName, $clientType, $isPrimary);
+            return $this->generateParaguayanContactData($companyName, $clientRoles, $isPrimary);
         }
 
-        return $this->generateGenericContactData($companyName, $clientType, $isPrimary);
+        return $this->generateGenericContactData($companyName, $clientRoles, $isPrimary);
     }
 
     /**
      * Generar datos de contacto para empresas argentinas
+     * CORRECCIÓN: Recibe array de roles en lugar de string
      */
-    private function generateArgentinianContactData(string $companyName, string $clientType, bool $isPrimary): array
+    private function generateArgentinianContactData(string $companyName, array $clientRoles, bool $isPrimary): array
     {
         $emails = [
             'administracion@' . $this->generateEmailDomain($companyName),
@@ -154,7 +158,8 @@ class ClientContactDataSeeder extends Seeder
             'ventas@' . $this->generateEmailDomain($companyName),
         ];
 
-        $positions = $this->getPositionsByClientType($clientType);
+        // CORRECCIÓN: Obtener posiciones basadas en roles múltiples
+        $positions = $this->getPositionsByClientRoles($clientRoles);
         $argentinianNames = [
             'Carlos Rodríguez', 'Ana María González', 'Roberto Silva', 'María José Fernández',
             'Jorge Luis Martín', 'Silvana López', 'Eduardo Pérez', 'Claudia Morales',
@@ -190,7 +195,7 @@ class ClientContactDataSeeder extends Seeder
             'business_hours' => $this->generateBusinessHours(),
             'timezone' => 'America/Argentina/Buenos_Aires',
             'communication_preferences' => $this->generateCommunicationPreferences(),
-            'accepts_email_notifications' => rand(1, 100) <= 90,
+            'accepts_email_notifications' => rand(1, 100) <= 85,
             'accepts_sms_notifications' => rand(1, 100) <= 60,
             'notes' => $this->generateContactNotes($isPrimary),
         ];
@@ -198,23 +203,23 @@ class ClientContactDataSeeder extends Seeder
 
     /**
      * Generar datos de contacto para empresas paraguayas
+     * CORRECCIÓN: Recibe array de roles en lugar de string
      */
-    private function generateParaguayanContactData(string $companyName, string $clientType, bool $isPrimary): array
+    private function generateParaguayanContactData(string $companyName, array $clientRoles, bool $isPrimary): array
     {
         $emails = [
-            'administracion@' . $this->generateEmailDomain($companyName),
+            'admin@' . $this->generateEmailDomain($companyName),
             'operaciones@' . $this->generateEmailDomain($companyName),
             'comercial@' . $this->generateEmailDomain($companyName),
-            'ventas@' . $this->generateEmailDomain($companyName),
-            'gerencia@' . $this->generateEmailDomain($companyName),
+            'logistica@' . $this->generateEmailDomain($companyName),
         ];
 
-        $positions = $this->getPositionsByClientType($clientType);
+        // CORRECCIÓN: Obtener posiciones basadas en roles múltiples
+        $positions = $this->getPositionsByClientRoles($clientRoles);
         $paraguayanNames = [
-            'José Luis Benítez', 'Carmen Sosa', 'Miguel Ángel Flores', 'Rosa Mendoza',
-            'Ramón González', 'Lourdes Martínez', 'Alfredo Cabrera', 'Mirta Villalba',
-            'Oscar Ayala', 'Graciela Valdez', 'Rubén Acosta', 'Norma Cáceres',
-            'Enrique Romero', 'Estela Gómez', 'Víctor Duarte', 'Elida Montiel'
+            'José María Benítez', 'Ana Rosa Cáceres', 'Carlos Alberto Franco', 'María Elena Duarte',
+            'Luis Fernando Aguilar', 'Rosa María Villalba', 'Miguel Ángel Rodríguez', 'Carmen López',
+            'Roberto Carlos Ayala', 'Miriam Beatriz Ovelar', 'Sergio Daniel Martínez', 'Liz Noguera'
         ];
 
         $paraguayanCities = [
@@ -223,8 +228,8 @@ class ClientContactDataSeeder extends Seeder
         ];
 
         $paraguayanDepartments = [
-            'Central', 'Alto Paraná', 'Itapúa', 'Cordillera', 'Paraguarí',
-            'Guairá', 'Caazapá', 'Misiones', 'Ñeembucú', 'Amambay'
+            'Central', 'Alto Paraná', 'Itapúa', 'Caaguazú', 'Paraguarí',
+            'Cordillera', 'Guairá', 'Misiones', 'Ñeembucú', 'Amambay'
         ];
 
         return [
@@ -253,8 +258,9 @@ class ClientContactDataSeeder extends Seeder
 
     /**
      * Generar datos genéricos de contacto
+     * CORRECCIÓN: Recibe array de roles en lugar de string
      */
-    private function generateGenericContactData(string $companyName, string $clientType, bool $isPrimary): array
+    private function generateGenericContactData(string $companyName, array $clientRoles, bool $isPrimary): array
     {
         // Usar nombre genérico si companyName está vacío
         $safeName = !empty($companyName) ? $companyName : 'Cliente-' . rand(1000, 9999);
@@ -270,6 +276,56 @@ class ClientContactDataSeeder extends Seeder
             'accepts_email_notifications' => true,
             'accepts_sms_notifications' => false,
         ];
+    }
+
+    /**
+     * CORRECCIÓN: Obtener posiciones basadas en array de roles en lugar de string
+     */
+    private function getPositionsByClientRoles(array $clientRoles): array
+    {
+        $allPositions = [
+            'Gerente General',
+            'Director Comercial',
+            'Jefe de Operaciones',
+            'Coordinador Logístico',
+            'Responsable de Importaciones',
+            'Responsable de Exportaciones',
+        ];
+
+        $roleSpecificPositions = [];
+
+        // Posiciones específicas según roles
+        if (in_array('shipper', $clientRoles)) {
+            $roleSpecificPositions = array_merge($roleSpecificPositions, [
+                'Gerente de Exportaciones',
+                'Coordinador de Embarques',
+                'Jefe de Logística Saliente',
+                'Responsable de Despachos',
+            ]);
+        }
+
+        if (in_array('consignee', $clientRoles)) {
+            $roleSpecificPositions = array_merge($roleSpecificPositions, [
+                'Gerente de Importaciones', 
+                'Coordinador de Recepciones',
+                'Jefe de Logística Entrante',
+                'Responsable de Recepciones',
+            ]);
+        }
+
+        if (in_array('notify_party', $clientRoles)) {
+            $roleSpecificPositions = array_merge($roleSpecificPositions, [
+                'Coordinador de Comunicaciones',
+                'Responsable de Notificaciones',
+                'Jefe de Seguimiento',
+            ]);
+        }
+
+        // Combinar posiciones generales con específicas
+        $combinedPositions = array_merge($allPositions, $roleSpecificPositions);
+        
+        // Eliminar duplicados y retornar
+        return array_unique($combinedPositions);
     }
 
     /**
@@ -291,42 +347,10 @@ class ClientContactDataSeeder extends Seeder
             $domain = 'empresa' . rand(100, 999);
         }
         
-        // Limitar longitud del dominio
+        // Truncar si es muy largo
         $domain = substr($domain, 0, 15);
         
-        $extensions = ['com.ar', 'com.py', 'com', 'net', 'org'];
-        return $domain . '.' . $extensions[array_rand($extensions)];
-    }
-
-    /**
-     * Obtener posiciones según el tipo de cliente
-     */
-    private function getPositionsByClientType(string $clientType): array
-    {
-        switch ($clientType) {
-            case 'shipper':
-                return [
-                    'Gerente de Exportaciones', 'Jefe de Logística', 'Coordinador de Embarques',
-                    'Encargado de Comercio Exterior', 'Supervisor de Despachos'
-                ];
-            case 'consignee':
-                return [
-                    'Gerente de Importaciones', 'Jefe de Operaciones', 'Coordinador de Recepciones',
-                    'Encargado de Almacenes', 'Supervisor de Descargas'
-                ];
-            case 'notify_party':
-                return [
-                    'Coordinador de Notificaciones', 'Jefe de Comunicaciones', 'Encargado de Seguimiento',
-                    'Supervisor de Tráfico', 'Responsable de Clientes'
-                ];
-            case 'owner':
-                return [
-                    'Propietario', 'Gerente General', 'Director Comercial',
-                    'Jefe de Operaciones', 'Coordinador General'
-                ];
-            default:
-                return ['Gerente General', 'Jefe de Operaciones', 'Coordinador'];
-        }
+        return $domain . '.com.ar';
     }
 
     /**
@@ -334,40 +358,16 @@ class ClientContactDataSeeder extends Seeder
      */
     private function generateArgentinianPhone(): string
     {
-        $areaCodes = ['11', '351', '341', '221', '381', '223', '387', '342', '264', '362'];
-        $areaCode = $areaCodes[array_rand($areaCodes)];
-        $number = rand(1000, 9999) . '-' . rand(1000, 9999);
-        return '+54 ' . $areaCode . ' ' . $number;
+        $areaCodes = ['011', '0223', '0341', '0351', '0381', '0261', '0342'];
+        return $areaCodes[array_rand($areaCodes)] . ' ' . rand(1000, 9999) . '-' . rand(1000, 9999);
     }
 
     /**
-     * Generar móvil argentino
+     * Generar celular argentino
      */
     private function generateArgentinianMobile(): string
     {
-        $areaCode = rand(11, 99);
-        $number = rand(1000, 9999) . '-' . rand(1000, 9999);
-        return '+54 9 ' . $areaCode . ' ' . $number;
-    }
-
-    /**
-     * Generar teléfono paraguayo
-     */
-    private function generateParaguayanPhone(): string
-    {
-        $number = rand(100, 999) . '-' . rand(100, 999);
-        return '+595 21 ' . $number;
-    }
-
-    /**
-     * Generar móvil paraguayo
-     */
-    private function generateParaguayanMobile(): string
-    {
-        $carriers = ['971', '972', '975', '981', '983', '985'];
-        $carrier = $carriers[array_rand($carriers)];
-        $number = rand(100, 999) . '-' . rand(100, 999);
-        return '+595 ' . $carrier . ' ' . $number;
+        return '+54 9 ' . rand(11, 99) . ' ' . rand(1000, 9999) . '-' . rand(1000, 9999);
     }
 
     /**
@@ -375,49 +375,8 @@ class ClientContactDataSeeder extends Seeder
      */
     private function generateArgentinianAddress(): string
     {
-        $streets = [
-            'Av. Corrientes', 'Av. Santa Fe', 'Av. Rivadavia', 'Av. Cabildo', 'Av. Juan B. Justo',
-            'San Martín', 'Belgrano', 'Mitre', 'Sarmiento', 'Moreno', 'Tucumán', 'Paraguay',
-            'Uruguay', 'Perú', 'Chile', 'Brasil', 'México', 'Venezuela'
-        ];
-        
-        $street = $streets[array_rand($streets)];
-        $number = rand(100, 9999);
-        
-        return $street . ' ' . $number;
-    }
-
-    /**
-     * Generar dirección paraguaya
-     */
-    private function generateParaguayanAddress(): string
-    {
-        $streets = [
-            'Av. Mariscal López', 'Av. España', 'Av. Brasilia', 'Av. Santísimo Sacramento',
-            'Eligio Ayala', 'Palma', 'Chile', 'Estrella', 'Independencia Nacional',
-            'Cerro Corá', 'General Díaz', 'Ygatimí', 'Haedo', 'Colón'
-        ];
-        
-        $street = $streets[array_rand($streets)];
-        $number = rand(100, 9999);
-        
-        return $street . ' ' . $number;
-    }
-
-    /**
-     * Generar línea de dirección 2
-     */
-    private function generateAddressLine2(): string
-    {
-        $options = [
-            'Piso ' . rand(1, 20),
-            'Oficina ' . rand(1, 50),
-            'Depto. ' . chr(rand(65, 90)),
-            'Local ' . rand(1, 20),
-            'Galpón ' . rand(1, 10),
-        ];
-        
-        return $options[array_rand($options)];
+        $streets = ['Av. Corrientes', 'Av. Santa Fe', 'Av. Rivadavia', 'Av. Cabildo', 'Sarmiento', 'San Martín', 'Belgrano', 'Mitre'];
+        return $streets[array_rand($streets)] . ' ' . rand(100, 9999);
     }
 
     /**
@@ -425,7 +384,32 @@ class ClientContactDataSeeder extends Seeder
      */
     private function generateArgentinianPostalCode(): string
     {
-        return chr(rand(65, 67)) . rand(1000, 9999) . chr(rand(65, 90)) . chr(rand(65, 90)) . chr(rand(65, 90));
+        return 'C' . rand(1000, 1900) . chr(rand(65, 90)) . chr(rand(65, 90)) . chr(rand(65, 90));
+    }
+
+    /**
+     * Generar teléfono paraguayo
+     */
+    private function generateParaguayanPhone(): string
+    {
+        return '+595 21 ' . rand(100, 999) . ' ' . rand(100, 999);
+    }
+
+    /**
+     * Generar celular paraguayo
+     */
+    private function generateParaguayanMobile(): string
+    {
+        return '+595 9' . rand(71, 99) . ' ' . rand(100, 999) . ' ' . rand(100, 999);
+    }
+
+    /**
+     * Generar dirección paraguaya
+     */
+    private function generateParaguayanAddress(): string
+    {
+        $streets = ['Av. Mariscal López', 'Av. España', 'Av. Brasilia', 'General Díaz', 'Eligio Ayala', 'Palma', 'Chile', 'Oliva'];
+        return $streets[array_rand($streets)] . ' ' . rand(100, 9999);
     }
 
     /**
@@ -433,7 +417,16 @@ class ClientContactDataSeeder extends Seeder
      */
     private function generateParaguayanPostalCode(): string
     {
-        return rand(1000, 9999) . '';
+        return rand(1000, 9999);
+    }
+
+    /**
+     * Generar segunda línea de dirección
+     */
+    private function generateAddressLine2(): string
+    {
+        $options = ['Piso ' . rand(1, 20), 'Oficina ' . rand(1, 50), 'Depto. ' . chr(rand(65, 90)), 'Local ' . rand(1, 20)];
+        return $options[array_rand($options)];
     }
 
     /**
@@ -441,18 +434,13 @@ class ClientContactDataSeeder extends Seeder
      */
     private function generatePersonalEmail(): string
     {
-        $providers = ['gmail.com', 'hotmail.com', 'yahoo.com', 'outlook.com'];
-        $names = ['juan', 'maria', 'carlos', 'ana', 'luis', 'sofia', 'diego', 'laura'];
-        
-        $name = $names[array_rand($names)];
-        $provider = $providers[array_rand($providers)];
-        $number = rand(1, 999);
-        
-        return $name . $number . '@' . $provider;
+        $names = ['carlos', 'ana', 'roberto', 'maria', 'jorge', 'patricia', 'diego', 'claudia'];
+        $domains = ['gmail.com', 'hotmail.com', 'yahoo.com', 'outlook.com'];
+        return $names[array_rand($names)] . rand(1, 99) . '@' . $domains[array_rand($domains)];
     }
 
     /**
-     * Generar horarios de atención
+     * Generar horarios de negocio
      */
     private function generateBusinessHours(): array
     {
@@ -461,8 +449,8 @@ class ClientContactDataSeeder extends Seeder
             'tuesday' => ['open' => '08:00', 'close' => '17:00'],
             'wednesday' => ['open' => '08:00', 'close' => '17:00'],
             'thursday' => ['open' => '08:00', 'close' => '17:00'],
-            'friday' => ['open' => '08:00', 'close' => '16:00'],
-            'saturday' => rand(1, 100) <= 50 ? ['open' => '09:00', 'close' => '13:00'] : null,
+            'friday' => ['open' => '08:00', 'close' => '17:00'],
+            'saturday' => rand(1, 100) <= 40 ? ['open' => '09:00', 'close' => '13:00'] : null,
             'sunday' => null,
         ];
     }
@@ -506,8 +494,8 @@ class ClientContactDataSeeder extends Seeder
     private function isLargeCompany(string $companyName): bool
     {
         $largeCompanies = [
-            'ALUAR', 'SIDERAR', 'TENARIS', 'BUNGE', 'CARGILL', 'DREYFUS',
-            'ARCELOR MITTAL', 'MOLINOS RIO DE LA PLATA', 'PETROPAR', 'ACEPAR'
+            'MAERSK', 'TERMINAL', 'CARGILL', 'NAVIERA', 'LOGÍSTICA', 'AGENCIA',
+            'FRIGORÍFICO', 'CONTAINERS', 'IMPORTADORA', 'EXPORTADOR'
         ];
         
         foreach ($largeCompanies as $large) {

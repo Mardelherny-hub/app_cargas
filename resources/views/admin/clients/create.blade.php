@@ -113,23 +113,29 @@
 
                             <!-- Tipo de Cliente -->
                             <div class="sm:col-span-1">
-                                <label for="client_type" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Cliente <span class="text-red-500">*</span>
+                                <label for="client_roles" class="block text-sm font-medium text-gray-700">
+                                    Roles de Cliente <span class="text-red-500">*</span>
                                 </label>
-                                <select id="client_type" name="client_type" required
+                                <select id="client_roles" name="client_roles[]" multiple required
                                         class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Seleccionar tipo</option>
-                                    <option value="shipper" {{ old('client_type') == 'shipper' ? 'selected' : '' }}>
-                                        Cargador/Exportador
-                                    </option>
-                                    <option value="consignee" {{ old('client_type') == 'consignee' ? 'selected' : '' }}>
-                                        Consignatario/Importador
-                                    </option>
-                                    <option value="notify_party" {{ old('client_type') == 'notify_party' ? 'selected' : '' }}>
-                                        Notificatario
-                                    </option>
+                                    @php
+                                        $oldRoles = old('client_roles', []);
+                                        if (!is_array($oldRoles)) {
+                                            $oldRoles = [$oldRoles];
+                                        }
+                                        $roles = [
+                                            'shipper' => 'Cargador/Exportador',
+                                            'consignee' => 'Consignatario/Importador',
+                                            'notify_party' => 'Notificatario',
+                                        ];
+                                    @endphp
+                                    @foreach($roles as $key => $label)
+                                        <option value="{{ $key }}" {{ in_array($key, $oldRoles) ? 'selected' : '' }}>
+                                            {{ $label }}
+                                        </option>
+                                    @endforeach
                                 </select>
-                                @error('client_type')
+                                @error('client_roles')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
