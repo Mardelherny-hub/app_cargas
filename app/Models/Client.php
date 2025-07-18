@@ -21,12 +21,13 @@ use App\Models\ClientContactData;
  * - ❌ REMOVIDO: client_type 'owner' (ahora en VesselOwner)
  * - ❌ REMOVIDO: relación companyRelations (base de datos compartida)
  * - ✅ MANTIENE: created_by_company_id (solo para auditoría)
+ * - ✅ CORRECCIÓN CRÍTICA: client_type → client_roles (JSON array para múltiples roles)
  *
  * @property int $id
  * @property string $tax_id CUIT/RUC del cliente
  * @property int $country_id País del cliente
  * @property int $document_type_id Tipo de documento
- * @property string $client_type Rol del cliente (shipper, consignee, notify_party)
+ * @property array $client_roles Array de roles del cliente ['shipper', 'consignee', 'notify_party']
  * @property string $legal_name Razón social oficial
  * @property int|null $primary_port_id Puerto principal
  * @property int|null $customs_offices_id Aduana habitual
@@ -53,7 +54,7 @@ class Client extends Model
         'tax_id',
         'country_id',
         'document_type_id',
-        'client_type',
+        'client_roles',
         'legal_name',
         'primary_port_id',
         'customs_offices_id',
@@ -67,6 +68,7 @@ class Client extends Model
      * Atributos que deben ser tratados como fechas.
      */
     protected $casts = [
+        'client_roles' => 'array',
         'verified_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -80,10 +82,10 @@ class Client extends Model
     ];
 
     /**
-     * Tipos de cliente disponibles.
-     * CORRECCIÓN: Removido 'owner' - ahora gestionado por VesselOwner
+     * Roles de cliente disponibles.
+     * CORRECCIÓN: Cambio de CLIENT_TYPES a CLIENT_ROLES
      */
-    public const CLIENT_TYPES = [
+    public const CLIENT_ROLES = [
         'shipper' => 'Cargador/Exportador',
         'consignee' => 'Consignatario/Importador',
         'notify_party' => 'Notificatario',
@@ -178,56 +180,12 @@ class Client extends Model
      */
     public function hasCompleteContactInfo(): bool
     {
-        $contact = $this->primaryContact;
-        return $contact && 
-               !empty($contact->email) && 
-               !empty($contact->address_line_1) && 
-               !empty($contact->city);
-    }
-
-    /**
-     * Verificar si puede recibir notificaciones por email.
-     */
-    public function canReceiveEmailNotifications(): bool
-    {
-        $contact = $this->primaryContact;
-        return $contact && 
-               $contact->accepts_email_notifications && 
-               !empty($contact->email);
-    }
-
-    /**
-     * Crear contacto principal para el cliente.
-     */
-    public function createPrimaryContact(array $data): ClientContactData
-    {
-        // Asegurar que sea el contacto principal
-        $data['is_primary'] = true;
-        $data['active'] = true;
-        
-        // Desactivar otros contactos primarios si existen
-        $this->contactData()->where('is_primary', true)->update(['is_primary' => false]);
-        
-        return $this->contactData()->create($data);
-    }
-
-    /**
-     * Actualizar o crear contacto principal.
-     */
-    public function updateOrCreatePrimaryContact(array $data): ClientContactData
-    {
-        $contact = $this->primaryContact;
-        
-        if ($contact) {
-            $contact->update($data);
-            return $contact;
-        }
-        
-        return $this->createPrimaryContact($data);
+        $primary = $this->primaryContact;
+        return $primary && ($primary->email || $primary->phone);
     }
 
     // =====================================================
-    // RELACIONES EXISTENTES
+    // RELACIONES CON OTRAS ENTIDADES
     // =====================================================
 
     /**
@@ -276,11 +234,12 @@ class Client extends Model
     // =====================================================
 
     /**
-     * Opciones para select de tipos de cliente.
+     * Opciones para select de roles de cliente.
+     * CORRECCIÓN: Cambio de getClientTypeOptions a getClientRoleOptions
      */
-    public static function getClientTypeOptions(): array
+    public static function getClientRoleOptions(): array
     {
-        return self::CLIENT_TYPES;
+        return self::CLIENT_ROLES;
     }
 
     /**
@@ -308,6 +267,75 @@ class Client extends Model
     }
 
     // =====================================================
+    // MÉTODOS PARA GESTIÓN DE ROLES MÚLTIPLES
+    // =====================================================
+
+    /**
+     * Verificar si el cliente tiene un rol específico.
+     */
+    public function hasRole(string $role): bool
+    {
+        return in_array($role, $this->client_roles ?? []);
+    }
+
+    /**
+     * Verificar si el cliente tiene alguno de los roles especificados.
+     */
+    public function hasAnyRole(array $roles): bool
+    {
+        return !empty(array_intersect($this->client_roles ?? [], $roles));
+    }
+
+    /**
+     * Obtener roles formateados para mostrar.
+     */
+    public function getRolesForDisplay(): string
+    {
+        if (empty($this->client_roles)) {
+            return 'Sin roles asignados';
+        }
+
+        $roleLabels = [];
+        foreach ($this->client_roles as $role) {
+            $roleLabels[] = self::CLIENT_ROLES[$role] ?? $role;
+        }
+
+        return implode(', ', $roleLabels);
+    }
+
+    /**
+     * Obtener el rol principal (primer rol en el array).
+     */
+    public function getPrimaryRole(): ?string
+    {
+        return $this->client_roles[0] ?? null;
+    }
+
+    /**
+     * Verificar si es un cliente cargador.
+     */
+    public function isShipper(): bool
+    {
+        return $this->hasRole('shipper');
+    }
+
+    /**
+     * Verificar si es un cliente consignatario.
+     */
+    public function isConsignee(): bool
+    {
+        return $this->hasRole('consignee');
+    }
+
+    /**
+     * Verificar si es parte a notificar.
+     */
+    public function isNotifyParty(): bool
+    {
+        return $this->hasRole('notify_party');
+    }
+
+    // =====================================================
     // EVENTOS DEL MODELO
     // =====================================================
 
@@ -319,6 +347,11 @@ class Client extends Model
         // Limpiar CUIT/RUC antes de guardar
         static::saving(function (Client $client) {
             $client->tax_id = preg_replace('/[^0-9]/', '', $client->tax_id);
+            
+            // Asegurar que client_roles sea un array
+            if (empty($client->client_roles)) {
+                $client->client_roles = ['consignee']; // Rol por defecto
+            }
         });
     }
 
@@ -354,48 +387,5 @@ class Client extends Model
     public function getWebserviceIdentifier(): string
     {
         return $this->country->alpha2_code . '_' . $this->tax_id;
-    }
-
-    /**
-     * Obtener contactos por tipo.
-     */
-    public function getContactsByType(string $type)
-    {
-        return $this->contactData()->byType($type)->get();
-    }
-
-    /**
-     * Obtener todos los emails para cartas de arribo.
-     */
-    public function getArrivalNoticeEmails(): array
-    {
-        return $this->contactData()
-                    ->arrivalNoticeContacts()
-                    ->whereNotNull('email')
-                    ->pluck('email')
-                    ->filter()
-                    ->unique()
-                    ->values()
-                    ->toArray();
-    }
-
-    /**
-     * Verificar si tiene contactos de un tipo específico.
-     */
-    public function hasContactType(string $type): bool
-    {
-        return $this->contactData()->byType($type)->exists();
-    }
-
-    /**
-     * Obtener contacto principal de un tipo específico.
-     */
-    public function getPrimaryContactOfType(string $type): ?ClientContactData
-    {
-        return $this->contactData()
-                    ->byType($type)
-                    ->where('active', true)
-                    ->orderBy('is_primary', 'desc')
-                    ->first();
     }
 }

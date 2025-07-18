@@ -32,13 +32,9 @@ return new class extends Migration
                 ->constrained('document_types')
                 ->comment('Tipo de documento según país');
 
-            // Tipo/rol del cliente en operaciones
-            $table->enum('client_type', [
-                'shipper',      // Cargador/Exportador
-                'consignee',    // Consignatario/Importador
-                'notify_party', // Parte a notificar
-            ])->default('consignee')
-            ->comment('Rol principal del cliente en operaciones');
+            // CORRECCIÓN: Roles múltiples del cliente en operaciones (JSON)
+            $table->json('client_roles')
+                ->comment('Array de roles del cliente: [shipper, consignee, notify_party]');
 
             // Datos oficiales del cliente
             $table->string('legal_name', 255)
@@ -84,11 +80,6 @@ return new class extends Migration
 
             // Índices compuestos para consultas por empresa
             $table->index(['created_by_company_id', 'status'], 'idx_company_status');
-            $table->index(['created_by_company_id', 'client_type', 'status'], 'idx_company_type_status');
-
-            // Índices para búsquedas por tipo de cliente
-            $table->index(['client_type', 'status'], 'idx_type_status');
-            $table->index(['client_type', 'country_id'], 'idx_type_country');
 
             // Índices para ubicación y operaciones
             $table->index(['primary_port_id', 'status'], 'idx_port_status');

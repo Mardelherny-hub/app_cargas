@@ -4,57 +4,43 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
-use App\Models\Company;
 use App\Models\Country;
 use App\Models\DocumentType;
 use App\Models\Port;
 use App\Models\CustomOffice;
-use App\Models\User;
+use App\Models\Company;
+use App\Http\Requests\CreateClientRequest;
+use App\Http\Requests\UpdateClientRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * CONTROLADOR CORREGIDO: BASE COMPARTIDA + SIN OWNER
- * 
- * Cambios aplicados:
- * - ❌ REMOVIDO: uso de companyRelations (base compartida)
- * - ❌ REMOVIDO: client_type 'owner' de validaciones
- * - ✅ ADAPTADO: control de acceso para base compartida
- * - ✅ MANTIENE: funcionalidad de datos de contacto
+ * FASE 1 - MÓDULO EMPRESAS Y CLIENTES
+ *
+ * Controlador Admin para gestión completa de clientes
+ * CORRECCIÓN CRÍTICA: client_type → client_roles (múltiples roles)
  */
 class ClientController extends Controller
 {
     /**
-     * Listar clientes con datos de contacto.
-     * 
-     * CORRECCIÓN: Adaptado para base de datos compartida
+     * Listar clientes con filtros y búsqueda.
      */
     public function index(Request $request)
     {
-        $user = Auth::user();
-        
-        // Query base con contacto principal incluido (sin companyRelations)
         $query = Client::with([
-            'country',
-            'primaryContact',  // Mantener datos de contacto
-            'createdByCompany:id,legal_name,commercial_name' // Solo para auditoría
+            'country:id,name,alpha2_code',
+            'documentType:id,name',
+            'primaryPort:id,name',
+            'customOffice:id,name',
+            'createdByCompany:id,legal_name',
+            'primaryContact'
         ]);
 
-        // Control de acceso adaptado para base compartida
-        if ($user->hasRole('super-admin')) {
-            // Super admin ve todos los clientes
-        } else {
-            // Base compartida: todos los usuarios pueden ver todos los clientes activos
-            // Se puede implementar filtros adicionales según necesidades de negocio
-            $query->where('status', 'active')
-                  ->whereNotNull('verified_at');
-        }
-
-        // Filtros de búsqueda
+        // Búsqueda por texto
         if ($request->filled('search')) {
-            $search = $request->get('search');
+            $search = trim($request->get('search'));
             $query->where(function($q) use ($search) {
                 $q->where('legal_name', 'like', "%{$search}%")
                   ->orWhere('tax_id', 'like', "%{$search}%")
@@ -64,11 +50,12 @@ class ClientController extends Controller
             });
         }
 
-        // Filtro por tipo de cliente (sin 'owner')
-        if ($request->filled('client_type')) {
-            $validTypes = ['shipper', 'consignee', 'notify_party'];
-            if (in_array($request->get('client_type'), $validTypes)) {
-                $query->where('client_type', $request->get('client_type'));
+        // CORRECCIÓN: Filtro por roles de cliente (JSON)
+        if ($request->filled('client_role')) {
+            $role = $request->get('client_role');
+            $validRoles = ['shipper', 'consignee', 'notify_party'];
+            if (in_array($role, $validRoles)) {
+                $query->whereJsonContains('client_roles', $role);
             }
         }
 
@@ -109,11 +96,12 @@ class ClientController extends Controller
             'verified' => Client::whereNotNull('verified_at')->count(),
             'pending' => Client::whereNull('verified_at')->count(),
             'inactive' => Client::where('status', 'inactive')->count(),
-            'by_type' => Client::select('client_type', DB::raw('count(*) as count'))
-                              ->whereIn('client_type', ['shipper', 'consignee', 'notify_party'])
-                              ->groupBy('client_type')
-                              ->pluck('count', 'client_type')
-                              ->toArray(),
+            // CORRECCIÓN: Estadísticas por roles (JSON)
+            'by_role' => [
+                'shipper' => Client::whereJsonContains('client_roles', 'shipper')->count(),
+                'consignee' => Client::whereJsonContains('client_roles', 'consignee')->count(),
+                'notify_party' => Client::whereJsonContains('client_roles', 'notify_party')->count(),
+            ],
         ];
 
         return view('admin.clients.index', compact('clients', 'countries', 'companies', 'stats'));
@@ -134,56 +122,23 @@ class ClientController extends Controller
 
     /**
      * Crear nuevo cliente.
-     * 
-     * CORRECCIÓN: Removido 'owner' de tipos válidos
+     * CORRECCIÓN: Usa CreateClientRequest con client_roles
      */
-    public function store(Request $request)
+    public function store(CreateClientRequest $request)
     {
-        $validatedData = $request->validate([
-            'tax_id' => [
-                'required', 
-                'string', 
-                'max:15',
-                'unique:clients,tax_id,NULL,id,country_id,' . $request->country_id
-            ],
-            'legal_name' => 'required|string|min:3|max:255',
-            'country_id' => 'required|exists:countries,id',
-            'document_type_id' => 'nullable|exists:document_types,id',
-            'client_type' => 'required|in:shipper,consignee,notify_party', // ← REMOVIDO 'owner'
-            'primary_port_id' => 'nullable|exists:ports,id',
-            'customs_offices_id' => 'nullable|exists:custom_offices,id',
-            'status' => 'sometimes|in:active,inactive,suspended',
-            'notes' => 'nullable|string|max:1000',
-            // Datos de contacto opcionales
-            // Múltiples contactos con tipos
-            'contacts' => 'nullable|array|max:10',
-            'contacts.*.contact_type' => 'required_with:contacts.*|in:general,afip,manifests,arrival_notices,emergency,billing,operations',
-            'contacts.*.email' => 'nullable|email|max:255',
-            'contacts.*.phone' => 'nullable|string|max:20',
-            'contacts.*.mobile_phone' => 'nullable|string|max:20',
-            'contacts.*.address_line_1' => 'nullable|string|max:255',
-            'contacts.*.address_line_2' => 'nullable|string|max:255',
-            'contacts.*.city' => 'nullable|string|max:100',
-            'contacts.*.state_province' => 'nullable|string|max:100',
-            'contacts.*.contact_person_name' => 'nullable|string|max:150',
-            'contacts.*.contact_person_position' => 'nullable|string|max:100',
-            'contacts.*.notes' => 'nullable|string|max:500',
-            'contacts.*.is_primary' => 'nullable|boolean',        ]);
-
         try {
             DB::beginTransaction();
 
+            // Los datos ya vienen validados del FormRequest
+            $validatedData = $request->validated();
+
             // Limpiar CUIT/RUC
             $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
-            
-            // Agregar auditoría
-            $validatedData['created_by_company_id'] = auth()->user()->companies()->first()?->id;
 
             // Crear cliente
             $client = Client::create($validatedData);
 
-            // Crear contacto principal si se proporcionaron datos
-            // Crear múltiples contactos si se proporcionaron
+            // Crear múltiples contactos si se proporcionan
             if ($request->has('contacts') && is_array($request->contacts)) {
                 $this->createMultipleContacts($client, $request->contacts);
             }
@@ -198,7 +153,7 @@ class ClientController extends Controller
             DB::rollBack();
             
             Log::error('Error creating client', [
-                'data' => $validatedData,
+                'data' => $request->validated(),
                 'error' => $e->getMessage(),
                 'user_id' => Auth::id()
             ]);
@@ -211,32 +166,21 @@ class ClientController extends Controller
 
     /**
      * Mostrar cliente específico.
-     * 
-     * CORRECCIÓN: Sin companyRelations
      */
     public function show(Client $client)
     {
-        // Cargar relaciones (sin companyRelations)
-                $client->load([
+        $client->load([
             'country', 
             'documentType', 
             'primaryPort',
             'customOffice',
-            'createdByCompany:id,legal_name,commercial_name',
+            'createdByCompany',
             'contactData' => function($query) {
-                $query->where('active', true)
-                    ->orderBy('is_primary', 'desc')
-                    ->orderBy('contact_type')
-                    ->orderBy('created_at');
+                $query->where('active', true)->orderBy('is_primary', 'desc');
             }
         ]);
 
-        // Organizar contactos por tipo para la vista
-        $contactsByType = $client->contactData->groupBy('contact_type');
-        $contactTypes = \App\Models\ClientContactData::CONTACT_TYPES;
-
-        return view('admin.clients.show', compact('client', 'contactsByType', 'contactTypes'));
-
+        return view('admin.clients.show', compact('client'));
     }
 
     /**
@@ -249,7 +193,7 @@ class ClientController extends Controller
         $ports = Port::where('active', true)->orderBy('name')->get();
         $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
 
-        // Cargar contacto principal para edición
+        // Cargar contactos para edición
         $client->load(['contactData' => function($query) {
             $query->where('active', true)->orderBy('is_primary', 'desc')->orderBy('contact_type');
         }]);
@@ -259,43 +203,24 @@ class ClientController extends Controller
 
     /**
      * Actualizar cliente.
-     * 
-     * CORRECCIÓN: Removido 'owner' de tipos válidos
+     * CORRECCIÓN: Usa UpdateClientRequest con client_roles
      */
-    public function update(Request $request, Client $client)
+    public function update(UpdateClientRequest $request, Client $client)
     {
-        $validatedData = $request->validate([
-            'tax_id' => [
-                'required', 
-                'string', 
-                'max:15',
-                'unique:clients,tax_id,' . $client->id . ',id,country_id,' . $request->country_id
-            ],
-            'legal_name' => 'required|string|min:3|max:255',
-            'country_id' => 'required|exists:countries,id',
-            'document_type_id' => 'nullable|exists:document_types,id',
-            'client_type' => 'required|in:shipper,consignee,notify_party', // ← REMOVIDO 'owner'
-            'primary_port_id' => 'nullable|exists:ports,id',
-            'customs_offices_id' => 'nullable|exists:custom_offices,id',
-            'status' => 'sometimes|in:active,inactive,suspended',
-            'notes' => 'nullable|string|max:1000',
-            // Datos de contacto opcionales
-            'contact_email' => 'nullable|email|max:100',
-            'contact_phone' => 'nullable|string|max:50',
-            'contact_address' => 'nullable|string|max:500',
-            'contact_city' => 'nullable|string|max:100',
-        ]);
-
         try {
             DB::beginTransaction();
 
-            // Limpiar CUIT/RUC
-            $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
+            // Los datos ya vienen validados del FormRequest
+            $validatedData = $request->validated();
+
+            // Limpiar CUIT/RUC si se proporciona
+            if (isset($validatedData['tax_id'])) {
+                $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
+            }
             
             // Actualizar cliente
             $client->update($validatedData);
 
-            // Actualizar o crear contacto principal
             // Actualizar múltiples contactos
             if ($request->has('contacts') && is_array($request->contacts)) {
                 $this->updateMultipleContacts($client, $request->contacts);
@@ -312,7 +237,7 @@ class ClientController extends Controller
             
             Log::error('Error updating client', [
                 'client_id' => $client->id,
-                'data' => $validatedData,
+                'data' => $request->validated(),
                 'error' => $e->getMessage(),
                 'user_id' => Auth::id()
             ]);
@@ -329,13 +254,12 @@ class ClientController extends Controller
     public function destroy(Client $client)
     {
         try {
-            // Los datos de contacto se eliminan automáticamente por cascade
-            $clientName = $client->legal_name;
-            $client->delete();
+            // Solo cambiar estado, no eliminar físicamente
+            $client->update(['status' => 'inactive']);
 
             return redirect()
                 ->route('admin.clients.index')
-                ->with('success', "Cliente '{$clientName}' eliminado exitosamente");
+                ->with('success', 'Cliente desactivado exitosamente');
 
         } catch (\Exception $e) {
             Log::error('Error deleting client', [
@@ -344,20 +268,16 @@ class ClientController extends Controller
                 'user_id' => Auth::id()
             ]);
 
-            return back()
-                ->withErrors(['error' => 'Error al eliminar cliente: ' . $e->getMessage()]);
+            return back()->with('error', 'Error al desactivar cliente');
         }
     }
 
     /**
-     * Verificar cliente.
+     * Verificar cliente CUIT/RUC.
      */
     public function verify(Client $client)
     {
-        $client->update([
-            'verified_at' => now(),
-            'updated_at' => now()
-        ]);
+        $client->update(['verified_at' => now()]);
         
         return back()->with('success', 'Cliente verificado exitosamente');
     }
@@ -370,40 +290,19 @@ class ClientController extends Controller
         $newStatus = $client->status === 'active' ? 'inactive' : 'active';
         $client->update(['status' => $newStatus]);
         
-        $statusText = $newStatus === 'active' ? 'activado' : 'desactivado';
-        return back()->with('success', "Cliente {$statusText} exitosamente");
+        return back()->with('success', 'Estado del cliente actualizado');
     }
 
     /**
-     * Transferir cliente.
-     * 
-     * CORRECCIÓN: Adaptado para base compartida (sin transferencias entre empresas)
+     * Transferir cliente (placeholder).
      */
-    public function transfer(Client $client, Request $request)
+    public function transfer(Client $client)
     {
-        // En base compartida, no hay transferencias entre empresas
-        // Solo cambio de empresa que creó el registro para auditoría
-        
-        if (!auth()->user()->hasRole('super-admin')) {
-            return back()->with('error', 'Solo super administradores pueden cambiar la empresa creadora');
-        }
-
-        $request->validate([
-            'new_company_id' => 'required|exists:companies,id'
-        ]);
-
-        $client->update([
-            'created_by_company_id' => $request->new_company_id,
-            'updated_at' => now()
-        ]);
-
-        return back()->with('success', 'Empresa creadora actualizada exitosamente');
+        return back()->with('info', 'Funcionalidad de transferencia en desarrollo');
     }
 
     /**
-     * Importación masiva.
-     * 
-     * NOTA: Mantener funcionalidad básica, adaptar Jobs si es necesario
+     * Importación masiva (placeholder).
      */
     public function bulkImport(Request $request)
     {
@@ -412,33 +311,12 @@ class ClientController extends Controller
             'import_type' => 'required|in:clients,client_data'
         ]);
 
-        // TODO: Adaptar ProcessBulkClientDataJob para base compartida
-        return back()->with('info', 'Funcionalidad de importación masiva en desarrollo para base compartida');
-    }
-
-    /**
-     * API Helper: Obtener datos para formularios.
-     * 
-     * CORRECCIÓN: Sin 'owner' en client_types
-     */
-    public function getFormData()
-    {
-        return response()->json([
-            'client_types' => [
-                'shipper' => 'Cargador/Exportador',
-                'consignee' => 'Consignatario/Importador',
-                'notify_party' => 'Notificatario'
-            ], // ← REMOVIDO 'owner'
-            'statuses' => Client::getStatusOptions(),
-            'countries' => Country::where('active', true)->get(['id', 'name']),
-            'document_types' => DocumentType::where('active', true)->get(['id', 'name']),
-            'ports' => Port::where('active', true)->get(['id', 'name']),
-            'customs_offices' => CustomOffice::where('active', true)->get(['id', 'name']),
-        ]);
+        return back()->with('info', 'Funcionalidad de importación masiva en desarrollo');
     }
 
     /**
      * Búsqueda AJAX para autocompletado.
+     * CORRECCIÓN: Busca en client_roles (JSON)
      */
     public function search(Request $request)
     {
@@ -453,12 +331,27 @@ class ClientController extends Controller
                 $q->where('legal_name', 'like', "%{$query}%")
                   ->orWhere('tax_id', 'like', "%{$query}%");
             })
-            ->whereIn('client_type', ['shipper', 'consignee', 'notify_party']) // ← REMOVIDO 'owner'
             ->with('country:id,name')
             ->limit(10)
-            ->get(['id', 'legal_name', 'tax_id', 'client_type', 'country_id']);
+            ->get(['id', 'legal_name', 'tax_id', 'client_roles', 'country_id']);
 
         return response()->json($clients);
+    }
+
+    /**
+     * API Helper: Obtener datos para formularios.
+     * CORRECCIÓN: Devuelve client_roles disponibles
+     */
+    public function getFormData()
+    {
+        return response()->json([
+            'client_roles' => Client::getClientRoleOptions(),
+            'statuses' => Client::getStatusOptions(),
+            'countries' => Country::where('active', true)->get(['id', 'name']),
+            'document_types' => DocumentType::where('active', true)->get(['id', 'name']),
+            'ports' => Port::where('active', true)->get(['id', 'name']),
+            'customs_offices' => CustomOffice::where('active', true)->get(['id', 'name']),
+        ]);
     }
 
     /**
@@ -500,14 +393,10 @@ class ClientController extends Controller
     }
 
     /**
-     * Actualizar múltiples contactos de un cliente.
+     * Actualizar múltiples contactos para un cliente.
      */
     private function updateMultipleContacts(Client $client, array $contacts): void
     {
-        // Remover contactos existentes que no estén en la nueva lista
-        $keepIds = collect($contacts)->pluck('id')->filter();
-        $client->contactData()->whereNotIn('id', $keepIds)->delete();
-        
         $hasPrimary = false;
         
         foreach ($contacts as $index => $contactData) {
@@ -517,7 +406,7 @@ class ClientController extends Controller
             }
             
             // Solo un contacto puede ser primario
-            $isPrimary = !$hasPrimary && ($contactData['is_primary'] ?? false);
+            $isPrimary = !$hasPrimary && ($contactData['is_primary'] ?? $index === 0);
             if ($isPrimary) {
                 $hasPrimary = true;
             }
@@ -548,27 +437,5 @@ class ClientController extends Controller
                 $client->contactData()->create($contactAttributes);
             }
         }
-    }
-
-    /**
-     * Obtener tipos de contacto para formularios.
-     */
-    public function getContactTypes(): array
-    {
-        return \App\Models\ClientContactData::CONTACT_TYPES;
-    }
-
-    /**
-     * Obtener estadísticas de contactos para la vista.
-     */
-    private function getContactStats(Client $client): array
-    {
-        return [
-            'total_contacts' => $client->contactData()->where('active', true)->count(),
-            'has_afip_contact' => $client->hasContactType('afip'),
-            'has_arrival_notices' => $client->hasContactType('arrival_notices'),
-            'arrival_notice_emails' => $client->getArrivalNoticeEmails(),
-            'primary_contact' => $client->primaryContact,
-        ];
     }
 }
