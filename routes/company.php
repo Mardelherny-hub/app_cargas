@@ -207,21 +207,27 @@ Route::prefix('certificates')->name('company.certificates.')->group(function () 
     Route::post('/{certificate}/renew', [CertificateController::class, 'processRenew'])->name('process-renew');
 });
 
-// Gestión de Clientes (base compartida)
+// Gestión de Clientes (base compartida) - ORDEN CORREGIDO
 Route::prefix('clients')->name('company.clients.')->group(function () {
     
-    // Rutas accesibles para company-admin y user
+    // 1. PRIMERO: Rutas específicas (sin parámetros)
     Route::get('/', [ClientController::class, 'index'])->name('index');
-    Route::get('/{client}', [ClientController::class, 'show'])->name('show');
     Route::get('/search', [ClientController::class, 'search'])->name('search');
     Route::get('/suggestions', [ClientController::class, 'suggestions'])->name('suggestions');
     Route::post('/validate-tax-id', [ClientController::class, 'validateTaxId'])->name('validate-tax-id');
-    Route::get('/{client}/contacts', [ClientController::class, 'contacts'])->name('contacts');
     
-    // Rutas SOLO para company-admin
+    // 2. Rutas SOLO para company-admin (específicas)
     Route::middleware(['role:company-admin'])->group(function () {
         Route::get('/create', [ClientController::class, 'create'])->name('create');
         Route::post('/', [ClientController::class, 'store'])->name('store');
+    });
+    
+    // 3. DESPUÉS: Rutas con parámetros {client}
+    Route::get('/{client}', [ClientController::class, 'show'])->name('show');
+    Route::get('/{client}/contacts', [ClientController::class, 'contacts'])->name('contacts');
+    
+    // 4. Más rutas SOLO para company-admin (con parámetros)
+    Route::middleware(['role:company-admin'])->group(function () {
         Route::get('/{client}/edit', [ClientController::class, 'edit'])->name('edit');
         Route::put('/{client}', [ClientController::class, 'update'])->name('update');
         Route::delete('/{client}', [ClientController::class, 'destroy'])->name('destroy');

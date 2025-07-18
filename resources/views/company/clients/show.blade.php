@@ -244,6 +244,75 @@
                         @endif
                     </div>
                 </div>
+
+                <!-- Agregar esta sección en company/clients/show.blade.php después de la información básica del cliente -->
+
+<!-- Roles de Cliente - CORRECCIÓN: Mostrar múltiples roles -->
+<div class="bg-white shadow rounded-lg">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900">Roles de Cliente</h3>
+    </div>
+    <div class="px-6 py-4">
+        <div class="flex items-center flex-wrap gap-2">
+            @php
+                $roleColors = [
+                    'shipper' => 'bg-green-500',
+                    'consignee' => 'bg-blue-500', 
+                    'notify_party' => 'bg-yellow-500',
+                ];
+                $clientRoles = $client->client_roles ?? [];
+            @endphp
+            
+            @forelse($clientRoles as $role)
+                <div class="flex items-center">
+                    <!-- Icono circular con color específico -->
+                    <div class="w-8 h-8 {{ $roleColors[$role] ?? 'bg-gray-500' }} rounded-full flex items-center justify-center mr-2" 
+                         title="{{ \App\Models\Client::CLIENT_ROLES[$role] ?? $role }}">
+                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            @if($role === 'shipper')
+                                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+                            @elseif($role === 'consignee')
+                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            @elseif($role === 'notify_party')
+                                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9zM13.73 21a2 2 0 01-3.46 0"/>
+                            @else
+                                <path d="M10 10h0"/>
+                            @endif
+                        </svg>
+                    </div>
+                    
+                    <!-- Badge con texto del rol -->
+                    @php
+                        $badgeColors = [
+                            'shipper' => 'bg-green-100 text-green-800',
+                            'consignee' => 'bg-blue-100 text-blue-800',
+                            'notify_party' => 'bg-yellow-100 text-yellow-800'
+                        ];
+                        $badgeClass = $badgeColors[$role] ?? 'bg-gray-100 text-gray-800';
+                    @endphp
+                    
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {{ $badgeClass }}">
+                        {{ \App\Models\Client::CLIENT_ROLES[$role] ?? ucfirst($role) }}
+                    </span>
+                </div>
+            @empty
+                <div class="text-sm text-gray-500 italic">
+                    No se han definido roles para este cliente
+                </div>
+            @endforelse
+        </div>
+        
+        @if(count($clientRoles) > 0)
+            <div class="mt-4 text-sm text-gray-600">
+                <p><strong>Total de roles:</strong> {{ count($clientRoles) }}</p>
+                <p class="mt-1">
+                    <strong>Descripción:</strong> 
+                    Este cliente puede actuar como: {{ implode(', ', array_map(fn($role) => \App\Models\Client::CLIENT_ROLES[$role] ?? ucfirst($role), $clientRoles)) }}.
+                </p>
+            </div>
+        @endif
+    </div>
+</div>
             </div>
 
             <!-- Información Adicional -->

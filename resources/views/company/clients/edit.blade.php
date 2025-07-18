@@ -152,6 +152,68 @@
                             @enderror
                         </div>
 
+                        <!-- Reemplazar la sección de "Tipo de Cliente" en company/clients/edit.blade.php -->
+
+<!-- Roles de Cliente - CORRECCIÓN: Selector múltiple con valores existentes -->
+<div class="sm:col-span-1">
+    <label for="client_roles" class="block text-sm font-medium text-gray-700">
+        Roles de Cliente <span class="text-red-500">*</span>
+    </label>
+    <select id="client_roles" name="client_roles[]" multiple required
+            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            size="3">
+        @php
+            $oldRoles = old('client_roles', $client->client_roles ?? []);
+            if (!is_array($oldRoles)) {
+                $oldRoles = [$oldRoles];
+            }
+        @endphp
+        @foreach(\App\Models\Client::CLIENT_ROLES as $key => $label)
+            <option value="{{ $key }}" {{ in_array($key, $oldRoles) ? 'selected' : '' }}>
+                {{ $label }}
+            </option>
+        @endforeach
+    </select>
+    <p class="mt-1 text-xs text-gray-500">
+        Mantenga presionado Ctrl (Windows) o Cmd (Mac) para seleccionar múltiples roles.
+    </p>
+    @error('client_roles')
+        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+    @enderror
+    @error('client_roles.*')
+        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+    @enderror
+</div>
+
+<!-- Mostrar roles actuales del cliente -->
+<div class="sm:col-span-2">
+    <label class="block text-sm font-medium text-gray-700 mb-2">
+        Roles Actuales
+    </label>
+    <div class="flex flex-wrap gap-2">
+        @php
+            $currentRoles = $client->client_roles ?? [];
+            $roleColors = [
+                'shipper' => 'bg-green-100 text-green-800',
+                'consignee' => 'bg-blue-100 text-blue-800',
+                'notify_party' => 'bg-yellow-100 text-yellow-800'
+            ];
+        @endphp
+        
+        @forelse($currentRoles as $role)
+            @php
+                $colorClass = $roleColors[$role] ?? 'bg-gray-100 text-gray-800';
+            @endphp
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $colorClass }}">
+                {{ \App\Models\Client::CLIENT_ROLES[$role] ?? ucfirst($role) }}
+            </span>
+        @empty
+            <span class="text-sm text-gray-500 italic">No hay roles asignados actualmente</span>
+        @endforelse
+    </div>
+</div>
+
+
                         <!-- Configuración Operativa -->
                         <div class="md:col-span-2">
                             <div class="border-b border-gray-200 pb-4 mb-6 mt-6">
@@ -575,5 +637,76 @@
         countrySelect.addEventListener('change', validateTaxId);
         addContactBtn.addEventListener('click', () => addContact());
     });
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rolesSelect = document.getElementById('client_roles');
+    const selectedRolesContainer = document.createElement('div');
+    selectedRolesContainer.className = 'mt-2 flex flex-wrap gap-2';
+    selectedRolesContainer.id = 'selected-roles-display';
+    
+    // Insertar después del texto de ayuda
+    const helpText = rolesSelect.nextElementSibling;
+    helpText.parentNode.insertBefore(selectedRolesContainer, helpText.nextSibling);
+    
+    // Colores para los badges
+    const roleColors = {
+        'shipper': 'bg-green-100 text-green-800',
+        'consignee': 'bg-blue-100 text-blue-800', 
+        'notify_party': 'bg-yellow-100 text-yellow-800'
+    };
+    
+    function updateSelectedRolesDisplay() {
+        const selectedOptions = Array.from(rolesSelect.selectedOptions);
+        selectedRolesContainer.innerHTML = '';
+        
+        if (selectedOptions.length === 0) {
+            selectedRolesContainer.innerHTML = '<span class="text-sm text-gray-500 italic">Ningún rol seleccionado</span>';
+            return;
+        }
+        
+        selectedOptions.forEach(option => {
+            const badge = document.createElement('span');
+            const colorClass = roleColors[option.value] || 'bg-gray-100 text-gray-800';
+            badge.className = `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}`;
+            badge.textContent = option.text;
+            
+            // Agregar icono si es un rol existente
+            const currentRoles = @json($client->client_roles ?? []);
+            if (currentRoles.includes(option.value)) {
+                badge.innerHTML = `
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                    </svg>
+                    ${option.text}
+                `;
+            }
+            
+            selectedRolesContainer.appendChild(badge);
+        });
+    }
+    
+    // Actualizar display cuando cambie la selección
+    rolesSelect.addEventListener('change', updateSelectedRolesDisplay);
+    
+    // Inicializar display
+    updateSelectedRolesDisplay();
+    
+    // Detectar cambios para mostrar indicador de "modificado"
+    let originalRoles = @json($client->client_roles ?? []);
+    rolesSelect.addEventListener('change', function() {
+        const currentlySelected = Array.from(this.selectedOptions).map(option => option.value);
+        const hasChanges = JSON.stringify(originalRoles.sort()) !== JSON.stringify(currentlySelected.sort());
+        
+        if (hasChanges) {
+            this.style.borderColor = '#f59e0b'; // border-yellow-500
+            this.style.borderWidth = '2px';
+        } else {
+            this.style.borderColor = '#d1d5db'; // border-gray-300  
+            this.style.borderWidth = '1px';
+        }
+    });
+});
 </script>
 @endpush

@@ -48,7 +48,7 @@ class DashboardController extends Controller
         }
 
         // Obtener información contextual del usuario
-        $userInfo = $this->getUserInfo();
+        $userInfo = $user->getUserInfo();
         $companyRoles = $this->getUserCompanyRoles();
         $operatorPermissions = $this->getUserOperatorPermissions();
 
