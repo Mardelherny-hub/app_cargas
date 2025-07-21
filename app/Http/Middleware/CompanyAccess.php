@@ -13,9 +13,18 @@ class CompanyAccess
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
-    public function handle(Request $request, Closure $next, ...$companyParams): Response
-    {
-        $user = auth()->user();
+
+public function handle(Request $request, Closure $next, ...$companyParams): Response
+{
+    $user = auth()->user();
+
+        \Log::info('CompanyAccess Debug', [
+            'user_id' => $user->id ?? 'null',
+            'email' => $user->email ?? 'null',
+            'roles' => $user ? $user->roles->pluck('name') : 'no user',
+            'userable_type' => $user->userable_type ?? 'null',
+            'userable_id' => $user->userable_id ?? 'null',
+        ]);
 
         if (!$user) {
             return redirect()->route('login');
@@ -29,6 +38,8 @@ class CompanyAccess
         // Company admin and users need to verify company access
         if ($user->hasRole('company-admin') || $user->hasRole('user')) {
             $companyId = $this->getCompanyIdFromRequest($request, $companyParams);
+            
+            \Log::info('CompanyAccess - Company ID from request', ['company_id' => $companyId]);
 
             // Si hay un companyId específico en la ruta, verificar acceso
             if ($companyId) {
@@ -38,14 +49,16 @@ class CompanyAccess
                 return $next($request);
             }
 
-            // CORREGIDO: Para rutas sin companyId específico (como /company/dashboard)
-            // verificar que el usuario tenga acceso general a empresas
-            if ($this->userHasCompanyAccess($user)) {
+            // Para rutas sin companyId específico
+            $hasAccess = $this->userHasCompanyAccess($user);
+            \Log::info('CompanyAccess - Has Access Result', ['has_access' => $hasAccess]);
+            
+            if ($hasAccess) {
                 return $next($request);
             }
 
             // Si el usuario no tiene acceso a ninguna empresa
-            abort(403, 'No tiene permisos para acceder al área de empresas. Contacte al administrador.');
+            abort(403, 'No autorizado: usuario sin empresa asignada.');
         }
 
         // If user has no recognized role, deny access
@@ -58,43 +71,22 @@ class CompanyAccess
      */
     private function userHasCompanyAccess($user): bool
     {
+        \Log::info('userHasCompanyAccess - Checking', [
+            'role' => $user->roles->pluck('name'),
+            'userable_type' => $user->userable_type,
+            'userable_exists' => $user->userable ? 'yes' : 'no',
+        ]);
+
         // Company admin debe tener empresa asociada
         if ($user->hasRole('company-admin')) {
             if ($user->userable_type === 'App\\Models\\Company' && $user->userable) {
-                return $user->userable->active;
+                $active = $user->userable->active;
+                \Log::info('Company active status', ['active' => $active]);
+                return $active;
             }
             return false;
         }
-
-        // CORREGIDO: Users (operadores) deben tener empresa asociada válida
-        if ($user->hasRole('user')) {
-            if ($user->userable_type === 'App\\Models\\Operator' && $user->userable) {
-                $operator = $user->userable;
-
-                // Verificar que el operador está activo
-                if (!$operator->active) {
-                    return false;
-                }
-
-                // CORREGIDO: Todos los operadores deben tener company_id válido
-                if (!$operator->company_id) {
-                    return false;
-                }
-
-                // Verificar que la empresa existe y está activa
-                $company = $operator->company;
-                return $company && $company->active;
-            }
-
-            // Si es usuario directo de empresa
-            if ($user->userable_type === 'App\\Models\\Company' && $user->userable) {
-                return $user->userable->active;
-            }
-
-            return false;
-        }
-
-        return false;
+        // ... resto del código
     }
 
     /**

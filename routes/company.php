@@ -14,7 +14,7 @@ use App\Http\Controllers\Company\DeconsolidationController;
 use App\Http\Controllers\Company\TransferController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
-
+use App\Http\Controllers\Company\VesselOwnerController;
 
 /*
 |--------------------------------------------------------------------------
@@ -87,6 +87,20 @@ Route::prefix('trips')->name('company.trips.')->group(function () {
     Route::delete('/{trip}/containers/{container}', [TripController::class, 'removeContainer'])->name('remove-container');
 });
 
+// Gestión de Propietarios de Embarcaciones
+Route::prefix('vessel-owners')->name('company.vessel-owners.')->group(function () {
+    Route::get('/', [VesselOwnerController::class, 'index'])->name('index');
+    Route::get('/create', [VesselOwnerController::class, 'create'])->name('create');
+    Route::post('/', [VesselOwnerController::class, 'store'])->name('store');
+    Route::get('/{vesselOwner}', [VesselOwnerController::class, 'show'])->name('show');
+    Route::get('/{vesselOwner}/edit', [VesselOwnerController::class, 'edit'])->name('edit');
+    Route::put('/{vesselOwner}', [VesselOwnerController::class, 'update'])->name('update');
+    Route::delete('/{vesselOwner}', [VesselOwnerController::class, 'destroy'])->name('destroy');
+    
+    // Acciones específicas
+    Route::patch('/{vesselOwner}/toggle-status', [VesselOwnerController::class, 'toggleStatus'])->name('toggle-status');
+    Route::get('/{vesselOwner}/vessels', [VesselOwnerController::class, 'vessels'])->name('vessels');
+});
 // Gestión de Desconsolidación (solo si la empresa tiene rol "Desconsolidador")
 Route::prefix('deconsolidation')->name('company.deconsolidation.')->group(function () {
     Route::get('/', [DeconsolidationController::class, 'index'])->name('index');
