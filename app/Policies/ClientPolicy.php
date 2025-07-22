@@ -61,31 +61,26 @@ class ClientPolicy
         return false;
     }
 
-    /**
-     * Determine if the user can create clients.
-     */
-    public function create(User $user): bool
-    {
-        // Super admin puede crear clientes
-        if ($user->hasRole('super-admin')) {
-            return true;
-        }
-
-        // Company admin puede crear clientes para su empresa
-        if ($user->hasRole('company-admin')) {
-            return $this->getUserCompany() !== null;
-        }
-
-        // Users NO pueden crear clientes (solo company-admin)
-        return false;
+/**
+ * Determine if the user can create clients.
+ */
+public function create(User $user): bool
+{
+    // Super admin puede crear clientes
+    if ($user->hasRole('super-admin')) {
+        return true;
     }
 
-    /**
-     * Determine if the user can update the client.
-     */
-   /**
+    // CAMBIO: Tanto company-admin como users pueden crear clientes
+    if ($user->hasRole(['company-admin', 'user'])) {
+        return $this->getUserCompany() !== null;
+    }
+
+    return false;
+}
+
+/**
  * Determine if the user can update the client.
- * CORRECCIÓN: Adaptado para base compartida
  */
 public function update(User $user, Client $client): bool
 {
@@ -94,24 +89,22 @@ public function update(User $user, Client $client): bool
         return true;
     }
 
-    // Company admin puede editar clientes activos de la base compartida
-    if ($user->hasRole('company-admin')) {
+    // CAMBIO: Tanto company-admin como users pueden editar clientes activos
+    if ($user->hasRole(['company-admin', 'user'])) {
         $userCompany = $this->getUserCompany();
         if (!$userCompany) {
             return false;
         }
         
-        // En base compartida, cualquier company admin puede editar clientes activos
+        // En base compartida, todos pueden editar clientes activos
         return $client->status === 'active' && $client->verified_at !== null;
     }
 
-    // Users NO pueden editar clientes
     return false;
 }
 
 /**
  * Determine if the user can delete the client.
- * CORRECCIÓN: Adaptado para base compartida
  */
 public function delete(User $user, Client $client): bool
 {
@@ -120,8 +113,8 @@ public function delete(User $user, Client $client): bool
         return true;
     }
 
-    // Company admin puede eliminar solo si su empresa creó el cliente
-    if ($user->hasRole('company-admin')) {
+    // CAMBIO: Tanto company-admin como users pueden eliminar si su empresa creó el cliente
+    if ($user->hasRole(['company-admin', 'user'])) {
         $userCompany = $this->getUserCompany();
         if (!$userCompany) {
             return false;
@@ -135,7 +128,6 @@ public function delete(User $user, Client $client): bool
 
 /**
  * Determine if the user can verify client tax_id.
- * CORRECCIÓN: Adaptado para base compartida
  */
 public function verify(User $user, Client $client): bool
 {
@@ -144,14 +136,13 @@ public function verify(User $user, Client $client): bool
         return true;
     }
 
-    // Company admin puede verificar clientes activos de la base compartida
-    if ($user->hasRole('company-admin')) {
+    // CAMBIO: Tanto company-admin como users pueden verificar
+    if ($user->hasRole(['company-admin', 'user'])) {
         $userCompany = $this->getUserCompany();
         if (!$userCompany) {
             return false;
         }
         
-        // En base compartida, cualquier company admin puede verificar
         return $client->status === 'active';
     }
 

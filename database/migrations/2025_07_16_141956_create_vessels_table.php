@@ -36,6 +36,7 @@ return new class extends Migration
 
             // Foreign keys (definidos manualmente para evitar conflictos de nombres)
             $table->unsignedBigInteger('company_id')->comment('Empresa propietaria');
+            $table->unsignedBigInteger('owner_id')->nullable()->comment('Propietario específico de la embarcación');
             $table->unsignedBigInteger('vessel_type_id')->comment('Tipo de embarcación');
             $table->unsignedBigInteger('flag_country_id')->comment('País de bandera');
             $table->unsignedBigInteger('home_port_id')->nullable()->comment('Puerto base');
@@ -47,7 +48,7 @@ return new class extends Migration
             $table->decimal('depth_meters', 8, 2)->nullable()->comment('Puntal en metros');
             $table->decimal('gross_tonnage', 10, 2)->nullable()->comment('Tonelaje bruto');
             $table->decimal('net_tonnage', 10, 2)->nullable()->comment('Tonelaje neto');
-            $table->decimal('deadweight_tonnage', 10, 2)->nullable()->comment('Porte bruto');
+            $table->decimal('deadweight_tons', 10, 2)->nullable()->comment('Porte bruto');
 
             // Capacity specifications
             $table->decimal('cargo_capacity_tons', 10, 2)->comment('Capacidad de carga en toneladas');
@@ -215,6 +216,7 @@ return new class extends Migration
 
            // Foreign key constraints con nombres explícitos
             $table->foreign('company_id', 'fk_vessels_company')->references('id')->on('companies')->onDelete('cascade');
+            //$table->foreign('owner_id', 'fk_vessels_owner')->references('id')->on('vessel_owners')->onDelete('set null');
             $table->foreign('vessel_type_id', 'fk_vessels_type')->references('id')->on('vessel_types')->onDelete('restrict');
             $table->foreign('flag_country_id', 'fk_vessels_flag_country')->references('id')->on('countries')->onDelete('restrict');
             $table->foreign('home_port_id', 'fk_vessels_home_port')->references('id')->on('ports')->onDelete('set null');

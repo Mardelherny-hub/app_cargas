@@ -8,6 +8,7 @@ use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use App\Models\VesselOwner;  
 
 class DashboardController extends Controller
 {
@@ -448,6 +449,15 @@ class DashboardController extends Controller
             ];
         }
 
+         $pendingVerification = VesselOwner::byCompany($company->id)->where('status', 'pending_verification')->count();
+        if ($pendingVerification > 0) {
+            $alerts[] = [
+                'type' => 'warning',
+                'message' => "Tiene {$pendingVerification} propietario(s) pendiente(s) de verificación fiscal.",
+                'action' => route('company.vessel-owners.index', ['status' => 'pending_verification']),
+            ];
+        }
+
         return $alerts;
     }
 
@@ -572,6 +582,14 @@ class DashboardController extends Controller
             'operators_with_export' => $company->operators()->where('can_export', true)->count(),
             'operators_with_transfer' => $company->operators()->where('can_transfer', true)->count(),
             'last_activity' => $company->updated_at,
+        ];
+        $vesselOwnersQuery = VesselOwner::byCompany($company->id);
+        $stats['vessel_owners'] = [
+            'total' => $vesselOwnersQuery->count(),
+            'active' => $vesselOwnersQuery->where('status', 'active')->count(),
+            'pending_verification' => $vesselOwnersQuery->where('status', 'pending_verification')->count(),
+            'webservice_authorized' => $vesselOwnersQuery->where('webservice_authorized', true)->count(),
+            'created_this_month' => $vesselOwnersQuery->where('created_at', '>=', now()->startOfMonth())->count(),
         ];
 
         // Estadísticas específicas por rol de empresa

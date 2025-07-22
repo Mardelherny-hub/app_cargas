@@ -4,24 +4,28 @@ namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
 use App\Models\VesselOwner;
+use App\Models\Vessel;
 use App\Models\Country;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use App\Traits\UserHelper;
 
 class VesselOwnerController extends Controller
 {
+
+    use UserHelper;
+
     /**
      * Display a listing of vessel owners.
      */
     public function index(Request $request)
     {
-        $companyId = Auth::user()->company_id;
+        $companyId = $this->getUserCompanyId();
         if (is_null($companyId)) {
             abort(403, 'No autorizado: usuario sin empresa asignada.');
         }
-
         $query = VesselOwner::with(['country', 'vessels'])
             ->byCompany($companyId);
 
@@ -122,9 +126,9 @@ class VesselOwnerController extends Controller
      */
     public function show(VesselOwner $vesselOwner)
     {
-        // Verificar que pertenece a la empresa del usuario
-        if ($vesselOwner->company_id !== Auth::user()->company_id) {
-            abort(403, 'No autorizado para ver este propietario.');
+         $companyId = $this->getUserCompanyId();
+        if (is_null($companyId)) {
+            abort(403, 'No autorizado: usuario sin empresa asignada.');
         }
 
         $vesselOwner->load([
@@ -152,8 +156,9 @@ class VesselOwnerController extends Controller
     public function edit(VesselOwner $vesselOwner)
     {
         // Verificar que pertenece a la empresa del usuario
-        if ($vesselOwner->company_id !== Auth::user()->company_id) {
-            abort(403, 'No autorizado para editar este propietario.');
+        $companyId = $this->getUserCompanyId();
+        if (is_null($companyId)) {
+            abort(403, 'No autorizado: usuario sin empresa asignada.');
         }
 
         $countries = Country::orderBy('name')->pluck('name', 'id');

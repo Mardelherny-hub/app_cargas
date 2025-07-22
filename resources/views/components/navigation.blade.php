@@ -45,142 +45,314 @@
                     <!-- Navigation Links -->
                     <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
                         @if ($user)
+                            <!-- Dashboard - Always first -->
                             @if ($user->hasRole('super-admin'))
-                                <!-- Navigation for Super Admin -->
                                 <x-nav-link :href="route('admin.dashboard')" :active="request()->routeIs('admin.dashboard')">
                                     {{ __('Dashboard') }}
                                 </x-nav-link>
-                                <x-nav-link :href="route('admin.users.index')" :active="request()->routeIs('admin.users.*')">
-                                    {{ __('Usuarios') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('admin.companies.index')" :active="request()->routeIs('admin.companies.*')">
-                                    {{ __('Empresas') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('admin.clients.index')" :active="request()->routeIs('admin.clients.*')">
-                                    {{ __('Clientes') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('admin.reports.index')" :active="request()->routeIs('admin.reports.*')">
-                                    {{ __('Reportes') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('admin.system.settings')" :active="request()->routeIs('admin.system.*')">
-                                    {{ __('Sistema') }}
-                                </x-nav-link>
-                            @elseif($user->hasRole('company-admin'))
-                                <!-- Navigation for Company Admin -->
+                            @elseif($user->hasRole('company-admin') || $user->hasRole('user'))
                                 <x-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
                                     {{ __('Dashboard') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')">
-                                    {{ __('Cargas') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')">
-                                    {{ __('Viajes') }}
-                                </x-nav-link>
-                                <!-- NUEVO: Propietarios de Embarcaciones -->
-                                <x-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')">
-                                    {{ __('Propietarios') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')">
-                                    {{ __('Clientes') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('company.operators.index')" :active="request()->routeIs('company.operators.*')">
-                                    {{ __('Operadores') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('company.reports.index')" :active="request()->routeIs('company.reports.*')">
-                                    {{ __('Reportes') }}
-                                </x-nav-link>
-                                <x-nav-link :href="route('company.settings.index')" :active="request()->routeIs('company.settings.*')">
-                                    {{ __('Configuración') }}
-                                </x-nav-link>
-                            @elseif($user->hasRole('user'))
-                                <!-- Navigation for User (based on company business roles) -->
-                                <x-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
-                                    {{ __('Dashboard') }}
-                                </x-nav-link>
-
-                                @if(in_array('Cargas', $companyRoles))
-                                    <x-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')">
-                                        {{ __('Cargas') }}
-                                    </x-nav-link>
-
-                                    <!-- NUEVO: Propietarios solo para usuarios con rol Cargas (solo lectura) -->
-                                    <x-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')">
-                                        {{ __('Propietarios') }}
-                                    </x-nav-link>
-                                @endif
-
-                                @if(in_array('Desconsolidador', $companyRoles))
-                                    <x-nav-link :href="route('company.deconsolidation.index')" :active="request()->routeIs('company.deconsolidation.*')">
-                                        {{ __('Desconsolidación') }}
-                                    </x-nav-link>
-                                @endif
-
-                                @if(in_array('Transbordos', $companyRoles))
-                                    <x-nav-link :href="route('company.transfers.index')" :active="request()->routeIs('company.transfers.*')">
-                                        {{ __('Transbordos') }}
-                                    </x-nav-link>
-                                @endif
-
-                                @if($canImport)
-                                    <x-nav-link :href="route('company.import.index')" :active="request()->routeIs('company.import.*')">
-                                        {{ __('Importar') }}
-                                    </x-nav-link>
-                                @endif
-
-                                @if($canExport)
-                                    <x-nav-link :href="route('company.export.index')" :active="request()->routeIs('company.export.*')">
-                                        {{ __('Exportar') }}
-                                    </x-nav-link>
-                                @endif
-
-                                <x-nav-link :href="route('company.reports.index')" :active="request()->routeIs('company.reports.*')">
-                                    {{ __('Reportes') }}
                                 </x-nav-link>
                             @endif
-                        @else
-                            <!-- Public navigation for guests -->
-                            <x-nav-link :href="route('welcome')" :active="request()->routeIs('welcome')">
-                                {{ __('Inicio') }}
-                            </x-nav-link>
+
+                            @if ($user->hasRole('super-admin'))
+                                <!-- GESTIÓN Dropdown for Super Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('admin.users.*', 'admin.companies.*', 'admin.clients.*') ? 'true' : 'false' }} }">
+                                        {{ __('Gestión') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 top-full mt-0 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <a href="{{ route('admin.users.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.users.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Usuarios') }}
+                                            </a>
+                                            <a href="{{ route('admin.companies.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.companies.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Empresas') }}
+                                            </a>
+                                            <a href="{{ route('admin.clients.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.clients.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Clientes') }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- ADMINISTRACIÓN Dropdown for Super Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('admin.reports.*', 'admin.system.*') ? 'true' : 'false' }} }">
+                                        {{ __('Administración') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 top-full mt-0 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <a href="{{ route('admin.reports.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.reports.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Reportes') }}
+                                            </a>
+                                            <a href="{{ route('admin.system.settings') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.system.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Sistema') }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            @elseif($user->hasRole('company-admin'))
+                                <!-- GESTIÓN Dropdown for Company Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.vessel-owners.*', 'company.clients.*', 'company.operators.*') ? 'true' : 'false' }} }">
+                                        {{ __('Gestión') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 top-full mt-0 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <a href="{{ route('company.vessel-owners.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessel-owners.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Propietarios') }}
+                                            </a>
+                                            <a href="{{ route('company.clients.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.clients.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Clientes') }}
+                                            </a>
+                                            <a href="{{ route('company.operators.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.operators.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Operadores') }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- OPERACIONES Dropdown for Company Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.shipments.*', 'company.trips.*') ? 'true' : 'false' }} }">
+                                        {{ __('Operaciones') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 top-full mt-0 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <a href="{{ route('company.shipments.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.shipments.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Cargas') }}
+                                            </a>
+                                            <a href="{{ route('company.trips.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.trips.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Viajes') }}
+                                            </a>
+
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- ADMINISTRACIÓN Dropdown for Company Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.reports.*') ? 'true' : 'false' }} }">
+                                        {{ __('Administración') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 top-full mt-0 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <a href="{{ route('company.reports.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.reports.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Reportes') }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            @elseif($user->hasRole('user'))
+                                @if(in_array('Cargas', $companyRoles))
+                                    <!-- GESTIÓN Dropdown for User with Cargas role -->
+                                    <div class="relative" x-data="{ open: false }">
+                                        <button @click="open = ! open" 
+                                                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                                :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.vessel-owners.*') ? 'true' : 'false' }} }">
+                                            {{ __('Gestión') }}
+                                            <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                        <div x-show="open" 
+                                             @click.away="open = false"
+                                             x-transition:enter="transition ease-out duration-200"
+                                             x-transition:enter-start="opacity-0 transform scale-95"
+                                             x-transition:enter-end="opacity-100 transform scale-100"
+                                             x-transition:leave="transition ease-in duration-150"
+                                             x-transition:leave-start="opacity-100 transform scale-100"
+                                             x-transition:leave-end="opacity-0 transform scale-95"
+                                             class="absolute z-50 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                            <div class="py-1">
+                                                <a href="{{ route('company.vessel-owners.index') }}" 
+                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessel-owners.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                    {{ __('Propietarios') }}
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
+                                <!-- OPERACIONES Dropdown for User/Operator -->
+                                <div class="relative" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.shipments.*', 'company.trips.*', 'company.deconsolidation.*', 'company.transfers.*') ? 'true' : 'false' }} }">
+                                        {{ __('Operaciones') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            @if(in_array('Cargas', $companyRoles))
+                                                <a href="{{ route('company.shipments.index') }}" 
+                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.shipments.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                    {{ __('Cargas') }}
+                                                </a>
+                                                <a href="{{ route('company.trips.index') }}" 
+                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.trips.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                    {{ __('Viajes') }}
+                                                </a>
+                                            @endif
+                                            @if(in_array('Desconsolidador', $companyRoles))
+                                                <a href="{{ route('company.deconsolidation.index') }}" 
+                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.deconsolidation.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                    {{ __('Desconsolidación') }}
+                                                </a>
+                                            @endif
+                                            @if(in_array('Transbordos', $companyRoles))
+                                                <a href="{{ route('company.transfers.index') }}" 
+                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.transfers.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                    {{ __('Transbordos') }}
+                                                </a>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @if($canImport || $canExport)
+                                    <!-- ADMINISTRACIÓN Dropdown for User/Operator with Import/Export -->
+                                    <div class="relative" x-data="{ open: false }">
+                                        <button @click="open = ! open" 
+                                                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                                :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.import.*', 'company.export.*') ? 'true' : 'false' }} }">
+                                            {{ __('Administración') }}
+                                            <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                        <div x-show="open" 
+                                             @click.away="open = false"
+                                             x-transition:enter="transition ease-out duration-200"
+                                             x-transition:enter-start="opacity-0 transform scale-95"
+                                             x-transition:enter-end="opacity-100 transform scale-100"
+                                             x-transition:leave="transition ease-in duration-150"
+                                             x-transition:leave-start="opacity-100 transform scale-100"
+                                             x-transition:leave-end="opacity-0 transform scale-95"
+                                             class="absolute z-50 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                            <div class="py-1">
+                                                @if($canImport)
+                                                    <a href="{{ route('company.import.index') }}" 
+                                                       class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.import.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                        {{ __('Importación') }}
+                                                    </a>
+                                                @endif
+                                                @if($canExport)
+                                                    <a href="{{ route('company.export.index') }}" 
+                                                       class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.export.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                        {{ __('Exportación') }}
+                                                    </a>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
+                            @endif
                         @endif
                     </div>
                 </div>
 
                 <div class="hidden sm:flex sm:items-center sm:ms-6">
                     @if ($user)
-                        <!-- Company info display -->
-                        @if ($company)
-                            <div class="flex items-center space-x-3 me-3">
-                                <div class="text-sm text-gray-600">
-                                    <span class="font-medium">{{ $company->commercial_name ?? $company->business_name }}</span>
-                                    @if($companyRoles)
-                                        <div class="text-xs text-gray-500">
-                                            {{ implode(', ', $companyRoles) }}
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
-                        @endif
-
                         <!-- Settings Dropdown -->
                         <div class="ms-3 relative">
                             <x-dropdown align="right" width="48">
                                 <x-slot name="trigger">
-                                    @if (Laravel\Jetstream\Jetstream::managesProfilePhotos())
-                                        <button class="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-gray-300 transition">
-                                            <img class="h-8 w-8 rounded-full object-cover" src="{{ Auth::user()->profile_photo_url }}" alt="{{ Auth::user()->name }}" />
-                                        </button>
-                                    @else
-                                        <span class="inline-flex rounded-md">
-                                            <button type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 bg-white hover:text-gray-700 focus:outline-none focus:bg-gray-50 active:bg-gray-50 transition ease-in-out duration-150">
-                                                {{ Auth::user()->name }}
-
-                                                <svg class="ms-2 -me-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                                </svg>
-                                            </button>
-                                        </span>
-                                    @endif
+                                    <button
+                                        class="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-gray-300 transition">
+                                        <img class="h-8 w-8 rounded-full object-cover"
+                                            src="{{ $user->profile_photo_url ?? 'https://ui-avatars.com/api/?name=' . urlencode($user->name) . '&color=7F9CF5&background=EBF4FF' }}"
+                                            alt="{{ $user->name }}" />
+                                    </button>
                                 </x-slot>
 
                                 <x-slot name="content">
@@ -192,12 +364,6 @@
                                     <x-dropdown-link href="{{ route('profile.show') }}">
                                         {{ __('Perfil') }}
                                     </x-dropdown-link>
-
-                                    @if (Laravel\Jetstream\Jetstream::hasApiFeatures())
-                                        <x-dropdown-link href="{{ route('api-tokens.index') }}">
-                                            {{ __('API Tokens') }}
-                                        </x-dropdown-link>
-                                    @endif
 
                                     <div class="border-t border-gray-200"></div>
 
@@ -249,128 +415,151 @@
                         <x-responsive-nav-link :href="route('admin.dashboard')" :active="request()->routeIs('admin.dashboard')">
                             {{ __('Dashboard') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('admin.users.index')" :active="request()->routeIs('admin.users.*')">
+                        
+                        <!-- Gestión Group -->
+                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {{ __('Gestión') }}
+                        </div>
+                        <x-responsive-nav-link :href="route('admin.users.index')" :active="request()->routeIs('admin.users.*')" class="pl-6">
                             {{ __('Usuarios') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('admin.companies.index')" :active="request()->routeIs('admin.companies.*')">
+                        <x-responsive-nav-link :href="route('admin.companies.index')" :active="request()->routeIs('admin.companies.*')" class="pl-6">
                             {{ __('Empresas') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('admin.clients.index')" :active="request()->routeIs('admin.clients.*')">
+                        <x-responsive-nav-link :href="route('admin.clients.index')" :active="request()->routeIs('admin.clients.*')" class="pl-6">
                             {{ __('Clientes') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('admin.reports.index')" :active="request()->routeIs('admin.reports.*')">
+                        
+                        <!-- Administración Group -->
+                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {{ __('Administración') }}
+                        </div>
+                        <x-responsive-nav-link :href="route('admin.reports.index')" :active="request()->routeIs('admin.reports.*')" class="pl-6">
                             {{ __('Reportes') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('admin.system.settings')" :active="request()->routeIs('admin.system.*')">
+                        <x-responsive-nav-link :href="route('admin.system.settings')" :active="request()->routeIs('admin.system.*')" class="pl-6">
                             {{ __('Sistema') }}
                         </x-responsive-nav-link>
+
                     @elseif($user->hasRole('company-admin'))
+                        <!-- Responsive navigation for Company Admin -->
                         <x-responsive-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
                             {{ __('Dashboard') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')">
-                            {{ __('Cargas') }}
-                        </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')">
-                            {{ __('Viajes') }}
-                        </x-responsive-nav-link>
-                        <!-- NUEVO: Propietarios de Embarcaciones en responsive -->
-                        <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')">
+                        
+                        <!-- Gestión Group -->
+                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {{ __('Gestión') }}
+                        </div>
+                        <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')" class="pl-6">
                             {{ __('Propietarios') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')">
+                        <x-responsive-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')" class="pl-6">
                             {{ __('Clientes') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.operators.index')" :active="request()->routeIs('company.operators.*')">
+                        <x-responsive-nav-link :href="route('company.operators.index')" :active="request()->routeIs('company.operators.*')" class="pl-6">
                             {{ __('Operadores') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.reports.index')" :active="request()->routeIs('company.reports.*')">
+                        
+                        <!-- Operaciones Group -->
+                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {{ __('Operaciones') }}
+                        </div>
+                        <x-responsive-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')" class="pl-6">
+                            {{ __('Cargas') }}
+                        </x-responsive-nav-link>
+                        <x-responsive-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')" class="pl-6">
+                            {{ __('Viajes') }}
+                        </x-responsive-nav-link>
+                        
+                        <!-- Administración Group -->
+                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {{ __('Administración') }}
+                        </div>
+                        <x-responsive-nav-link :href="route('company.reports.index')" :active="request()->routeIs('company.reports.*')" class="pl-6">
                             {{ __('Reportes') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.settings.index')" :active="request()->routeIs('company.settings.*')">
-                            {{ __('Configuración') }}
-                        </x-responsive-nav-link>
+
                     @elseif($user->hasRole('user'))
+                        <!-- Responsive navigation for User/Operator -->
                         <x-responsive-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
                             {{ __('Dashboard') }}
                         </x-responsive-nav-link>
-
+                        
+                        <!-- Gestión Group (solo propietarios si tiene rol Cargas) -->
                         @if(in_array('Cargas', $companyRoles))
-                            <x-responsive-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')">
-                                {{ __('Cargas') }}
-                            </x-responsive-nav-link>
-
-                            <!-- NUEVO: Propietarios para usuarios con rol Cargas en responsive -->
-                            <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')">
+                            <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                {{ __('Gestión') }}
+                            </div>
+                            <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')" class="pl-6">
                                 {{ __('Propietarios') }}
                             </x-responsive-nav-link>
                         @endif
-
+                        
+                        <!-- Operaciones Group -->
+                        <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {{ __('Operaciones') }}
+                        </div>
+                        @if(in_array('Cargas', $companyRoles))
+                            <x-responsive-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')" class="pl-6">
+                                {{ __('Cargas') }}
+                            </x-responsive-nav-link>
+                            <x-responsive-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')" class="pl-6">
+                                {{ __('Viajes') }}
+                            </x-responsive-nav-link>
+                        @endif
                         @if(in_array('Desconsolidador', $companyRoles))
-                            <x-responsive-nav-link :href="route('company.deconsolidation.index')" :active="request()->routeIs('company.deconsolidation.*')">
+                            <x-responsive-nav-link :href="route('company.deconsolidation.index')" :active="request()->routeIs('company.deconsolidation.*')" class="pl-6">
                                 {{ __('Desconsolidación') }}
                             </x-responsive-nav-link>
                         @endif
-
                         @if(in_array('Transbordos', $companyRoles))
-                            <x-responsive-nav-link :href="route('company.transfers.index')" :active="request()->routeIs('company.transfers.*')">
+                            <x-responsive-nav-link :href="route('company.transfers.index')" :active="request()->routeIs('company.transfers.*')" class="pl-6">
                                 {{ __('Transbordos') }}
                             </x-responsive-nav-link>
                         @endif
-
-                        @if($canImport)
-                            <x-responsive-nav-link :href="route('company.import.index')" :active="request()->routeIs('company.import.*')">
-                                {{ __('Importar') }}
-                            </x-responsive-nav-link>
+                        
+                        <!-- Administración Group (solo si puede importar/exportar) -->
+                        @if($canImport || $canExport)
+                            <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                {{ __('Administración') }}
+                            </div>
+                            @if($canImport)
+                                <x-responsive-nav-link :href="route('company.import.index')" :active="request()->routeIs('company.import.*')" class="pl-6">
+                                    {{ __('Importación') }}
+                                </x-responsive-nav-link>
+                            @endif
+                            @if($canExport)
+                                <x-responsive-nav-link :href="route('company.export.index')" :active="request()->routeIs('company.export.*')" class="pl-6">
+                                    {{ __('Exportación') }}
+                                </x-responsive-nav-link>
+                            @endif
                         @endif
-
-                        @if($canExport)
-                            <x-responsive-nav-link :href="route('company.export.index')" :active="request()->routeIs('company.export.*')">
-                                {{ __('Exportar') }}
-                            </x-responsive-nav-link>
-                        @endif
-
-                        <x-responsive-nav-link :href="route('company.reports.index')" :active="request()->routeIs('company.reports.*')">
-                            {{ __('Reportes') }}
-                        </x-responsive-nav-link>
                     @endif
-                @else
-                    <!-- Guest responsive links -->
-                    <x-responsive-nav-link :href="route('welcome')" :active="request()->routeIs('welcome')">
-                        {{ __('Inicio') }}
-                    </x-responsive-nav-link>
                 @endif
             </div>
 
+            <!-- Responsive Settings Options -->
             @if ($user)
-                <!-- Responsive Settings Options -->
                 <div class="pt-4 pb-1 border-t border-gray-200">
                     <div class="flex items-center px-4">
-                        @if (Laravel\Jetstream\Jetstream::managesProfilePhotos())
-                            <div class="shrink-0 me-3">
-                                <img class="h-10 w-10 rounded-full object-cover" src="{{ Auth::user()->profile_photo_url }}" alt="{{ Auth::user()->name }}" />
-                            </div>
-                        @endif
+                        <div class="shrink-0 me-3">
+                            <img class="h-10 w-10 rounded-full object-cover"
+                                src="{{ $user->profile_photo_url ?? 'https://ui-avatars.com/api/?name=' . urlencode($user->name) . '&color=7F9CF5&background=EBF4FF' }}"
+                                alt="{{ $user->name }}" />
+                        </div>
 
                         <div>
-                            <div class="font-medium text-base text-gray-800">{{ Auth::user()->name }}</div>
-                            <div class="font-medium text-sm text-gray-500">{{ Auth::user()->email }}</div>
-                            @if ($company)
-                                <div class="text-xs text-gray-400">{{ $company->commercial_name ?? $company->business_name }}</div>
-                            @endif
+                            <div class="font-medium text-base text-gray-800">{{ $user->name }}</div>
+                            <div class="font-medium text-sm text-gray-500">{{ $user->email }}</div>
                         </div>
                     </div>
 
                     <div class="mt-3 space-y-1">
+                        <!-- Account Management -->
                         <x-responsive-nav-link href="{{ route('profile.show') }}" :active="request()->routeIs('profile.show')">
                             {{ __('Perfil') }}
                         </x-responsive-nav-link>
-
-                        @if (Laravel\Jetstream\Jetstream::hasApiFeatures())
-                            <x-responsive-nav-link href="{{ route('api-tokens.index') }}" :active="request()->routeIs('api-tokens.index')">
-                                {{ __('API Tokens') }}
-                            </x-responsive-nav-link>
-                        @endif
 
                         <!-- Authentication -->
                         <form method="POST" action="{{ route('logout') }}" x-data>
