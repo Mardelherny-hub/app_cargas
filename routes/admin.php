@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\SystemController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\ClientController;
+use App\Http\Controllers\Admin\VesselOwnerController;
 
 /*
 |--------------------------------------------------------------------------
@@ -129,6 +130,23 @@ Route::prefix('system')->name('admin.system.')->group(function () {
     Route::get('/commands', [SystemController::class, 'commands'])->name('commands');
     Route::post('/commands/verify-users', [SystemController::class, 'verifyUsers'])->name('verify-users');
     Route::post('/commands/optimize', [SystemController::class, 'optimize'])->name('optimize');
+});
+
+// Gestión de Propietarios de Embarcaciones
+Route::prefix('vessel-owners')->name('admin.vessel-owners.')->group(function () {
+    Route::get('/', [VesselOwnerController::class, 'index'])->name('index');
+    Route::get('/create', [VesselOwnerController::class, 'create'])->name('create');
+    Route::post('/', [VesselOwnerController::class, 'store'])->name('store');
+    Route::get('/{vesselOwner}', [VesselOwnerController::class, 'show'])->name('show');
+    Route::get('/{vesselOwner}/edit', [VesselOwnerController::class, 'edit'])->name('edit');
+    Route::put('/{vesselOwner}', [VesselOwnerController::class, 'update'])->name('update');
+    Route::delete('/{vesselOwner}', [VesselOwnerController::class, 'destroy'])->name('destroy');
+
+    // Acciones específicas de propietarios
+    Route::patch('/{vesselOwner}/verify', [VesselOwnerController::class, 'verify'])->name('verify');
+    Route::patch('/{vesselOwner}/toggle-status', [VesselOwnerController::class, 'toggleStatus'])->name('toggle-status');
+    Route::post('/{vesselOwner}/transfer', [VesselOwnerController::class, 'transfer'])->name('transfer');
+    Route::post('/bulk-action', [VesselOwnerController::class, 'bulkAction'])->name('bulk-action');
 });
 
 // Reportes y Estadísticas

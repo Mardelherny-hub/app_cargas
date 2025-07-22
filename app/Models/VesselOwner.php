@@ -160,6 +160,14 @@ class VesselOwner extends Model
     }
 
     /**
+     * Scope para propietarios inactivos.
+     */
+    public function scopeInactive(Builder $query): Builder
+    {
+        return $query->where('status', 'inactive');
+    }
+
+    /**
      * Scope para propietarios autorizados para webservices.
      */
     public function scopeWebserviceAuthorized(Builder $query): Builder
