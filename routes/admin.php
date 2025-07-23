@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\VesselOwnerController;
+use App\Http\Controllers\Admin\VesselTypeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -147,6 +148,23 @@ Route::prefix('vessel-owners')->name('admin.vessel-owners.')->group(function () 
     Route::patch('/{vesselOwner}/toggle-status', [VesselOwnerController::class, 'toggleStatus'])->name('toggle-status');
     Route::post('/{vesselOwner}/transfer', [VesselOwnerController::class, 'transfer'])->name('transfer');
     Route::post('/bulk-action', [VesselOwnerController::class, 'bulkAction'])->name('bulk-action');
+});
+
+// Gestión de Tipos de Embarcación (VesselType)
+Route::prefix('vessel-types')->name('admin.vessel-types.')->group(function () {
+    Route::get('/', [VesselTypeController::class, 'index'])->name('index');
+    Route::get('/create', [VesselTypeController::class, 'create'])->name('create');
+    Route::post('/', [VesselTypeController::class, 'store'])->name('store');
+    Route::get('/{vesselType}', [VesselTypeController::class, 'show'])->name('show');
+    Route::get('/{vesselType}/edit', [VesselTypeController::class, 'edit'])->name('edit');
+    Route::put('/{vesselType}', [VesselTypeController::class, 'update'])->name('update');
+    Route::delete('/{vesselType}', [VesselTypeController::class, 'destroy'])->name('destroy');
+
+    // Acciones específicas de tipos de embarcación
+    Route::patch('/{vesselType}/toggle-status', [VesselTypeController::class, 'toggleStatus'])->name('toggle-status');
+    Route::post('/{vesselType}/duplicate', [VesselTypeController::class, 'duplicate'])->name('duplicate');
+    Route::post('/import-csv', [VesselTypeController::class, 'importFromCsv'])->name('import-csv');
+    Route::post('/bulk-action', [VesselTypeController::class, 'bulkAction'])->name('bulk-action');
 });
 
 // Reportes y Estadísticas

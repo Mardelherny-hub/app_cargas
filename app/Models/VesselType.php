@@ -28,32 +28,61 @@ use Illuminate\Support\Carbon;
  * @property float|null $max_beam Manga máxima en metros
  * @property float|null $min_draft Calado mínimo en metros
  * @property float|null $max_draft Calado máximo en metros
- * @property float|null $min_deadweight Peso muerto mínimo en toneladas
- * @property float|null $max_deadweight Peso muerto máximo en toneladas
+ * @property float|null $min_cargo_capacity Capacidad mínima de carga en toneladas
+ * @property float|null $max_cargo_capacity Capacidad máxima de carga en toneladas
+ * @property int|null $min_container_capacity Capacidad mínima de contenedores
+ * @property int|null $max_container_capacity Capacidad máxima de contenedores
+ * @property float|null $min_liquid_capacity Capacidad mínima líquidos en m³
+ * @property float|null $max_liquid_capacity Capacidad máxima líquidos en m³
+ * @property int|null $typical_crew_size Tamaño típico de tripulación
+ * @property int|null $max_crew_size Tamaño máximo de tripulación
+ * @property float|null $typical_speed Velocidad típica en nudos
+ * @property float|null $max_speed Velocidad máxima en nudos
+ * @property int|null $fuel_consumption_per_day Consumo combustible por día en litros
  * @property bool $handles_containers Maneja contenedores
  * @property bool $handles_bulk_cargo Maneja carga a granel
- * @property bool $handles_liquid_cargo Maneja carga líquida
  * @property bool $handles_general_cargo Maneja carga general
+ * @property bool $handles_liquid_cargo Maneja carga líquida
  * @property bool $handles_dangerous_goods Maneja mercancías peligrosas
- * @property bool $handles_passengers Transporta pasajeros
+ * @property bool $handles_refrigerated_cargo Maneja carga refrigerada
+ * @property bool $handles_oversized_cargo Maneja carga sobredimensionada
  * @property bool $river_navigation Navegación fluvial
  * @property bool $maritime_navigation Navegación marítima
- * @property bool $can_be_lead_vessel Puede ser embarcación principal
- * @property bool $can_be_in_convoy Puede formar parte de convoy
- * @property int|null $max_convoy_size Tamaño máximo de convoy
- * @property int|null $crew_capacity Capacidad de tripulación
- * @property int|null $passenger_capacity Capacidad de pasajeros
- * @property float|null $fuel_capacity_liters Capacidad de combustible
- * @property string|null $engine_configuration Configuración del motor
- * @property float|null $max_speed_knots Velocidad máxima en nudos
- * @property float|null $service_speed_knots Velocidad de servicio
- * @property string|null $construction_materials Materiales de construcción
- * @property int|null $typical_lifespan_years Vida útil típica
- * @property string|null $environmental_standards Estándares ambientales
- * @property string|null $regulatory_requirements Requisitos regulatorios
- * @property int|null $maintenance_interval_months Intervalo de mantenimiento
+ * @property bool $coastal_navigation Navegación costera
+ * @property bool $lake_navigation Navegación lacustre
+ * @property float|null $min_water_depth Profundidad mínima requerida en metros
+ * @property bool $can_be_lead_vessel Puede ser embarcación líder
+ * @property bool $can_be_in_convoy Puede ir en convoy
+ * @property bool $can_push_barges Puede empujar barcazas
+ * @property bool $can_tow_barges Puede remolcar barcazas
+ * @property int|null $max_barges_in_convoy Máximo de barcazas en convoy
+ * @property bool $requires_pilot Requiere piloto
+ * @property bool $requires_tugboat_assistance Requiere asistencia de remolcador
+ * @property array|null $environmental_restrictions Restricciones ambientales
+ * @property array|null $seasonal_restrictions Restricciones estacionales
+ * @property array|null $weather_limitations Limitaciones climáticas
+ * @property bool $requires_special_permits Requiere permisos especiales
+ * @property bool $requires_insurance Requiere seguro
+ * @property bool $requires_safety_certificate Requiere certificado de seguridad
+ * @property array|null $required_certifications Certificaciones requeridas
+ * @property string|null $imo_type_code Código tipo IMO
+ * @property string|null $inland_vessel_code Código embarcación fluvial
+ * @property string|null $imdg_class Clase IMDG para mercancías peligrosas
+ * @property string|null $argentina_ws_code Código para webservice Argentina
+ * @property string|null $paraguay_ws_code Código para webservice Paraguay
+ * @property array|null $webservice_mapping Mapeo adicional para webservices
+ * @property float|null $daily_charter_rate Tarifa diaria de alquiler
+ * @property float|null $fuel_cost_per_day Costo combustible por día
+ * @property int|null $typical_voyage_duration Duración típica de viaje en días
+ * @property int|null $loading_time_hours Tiempo de carga en horas
+ * @property int|null $unloading_time_hours Tiempo de descarga en horas
+ * @property array|null $compatible_ports Puertos compatibles
+ * @property array|null $restricted_ports Puertos restringidos
+ * @property array|null $preferred_berths Muelles preferidos por puerto
+ * @property int|null $typical_lifespan_years Vida útil típica en años
+ * @property int|null $maintenance_interval_days Intervalo mantenimiento en días
  * @property bool $requires_dry_dock Requiere dique seco
- * @property int|null $dry_dock_interval_months Intervalo dique seco
+ * @property int|null $dry_dock_interval_months Intervalo dique seco en meses
  * @property bool $active Tipo activo
  * @property bool $is_common Tipo común/frecuente
  * @property bool $is_specialized Tipo especializado
@@ -90,30 +119,59 @@ class VesselType extends Model
         'max_beam',
         'min_draft',
         'max_draft',
-        'min_deadweight',
-        'max_deadweight',
+        'min_cargo_capacity',
+        'max_cargo_capacity',
+        'min_container_capacity',
+        'max_container_capacity',
+        'min_liquid_capacity',
+        'max_liquid_capacity',
+        'typical_crew_size',
+        'max_crew_size',
+        'typical_speed',
+        'max_speed',
+        'fuel_consumption_per_day',
         'handles_containers',
         'handles_bulk_cargo',
-        'handles_liquid_cargo',
         'handles_general_cargo',
+        'handles_liquid_cargo',
         'handles_dangerous_goods',
-        'handles_passengers',
+        'handles_refrigerated_cargo',
+        'handles_oversized_cargo',
         'river_navigation',
         'maritime_navigation',
+        'coastal_navigation',
+        'lake_navigation',
+        'min_water_depth',
         'can_be_lead_vessel',
         'can_be_in_convoy',
-        'max_convoy_size',
-        'crew_capacity',
-        'passenger_capacity',
-        'fuel_capacity_liters',
-        'engine_configuration',
-        'max_speed_knots',
-        'service_speed_knots',
-        'construction_materials',
+        'can_push_barges',
+        'can_tow_barges',
+        'max_barges_in_convoy',
+        'requires_pilot',
+        'requires_tugboat_assistance',
+        'environmental_restrictions',
+        'seasonal_restrictions',
+        'weather_limitations',
+        'requires_special_permits',
+        'requires_insurance',
+        'requires_safety_certificate',
+        'required_certifications',
+        'imo_type_code',
+        'inland_vessel_code',
+        'imdg_class',
+        'argentina_ws_code',
+        'paraguay_ws_code',
+        'webservice_mapping',
+        'daily_charter_rate',
+        'fuel_cost_per_day',
+        'typical_voyage_duration',
+        'loading_time_hours',
+        'unloading_time_hours',
+        'compatible_ports',
+        'restricted_ports',
+        'preferred_berths',
         'typical_lifespan_years',
-        'environmental_standards',
-        'regulatory_requirements',
-        'maintenance_interval_months',
+        'maintenance_interval_days',
         'requires_dry_dock',
         'dry_dock_interval_months',
         'active',
@@ -136,25 +194,47 @@ class VesselType extends Model
         'max_beam' => 'decimal:2',
         'min_draft' => 'decimal:2',
         'max_draft' => 'decimal:2',
-        'min_deadweight' => 'decimal:2',
-        'max_deadweight' => 'decimal:2',
-        'fuel_capacity_liters' => 'decimal:2',
-        'max_speed_knots' => 'decimal:2',
-        'service_speed_knots' => 'decimal:2',
+        'min_cargo_capacity' => 'decimal:2',
+        'max_cargo_capacity' => 'decimal:2',
+        'min_liquid_capacity' => 'decimal:2',
+        'max_liquid_capacity' => 'decimal:2',
+        'min_water_depth' => 'decimal:2',
+        'typical_speed' => 'decimal:2',
+        'max_speed' => 'decimal:2',
+        'daily_charter_rate' => 'decimal:2',
+        'fuel_cost_per_day' => 'decimal:2',
         'handles_containers' => 'boolean',
         'handles_bulk_cargo' => 'boolean',
-        'handles_liquid_cargo' => 'boolean',
         'handles_general_cargo' => 'boolean',
+        'handles_liquid_cargo' => 'boolean',
         'handles_dangerous_goods' => 'boolean',
-        'handles_passengers' => 'boolean',
+        'handles_refrigerated_cargo' => 'boolean',
+        'handles_oversized_cargo' => 'boolean',
         'river_navigation' => 'boolean',
         'maritime_navigation' => 'boolean',
+        'coastal_navigation' => 'boolean',
+        'lake_navigation' => 'boolean',
         'can_be_lead_vessel' => 'boolean',
         'can_be_in_convoy' => 'boolean',
+        'can_push_barges' => 'boolean',
+        'can_tow_barges' => 'boolean',
+        'requires_pilot' => 'boolean',
+        'requires_tugboat_assistance' => 'boolean',
+        'requires_special_permits' => 'boolean',
+        'requires_insurance' => 'boolean',
+        'requires_safety_certificate' => 'boolean',
         'requires_dry_dock' => 'boolean',
         'active' => 'boolean',
         'is_common' => 'boolean',
         'is_specialized' => 'boolean',
+        'environmental_restrictions' => 'array',
+        'seasonal_restrictions' => 'array',
+        'weather_limitations' => 'array',
+        'required_certifications' => 'array',
+        'webservice_mapping' => 'array',
+        'compatible_ports' => 'array',
+        'restricted_ports' => 'array',
+        'preferred_berths' => 'array',
         'created_date' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
@@ -187,10 +267,11 @@ class VesselType extends Model
     public const CARGO_CAPABILITIES = [
         'containers' => 'Contenedores',
         'bulk_cargo' => 'Carga a Granel',
-        'liquid_cargo' => 'Carga Líquida',
         'general_cargo' => 'Carga General',
+        'liquid_cargo' => 'Carga Líquida',
         'dangerous_goods' => 'Mercancías Peligrosas',
-        'passengers' => 'Pasajeros',
+        'refrigerated_cargo' => 'Carga Refrigerada',
+        'oversized_cargo' => 'Carga Sobredimensionada',
     ];
 
     /**
@@ -199,7 +280,8 @@ class VesselType extends Model
     public const NAVIGATION_TYPES = [
         'river' => 'Navegación Fluvial',
         'maritime' => 'Navegación Marítima',
-        'both' => 'Ambas',
+        'coastal' => 'Navegación Costera',
+        'lake' => 'Navegación Lacustre',
     ];
 
     // =====================================================
@@ -221,6 +303,36 @@ class VesselType extends Model
     {
         return $this->hasMany(Vessel::class, 'vessel_type_id');
     }
+
+    // =====================================================
+// RELACIONES ADICIONALES CORRECTAS
+// =====================================================
+
+/**
+ * Alias para el propietario (usado en algunas vistas).
+ */
+public function vesselOwner(): BelongsTo
+{
+    return $this->owner();
+}
+
+/**
+ * Viajes donde participa esta embarcación.
+ * TEMPORAL: Comentado hasta crear modelo Voyage
+ */
+// public function voyages(): HasMany
+// {
+//     return $this->hasMany(Voyage::class, 'lead_vessel_id');
+// }
+
+/**
+ * Envíos/shipments de esta embarcación.
+ * TEMPORAL: Comentado hasta crear modelo Shipment
+ */
+// public function shipments(): HasMany
+// {
+//     return $this->hasMany(Shipment::class, 'vessel_id');
+// }
 
     // =====================================================
     // SCOPES Y CONSULTAS
@@ -275,6 +387,14 @@ class VesselType extends Model
     }
 
     /**
+     * Scope para tipos que manejan carga líquida.
+     */
+    public function scopeHandlesLiquidCargo(Builder $query): Builder
+    {
+        return $query->where('handles_liquid_cargo', true);
+    }
+
+    /**
      * Scope para tipos que pueden liderar convoy.
      */
     public function scopeCanLead(Builder $query): Builder
@@ -291,6 +411,22 @@ class VesselType extends Model
     }
 
     /**
+     * Scope para tipos que pueden empujar barcazas.
+     */
+    public function scopeCanPushBarges(Builder $query): Builder
+    {
+        return $query->where('can_push_barges', true);
+    }
+
+    /**
+     * Scope para tipos que pueden remolcar barcazas.
+     */
+    public function scopeCanTowBarges(Builder $query): Builder
+    {
+        return $query->where('can_tow_barges', true);
+    }
+
+    /**
      * Scope para navegación fluvial.
      */
     public function scopeRiverNavigation(Builder $query): Builder
@@ -304,6 +440,14 @@ class VesselType extends Model
     public function scopeMaritimeNavigation(Builder $query): Builder
     {
         return $query->where('maritime_navigation', true);
+    }
+
+    /**
+     * Scope para navegación costera.
+     */
+    public function scopeCoastalNavigation(Builder $query): Builder
+    {
+        return $query->where('coastal_navigation', true);
     }
 
     /**
@@ -351,10 +495,7 @@ class VesselType extends Model
         $capabilities = [];
         
         foreach (self::CARGO_CAPABILITIES as $key => $label) {
-            $field = "handles_" . str_replace('_cargo', '_cargo', $key);
-            if ($key === 'containers') $field = 'handles_containers';
-            if ($key === 'passengers') $field = 'handles_passengers';
-            if ($key === 'dangerous_goods') $field = 'handles_dangerous_goods';
+            $field = "handles_{$key}";
             
             if ($this->$field ?? false) {
                 $capabilities[$key] = $label;
@@ -377,6 +518,14 @@ class VesselType extends Model
         
         if ($this->maritime_navigation) {
             $capabilities[] = 'maritime';
+        }
+
+        if ($this->coastal_navigation) {
+            $capabilities[] = 'coastal';
+        }
+
+        if ($this->lake_navigation) {
+            $capabilities[] = 'lake';
         }
         
         return $capabilities;
@@ -431,6 +580,26 @@ class VesselType extends Model
     }
 
     /**
+     * Obtener rango de capacidad de carga como string.
+     */
+    public function getCargoCapacityRangeAttribute(): ?string
+    {
+        if (!$this->min_cargo_capacity && !$this->max_cargo_capacity) {
+            return null;
+        }
+        
+        if ($this->min_cargo_capacity && $this->max_cargo_capacity) {
+            return "{$this->min_cargo_capacity}t - {$this->max_cargo_capacity}t";
+        }
+        
+        if ($this->min_cargo_capacity) {
+            return "≥ {$this->min_cargo_capacity}t";
+        }
+        
+        return "≤ {$this->max_cargo_capacity}t";
+    }
+
+    /**
      * Obtener el color asignado o uno por defecto según categoría.
      */
     public function getDisplayColorAttribute(): string
@@ -466,18 +635,39 @@ class VesselType extends Model
      */
     public function getMaintenanceIntervalText(): ?string
     {
-        if (!$this->maintenance_interval_months) {
+        if (!$this->maintenance_interval_days) {
             return null;
         }
         
-        $interval = $this->maintenance_interval_months;
+        $days = $this->maintenance_interval_days;
         
-        if ($interval >= 12) {
-            $years = round($interval / 12, 1);
+        if ($days >= 365) {
+            $years = round($days / 365, 1);
             return $years == 1 ? "1 año" : "{$years} años";
         }
         
-        return "{$interval} meses";
+        if ($days >= 30) {
+            $months = round($days / 30, 1);
+            return $months == 1 ? "1 mes" : "{$months} meses";
+        }
+        
+        return "{$days} días";
+    }
+
+    /**
+     * Verificar si puede operar en convoy.
+     */
+    public function canOperateInConvoy(): bool
+    {
+        return $this->can_be_in_convoy || $this->can_be_lead_vessel;
+    }
+
+    /**
+     * Verificar si puede manejar convoy de barcazas.
+     */
+    public function canHandleBargeConvoy(): bool
+    {
+        return $this->can_push_barges || $this->can_tow_barges;
     }
 
     // =====================================================
@@ -496,12 +686,20 @@ class VesselType extends Model
                 return $query->handlesContainers();
             case 'bulk':
                 return $query->handlesBulkCargo();
+            case 'liquid':
+                return $query->handlesLiquidCargo();
             case 'convoy_lead':
                 return $query->canLead();
+            case 'push_barges':
+                return $query->canPushBarges();
+            case 'tow_barges':
+                return $query->canTowBarges();
             case 'river':
                 return $query->riverNavigation();
             case 'maritime':
                 return $query->maritimeNavigation();
+            case 'coastal':
+                return $query->coastalNavigation();
             default:
                 return $query;
         }
@@ -534,6 +732,11 @@ class VesselType extends Model
                 ->toArray(),
             'common' => static::active()->common()->count(),
             'specialized' => static::active()->specialized()->count(),
+            'with_convoy_capability' => static::active()
+                ->where(function($q) {
+                    $q->where('can_push_barges', true)
+                      ->orWhere('can_tow_barges', true);
+                })->count(),
         ];
     }
 }

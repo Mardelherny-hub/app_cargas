@@ -13,6 +13,8 @@ class VesselTypeSeeder extends Seeder
      * 
      * Seed para tipos de embarcación del sistema de cargas fluviales y marítimas
      * Incluye barcazas, remolcadores, autopropulsados, empujadores y mixtos
+     * 
+     * CORREGIDO: Usa nombres exactos de la migración create_vessel_types_table.php
      */
     public function run(): void
     {
@@ -62,6 +64,7 @@ class VesselTypeSeeder extends Seeder
 
     /**
      * Obtener datos de tipos de embarcación.
+     * CORREGIDO: Nombres de columnas coinciden exactamente con la migración
      */
     private function getVesselTypesData(): array
     {
@@ -74,38 +77,95 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Barcaza estándar diseñada específicamente para transporte de contenedores de 20\' y 40\'. Ideal para rutas fluviales principales.',
                 'category' => 'barge',
                 'propulsion_type' => 'pushed',
+                
+                // Physical specifications
                 'min_length' => 80.0,
                 'max_length' => 120.0,
                 'min_beam' => 12.0,
                 'max_beam' => 18.0,
                 'min_draft' => 2.5,
                 'max_draft' => 4.0,
-                'min_deadweight' => 800.0,
-                'max_deadweight' => 1500.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 800.0,
+                'max_cargo_capacity' => 1500.0,
+                'min_container_capacity' => 40,
+                'max_container_capacity' => 120,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 0,
+                'max_crew_size' => 0,
+                'typical_speed' => 0.0,
+                'max_speed' => 0.0,
+                'fuel_consumption_per_day' => null,
+                
+                // Cargo compatibility
                 'handles_containers' => true,
                 'handles_bulk_cargo' => false,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => true,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => true,
-                'handles_passengers' => false,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => false,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => false,
+                'lake_navigation' => false,
+                'min_water_depth' => 3.0,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => false,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 6,
-                'crew_capacity' => 0,
-                'passenger_capacity' => 0,
-                'fuel_capacity_liters' => 0.0,
-                'engine_configuration' => null,
-                'max_speed_knots' => 0.0,
-                'service_speed_knots' => 0.0,
-                'construction_materials' => 'Acero naval, recubrimiento anticorrosivo',
+                'can_push_barges' => false,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => null,
+                
+                // Environmental and safety
+                'requires_pilot' => false,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'BC001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'BARCAZA_CONT',
+                'paraguay_ws_code' => 'BC_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 1200.00,
+                'fuel_cost_per_day' => null,
+                'typical_voyage_duration' => 5,
+                'loading_time_hours' => 8,
+                'unloading_time_hours' => 8,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 25,
-                'environmental_standards' => 'IMO MARPOL, certificación verde',
-                'regulatory_requirements' => 'Inspección anual, certificado de navegabilidad',
-                'maintenance_interval_months' => 6,
+                'maintenance_interval_days' => 180,
                 'requires_dry_dock' => true,
                 'dry_dock_interval_months' => 24,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => false,
@@ -113,6 +173,7 @@ class VesselTypeSeeder extends Seeder
                 'icon' => 'ship-container',
                 'color_code' => '#3B82F6',
             ],
+            
             [
                 'code' => 'BARGE_BULK_001',
                 'name' => 'Barcaza de Carga a Granel',
@@ -120,38 +181,95 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Barcaza especializada en transporte de granos, minerales y otros productos a granel. Equipada con sistema de descarga neumática.',
                 'category' => 'barge',
                 'propulsion_type' => 'pushed',
+                
+                // Physical specifications
                 'min_length' => 90.0,
                 'max_length' => 140.0,
                 'min_beam' => 15.0,
                 'max_beam' => 22.0,
                 'min_draft' => 3.0,
                 'max_draft' => 5.0,
-                'min_deadweight' => 1200.0,
-                'max_deadweight' => 2500.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 1200.0,
+                'max_cargo_capacity' => 2500.0,
+                'min_container_capacity' => null,
+                'max_container_capacity' => null,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 0,
+                'max_crew_size' => 0,
+                'typical_speed' => 0.0,
+                'max_speed' => 0.0,
+                'fuel_consumption_per_day' => null,
+                
+                // Cargo compatibility
                 'handles_containers' => false,
                 'handles_bulk_cargo' => true,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => false,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => false,
-                'handles_passengers' => false,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => true,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => false,
+                'lake_navigation' => false,
+                'min_water_depth' => 3.5,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => false,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 4,
-                'crew_capacity' => 0,
-                'passenger_capacity' => 0,
-                'fuel_capacity_liters' => 0.0,
-                'engine_configuration' => null,
-                'max_speed_knots' => 0.0,
-                'service_speed_knots' => 0.0,
-                'construction_materials' => 'Acero naval reforzado, bodegas selladas',
+                'can_push_barges' => false,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => null,
+                
+                // Environmental and safety
+                'requires_pilot' => false,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'BG001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'BARCAZA_GRANEL',
+                'paraguay_ws_code' => 'BG_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 1500.00,
+                'fuel_cost_per_day' => null,
+                'typical_voyage_duration' => 7,
+                'loading_time_hours' => 12,
+                'unloading_time_hours' => 10,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 30,
-                'environmental_standards' => 'Certificación ambiental para granos',
-                'regulatory_requirements' => 'Inspección sanitaria trimestral',
-                'maintenance_interval_months' => 4,
+                'maintenance_interval_days' => 120,
                 'requires_dry_dock' => true,
                 'dry_dock_interval_months' => 18,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => true,
@@ -159,6 +277,7 @@ class VesselTypeSeeder extends Seeder
                 'icon' => 'ship-bulk',
                 'color_code' => '#059669',
             ],
+            
             [
                 'code' => 'BARGE_TANK_001',
                 'name' => 'Barcaza Tanque para Líquidos',
@@ -166,38 +285,95 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Barcaza especializada para transporte de combustibles, aceites y productos químicos líquidos. Cumple estándares internacionales de seguridad.',
                 'category' => 'barge',
                 'propulsion_type' => 'pushed',
+                
+                // Physical specifications
                 'min_length' => 70.0,
                 'max_length' => 110.0,
                 'min_beam' => 11.0,
                 'max_beam' => 16.0,
                 'min_draft' => 2.0,
                 'max_draft' => 3.5,
-                'min_deadweight' => 600.0,
-                'max_deadweight' => 1200.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 600.0,
+                'max_cargo_capacity' => 1200.0,
+                'min_container_capacity' => null,
+                'max_container_capacity' => null,
+                'min_liquid_capacity' => 800.0,
+                'max_liquid_capacity' => 1500.0,
+                
+                // Operational characteristics
+                'typical_crew_size' => 0,
+                'max_crew_size' => 0,
+                'typical_speed' => 0.0,
+                'max_speed' => 0.0,
+                'fuel_consumption_per_day' => null,
+                
+                // Cargo compatibility
                 'handles_containers' => false,
                 'handles_bulk_cargo' => false,
-                'handles_liquid_cargo' => true,
                 'handles_general_cargo' => false,
+                'handles_liquid_cargo' => true,
                 'handles_dangerous_goods' => true,
-                'handles_passengers' => false,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => false,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => false,
+                'lake_navigation' => false,
+                'min_water_depth' => 2.5,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => false,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 3,
-                'crew_capacity' => 0,
-                'passenger_capacity' => 0,
-                'fuel_capacity_liters' => 0.0,
-                'engine_configuration' => null,
-                'max_speed_knots' => 0.0,
-                'service_speed_knots' => 0.0,
-                'construction_materials' => 'Acero inoxidable, doble casco',
+                'can_push_barges' => false,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => null,
+                
+                // Environmental and safety
+                'requires_pilot' => true,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => true,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'BT001',
+                'imdg_class' => 'Class_3',
+                
+                // Webservice integration
+                'argentina_ws_code' => 'BARCAZA_TANQUE',
+                'paraguay_ws_code' => 'BT_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 1800.00,
+                'fuel_cost_per_day' => null,
+                'typical_voyage_duration' => 4,
+                'loading_time_hours' => 6,
+                'unloading_time_hours' => 6,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 20,
-                'environmental_standards' => 'IMO tanker standards, certificación SOLAS',
-                'regulatory_requirements' => 'Inspección mensual, certificado ISGOTT',
-                'maintenance_interval_months' => 3,
+                'maintenance_interval_days' => 90,
                 'requires_dry_dock' => true,
                 'dry_dock_interval_months' => 12,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => false,
                 'is_specialized' => true,
@@ -205,6 +381,7 @@ class VesselTypeSeeder extends Seeder
                 'icon' => 'ship-tank',
                 'color_code' => '#DC2626',
             ],
+            
             [
                 'code' => 'BARGE_MULTI_001',
                 'name' => 'Barcaza Multipropósito',
@@ -212,38 +389,95 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Barcaza versátil diseñada para transportar diferentes tipos de carga. Ideal para rutas con carga mixta y operaciones flexibles.',
                 'category' => 'barge',
                 'propulsion_type' => 'pushed',
+                
+                // Physical specifications
                 'min_length' => 75.0,
                 'max_length' => 115.0,
                 'min_beam' => 13.0,
                 'max_beam' => 17.0,
                 'min_draft' => 2.5,
                 'max_draft' => 4.0,
-                'min_deadweight' => 700.0,
-                'max_deadweight' => 1300.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 700.0,
+                'max_cargo_capacity' => 1300.0,
+                'min_container_capacity' => 20,
+                'max_container_capacity' => 80,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 0,
+                'max_crew_size' => 0,
+                'typical_speed' => 0.0,
+                'max_speed' => 0.0,
+                'fuel_consumption_per_day' => null,
+                
+                // Cargo compatibility
                 'handles_containers' => true,
                 'handles_bulk_cargo' => true,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => true,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => false,
-                'handles_passengers' => false,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => true,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => false,
+                'lake_navigation' => false,
+                'min_water_depth' => 3.0,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => false,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 5,
-                'crew_capacity' => 0,
-                'passenger_capacity' => 0,
-                'fuel_capacity_liters' => 0.0,
-                'engine_configuration' => null,
-                'max_speed_knots' => 0.0,
-                'service_speed_knots' => 0.0,
-                'construction_materials' => 'Acero naval, cubierta adaptable',
+                'can_push_barges' => false,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => null,
+                
+                // Environmental and safety
+                'requires_pilot' => false,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'BM001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'BARCAZA_MULTI',
+                'paraguay_ws_code' => 'BM_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 1350.00,
+                'fuel_cost_per_day' => null,
+                'typical_voyage_duration' => 6,
+                'loading_time_hours' => 10,
+                'unloading_time_hours' => 10,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 28,
-                'environmental_standards' => 'Certificación estándar',
-                'regulatory_requirements' => 'Inspección semestral',
-                'maintenance_interval_months' => 6,
+                'maintenance_interval_days' => 180,
                 'requires_dry_dock' => true,
                 'dry_dock_interval_months' => 24,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => false,
@@ -260,38 +494,95 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Remolcador potente diseñado para maniobras en puerto y asistencia a embarcaciones grandes. Alta maniobrabilidad en espacios reducidos.',
                 'category' => 'tugboat',
                 'propulsion_type' => 'self_propelled',
+                
+                // Physical specifications
                 'min_length' => 25.0,
                 'max_length' => 40.0,
                 'min_beam' => 8.0,
                 'max_beam' => 12.0,
                 'min_draft' => 3.0,
                 'max_draft' => 5.0,
-                'min_deadweight' => 50.0,
-                'max_deadweight' => 150.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 50.0,
+                'max_cargo_capacity' => 150.0,
+                'min_container_capacity' => null,
+                'max_container_capacity' => null,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 8,
+                'max_crew_size' => 12,
+                'typical_speed' => 10.0,
+                'max_speed' => 14.0,
+                'fuel_consumption_per_day' => 2000,
+                
+                // Cargo compatibility
                 'handles_containers' => false,
                 'handles_bulk_cargo' => false,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => false,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => false,
-                'handles_passengers' => true,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => false,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => true,
+                'lake_navigation' => false,
+                'min_water_depth' => 4.0,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => true,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 3,
-                'crew_capacity' => 8,
-                'passenger_capacity' => 2,
-                'fuel_capacity_liters' => 15000.0,
-                'engine_configuration' => 'Twin diesel engines, 2000-3500 HP',
-                'max_speed_knots' => 14.0,
-                'service_speed_knots' => 10.0,
-                'construction_materials' => 'Acero naval reforzado, protección de hélices',
+                'can_push_barges' => true,
+                'can_tow_barges' => true,
+                'max_barges_in_convoy' => 6,
+                
+                // Environmental and safety
+                'requires_pilot' => false,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => 'TUG_001',
+                'inland_vessel_code' => 'TP001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'REMOLCADOR_PUERTO',
+                'paraguay_ws_code' => 'TP_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 2500.00,
+                'fuel_cost_per_day' => 1800.00,
+                'typical_voyage_duration' => 1,
+                'loading_time_hours' => 2,
+                'unloading_time_hours' => 2,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 30,
-                'environmental_standards' => 'IMO Tier III emissions',
-                'regulatory_requirements' => 'Certificado de potencia, inspección trimestral',
-                'maintenance_interval_months' => 4,
+                'maintenance_interval_days' => 120,
                 'requires_dry_dock' => true,
                 'dry_dock_interval_months' => 18,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => true,
@@ -299,6 +590,7 @@ class VesselTypeSeeder extends Seeder
                 'icon' => 'ship-tugboat',
                 'color_code' => '#EF4444',
             ],
+            
             [
                 'code' => 'TUG_RIVER_001',
                 'name' => 'Remolcador Fluvial',
@@ -306,38 +598,94 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Remolcador especializado para navegación fluvial. Diseño optimizado para aguas poco profundas y corrientes fuertes.',
                 'category' => 'tugboat',
                 'propulsion_type' => 'self_propelled',
+                
+                // Physical specifications
                 'min_length' => 30.0,
                 'max_length' => 45.0,
                 'min_beam' => 9.0,
                 'max_beam' => 13.0,
                 'min_draft' => 2.5,
                 'max_draft' => 4.0,
-                'min_deadweight' => 80.0,
-                'max_deadweight' => 200.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 80.0,
+                'max_cargo_capacity' => 200.0,
+                'min_container_capacity' => null,
+                'max_container_capacity' => null,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 10,
+                'max_crew_size' => 15,
+                'typical_speed' => 8.0,
+                'max_speed' => 12.0,
+                'fuel_consumption_per_day' => 2500,
+                
+                // Cargo compatibility
                 'handles_containers' => false,
                 'handles_bulk_cargo' => false,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => false,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => false,
-                'handles_passengers' => true,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => false,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => false,
+                'coastal_navigation' => false,
+                'lake_navigation' => true,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => true,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 4,
-                'crew_capacity' => 10,
-                'passenger_capacity' => 4,
-                'fuel_capacity_liters' => 20000.0,
-                'engine_configuration' => 'Triple diesel engines, 3000-4500 HP',
-                'max_speed_knots' => 12.0,
-                'service_speed_knots' => 8.0,
-                'construction_materials' => 'Acero naval, casco reforzado para encallamientos',
+                'can_push_barges' => true,
+                'can_tow_barges' => true,
+                'max_barges_in_convoy' => 8,
+                
+                // Environmental and safety
+                'requires_pilot' => false,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'TR001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'REMOLCADOR_FLUVIAL',
+                'paraguay_ws_code' => 'TR_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 3000.00,
+                'fuel_cost_per_day' => 2200.00,
+                'typical_voyage_duration' => 3,
+                'loading_time_hours' => 4,
+                'unloading_time_hours' => 4,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 35,
-                'environmental_standards' => 'Certificación fluvial ambiental',
-                'regulatory_requirements' => 'Licencia navegación fluvial',
-                'maintenance_interval_months' => 6,
+                'maintenance_interval_days' => 180,
                 'requires_dry_dock' => true,
                 'dry_dock_interval_months' => 24,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => true,
@@ -354,44 +702,205 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Embarcación empujadora para formación de convoy con barcazas. Optimizada para empuje y eficiencia de combustible en trayectos largos.',
                 'category' => 'pusher',
                 'propulsion_type' => 'self_propelled',
+                
+                // Physical specifications
                 'min_length' => 35.0,
                 'max_length' => 55.0,
                 'min_beam' => 12.0,
                 'max_beam' => 16.0,
                 'min_draft' => 3.0,
                 'max_draft' => 5.0,
-                'min_deadweight' => 100.0,
-                'max_deadweight' => 300.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 100.0,
+                'max_cargo_capacity' => 300.0,
+                'min_container_capacity' => null,
+                'max_container_capacity' => null,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 12,
+                'max_crew_size' => 16,
+                'typical_speed' => 9.0,
+                'max_speed' => 15.0,
+                'fuel_consumption_per_day' => 3500,
+                
+                // Cargo compatibility
                 'handles_containers' => false,
                 'handles_bulk_cargo' => false,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => false,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => false,
-                'handles_passengers' => true,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => false,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => false,
+                'lake_navigation' => false,
+                'min_water_depth' => 3.5,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => true,
                 'can_be_in_convoy' => true,
-                'max_convoy_size' => 8,
-                'crew_capacity' => 12,
-                'passenger_capacity' => 6,
-                'fuel_capacity_liters' => 35000.0,
-                'engine_configuration' => 'Twin diesel engines, 4000-6000 HP',
-                'max_speed_knots' => 15.0,
-                'service_speed_knots' => 9.0,
-                'construction_materials' => 'Acero naval, proa reforzada para empuje',
+                'can_push_barges' => true,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => 8,
+                
+                // Environmental and safety
+                'requires_pilot' => false,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'PE001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'EMPUJADOR_STD',
+                'paraguay_ws_code' => 'PE_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 3500.00,
+                'fuel_cost_per_day' => 3200.00,
+                'typical_voyage_duration' => 8,
+                'loading_time_hours' => 6,
+                'unloading_time_hours' => 6,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 32,
-                'environmental_standards' => 'IMO Tier II emissions, sistema SCR',
-                'regulatory_requirements' => 'Certificado de convoy, capacitación especializada',
-                'maintenance_interval_months' => 6,
+                'maintenance_interval_days' => 180,
                 'requires_dry_dock' => true,
-                'dry_dock_interval_months' => 24,
+                'dry_dock_interval_months' => 18,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => true,
                 'display_order' => 70,
                 'icon' => 'ship-pusher',
                 'color_code' => '#059669',
+            ],
+            
+            [
+                'code' => 'PUSHER_HEAVY_001',
+                'name' => 'Empujador Pesado',
+                'short_name' => 'Empujador Pesado',
+                'description' => 'Empujador de alta potencia para convoy de múltiples barcazas. Diseñado para cargas pesadas y largas distancias.',
+                'category' => 'pusher',
+                'propulsion_type' => 'self_propelled',
+                
+                // Physical specifications
+                'min_length' => 45.0,
+                'max_length' => 70.0,
+                'min_beam' => 14.0,
+                'max_beam' => 20.0,
+                'min_draft' => 3.5,
+                'max_draft' => 6.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 200.0,
+                'max_cargo_capacity' => 500.0,
+                'min_container_capacity' => null,
+                'max_container_capacity' => null,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 15,
+                'max_crew_size' => 20,
+                'typical_speed' => 8.0,
+                'max_speed' => 12.0,
+                'fuel_consumption_per_day' => 5000,
+                
+                // Cargo compatibility
+                'handles_containers' => false,
+                'handles_bulk_cargo' => false,
+                'handles_general_cargo' => false,
+                'handles_liquid_cargo' => false,
+                'handles_dangerous_goods' => false,
+                'handles_refrigerated_cargo' => false,
+                'handles_oversized_cargo' => false,
+                
+                // Navigation capabilities
+                'river_navigation' => true,
+                'maritime_navigation' => true,
+                'coastal_navigation' => false,
+                'lake_navigation' => false,
+                'min_water_depth' => 4.0,
+                
+                // Convoy capabilities
+                'can_be_lead_vessel' => true,
+                'can_be_in_convoy' => true,
+                'can_push_barges' => true,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => 12,
+                
+                // Environmental and safety
+                'requires_pilot' => true,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => true,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => null,
+                'inland_vessel_code' => 'PP001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'EMPUJADOR_PESADO',
+                'paraguay_ws_code' => 'PP_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 4500.00,
+                'fuel_cost_per_day' => 4200.00,
+                'typical_voyage_duration' => 12,
+                'loading_time_hours' => 8,
+                'unloading_time_hours' => 8,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
+                'typical_lifespan_years' => 35,
+                'maintenance_interval_days' => 150,
+                'requires_dry_dock' => true,
+                'dry_dock_interval_months' => 12,
+                
+                // Status and display
+                'active' => true,
+                'is_common' => false,
+                'is_specialized' => true,
+                'display_order' => 80,
+                'icon' => 'ship-pusher-heavy',
+                'color_code' => '#7C2D12',
             ],
 
             // ========== AUTOPROPULSADOS ==========
@@ -402,91 +911,100 @@ class VesselTypeSeeder extends Seeder
                 'description' => 'Buque autopropulsado para carga general y contenedores. Ideal para rutas directas sin necesidad de remolque.',
                 'category' => 'self_propelled',
                 'propulsion_type' => 'self_propelled',
+                
+                // Physical specifications
                 'min_length' => 80.0,
                 'max_length' => 150.0,
                 'min_beam' => 15.0,
                 'max_beam' => 25.0,
                 'min_draft' => 4.0,
                 'max_draft' => 8.0,
-                'min_deadweight' => 1000.0,
-                'max_deadweight' => 3000.0,
+                
+                // Capacity specifications
+                'min_cargo_capacity' => 1000.0,
+                'max_cargo_capacity' => 5000.0,
+                'min_container_capacity' => 50,
+                'max_container_capacity' => 200,
+                'min_liquid_capacity' => null,
+                'max_liquid_capacity' => null,
+                
+                // Operational characteristics
+                'typical_crew_size' => 20,
+                'max_crew_size' => 30,
+                'typical_speed' => 12.0,
+                'max_speed' => 18.0,
+                'fuel_consumption_per_day' => 4000,
+                
+                // Cargo compatibility
                 'handles_containers' => true,
                 'handles_bulk_cargo' => true,
-                'handles_liquid_cargo' => false,
                 'handles_general_cargo' => true,
+                'handles_liquid_cargo' => false,
                 'handles_dangerous_goods' => true,
-                'handles_passengers' => true,
+                'handles_refrigerated_cargo' => true,
+                'handles_oversized_cargo' => true,
+                
+                // Navigation capabilities
                 'river_navigation' => true,
                 'maritime_navigation' => true,
+                'coastal_navigation' => true,
+                'lake_navigation' => false,
+                'min_water_depth' => 5.0,
+                
+                // Convoy capabilities
                 'can_be_lead_vessel' => true,
                 'can_be_in_convoy' => false,
-                'max_convoy_size' => 1,
-                'crew_capacity' => 20,
-                'passenger_capacity' => 12,
-                'fuel_capacity_liters' => 50000.0,
-                'engine_configuration' => 'Main diesel engine, 6000-10000 HP',
-                'max_speed_knots' => 18.0,
-                'service_speed_knots' => 14.0,
-                'construction_materials' => 'Acero naval, estructura optimizada',
+                'can_push_barges' => false,
+                'can_tow_barges' => false,
+                'max_barges_in_convoy' => null,
+                
+                // Environmental and safety
+                'requires_pilot' => true,
+                'requires_tugboat_assistance' => false,
+                'environmental_restrictions' => null,
+                'seasonal_restrictions' => null,
+                'weather_limitations' => null,
+                
+                // Documentation and certification
+                'requires_special_permits' => false,
+                'requires_insurance' => true,
+                'requires_safety_certificate' => true,
+                'required_certifications' => null,
+                
+                // International classifications
+                'imo_type_code' => 'CARGO_001',
+                'inland_vessel_code' => 'AC001',
+                'imdg_class' => null,
+                
+                // Webservice integration
+                'argentina_ws_code' => 'AUTOPROPULSADO',
+                'paraguay_ws_code' => 'AC_001',
+                'webservice_mapping' => null,
+                
+                // Economic and operational data
+                'daily_charter_rate' => 5000.00,
+                'fuel_cost_per_day' => 3800.00,
+                'typical_voyage_duration' => 10,
+                'loading_time_hours' => 16,
+                'unloading_time_hours' => 16,
+                
+                // Port compatibility
+                'compatible_ports' => null,
+                'restricted_ports' => null,
+                'preferred_berths' => null,
+                
+                // Maintenance and lifecycle
                 'typical_lifespan_years' => 25,
-                'environmental_standards' => 'IMO MARPOL Annex VI, sistema de tratamiento',
-                'regulatory_requirements' => 'Certificado internacional, inspección anual',
-                'maintenance_interval_months' => 8,
+                'maintenance_interval_days' => 180,
                 'requires_dry_dock' => true,
-                'dry_dock_interval_months' => 30,
+                'dry_dock_interval_months' => 18,
+                
+                // Status and display
                 'active' => true,
                 'is_common' => true,
                 'is_specialized' => false,
-                'display_order' => 80,
-                'icon' => 'ship-cargo',
-                'color_code' => '#10B981',
-            ],
-
-            // ========== MIXTOS ==========
-            [
-                'code' => 'MIXED_FLEXI_001',
-                'name' => 'Embarcación Multifuncional',
-                'short_name' => 'Multifuncional',
-                'description' => 'Embarcación híbrida que puede operar como remolcador, empujador o transporte independiente según las necesidades operativas.',
-                'category' => 'mixed',
-                'propulsion_type' => 'hybrid',
-                'min_length' => 40.0,
-                'max_length' => 70.0,
-                'min_beam' => 10.0,
-                'max_beam' => 16.0,
-                'min_draft' => 3.0,
-                'max_draft' => 5.5,
-                'min_deadweight' => 150.0,
-                'max_deadweight' => 500.0,
-                'handles_containers' => true,
-                'handles_bulk_cargo' => true,
-                'handles_liquid_cargo' => false,
-                'handles_general_cargo' => true,
-                'handles_dangerous_goods' => false,
-                'handles_passengers' => true,
-                'river_navigation' => true,
-                'maritime_navigation' => true,
-                'can_be_lead_vessel' => true,
-                'can_be_in_convoy' => true,
-                'max_convoy_size' => 5,
-                'crew_capacity' => 15,
-                'passenger_capacity' => 8,
-                'fuel_capacity_liters' => 25000.0,
-                'engine_configuration' => 'Hybrid diesel-electric, 3500-5000 HP',
-                'max_speed_knots' => 16.0,
-                'service_speed_knots' => 11.0,
-                'construction_materials' => 'Acero naval modular, configuración adaptable',
-                'typical_lifespan_years' => 30,
-                'environmental_standards' => 'Certificación híbrida, reducción de emisiones',
-                'regulatory_requirements' => 'Certificación múltiple según configuración',
-                'maintenance_interval_months' => 6,
-                'requires_dry_dock' => true,
-                'dry_dock_interval_months' => 24,
-                'active' => true,
-                'is_common' => false,
-                'is_specialized' => true,
                 'display_order' => 90,
-                'icon' => 'ship-mixed',
+                'icon' => 'ship-cargo',
                 'color_code' => '#8B5CF6',
             ],
         ];

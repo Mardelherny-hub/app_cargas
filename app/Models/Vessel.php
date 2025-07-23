@@ -4,9 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
 
 /**
  * Modelo Vessel para embarcaciones específicas
@@ -137,13 +139,21 @@ class Vessel extends Model
         return $this->belongsTo(Company::class);
     }
 
-    /**
-     * Propietario específico de la embarcación.
-     */
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(VesselOwner::class, 'owner_id');
-    }
+/**
+ * Propietario específico de la embarcación.
+ */
+public function owner(): BelongsTo
+{
+    return $this->belongsTo(VesselOwner::class, 'owner_id');
+}
+
+/**
+ * Alias para el propietario (usado en algunas vistas).
+ */
+public function vesselOwner(): BelongsTo
+{
+    return $this->owner();
+}
 
     /**
      * Tipo de embarcación.
@@ -200,6 +210,110 @@ class Vessel extends Model
     {
         return $this->belongsTo(User::class, 'last_updated_by_user_id');
     }
+
+    // =====================================================
+// MÉTODOS AUXILIARES PARA VISTAS
+// =====================================================
+
+/**
+ * Obtener nombre completo de la embarcación con propietario.
+ */
+public function getFullNameAttribute(): string
+{
+    $ownerName = $this->vesselOwner?->legal_name ?? $this->vesselOwner?->commercial_name ?? 'Sin propietario';
+    return "{$this->name} ({$ownerName})";
+}
+
+/**
+ * Obtener estado operacional con color.
+ */
+public function getStatusColorAttribute(): string
+{
+    $colors = [
+        'active' => 'green',
+        'maintenance' => 'yellow', 
+        'dry_dock' => 'blue',
+        'charter' => 'purple',
+        'inactive' => 'gray',
+        'decommissioned' => 'red',
+    ];
+    
+    return $colors[$this->operational_status] ?? 'gray';
+}
+
+/**
+ * Verificar si la embarcación está disponible.
+ */
+public function isAvailable(): bool
+{
+    return $this->active && 
+           $this->operational_status === 'active' && 
+           $this->available_for_charter;
+}
+
+/**
+ * Obtener información completa del capitán.
+ */
+public function getCaptainInfoAttribute(): ?string
+{
+    if (!$this->primaryCaptain) {
+        return null;
+    }
+    
+    return "{$this->primaryCaptain->full_name} - Lic: {$this->primaryCaptain->license_number}";
+}
+
+/**
+ * Obtener ubicación actual.
+ */
+public function getCurrentLocationAttribute(): string
+{
+    if ($this->currentPort) {
+        return "{$this->currentPort->name} ({$this->currentPort->country->name})";
+    }
+    
+    if ($this->homePort) {
+        return "Puerto base: {$this->homePort->name}";
+    }
+    
+    return 'Ubicación no especificada';
+}
+
+    // =====================================================
+// RELACIONES ADICIONALES
+// =====================================================
+
+/**
+ * Viajes donde participa esta embarcación.
+ */
+public function voyages(): HasMany
+{
+    return $this->hasMany(Voyage::class, 'lead_vessel_id');
+}
+
+/**
+ * Envíos/shipments de esta embarcación.
+ */
+public function shipments(): HasMany
+{
+    return $this->hasMany(Shipment::class, 'vessel_id');
+}
+
+/**
+ * Viajes donde es embarcación líder.
+ */
+public function leadVoyages(): HasMany
+{
+    return $this->hasMany(Voyage::class, 'lead_vessel_id');
+}
+
+/**
+ * Obtener el último viaje de la embarcación.
+ */
+public function latestVoyage(): BelongsTo
+{
+    return $this->belongsTo(Voyage::class, 'lead_vessel_id')->latest();
+}
 
     // =====================================================
     // SCOPES Y CONSULTAS
@@ -285,17 +399,7 @@ class Vessel extends Model
     // MÉTODOS DE UTILIDAD
     // =====================================================
 
-    /**
-     * Verificar si la embarcación está disponible.
-     */
-    public function isAvailable(): bool
-    {
-        return $this->active && 
-               $this->operational_status === 'active' &&
-               $this->certificates_current &&
-               $this->inspection_current &&
-               $this->insurance_current;
-    }
+   
 
     /**
      * Verificar si requiere mantenimiento urgente.
