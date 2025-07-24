@@ -172,8 +172,8 @@ return new class extends Migration
             $table->unique(['country', 'webservice_type', 'error_code', 'error_subcode'], 'uk_error_identification');
 
             // Foreign key constraints will be added separately
-            // $table->foreign('parent_error_id')->references('id')->on('webservice_errors')->onDelete('set null');
-            // $table->foreign('reviewed_by_user_id')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('parent_error_id')->references('id')->on('webservice_errors')->onDelete('set null');
+            $table->foreign('reviewed_by_user_id')->references('id')->on('users')->onDelete('set null');
         });
     }
 

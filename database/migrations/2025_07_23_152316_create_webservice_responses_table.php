@@ -169,7 +169,7 @@ return new class extends Migration
             $table->unique(['transaction_id'], 'uk_transaction_response');
 
             // Foreign key constraints will be added separately
-            // $table->foreign('transaction_id')->references('id')->on('webservice_transactions')->onDelete('cascade');
+            $table->foreign('transaction_id')->references('id')->on('webservice_transactions')->onDelete('cascade');
         });
     }
 

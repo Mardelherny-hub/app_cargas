@@ -140,10 +140,10 @@ return new class extends Migration
             $table->unique(['company_id', 'transaction_id'], 'uk_company_transaction');
 
             // Foreign key constraints will be added separately after confirming table structure
-            // $table->foreign('company_id')->references('id')->on('companies')->onDelete('cascade');
-            // $table->foreign('user_id')->references('id')->on('users')->onDelete('restrict');
-            // $table->foreign('shipment_id')->references('id')->on('shipments')->onDelete('set null');
-            // $table->foreign('voyage_id')->references('id')->on('voyages')->onDelete('set null');
+            $table->foreign('company_id')->references('id')->on('companies')->onDelete('cascade');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('restrict');
+            $table->foreign('shipment_id')->references('id')->on('shipments')->onDelete('set null');
+            $table->foreign('voyage_id')->references('id')->on('voyages')->onDelete('set null');
         });
     }
 
