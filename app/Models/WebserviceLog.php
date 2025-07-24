@@ -57,6 +57,8 @@ class WebserviceLog extends Model
 {
     use HasFactory;
 
+        const UPDATED_AT = null;
+
     protected $fillable = [
         'transaction_id',
         'user_id',
