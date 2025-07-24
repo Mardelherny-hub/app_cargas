@@ -13,7 +13,7 @@ use App\Traits\UserHelper;
  *
  * Form Request para validación de creación de clientes
  * CORRECCIÓN CRÍTICA: client_type → client_roles (array múltiple)
- * BASADO EN: Datos reales del sistema (legal_name, no business_name)
+ * BASADO EN: Datos reales del sistema (legal_name, no legal_name)
  */
 class CreateClientRequest extends FormRequest
 {
@@ -60,7 +60,7 @@ class CreateClientRequest extends FormRequest
                 Rule::in(['shipper', 'consignee', 'notify_party'])
             ],
             
-            // CORRECCIÓN: Campo real es legal_name (no business_name)
+            // CORRECCIÓN: Campo real es legal_name (no legal_name)
             'legal_name' => [
                 'required',
                 'string',

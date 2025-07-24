@@ -432,7 +432,7 @@
                                         </span>
                                     </td>
                                     <td class="px-4 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">{{ $owner->company->business_name ?? 'N/A' }}</div>
+                                        <div class="text-sm text-gray-900">{{ $owner->company->legal_name ?? 'N/A' }}</div>
                                     </td>
                                     <td class="px-4 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900">{{ $owner->country->name ?? 'N/A' }}</div>

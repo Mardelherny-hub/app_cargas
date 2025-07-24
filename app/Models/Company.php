@@ -749,7 +749,7 @@ class Company extends Model
             'verified_at' => $client->verified_at?->toISOString(),
             
             // Configuración de empresa
-            'company_name' => $this->commercial_name ?: $this->business_name,
+            'company_name' => $this->commercial_name ?: $this->legal_name,
             'company_tax_id' => $this->tax_id,
             'webservice_capabilities' => $this->getWebserviceCapabilities(),
         ];

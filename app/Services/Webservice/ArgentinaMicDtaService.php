@@ -79,7 +79,7 @@ class ArgentinaMicDtaService
 
         $this->logOperation('info', 'ArgentinaMicDtaService inicializado', [
             'company_id' => $company->id,
-            'company_name' => $company->business_name,
+            'company_name' => $company->legal_name,
             'user_id' => $user->id,
             'environment' => $this->config['environment'],
         ]);
@@ -636,7 +636,7 @@ class ArgentinaMicDtaService
         $logData = array_merge([
             'service' => 'ArgentinaMicDtaService',
             'company_id' => $this->company->id,
-            'company_name' => $this->company->business_name,
+            'company_name' => $this->company->legal_name,
             'user_id' => $this->user->id,
             'timestamp' => now()->toISOString(),
         ], $context);

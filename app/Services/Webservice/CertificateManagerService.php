@@ -73,7 +73,7 @@ class CertificateManagerService
         
         $this->logOperation('info', 'CertificateManagerService inicializado', [
             'company_id' => $company->id,
-            'company_name' => $company->business_name,
+            'company_name' => $company->legal_name,
             'has_certificate' => $company->has_certificate,
         ]);
     }
@@ -668,7 +668,7 @@ class CertificateManagerService
         $logData = array_merge([
             'service' => 'CertificateManagerService',
             'company_id' => $this->company->id,
-            'company_name' => $this->company->business_name,
+            'company_name' => $this->company->legal_name,
             'timestamp' => now()->toISOString(),
         ], $context);
 
