@@ -6,11 +6,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Carbon\Carbon;
 
 /**
  * Captain Model
  * 
- * Modelo para capitanes de embarcaciones.
+ * Modelo para capitanes de embarcaciones del sistema de transporte fluvial.
  * Gestiona datos personales, licencias, certificaciones y competencias.
  * 
  * MÓDULO 3: VIAJES Y CARGAS
@@ -38,24 +40,24 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $primary_company_id
  * @property string|null $document_type
  * @property string|null $document_number
- * @property \Carbon\Carbon|null $document_expires
- * @property string $license_number
- * @property string $license_class
+ * @property string|null $license_number
+ * @property string|null $license_class
  * @property string $license_status
  * @property \Carbon\Carbon|null $license_issued_at
  * @property \Carbon\Carbon|null $license_expires_at
- * @property string|null $medical_certificate_number
  * @property \Carbon\Carbon|null $medical_certificate_expires_at
- * @property string|null $safety_training_certificate
  * @property \Carbon\Carbon|null $safety_training_expires_at
- * @property int $years_of_experience
  * @property string $employment_status
  * @property bool $available_for_hire
  * @property \Carbon\Carbon|null $available_from
  * @property \Carbon\Carbon|null $available_until
  * @property \Carbon\Carbon|null $last_voyage_date
+ * @property int $total_voyages
+ * @property int $years_of_experience
  * @property decimal $performance_rating
+ * @property string|null $specializations
  * @property array|null $vessel_type_competencies
+ * @property array|null $route_competencies
  * @property array|null $cargo_type_competencies
  * @property array|null $route_restrictions
  * @property array|null $additional_certifications
@@ -104,24 +106,24 @@ class Captain extends Model
         'primary_company_id',
         'document_type',
         'document_number',
-        'document_expires',
         'license_number',
         'license_class',
         'license_status',
         'license_issued_at',
         'license_expires_at',
-        'medical_certificate_number',
         'medical_certificate_expires_at',
-        'safety_training_certificate',
         'safety_training_expires_at',
-        'years_of_experience',
         'employment_status',
         'available_for_hire',
         'available_from',
         'available_until',
         'last_voyage_date',
+        'total_voyages',
+        'years_of_experience',
         'performance_rating',
+        'specializations',
         'vessel_type_competencies',
+        'route_competencies',
         'cargo_type_competencies',
         'route_restrictions',
         'additional_certifications',
@@ -139,20 +141,19 @@ class Captain extends Model
      */
     protected $casts = [
         'birth_date' => 'date',
-        'document_expires' => 'date',
-        'license_issued_at' => 'date',
-        'license_expires_at' => 'date',
-        'medical_certificate_expires_at' => 'date',
-        'safety_training_expires_at' => 'date',
+        'license_issued_at' => 'datetime',
+        'license_expires_at' => 'datetime',
+        'medical_certificate_expires_at' => 'datetime',
+        'safety_training_expires_at' => 'datetime',
         'available_from' => 'datetime',
         'available_until' => 'datetime',
         'last_voyage_date' => 'datetime',
-        'performance_rating' => 'decimal:2',
-        'years_of_experience' => 'integer',
         'available_for_hire' => 'boolean',
         'active' => 'boolean',
         'verified' => 'boolean',
+        'performance_rating' => 'decimal:2',
         'vessel_type_competencies' => 'array',
+        'route_competencies' => 'array',
         'cargo_type_competencies' => 'array',
         'route_restrictions' => 'array',
         'additional_certifications' => 'array',
@@ -164,13 +165,27 @@ class Captain extends Model
      * The attributes that should be hidden for serialization.
      */
     protected $hidden = [
-        'created_by_user_id',
-        'last_updated_by_user_id',
+        'document_number', // Documento personal sensible
     ];
 
-    // ================================
-    // RELATIONSHIPS
-    // ================================
+    /**
+     * Bootstrap the model and its traits.
+     */
+    protected static function boot()
+    {
+        parent::boot();
+        
+        // Auto-generar full_name cuando se crea o actualiza
+        static::saving(function ($captain) {
+            if ($captain->first_name || $captain->last_name) {
+                $captain->full_name = trim($captain->first_name . ' ' . $captain->last_name);
+            }
+        });
+    }
+
+    //
+    // === RELATIONSHIPS ===
+    //
 
     /**
      * País de residencia del capitán
@@ -197,6 +212,22 @@ class Captain extends Model
     }
 
     /**
+     * Usuario que creó el registro
+     */
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * Usuario que actualizó el registro por última vez
+     */
+    public function lastUpdatedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'last_updated_by_user_id');
+    }
+
+    /**
      * Embarcaciones donde este capitán es el capitán principal
      */
     public function primaryVessels(): HasMany
@@ -205,7 +236,7 @@ class Captain extends Model
     }
 
     /**
-     * Viajes donde este capitán es el capitán principal
+     * Viajes donde actúa como capitán principal
      */
     public function voyages(): HasMany
     {
@@ -213,48 +244,19 @@ class Captain extends Model
     }
 
     /**
-     * Envíos donde este capitán está asignado
+     * Envíos individuales asignados a este capitán
      */
     public function shipments(): HasMany
     {
         return $this->hasMany(Shipment::class, 'captain_id');
     }
 
-    // ================================
-    // ACCESSORS & MUTATORS
-    // ================================
+    //
+    // === SCOPES ===
+    //
 
     /**
-     * Generar full_name automáticamente
-     */
-    public function setFirstNameAttribute($value)
-    {
-        $this->attributes['first_name'] = $value;
-        $this->updateFullName();
-    }
-
-    public function setLastNameAttribute($value)
-    {
-        $this->attributes['last_name'] = $value;
-        $this->updateFullName();
-    }
-
-    /**
-     * Actualizar el nombre completo
-     */
-    private function updateFullName()
-    {
-        if (isset($this->attributes['first_name']) && isset($this->attributes['last_name'])) {
-            $this->attributes['full_name'] = trim($this->attributes['first_name'] . ' ' . $this->attributes['last_name']);
-        }
-    }
-
-    // ================================
-    // QUERY SCOPES
-    // ================================
-
-    /**
-     * Capitanes activos
+     * Solo capitanes activos
      */
     public function scopeActive($query)
     {
@@ -262,36 +264,61 @@ class Captain extends Model
     }
 
     /**
-     * Capitanes disponibles para contratación
+     * Solo capitanes verificados
      */
-    public function scopeAvailable($query)
+    public function scopeVerified($query)
     {
-        return $query->where('active', true)
-                    ->where('available_for_hire', true);
+        return $query->where('verified', true);
     }
 
     /**
-     * Capitanes con licencia activa
+     * Solo capitanes disponibles para contratación
      */
-    public function scopeWithActiveLicense($query)
+    public function scopeAvailableForHire($query)
     {
-        return $query->where('license_status', 'active')
-                    ->where(function($q) {
+        return $query->where('available_for_hire', true)
+                    ->where('active', true);
+    }
+
+    /**
+     * Capitanes con licencia válida
+     */
+    public function scopeWithValidLicense($query)
+    {
+        return $query->where('license_status', 'valid')
+                    ->where(function ($q) {
                         $q->whereNull('license_expires_at')
                           ->orWhere('license_expires_at', '>', now());
                     });
     }
 
     /**
-     * Capitanes por clase de licencia
+     * Capitanes con certificado médico vigente
      */
-    public function scopeByLicenseClass($query, $class)
+    public function scopeWithValidMedical($query)
     {
-        return $query->where('license_class', $class);
+        return $query->where(function ($q) {
+            $q->whereNull('medical_certificate_expires_at')
+              ->orWhere('medical_certificate_expires_at', '>', now());
+        });
     }
 
     /**
-     * Capitanes por empresa
+     * Capitanes disponibles en un rango de fechas
+     */
+    public function scopeAvailableBetween($query, $start, $end)
+    {
+        return $query->where(function ($q) use ($start, $end) {
+            $q->where('available_from', '<=', $start)
+              ->where(function ($sub) use ($end) {
+                  $sub->whereNull('available_until')
+                      ->orWhere('available_until', '>=', $end);
+              });
+        });
+    }
+
+    /**
+     * Filtrar por empresa
      */
     public function scopeByCompany($query, $companyId)
     {
@@ -299,88 +326,254 @@ class Captain extends Model
     }
 
     /**
-     * Capitanes con experiencia mínima
+     * Filtrar por años de experiencia mínima
      */
-    public function scopeWithMinExperience($query, $years)
+    public function scopeWithExperienceAtLeast($query, $years)
     {
         return $query->where('years_of_experience', '>=', $years);
     }
 
-    // ================================
-    // BUSINESS METHODS
-    // ================================
+    /**
+     * Filtrar por rating mínimo
+     */
+    public function scopeWithRatingAtLeast($query, $rating)
+    {
+        return $query->where('performance_rating', '>=', $rating);
+    }
+
+    //
+    // === ACCESSORS & MUTATORS ===
+    //
 
     /**
-     * Verificar si la licencia está vigente
+     * Calcular edad del capitán
      */
-    public function hasValidLicense(): bool
+    public function getAgeAttribute(): ?int
     {
-        return $this->license_status === 'active' && 
-               ($this->license_expires_at === null || $this->license_expires_at->isFuture());
+        return $this->birth_date ? $this->birth_date->age : null;
     }
 
     /**
-     * Verificar si el certificado médico está vigente
+     * Verificar si la licencia está próxima a vencer
      */
-    public function hasValidMedicalCertificate(): bool
+    public function getLicenseExpiringAttribute(): bool
     {
-        return $this->medical_certificate_expires_at === null || 
-               $this->medical_certificate_expires_at->isFuture();
+        if (!$this->license_expires_at) {
+            return false;
+        }
+        
+        return $this->license_expires_at->diffInDays(now()) <= 30;
     }
 
     /**
-     * Verificar si está disponible en un rango de fechas
+     * Verificar si el certificado médico está próximo a vencer
      */
-    public function isAvailableForPeriod($startDate, $endDate): bool
+    public function getMedicalExpiringAttribute(): bool
     {
-        if (!$this->available_for_hire || !$this->active) {
+        if (!$this->medical_certificate_expires_at) {
             return false;
         }
+        
+        return $this->medical_certificate_expires_at->diffInDays(now()) <= 30;
+    }
 
-        // Verificar disponibilidad general
-        if ($this->available_from && $this->available_from->isAfter($startDate)) {
+    /**
+     * Obtener estado general del capitán
+     */
+    public function getStatusAttribute(): string
+    {
+        if (!$this->active) {
+            return 'inactive';
+        }
+        
+        if ($this->license_status !== 'valid') {
+            return 'license_invalid';
+        }
+        
+        if ($this->license_expires_at && $this->license_expires_at <= now()) {
+            return 'license_expired';
+        }
+        
+        if ($this->medical_certificate_expires_at && $this->medical_certificate_expires_at <= now()) {
+            return 'medical_expired';
+        }
+        
+        if (!$this->available_for_hire) {
+            return 'unavailable';
+        }
+        
+        return 'available';
+    }
+
+    /**
+     * Formatear nombre completo con título
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        $title = '';
+        
+        // Agregar título basado en clase de licencia
+        if ($this->license_class) {
+            $titles = [
+                'master' => 'Cap.',
+                'chief_officer' => 'Primer Of.',
+                'officer' => 'Of.',
+                'pilot' => 'Práctico',
+            ];
+            $title = $titles[$this->license_class] ?? '';
+        }
+        
+        return trim($title . ' ' . $this->full_name);
+    }
+
+    //
+    // === METHODS ===
+    //
+
+    /**
+     * Marcar como no disponible
+     */
+    public function markUnavailable(?Carbon $until = null): void
+    {
+        $this->update([
+            'available_for_hire' => false,
+            'available_until' => $until,
+        ]);
+    }
+
+    /**
+     * Marcar como disponible
+     */
+    public function markAvailable(?Carbon $from = null): void
+    {
+        $this->update([
+            'available_for_hire' => true,
+            'available_from' => $from ?? now(),
+            'available_until' => null,
+        ]);
+    }
+
+    /**
+     * Actualizar después de completar un viaje
+     */
+    public function updateAfterVoyage(Carbon $voyageDate, float $rating = null): void
+    {
+        $updateData = [
+            'last_voyage_date' => $voyageDate,
+            'total_voyages' => $this->total_voyages + 1,
+        ];
+        
+        // Actualizar rating si se proporciona
+        if ($rating !== null) {
+            $currentRating = $this->performance_rating ?? 0;
+            $totalVoyages = $this->total_voyages;
+            
+            // Promedio ponderado
+            $newRating = (($currentRating * $totalVoyages) + $rating) / ($totalVoyages + 1);
+            $updateData['performance_rating'] = round($newRating, 2);
+        }
+        
+        $this->update($updateData);
+    }
+
+    /**
+     * Verificar si puede comandar un tipo de embarcación
+     */
+    public function canCommandVesselType(string $vesselType): bool
+    {
+        if (!$this->vessel_type_competencies) {
             return false;
         }
+        
+        return in_array($vesselType, $this->vessel_type_competencies);
+    }
 
-        if ($this->available_until && $this->available_until->isBefore($endDate)) {
+    /**
+     * Verificar si puede navegar una ruta específica
+     */
+    public function canNavigateRoute(string $route): bool
+    {
+        // Verificar restricciones
+        if ($this->route_restrictions && in_array($route, $this->route_restrictions)) {
             return false;
         }
-
+        
+        // Verificar competencias (si están definidas)
+        if ($this->route_competencies) {
+            return in_array($route, $this->route_competencies);
+        }
+        
+        // Si no hay competencias específicas definidas, asumir que puede
         return true;
     }
 
     /**
-     * Obtener rating como texto
+     * Verificar disponibilidad en un período
      */
-    public function getRatingText(): string
+    public function isAvailableBetween(Carbon $start, Carbon $end): bool
     {
-        $rating = (float) $this->performance_rating;
-        
-        if ($rating >= 4.5) return 'Excelente';
-        if ($rating >= 4.0) return 'Muy Bueno';
-        if ($rating >= 3.5) return 'Bueno';
-        if ($rating >= 3.0) return 'Regular';
-        return 'Necesita Mejora';
-    }
-
-    /**
-     * Obtener días hasta vencimiento de licencia
-     */
-    public function getDaysUntilLicenseExpiry(): ?int
-    {
-        if (!$this->license_expires_at) {
-            return null;
+        if (!$this->available_for_hire || !$this->active) {
+            return false;
         }
-
-        return now()->diffInDays($this->license_expires_at, false);
+        
+        // Verificar ventana de disponibilidad
+        if ($this->available_from && $this->available_from > $start) {
+            return false;
+        }
+        
+        if ($this->available_until && $this->available_until < $end) {
+            return false;
+        }
+        
+        return true;
     }
 
     /**
-     * Verificar si requiere renovación próxima (30 días)
+     * Obtener próximas expiraciones
      */
-    public function requiresLicenseRenewal(): bool
+    public function getUpcomingExpirations(): array
     {
-        $days = $this->getDaysUntilLicenseExpiry();
-        return $days !== null && $days <= 30 && $days >= 0;
+        $expirations = [];
+        
+        if ($this->license_expires_at) {
+            $daysToExpiry = $this->license_expires_at->diffInDays(now());
+            if ($daysToExpiry <= 60) {
+                $expirations[] = [
+                    'type' => 'license',
+                    'description' => 'Licencia de Navegación',
+                    'expires_at' => $this->license_expires_at,
+                    'days_remaining' => $daysToExpiry,
+                    'urgency' => $daysToExpiry <= 30 ? 'high' : 'medium',
+                ];
+            }
+        }
+        
+        if ($this->medical_certificate_expires_at) {
+            $daysToExpiry = $this->medical_certificate_expires_at->diffInDays(now());
+            if ($daysToExpiry <= 60) {
+                $expirations[] = [
+                    'type' => 'medical',
+                    'description' => 'Certificado Médico',
+                    'expires_at' => $this->medical_certificate_expires_at,
+                    'days_remaining' => $daysToExpiry,
+                    'urgency' => $daysToExpiry <= 30 ? 'high' : 'medium',
+                ];
+            }
+        }
+        
+        if ($this->safety_training_expires_at) {
+            $daysToExpiry = $this->safety_training_expires_at->diffInDays(now());
+            if ($daysToExpiry <= 60) {
+                $expirations[] = [
+                    'type' => 'safety',
+                    'description' => 'Entrenamiento de Seguridad',
+                    'expires_at' => $this->safety_training_expires_at,
+                    'days_remaining' => $daysToExpiry,
+                    'urgency' => $daysToExpiry <= 30 ? 'high' : 'medium',
+                ];
+            }
+        }
+        
+        return $expirations;
     }
 }

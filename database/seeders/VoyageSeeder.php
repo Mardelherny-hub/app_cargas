@@ -2,19 +2,31 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\Voyage;
 use App\Models\Company;
-use App\Models\Vessel;
-use App\Models\Captain;
 use App\Models\Country;
 use App\Models\Port;
-use App\Models\CustomOffice;
-use App\Models\User;
+use App\Models\CustomsOffice;
+use App\Models\Captain;
+use App\Models\Vessel;
 use Carbon\Carbon;
-use Faker\Factory as Faker;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
+/**
+ * VoyageSeeder - MÓDULO 3: VIAJES Y CARGAS
+ * 
+ * Seeder para viajes del sistema de transporte fluvial AR/PY
+ * 
+ * DATOS REALES DEL SISTEMA:
+ * - Ruta principal: ARBUE → PYTVT (Buenos Aires → Paraguay Terminal Villeta)
+ * - Empresas: Rio de la Plata Transport S.A., Navegación Paraguay S.A.
+ * - Viajes: V022NB, V023NB, etc. (formato real del sistema)
+ * - Embarcaciones: PAR13001, GUARAN F, REINA DEL PARANA
+ * - Terminal: TERPORT VILLETA
+ * 
+ * Contexto: Sistema real de transporte fluvial con datos del manifiesto PARANA.xlsx
+ */
 class VoyageSeeder extends Seeder
 {
     /**
@@ -22,411 +34,601 @@ class VoyageSeeder extends Seeder
      */
     public function run(): void
     {
-        $faker = Faker::create('es_AR');
-        
-        // Obtener datos de referencia existentes
-        $companies = Company::all();
-        $vessels = Vessel::all();
-        $captains = Captain::all();
-        $countries = Country::all();
-        $ports = Port::all();
-        $customsOffices = CustomOffice::all();
-        $users = User::all();
+        $this->command->info('🚢 Creando viajes para transporte fluvial AR/PY...');
 
-        if ($companies->isEmpty() || $vessels->isEmpty() || $countries->isEmpty() || $ports->isEmpty()) {
-            $this->command->warn('No se encontraron datos de referencia suficientes. Ejecuta primero los seeders de companies, vessels, countries y ports.');
+        // Verificar dependencias
+        if (!$this->verifyDependencies()) {
             return;
         }
 
-        // Rutas típicas del transporte fluvial en la región
-        $commonRoutes = $this->getCommonRoutes($countries, $ports);
-        
-        // Crear 50 viajes de prueba
-        for ($i = 1; $i <= 50; $i++) {
-            $company = $companies->random();
-            $vessel = $vessels->random();
-            $captain = $captains->isNotEmpty() ? $captains->random() : null;
-            $route = $faker->randomElement($commonRoutes);
-            $user = $users->isNotEmpty() ? $users->random() : null;
+        // Obtener referencias necesarias
+        $references = $this->getReferences();
 
-            // Fechas del viaje
-            $departureDate = $faker->dateTimeBetween('-6 months', '+3 months');
-            $transitHours = $faker->numberBetween(24, 168); // 1-7 días
-            $estimatedArrival = (clone $departureDate)->modify("+{$transitHours} hours");
-            
-            // Estado del viaje basado en la fecha
-            $status = $this->determineVoyageStatus($departureDate, $estimatedArrival);
-            
-            // Fechas reales si el viaje ya terminó
-            $actualArrival = null;
-            if (in_array($status, ['completed', 'at_destination'])) {
-                $delayHours = $faker->boolean(30) ? $faker->numberBetween(-6, 48) : 0;
-                $actualArrival = (clone $estimatedArrival)->modify("{$delayHours} hours");
-            }
+        // Limpiar tabla existente
+        DB::table('voyages')->truncate();
 
-            // Datos de carga
-            $totalContainers = $faker->numberBetween(0, 120);
-            $totalWeight = $faker->randomFloat(2, 500, 5000); // toneladas
-            $totalVolume = $faker->randomFloat(2, 1000, 8000); // m³
-            
-            // Tipo de viaje basado en el tipo de embarcación
-            $voyageType = $this->getVoyageTypeByVessel($vessel);
-            
-            // Generar número de viaje
-            $voyageNumber = $this->generateVoyageNumber($company, $departureDate, $i);
+        //
+        // === VIAJES HISTÓRICOS COMPLETADOS ===
+        //
+        $this->createHistoricalVoyages($references);
 
-            $voyage = Voyage::create([
-                'voyage_number' => $voyageNumber,
-                'internal_reference' => $faker->boolean(70) ? strtoupper($faker->lexify('REF-????-###')) : null,
-                'company_id' => $company->id,
-                'lead_vessel_id' => $vessel->id,
-                'captain_id' => $captain?->id,
-                'origin_country_id' => $route['origin_country_id'],
-                'origin_port_id' => $route['origin_port_id'],
-                'destination_country_id' => $route['destination_country_id'],
-                'destination_port_id' => $route['destination_port_id'],
-                'transshipment_port_id' => $faker->boolean(20) ? $ports->random()->id : null,
-                'origin_customs_id' => $customsOffices->isNotEmpty() ? $customsOffices->random()->id : null,
-                'destination_customs_id' => $customsOffices->isNotEmpty() ? $customsOffices->random()->id : null,
-                
-                // Fechas
-                'departure_date' => $departureDate,
-                'estimated_arrival_date' => $estimatedArrival,
-                'actual_arrival_date' => $actualArrival,
-                'customs_clearance_date' => $faker->boolean(60) ? 
-                    $faker->dateTimeBetween($departureDate, $estimatedArrival) : null,
-                'cargo_loading_start' => $faker->dateTimeBetween('-1 day', $departureDate),
-                'cargo_loading_end' => $departureDate,
-                'cargo_discharge_start' => $actualArrival ? 
-                    $faker->dateTimeBetween($actualArrival, '+1 day') : null,
-                'cargo_discharge_end' => $actualArrival ? 
-                    $faker->dateTimeBetween($actualArrival, '+2 days') : null,
+        //
+        // === VIAJES EN CURSO Y FUTUROS ===
+        //
+        $this->createCurrentVoyages($references);
 
-                // Tipo y características
-                'voyage_type' => $voyageType,
-                'cargo_type' => $faker->randomElement(['export', 'import', 'transit', 'transshipment', 'cabotage']),
-                'is_consolidated' => $faker->boolean(40),
-                'has_transshipment' => $faker->boolean(20),
-                'requires_pilot' => $faker->boolean(60),
-                'status' => $status,
+        //
+        // === VIAJES PLANIFICADOS ===
+        //
+        $this->createPlannedVoyages($references);
 
-                // Resumen de carga
-                'total_containers' => $totalContainers,
-                'total_cargo_weight' => $totalWeight,
-                'total_cargo_volume' => $totalVolume,
-                'total_bills_of_lading' => $faker->numberBetween(1, 15),
-                'total_clients' => $faker->numberBetween(1, 8),
-
-                // Webservice (Argentina/Paraguay)
-                'argentina_voyage_id' => $faker->boolean(70) ? 'AR-' . $faker->numerify('######') : null,
-                'paraguay_voyage_id' => $faker->boolean(60) ? 'PY-' . $faker->numerify('######') : null,
-                'argentina_status' => $faker->randomElement(['pending', 'sent', 'approved', 'rejected']),
-                'paraguay_status' => $faker->randomElement(['pending', 'sent', 'approved']),
-                'argentina_sent_at' => $faker->boolean(70) ? $faker->dateTimeBetween($departureDate, 'now') : null,
-                'paraguay_sent_at' => $faker->boolean(60) ? $faker->dateTimeBetween($departureDate, 'now') : null,
-
-                // Costos financieros
-                'estimated_freight_cost' => $faker->randomFloat(2, 5000, 50000),
-                'actual_freight_cost' => $status === 'completed' ? $faker->randomFloat(2, 5000, 55000) : null,
-                'fuel_cost' => $faker->randomFloat(2, 2000, 15000),
-                'port_charges' => $faker->randomFloat(2, 500, 3000),
-                'currency_code' => $faker->randomElement(['USD', 'ARS', 'PYG']),
-
-                // Condiciones y notas
-                'weather_conditions' => $this->generateWeatherConditions($faker),
-                'river_conditions' => $this->generateRiverConditions($faker),
-                'voyage_notes' => $faker->boolean(60) ? $faker->sentence(20) : null,
-                'delays_explanation' => $status === 'delayed' ? $faker->sentence(15) : null,
-
-                // Documentos
-                'required_documents' => $this->generateRequiredDocuments(),
-                'uploaded_documents' => $this->generateUploadedDocuments($faker),
-                'customs_approved' => $faker->boolean(80),
-                'port_authority_approved' => $faker->boolean(85),
-                'all_documents_ready' => $faker->boolean(75),
-
-                // Emergencia y seguridad
-                'emergency_contacts' => $this->generateEmergencyContacts($faker),
-                'safety_equipment' => $this->generateSafetyEquipment($faker),
-                'dangerous_cargo' => $faker->boolean(15),
-                'safety_notes' => $faker->boolean(30) ? $faker->sentence(10) : null,
-
-                // Performance
-                'distance_nautical_miles' => $faker->randomFloat(2, 50, 800),
-                'average_speed_knots' => $faker->randomFloat(2, 8, 15),
-                'transit_time_hours' => $transitHours,
-                'fuel_consumption' => $faker->randomFloat(2, 200, 2000),
-                'fuel_efficiency' => $faker->randomFloat(2, 0.5, 3.5),
-
-                // Comunicación
-                'communication_frequency' => $faker->randomElement(['VHF-16', 'VHF-12', 'SATCOM', 'RADIO-MF']),
-                'reporting_schedule' => $this->generateReportingSchedule(),
-                'last_position_report' => $status === 'in_transit' ? 
-                    $faker->dateTimeBetween('-6 hours', 'now') : null,
-
-                // Flags de estado
-                'active' => !in_array($status, ['cancelled', 'completed']),
-                'archived' => $faker->boolean(10),
-                'requires_follow_up' => $faker->boolean(25),
-                'has_incidents' => $faker->boolean(10),
-
-                // Auditoría
-                'created_date' => $faker->dateTimeBetween('-6 months', 'now'),
-                'created_by_user_id' => $user?->id,
-                'last_updated_date' => $faker->dateTimeBetween('-1 month', 'now'),
-                'last_updated_by_user_id' => $user?->id,
-            ]);
-
-            // Calcular costo total
-            $voyage->updateTotalCost();
-        }
-
-        $this->command->info('✅ Se crearon 50 viajes de prueba exitosamente.');
+        $this->command->info('✅ Viajes creados exitosamente para transporte fluvial AR/PY');
+        $this->command->info('');
+        $this->showCreatedSummary();
     }
 
-    private function getCommonRoutes($countries, $ports): array
+    /**
+     * Verificar que las dependencias existan
+     */
+    private function verifyDependencies(): bool
     {
-        // Intentar obtener países conocidos
-        $argentina = $countries->where('name', 'like', '%Argentina%')->first() 
-                   ?? $countries->where('iso_code', 'AR')->first()
-                   ?? $countries->first();
-                   
-        $paraguay = $countries->where('name', 'like', '%Paraguay%')->first()
-                  ?? $countries->where('iso_code', 'PY')->first()
-                  ?? $countries->skip(1)->first() ?? $countries->first();
-
-        $uruguay = $countries->where('name', 'like', '%Uruguay%')->first()
-                 ?? $countries->where('iso_code', 'UY')->first()
-                 ?? $countries->skip(2)->first() ?? $countries->first();
-
-        $brasil = $countries->where('name', 'like', '%Brasil%')->first()
-                ?? $countries->where('name', 'like', '%Brazil%')->first()
-                ?? $countries->where('iso_code', 'BR')->first()
-                ?? $countries->skip(3)->first() ?? $countries->first();
-
-        // Intentar obtener puertos conocidos o usar los disponibles
-        $availablePorts = $ports->take(10); // Usar los primeros 10 puertos disponibles
-        
-        if ($availablePorts->count() < 4) {
-            // Si no hay suficientes puertos, crear rutas con los disponibles
-            return $this->createBasicRoutes($availablePorts, $argentina, $paraguay);
-        }
-
-        return [
-            // Rutas Argentina-Paraguay
-            [
-                'origin_country_id' => $argentina->id,
-                'origin_port_id' => $availablePorts->get(0)->id,
-                'destination_country_id' => $paraguay->id,
-                'destination_port_id' => $availablePorts->get(1)->id,
-            ],
-            [
-                'origin_country_id' => $argentina->id,
-                'origin_port_id' => $availablePorts->get(2)->id,
-                'destination_country_id' => $paraguay->id,
-                'destination_port_id' => $availablePorts->get(1)->id,
-            ],
-            // Rutas Argentina-Uruguay
-            [
-                'origin_country_id' => $argentina->id,
-                'origin_port_id' => $availablePorts->get(0)->id,
-                'destination_country_id' => $uruguay->id,
-                'destination_port_id' => $availablePorts->get(3)->id,
-            ],
-            // Rutas Argentina-Brasil
-            [
-                'origin_country_id' => $argentina->id,
-                'origin_port_id' => $availablePorts->get(2)->id,
-                'destination_country_id' => $brasil->id,
-                'destination_port_id' => $availablePorts->get(4)->id ?? $availablePorts->get(0)->id,
-            ],
-            // Rutas de cabotaje Argentina
-            [
-                'origin_country_id' => $argentina->id,
-                'origin_port_id' => $availablePorts->get(0)->id,
-                'destination_country_id' => $argentina->id,
-                'destination_port_id' => $availablePorts->get(2)->id,
-            ],
-        ];
-    }
-
-    private function createBasicRoutes($ports, $country1, $country2): array
-    {
-        $routes = [];
-        $portArray = $ports->toArray();
-        
-        for ($i = 0; $i < count($portArray) - 1; $i++) {
-            $routes[] = [
-                'origin_country_id' => $country1->id,
-                'origin_port_id' => $portArray[$i]['id'],
-                'destination_country_id' => $country2->id,
-                'destination_port_id' => $portArray[$i + 1]['id'],
-            ];
-        }
-        
-        return $routes;
-    }
-
-    private function determineVoyageStatus($departureDate, $estimatedArrival): string
-    {
-        $now = now();
-        $departure = Carbon::parse($departureDate);
-        $arrival = Carbon::parse($estimatedArrival);
-
-        if ($departure->isFuture()) {
-            return 'planning';
-        } elseif ($departure->isPast() && $arrival->isFuture()) {
-            return 'in_transit';
-        } elseif ($arrival->isPast()) {
-            return collect(['completed', 'at_destination'])->random();
-        }
-        
-        return 'approved';
-    }
-
-    private function getVoyageTypeByVessel($vessel): string
-    {
-        // Basado en el tipo de embarcación, determinar el tipo de viaje
-        $vesselName = strtolower($vessel->name ?? '');
-        
-        if (str_contains($vesselName, 'remolcador') || str_contains($vesselName, 'convoy')) {
-            return 'convoy';
-        } elseif (str_contains($vesselName, 'flota') || str_contains($vesselName, 'fleet')) {
-            return 'fleet';
-        }
-        
-        return 'single_vessel';
-    }
-
-    private function generateVoyageNumber($company, $departureDate, $sequence): string
-    {
-        $date = Carbon::parse($departureDate);
-        $companyCode = $company->code ?? 'VOY';
-        $dateStr = $date->format('ymd');
-        
-        return sprintf('%s-%s-%03d', strtoupper($companyCode), $dateStr, $sequence);
-    }
-
-    private function generateWeatherConditions($faker): array
-    {
-        return [
-            'temperature' => $faker->numberBetween(15, 35),
-            'humidity' => $faker->numberBetween(60, 95),
-            'wind_speed' => $faker->numberBetween(5, 25),
-            'wind_direction' => $faker->randomElement(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']),
-            'visibility' => $faker->randomElement(['Excelente', 'Buena', 'Regular', 'Limitada']),
-            'precipitation' => $faker->randomElement(['Ninguna', 'Llovizna', 'Lluvia ligera', 'Lluvia intensa']),
-            'conditions' => $faker->randomElement(['Despejado', 'Parcialmente nublado', 'Nublado', 'Tormentoso'])
-        ];
-    }
-
-    private function generateRiverConditions($faker): array
-    {
-        return [
-            'water_level' => $faker->randomFloat(2, 2.5, 8.0), // metros
-            'current_speed' => $faker->randomFloat(2, 1.0, 4.5), // nudos
-            'depth' => $faker->randomFloat(2, 8.0, 25.0), // metros
-            'navigation_status' => $faker->randomElement(['Normal', 'Restringida', 'Precaución', 'Cerrada']),
-            'obstacles' => $faker->boolean(20) ? $faker->randomElement(['Troncos', 'Sedimentos', 'Bajo nivel', 'Ninguno']) : 'Ninguno',
-            'tidal_conditions' => $faker->randomElement(['Alta', 'Baja', 'Creciente', 'Menguante']),
-            'temperature_water' => $faker->numberBetween(18, 28)
-        ];
-    }
-
-    private function generateRequiredDocuments(): array
-    {
-        return [
-            'bill_of_lading' => true,
-            'cargo_manifest' => true,
-            'customs_declaration' => true,
-            'vessel_certificate' => true,
-            'crew_documents' => true,
-            'insurance_certificate' => true,
-            'port_clearance' => true,
-            'dangerous_goods_declaration' => false,
-            'phytosanitary_certificate' => false,
-            'origin_certificate' => true
-        ];
-    }
-
-    private function generateUploadedDocuments($faker): array
-    {
-        $documents = [];
-        $docTypes = [
-            'bill_of_lading', 'cargo_manifest', 'customs_declaration', 
-            'vessel_certificate', 'crew_documents', 'insurance_certificate'
+        $dependencies = [
+            ['model' => Country::class, 'condition' => ['iso_code' => 'AR'], 'name' => 'Argentina'],
+            ['model' => Country::class, 'condition' => ['iso_code' => 'PY'], 'name' => 'Paraguay'],
+            ['model' => Company::class, 'condition' => ['tax_id' => '20123456789'], 'name' => 'Rio de la Plata'],
+            ['model' => Captain::class, 'condition' => ['active' => true], 'name' => 'Capitanes activos'],
+            ['model' => Port::class, 'condition' => ['code' => 'ARBUE'], 'name' => 'Puerto Buenos Aires'],
         ];
 
-        foreach ($docTypes as $docType) {
-            if ($faker->boolean(75)) {
-                $documents[$docType] = [
-                    'filename' => $docType . '_' . $faker->numberBetween(1000, 9999) . '.pdf',
-                    'uploaded_at' => $faker->dateTimeBetween('-1 week', 'now')->format('Y-m-d H:i:s'),
-                    'uploaded_by' => $faker->name(),
-                    'file_size' => $faker->numberBetween(100, 5000) . 'KB',
-                    'status' => $faker->randomElement(['approved', 'pending', 'rejected'])
-                ];
+        foreach ($dependencies as $dep) {
+            if (!$dep['model']::where($dep['condition'])->exists()) {
+                $this->command->error("❌ {$dep['name']} no encontrado. Ejecutar seeders previos.");
+                return false;
             }
         }
 
-        return $documents;
+        return true;
     }
 
-    private function generateEmergencyContacts($faker): array
+    /**
+     * Obtener referencias necesarias para los viajes
+     */
+    private function getReferences(): array
     {
         return [
-            'primary' => [
-                'name' => $faker->name(),
-                'position' => 'Coordinador Operaciones',
-                'phone' => $faker->phoneNumber(),
-                'email' => $faker->safeEmail(),
-                'available_24h' => true
+            // Países
+            'argentina' => Country::where('iso_code', 'AR')->first(),
+            'paraguay' => Country::where('iso_code', 'PY')->first(),
+            
+            // Empresas
+            'rio_plata' => Company::where('tax_id', '20123456789')->first(),
+            'navegacion_py' => Company::where('tax_id', '80987654321')->first(),
+            'logistica_integral' => Company::where('tax_id', '30555666777')->first(),
+            
+            // Puertos
+            'puerto_buenos_aires' => Port::where('code', 'ARBUE')->first(),
+            'terminal_villeta' => Port::where('code', 'PYTVT')->first(),
+            'puerto_rosario' => Port::where('code', 'ARROS')->first(),
+            'puerto_asuncion' => Port::where('code', 'PYASU')->first(),
+            
+            // Aduanas
+            'aduana_buenos_aires' => CustomsOffice::where('code', '001')->first(),
+            'aduana_rosario' => CustomsOffice::where('code', '002')->first(),
+            'aduana_villeta' => CustomsOffice::where('code', 'PY001')->first(),
+            'aduana_asuncion' => CustomsOffice::where('code', 'PY002')->first(),
+            
+            // Capitanes
+            'captains_ar' => Captain::whereHas('country', fn($q) => $q->where('iso_code', 'AR'))->get(),
+            'captains_py' => Captain::whereHas('country', fn($q) => $q->where('iso_code', 'PY'))->get(),
+            
+            // Embarcaciones (simuladas - en un sistema real vendrían de la tabla vessels)
+            'vessels' => collect([
+                ['name' => 'PAR13001', 'capacity' => 1200, 'containers' => 48],
+                ['name' => 'GUARAN F', 'capacity' => 1100, 'containers' => 44],
+                ['name' => 'REINA DEL PARANA', 'capacity' => 950, 'containers' => 38],
+            ]),
+        ];
+    }
+
+    /**
+     * Crear viajes históricos completados (diciembre 2024)
+     */
+    private function createHistoricalVoyages(array $refs): void
+    {
+        $this->command->info('📅 Creando viajes históricos completados...');
+
+        $historicalVoyages = [
+            [
+                'voyage_number' => 'V022NB',
+                'internal_reference' => 'RIO-2024-022',
+                'company_id' => $refs['rio_plata']->id,
+                'captain_id' => $refs['captains_ar']->where('license_class', 'master')->first()?->id,
+                'origin_country_id' => $refs['argentina']->id,
+                'origin_port_id' => $refs['puerto_buenos_aires']->id,
+                'destination_country_id' => $refs['paraguay']->id,
+                'destination_port_id' => $refs['terminal_villeta']->id,
+                'origin_customs_id' => $refs['aduana_buenos_aires']->id,
+                'destination_customs_id' => $refs['aduana_villeta']->id,
+                'departure_date' => '2024-12-15 08:00:00',
+                'estimated_arrival_date' => '2024-12-18 16:00:00',
+                'actual_arrival_date' => '2024-12-18 15:30:00',
+                'customs_clearance_deadline' => '2024-12-19 12:00:00',
+                'voyage_type' => 'single_vessel',
+                'cargo_type' => 'export',
+                'is_convoy' => false,
+                'vessel_count' => 1,
+                'total_cargo_capacity_tons' => 1200.00,
+                'total_container_capacity' => 48,
+                'total_cargo_weight_loaded' => 1150.50,
+                'total_containers_loaded' => 46,
+                'capacity_utilization_percentage' => 95.88,
+                'status' => 'completed',
+                'priority_level' => 'normal',
+                'requires_escort' => false,
+                'requires_pilot' => true,
+                'hazardous_cargo' => false,
+                'refrigerated_cargo' => false,
+                'oversized_cargo' => false,
+                'weather_conditions' => 'Favorable, vientos del SE 15 km/h',
+                'route_conditions' => 'Navegación normal, nivel de río adecuado',
+                'special_instructions' => 'Entrega directa Terminal TERPORT VILLETA',
+                'operational_notes' => 'Viaje completado exitosamente, sin incidentes',
+                'estimated_cost' => 75000.00,
+                'actual_cost' => 72500.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => true,
+                'customs_cleared_origin' => true,
+                'customs_cleared_destination' => true,
+                'documentation_complete' => true,
+                'environmental_approved' => true,
+                'safety_approval_date' => '2024-12-14 14:00:00',
+                'customs_approval_date' => '2024-12-14 16:30:00',
+                'environmental_approval_date' => '2024-12-14 10:00:00',
+                'active' => false,
+                'archived' => true,
+                'requires_follow_up' => false,
             ],
-            'secondary' => [
-                'name' => $faker->name(),
-                'position' => 'Gerente Flota',
-                'phone' => $faker->phoneNumber(),
-                'email' => $faker->safeEmail(),
-                'available_24h' => false
+            [
+                'voyage_number' => 'V021SB',
+                'internal_reference' => 'NAV-PY-2024-021',
+                'company_id' => $refs['navegacion_py']->id,
+                'captain_id' => $refs['captains_py']->where('license_class', 'master')->first()?->id,
+                'origin_country_id' => $refs['paraguay']->id,
+                'origin_port_id' => $refs['terminal_villeta']->id,
+                'destination_country_id' => $refs['argentina']->id,
+                'destination_port_id' => $refs['puerto_buenos_aires']->id,
+                'origin_customs_id' => $refs['aduana_villeta']->id,
+                'destination_customs_id' => $refs['aduana_buenos_aires']->id,
+                'departure_date' => '2024-12-10 09:30:00',
+                'estimated_arrival_date' => '2024-12-13 18:00:00',
+                'actual_arrival_date' => '2024-12-13 17:15:00',
+                'customs_clearance_deadline' => '2024-12-14 12:00:00',
+                'voyage_type' => 'convoy',
+                'cargo_type' => 'import',
+                'is_convoy' => true,
+                'vessel_count' => 2,
+                'total_cargo_capacity_tons' => 2300.00,
+                'total_container_capacity' => 92,
+                'total_cargo_weight_loaded' => 2180.75,
+                'total_containers_loaded' => 89,
+                'capacity_utilization_percentage' => 94.83,
+                'status' => 'completed',
+                'priority_level' => 'high',
+                'requires_escort' => true,
+                'requires_pilot' => true,
+                'hazardous_cargo' => true,
+                'refrigerated_cargo' => false,
+                'oversized_cargo' => false,
+                'weather_conditions' => 'Condiciones adversas iniciales, mejoró durante viaje',
+                'route_conditions' => 'Tráfico intenso en aproximación Buenos Aires',
+                'special_instructions' => 'Convoy GUARAN F + barcaza de apoyo, carga peligrosa clase 9',
+                'operational_notes' => 'Convoy arribó adelantado, excelente coordinación',
+                'estimated_cost' => 145000.00,
+                'actual_cost' => 148200.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => true,
+                'customs_cleared_origin' => true,
+                'customs_cleared_destination' => true,
+                'documentation_complete' => true,
+                'environmental_approved' => true,
+                'safety_approval_date' => '2024-12-09 11:00:00',
+                'customs_approval_date' => '2024-12-09 15:20:00',
+                'environmental_approval_date' => '2024-12-09 09:30:00',
+                'active' => false,
+                'archived' => true,
+                'requires_follow_up' => false,
             ],
-            'port_authority' => [
-                'name' => 'Autoridad Portuaria',
-                'phone' => '+54-11-4000-0000',
-                'radio' => 'VHF Canal 16',
-                'emergency_frequency' => '2182 kHz'
-            ]
+            [
+                'voyage_number' => 'V020NB',
+                'internal_reference' => 'RIO-2024-020',
+                'company_id' => $refs['rio_plata']->id,
+                'captain_id' => $refs['captains_ar']->where('license_class', 'chief_officer')->first()?->id,
+                'origin_country_id' => $refs['argentina']->id,
+                'origin_port_id' => $refs['puerto_rosario']->id,
+                'destination_country_id' => $refs['paraguay']->id,
+                'destination_port_id' => $refs['puerto_asuncion']->id,
+                'origin_customs_id' => $refs['aduana_rosario']->id,
+                'destination_customs_id' => $refs['aduana_asuncion']->id,
+                'departure_date' => '2024-12-05 07:45:00',
+                'estimated_arrival_date' => '2024-12-08 14:00:00',
+                'actual_arrival_date' => '2024-12-08 16:30:00',
+                'customs_clearance_deadline' => '2024-12-09 10:00:00',
+                'voyage_type' => 'single_vessel',
+                'cargo_type' => 'export',
+                'is_convoy' => false,
+                'vessel_count' => 1,
+                'total_cargo_capacity_tons' => 950.00,
+                'total_container_capacity' => 38,
+                'total_cargo_weight_loaded' => 920.25,
+                'total_containers_loaded' => 37,
+                'capacity_utilization_percentage' => 96.87,
+                'status' => 'completed',
+                'priority_level' => 'normal',
+                'requires_escort' => false,
+                'requires_pilot' => false,
+                'hazardous_cargo' => false,
+                'refrigerated_cargo' => true,
+                'oversized_cargo' => false,
+                'weather_conditions' => 'Excelente, cielo despejado',
+                'route_conditions' => 'Navegación fluida, sin demoras',
+                'special_instructions' => 'Carga refrigerada productos alimentarios, temperatura -18°C',
+                'operational_notes' => 'Retraso menor por inspección adicional carga refrigerada',
+                'estimated_cost' => 68000.00,
+                'actual_cost' => 71200.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => true,
+                'customs_cleared_origin' => true,
+                'customs_cleared_destination' => true,
+                'documentation_complete' => true,
+                'environmental_approved' => true,
+                'safety_approval_date' => '2024-12-04 13:30:00',
+                'customs_approval_date' => '2024-12-04 17:00:00',
+                'environmental_approval_date' => '2024-12-04 11:00:00',
+                'active' => false,
+                'archived' => true,
+                'requires_follow_up' => true,
+                'follow_up_reason' => 'Retraso de 2.5 horas por inspección adicional',
+            ],
         ];
+
+        foreach ($historicalVoyages as $voyageData) {
+            $this->createVoyage($voyageData);
+        }
     }
 
-    private function generateSafetyEquipment($faker): array
+    /**
+     * Crear viajes en curso y futuros inmediatos
+     */
+    private function createCurrentVoyages(array $refs): void
     {
-        return [
-            'life_jackets' => $faker->numberBetween(10, 50),
-            'life_rafts' => $faker->numberBetween(2, 8),
-            'fire_extinguishers' => $faker->numberBetween(5, 15),
-            'emergency_radio' => true,
-            'flares' => $faker->numberBetween(6, 24),
-            'first_aid_kit' => true,
-            'emergency_lighting' => true,
-            'immersion_suits' => $faker->numberBetween(4, 12),
-            'epirb' => true, // Emergency Position Indicating Radio Beacon
-            'ais_transponder' => true,
-            'radar' => true,
-            'gps' => true,
-            'last_inspection' => $faker->dateTimeBetween('-6 months', '-1 month')->format('Y-m-d')
+        $this->command->info('🚢 Creando viajes en curso y próximos...');
+
+        $currentVoyages = [
+            [
+                'voyage_number' => 'V023NB',
+                'internal_reference' => 'RIO-2025-001',
+                'company_id' => $refs['rio_plata']->id,
+                'captain_id' => $refs['captains_ar']->where('license_class', 'master')->skip(1)->first()?->id,
+                'origin_country_id' => $refs['argentina']->id,
+                'origin_port_id' => $refs['puerto_buenos_aires']->id,
+                'destination_country_id' => $refs['paraguay']->id,
+                'destination_port_id' => $refs['terminal_villeta']->id,
+                'origin_customs_id' => $refs['aduana_buenos_aires']->id,
+                'destination_customs_id' => $refs['aduana_villeta']->id,
+                'departure_date' => now()->subDays(1)->format('Y-m-d H:i:s'),
+                'estimated_arrival_date' => now()->addDays(2)->format('Y-m-d H:i:s'),
+                'customs_clearance_deadline' => now()->addDays(3)->format('Y-m-d H:i:s'),
+                'voyage_type' => 'single_vessel',
+                'cargo_type' => 'export',
+                'is_convoy' => false,
+                'vessel_count' => 1,
+                'total_cargo_capacity_tons' => 1200.00,
+                'total_container_capacity' => 48,
+                'total_cargo_weight_loaded' => 1100.00,
+                'total_containers_loaded' => 44,
+                'capacity_utilization_percentage' => 91.67,
+                'status' => 'in_transit',
+                'priority_level' => 'normal',
+                'requires_escort' => false,
+                'requires_pilot' => true,
+                'hazardous_cargo' => false,
+                'refrigerated_cargo' => false,
+                'oversized_cargo' => false,
+                'weather_conditions' => 'Condiciones favorables, visibilidad buena',
+                'route_conditions' => 'Navegación normal, sin obstáculos reportados',
+                'special_instructions' => 'Viaje regular Buenos Aires - Terminal Villeta',
+                'operational_notes' => 'Viaje en curso, progreso normal según cronograma',
+                'estimated_cost' => 78000.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => true,
+                'customs_cleared_origin' => true,
+                'customs_cleared_destination' => false,
+                'documentation_complete' => true,
+                'environmental_approved' => true,
+                'safety_approval_date' => now()->subDays(2)->format('Y-m-d H:i:s'),
+                'customs_approval_date' => now()->subDays(2)->format('Y-m-d H:i:s'),
+                'environmental_approval_date' => now()->subDays(3)->format('Y-m-d H:i:s'),
+                'active' => true,
+                'archived' => false,
+                'requires_follow_up' => false,
+            ],
+            [
+                'voyage_number' => 'V024SB',
+                'internal_reference' => 'NAV-PY-2025-001',
+                'company_id' => $refs['navegacion_py']->id,
+                'captain_id' => $refs['captains_py']->where('license_class', 'master')->skip(1)->first()?->id,
+                'origin_country_id' => $refs['paraguay']->id,
+                'origin_port_id' => $refs['terminal_villeta']->id,
+                'destination_country_id' => $refs['argentina']->id,
+                'destination_port_id' => $refs['puerto_buenos_aires']->id,
+                'origin_customs_id' => $refs['aduana_villeta']->id,
+                'destination_customs_id' => $refs['aduana_buenos_aires']->id,
+                'departure_date' => now()->addDays(2)->format('Y-m-d H:i:s'),
+                'estimated_arrival_date' => now()->addDays(5)->format('Y-m-d H:i:s'),
+                'customs_clearance_deadline' => now()->addDays(6)->format('Y-m-d H:i:s'),
+                'voyage_type' => 'convoy',
+                'cargo_type' => 'import',
+                'is_convoy' => true,
+                'vessel_count' => 3,
+                'total_cargo_capacity_tons' => 3450.00,
+                'total_container_capacity' => 138,
+                'total_cargo_weight_loaded' => 3200.00,
+                'total_containers_loaded' => 128,
+                'capacity_utilization_percentage' => 92.75,
+                'status' => 'approved',
+                'priority_level' => 'high',
+                'requires_escort' => true,
+                'requires_pilot' => true,
+                'hazardous_cargo' => true,
+                'refrigerated_cargo' => true,
+                'oversized_cargo' => false,
+                'weather_conditions' => 'Pronóstico favorable para próximos días',
+                'route_conditions' => 'Ruta despejada, tráfico normal esperado',
+                'special_instructions' => 'Convoy GUARAN F + 2 barcazas, carga mixta peligrosa/refrigerada',
+                'operational_notes' => 'Preparación final, salida programada en 2 días',
+                'estimated_cost' => 195000.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => true,
+                'customs_cleared_origin' => true,
+                'customs_cleared_destination' => false,
+                'documentation_complete' => true,
+                'environmental_approved' => true,
+                'safety_approval_date' => now()->subDays(1)->format('Y-m-d H:i:s'),
+                'customs_approval_date' => now()->format('Y-m-d H:i:s'),
+                'environmental_approval_date' => now()->subDays(1)->format('Y-m-d H:i:s'),
+                'active' => true,
+                'archived' => false,
+                'requires_follow_up' => false,
+            ],
         ];
+
+        foreach ($currentVoyages as $voyageData) {
+            $this->createVoyage($voyageData);
+        }
     }
 
-    private function generateReportingSchedule(): array
+    /**
+     * Crear viajes planificados
+     */
+    private function createPlannedVoyages(array $refs): void
     {
-        return [
-            'departure_report' => '06:00',
-            'position_reports' => ['12:00', '18:00', '00:00'],
-            'arrival_eta_update' => '06:00',
-            'emergency_frequency' => 'Continuo',
-            'weather_reports' => ['06:00', '18:00'],
-            'cargo_status' => ['12:00'],
-            'fuel_status' => 'Diario 18:00'
+        $this->command->info('📋 Creando viajes planificados...');
+
+        $plannedVoyages = [
+            [
+                'voyage_number' => 'V025NB',
+                'internal_reference' => 'RIO-2025-002',
+                'company_id' => $refs['rio_plata']->id,
+                'captain_id' => $refs['captains_ar']->where('license_class', 'chief_officer')->skip(1)->first()?->id,
+                'origin_country_id' => $refs['argentina']->id,
+                'origin_port_id' => $refs['puerto_buenos_aires']->id,
+                'destination_country_id' => $refs['paraguay']->id,
+                'destination_port_id' => $refs['terminal_villeta']->id,
+                'origin_customs_id' => $refs['aduana_buenos_aires']->id,
+                'destination_customs_id' => $refs['aduana_villeta']->id,
+                'departure_date' => now()->addDays(7)->format('Y-m-d H:i:s'),
+                'estimated_arrival_date' => now()->addDays(10)->format('Y-m-d H:i:s'),
+                'customs_clearance_deadline' => now()->addDays(11)->format('Y-m-d H:i:s'),
+                'voyage_type' => 'single_vessel',
+                'cargo_type' => 'export',
+                'is_convoy' => false,
+                'vessel_count' => 1,
+                'total_cargo_capacity_tons' => 1100.00,
+                'total_container_capacity' => 44,
+                'total_cargo_weight_loaded' => 0.00, // Sin cargar aún
+                'total_containers_loaded' => 0,
+                'capacity_utilization_percentage' => 0.00,
+                'status' => 'planning',
+                'priority_level' => 'normal',
+                'requires_escort' => false,
+                'requires_pilot' => true,
+                'hazardous_cargo' => false,
+                'refrigerated_cargo' => false,
+                'oversized_cargo' => false,
+                'special_instructions' => 'Viaje en planificación, pendiente asignación de carga',
+                'operational_notes' => 'Planificación inicial, capacidad disponible completa',
+                'estimated_cost' => 82000.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => false,
+                'customs_cleared_origin' => false,
+                'customs_cleared_destination' => false,
+                'documentation_complete' => false,
+                'environmental_approved' => false,
+                'active' => true,
+                'archived' => false,
+                'requires_follow_up' => false,
+            ],
+            [
+                'voyage_number' => 'V026SB',
+                'internal_reference' => 'LOG-INT-2025-001',
+                'company_id' => $refs['logistica_integral']->id,
+                'captain_id' => $refs['captains_ar']->where('license_class', 'officer')->first()?->id,
+                'origin_country_id' => $refs['paraguay']->id,
+                'origin_port_id' => $refs['puerto_asuncion']->id,
+                'destination_country_id' => $refs['argentina']->id,
+                'destination_port_id' => $refs['puerto_rosario']->id,
+                'origin_customs_id' => $refs['aduana_asuncion']->id,
+                'destination_customs_id' => $refs['aduana_rosario']->id,
+                'departure_date' => now()->addDays(10)->format('Y-m-d H:i:s'),
+                'estimated_arrival_date' => now()->addDays(13)->format('Y-m-d H:i:s'),
+                'customs_clearance_deadline' => now()->addDays(14)->format('Y-m-d H:i:s'),
+                'voyage_type' => 'single_vessel',
+                'cargo_type' => 'transshipment',
+                'is_convoy' => false,
+                'vessel_count' => 1,
+                'total_cargo_capacity_tons' => 950.00,
+                'total_container_capacity' => 38,
+                'total_cargo_weight_loaded' => 0.00,
+                'total_containers_loaded' => 0,
+                'capacity_utilization_percentage' => 0.00,
+                'status' => 'planning',
+                'priority_level' => 'normal',
+                'requires_escort' => false,
+                'requires_pilot' => false,
+                'hazardous_cargo' => false,
+                'refrigerated_cargo' => false,
+                'oversized_cargo' => false,
+                'special_instructions' => 'Operación de desconsolidación, múltiples destinos finales',
+                'operational_notes' => 'Especializado en operaciones de desconsolidación',
+                'estimated_cost' => 65000.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => false,
+                'customs_cleared_origin' => false,
+                'customs_cleared_destination' => false,
+                'documentation_complete' => false,
+                'environmental_approved' => false,
+                'active' => true,
+                'archived' => false,
+                'requires_follow_up' => false,
+            ],
+            [
+                'voyage_number' => 'V027NB',
+                'internal_reference' => 'NAV-PY-2025-002',
+                'company_id' => $refs['navegacion_py']->id,
+                'captain_id' => $refs['captains_py']->where('license_class', 'chief_officer')->first()?->id,
+                'origin_country_id' => $refs['argentina']->id,
+                'origin_port_id' => $refs['puerto_rosario']->id,
+                'destination_country_id' => $refs['paraguay']->id,
+                'destination_port_id' => $refs['terminal_villeta']->id,
+                'transshipment_port_id' => $refs['puerto_asuncion']->id,
+                'origin_customs_id' => $refs['aduana_rosario']->id,
+                'destination_customs_id' => $refs['aduana_villeta']->id,
+                'transshipment_customs_id' => $refs['aduana_asuncion']->id,
+                'departure_date' => now()->addDays(14)->format('Y-m-d H:i:s'),
+                'estimated_arrival_date' => now()->addDays(18)->format('Y-m-d H:i:s'),
+                'customs_clearance_deadline' => now()->addDays(19)->format('Y-m-d H:i:s'),
+                'voyage_type' => 'convoy',
+                'cargo_type' => 'transit',
+                'is_convoy' => true,
+                'vessel_count' => 2,
+                'total_cargo_capacity_tons' => 2100.00,
+                'total_container_capacity' => 84,
+                'total_cargo_weight_loaded' => 0.00,
+                'total_containers_loaded' => 0,
+                'capacity_utilization_percentage' => 0.00,
+                'status' => 'planning',
+                'priority_level' => 'high',
+                'requires_escort' => true,
+                'requires_pilot' => true,
+                'hazardous_cargo' => false,
+                'refrigerated_cargo' => false,
+                'oversized_cargo' => true,
+                'special_instructions' => 'Viaje con transbordo en Asunción, carga sobredimensionada',
+                'operational_notes' => 'Convoy especializado con transbordo intermedio',
+                'estimated_cost' => 165000.00,
+                'cost_currency' => 'USD',
+                'safety_approved' => false,
+                'customs_cleared_origin' => false,
+                'customs_cleared_destination' => false,
+                'documentation_complete' => false,
+                'environmental_approved' => false,
+                'active' => true,
+                'archived' => false,
+                'requires_follow_up' => false,
+            ],
         ];
+
+        foreach ($plannedVoyages as $voyageData) {
+            $this->createVoyage($voyageData);
+        }
+    }
+
+    /**
+     * Crear un viaje individual
+     */
+    private function createVoyage(array $data): void
+    {
+        // Datos base comunes
+        $baseData = [
+            'created_date' => now(),
+            'last_updated_date' => now(),
+            'created_by_user_id' => 1, // Admin
+            'last_updated_by_user_id' => 1,
+        ];
+
+        // Convertir fechas string a Carbon
+        $dateFields = [
+            'departure_date', 'estimated_arrival_date', 'actual_arrival_date',
+            'customs_clearance_deadline', 'safety_approval_date',
+            'customs_approval_date', 'environmental_approval_date'
+        ];
+
+        foreach ($dateFields as $field) {
+            if (isset($data[$field]) && is_string($data[$field])) {
+                $data[$field] = Carbon::parse($data[$field]);
+            }
+        }
+
+        Voyage::create(array_merge($baseData, $data));
+    }
+
+    /**
+     * Mostrar resumen de viajes creados
+     */
+    private function showCreatedSummary(): void
+    {
+        $totalVoyages = Voyage::count();
+        $completedVoyages = Voyage::where('status', 'completed')->count();
+        $inTransitVoyages = Voyage::where('status', 'in_transit')->count();
+        $approvedVoyages = Voyage::where('status', 'approved')->count();
+        $planningVoyages = Voyage::where('status', 'planning')->count();
+        $convoyVoyages = Voyage::where('is_convoy', true)->count();
+        $singleVesselVoyages = Voyage::where('is_convoy', false)->count();
+        $exportVoyages = Voyage::where('cargo_type', 'export')->count();
+        $importVoyages = Voyage::where('cargo_type', 'import')->count();
+
+        $this->command->info('=== 🚢 RESUMEN DE VIAJES CREADOS ===');
+        $this->command->info('');
+        $this->command->info("📊 Total viajes: {$totalVoyages}");
+        $this->command->info('');
+        $this->command->info('📈 Por estado:');
+        $this->command->info("   • Completados: {$completedVoyages}");
+        $this->command->info("   • En tránsito: {$inTransitVoyages}");
+        $this->command->info("   • Aprobados: {$approvedVoyages}");
+        $this->command->info("   • En planificación: {$planningVoyages}");
+        $this->command->info('');
+        $this->command->info('🚢 Por tipo de viaje:');
+        $this->command->info("   • Convoy: {$convoyVoyages}");
+        $this->command->info("   • Embarcación única: {$singleVesselVoyages}");
+        $this->command->info('');
+        $this->command->info('📦 Por tipo de carga:');
+        $this->command->info("   • Exportación: {$exportVoyages}");
+        $this->command->info("   • Importación: {$importVoyages}");
+        $this->command->info('');
+        $this->command->info('🛳️ VIAJES DESTACADOS CREADOS:');
+        $this->command->info('   • V022NB - Completado (PAR13001, Buenos Aires → Villeta)');
+        $this->command->info('   • V021SB - Convoy completado (GUARAN F + barcaza, carga peligrosa)');
+        $this->command->info('   • V023NB - En tránsito actual (Buenos Aires → Villeta)');
+        $this->command->info('   • V024SB - Convoy aprobado (3 embarcaciones, carga mixta)');
+        $this->command->info('   • V027NB - Planificado con transbordo (Rosario → Villeta vía Asunción)');
+        $this->command->info('');
+        $this->command->info('🌍 RUTAS PRINCIPALES:');
+        $this->command->info('   • ARBUE → PYTVT (Buenos Aires → Terminal Villeta)');
+        $this->command->info('   • PYTVT → ARBUE (Terminal Villeta → Buenos Aires)');
+        $this->command->info('   • ARROS → PYASU (Rosario → Asunción)');
+        $this->command->info('');
+        $this->command->info('✅ Datos coherentes con sistema real PARANA.xlsx');
+        $this->command->info('✅ Capitanes asignados de CaptainSeeder');
+        $this->command->info('✅ Empresas vinculadas del sistema existente');
     }
 }

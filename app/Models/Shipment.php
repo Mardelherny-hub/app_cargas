@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Carbon\Carbon;
 
 /**
  * Shipment Model
@@ -15,6 +17,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * Un viaje puede tener 1 shipment (barco único) o varios (convoy).
  * 
  * MÓDULO 3: VIAJES Y CARGAS
+ * 
+ * Basado en datos reales del sistema:
+ * - Manifiestos PARANA con 253 registros, 73 columnas
+ * - Embarcaciones: PAR13001, GUARAN F, REINA DEL PARANA
+ * - Contenedores: 40HC, 20GP, múltiples tipos
+ * - Rutas fluviales AR/PY con terminales específicos
  * 
  * @property int $id
  * @property int $voyage_id
@@ -105,52 +113,58 @@ class Shipment extends Model
      * The attributes that should be cast.
      */
     protected $casts = [
-        'voyage_id' => 'integer',
-        'vessel_id' => 'integer',
-        'captain_id' => 'integer',
-        'sequence_in_voyage' => 'integer',
-        'convoy_position' => 'integer',
-        'is_lead_vessel' => 'boolean',
-        'cargo_capacity_tons' => 'decimal:2',
-        'container_capacity' => 'integer',
-        'cargo_weight_loaded' => 'decimal:2',
-        'containers_loaded' => 'integer',
-        'utilization_percentage' => 'decimal:2',
         'departure_time' => 'datetime',
         'arrival_time' => 'datetime',
         'loading_start_time' => 'datetime',
         'loading_end_time' => 'datetime',
         'discharge_start_time' => 'datetime',
         'discharge_end_time' => 'datetime',
+        'is_lead_vessel' => 'boolean',
         'safety_approved' => 'boolean',
         'customs_cleared' => 'boolean',
         'documentation_complete' => 'boolean',
         'cargo_inspected' => 'boolean',
-        'delay_minutes' => 'integer',
         'active' => 'boolean',
         'requires_attention' => 'boolean',
         'has_delays' => 'boolean',
+        'cargo_capacity_tons' => 'decimal:2',
+        'cargo_weight_loaded' => 'decimal:2',
+        'utilization_percentage' => 'decimal:2',
         'created_date' => 'datetime',
-        'created_by_user_id' => 'integer',
     ];
 
     /**
-     * The attributes that should be hidden for serialization.
+     * Bootstrap the model and its traits.
      */
-    protected $hidden = [
-        'created_by_user_id',
-    ];
+    protected static function boot()
+    {
+        parent::boot();
+        
+        // Auto-calcular utilization_percentage cuando se actualiza la carga
+        static::saving(function ($shipment) {
+            $shipment->calculateUtilization();
+        });
 
-    // ================================
-    // RELATIONSHIPS
-    // ================================
+        // Actualizar estadísticas del viaje cuando se modifica un shipment
+        static::saved(function ($shipment) {
+            $shipment->voyage->recalculateShipmentStats();
+        });
+        
+        static::deleted(function ($shipment) {
+            $shipment->voyage->recalculateShipmentStats();
+        });
+    }
+
+    //
+    // === RELATIONSHIPS ===
+    //
 
     /**
      * Viaje al que pertenece este envío
      */
     public function voyage(): BelongsTo
     {
-        return $this->belongsTo(Voyage::class, 'voyage_id');
+        return $this->belongsTo(Voyage::class);
     }
 
     /**
@@ -158,31 +172,55 @@ class Shipment extends Model
      */
     public function vessel(): BelongsTo
     {
-        return $this->belongsTo(Vessel::class, 'vessel_id');
+        return $this->belongsTo(Vessel::class);
     }
 
     /**
-     * Capitán de esta embarcación
+     * Capitán de esta embarcación específica
      */
     public function captain(): BelongsTo
     {
-        return $this->belongsTo(Captain::class, 'captain_id');
+        return $this->belongsTo(Captain::class);
     }
 
     /**
-     * Conocimientos de embarque de este envío
+     * Usuario que creó el envío
+     */
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * Conocimientos de embarque específicos de este envío
      */
     public function billsOfLading(): HasMany
     {
-        return $this->hasMany(BillOfLading::class, 'shipment_id');
+        return $this->hasMany(BillOfLading::class);
     }
 
-    // ================================
-    // QUERY SCOPES
-    // ================================
+    /**
+     * Ítems de mercadería específicos de este envío
+     */
+    public function shipmentItems(): HasMany
+    {
+        return $this->hasMany(ShipmentItem::class);
+    }
 
     /**
-     * Envíos activos
+     * Contenedores asignados a este envío
+     */
+    public function containers(): HasMany
+    {
+        return $this->hasMany(Container::class);
+    }
+
+    //
+    // === SCOPES ===
+    //
+
+    /**
+     * Solo envíos activos
      */
     public function scopeActive($query)
     {
@@ -190,7 +228,7 @@ class Shipment extends Model
     }
 
     /**
-     * Envíos por estado
+     * Filtrar por estado
      */
     public function scopeByStatus($query, $status)
     {
@@ -198,39 +236,7 @@ class Shipment extends Model
     }
 
     /**
-     * Envíos que requieren atención
-     */
-    public function scopeRequiringAttention($query)
-    {
-        return $query->where('requires_attention', true);
-    }
-
-    /**
-     * Envíos con demoras
-     */
-    public function scopeWithDelays($query)
-    {
-        return $query->where('has_delays', true);
-    }
-
-    /**
-     * Envíos de un viaje específico
-     */
-    public function scopeForVoyage($query, $voyageId)
-    {
-        return $query->where('voyage_id', $voyageId);
-    }
-
-    /**
-     * Envíos por rol de embarcación
-     */
-    public function scopeByVesselRole($query, $role)
-    {
-        return $query->where('vessel_role', $role);
-    }
-
-    /**
-     * Embarcaciones líder
+     * Solo embarcaciones líderes
      */
     public function scopeLeadVessels($query)
     {
@@ -238,221 +244,617 @@ class Shipment extends Model
     }
 
     /**
-     * Envíos en convoy
+     * Filtrar por rol de embarcación
      */
-    public function scopeInConvoy($query)
+    public function scopeByVesselRole($query, $role)
     {
-        return $query->whereNotNull('convoy_position');
+        return $query->where('vessel_role', $role);
     }
 
     /**
-     * Envíos ordenados por secuencia en viaje
+     * Solo envíos que requieren atención
      */
-    public function scopeOrderedBySequence($query)
+    public function scopeRequiringAttention($query)
+    {
+        return $query->where('requires_attention', true);
+    }
+
+    /**
+     * Solo envíos con retrasos
+     */
+    public function scopeWithDelays($query)
+    {
+        return $query->where('has_delays', true);
+    }
+
+    /**
+     * Envíos con todas las aprobaciones
+     */
+    public function scopeFullyApproved($query)
+    {
+        return $query->where('safety_approved', true)
+                    ->where('customs_cleared', true)
+                    ->where('documentation_complete', true)
+                    ->where('cargo_inspected', true);
+    }
+
+    /**
+     * Filtrar por viaje
+     */
+    public function scopeByVoyage($query, $voyageId)
+    {
+        return $query->where('voyage_id', $voyageId);
+    }
+
+    /**
+     * Ordenar por secuencia en el viaje
+     */
+    public function scopeBySequence($query)
     {
         return $query->orderBy('sequence_in_voyage');
     }
 
-    // ================================
-    // ACCESSORS & MUTATORS
-    // ================================
-
     /**
-     * Calcular automáticamente el porcentaje de utilización
+     * Envíos en proceso de carga
      */
-    public function setCargoWeightLoadedAttribute($value)
+    public function scopeLoading($query)
     {
-        $this->attributes['cargo_weight_loaded'] = $value;
-        $this->calculateUtilization();
+        return $query->where('status', 'loading')
+                    ->whereNotNull('loading_start_time')
+                    ->whereNull('loading_end_time');
     }
 
     /**
-     * Calcular automáticamente el porcentaje de utilización
+     * Envíos en proceso de descarga
      */
-    public function setContainersLoadedAttribute($value)
+    public function scopeDischarging($query)
     {
-        $this->attributes['containers_loaded'] = $value;
-        $this->calculateUtilization();
+        return $query->where('status', 'discharging')
+                    ->whereNotNull('discharge_start_time')
+                    ->whereNull('discharge_end_time');
+    }
+
+    //
+    // === ACCESSORS & MUTATORS ===
+    //
+
+    /**
+     * Obtener descripción del rol en español
+     */
+    public function getVesselRoleDescriptionAttribute(): string
+    {
+        return match($this->vessel_role) {
+            'single' => 'Embarcación Única',
+            'lead' => 'Líder (Remolcador/Empujador)',
+            'towed' => 'Remolcada',
+            'pushed' => 'Empujada',
+            'escort' => 'Escolta',
+            default => 'Indefinido'
+        };
     }
 
     /**
-     * Calcular utilización basada en peso y contenedores
+     * Verificar si está en convoy
      */
-    private function calculateUtilization()
+    public function getIsInConvoyAttribute(): bool
     {
-        if (!isset($this->attributes['cargo_capacity_tons']) || !isset($this->attributes['container_capacity'])) {
-            return;
-        }
-
-        $weightUtilization = 0;
-        $containerUtilization = 0;
-
-        // Utilización por peso
-        if ($this->attributes['cargo_capacity_tons'] > 0) {
-            $weightUtilization = ($this->attributes['cargo_weight_loaded'] ?? 0) / $this->attributes['cargo_capacity_tons'] * 100;
-        }
-
-        // Utilización por contenedores
-        if ($this->attributes['container_capacity'] > 0) {
-            $containerUtilization = ($this->attributes['containers_loaded'] ?? 0) / $this->attributes['container_capacity'] * 100;
-        }
-
-        // Tomar el mayor de los dos
-        $this->attributes['utilization_percentage'] = max($weightUtilization, $containerUtilization);
+        return $this->vessel_role !== 'single' && $this->convoy_position !== null;
     }
 
-    // ================================
-    // BUSINESS METHODS
-    // ================================
+    /**
+     * Calcular duración de carga
+     */
+    public function getLoadingDurationAttribute(): ?int
+    {
+        if (!$this->loading_start_time) {
+            return null;
+        }
+        
+        $endTime = $this->loading_end_time ?? now();
+        return $this->loading_start_time->diffInMinutes($endTime);
+    }
 
     /**
-     * Verificar si el envío está listo para partir
+     * Calcular duración de descarga
      */
-    public function isReadyForDeparture(): bool
+    public function getDischargeDurationAttribute(): ?int
+    {
+        if (!$this->discharge_start_time) {
+            return null;
+        }
+        
+        $endTime = $this->discharge_end_time ?? now();
+        return $this->discharge_start_time->diffInMinutes($endTime);
+    }
+
+    /**
+     * Verificar si está retrasado
+     */
+    public function getIsDelayedAttribute(): bool
+    {
+        return $this->has_delays || ($this->delay_minutes && $this->delay_minutes > 0);
+    }
+
+    /**
+     * Obtener todas las aprobaciones pendientes
+     */
+    public function getPendingApprovalsAttribute(): array
+    {
+        $pending = [];
+        
+        if (!$this->safety_approved) {
+            $pending[] = 'safety';
+        }
+        
+        if (!$this->customs_cleared) {
+            $pending[] = 'customs';
+        }
+        
+        if (!$this->documentation_complete) {
+            $pending[] = 'documentation';
+        }
+        
+        if (!$this->cargo_inspected) {
+            $pending[] = 'cargo_inspection';
+        }
+        
+        return $pending;
+    }
+
+    /**
+     * Verificar si puede partir
+     */
+    public function getCanDepartAttribute(): bool
     {
         return $this->safety_approved && 
                $this->customs_cleared && 
                $this->documentation_complete && 
-               $this->active;
+               $this->cargo_inspected &&
+               $this->status === 'ready';
     }
 
     /**
-     * Verificar si está en tránsito
+     * Obtener estado detallado
      */
-    public function isInTransit(): bool
+    public function getDetailedStatusAttribute(): array
     {
-        return in_array($this->status, ['departed', 'in_transit']) && 
-               $this->departure_time !== null && 
-               $this->arrival_time === null;
+        return [
+            'status' => $this->status,
+            'is_delayed' => $this->is_delayed,
+            'delay_minutes' => $this->delay_minutes,
+            'requires_attention' => $this->requires_attention,
+            'approvals' => [
+                'safety' => $this->safety_approved,
+                'customs' => $this->customs_cleared,
+                'documentation' => $this->documentation_complete,
+                'cargo_inspection' => $this->cargo_inspected,
+            ],
+            'loading_progress' => $this->getLoadingProgressStatus(),
+            'can_depart' => $this->can_depart,
+        ];
     }
 
     /**
-     * Verificar si ha llegado
+     * Obtener color de estado para UI
      */
-    public function hasArrived(): bool
+    public function getStatusColorAttribute(): string
     {
-        return $this->status === 'arrived' && $this->arrival_time !== null;
-    }
-
-    /**
-     * Calcular duración del viaje en horas
-     */
-    public function getTravelDurationHours(): ?float
-    {
-        if (!$this->departure_time || !$this->arrival_time) {
-            return null;
+        if ($this->requires_attention) {
+            return 'red';
         }
-
-        return $this->departure_time->diffInHours($this->arrival_time);
+        
+        return match($this->status) {
+            'planning' => 'blue',
+            'loading' => 'yellow',
+            'ready' => 'green',
+            'departed' => 'orange',
+            'in_transit' => 'purple',
+            'arrived' => 'indigo',
+            'discharging' => 'yellow',
+            'completed' => 'green',
+            'cancelled' => 'red',
+            default => 'gray'
+        };
     }
 
+    //
+    // === METHODS ===
+    //
+
     /**
-     * Calcular tiempo de carga en horas
+     * Calcular porcentaje de utilización
      */
-    public function getLoadingDurationHours(): ?float
+    private function calculateUtilization(): void
     {
-        if (!$this->loading_start_time || !$this->loading_end_time) {
-            return null;
+        if ($this->cargo_capacity_tons > 0) {
+            $this->utilization_percentage = min(100, ($this->cargo_weight_loaded / $this->cargo_capacity_tons) * 100);
+        } else {
+            $this->utilization_percentage = 0;
         }
-
-        return $this->loading_start_time->diffInHours($this->loading_end_time);
     }
 
     /**
-     * Calcular tiempo de descarga en horas
+     * Iniciar proceso de carga
      */
-    public function getDischargeDurationHours(): ?float
-    {
-        if (!$this->discharge_start_time || !$this->discharge_end_time) {
-            return null;
-        }
-
-        return $this->discharge_start_time->diffInHours($this->discharge_end_time);
-    }
-
-    /**
-     * Obtener el peso disponible restante
-     */
-    public function getRemainingCapacityTons(): float
-    {
-        return max(0, $this->cargo_capacity_tons - $this->cargo_weight_loaded);
-    }
-
-    /**
-     * Obtener contenedores disponibles restantes
-     */
-    public function getRemainingContainerCapacity(): int
-    {
-        return max(0, $this->container_capacity - $this->containers_loaded);
-    }
-
-    /**
-     * Verificar si puede cargar más mercadería
-     */
-    public function canLoadMore(): bool
-    {
-        return $this->getRemainingCapacityTons() > 0 || $this->getRemainingContainerCapacity() > 0;
-    }
-
-    /**
-     * Marcar como que requiere atención
-     */
-    public function markRequiresAttention(string $reason = null): void
+    public function startLoading(): void
     {
         $this->update([
-            'requires_attention' => true,
-            'handling_notes' => $reason ? ($this->handling_notes ? $this->handling_notes . "\n" . $reason : $reason) : $this->handling_notes
+            'status' => 'loading',
+            'loading_start_time' => now(),
+            'loading_end_time' => null,
         ]);
     }
 
     /**
-     * Registrar demora
+     * Finalizar proceso de carga
      */
-    public function recordDelay(int $minutes, string $reason): void
+    public function finishLoading(): void
+    {
+        $this->update([
+            'status' => 'ready',
+            'loading_end_time' => now(),
+        ]);
+    }
+
+    /**
+     * Iniciar proceso de descarga
+     */
+    public function startDischarging(): void
+    {
+        $this->update([
+            'status' => 'discharging',
+            'discharge_start_time' => now(),
+            'discharge_end_time' => null,
+        ]);
+    }
+
+    /**
+     * Finalizar proceso de descarga
+     */
+    public function finishDischarging(): void
+    {
+        $this->update([
+            'status' => 'completed',
+            'discharge_end_time' => now(),
+        ]);
+    }
+
+    /**
+     * Marcar salida
+     */
+    public function markDeparture(): void
+    {
+        $this->update([
+            'status' => 'departed',
+            'departure_time' => now(),
+        ]);
+    }
+
+    /**
+     * Marcar llegada
+     */
+    public function markArrival(): void
+    {
+        $this->update([
+            'status' => 'arrived',
+            'arrival_time' => now(),
+        ]);
+        
+        // Verificar si llegó tarde comparado con el viaje
+        if ($this->voyage->estimated_arrival_date && now() > $this->voyage->estimated_arrival_date) {
+            $delayMinutes = $this->voyage->estimated_arrival_date->diffInMinutes(now());
+            $this->reportDelay($delayMinutes, 'Arribó tarde según cronograma del viaje');
+        }
+    }
+
+    /**
+     * Reportar retraso
+     */
+    public function reportDelay(int $minutes, ?string $reason = null): void
     {
         $this->update([
             'has_delays' => true,
             'delay_minutes' => ($this->delay_minutes ?? 0) + $minutes,
             'delay_reason' => $reason,
-            'requires_attention' => true
+            'requires_attention' => true,
         ]);
     }
 
     /**
-     * Obtener estado en texto legible
+     * Aprobar aspecto específico
      */
-    public function getStatusText(): string
+    public function approve(string $aspect): void
     {
-        $statuses = [
-            'planning' => 'En Planificación',
-            'approved' => 'Aprobado',
-            'loading' => 'Cargando',
-            'ready' => 'Listo',
-            'departed' => 'Partió',
-            'in_transit' => 'En Tránsito',
-            'arrived' => 'Arribó',
-            'discharging' => 'Descargando',
-            'completed' => 'Completado',
-            'cancelled' => 'Cancelado',
-            'delayed' => 'Demorado'
-        ];
-
-        return $statuses[$this->status] ?? $this->status;
+        $validAspects = ['safety', 'customs', 'documentation', 'cargo'];
+        
+        if (!in_array($aspect, $validAspects)) {
+            throw new \InvalidArgumentException("Aspecto inválido: {$aspect}");
+        }
+        
+        $field = match($aspect) {
+            'safety' => 'safety_approved',
+            'customs' => 'customs_cleared',
+            'documentation' => 'documentation_complete',
+            'cargo' => 'cargo_inspected',
+        };
+        
+        $this->update([$field => true]);
+        
+        // Si todas las aprobaciones están completas, verificar si puede cambiar estado
+        if (empty($this->pending_approvals) && $this->status === 'planning') {
+            $this->update(['status' => 'approved']);
+        }
     }
 
     /**
-     * Obtener rol de embarcación en texto
+     * Obtener progreso de carga
      */
-    public function getVesselRoleText(): string
+    private function getLoadingProgressStatus(): array
     {
-        $roles = [
-            'single' => 'Embarcación Única',
-            'lead' => 'Líder (Remolcador/Empujador)',
-            'towed' => 'Remolcada',
-            'pushed' => 'Empujada',
-            'escort' => 'Escolta'
+        if (!$this->loading_start_time) {
+            return ['status' => 'not_started', 'percentage' => 0];
+        }
+        
+        if (!$this->loading_end_time) {
+            // Estimar progreso basado en utilización actual
+            return [
+                'status' => 'in_progress',
+                'percentage' => min(100, $this->utilization_percentage),
+                'duration_minutes' => $this->loading_duration,
+            ];
+        }
+        
+        return [
+            'status' => 'completed',
+            'percentage' => 100,
+            'duration_minutes' => $this->loading_duration,
         ];
+    }
 
-        return $roles[$this->vessel_role] ?? $this->vessel_role;
+    /**
+     * Cambiar estado con validaciones
+     */
+    public function changeStatus(string $newStatus, ?string $reason = null): void
+    {
+        $oldStatus = $this->status;
+        
+        // Validaciones de transición de estado
+        $this->validateStatusTransition($oldStatus, $newStatus);
+        
+        $this->update([
+            'status' => $newStatus,
+        ]);
+        
+        // Acciones específicas por estado
+        match($newStatus) {
+            'loading' => $this->handleLoadingStart(),
+            'ready' => $this->handleReadyState(),
+            'departed' => $this->handleDeparture(),
+            'arrived' => $this->handleArrival(),
+            'completed' => $this->handleCompletion(),
+            default => null,
+        };
+        
+        // Log del cambio
+        $this->logStatusChange($oldStatus, $newStatus, $reason);
+    }
+
+    /**
+     * Validar transición de estado
+     */
+    private function validateStatusTransition(string $from, string $to): void
+    {
+        $validTransitions = [
+            'planning' => ['loading', 'approved', 'cancelled'],
+            'approved' => ['loading', 'ready', 'cancelled'],
+            'loading' => ['ready', 'cancelled'],
+            'ready' => ['departed', 'loading', 'cancelled'],
+            'departed' => ['in_transit', 'arrived'],
+            'in_transit' => ['arrived'],
+            'arrived' => ['discharging'],
+            'discharging' => ['completed'],
+            'completed' => [],
+            'cancelled' => [],
+        ];
+        
+        if (!isset($validTransitions[$from]) || !in_array($to, $validTransitions[$from])) {
+            throw new \InvalidArgumentException("Transición inválida de {$from} a {$to}");
+        }
+    }
+
+    /**
+     * Manejar inicio de carga
+     */
+    private function handleLoadingStart(): void
+    {
+        if (!$this->loading_start_time) {
+            $this->update(['loading_start_time' => now()]);
+        }
+    }
+
+    /**
+     * Manejar estado listo
+     */
+    private function handleReadyState(): void
+    {
+        if (!$this->loading_end_time) {
+            $this->update(['loading_end_time' => now()]);
+        }
+    }
+
+    /**
+     * Manejar salida
+     */
+    private function handleDeparture(): void
+    {
+        if (!$this->departure_time) {
+            $this->update(['departure_time' => now()]);
+        }
+    }
+
+    /**
+     * Manejar llegada
+     */
+    private function handleArrival(): void
+    {
+        if (!$this->arrival_time) {
+            $this->update(['arrival_time' => now()]);
+        }
+    }
+
+    /**
+     * Manejar finalización
+     */
+    private function handleCompletion(): void
+    {
+        if (!$this->discharge_end_time) {
+            $this->update(['discharge_end_time' => now()]);
+        }
+        
+        // Actualizar estadísticas de la embarcación
+        $this->vessel->updateAfterShipment($this);
+    }
+
+    /**
+     * Obtener otros envíos del mismo convoy
+     */
+    public function getConvoyShipments(): \Illuminate\Database\Eloquent\Collection
+    {
+        if (!$this->is_in_convoy) {
+            return collect([$this]);
+        }
+        
+        return $this->voyage->shipments()
+                          ->where('id', '!=', $this->id)
+                          ->orderBy('convoy_position')
+                          ->get();
+    }
+
+    /**
+     * Verificar si es compatible con otro envío para formar convoy
+     */
+    public function isCompatibleForConvoy(Shipment $other): bool
+    {
+        return $this->voyage_id === $other->voyage_id &&
+               $this->status === $other->status &&
+               $this->departure_time && $other->departure_time &&
+               abs($this->departure_time->diffInMinutes($other->departure_time)) <= 30;
+    }
+
+    /**
+     * Generar número de envío automático
+     */
+    public static function generateShipmentNumber(Voyage $voyage, int $sequence): string
+    {
+        return $voyage->voyage_number . '-' . str_pad($sequence, 2, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Obtener documentos específicos requeridos
+     */
+    public function getRequiredDocuments(): array
+    {
+        $documents = [
+            'loading_manifest' => 'Manifiesto de Carga',
+            'vessel_certificate' => 'Certificado de Embarcación',
+        ];
+        
+        if ($this->is_lead_vessel) {
+            $documents['convoy_authorization'] = 'Autorización de Convoy';
+            $documents['navigation_plan'] = 'Plan de Navegación';
+        }
+        
+        if ($this->hazardous_cargo ?? false) {
+            $documents['hazmat_declaration'] = 'Declaración de Mercancías Peligrosas';
+        }
+        
+        return $documents;
+    }
+
+    /**
+     * Log de cambio de estado
+     */
+    private function logStatusChange(string $oldStatus, string $newStatus, ?string $reason): void
+    {
+        \Log::info("Shipment {$this->shipment_number} status changed from {$oldStatus} to {$newStatus}", [
+            'shipment_id' => $this->id,
+            'voyage_id' => $this->voyage_id,
+            'vessel_id' => $this->vessel_id,
+            'old_status' => $oldStatus,
+            'new_status' => $newStatus,
+            'reason' => $reason,
+            'timestamp' => now(),
+        ]);
+    }
+
+    /**
+     * Obtener métricas de rendimiento
+     */
+    public function getPerformanceMetrics(): array
+    {
+        return [
+            'capacity_utilization' => $this->utilization_percentage,
+            'loading_efficiency' => $this->calculateLoadingEfficiency(),
+            'schedule_adherence' => $this->calculateScheduleAdherence(),
+            'approval_completeness' => $this->calculateApprovalCompleteness(),
+            'delay_impact' => $this->calculateDelayImpact(),
+        ];
+    }
+
+    /**
+     * Calcular eficiencia de carga
+     */
+    private function calculateLoadingEfficiency(): ?float
+    {
+        if (!$this->loading_duration || $this->loading_duration <= 0) {
+            return null;
+        }
+        
+        // Tiempo estándar basado en toneladas (ej: 2 horas por 100 toneladas)
+        $standardTime = ($this->cargo_capacity_tons / 100) * 120; // minutos
+        
+        return min(100, ($standardTime / $this->loading_duration) * 100);
+    }
+
+    /**
+     * Calcular adherencia al cronograma
+     */
+    private function calculateScheduleAdherence(): ?float
+    {
+        if (!$this->departure_time || !$this->voyage->departure_date) {
+            return null;
+        }
+        
+        $scheduledDeparture = $this->voyage->departure_date;
+        $actualDeparture = $this->departure_time;
+        
+        $diffMinutes = abs($scheduledDeparture->diffInMinutes($actualDeparture));
+        
+        // Máximo 100% si está dentro de 30 minutos, decrece linealmente
+        return max(0, 100 - ($diffMinutes / 30 * 100));
+    }
+
+    /**
+     * Calcular completitud de aprobaciones
+     */
+    private function calculateApprovalCompleteness(): float
+    {
+        $totalApprovals = 4; // safety, customs, documentation, cargo
+        $completedApprovals = 4 - count($this->pending_approvals);
+        
+        return ($completedApprovals / $totalApprovals) * 100;
+    }
+
+    /**
+     * Calcular impacto de retrasos
+     */
+    private function calculateDelayImpact(): float
+    {
+        if (!$this->delay_minutes || $this->delay_minutes <= 0) {
+            return 0;
+        }
+        
+        // Impacto basado en minutos de retraso (máximo 100 para 6+ horas)
+        return min(100, ($this->delay_minutes / 360) * 100);
     }
 }

@@ -26,10 +26,11 @@ class VesselOwnersSeeder extends Seeder
     {
         // Verificar que existan datos relacionados
         $companies = Company::where('active', true)->get();
-        $argentinaCountry = Country::where('iso_code', 'AR')->first();
-        $paraguayCountry = Country::where('iso_code', 'PY')->first();
-        $argentinaCountry = Country::where('alpha2_code', 'AR')->first();
-        $paraguayCountry = Country::where('alpha2_code', 'PY')->first();
+        
+        // Intentar con ambos tipos de códigos de país
+        $argentinaCountry = Country::where('iso_code', 'AR')->first() ?? Country::where('alpha2_code', 'AR')->first();
+        $paraguayCountry = Country::where('iso_code', 'PY')->first() ?? Country::where('alpha2_code', 'PY')->first();
+        
         $users = User::where('active', true)->limit(5)->get();
 
         if ($companies->isEmpty()) {
@@ -48,6 +49,10 @@ class VesselOwnersSeeder extends Seeder
         }
 
         $this->command->info('🚢 Creando propietarios de embarcaciones...');
+
+        // Obtener código de país correcto
+        $argentineCode = $argentinaCountry->iso_code ?? $argentinaCountry->alpha2_code;
+        $paraguayanCode = $paraguayCountry->iso_code ?? $paraguayCountry->alpha2_code;
 
         // Propietarios realistas para Argentina
         $argentinianOwners = [
@@ -129,28 +134,62 @@ class VesselOwnersSeeder extends Seeder
 
         // Crear propietarios argentinos
         foreach ($argentinianOwners as $ownerData) {
+            $company = $this->findCompanyByCountry($companies, $argentineCode) ?? $companies->first();
+            if (!$company) {
+                $this->command->error('❌ No hay empresas disponibles');
+                continue;
+            }
+            
+            if ($users->isEmpty()) {
+                $this->command->error('❌ No hay usuarios disponibles');
+                continue;
+            }
+            
             $this->createVesselOwner(
                 $ownerData,
                 $argentinaCountry,
-                $companies->where('country', 'AR')->first() ?? $companies->first(),
+                $company,
                 $users->random()
             );
         }
 
         // Crear propietarios paraguayos
         foreach ($paraguayanOwners as $ownerData) {
+            $company = $this->findCompanyByCountry($companies, $paraguayanCode) ?? $companies->first();
+            if (!$company) {
+                $this->command->error('❌ No hay empresas disponibles');
+                continue;
+            }
+            
+            if ($users->isEmpty()) {
+                $this->command->error('❌ No hay usuarios disponibles');
+                continue;
+            }
+            
             $this->createVesselOwner(
                 $ownerData,
                 $paraguayCountry,
-                $companies->where('country', 'PY')->first() ?? $companies->first(),
+                $company,
                 $users->random()
             );
         }
 
         // Crear algunos propietarios adicionales distribuidos entre empresas
-        $this->createAdditionalOwners($companies, $argentinaCountry, $paraguayCountry, $users);
+        if ($companies->isNotEmpty() && $users->isNotEmpty()) {
+            $this->createAdditionalOwners($companies, $argentineCode, $paraguayanCode, $argentinaCountry, $paraguayCountry, $users);
+        } else {
+            $this->command->warn('⚠️ Saltando propietarios adicionales - faltan empresas o usuarios');
+        }
 
         $this->command->info('✅ Propietarios de embarcaciones creados exitosamente');
+    }
+
+    /**
+     * Buscar empresa por código de país
+     */
+    private function findCompanyByCountry($companies, string $countryCode)
+    {
+        return $companies->where('country', $countryCode)->first();
     }
 
     /**
@@ -198,6 +237,8 @@ class VesselOwnersSeeder extends Seeder
      */
     private function createAdditionalOwners(
         $companies,
+        string $argentineCode,
+        string $paraguayanCode,
         Country $argentina,
         Country $paraguay,
         $users
@@ -209,6 +250,7 @@ class VesselOwnersSeeder extends Seeder
                 'legal_name' => 'Barcazas Argentinas S.A.',
                 'transportista_type' => 'O',
                 'country' => $argentina,
+                'country_code' => $argentineCode,
                 'phone' => '+54 11 5555-9999',
                 'city' => 'Buenos Aires',
             ],
@@ -217,6 +259,7 @@ class VesselOwnersSeeder extends Seeder
                 'legal_name' => 'Fluvial Paraná S.R.L.',
                 'transportista_type' => 'R',
                 'country' => $argentina,
+                'country_code' => $argentineCode,
                 'phone' => '+54 341 777-8888',
                 'city' => 'Rosario',
             ],
@@ -226,13 +269,24 @@ class VesselOwnersSeeder extends Seeder
                 'legal_name' => 'Transporte Fluvial del Este S.A.',
                 'transportista_type' => 'O',
                 'country' => $paraguay,
+                'country_code' => $paraguayanCode,
                 'phone' => '+595 61 666-777',
                 'city' => 'Ciudad del Este',
             ],
         ];
 
         foreach ($additionalOwners as $index => $ownerData) {
-            $company = $companies->where('country', $ownerData['country']->iso_code)->random() ?? $companies->random();
+            // Buscar empresa por país, si no existe usar la primera disponible
+            $companiesByCountry = $companies->where('country', $ownerData['country_code']);
+            $company = $companiesByCountry->isNotEmpty() 
+                ? $companiesByCountry->random() 
+                : $companies->random();
+            
+            // Verificar que tengamos usuarios disponibles
+            if ($users->isEmpty()) {
+                $this->command->warn('⚠️  No hay usuarios disponibles para asignar');
+                continue;
+            }
             
             VesselOwner::create([
                 'tax_id' => $ownerData['tax_id'],
@@ -245,7 +299,7 @@ class VesselOwnersSeeder extends Seeder
                 'phone' => $ownerData['phone'],
                 'address' => 'Dirección ' . ($index + 1),
                 'city' => $ownerData['city'],
-                'postal_code' => rand(1000, 9999),
+                'postal_code' => (string) rand(1000, 9999),
                 'status' => 'active',
                 'tax_id_verified_at' => now()->subDays(rand(60, 200)),
                 'webservice_authorized' => rand(0, 1) === 1,
