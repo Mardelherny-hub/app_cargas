@@ -19,12 +19,11 @@ class WebserviceController extends Controller
      */
     public function index()
     {
-        // 1. Verificar permisos básicos de acceso a webservices
-        if (!$this->canPerform('webservice_access')) {
+        // 1. Verificar permisos básicos (company-admin o user con empresa)
+        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
             abort(403, 'No tiene permisos para acceder a webservices.');
         }
 
-        $user = $this->getCurrentUser();
         $company = $this->getUserCompany();
 
         // 2. Verificar que el usuario tenga una empresa asociada
@@ -33,24 +32,150 @@ class WebserviceController extends Controller
                 ->with('error', 'No se encontró la empresa asociada a su usuario.');
         }
 
-        // 3. Verificar acceso específico a esta empresa
-        if (!$this->canAccessCompany($company->id)) {
-            abort(403, 'No tiene permisos para acceder a esta empresa.');
-        }
-
-        // Obtener información de webservices
-        $webserviceConfig = $this->getWebserviceConfiguration($company);
-        $availableWebservices = $this->getAvailableWebservices($company);
-        $webserviceStatus = $this->getWebserviceStatus($company);
+        // 3. Datos para la vista
+        $companyRoles = $company->company_roles ?? [];
         $certificateStatus = $this->getCertificateStatus($company);
+        
+        // Estadísticas mock (temporal)
+        $stats = [
+            'anticipada' => ['total' => 0, 'success' => 0, 'failed' => 0],
+            'micdta' => ['total' => 0, 'success' => 0, 'failed' => 0],
+            'desconsolidados' => ['total' => 0, 'success' => 0, 'failed' => 0],
+            'transbordos' => ['total' => 0, 'success' => 0, 'failed' => 0],
+            'paraguay' => ['total' => 0, 'success' => 0, 'failed' => 0],
+        ];
+        
+        $recentTransactions = collect(); // Temporal vacío
 
         return view('company.webservices.index', compact(
             'company',
-            'webserviceConfig',
-            'availableWebservices',
-            'webserviceStatus',
-            'certificateStatus'
+            'companyRoles',
+            'certificateStatus',
+            'stats',
+            'recentTransactions'
         ));
+    }
+
+    /**
+     * Vista para envío de manifiestos
+     */
+    public function send(Request $request)
+    {
+        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+            abort(403, 'No tiene permisos para enviar manifiestos.');
+        }
+
+        $company = $this->getUserCompany();
+        if (!$company) {
+            return redirect()->route('company.dashboard')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
+        $companyRoles = $company->company_roles ?? [];
+        $webserviceType = $request->get('type', 'anticipada');
+        
+        // Verificar que la empresa puede usar este webservice
+        $availableTypes = $this->getAvailableWebserviceTypes($companyRoles);
+        if (!in_array($webserviceType, $availableTypes)) {
+            abort(403, 'Su empresa no tiene permisos para este tipo de webservice.');
+        }
+
+        // Obtener datos según el tipo de webservice
+        $data = $this->getWebserviceData($company, $webserviceType);
+        
+        return view('company.webservices.send', compact(
+            'company',
+            'companyRoles', 
+            'webserviceType',
+            'availableTypes',
+            'data'
+        ));
+    }
+
+    /**
+     * Obtener tipos de webservice disponibles según roles
+     */
+    private function getAvailableWebserviceTypes(array $companyRoles): array
+    {
+        $types = [];
+        
+        if (in_array('Cargas', $companyRoles)) {
+            $types[] = 'anticipada';
+            $types[] = 'micdta';
+        }
+        
+        if (in_array('Desconsolidador', $companyRoles)) {
+            $types[] = 'desconsolidados';
+        }
+        
+        if (in_array('Transbordos', $companyRoles)) {
+            $types[] = 'transbordos';
+        }
+        
+        return $types;
+    }
+
+    /**
+     * Obtener datos para el webservice
+     */
+    private function getWebserviceData(Company $company, string $type): array
+    {
+        switch ($type) {
+            case 'anticipada':
+            case 'micdta':
+                // Obtener viajes pendientes de envío
+                return [
+                    'trips' => $this->getPendingTrips($company),
+                    'vessels' => $this->getCompanyVessels($company),
+                ];
+                
+            case 'desconsolidados':
+                return [
+                    'shipments' => $this->getPendingDeconsolidationShipments($company),
+                ];
+                
+            case 'transbordos':
+                return [
+                    'transfers' => $this->getPendingTransfers($company),
+                    'barges' => $this->getAvailableBarges($company),
+                ];
+                
+            default:
+                return [];
+        }
+    }                           
+
+    /**
+     * Helpers temporales (implementar según modelos existentes)
+     */
+    private function getPendingTrips(Company $company): array
+    {
+        // TODO: Implementar con modelos Trip/Voyage reales
+        return [];
+    }
+
+    private function getCompanyVessels(Company $company): array
+    {
+        // TODO: Implementar con modelos Vessel reales  
+        return [];
+    }
+
+    private function getPendingDeconsolidationShipments(Company $company): array
+    {
+        // TODO: Implementar según modelo Shipment
+        return [];
+    }
+
+    private function getPendingTransfers(Company $company): array
+    {
+        // TODO: Implementar según modelo Transfer
+        return [];
+    }
+
+    private function getAvailableBarges(Company $company): array
+    {
+        // TODO: Implementar según datos PARANA.csv
+        return [];
     }
 
     /**

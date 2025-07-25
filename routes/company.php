@@ -7,7 +7,7 @@ use App\Http\Controllers\Company\TripController;
 use App\Http\Controllers\Company\OperatorController;
 use App\Http\Controllers\Company\ReportController;
 use App\Http\Controllers\Company\CertificateController;
-use App\Http\Controllers\Company\WebserviceController;
+use App\Http\Controllers\Company\WebServiceController as WebserviceController;
 use App\Http\Controllers\Company\ImportController;
 use App\Http\Controllers\Company\ExportController;
 use App\Http\Controllers\Company\DeconsolidationController;
