@@ -22,10 +22,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Illuminate\Database\Eloquent\Builder;
-use App\Models\User;
-use App\Models\WebserviceResponse;
-use Exception;
 
 class WebserviceController extends Controller
 {
@@ -1360,7 +1356,7 @@ private function getRecentTransactions(Company $company, int $limit = 10): \Illu
 {
     try {
         return WebserviceTransaction::where('company_id', $company->id)
-            ->with(['user:id,name', 'voyage:id,voyage_number,internal_reference'])
+            ->with(['user:id,name', 'voyage:id,voyage_number,barge_name'])
             ->orderBy('created_at', 'desc')
             ->limit($limit)
             ->get();
@@ -1700,7 +1696,7 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
                 'transaction_id' => 'nullable|string|max:100',
                 'external_reference' => 'nullable|string|max:100',
                 'voyage_id' => 'nullable|integer|exists:voyages,id',
-                'voyage_number' => 'nullable|string|max:50',
+                'voyage_code' => 'nullable|string|max:50',
                 'webservice_type' => 'nullable|string|in:anticipada,micdta,desconsolidados,transbordos',
                 
                 // Rango de fechas
@@ -1877,7 +1873,7 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
                     $voyage = Voyage::find($validated['voyage_id']);
                     if ($voyage) {
                         $Data['filtros']['voyage_code'] = $voyage->voyage_number; // V022NB
-                        $Data['filtros']['internal_reference'] = $voyage->barge_name; // PAR13001
+                        $Data['filtros']['barge_name'] = $voyage->barge_name; // PAR13001
                     }
                 } elseif ($validated['voyage_code']) {
                     $Data['filtros']['voyage_code'] = $validated['voyage_code'];
@@ -1947,8 +1943,8 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
                 'webservice_type' => $titulo['tipo_manifiesto'] ?? 'micdta',
                 'status' => $this->mapAfipStatusToLocal($titulo['estado'] ?? ''),
                 'confirmation_number' => $titulo['numero_confirmacion'] ?? null,
-                'voyage_number' => $titulo['codigo_viaje'] ?? null,
-                'internal_reference' => $titulo['nombre_barcaza'] ?? null,
+                'voyage_code' => $titulo['codigo_viaje'] ?? null,
+                'barge_name' => $titulo['nombre_barcaza'] ?? null,
                 'sent_date' => $titulo['fecha_envio'] ? Carbon::parse($titulo['fecha_envio']) : null,
                 'processed_date' => $titulo['fecha_procesamiento'] ? Carbon::parse($titulo['fecha_procesamiento']) : null,
                 'containers_count' => $titulo['cantidad_contenedores'] ?? 0,
@@ -2003,7 +1999,7 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
 
             // Buscar transacción local por referencia externa
             $localTransaction = WebserviceTransaction::where('company_id', $companyId)
-                ->where('internal_reference', $transactionData['external_reference'])
+                ->where('external_reference', $transactionData['external_reference'])
                 ->first();
 
             if ($localTransaction) {
@@ -2076,60 +2072,47 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
  */
 public function history(Request $request)
 {
-    // DEBUG: Verificar paso a paso
+    // 1. Obtener empresa del usuario (las rutas ya están protegidas por middleware)
+    $company = $this->getUserCompany();
+    if (!$company) {
+        return redirect()->route('company.webservices.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
     try {
-        // 1. Verificar empresa
-        $company = $this->getUserCompany();
-        if (!$company) {
-            \Log::error('DEBUG: No se encontró company en history()');
-            return response()->json(['error' => 'No company found', 'step' => 1]);
-        }
+        // 2. Procesar filtros de búsqueda
+        $filters = $this->processHistoryFilters($request);
         
-        \Log::info('DEBUG: Company encontrada', ['company_id' => $company->id]);
+        // 3. Construir query base con relaciones
+        $query = WebserviceTransaction::with([
+                'user:id,name,email',
+                'voyage:id,voyage_code,barge_name',
+                'shipment:id,shipment_number',
+                'response:transaction_id,confirmation_number,customs_status,requires_action'
+            ])
+            ->forCompany($company->id)
+            ->orderBy('created_at', 'desc');
 
-        // 2. Verificar que WebserviceTransaction existe
-        if (!class_exists(\App\Models\WebserviceTransaction::class)) {
-            \Log::error('DEBUG: WebserviceTransaction class no existe');
-            return response()->json(['error' => 'WebserviceTransaction not found', 'step' => 2]);
-        }
+        // 4. Aplicar filtros dinámicamente
+        $query = $this->applyHistoryFilters($query, $filters);
 
-        // 3. Test query básica
-        $testQuery = \App\Models\WebserviceTransaction::where('company_id', $company->id)->count();
-        \Log::info('DEBUG: Test query exitosa', ['count' => $testQuery]);
+        // 5. Obtener transacciones paginadas
+        $transactions = $query->paginate(20)->withQueryString();
 
-        // 4. Test con datos mínimos para la vista
-        $transactions = \App\Models\WebserviceTransaction::where('company_id', $company->id)
-            ->orderBy('created_at', 'desc')
-            ->paginate(10);
+        // 6. Obtener estadísticas del historial
+        $statistics = $this->getHistoryStatistics($company->id, $filters);
 
-        $statistics = [
-            'total' => $testQuery,
-            'by_status' => ['success' => ['count' => 0]],
-            'by_type' => [],
-            'by_country' => [],
-            'success_rate' => 0,
-            'last_24h' => 0,
-            'pending_action' => 0,
-        ];
+        // 7. Obtener datos para los filtros de la vista
+        $filterData = $this->getHistoryFilterData($company);
 
-        $filterData = [
-            'webservice_types' => [],
-            'statuses' => [],
-            'countries' => [],
-            'environments' => [],
-            'users' => [],
-        ];
+        // 8. Log de acceso al historial
+        $this->logWebserviceOperation('info', 'Acceso al historial de webservices', [
+            'company_id' => $company->id,
+            'user_id' => Auth::id(),
+            'total_found' => $transactions->total(),
+            'filters_applied' => array_filter($filters),
+        ]);
 
-        $filters = [
-            'search' => $request->get('search'),
-            'webservice_type' => $request->get('webservice_type', 'all'),
-            'status' => $request->get('status', 'all'),
-            'country' => $request->get('country', 'all'),
-        ];
-
-        \Log::info('DEBUG: Intentando cargar vista history');
-
-        // 5. Test de vista
         return view('company.webservices.history', compact(
             'transactions',
             'statistics', 
@@ -2138,21 +2121,17 @@ public function history(Request $request)
             'company'
         ));
 
-    } catch (\Exception $e) {
-        \Log::error('DEBUG: Exception en history()', [
-            'message' => $e->getMessage(),
+    } catch (Exception $e) {
+        $this->logWebserviceOperation('error', 'Error en historial de webservices', [
+            'company_id' => $company->id ?? null,
+            'user_id' => Auth::id(),
+            'error' => $e->getMessage(),
             'file' => $e->getFile(),
             'line' => $e->getLine(),
-            'trace' => $e->getTraceAsString()
         ]);
-        
-        // NO REDIRECCIONAR - Mostrar error directamente
-        return response()->json([
-            'error' => 'Exception caught',
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ]);
+
+        return redirect()->route('company.webservices.index')
+            ->with('error', 'Error cargando historial: ' . $e->getMessage());
     }
 }
 
@@ -2169,7 +2148,7 @@ private function processHistoryFilters(Request $request): array
         'environment' => 'nullable|string|in:all,testing,production',
         'date_from' => 'nullable|date|before_or_equal:today',
         'date_to' => 'nullable|date|after_or_equal:date_from',
-        'voyage_number' => 'nullable|string|max:50',
+        'voyage_code' => 'nullable|string|max:50',
         'confirmation_number' => 'nullable|string|max:100',
         'external_reference' => 'nullable|string|max:100',
         'user_id' => 'nullable|integer|exists:users,id',
@@ -2186,7 +2165,7 @@ private function processHistoryFilters(Request $request): array
         'environment' => $request->get('environment', 'all'),
         'date_from' => $request->get('date_from'),
         'date_to' => $request->get('date_to'),
-        'voyage_number' => $request->get('voyage_number'),
+        'voyage_code' => $request->get('voyage_code'),
         'confirmation_number' => $request->get('confirmation_number'),
         'external_reference' => $request->get('external_reference'),
         'user_id' => $request->get('user_id'),
@@ -2201,7 +2180,7 @@ private function processHistoryFilters(Request $request): array
  */
 private function applyHistoryFilters(Builder $query, array $filters): Builder
 {
-    // Búsqueda general por transaction_id, external_reference o confirmation_number
+    // Búsqueda general por transaction_id o external_reference
     if (!empty($filters['search'])) {
         $search = $filters['search'];
         $query->where(function($q) use ($search) {
@@ -2213,17 +2192,17 @@ private function applyHistoryFilters(Builder $query, array $filters): Builder
 
     // Filtro por tipo de webservice
     if (!empty($filters['webservice_type']) && $filters['webservice_type'] !== 'all') {
-        $query->where('webservice_type', $filters['webservice_type']);
+        $query->ofType($filters['webservice_type']);
     }
 
     // Filtro por estado
     if (!empty($filters['status']) && $filters['status'] !== 'all') {
-        $query->where('status', $filters['status']);
+        $query->withStatus($filters['status']);
     }
 
     // Filtro por país
     if (!empty($filters['country']) && $filters['country'] !== 'all') {
-        $query->where('country', $filters['country']);
+        $query->forCountry($filters['country']);
     }
 
     // Filtro por ambiente
@@ -2239,12 +2218,11 @@ private function applyHistoryFilters(Builder $query, array $filters): Builder
         $query->whereDate('created_at', '<=', $filters['date_to']);
     }
 
-    // Filtro por código de viaje (V022NB) o voyage_number
-    if (!empty($filters['voyage_code']) || !empty($filters['voyage_number'])) {
-        $voyageSearch = $filters['voyage_code'] ?? $filters['voyage_number'];
-        $query->whereHas('voyage', function($q) use ($voyageSearch) {
-            $q->where('voyage_number', 'LIKE', "%{$voyageSearch}%")
-              ->orWhere('internal_reference', 'LIKE', "%{$voyageSearch}%");
+    // Filtro por código de viaje (V022NB)
+    if (!empty($filters['voyage_code'])) {
+        $query->whereHas('voyage', function($q) use ($filters) {
+                    $q->where('voyage_number', 'LIKE', "%{$filters['voyage_code']}%")
+              ->orWhere('barge_name', 'LIKE', "%{$filters['voyage_code']}%"); // También buscar en barge_name (PAR13001)
         });
     }
 
@@ -2264,7 +2242,7 @@ private function applyHistoryFilters(Builder $query, array $filters): Builder
     }
 
     // Filtro por transacciones que requieren acción
-    if (!empty($filters['requires_action'])) {
+    if ($filters['requires_action']) {
         $query->whereHas('response', function($q) {
             $q->where('requires_action', true);
         });
@@ -2288,20 +2266,17 @@ private function applyHistoryFilters(Builder $query, array $filters): Builder
  */
 private function getHistoryStatistics(int $companyId, array $filters): array
 {
-    // Query base para estadísticas (SIN ORDER BY)
-    $baseQuery = WebserviceTransaction::where('company_id', $companyId);
+    // Query base para estadísticas
+    $baseQuery = WebserviceTransaction::forCompany($companyId);
     
     // Aplicar los mismos filtros excepto el estado
     $statsQuery = clone $baseQuery;
     $tempFilters = $filters;
     $tempFilters['status'] = 'all'; // Remover filtro de estado para estadísticas
     $statsQuery = $this->applyHistoryFilters($statsQuery, $tempFilters);
-    
-    // IMPORTANTE: Remover cualquier ORDER BY para las consultas agregadas
-    $statsQuery->getQuery()->orders = null;
 
     $stats = [
-        'total' => (clone $statsQuery)->count(),
+        'total' => $statsQuery->count(),
         'by_status' => [],
         'by_type' => [],
         'by_country' => [],
@@ -2310,11 +2285,10 @@ private function getHistoryStatistics(int $companyId, array $filters): array
         'pending_action' => 0,
     ];
 
-    // Estadísticas por estado (SIN ORDER BY conflictivo)
+    // Estadísticas por estado
     $statusStats = (clone $statsQuery)
         ->select('status', DB::raw('count(*) as count'))
         ->groupBy('status')
-        ->orderBy('count', 'desc') // Ordenar por count en lugar de created_at
         ->pluck('count', 'status')
         ->toArray();
 
@@ -2322,55 +2296,54 @@ private function getHistoryStatistics(int $companyId, array $filters): array
         $stats['by_status'][$status] = [
             'count' => $statusStats[$status] ?? 0,
             'name' => $name,
-            'percentage' => $stats['total'] > 0 ? round(($statusStats[$status] ?? 0) / $stats['total'] * 100, 1) : 0
         ];
     }
 
-    // Estadísticas por tipo de webservice
+    // Estadísticas por tipo
     $typeStats = (clone $statsQuery)
         ->select('webservice_type', DB::raw('count(*) as count'))
         ->groupBy('webservice_type')
-        ->orderBy('count', 'desc')
         ->pluck('count', 'webservice_type')
         ->toArray();
 
     foreach (WebserviceTransaction::WEBSERVICE_TYPES as $type => $name) {
-        $stats['by_type'][$type] = [
-            'count' => $typeStats[$type] ?? 0,
-            'name' => $name,
-            'percentage' => $stats['total'] > 0 ? round(($typeStats[$type] ?? 0) / $stats['total'] * 100, 1) : 0
-        ];
+        if (isset($typeStats[$type])) {
+            $stats['by_type'][$type] = [
+                'count' => $typeStats[$type],
+                'name' => $name,
+            ];
+        }
     }
 
     // Estadísticas por país
     $countryStats = (clone $statsQuery)
         ->select('country', DB::raw('count(*) as count'))
         ->groupBy('country')
-        ->orderBy('count', 'desc')
         ->pluck('count', 'country')
         ->toArray();
 
     foreach (WebserviceTransaction::COUNTRIES as $country => $name) {
-        $stats['by_country'][$country] = [
-            'count' => $countryStats[$country] ?? 0,
-            'name' => $name,
-            'percentage' => $stats['total'] > 0 ? round(($countryStats[$country] ?? 0) / $stats['total'] * 100, 1) : 0
-        ];
+        if (isset($countryStats[$country])) {
+            $stats['by_country'][$country] = [
+                'count' => $countryStats[$country],
+                'name' => $name,
+            ];
+        }
     }
 
-    // Calcular tasa de éxito
+    // Tasa de éxito
+    $successCount = $stats['by_status']['success']['count'] ?? 0;
     if ($stats['total'] > 0) {
-        $successCount = $stats['by_status']['success']['count'] ?? 0;
-        $stats['success_rate'] = round($successCount / $stats['total'] * 100, 1);
+        $stats['success_rate'] = round(($successCount / $stats['total']) * 100, 1);
     }
 
-    // Transacciones en las últimas 24 horas
+    // Transacciones últimas 24 horas
     $stats['last_24h'] = (clone $baseQuery)
         ->where('created_at', '>=', now()->subDay())
         ->count();
 
     // Transacciones que requieren acción
-    $stats['pending_action'] = (clone $baseQuery)
+    $stats['pending_action'] = (clone $statsQuery)
         ->whereHas('response', function($q) {
             $q->where('requires_action', true);
         })
@@ -2402,7 +2375,7 @@ private function getHistoryFilterData(Company $company): array
         'voyage_codes' => Voyage::whereHas('webserviceTransactions', function($q) use ($company) {
                 $q->where('company_id', $company->id);
             })
-            ->select('voyage_number', 'internal_reference')
+            ->select('voyage_number', 'barge_name')
             ->distinct()
             ->orderBy('voyage_number')
             ->limit(50) // Limitar para performance
@@ -2428,7 +2401,7 @@ public function showWebservice(Request $request, WebserviceTransaction $webservi
     $webservice->load([
         'user:id,name,email',
         'company:id,legal_name,tax_id',
-        'voyage:id,voyage_number,internal_reference,origin_port_id,destination_port_id',
+        'voyage:id,voyage_code,barge_name,departure_port,arrival_port',
         'shipment:id,shipment_number,reference_number',
         'response',
         'logs' => function($query) {
@@ -2449,13 +2422,13 @@ public function showWebservice(Request $request, WebserviceTransaction $webservi
         ->where('id', '!=', $webservice->id)
         ->where(function($query) use ($webservice) {
             if ($webservice->voyage_id) {
-                $query->where('voyage_number', $webservice->voyage_id);
+                $query->orWhere('voyage_id', $webservice->voyage_id);
             }
             if ($webservice->shipment_id) {
-                $query->where('destination_country_id', $webservice->shipment_id);
+                $query->orWhere('shipment_id', $webservice->shipment_id);
             }
             if ($webservice->external_reference) {
-                $query->where('internal_reference', $webservice->external_reference);
+                $query->orWhere('external_reference', $webservice->external_reference);
             }
         })
         ->with('user:id,name')
@@ -2617,7 +2590,7 @@ private function getFilterData(Company $company): array
                 $q->where('company_id', $company->id);
             })
             ->orWhere('company_id', $company->id) // También viajes sin transacciones
-            ->select('id', 'voyage_code', 'internal_reference', 'departure_port', 'arrival_port')
+            ->select('id', 'voyage_code', 'barge_name', 'departure_port', 'arrival_port')
             ->where('created_at', '>=', now()->subMonths(6))
             ->orderBy('created_at', 'desc')
             ->distinct('voyage_code')
@@ -2629,22 +2602,22 @@ private function getFilterData(Company $company): array
             $filterData['voyage_codes'] = collect([
                 (object)[
                     'id' => 1,
-                    'voyage_number' => 'V022NB',
-                    'internal_reference' => 'PAR13001',
+                    'voyage_code' => 'V022NB',
+                    'barge_name' => 'PAR13001',
                     'departure_port' => 'ARBUE',
                     'arrival_port' => 'PYTVT'
                 ],
                 (object)[
                     'id' => 2,
-                    'voyage_number' => 'V023NB', 
-                    'internal_reference' => 'PAR13002',
+                    'voyage_code' => 'V023NB', 
+                    'barge_name' => 'PAR13002',
                     'departure_port' => 'ARBUE',
                     'arrival_port' => 'PYTVT'
                 ],
                 (object)[
                     'id' => 3,
-                    'voyage_number' => 'V024NB',
-                    'internal_reference' => 'PAR13003', 
+                    'voyage_code' => 'V024NB',
+                    'barge_name' => 'PAR13003', 
                     'departure_port' => 'ARBUE',
                     'arrival_port' => 'PYTVT'
                 ]
@@ -2761,7 +2734,7 @@ private function getQueryFilterData(Company $company): array
                 $q->where('company_id', $company->id);
             })
             ->orWhere('company_id', $company->id) // También viajes sin transacciones
-            ->select('id', 'voyage_code', 'internal_reference', 'departure_port', 'arrival_port')
+            ->select('id', 'voyage_code', 'barge_name', 'departure_port', 'arrival_port')
             ->where('created_at', '>=', now()->subMonths(6))
             ->orderBy('created_at', 'desc')
             ->distinct('voyage_code')
@@ -2773,22 +2746,22 @@ private function getQueryFilterData(Company $company): array
             $filterData['voyage_codes'] = collect([
                 (object)[
                     'id' => 1,
-                    'voyage_number' => 'V022NB',
-                    'internal_reference' => 'PAR13001',
+                    'voyage_code' => 'V022NB',
+                    'barge_name' => 'PAR13001',
                     'departure_port' => 'ARBUE',
                     'arrival_port' => 'PYTVT'
                 ],
                 (object)[
                     'id' => 2,
-                    'voyage_number' => 'V023NB', 
-                    'internal_reference' => 'PAR13002',
+                    'voyage_code' => 'V023NB', 
+                    'barge_name' => 'PAR13002',
                     'departure_port' => 'ARBUE',
                     'arrival_port' => 'PYTVT'
                 ],
                 (object)[
                     'id' => 3,
-                    'voyage_number' => 'V024NB',
-                    'internal_reference' => 'PAR13003', 
+                    'voyage_code' => 'V024NB',
+                    'barge_name' => 'PAR13003', 
                     'departure_port' => 'ARBUE',
                     'arrival_port' => 'PYTVT'
                 ]
@@ -2972,75 +2945,6 @@ private function getPODCodesFromParana(): array
         'PYPIL', // Paraguay Pilar
         'PYCON', // Paraguay Concepción
     ];
-}
-
-// AGREGAR estos métodos al WebServiceController.php
-
-/**
- * Exportar historial en diferentes formatos
- */
-public function export(Request $request)
-{
-    $company = $this->getUserCompany();
-    if (!$company) {
-        return redirect()->route('company.webservices.index')
-            ->with('error', 'No se encontró la empresa asociada.');
-    }
-
-    $request->validate([
-        'format' => 'required|in:excel,csv,pdf',
-        'period' => 'required|in:current_filters,last_30_days,last_3_months,current_year,all',
-        'include_xml' => 'nullable|boolean'
-    ]);
-
-    // TODO: Implementar exportación
-    return redirect()->route('company.webservices.history')
-        ->with('info', 'Funcionalidad de exportación en desarrollo.');
-}
-
-
-
-/**
- * Descargar XML de respuesta
- */
-public function downloadXml(WebserviceTransaction $webservice)
-{
-    $company = $this->getUserCompany();
-    if (!$company || $webservice->company_id !== $company->id) {
-        abort(403, 'No tiene permisos para esta transacción.');
-    }
-
-    if (!$webservice->response_xml) {
-        return redirect()->back()
-            ->with('error', 'No hay XML de respuesta disponible.');
-    }
-
-    $filename = "webservice_{$webservice->transaction_id}_response.xml";
-    
-    return response($webservice->response_xml, 200, [
-        'Content-Type' => 'application/xml',
-        'Content-Disposition' => "attachment; filename=\"{$filename}\"",
-    ]);
-}
-
-/**
- * Descargar PDF del reporte
- */
-public function downloadPdf(WebserviceTransaction $webservice)
-{
-    $company = $this->getUserCompany();
-    if (!$company || $webservice->company_id !== $company->id) {
-        abort(403, 'No tiene permisos para esta transacción.');
-    }
-
-    if (!$webservice->confirmation_number) {
-        return redirect()->back()
-            ->with('error', 'No hay confirmación disponible para generar PDF.');
-    }
-
-    // TODO: Implementar generación de PDF
-    return redirect()->back()
-        ->with('info', 'Funcionalidad de PDF en desarrollo.');
 }
 
 }

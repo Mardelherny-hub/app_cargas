@@ -7,7 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Log; 
+use Illuminate\Support\Facades\Schema; 
 use Carbon\Carbon;
+use App\Models\Company;
+use App\Models\WebserviceTransaction;
 
 /**
  * Voyage Model
@@ -87,7 +91,73 @@ class Voyage extends Model
 {
     use HasFactory;
 
-    // ... existing code ...
+       /**
+     * The table associated with the model.
+     */
+    protected $table = 'voyages';
+
+    /**
+     * The attributes that are mass assignable.
+     */
+    protected $fillable = [
+        'voyage_number',
+        'internal_reference',
+        'company_id',
+        'lead_vessel_id',
+        'captain_id',
+        'origin_country_id',
+        'origin_port_id',
+        'destination_country_id',
+        'destination_port_id',
+        'transshipment_port_id',
+        'origin_customs_id',
+        'destination_customs_id',
+        'transshipment_customs_id',
+        'departure_date',
+        'estimated_arrival_date',
+        'actual_arrival_date',
+        'customs_clearance_deadline',
+        'voyage_type',
+        'cargo_type',
+        'is_convoy',
+        'vessel_count',
+        'total_cargo_capacity_tons',
+        'total_container_capacity',
+        'total_cargo_weight_loaded',
+        'total_containers_loaded',
+        'capacity_utilization_percentage',
+        'status',
+        'priority_level',
+        'requires_escort',
+        'requires_pilot',
+        'hazardous_cargo',
+        'refrigerated_cargo',
+        'oversized_cargo',
+        'weather_conditions',
+        'route_conditions',
+        'special_instructions',
+        'operational_notes',
+        'estimated_cost',
+        'actual_cost',
+        'cost_currency',
+        'safety_approved',
+        'customs_cleared_origin',
+        'customs_cleared_destination',
+        'documentation_complete',
+        'environmental_approved',
+        'safety_approval_date',
+        'customs_approval_date',
+        'environmental_approval_date',
+        'active',
+        'archived',
+        'requires_follow_up',
+        'follow_up_reason',
+        'created_date',
+        'created_by_user_id',
+        'last_updated_date',
+        'last_updated_by_user_id',
+    ];
+
 
     /**
      * Transacciones de webservice relacionadas con el viaje

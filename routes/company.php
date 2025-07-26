@@ -191,7 +191,15 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/history', [WebserviceController::class, 'history'])->name('history');
     Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
 
-    // NUEVA RUTA: Datos PARANA para autocompletar (AJAX)
+   // Acciones adicionales del historial - NUEVAS RUTAS
+    Route::post('/retry/{webservice}', [WebserviceController::class, 'retryTransaction'])->name('retry-transaction');
+    Route::post('/export', [WebserviceController::class, 'export'])->name('export');
+    
+    // Descargas - NUEVAS RUTAS
+    Route::get('/download/{webservice}/xml', [WebserviceController::class, 'downloadXml'])->name('download-xml');
+    Route::get('/download/{webservice}/pdf', [WebserviceController::class, 'downloadPdf'])->name('download-pdf');
+
+    // Datos PARANA para autocompletar (AJAX)
     Route::get('/parana-data', [WebserviceController::class, 'getParanaData'])->name('parana-data');
 
 });
