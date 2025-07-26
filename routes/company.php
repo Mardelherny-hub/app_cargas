@@ -190,6 +190,10 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     // Historial de webservices
     Route::get('/history', [WebserviceController::class, 'history'])->name('history');
     Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
+
+    // NUEVA RUTA: Datos PARANA para autocompletar (AJAX)
+    Route::get('/parana-data', [WebserviceController::class, 'getParanaData'])->name('parana-data');
+
 });
 
 // Reportes
