@@ -26,7 +26,7 @@ return new class extends Migration
 
             // Digital certificates for webservices
             $table->string('certificate_path')->nullable(); // .p12 file path
-            $table->string('certificate_password')->nullable(); // encrypted
+            $table->text('certificate_password')->nullable()->comment('Password del certificado'); // encrypted
             $table->string('certificate_alias')->nullable();
             $table->timestamp('certificate_expires_at')->nullable();
 

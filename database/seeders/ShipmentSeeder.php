@@ -48,7 +48,7 @@ class ShipmentSeeder extends Seeder
         }
 
         // Limpiar tabla existente
-        DB::table('shipments')->truncate();
+        DB::table('shipments')->delete();
 
         // Obtener todos los viajes ordenados por fecha de creación
         $voyages = Voyage::orderBy('departure_date')->get();
@@ -226,12 +226,12 @@ class ShipmentSeeder extends Seeder
     {
         return match($voyage->status) {
             'planning' => 'planning',
-            'approved' => 'ready',
-            'departed' => 'departed',
+            'approved' => 'loading',
+            'departed' => 'in_transit',
             'in_transit' => 'in_transit',
             'arrived' => 'arrived',
             'completed' => 'completed',
-            'cancelled' => 'cancelled',
+            'cancelled' => 'delayed',
             default => 'planning',
         };
     }

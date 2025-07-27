@@ -13,6 +13,9 @@ return new class extends Migration
      * Tabla principal para viajes - agrupa embarcaciones y cargas
      * Un viaje puede contener múltiples envíos (convoy) y múltiples cargas
      * 
+     * MIGRACIÓN CORREGIDA - COHERENTE CON EL SISTEMA COMPLETO
+     * Incluye todos los campos utilizados en VoyageSeeder, Modelo y funcionalidades
+     * 
      * REFERENCIAS CONFIRMADAS DEL SISTEMA:
      * - companies, vessels, countries, ports, customs_offices, captains, users
      */
@@ -38,11 +41,13 @@ return new class extends Migration
             $table->unsignedBigInteger('origin_customs_id')->nullable()->comment('Aduana de origen');
             $table->unsignedBigInteger('destination_customs_id')->nullable()->comment('Aduana de destino');
             $table->unsignedBigInteger('transshipment_customs_id')->nullable()->comment('Aduana de transbordo');
+
             // Voyage dates
             $table->datetime('departure_date')->comment('Fecha/hora salida');
             $table->datetime('estimated_arrival_date')->comment('Fecha/hora llegada estimada');
             $table->datetime('actual_arrival_date')->nullable()->comment('Fecha/hora llegada real');
             $table->datetime('customs_clearance_date')->nullable()->comment('Fecha despacho aduanero');
+            $table->datetime('customs_clearance_deadline')->nullable()->comment('Fecha límite despacho aduanero');
             $table->datetime('cargo_loading_start')->nullable()->comment('Inicio carga mercadería');
             $table->datetime('cargo_loading_end')->nullable()->comment('Fin carga mercadería');
             $table->datetime('cargo_discharge_start')->nullable()->comment('Inicio descarga mercadería');
@@ -66,6 +71,8 @@ return new class extends Migration
             $table->boolean('is_consolidated')->default(false)->comment('Viaje consolidado');
             $table->boolean('has_transshipment')->default(false)->comment('Tiene transbordo');
             $table->boolean('requires_pilot')->default(false)->comment('Requiere piloto');
+            $table->boolean('is_convoy')->default(false)->comment('Es convoy');
+            $table->integer('vessel_count')->default(1)->comment('Cantidad de embarcaciones');
 
             // Voyage status
             $table->enum('status', [
@@ -78,12 +85,33 @@ return new class extends Migration
                 'delayed'           // Demorado
             ])->default('planning')->comment('Estado del viaje');
 
-            // Cargo summary
-            $table->integer('total_containers')->default(0)->comment('Total contenedores');
-            $table->decimal('total_cargo_weight', 12, 2)->default(0)->comment('Peso total carga en toneladas');
+            $table->enum('priority_level', [
+                'low',              // Baja prioridad
+                'normal',           // Prioridad normal
+                'high',             // Alta prioridad
+                'urgent'            // Urgente
+            ])->default('normal')->comment('Nivel de prioridad');
+
+            // Cargo capacity and statistics (CAMPOS CRÍTICOS)
+            $table->decimal('total_cargo_capacity_tons', 10, 2)->default(0)->comment('Capacidad total carga en toneladas');
+            $table->integer('total_container_capacity')->default(0)->comment('Capacidad total contenedores');
+            $table->decimal('total_cargo_weight_loaded', 10, 2)->default(0)->comment('Peso carga embarcada');
+            $table->integer('total_containers_loaded')->default(0)->comment('Contenedores embarcados');
+            $table->decimal('capacity_utilization_percentage', 5, 2)->default(0)->comment('Porcentaje utilización capacidad');
+
+            // Cargo summary (compatibilidad con migración original)
+            $table->integer('total_containers')->default(0)->comment('Total contenedores (alias)');
+            $table->decimal('total_cargo_weight', 12, 2)->default(0)->comment('Peso total carga en toneladas (alias)');
             $table->decimal('total_cargo_volume', 12, 2)->default(0)->comment('Volumen total en m³');
             $table->integer('total_bills_of_lading')->default(0)->comment('Total conocimientos embarque');
             $table->integer('total_clients')->default(0)->comment('Total clientes involucrados');
+
+            // Special requirements and cargo types
+            $table->boolean('requires_escort')->default(false)->comment('Requiere escolta');
+            $table->boolean('hazardous_cargo')->default(false)->comment('Carga peligrosa');
+            $table->boolean('refrigerated_cargo')->default(false)->comment('Carga refrigerada');
+            $table->boolean('oversized_cargo')->default(false)->comment('Carga sobredimensionada');
+            $table->boolean('dangerous_cargo')->default(false)->comment('Carga peligrosa a bordo (alias)');
 
             // Webservice integration
             $table->string('argentina_voyage_id', 50)->nullable()->comment('ID viaje en Argentina');
@@ -97,31 +125,46 @@ return new class extends Migration
             $table->datetime('argentina_sent_at')->nullable()->comment('Enviado a Argentina');
             $table->datetime('paraguay_sent_at')->nullable()->comment('Enviado a Paraguay');
 
-            // Financial information
-            $table->decimal('estimated_freight_cost', 10, 2)->nullable()->comment('Costo flete estimado');
-            $table->decimal('actual_freight_cost', 10, 2)->nullable()->comment('Costo flete real');
+            // Financial information (nombres del modelo + alias migración)
+            $table->decimal('estimated_cost', 10, 2)->nullable()->comment('Costo estimado');
+            $table->decimal('actual_cost', 10, 2)->nullable()->comment('Costo real');
+            $table->string('cost_currency', 3)->default('USD')->comment('Moneda costos');
+            $table->decimal('estimated_freight_cost', 10, 2)->nullable()->comment('Costo flete estimado (alias)');
+            $table->decimal('actual_freight_cost', 10, 2)->nullable()->comment('Costo flete real (alias)');
             $table->decimal('fuel_cost', 10, 2)->nullable()->comment('Costo combustible');
             $table->decimal('port_charges', 10, 2)->nullable()->comment('Tasas portuarias');
             $table->decimal('total_voyage_cost', 10, 2)->nullable()->comment('Costo total viaje');
-            $table->string('currency_code', 3)->default('USD')->comment('Moneda');
+            $table->string('currency_code', 3)->default('USD')->comment('Moneda (alias)');
 
-            // Weather and conditions
+            // Weather and conditions (nombres del modelo + alias migración)
             $table->json('weather_conditions')->nullable()->comment('Condiciones climáticas');
-            $table->json('river_conditions')->nullable()->comment('Condiciones del río');
-            $table->text('voyage_notes')->nullable()->comment('Notas del viaje');
+            $table->json('route_conditions')->nullable()->comment('Condiciones de ruta');
+            $table->json('river_conditions')->nullable()->comment('Condiciones del río (alias)');
+            $table->text('special_instructions')->nullable()->comment('Instrucciones especiales');
+            $table->text('operational_notes')->nullable()->comment('Notas operacionales');
+            $table->text('voyage_notes')->nullable()->comment('Notas del viaje (alias)');
             $table->text('delays_explanation')->nullable()->comment('Explicación demoras');
 
-            // Documents and approvals
+            // Documents and approvals (campos del modelo + migración)
             $table->json('required_documents')->nullable()->comment('Documentos requeridos');
             $table->json('uploaded_documents')->nullable()->comment('Documentos subidos');
             $table->boolean('customs_approved')->default(false)->comment('Aprobado por aduana');
             $table->boolean('port_authority_approved')->default(false)->comment('Aprobado por autoridad portuaria');
             $table->boolean('all_documents_ready')->default(false)->comment('Todos documentos listos');
+            $table->boolean('safety_approved')->default(false)->comment('Seguridad aprobada');
+            $table->boolean('customs_cleared_origin')->default(false)->comment('Despacho aduanero origen');
+            $table->boolean('customs_cleared_destination')->default(false)->comment('Despacho aduanero destino');
+            $table->boolean('documentation_complete')->default(false)->comment('Documentación completa');
+            $table->boolean('environmental_approved')->default(false)->comment('Aprobación ambiental');
+
+            // Approval dates
+            $table->datetime('safety_approval_date')->nullable()->comment('Fecha aprobación seguridad');
+            $table->datetime('customs_approval_date')->nullable()->comment('Fecha aprobación aduanera');
+            $table->datetime('environmental_approval_date')->nullable()->comment('Fecha aprobación ambiental');
 
             // Emergency and safety
             $table->json('emergency_contacts')->nullable()->comment('Contactos de emergencia');
             $table->json('safety_equipment')->nullable()->comment('Equipos de seguridad');
-            $table->boolean('dangerous_cargo')->default(false)->comment('Carga peligrosa a bordo');
             $table->text('safety_notes')->nullable()->comment('Notas de seguridad');
 
             // Performance tracking
@@ -140,6 +183,7 @@ return new class extends Migration
             $table->boolean('active')->default(true)->comment('Viaje activo');
             $table->boolean('archived')->default(false)->comment('Archivado');
             $table->boolean('requires_follow_up')->default(false)->comment('Requiere seguimiento');
+            $table->text('follow_up_reason')->nullable()->comment('Motivo seguimiento');
             $table->boolean('has_incidents')->default(false)->comment('Tiene incidentes reportados');
 
             // Audit trail
@@ -162,6 +206,8 @@ return new class extends Migration
             $table->index(['customs_approved', 'port_authority_approved'], 'idx_voyages_approvals');
             $table->index(['active', 'archived'], 'idx_voyages_active');
             $table->index(['requires_follow_up'], 'idx_voyages_follow_up');
+            $table->index(['is_convoy'], 'idx_voyages_convoy');
+            $table->index(['priority_level'], 'idx_voyages_priority');
 
             // Foreign key constraints con nombres explícitos
             $table->foreign('company_id', 'fk_voyages_company')->references('id')->on('companies')->onDelete('cascade');
@@ -175,7 +221,7 @@ return new class extends Migration
             $table->foreign('origin_customs_id', 'fk_voyages_origin_customs')->references('id')->on('customs_offices')->onDelete('set null');
             $table->foreign('destination_customs_id', 'fk_voyages_destination_customs')->references('id')->on('customs_offices')->onDelete('set null');
             $table->foreign('transshipment_customs_id', 'fk_voyages_transshipment_customs')->references('id')->on('customs_offices')->onDelete('set null');
-// $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
+            // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
             // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');
         });
     }

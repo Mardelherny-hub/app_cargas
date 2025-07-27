@@ -15,9 +15,10 @@ use Illuminate\Database\Seeder;
  * 3. Tipos y propietarios (para embarcaciones)
  * 4. Embarcaciones (requiere tipos y propietarios)
  * 5. Clientes y contactos
- * 6. Módulo 3: Capitanes, Viajes y Cargas
+ * 6. Dependencias básicas webservices (países específicos, MAERSK, puertos)
+ * 7. Módulo 3: Capitanes, Viajes y Cargas (CON DATOS REALES PARANA)
  * 
- * USO: php artisan db:seed
+ * USO: php artisan migrate:fresh --seed
  */
 class DatabaseSeeder extends Seeder
 {
@@ -98,18 +99,31 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 6: MÓDULO 3 - VIAJES Y CARGAS ===
+        // === FASE 6: DEPENDENCIAS WEBSERVICES ===
         //
-        $this->command->info('🚢 FASE 6: Módulo 3 - Viajes y Cargas');
-        $this->command->line('  └── Creando capitanes, viajes y envíos...');
+        $this->command->info('🔧 FASE 6: Dependencias Webservices');
+        $this->command->line('  └── Creando dependencias específicas para módulo webservices...');
+        
+        $this->call([
+            WebserviceBasicDependenciesSeeder::class,
+        ]);
+        
+        $this->command->info('  ✅ Dependencias webservices completadas');
+        $this->command->info('');
+
+        //
+        // === FASE 7: MÓDULO 3 - VIAJES Y CARGAS (CON DATOS REALES) ===
+        //
+        $this->command->info('🚢 FASE 7: Módulo 3 - Viajes y Cargas (DATOS REALES PARANA)');
+        $this->command->line('  └── Creando capitanes y viajes con datos reales del manifiesto PARANA...');
         
         $this->call([
             CaptainSeeder::class,
-            VoyageSeeder::class,
+            VoyagesFromParanaSeeder::class,  // ✅ REEMPLAZA VoyageSeeder con datos reales
             ShipmentSeeder::class,
         ]);
         
-        $this->command->info('  ✅ Módulo 3 completado');
+        $this->command->info('  ✅ Módulo 3 completado con datos reales PARANA');
         $this->command->info('');
 
         //
@@ -190,10 +204,12 @@ class DatabaseSeeder extends Seeder
         $this->command->info('📋 Próximos pasos:');
         $this->command->line('  • Verificar datos: php artisan tinker');
         $this->command->line('  • Ver usuarios: User::with(\'userable\')->get()');
-        $this->command->line('  • Ver viajes: Voyage::with(\'shipments\')->get()');
+        $this->command->line('  • Ver viajes PARANA: Voyage::with(\'company\')->get()');
+        $this->command->line('  • Ver viajes por número: Voyage::where(\'voyage_number\', \'V022NB\')->first()');
         $this->command->line('  • Ver capitanes: Captain::with(\'country\')->get()');
         $this->command->info('');
-        $this->command->info('✅ Base de datos poblada exitosamente con datos reales');
-        $this->command->info('🚢 Sistema listo para pruebas y desarrollo');
+        $this->command->info('✅ Base de datos poblada exitosamente con DATOS REALES PARANA.csv');
+        $this->command->info('🚢 Sistema listo para pruebas de webservices con datos reales');
+        $this->command->info('📡 Próximo: Implementar seeders de transacciones webservice');
     }
 }

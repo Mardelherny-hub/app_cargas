@@ -69,6 +69,8 @@ class Vessel extends Model
         'net_tonnage',
         'deadweight_tons',
         'max_cargo_capacity',
+        'cargo_capacity_tons',        
+        'container_capacity',   
         'operational_status',
         'available_for_charter',
         'charter_rate',

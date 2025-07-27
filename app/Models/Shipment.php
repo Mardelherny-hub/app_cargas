@@ -70,67 +70,149 @@ class Shipment extends Model
      */
     protected $table = 'shipments';
 
-    /**
+/**
      * The attributes that are mass assignable.
+     * UNIFICADO - Coherente con migración y seeder
      */
     protected $fillable = [
+        // Identification and relationships
         'voyage_id',
         'vessel_id',
         'captain_id',
         'shipment_number',
         'sequence_in_voyage',
+        
+        // Convoy configuration
         'vessel_role',
         'convoy_position',
         'is_lead_vessel',
+        
+        // Cargo capacity and loading
         'cargo_capacity_tons',
         'container_capacity',
         'cargo_weight_loaded',
         'containers_loaded',
         'utilization_percentage',
+        
+        // Status
         'status',
-        'departure_time',
-        'arrival_time',
+        
+        // Operational times - NOMBRES UNIFICADOS (descriptivos)
         'loading_start_time',
         'loading_end_time',
+        'departure_time',
+        'arrival_time',
         'discharge_start_time',
         'discharge_end_time',
+        
+        // Position and tracking
+        'current_latitude',
+        'current_longitude',
+        'position_updated_at',
+        'distance_from_lead',
+        
+        // Operational data
+        'fuel_consumption',
+        'average_speed',
+        'cargo_manifest',
+        'bills_of_lading_count',
+        
+        // Safety and compliance - UNIFICADO CON SEEDER
         'safety_approved',
         'customs_cleared',
         'documentation_complete',
         'cargo_inspected',
+        'has_dangerous_cargo',
+        'safety_notes',
+        
+        // Communication
+        'radio_frequency',
+        'last_communication',
+        'communication_log',
+        
+        // Performance metrics
+        'loading_efficiency',
+        'loading_time_minutes',
+        'discharge_time_minutes',
+        'on_schedule',
+        
+        // Financial data
+        'freight_cost',
+        'fuel_cost',
+        'port_charges',
+        'total_cost',
+        
+        // Documents
+        'required_documents',
+        'uploaded_documents',
+        
+        // Notes - UNIFICADO CON MODELO Y SEEDER
+        'operational_notes',
+        'cargo_notes',
+        'incidents',
         'special_instructions',
         'handling_notes',
         'delay_reason',
         'delay_minutes',
+        
+        // Status flags
         'active',
         'requires_attention',
         'has_delays',
+        
+        // Audit trail
         'created_date',
         'created_by_user_id',
     ];
 
     /**
      * The attributes that should be cast.
+     * UNIFICADO - Coherente con migración
      */
     protected $casts = [
-        'departure_time' => 'datetime',
-        'arrival_time' => 'datetime',
+        // Operational times - NOMBRES UNIFICADOS
         'loading_start_time' => 'datetime',
         'loading_end_time' => 'datetime',
+        'departure_time' => 'datetime',
+        'arrival_time' => 'datetime',
         'discharge_start_time' => 'datetime',
         'discharge_end_time' => 'datetime',
+        'position_updated_at' => 'datetime',
+        'last_communication' => 'datetime',
+        'created_date' => 'datetime',
+        
+        // Boolean fields
         'is_lead_vessel' => 'boolean',
         'safety_approved' => 'boolean',
         'customs_cleared' => 'boolean',
         'documentation_complete' => 'boolean',
         'cargo_inspected' => 'boolean',
+        'has_dangerous_cargo' => 'boolean',
+        'on_schedule' => 'boolean',
         'active' => 'boolean',
         'requires_attention' => 'boolean',
         'has_delays' => 'boolean',
+        
+        // Decimal fields
         'cargo_capacity_tons' => 'decimal:2',
         'cargo_weight_loaded' => 'decimal:2',
         'utilization_percentage' => 'decimal:2',
-        'created_date' => 'datetime',
+        'current_latitude' => 'decimal:8',
+        'current_longitude' => 'decimal:8',
+        'distance_from_lead' => 'decimal:2',
+        'fuel_consumption' => 'decimal:2',
+        'average_speed' => 'decimal:2',
+        'loading_efficiency' => 'decimal:2',
+        'freight_cost' => 'decimal:2',
+        'fuel_cost' => 'decimal:2',
+        'port_charges' => 'decimal:2',
+        'total_cost' => 'decimal:2',
+        
+        // JSON fields
+        'cargo_manifest' => 'array',
+        'communication_log' => 'array',
+        'required_documents' => 'array',
+        'uploaded_documents' => 'array',
     ];
 
     /**

@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Models\Company;
 use App\Models\WebserviceTransaction;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\Shipment;
+
 
 /**
  * Voyage Model
@@ -98,10 +101,14 @@ class Voyage extends Model
 
     /**
      * The attributes that are mass assignable.
+     * 100% coherente con migración create_voyages_table.php corregida
      */
     protected $fillable = [
+        // Basic identification
         'voyage_number',
         'internal_reference',
+
+        // Foreign keys
         'company_id',
         'lead_vessel_id',
         'captain_id',
@@ -113,52 +120,237 @@ class Voyage extends Model
         'origin_customs_id',
         'destination_customs_id',
         'transshipment_customs_id',
+
+        // Voyage dates
         'departure_date',
         'estimated_arrival_date',
         'actual_arrival_date',
+        'customs_clearance_date',
         'customs_clearance_deadline',
+        'cargo_loading_start',
+        'cargo_loading_end',
+        'cargo_discharge_start',
+        'cargo_discharge_end',
+
+        // Voyage type and characteristics
         'voyage_type',
         'cargo_type',
+        'is_consolidated',
+        'has_transshipment',
+        'requires_pilot',
         'is_convoy',
         'vessel_count',
+
+        // Voyage status
+        'status',
+        'priority_level',
+
+        // Cargo capacity and statistics (CAMPOS CRÍTICOS)
         'total_cargo_capacity_tons',
         'total_container_capacity',
         'total_cargo_weight_loaded',
         'total_containers_loaded',
         'capacity_utilization_percentage',
-        'status',
-        'priority_level',
+
+        // Cargo summary (compatibilidad con migración original)
+        'total_containers',
+        'total_cargo_weight',
+        'total_cargo_volume',
+        'total_bills_of_lading',
+        'total_clients',
+
+        // Special requirements and cargo types
         'requires_escort',
-        'requires_pilot',
         'hazardous_cargo',
         'refrigerated_cargo',
         'oversized_cargo',
-        'weather_conditions',
-        'route_conditions',
-        'special_instructions',
-        'operational_notes',
+        'dangerous_cargo',
+
+        // Webservice integration
+        'argentina_voyage_id',
+        'paraguay_voyage_id',
+        'argentina_status',
+        'paraguay_status',
+        'argentina_sent_at',
+        'paraguay_sent_at',
+
+        // Financial information (nombres del modelo + alias migración)
         'estimated_cost',
         'actual_cost',
         'cost_currency',
+        'estimated_freight_cost',
+        'actual_freight_cost',
+        'fuel_cost',
+        'port_charges',
+        'total_voyage_cost',
+        'currency_code',
+
+        // Weather and conditions (nombres del modelo + alias migración)
+        'weather_conditions',
+        'route_conditions',
+        'river_conditions',
+        'special_instructions',
+        'operational_notes',
+        'voyage_notes',
+        'delays_explanation',
+
+        // Documents and approvals (campos del modelo + migración)
+        'required_documents',
+        'uploaded_documents',
+        'customs_approved',
+        'port_authority_approved',
+        'all_documents_ready',
         'safety_approved',
         'customs_cleared_origin',
         'customs_cleared_destination',
         'documentation_complete',
         'environmental_approved',
+
+        // Approval dates
         'safety_approval_date',
         'customs_approval_date',
         'environmental_approval_date',
+
+        // Emergency and safety
+        'emergency_contacts',
+        'safety_equipment',
+        'safety_notes',
+
+        // Performance tracking
+        'distance_nautical_miles',
+        'average_speed_knots',
+        'transit_time_hours',
+        'fuel_consumption',
+        'fuel_efficiency',
+
+        // Communication
+        'communication_frequency',
+        'reporting_schedule',
+        'last_position_report',
+
+        // Status flags
         'active',
         'archived',
         'requires_follow_up',
         'follow_up_reason',
+        'has_incidents',
+
+        // Audit trail
         'created_date',
         'created_by_user_id',
         'last_updated_date',
         'last_updated_by_user_id',
     ];
 
+    /**
+     * The attributes that should be cast.
+     * 100% coherente con migración create_voyages_table.php corregida
+     */
+    protected $casts = [
+        // === FECHAS Y TIMESTAMPS ===
+        'departure_date' => 'datetime',
+        'estimated_arrival_date' => 'datetime',
+        'actual_arrival_date' => 'datetime',
+        'customs_clearance_date' => 'datetime',
+        'customs_clearance_deadline' => 'datetime',
+        'cargo_loading_start' => 'datetime',
+        'cargo_loading_end' => 'datetime',
+        'cargo_discharge_start' => 'datetime',
+        'cargo_discharge_end' => 'datetime',
+        'argentina_sent_at' => 'datetime',
+        'paraguay_sent_at' => 'datetime',
+        'safety_approval_date' => 'datetime',
+        'customs_approval_date' => 'datetime',
+        'environmental_approval_date' => 'datetime',
+        'last_position_report' => 'datetime',
+        'created_date' => 'datetime',
+        'last_updated_date' => 'datetime',
 
+        // === DECIMALES (CAPACIDADES Y ESTADÍSTICAS) ===
+        // Campos críticos de capacidad
+        'total_cargo_capacity_tons' => 'decimal:2',        // 10,2
+        'total_cargo_weight_loaded' => 'decimal:2',        // 10,2
+        'capacity_utilization_percentage' => 'decimal:2',  // 5,2
+        
+        // Campos de resumen de carga (alias)
+        'total_cargo_weight' => 'decimal:2',               // 12,2
+        'total_cargo_volume' => 'decimal:2',               // 12,2
+        
+        // Información financiera
+        'estimated_cost' => 'decimal:2',                   // 10,2
+        'actual_cost' => 'decimal:2',                      // 10,2
+        'estimated_freight_cost' => 'decimal:2',           // 10,2 (alias)
+        'actual_freight_cost' => 'decimal:2',              // 10,2 (alias)
+        'fuel_cost' => 'decimal:2',                        // 10,2
+        'port_charges' => 'decimal:2',                     // 10,2
+        'total_voyage_cost' => 'decimal:2',                // 10,2
+        
+        // Tracking de rendimiento
+        'distance_nautical_miles' => 'decimal:2',          // 8,2
+        'average_speed_knots' => 'decimal:2',              // 5,2
+        'fuel_consumption' => 'decimal:2',                 // 8,2
+        'fuel_efficiency' => 'decimal:2',                  // 8,2
+
+        // === BOOLEANOS (CARACTERÍSTICAS Y ESTADOS) ===
+        // Características del viaje
+        'is_consolidated' => 'boolean',
+        'has_transshipment' => 'boolean',
+        'requires_pilot' => 'boolean',
+        'is_convoy' => 'boolean',
+        
+        // Requerimientos especiales
+        'requires_escort' => 'boolean',
+        'hazardous_cargo' => 'boolean',
+        'refrigerated_cargo' => 'boolean',
+        'oversized_cargo' => 'boolean',
+        'dangerous_cargo' => 'boolean',                    // alias
+        
+        // Aprobaciones y despachos
+        'customs_approved' => 'boolean',
+        'port_authority_approved' => 'boolean',
+        'all_documents_ready' => 'boolean',
+        'safety_approved' => 'boolean',
+        'customs_cleared_origin' => 'boolean',
+        'customs_cleared_destination' => 'boolean',
+        'documentation_complete' => 'boolean',
+        'environmental_approved' => 'boolean',
+        
+        // Estados de control
+        'active' => 'boolean',
+        'archived' => 'boolean',
+        'requires_follow_up' => 'boolean',
+        'has_incidents' => 'boolean',
+
+        // === CAMPOS JSON (DATOS COMPLEJOS) ===
+        'weather_conditions' => 'array',
+        'route_conditions' => 'array',
+        'river_conditions' => 'array',                     // alias
+        'required_documents' => 'array',
+        'uploaded_documents' => 'array',
+        'emergency_contacts' => 'array',
+        'safety_equipment' => 'array',
+        'reporting_schedule' => 'array',
+
+        // === ENTEROS (CANTIDADES Y CONTADORES) ===
+        'vessel_count' => 'integer',
+        'total_container_capacity' => 'integer',
+        'total_containers_loaded' => 'integer',
+        'total_containers' => 'integer',                   // alias
+        'total_bills_of_lading' => 'integer',
+        'total_clients' => 'integer',
+        'transit_time_hours' => 'integer',
+        'created_by_user_id' => 'integer',
+        'last_updated_by_user_id' => 'integer',
+    ];
+
+    /**
+     * Relations
+     */
+    // Relacion con la empresa propietaria del viaje
+    public function shipments(): HasMany
+    {
+        return $this->hasMany(Shipment::class);
+    }
     /**
      * Transacciones de webservice relacionadas con el viaje
      */
@@ -412,15 +604,30 @@ class Voyage extends Model
      */
     public function recalculateShipmentStats(): void
     {
+        // Cargar la relación si no está cargada
+        if (!$this->relationLoaded('shipments')) {
+            $this->load('shipments');
+        }
+        
         $shipments = $this->shipments;
         
+        // Verificar que la colección no sea null
+        if ($shipments === null) {
+            $shipments = $this->shipments()->get();
+        }
+
+        // Calcular utilización promedio manualmente
+        $avgUtilization = $shipments->count() > 0 
+            ? $shipments->avg('utilization_percentage') ?? 0 
+            : 0;
+
         $this->update([
             'vessel_count' => $shipments->count(),
             'total_cargo_capacity_tons' => $shipments->sum('cargo_capacity_tons'),
             'total_container_capacity' => $shipments->sum('container_capacity'),
             'total_cargo_weight_loaded' => $shipments->sum('cargo_weight_loaded'),
             'total_containers_loaded' => $shipments->sum('containers_loaded'),
-            'capacity_utilization_percentage' => $this->calculateUtilizationPercentage(),
+            'capacity_utilization_percentage' => $avgUtilization, // ✅ Campo correcto
         ]);
     }
 

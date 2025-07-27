@@ -11,8 +11,7 @@ return new class extends Migration
      * 
      * MÓDULO 3: VIAJES Y CARGAS
      * Tabla shipments - Envíos individuales dentro de un viaje
-     * Cada embarcación en un convoy es un shipment
-     * Un viaje puede tener 1 shipment (barco único) o varios (convoy)
+     * UNIFICADA - Coherente con modelo y seeder
      */
     public function up(): void
     {
@@ -20,53 +19,37 @@ return new class extends Migration
             // Primary key
             $table->id();
 
-            // References to confirmed system tables
-            // Foreign keys definidos manualmente
+            // Foreign keys
             $table->unsignedBigInteger('voyage_id')->comment('Viaje al que pertenece');
             $table->unsignedBigInteger('vessel_id')->comment('Embarcación de este envío');
             $table->unsignedBigInteger('captain_id')->nullable()->comment('Capitán de esta embarcación');
+            
             // Shipment identification
             $table->string('shipment_number', 50)->comment('Número del envío');
             $table->integer('sequence_in_voyage')->comment('Secuencia en el viaje');
 
-            // Convoy position (for convoy operations)
-            $table->enum('vessel_role', [
-                'single',           // Embarcación única
-                'lead',            // Líder (remolcador/empujador)
-                'towed',           // Remolcada
-                'pushed',          // Empujada
-                'escort'           // Escolta
-            ])->comment('Rol en el convoy');
-
+            // Convoy configuration
+            $table->enum('vessel_role', ['single', 'lead', 'towed', 'pushed', 'escort'])->comment('Rol en el convoy');
             $table->integer('convoy_position')->nullable()->comment('Posición en convoy (1, 2, 3...)');
             $table->boolean('is_lead_vessel')->default(false)->comment('Es embarcación líder');
 
-            // Cargo capacity for this shipment
+            // Cargo capacity and loading
             $table->decimal('cargo_capacity_tons', 10, 2)->comment('Capacidad carga en toneladas');
             $table->integer('container_capacity')->default(0)->comment('Capacidad contenedores');
             $table->decimal('cargo_weight_loaded', 10, 2)->default(0)->comment('Peso cargado');
             $table->integer('containers_loaded')->default(0)->comment('Contenedores cargados');
             $table->decimal('utilization_percentage', 5, 2)->default(0)->comment('Porcentaje utilización');
 
-            // Individual shipment status
-            $table->enum('status', [
-                'planning',         // Planificación
-                'loading',          // Cargando
-                'loaded',           // Cargado
-                'in_transit',       // En tránsito
-                'arrived',          // Arribado
-                'discharging',      // Descargando
-                'completed',        // Completado
-                'delayed'           // Demorado
-            ])->default('planning')->comment('Estado del envío');
+            // Shipment status
+            $table->enum('status', ['planning', 'loading', 'loaded', 'in_transit', 'arrived', 'discharging', 'completed', 'delayed'])->default('planning')->comment('Estado del envío');
 
-            // Dates specific to this shipment
-            $table->datetime('loading_start')->nullable()->comment('Inicio carga');
-            $table->datetime('loading_end')->nullable()->comment('Fin carga');
+            // NOMBRES UNIFICADOS - Tiempos operacionales (formato descriptivo)
+            $table->datetime('loading_start_time')->nullable()->comment('Inicio carga');
+            $table->datetime('loading_end_time')->nullable()->comment('Fin carga');
             $table->datetime('departure_time')->nullable()->comment('Hora salida');
             $table->datetime('arrival_time')->nullable()->comment('Hora llegada');
-            $table->datetime('discharge_start')->nullable()->comment('Inicio descarga');
-            $table->datetime('discharge_end')->nullable()->comment('Fin descarga');
+            $table->datetime('discharge_start_time')->nullable()->comment('Inicio descarga');
+            $table->datetime('discharge_end_time')->nullable()->comment('Fin descarga');
 
             // Position and tracking
             $table->decimal('current_latitude', 10, 8)->nullable()->comment('Latitud actual');
@@ -80,9 +63,11 @@ return new class extends Migration
             $table->json('cargo_manifest')->nullable()->comment('Manifiesto de carga');
             $table->integer('bills_of_lading_count')->default(0)->comment('Cantidad conocimientos');
 
-            // Safety and compliance
+            // Safety and compliance - UNIFICADO CON SEEDER
             $table->boolean('safety_approved')->default(false)->comment('Aprobado seguridad');
             $table->boolean('customs_cleared')->default(false)->comment('Despacho aduanero');
+            $table->boolean('documentation_complete')->default(false)->comment('Documentación completa');
+            $table->boolean('cargo_inspected')->default(false)->comment('Carga inspeccionada');
             $table->boolean('has_dangerous_cargo')->default(false)->comment('Carga peligrosa');
             $table->text('safety_notes')->nullable()->comment('Notas seguridad');
 
@@ -106,12 +91,15 @@ return new class extends Migration
             // Documents and attachments
             $table->json('required_documents')->nullable()->comment('Documentos requeridos');
             $table->json('uploaded_documents')->nullable()->comment('Documentos subidos');
-            $table->boolean('documentation_complete')->default(false)->comment('Documentación completa');
 
-            // Notes and observations
+            // Notes and observations - UNIFICADO CON MODELO Y SEEDER
             $table->text('operational_notes')->nullable()->comment('Notas operacionales');
             $table->text('cargo_notes')->nullable()->comment('Notas de carga');
             $table->text('incidents')->nullable()->comment('Incidentes reportados');
+            $table->text('special_instructions')->nullable()->comment('Instrucciones especiales');
+            $table->text('handling_notes')->nullable()->comment('Notas de manejo');
+            $table->text('delay_reason')->nullable()->comment('Razón del retraso');
+            $table->integer('delay_minutes')->nullable()->comment('Minutos de retraso');
 
             // Status flags
             $table->boolean('active')->default(true)->comment('Envío activo');
@@ -123,7 +111,7 @@ return new class extends Migration
             $table->unsignedBigInteger('created_by_user_id')->nullable()->comment('Usuario creador');
             $table->timestamps();
 
-            // Performance indexes
+            // Indexes
             $table->index(['voyage_id', 'sequence_in_voyage'], 'idx_shipments_voyage_sequence');
             $table->index(['vessel_id', 'status'], 'idx_shipments_vessel_status');
             $table->index(['status', 'departure_time'], 'idx_shipments_status_departure');
@@ -139,17 +127,12 @@ return new class extends Migration
             $table->unique(['voyage_id', 'sequence_in_voyage'], 'uk_shipments_voyage_sequence');
 
             // Foreign key constraints
-            // Foreign key constraints con nombres explícitos
             $table->foreign('voyage_id', 'fk_shipments_voyage')->references('id')->on('voyages')->onDelete('cascade');
             $table->foreign('vessel_id', 'fk_shipments_vessel')->references('id')->on('vessels')->onDelete('restrict');
             $table->foreign('captain_id', 'fk_shipments_captain')->references('id')->on('captains')->onDelete('set null');
-            // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('shipments');
