@@ -22,58 +22,43 @@ return new class extends Migration
             // Primary key
             $table->id();
 
-            // Reference to shipment (confirmed table)
-           // $table->foreignId('shipment_id')->constrained('shipments')->comment('Envío al que pertenece');
-
-            // Bill of lading identification
-            // Foreign keys definidos manualmente
+            // Foreign keys principales
             $table->unsignedBigInteger('shipment_id')->comment('Envío al que pertenece');
             $table->unsignedBigInteger('shipper_id')->comment('Cargador/Exportador');
             $table->unsignedBigInteger('consignee_id')->comment('Consignatario/Importador');
             $table->unsignedBigInteger('notify_party_id')->nullable()->comment('Parte a notificar');
             $table->unsignedBigInteger('cargo_owner_id')->nullable()->comment('Propietario de la carga');
+            
+            // Puertos y aduanas
             $table->unsignedBigInteger('loading_port_id')->comment('Puerto de carga');
             $table->unsignedBigInteger('discharge_port_id')->comment('Puerto de descarga');
             $table->unsignedBigInteger('transshipment_port_id')->nullable()->comment('Puerto transbordo');
             $table->unsignedBigInteger('final_destination_port_id')->nullable()->comment('Destino final');
             $table->unsignedBigInteger('loading_customs_id')->nullable()->comment('Aduana de carga');
             $table->unsignedBigInteger('discharge_customs_id')->nullable()->comment('Aduana de descarga');
+            
+            // Tipos de carga y embalaje
             $table->unsignedBigInteger('primary_cargo_type_id')->comment('Tipo principal de carga');
             $table->unsignedBigInteger('primary_packaging_type_id')->comment('Tipo principal embalaje');
                     
-            // Bill of lading identification  
+            // Identificación del conocimiento
             $table->string('bill_number', 50)->unique()->comment('Número conocimiento embarque');
             $table->string('master_bill_number', 50)->nullable()->comment('Conocimiento madre (consolidados)');
             $table->string('house_bill_number', 50)->nullable()->comment('Conocimiento hijo');
             $table->string('internal_reference', 100)->nullable()->comment('Referencia interna empresa');
-            // Bill of lading dates
-            $table->date('issue_date')->comment('Fecha emisión conocimiento');
-            $table->date('loading_date')->comment('Fecha de carga');
-            $table->date('discharge_date')->nullable()->comment('Fecha de descarga');
-            $table->date('delivery_date')->nullable()->comment('Fecha de entrega');
-            $table->date('cargo_ready_date')->nullable()->comment('Fecha mercadería lista');
+            $table->datetime('bill_date')->comment('Fecha del conocimiento');
+            $table->string('manifest_number', 50)->nullable()->comment('Número de manifiesto');
+            $table->integer('manifest_line_number')->nullable()->comment('Línea en manifiesto');
 
-            // Cargo summary
-            $table->integer('total_packages')->default(0)->comment('Total bultos');
-            $table->decimal('gross_weight_kg', 12, 2)->comment('Peso bruto en kilogramos');
-            $table->decimal('net_weight_kg', 12, 2)->nullable()->comment('Peso neto en kilogramos');
-            $table->decimal('volume_m3', 10, 3)->nullable()->comment('Volumen en metros cúbicos');
-            $table->integer('container_count')->default(0)->comment('Cantidad contenedores');
+            // Fechas operacionales
+            $table->datetime('loading_date')->comment('Fecha de carga');
+            $table->datetime('discharge_date')->nullable()->comment('Fecha de descarga');
+            $table->datetime('arrival_date')->nullable()->comment('Fecha de arribo');
+            $table->datetime('delivery_date')->nullable()->comment('Fecha de entrega');
+            $table->datetime('cargo_ready_date')->nullable()->comment('Fecha mercadería lista');
+            $table->datetime('free_time_expires_at')->nullable()->comment('Vencimiento tiempo libre');
 
-            // Cargo description
-            $table->text('cargo_description')->comment('Descripción de la mercadería');
-            $table->text('cargo_marks')->nullable()->comment('Marcas de la mercadería');
-            $table->string('commodity_code', 20)->nullable()->comment('Código commodity/NCM');
-            $table->json('special_instructions')->nullable()->comment('Instrucciones especiales');
-
-            // Bill type and characteristics
-            $table->enum('bill_type', [
-                'original',         // Original
-                'copy',            // Copia
-                'duplicate',       // Duplicado
-                'amendment'        // Enmienda
-            ])->default('original')->comment('Tipo de conocimiento');
-
+            // Términos comerciales
             $table->enum('freight_terms', [
                 'prepaid',         // Prepagado
                 'collect',         // Por cobrar
@@ -87,47 +72,105 @@ return new class extends Migration
                 'other'            // Otro
             ])->default('cash')->comment('Términos de pago');
 
-            // Consolidation and transshipment
-            $table->boolean('is_consolidated')->default(false)->comment('Es consolidado');
-            $table->boolean('is_master_bill')->default(false)->comment('Es conocimiento madre');
-            $table->boolean('is_house_bill')->default(false)->comment('Es conocimiento hijo');
-            $table->boolean('allows_transshipment')->default(true)->comment('Permite transbordo');
-            $table->boolean('requires_surrender')->default(false)->comment('Requiere entrega');
+            $table->string('incoterms', 10)->nullable()->comment('Términos Incoterms');
+            $table->string('currency_code', 3)->default('USD')->comment('Moneda');
 
-            // Special cargo characteristics
-            $table->boolean('is_dangerous_cargo')->default(false)->comment('Carga peligrosa');
-            $table->boolean('is_perishable')->default(false)->comment('Carga perecedera');
-            $table->boolean('is_fragile')->default(false)->comment('Carga frágil');
-            $table->boolean('requires_refrigeration')->default(false)->comment('Requiere refrigeración');
-            $table->boolean('requires_special_handling')->default(false)->comment('Requiere manejo especial');
-            $table->string('un_number', 10)->nullable()->comment('Número UN (mercancías peligrosas)');
-            $table->string('imdg_class', 10)->nullable()->comment('Clase IMDG');
+            // Medidas y pesos
+            $table->integer('total_packages')->default(0)->comment('Total bultos');
+            $table->decimal('gross_weight_kg', 12, 2)->comment('Peso bruto en kilogramos');
+            $table->decimal('net_weight_kg', 12, 2)->nullable()->comment('Peso neto en kilogramos');
+            $table->decimal('volume_m3', 10, 3)->nullable()->comment('Volumen en metros cúbicos');
+            $table->string('measurement_unit', 10)->default('KG')->comment('Unidad de medida');
+            $table->integer('container_count')->default(0)->comment('Cantidad contenedores');
 
-            // Status tracking
+            // Descripción de carga
+            $table->text('cargo_description')->comment('Descripción de la mercadería');
+            $table->text('cargo_marks')->nullable()->comment('Marcas de la mercadería');
+            $table->string('commodity_code', 20)->nullable()->comment('Código commodity/NCM');
+
+            // Tipo y características del conocimiento
+            $table->enum('bill_type', [
+                'original',         // Original
+                'copy',            // Copia
+                'duplicate',       // Duplicado
+                'amendment'        // Enmienda
+            ])->default('original')->comment('Tipo de conocimiento');
+
+            // Estados y control
             $table->enum('status', [
                 'draft',           // Borrador
-                'issued',          // Emitido
-                'loaded',          // Cargado
-                'in_transit',      // En tránsito
-                'arrived',         // Arribado
-                'discharged',      // Descargado
-                'delivered',       // Entregado
+                'pending_review',  // Pendiente Revisión
+                'verified',        // Verificado
+                'sent_to_customs', // Enviado a Aduana
+                'accepted',        // Aceptado
+                'rejected',        // Rechazado
                 'completed',       // Completado
                 'cancelled'        // Cancelado
             ])->default('draft')->comment('Estado del conocimiento');
 
-            $table->boolean('customs_cleared')->default(false)->comment('Despacho aduanero');
-            $table->boolean('documentation_complete')->default(false)->comment('Documentación completa');
-            $table->boolean('ready_for_delivery')->default(false)->comment('Listo para entrega');
+            $table->enum('priority_level', [
+                'low', 'normal', 'high', 'urgent'
+            ])->default('normal')->comment('Nivel de prioridad');
 
-            // Financial information
+            // Características especiales de carga
+            $table->boolean('requires_inspection')->default(false)->comment('Requiere inspección');
+            $table->boolean('contains_dangerous_goods')->default(false)->comment('Contiene mercancías peligrosas');
+            $table->boolean('requires_refrigeration')->default(false)->comment('Requiere refrigeración');
+            $table->boolean('is_transhipment')->default(false)->comment('Es transbordo');
+            $table->boolean('is_partial_shipment')->default(false)->comment('Es envío parcial');
+            $table->boolean('allows_partial_delivery')->default(true)->comment('Permite entrega parcial');
+            $table->boolean('requires_documents_on_arrival')->default(false)->comment('Requiere documentos al arribo');
+
+            // Consolidación
+            $table->boolean('is_consolidated')->default(false)->comment('Es consolidado');
+            $table->boolean('is_master_bill')->default(false)->comment('Es conocimiento madre');
+            $table->boolean('is_house_bill')->default(false)->comment('Es conocimiento hijo');
+            $table->boolean('requires_surrender')->default(false)->comment('Requiere entrega');
+
+            // Mercancías peligrosas
+            $table->string('un_number', 10)->nullable()->comment('Número UN (mercancías peligrosas)');
+            $table->string('imdg_class', 10)->nullable()->comment('Clase IMDG');
+
+            // Información financiera
             $table->decimal('freight_amount', 10, 2)->nullable()->comment('Monto flete');
             $table->decimal('insurance_amount', 10, 2)->nullable()->comment('Monto seguro');
             $table->decimal('declared_value', 12, 2)->nullable()->comment('Valor declarado');
-            $table->string('currency_code', 3)->default('USD')->comment('Moneda');
             $table->json('additional_charges')->nullable()->comment('Cargos adicionales');
 
-            // Webservice integration
+            // Instrucciones y observaciones
+            $table->json('special_instructions')->nullable()->comment('Instrucciones especiales');
+            $table->text('handling_instructions')->nullable()->comment('Instrucciones manejo');
+            $table->text('customs_remarks')->nullable()->comment('Observaciones aduaneras');
+            $table->text('internal_notes')->nullable()->comment('Notas internas');
+            $table->text('loading_remarks')->nullable()->comment('Observaciones carga');
+            $table->text('discharge_remarks')->nullable()->comment('Observaciones descarga');
+            $table->text('delivery_remarks')->nullable()->comment('Observaciones entrega');
+
+            // Control de calidad y condición
+            $table->enum('cargo_condition_loading', [
+                'good', 'fair', 'poor', 'damaged', 'not_inspected'
+            ])->default('good')->comment('Condición en carga');
+            $table->enum('cargo_condition_discharge', [
+                'good', 'fair', 'poor', 'damaged', 'not_inspected'
+            ])->nullable()->comment('Condición en descarga');
+            $table->text('condition_remarks')->nullable()->comment('Observaciones condición');
+
+            // Verificación y discrepancias
+            $table->datetime('verified_at')->nullable()->comment('Fecha verificación');
+            $table->unsignedBigInteger('verified_by_user_id')->nullable()->comment('Usuario verificador');
+            $table->boolean('has_discrepancies')->default(false)->comment('Tiene discrepancias');
+            $table->json('discrepancy_details')->nullable()->comment('Detalles discrepancias');
+
+            // Webservices integración
+            $table->enum('webservice_status', [
+                'pending', 'sent', 'accepted', 'rejected', 'error'
+            ])->nullable()->comment('Estado webservice');
+            $table->string('webservice_reference', 100)->nullable()->comment('Referencia webservice');
+            $table->datetime('webservice_sent_at')->nullable()->comment('Enviado webservice');
+            $table->datetime('webservice_response_at')->nullable()->comment('Respuesta webservice');
+            $table->text('webservice_error_message')->nullable()->comment('Error webservice');
+
+            // Específicos para Argentina y Paraguay
             $table->string('argentina_bill_id', 50)->nullable()->comment('ID en webservice Argentina');
             $table->string('paraguay_bill_id', 50)->nullable()->comment('ID en webservice Paraguay');
             $table->enum('argentina_status', [
@@ -140,80 +183,51 @@ return new class extends Migration
             $table->datetime('paraguay_sent_at')->nullable()->comment('Enviado a Paraguay');
             $table->json('webservice_errors')->nullable()->comment('Errores webservice');
 
-            // Delivery and pickup information
+            // Entrega y recogida
             $table->string('delivery_address', 500)->nullable()->comment('Dirección entrega');
             $table->string('pickup_address', 500)->nullable()->comment('Dirección recogida');
             $table->string('delivery_contact_name', 100)->nullable()->comment('Contacto entrega');
             $table->string('delivery_contact_phone', 30)->nullable()->comment('Teléfono contacto');
             $table->json('delivery_instructions')->nullable()->comment('Instrucciones entrega');
 
-            // Documents and attachments
+            // Documentos
             $table->json('required_documents')->nullable()->comment('Documentos requeridos');
             $table->json('attached_documents')->nullable()->comment('Documentos adjuntos');
             $table->boolean('original_released')->default(false)->comment('Original liberado');
             $table->datetime('original_release_date')->nullable()->comment('Fecha liberación original');
+            $table->boolean('documentation_complete')->default(false)->comment('Documentación completa');
+            $table->boolean('ready_for_delivery')->default(false)->comment('Listo para entrega');
 
-            // Temperature control (for refrigerated cargo)
-            $table->decimal('required_temperature_min', 5, 2)->nullable()->comment('Temperatura mínima °C');
-            $table->decimal('required_temperature_max', 5, 2)->nullable()->comment('Temperatura máxima °C');
-            $table->boolean('temperature_controlled')->default(false)->comment('Control temperatura');
-            $table->json('temperature_log')->nullable()->comment('Registro temperaturas');
-
-            // Operational notes
-            $table->text('loading_remarks')->nullable()->comment('Observaciones carga');
-            $table->text('discharge_remarks')->nullable()->comment('Observaciones descarga');
-            $table->text('delivery_remarks')->nullable()->comment('Observaciones entrega');
-            $table->text('general_remarks')->nullable()->comment('Observaciones generales');
-            $table->json('incident_reports')->nullable()->comment('Reportes incidentes');
-
-            // Quality and condition
-            $table->enum('cargo_condition_loading', [
-                'good', 'fair', 'poor', 'damaged', 'not_inspected'
-            ])->default('good')->comment('Condición en carga');
-            $table->enum('cargo_condition_discharge', [
-                'good', 'fair', 'poor', 'damaged', 'not_inspected'
-            ])->nullable()->comment('Condición en descarga');
-            $table->text('condition_remarks')->nullable()->comment('Observaciones condición');
-
-            // Environmental and regulatory
-            $table->json('environmental_requirements')->nullable()->comment('Requerimientos ambientales');
-            $table->json('regulatory_compliance')->nullable()->comment('Cumplimiento regulatorio');
+            // Control aduanero
+            $table->boolean('customs_cleared')->default(false)->comment('Despacho aduanero');
             $table->boolean('customs_bond_required')->default(false)->comment('Requiere fianza aduanera');
             $table->string('customs_bond_number', 100)->nullable()->comment('Número fianza');
 
-            // Status flags
-            $table->boolean('active')->default(true)->comment('Conocimiento activo');
-            $table->boolean('archived')->default(false)->comment('Archivado');
-            $table->boolean('requires_review')->default(false)->comment('Requiere revisión');
-            $table->boolean('has_discrepancies')->default(false)->comment('Tiene discrepancias');
-
-            // Audit trail
-            $table->timestamp('created_date')->useCurrent()->comment('Fecha creación');
+            // Auditoría
             $table->unsignedBigInteger('created_by_user_id')->nullable()->comment('Usuario creador');
-            $table->timestamp('last_updated_date')->useCurrent()->useCurrentOnUpdate()->comment('Última actualización');
             $table->unsignedBigInteger('last_updated_by_user_id')->nullable()->comment('Último usuario actualizó');
             $table->timestamps();
+            $table->softDeletes();
 
-            // Performance indexes
+            // Índices de rendimiento
             $table->index(['shipment_id', 'status'], 'idx_bills_shipment_status');
             $table->index(['shipper_id', 'status'], 'idx_bills_shipper_status');
             $table->index(['consignee_id', 'status'], 'idx_bills_consignee_status');
             $table->index(['loading_port_id', 'discharge_port_id'], 'idx_bills_route');
-            $table->index(['issue_date', 'loading_date'], 'idx_bills_dates');
+            $table->index(['bill_date', 'loading_date'], 'idx_bills_dates');
             $table->index(['status', 'customs_cleared'], 'idx_bills_status_customs');
             $table->index(['is_consolidated', 'is_master_bill'], 'idx_bills_consolidation');
             $table->index(['argentina_status'], 'idx_bills_argentina');
             $table->index(['paraguay_status'], 'idx_bills_paraguay');
             $table->index(['primary_cargo_type_id'], 'idx_bills_cargo_type');
-            $table->index(['requires_review'], 'idx_bills_review');
             $table->index(['has_discrepancies'], 'idx_bills_discrepancies');
-            $table->index(['active', 'archived'], 'idx_bills_active');
+            $table->index(['webservice_status'], 'idx_bills_webservice');
+            $table->index(['verified_at'], 'idx_bills_verified');
 
-            // Unique constraints
+            // Constraint único
             $table->unique(['bill_number'], 'uk_bills_number');
 
-            // Foreign key constraints (only to confirmed existing tables)
-            // Foreign key constraints con nombres explícitos
+            // Foreign key constraints
             $table->foreign('shipment_id', 'fk_bills_shipment')->references('id')->on('shipments')->onDelete('cascade');
             $table->foreign('shipper_id', 'fk_bills_shipper')->references('id')->on('clients')->onDelete('restrict');
             $table->foreign('consignee_id', 'fk_bills_consignee')->references('id')->on('clients')->onDelete('restrict');
@@ -226,8 +240,10 @@ return new class extends Migration
             $table->foreign('loading_customs_id', 'fk_bills_loading_customs')->references('id')->on('customs_offices')->onDelete('set null');
             $table->foreign('discharge_customs_id', 'fk_bills_discharge_customs')->references('id')->on('customs_offices')->onDelete('set null');
             $table->foreign('primary_cargo_type_id', 'fk_bills_cargo_type')->references('id')->on('cargo_types')->onDelete('restrict');
-            $table->foreign('primary_packaging_type_id', 'fk_bills_packaging_type')->references('id')->on('packaging_types')->onDelete('restrict');// $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
-            // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('primary_packaging_type_id', 'fk_bills_packaging_type')->references('id')->on('packaging_types')->onDelete('restrict');
+            $table->foreign('verified_by_user_id', 'fk_bills_verified_by')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('created_by_user_id', 'fk_bills_created_by')->references('id')->on('users')->onDelete('set null');
+            $table->foreign('last_updated_by_user_id', 'fk_bills_updated_by')->references('id')->on('users')->onDelete('set null');
         });
     }
 

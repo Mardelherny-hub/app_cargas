@@ -15,6 +15,8 @@ use App\Http\Controllers\Company\TransferController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
 use App\Http\Controllers\Company\VesselOwnerController;
+use App\Http\Controllers\Company\BillOfLadingController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -59,6 +61,44 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
     // Historial y seguimiento
     Route::get('/{shipment}/history', [ShipmentController::class, 'history'])->name('history');
     Route::get('/{shipment}/tracking', [ShipmentController::class, 'tracking'])->name('tracking');
+});
+
+// Gestión de Conocimientos de Embarque
+Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(function () {
+    // CRUD básico
+    Route::get('/', [BillOfLadingController::class, 'index'])->name('index');
+    Route::get('/create', [BillOfLadingController::class, 'create'])->name('create');
+    Route::post('/', [BillOfLadingController::class, 'store'])->name('store');
+    Route::get('/{bill_of_lading}', [BillOfLadingController::class, 'show'])->name('show');
+    Route::get('/{bill_of_lading}/edit', [BillOfLadingController::class, 'edit'])->name('edit');
+    Route::put('/{bill_of_lading}', [BillOfLadingController::class, 'update'])->name('update');
+    Route::delete('/{bill_of_lading}', [BillOfLadingController::class, 'destroy'])->name('destroy');
+
+    // Acciones específicas de conocimientos
+    Route::patch('/{bill_of_lading}/verify', [BillOfLadingController::class, 'verify'])->name('verify');
+    Route::patch('/{bill_of_lading}/status', [BillOfLadingController::class, 'updateStatus'])->name('update-status');
+    Route::post('/{bill_of_lading}/duplicate', [BillOfLadingController::class, 'duplicate'])->name('duplicate');
+    
+    // Documentos y reportes
+    Route::get('/{bill_of_lading}/pdf', [BillOfLadingController::class, 'generatePdf'])->name('pdf');
+    Route::get('/{bill_of_lading}/print', [BillOfLadingController::class, 'print'])->name('print');
+    
+    // Adjuntos
+    Route::get('/{bill_of_lading}/attachments', [BillOfLadingController::class, 'attachments'])->name('attachments');
+    Route::post('/{bill_of_lading}/attachments', [BillOfLadingController::class, 'uploadAttachment'])->name('upload-attachment');
+    Route::delete('/{bill_of_lading}/attachments/{attachment}', [BillOfLadingController::class, 'deleteAttachment'])->name('delete-attachment');
+
+    // Búsqueda y filtros
+    Route::get('/search', [BillOfLadingController::class, 'search'])->name('search');
+    Route::post('/search', [BillOfLadingController::class, 'searchResults'])->name('search-results');
+    
+    // Exportación
+    Route::post('/export', [BillOfLadingController::class, 'export'])->name('export');
+    Route::get('/export/{format}', [BillOfLadingController::class, 'exportByFormat'])->name('export-format');
+
+    // Historial y auditoría
+    Route::get('/{bill_of_lading}/history', [BillOfLadingController::class, 'history'])->name('history');
+    Route::get('/{bill_of_lading}/audit', [BillOfLadingController::class, 'auditLog'])->name('audit');
 });
 
 // Gestión de Viajes

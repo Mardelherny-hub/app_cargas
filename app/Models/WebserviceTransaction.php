@@ -12,7 +12,7 @@ use Carbon\Carbon;
 
 /**
  * MÓDULO 4: WEBSERVICES ADUANA - Modelo WebserviceTransaction
- *
+ * 
  * Modelo principal para transacciones de webservices aduaneros.
  * Maneja el ciclo completo de vida de las transacciones SOAP con
  * Argentina (AFIP) y Paraguay (DNA/Aduanas).
