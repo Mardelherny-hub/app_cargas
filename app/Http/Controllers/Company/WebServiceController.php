@@ -19,6 +19,7 @@ use App\Models\WebserviceLog;
 use App\Http\Requests\Company\ImportManifestRequest;
 use App\Models\Voyage;
 use App\Models\Shipment;
+use App\Models\Client;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -1080,11 +1081,10 @@ private function getTransfersForWebservice(Company $company): array
                 'anticipada' => $this->processArgentinaAnticipated($transaction, $sendData, $user),
                 'micdta' => $this->processArgentinaMicDta($transaction, $sendData, $user),
                 'desconsolidados' => $this->processArgentinaDeconsolidation($transaction, $sendData, $user),
-                'transbordos' => $this->processArgentinaTransshipment($transaction, $sendData, $user),
+                'transbordos', 'transbordo' => $this->processArgentinaTransshipment($transaction, $sendData, $user), // ← AQUÍ
                 'paraguay' => $this->processParaguayCustoms($transaction, $sendData, $user),
                 default => throw new Exception("Tipo de webservice no soportado: {$validated['webservice_type']}")
             };
-
             return $result;
 
         } catch (Exception $e) {
@@ -1111,66 +1111,70 @@ private function getTransfersForWebservice(Company $company): array
     /**
      * Procesar Información Anticipada Argentina
      */
-    private function processArgentinaAnticipated(WebserviceTransaction $transaction, array $sendData, User $user): array
-    {
-        try {
-            $service = new ArgentinaAnticipatedService($sendData['company'], $user);
-            $service->setEnvironment($sendData['environment']);
+private function processArgentinaAnticipated(WebserviceTransaction $transaction, array $sendData, User $user): array
+{
+    try {
+        $service = new ArgentinaAnticipatedService($sendData['company'], $user);
+        $service->setEnvironment($sendData['environment']);
 
-            // Validar datos requeridos
-            if (!isset($sendData['voyage'])) {
-                throw new Exception('Se requiere un viaje para enviar información anticipada');
-            }
+        // Validar datos requeridos
+        if (!isset($sendData['voyage'])) {
+            throw new Exception('Se requiere un viaje para enviar información anticipada');
+        }
 
-            $voyage = $sendData['voyage'];
-            
-            // Actualizar transacción con datos del viaje
-            $transaction->update([
-                'voyage_id' => $voyage->id,
-                'webservice_url' => $service->getWebserviceUrl(),
-                'status' => 'sending',
-                'sent_at' => now(),
-            ]);
+        $voyage = $sendData['voyage'];
+        
+        // ✅ CORRECCIÓN: Actualizar transacción SIN llamar al método privado getWebserviceUrl()
+        $transaction->update([
+            'voyage_id' => $voyage->id,
+            // ❌ LÍNEA REMOVIDA: 'webservice_url' => $service->getWebserviceUrl(),
+            'status' => 'sending',
+            'sent_at' => now(),
+        ]);
 
-            $this->logWebserviceOperation('info', 'Enviando información anticipada', [
-                'transaction_id' => $transaction->id,
-                'voyage_id' => $voyage->id,
-                //'voyage_id' => $voyage->voyage_number,
-                'vessel_name' => $voyage->vessel->name ?? 'N/A',
-            ]);
+        $this->logWebserviceOperation('info', 'Enviando información anticipada', [
+            'transaction_id' => $transaction->id,
+            'voyage_id' => $voyage->id,
+            'vessel_name' => $voyage->vessel->name ?? 'N/A',
+        ]);
 
-            // Enviar usando el servicio
-            $response = $service->sendVoyageData($voyage, $transaction->transaction_id);
+        // Enviar usando el servicio
+        $response = $service->sendVoyageData($voyage, $transaction->transaction_id);
 
-            if ($response['success']) {
-                return [
-                    'success' => true,
-                    'message' => 'Información anticipada enviada exitosamente',
-                    'confirmation_number' => $response['confirmation_number'] ?? null,
-                    'success_data' => $response['data'] ?? null,
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Error en el webservice de información anticipada: ' . ($response['error_message'] ?? 'Error desconocido'),
-                    'error_code' => $response['error_code'] ?? 'WEBSERVICE_ERROR',
-                    'error_details' => $response['error_details'] ?? null,
-                ];
-            }
-
-        } catch (Exception $e) {
-            $this->logWebserviceOperation('error', 'Error en información anticipada', [
-                'transaction_id' => $transaction->id,
-                'error' => $e->getMessage(),
-            ]);
-
+        if ($response['success']) {
+            return [
+                'success' => true,
+                'message' => 'Información anticipada enviada exitosamente',
+                'confirmation_number' => $response['confirmation_number'] ?? null,
+                'success_data' => $response['data'] ?? null,
+            ];
+        } else {
             return [
                 'success' => false,
-                'message' => 'Error procesando información anticipada: ' . $e->getMessage(),
-                'error_code' => 'ANTICIPADA_ERROR',
+                'message' => 'Error en el webservice de información anticipada: ' . ($response['error_message'] ?? 'Error desconocido'),
+                'error_code' => $response['error_code'] ?? 'WEBSERVICE_ERROR',
+                'error_details' => $response['error_details'] ?? null,
             ];
         }
+
+    } catch (Exception $e) {
+        $this->logWebserviceOperation('error', 'Error en información anticipada', [
+            'transaction_id' => $transaction->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return [
+            'success' => false,
+            'message' => 'Error procesando información anticipada: ' . $e->getMessage(),
+            'error_code' => 'PROCESSING_ERROR',
+            'error_details' => [
+                'type' => get_class($e),
+                'message' => $e->getMessage(),
+                'line' => $e->getLine(),
+            ]
+        ];
     }
+}
 
     /**
      * Procesar MIC/DTA Argentina
@@ -1197,7 +1201,6 @@ private function getTransfersForWebservice(Company $company): array
             $transaction->update([
                 'voyage_id' => $voyage->id,
                 'shipment_id' => $shipment->id ?? null,
-                'webservice_url' => $service->getWebserviceUrl(),
                 'status' => 'sending',
                 'sent_at' => now(),
             ]);
@@ -1265,7 +1268,7 @@ private function getTransfersForWebservice(Company $company): array
             $transaction->update([
                 'shipment_id' => $shipment->id,
                 'voyage_id' => $shipment->voyage_id ?? null,
-                'webservice_url' => $service->getWebserviceUrl(),
+                //'webservice_url' => $service->getWebserviceUrl(),
                 'status' => 'sending',
                 'sent_at' => now(),
             ]);
@@ -1312,65 +1315,199 @@ private function getTransfersForWebservice(Company $company): array
     /**
      * Procesar Transbordos Argentina
      */
-    private function processArgentinaTransshipment(WebserviceTransaction $transaction, array $sendData, User $user): array
-    {
-        try {
-            $service = new ArgentinaTransshipmentService($sendData['company'], $user);
-            $service->setEnvironment($sendData['environment']);
+/**
+ * Procesar Transbordos Argentina - VERSIÓN CORREGIDA CON LOGS DEBUG
+ * 
+ * REEMPLAZAR este método en: app/Http/Controllers/Company/WebServiceController.php
+ */
+private function processArgentinaTransshipment(WebserviceTransaction $transaction, array $sendData, User $user): array
+{
+    try {
+        Log::info('DEBUG: Entrando processArgentinaTransshipment', [
+            'transaction_id' => $transaction->id,
+            'voyage_present' => isset($sendData['voyage']),
+            'user_id' => $user->id
+        ]);
 
-            // Validar datos requeridos
-            if (!isset($sendData['voyage'])) {
-                throw new Exception('Se requiere un viaje para procesar transbordos');
-            }
+        $service = new ArgentinaTransshipmentService($sendData['company'], $user);
+        $service->setEnvironment($sendData['environment']);
+        
+        Log::info('DEBUG: Service ArgentinaTransshipmentService creado exitosamente');
 
-            $voyage = $sendData['voyage'];
+        // Validar datos requeridos
+        if (!isset($sendData['voyage'])) {
+            throw new Exception('Se requiere un viaje para procesar transbordos');
+        }
 
-            // Actualizar transacción
-            $transaction->update([
-                'voyage_id' => $voyage->id,
-                'webservice_url' => $service->getWebserviceUrl(),
-                'status' => 'sending',
-                'sent_at' => now(),
+        $voyage = $sendData['voyage'];
+        
+        Log::info('DEBUG: Voyage validado', [
+            'voyage_id' => $voyage->id,
+            'voyage_number' => $voyage->voyage_number ?? 'N/A'
+        ]);
+
+        // ✅ CORRECCIÓN: Actualizar transacción SIN webservice_url (causa error)
+        $transaction->update([
+            'voyage_id' => $voyage->id,
+            'status' => 'sending',
+            'sent_at' => now(),
+        ]);
+        
+        Log::info('DEBUG: Transacción actualizada a sending');
+
+        $this->logWebserviceOperation('info', 'Enviando transbordos', [
+            'transaction_id' => $transaction->id,
+            'voyage_id' => $voyage->id,
+            'vessel_type' => $voyage->vessel->vessel_type ?? 'N/A',
+        ]);
+
+        // ✅ CORRECCIÓN: Preparar datos de barcazas requeridos por registerTransshipment
+        Log::info('DEBUG: Preparando datos de barcazas');
+        
+        $bargeData = $this->prepareBargeDatatForTransshipment($voyage);
+        
+        Log::info('DEBUG: Datos de barcazas preparados', [
+            'barges_count' => count($bargeData),
+            'total_containers' => array_sum(array_map(function($barge) {
+                return count($barge['containers'] ?? []);
+            }, $bargeData))
+        ]);
+
+        // ✅ CORRECCIÓN: Llamar registerTransshipment (método correcto)
+        Log::info('DEBUG: Enviando registerTransshipment al servicio');
+        
+        $response = $service->registerTransshipment($bargeData, $voyage);
+        
+        Log::info('DEBUG: Respuesta de registerTransshipment recibida', [
+            'success' => $response['success'] ?? false,
+            'transaction_id' => $response['transaction_id'] ?? null,
+            'errors_count' => count($response['errors'] ?? [])
+        ]);
+
+        if ($response['success']) {
+            Log::info('DEBUG: Transbordo exitoso - preparando respuesta success');
+            
+            return [
+                'success' => true,
+                'message' => 'Transbordos procesados exitosamente',
+                'confirmation_number' => $response['transshipment_reference'] ?? null,
+                'success_data' => $response['response_data'] ?? null,
+            ];
+        } else {
+            Log::info('DEBUG: Transbordo falló - preparando respuesta error', [
+                'errors' => $response['errors'] ?? []
             ]);
-
-            $this->logWebserviceOperation('info', 'Enviando transbordos', [
-                'transaction_id' => $transaction->id,
-                'voyage_id' => $voyage->id,
-                'vessel_type' => $voyage->vessel->vessel_type ?? 'N/A',
-            ]);
-
-            // Enviar usando el servicio
-            $response = $service->processTransshipment($voyage, $transaction->transaction_id);
-
-            if ($response['success']) {
-                return [
-                    'success' => true,
-                    'message' => 'Transbordos procesados exitosamente',
-                    'confirmation_number' => $response['confirmation_number'] ?? null,
-                    'success_data' => $response['data'] ?? null,
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Error procesando transbordos: ' . ($response['error_message'] ?? 'Error desconocido'),
-                    'error_code' => $response['error_code'] ?? 'TRANSSHIPMENT_ERROR',
-                    'error_details' => $response['error_details'] ?? null,
-                ];
-            }
-
-        } catch (Exception $e) {
-            $this->logWebserviceOperation('error', 'Error en transbordos', [
-                'transaction_id' => $transaction->id,
-                'error' => $e->getMessage(),
-            ]);
-
+            
             return [
                 'success' => false,
-                'message' => 'Error procesando transbordos: ' . $e->getMessage(),
+                'message' => 'Error procesando transbordos: ' . implode(', ', $response['errors'] ?? ['Error desconocido']),
                 'error_code' => 'TRANSSHIPMENT_ERROR',
+                'error_details' => $response['errors'] ?? null,
             ];
         }
+
+    } catch (Exception $e) {
+        Log::error('DEBUG: Exception en processArgentinaTransshipment', [
+            'transaction_id' => $transaction->id,
+            'error' => $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => $e->getFile()
+        ]);
+
+        $this->logWebserviceOperation('error', 'Error en transbordos', [
+            'transaction_id' => $transaction->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return [
+            'success' => false,
+            'message' => 'Error procesando transbordos: ' . $e->getMessage(),
+            'error_code' => 'TRANSSHIPMENT_ERROR',
+        ];
     }
+}
+
+/**
+ * Preparar datos de barcazas para transbordo
+ * 
+ * AGREGAR este método helper en: app/Http/Controllers/Company/WebServiceController.php
+ */
+private function prepareBargeDatatForTransshipment(Voyage $voyage): array
+{
+    try {
+        Log::info('DEBUG: Preparando datos de barcazas para voyage', [
+            'voyage_id' => $voyage->id
+        ]);
+
+        // Cargar contenedores del viaje
+        $containers = $voyage->shipments()
+            ->with('containers')
+            ->get()
+            ->pluck('containers')
+            ->flatten();
+            
+        Log::info('DEBUG: Contenedores cargados', [
+            'containers_count' => $containers->count()
+        ]);
+
+        // Si no hay contenedores, crear barcaza vacía de ejemplo
+        if ($containers->isEmpty()) {
+            Log::info('DEBUG: No hay contenedores - creando barcaza vacía de ejemplo');
+            
+            return [
+                [
+                    'barge_id' => 'BARCAZA-' . $voyage->voyage_number,
+                    'containers' => [],
+                    'containers_count' => 0,
+                    'route' => [
+                        'origin' => $voyage->port_of_loading ?? 'N/A',
+                        'destination' => $voyage->port_of_discharge ?? 'N/A'
+                    ]
+                ]
+            ];
+        }
+
+        // Crear barcaza con contenedores reales
+        $bargeData = [
+            [
+                'barge_id' => 'BARCAZA-' . ($voyage->voyage_number ?? 'DEFAULT'),
+                'containers' => $containers->map(function($container) {
+                    return [
+                        'container_number' => $container->container_number,
+                        'container_type' => $container->container_type ?? '20ST',
+                        'weight' => $container->gross_weight ?? 0,
+                        'seal_number' => $container->seal_number ?? '',
+                    ];
+                })->toArray(),
+                'containers_count' => $containers->count(),
+                'route' => [
+                    'origin' => $voyage->port_of_loading ?? 'N/A',
+                    'destination' => $voyage->port_of_discharge ?? 'N/A'
+                ]
+            ]
+        ];
+        
+        Log::info('DEBUG: Barcaza con contenedores creada exitosamente');
+        
+        return $bargeData;
+        
+    } catch (Exception $e) {
+        Log::error('DEBUG: Error preparando datos de barcazas', [
+            'error' => $e->getMessage(),
+            'voyage_id' => $voyage->id
+        ]);
+        
+        // Retornar barcaza mínima en caso de error
+        return [
+            [
+                'barge_id' => 'BARCAZA-ERROR',
+                'containers' => [],
+                'containers_count' => 0,
+                'route' => ['origin' => 'N/A', 'destination' => 'N/A']
+            ]
+        ];
+    }
+}
 
     /**
      * Procesar Paraguay Customs
@@ -1393,7 +1530,7 @@ private function getTransfersForWebservice(Company $company): array
             $transaction->update([
                 'voyage_id' => $voyage->id ?? $shipment->voyage_id ?? null,
                 'shipment_id' => $shipment->id ?? null,
-                'webservice_url' => $service->getWebserviceUrl(),
+                //'webservice_url' => $service->getWebserviceUrl(),
                 'status' => 'sending',
                 'sent_at' => now(),
             ]);
@@ -2069,7 +2206,7 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
             $this->logWebserviceOperation('info', 'Ejecutando consulta Argentina', [
                 '_transaction_id' => $TransactionId,
                 '_data' => $Data,
-                'webservice_url' => $service->getWebserviceUrl(),
+                //'webservice_url' => $service->getWebserviceUrl(),
             ]);
 
             // Ejecutar consulta usando ConsultarTitEnviosReg
@@ -3854,6 +3991,13 @@ public function downloadPdf(WebserviceTransaction $webservice)
  */
 public function processPendingTransaction(WebserviceTransaction $webservice)
 {
+    // AGREGAR ESTE LOG AL INICIO
+    Log::info('DEBUG: Iniciando processPendingTransaction', [
+        'transaction_id' => $webservice->id,
+        'status' => $webservice->status,
+        'webservice_type' => $webservice->webservice_type
+    ]);
+
     // 1. Validaciones básicas
     if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
         abort(403, 'No tiene permisos para procesar transacciones.');
@@ -3887,7 +4031,8 @@ public function processPendingTransaction(WebserviceTransaction $webservice)
 
         // 5. Cargar relaciones necesarias según el tipo
         if ($webservice->voyage_id) {
-            $voyage = Voyage::with(['vessel', 'shipments', 'containers'])->find($webservice->voyage_id);
+            // ✅ CORRECCIÓN: 'shipments.containers' en lugar de 'containers'
+            $voyage = Voyage::with(['vessel', 'shipments.containers'])->find($webservice->voyage_id);
             if ($voyage) {
                 $sendData['voyage'] = $voyage;
                 if ($voyage->shipments->isNotEmpty()) {
@@ -3906,7 +4051,9 @@ public function processPendingTransaction(WebserviceTransaction $webservice)
             }
         }
 
-        // 6. Datos de validación simulados
+        // 6. ✅ CORRECCIÓN: Crear array $validated correctamente
+        Log::info('DEBUG: Creando array validated');
+
         $validated = [
             'webservice_type' => $webservice->webservice_type,
             'country' => $webservice->country,
@@ -3923,8 +4070,17 @@ public function processPendingTransaction(WebserviceTransaction $webservice)
             'sent_at' => now(),
         ]);
 
-        // 8. PROCESAR usando método existente
+        // 8. ✅ CORRECCIÓN: Llamada correcta a processWebserviceByType()
+        Log::info('DEBUG: Llamando processWebserviceByType', [
+            'webservice_type' => $validated['webservice_type']
+        ]);
+
         $result = $this->processWebserviceByType($webservice, $sendData, $validated);
+
+        Log::info('DEBUG: processWebserviceByType completado', [
+            'success' => $result['success'],
+            'message' => $result['message'] ?? 'Sin mensaje'
+        ]);
 
         // 9. Actualizar resultado final
         $webservice->update([
@@ -3948,6 +4104,11 @@ public function processPendingTransaction(WebserviceTransaction $webservice)
         }
 
     } catch (Exception $e) {
+         Log::error('DEBUG: Exception en processPendingTransaction', [
+            'error' => $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => $e->getFile()
+        ]);
         // Error crítico
         $webservice->update([
             'status' => 'error',
@@ -3965,7 +4126,6 @@ public function processPendingTransaction(WebserviceTransaction $webservice)
             ->with('error', 'Error interno. Contacte al administrador.');
     }
 }
-
     /**
      * Preparar datos para el envío desde transacción existente
      * 

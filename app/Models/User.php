@@ -742,4 +742,14 @@ public function getFavoriteClients(int $limit = 5)
     // En el futuro se puede implementar sistema de favoritos real
     return $this->getRecentClients($limit);
 }
+public function getUserCompany(): ?Company
+{
+    if ($this->userable_type === 'App\Models\Company') {
+        return $this->userable;
+    }
+    if ($this->userable_type === 'App\Models\Operator' && $this->userable) {
+        return $this->userable->company;
+    }
+    return null;
+}
 }

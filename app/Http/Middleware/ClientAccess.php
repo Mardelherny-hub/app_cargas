@@ -84,7 +84,7 @@ class ClientAccess
                 }
 
                 if ($user->hasRole('company-admin')) {
-                    $userCompany = $user->getUserCompany();
+                    $userCompany = $this->getUserCompany();
                     return $userCompany && $client->created_by_company_id === $userCompany->id;
                 }
 

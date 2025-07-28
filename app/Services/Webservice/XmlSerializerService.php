@@ -1826,4 +1826,132 @@ class XmlSerializerService
             }
         }
     }
+
+    /**
+ * MÉTODO STUB TEMPORAL - createTransshipmentXml
+ * 
+ * AGREGAR al final de: app/Services/Webservice/XmlSerializerService.php
+ * (antes del último "}")
+ */
+
+/**
+ * Crear XML para Transbordos Argentina (RegistrarEnvios) - MÉTODO STUB TEMPORAL
+ * 
+ * @param array $transshipmentData Datos del transbordo ['barge_data' => [...], 'voyage' => Voyage]
+ * @param string $transactionId ID de transacción
+ * @return string|null XML generado o null si falla
+ */
+public function createTransshipmentXml(array $transshipmentData, string $transactionId): ?string
+{
+    try {
+        $this->logOperation('info', 'Creando XML transbordo (STUB TEMPORAL)', [
+            'transaction_id' => $transactionId,
+            'barges_count' => count($transshipmentData['barge_data'] ?? []),
+            'voyage_id' => $transshipmentData['voyage']->id ?? 'N/A'
+        ]);
+
+        // Inicializar DOM
+        $this->initializeDom();
+
+        // Crear estructura SOAP básica
+        $envelope = $this->createSoapEnvelope();
+        $body = $this->createElement('soap:Body');
+        $envelope->appendChild($body);
+
+        // Crear elemento RegistrarEnvios (método para transbordos según documentación AFIP)
+        $registrarEnvios = $this->createElement('RegistrarEnvios');
+        $registrarEnvios->setAttribute('xmlns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+        $body->appendChild($registrarEnvios);
+
+        // Autenticación de empresa
+        $this->createAutenticacionEmpresa($registrarEnvios);
+
+        // Parámetros del transbordo
+        $parametros = $this->createElement('argRegistrarEnviosParam');
+        $registrarEnvios->appendChild($parametros);
+
+        // ID de transacción
+        $idTransaccion = $this->createElement('idTransaccion', $transactionId);
+        $parametros->appendChild($idTransaccion);
+
+        // ID del título de transporte (usando voyage_number o default)
+        $voyage = $transshipmentData['voyage'] ?? null;
+        $titTrans = $voyage ? $voyage->voyage_number : 'TIT-' . substr($transactionId, -8);
+        $idTitTrans = $this->createElement('idTitTrans', $titTrans);
+        $parametros->appendChild($idTitTrans);
+
+        // Envíos (barcazas con contenedores)
+        $envios = $this->createElement('envios');
+        $parametros->appendChild($envios);
+
+        // Procesar cada barcaza como un envío
+        $bargeData = $transshipmentData['barge_data'] ?? [];
+        foreach ($bargeData as $index => $barge) {
+            $envio = $this->createElement('Envio');
+            $envios->appendChild($envio);
+
+            // Destinaciones (ruta de la barcaza)
+            $destinaciones = $this->createElement('destinaciones');
+            $destinaciones->setAttribute('xsi:nil', 'true');
+            $envio->appendChild($destinaciones);
+
+            // Indicador de última fracción (siempre 'S' para simplicidad)
+            $indUltFra = $this->createElement('indUltFra', 'S');
+            $envio->appendChild($indUltFra);
+
+            // Contenedores de esta barcaza
+            $contenedores = $this->createElement('contenedores');
+            $envio->appendChild($contenedores);
+
+            $containers = $barge['containers'] ?? [];
+            foreach ($containers as $containerIndex => $container) {
+                $contenedor = $this->createElement('Contenedor');
+                $contenedores->appendChild($contenedor);
+
+                // ID del contenedor
+                $containerId = $container['container_number'] ?? "CONT{$index}{$containerIndex}";
+                $id = $this->createElement('id', $containerId);
+                $contenedor->appendChild($id);
+
+                // Código de medida (tipo de contenedor simplificado)
+                $containerType = $container['container_type'] ?? '20ST';
+                $codMedida = $this->createElement('codMedida', $containerType);
+                $contenedor->appendChild($codMedida);
+
+                // Condición del contenedor (siempre 'LLENO' para simplicidad)
+                $condicion = $this->createElement('condicion', 'LLENO');
+                $contenedor->appendChild($condicion);
+
+                // Accesorio (no aplica para contenedores básicos)
+                $accesorio = $this->createElement('accesorio', '');
+                $contenedor->appendChild($accesorio);
+
+                // Precintos (sello del contenedor)
+                $precintos = $this->createElement('precintos');
+                $precintos->setAttribute('xsi:nil', 'true');
+                $contenedor->appendChild($precintos);
+            }
+        }
+
+        // Generar XML final
+        $xmlContent = $this->dom->saveXML();
+        
+        $this->logOperation('info', 'XML transbordo generado exitosamente (STUB)', [
+            'transaction_id' => $transactionId,
+            'xml_size_bytes' => strlen($xmlContent),
+            'barges_processed' => count($bargeData)
+        ]);
+
+        return $xmlContent;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error generando XML transbordo (STUB)', [
+            'transaction_id' => $transactionId,
+            'error' => $e->getMessage(),
+            'line' => $e->getLine()
+        ]);
+
+        return null;
+    }
+}
 }
