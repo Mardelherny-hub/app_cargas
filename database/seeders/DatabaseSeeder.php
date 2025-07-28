@@ -17,6 +17,7 @@ use Illuminate\Database\Seeder;
  * 5. Clientes y contactos
  * 6. Dependencias básicas webservices (países específicos, MAERSK, puertos)
  * 7. Módulo 3: Capitanes, Viajes y Cargas (CON DATOS REALES PARANA)
+ * 8. Módulo 4: Transacciones Webservices (CON DATOS REALES MAERSK)
  * 
  * USO: php artisan migrate:fresh --seed
  */
@@ -88,11 +89,10 @@ class DatabaseSeeder extends Seeder
         // === FASE 5: CLIENTES ===
         //
         $this->command->info('🏢 FASE 5: Clientes');
-        $this->command->line('  └── Creando clientes y contactos...');
+        $this->command->line('  └── Creando empresas y clientes de Argentina y Paraguay...');
         
         $this->call([
             ClientsSeeder::class,
-            ClientContactDataSeeder::class,
         ]);
         
         $this->command->info('  ✅ Clientes completados');
@@ -102,7 +102,7 @@ class DatabaseSeeder extends Seeder
         // === FASE 6: DEPENDENCIAS WEBSERVICES ===
         //
         $this->command->info('🔧 FASE 6: Dependencias Webservices');
-        $this->command->line('  └── Creando dependencias específicas para módulo webservices...');
+        $this->command->line('  └── Creando empresa MAERSK, puertos específicos y usuarios...');
         
         $this->call([
             WebserviceBasicDependenciesSeeder::class,
@@ -112,46 +112,47 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 7: MÓDULO 3 - VIAJES Y CARGAS (CON DATOS REALES) ===
+        // === FASE 7: MÓDULO 3 - VIAJES Y CARGAS (DATOS REALES PARANA) ===
         //
-        $this->command->info('🚢 FASE 7: Módulo 3 - Viajes y Cargas (DATOS REALES PARANA)');
-        $this->command->line('  └── Creando capitanes y viajes con datos reales del manifiesto PARANA...');
+        $this->command->info('🚢 FASE 7: Viajes y Cargas');
+        $this->command->line('  └── Creando capitanes, viajes y cargas con datos reales PARANA...');
         
         $this->call([
             CaptainSeeder::class,
-            VoyagesFromParanaSeeder::class,  // ✅ REEMPLAZA VoyageSeeder con datos reales
-            ShipmentSeeder::class,
+            VoyagesFromParanaSeeder::class,
         ]);
         
-        $this->command->info('  ✅ Módulo 3 completado con datos reales PARANA');
+        $this->command->info('  ✅ Viajes y cargas completados');
+        $this->command->info('');
+
+        //
+        // === FASE 8: MÓDULO 4 - TRANSACCIONES WEBSERVICES (DATOS REALES MAERSK) ===
+        //
+        $this->command->info('📡 FASE 8: Transacciones Webservices');
+        $this->command->line('  └── Creando transacciones webservice con datos reales MAERSK...');
+        
+        $this->call([
+            WebserviceTransactionsSeeder::class,
+        ]);
+        
+        $this->command->info('  ✅ Transacciones webservices completadas');
         $this->command->info('');
 
         //
         // === RESUMEN FINAL ===
         //
-        $this->showCompletionSummary();
-    }
-
-    /**
-     * Mostrar resumen de población completada
-     */
-    private function showCompletionSummary(): void
-    {
-        $this->command->info('=== 🎉 POBLACIÓN DE BASE DE DATOS COMPLETADA ===');
-        $this->command->info('');
+        $this->command->info('🎯 POBLACIÓN COMPLETADA');
+        $this->command->line('────────────────────────────────────────');
         
-        // Contar registros principales si las tablas existen
         try {
-            $this->command->info('📊 RESUMEN DE REGISTROS CREADOS:');
-            
             if (class_exists('\App\Models\Country')) {
                 $countries = \App\Models\Country::count();
                 $this->command->line("  • Países: {$countries}");
             }
             
-            if (class_exists('\App\Models\Company')) {
-                $companies = \App\Models\Company::count();
-                $this->command->line("  • Empresas: {$companies}");
+            if (class_exists('\App\Models\Port')) {
+                $ports = \App\Models\Port::count();
+                $this->command->line("  • Puertos: {$ports}");
             }
             
             if (class_exists('\App\Models\User')) {
@@ -159,14 +160,9 @@ class DatabaseSeeder extends Seeder
                 $this->command->line("  • Usuarios: {$users}");
             }
             
-            if (class_exists('\App\Models\VesselType')) {
-                $vesselTypes = \App\Models\VesselType::count();
-                $this->command->line("  • Tipos de embarcación: {$vesselTypes}");
-            }
-            
-            if (class_exists('\App\Models\VesselOwner')) {
-                $vesselOwners = \App\Models\VesselOwner::count();
-                $this->command->line("  • Propietarios de embarcaciones: {$vesselOwners}");
+            if (class_exists('\App\Models\Company')) {
+                $companies = \App\Models\Company::count();
+                $this->command->line("  • Empresas: {$companies}");
             }
             
             if (class_exists('\App\Models\Vessel')) {
@@ -193,6 +189,11 @@ class DatabaseSeeder extends Seeder
                 $shipments = \App\Models\Shipment::count();
                 $this->command->line("  • Envíos: {$shipments}");
             }
+
+            if (class_exists('\App\Models\WebserviceTransaction')) {
+                $transactions = \App\Models\WebserviceTransaction::count();
+                $this->command->line("  • Transacciones WS: {$transactions}");
+            }
             
         } catch (\Exception $e) {
             $this->command->warn('  (No se pudo obtener el conteo de registros - normal en primera ejecución)');
@@ -207,9 +208,16 @@ class DatabaseSeeder extends Seeder
         $this->command->line('  • Ver viajes PARANA: Voyage::with(\'company\')->get()');
         $this->command->line('  • Ver viajes por número: Voyage::where(\'voyage_number\', \'V022NB\')->first()');
         $this->command->line('  • Ver capitanes: Captain::with(\'country\')->get()');
+        $this->command->line('  • Ver transacciones WS: WebserviceTransaction::with(\'company\')->get()');
         $this->command->info('');
         $this->command->info('✅ Base de datos poblada exitosamente con DATOS REALES PARANA.csv');
         $this->command->info('🚢 Sistema listo para pruebas de webservices con datos reales');
-        $this->command->info('📡 Próximo: Implementar seeders de transacciones webservice');
+        $this->command->info('📡 Transacciones webservice MAERSK creadas y listas para testing');
+        $this->command->info('');
+        $this->command->info('🎯 CREDENCIALES PARA EL CLIENTE:');
+        $this->command->line('  • Email: admin.maersk@cargas.com');
+        $this->command->line('  • Password: Maersk2025!');
+        $this->command->line('  • Empresa: MAERSK LINE ARGENTINA S.A.');
+        $this->command->line('  • CUIT: 30688415531');
     }
 }

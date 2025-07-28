@@ -360,6 +360,116 @@ class Voyage extends Model
     }
 
     //
+// === RELACIONES PRINCIPALES ===
+//
+
+/**
+ * Empresa organizadora del viaje.
+ */
+public function company(): BelongsTo
+{
+    return $this->belongsTo(Company::class, 'company_id');
+}
+
+/**
+ * Embarcación líder/principal del viaje.
+ */
+public function leadVessel(): BelongsTo
+{
+    return $this->belongsTo(Vessel::class, 'lead_vessel_id');
+}
+
+/**
+ * Capitán principal del viaje.
+ */
+public function captain(): BelongsTo
+{
+    return $this->belongsTo(Captain::class, 'captain_id');
+}
+
+/**
+ * Puerto de origen.
+ */
+public function originPort(): BelongsTo
+{
+    return $this->belongsTo(Port::class, 'origin_port_id');
+}
+
+/**
+ * Puerto de destino.
+ */
+public function destinationPort(): BelongsTo
+{
+    return $this->belongsTo(Port::class, 'destination_port_id');
+}
+
+/**
+ * Puerto de transbordo (opcional).
+ */
+public function transshipmentPort(): BelongsTo
+{
+    return $this->belongsTo(Port::class, 'transshipment_port_id');
+}
+
+/**
+ * País de origen.
+ */
+public function originCountry(): BelongsTo
+{
+    return $this->belongsTo(Country::class, 'origin_country_id');
+}
+
+/**
+ * País de destino.
+ */
+public function destinationCountry(): BelongsTo
+{
+    return $this->belongsTo(Country::class, 'destination_country_id');
+}
+
+//
+// === RELACIONES CON OTROS MÓDULOS ===
+//
+
+
+
+//
+// === SCOPES ÚTILES ===
+//
+
+/**
+ * Scope para viajes disponibles para webservices.
+ */
+public function scopeAvailableForWebservices(Builder $query): Builder
+{
+    return $query->where('active', true)
+                 ->where('status', '!=', 'cancelled')
+                 ->whereNotNull('lead_vessel_id');
+}
+
+/**
+ * Scope para viajes por empresa.
+ */
+public function scopeForCompany(Builder $query, int $companyId): Builder
+{
+    return $query->where('company_id', $companyId);
+}
+
+/**
+ * Scope para incluir relaciones necesarias para webservices.
+ */
+public function scopeWithWebserviceRelations(Builder $query): Builder
+{
+    return $query->with([
+        'leadVessel',
+        'captain',
+        'originPort.country',
+        'destinationPort.country',
+        'transshipmentPort'
+    ]);
+}
+
+    //
     // === SCOPES ===
     //
 

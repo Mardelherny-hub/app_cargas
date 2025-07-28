@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Country;
 use App\Models\Port;
 use App\Models\User;
+use App\Models\Operator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -49,14 +50,16 @@ class WebserviceBasicDependenciesSeeder extends Seeder
             $maersk = $this->createMaerskCompany();
             $this->command->info('✅ Empresa MAERSK creada: ' . $maersk->legal_name);
 
-            // 4. Crear usuario admin si no existe
-            $adminUser = $this->createAdminUser();
-            $this->command->info('✅ Usuario admin: ' . $adminUser->email);
+           
+             // 5. Crear usuarios MAERSK específicos
+            $maerskUsers = $this->createMaerskUsers($maersk);
+            $this->command->info('✅ Usuarios MAERSK específicos: ' . count($maerskUsers));
+
 
             DB::commit();
 
             $this->command->info('🎉 Dependencias básicas creadas exitosamente!');
-            $this->displaySummary($countries, $ports, $maersk, $adminUser);
+            $this->displaySummary($countries, $ports, $maersk, $maerskUsers);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -315,27 +318,133 @@ class WebserviceBasicDependenciesSeeder extends Seeder
         );
     }
 
-    /**
-     * Crear usuario admin para testing
+     /**
+     * Crear usuarios específicos para MAERSK
      */
-    private function createAdminUser(): User
+    private function createMaerskUsers(Company $maersk): array
     {
-        return User::updateOrCreate(
-            ['email' => 'admin.webservices@maersk.com.ar'],
+        $users = [];
+
+        // ===== 1. COMPANY ADMIN MAERSK =====
+        $adminUser = User::updateOrCreate(
+            ['email' => 'admin.maersk@cargas.com'],
             [
-                'name' => 'Admin Webservices',
-                'password' => Hash::make('WebServices2025!'),
+                'name' => 'Admin MAERSK',
+                'password' => Hash::make('password123!'),
+                'userable_type' => 'App\Models\Company',
+                'userable_id' => $maersk->id,
                 'email_verified_at' => now(),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]
         );
+        
+        // Asignar rol company-admin
+        if (!$adminUser->hasRole('company-admin')) {
+            $adminUser->assignRole('company-admin');
+        }
+        
+        $users['admin'] = $adminUser;
+
+        // ===== 2. OPERADOR MAERSK - IMPORT/EXPORT =====
+        $operatorCarga = Operator::updateOrCreate(
+            ['document_number' => 'MAE001'],
+            [
+                'first_name' => 'Carlos',
+                'last_name' => 'Martínez',
+                'position' => 'Operador de Cargas MAERSK',
+                'phone' => '+54 11 4878-3001',
+                'company_id' => $maersk->id,
+                'type' => 'external',
+                'can_import' => true,
+                'can_export' => true,
+                'can_transfer' => false,
+                'active' => true,
+            ]
+        );
+
+        $userCarga = User::updateOrCreate(
+            ['email' => 'carlos.martinez@maersk.com.ar'],
+            [
+                'name' => 'Carlos Martínez',
+                'password' => Hash::make('password123!'),
+                'userable_type' => 'App\Models\Operator',
+                'userable_id' => $operatorCarga->id,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
+
+        if (!$userCarga->hasRole('user')) {
+            $userCarga->assignRole('user');
+        }
+
+        $users['operator1'] = $userCarga;
+
+        // ===== 3. OPERADOR MAERSK - PERMISOS COMPLETOS =====
+        $operatorSenior = Operator::updateOrCreate(
+            ['document_number' => 'MAE002'],
+            [
+                'first_name' => 'Ana',
+                'last_name' => 'González',
+                'position' => 'Operador Senior MAERSK',
+                'phone' => '+54 11 4878-3002',
+                'company_id' => $maersk->id,
+                'type' => 'external',
+                'can_import' => true,
+                'can_export' => true,
+                'can_transfer' => true,
+                'active' => true,
+            ]
+        );
+
+        $userSenior = User::updateOrCreate(
+            ['email' => 'ana.gonzalez@maersk.com.ar'],
+            [
+                'name' => 'Ana González',
+                'password' => Hash::make('password123!'),
+                'userable_type' => 'App\Models\Operator',
+                'userable_id' => $operatorSenior->id,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
+
+        if (!$userSenior->hasRole('user')) {
+            $userSenior->assignRole('user');
+        }
+
+        $users['operator2'] = $userSenior;
+
+        // ===== 4. USUARIO TESTING (para seeders automáticos) =====
+        $testingUser = User::updateOrCreate(
+            ['email' => 'testing.maersk@cargas.com'],
+            [
+                'name' => 'Testing MAERSK',
+                'password' => Hash::make('password123!'),
+                'userable_type' => 'App\Models\Company',
+                'userable_id' => $maersk->id,
+                'email_verified_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
+
+        if (!$testingUser->hasRole('company-admin')) {
+            $testingUser->assignRole('company-admin');
+        }
+
+        $users['testing'] = $testingUser;
+
+        return $users;
     }
 
     /**
      * Mostrar resumen de lo creado
      */
-    private function displaySummary(array $countries, array $ports, Company $maersk, User $admin): void
+    private function displaySummary(array $countries, array $ports, Company $maersk, array $maerskUsers): void
     {
         $this->command->line('');
         $this->command->info('📋 RESUMEN DE DEPENDENCIAS CREADAS:');
@@ -355,8 +464,23 @@ class WebserviceBasicDependenciesSeeder extends Seeder
         $this->command->line("   • Roles WS: " . implode(', ', $maersk->company_roles));
         
         $this->command->info('👤 USUARIO ADMIN:');
-        $this->command->line("   • {$admin->name}");
-        $this->command->line("   • Email: {$admin->email}");
+        $this->command->line("   • {$maerskUsers['admin']->name}");
+        $this->command->line("   • Email: {$maerskUsers['admin']->email}");
+
+        $this->command->info('👥 USUARIOS MAERSK AGREGADOS:');
+        $this->command->line("   • Admin: {$maerskUsers['admin']->email} (company-admin)");
+        $this->command->line("   • Operador 1: {$maerskUsers['operator1']->email} (import/export)");
+        $this->command->line("   • Operador 2: {$maerskUsers['operator2']->email} (completo)");
+        $this->command->line("   • Testing: {$maerskUsers['testing']->email} (seeders)");
+        
+        $this->command->line('');
+        $this->command->info('🎯 PRÓXIMO PASO: Ejecutar seeders corregidos de viajes y webservices');
+        $this->command->line('');
+        $this->command->info('📋 CREDENCIALES PARA EL CLIENTE:');
+        $this->command->line("   • Email: admin.maersk@cargas.com");
+        $this->command->line("   • Password: Maersk2025!");
+        $this->command->line("   • Rol: Administrador de empresa MAERSK");
+    
         
         $this->command->line('');
         $this->command->info('🎯 PRÓXIMO PASO: Ejecutar seeders corregidos de viajes y webservices');

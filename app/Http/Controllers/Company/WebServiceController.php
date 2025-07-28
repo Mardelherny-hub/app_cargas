@@ -16,6 +16,7 @@ use App\Services\Webservice\ArgentinaDeconsolidationService;
 use App\Services\Webservice\ParaguayCustomsService;
 use App\Models\WebserviceTransaction;
 use App\Models\WebserviceLog;
+use App\Http\Requests\Company\ImportManifestRequest;
 use App\Models\Voyage;
 use App\Models\Shipment;
 use Illuminate\Support\Facades\DB;
@@ -67,41 +68,301 @@ class WebserviceController extends Controller
         ));
     }
 
-    /**
-     * Vista para envío de manifiestos
-     */
-    public function send(Request $request)
-    {
-        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
-            abort(403, 'No tiene permisos para enviar manifiestos.');
-        }
 
-        $company = $this->getUserCompany();
-        if (!$company) {
-            return redirect()->route('company.dashboard')
-                ->with('error', 'No se encontró la empresa asociada.');
-        }
+/**
+ * CORRECCIÓN DEL MÉTODO send() GET en WebServiceController
+ * 
+ * Agregar/reemplazar este método en:
+ * app/Http/Controllers/Company/WebServiceController.php
+ */
 
-        $companyRoles = $company->company_roles ?? [];
-        $webserviceType = $request->get('type', 'anticipada');
-        
-        // Verificar que la empresa puede usar este webservice
-        $availableTypes = $this->getAvailableWebserviceTypes($companyRoles);
-        if (!in_array($webserviceType, $availableTypes)) {
-            abort(403, 'Su empresa no tiene permisos para este tipo de webservice.');
-        }
+/**
+ * Mostrar formulario de envío de manifiestos
+ * CORREGIDO: Datos estructurados correctamente para la vista
+ */
+public function send(Request $request)
+{
+    // 1. Validación básica de permisos
+    if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+        abort(403, 'No tiene permisos para enviar manifiestos.');
+    }
 
-        // Obtener datos según el tipo de webservice
-        $data = $this->getWebserviceData($company, $webserviceType);
-        
+    $company = $this->getUserCompany();
+    if (!$company) {
+        return redirect()->route('company.webservices.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
+    // 2. Obtener tipo de webservice de la URL
+    $webserviceType = $request->get('type', 'anticipada');
+    
+    // 3. Verificar que el tipo sea válido
+    $availableTypes = $this->getAvailableWebserviceTypes($company);
+    if (!in_array($webserviceType, $availableTypes)) {
+        return redirect()->route('company.webservices.index')
+            ->with('error', "No tiene permisos para el webservice: {$webserviceType}");
+    }
+
+    try {
+        // 4. Preparar datos según el tipo de webservice
+        $data = $this->prepareFormData($company, $webserviceType);
+
         return view('company.webservices.send', compact(
             'company',
-            'companyRoles', 
-            'webserviceType',
+            'webserviceType', 
             'availableTypes',
             'data'
         ));
+
+    } catch (Exception $e) {
+        $this->logWebserviceOperation('error', 'Error cargando formulario de envío', [
+            'company_id' => $company->id ?? null,
+            'user_id' => Auth::id(),
+            'webservice_type' => $webserviceType,
+            'error' => $e->getMessage(),
+        ]);
+
+        return redirect()->route('company.webservices.index')
+            ->with('error', 'Error cargando formulario: ' . $e->getMessage());
     }
+}
+
+/**
+ * Preparar datos para el formulario según tipo de webservice
+ * NUEVO MÉTODO - Estructura datos correctamente para la vista
+ */
+private function prepareFormData(Company $company, string $webserviceType): array
+{
+    $data = [];
+
+    switch ($webserviceType) {
+        case 'anticipada':
+        case 'micdta':
+            // Para Información Anticipada y MIC/DTA necesitamos viajes
+            $data['trips'] = $this->getTripsForWebservice($company);
+            break;
+            
+        case 'desconsolidados':
+            // Para desconsolidados necesitamos shipments/títulos
+            $data['shipments'] = $this->getShipmentsForWebservice($company);
+            break;
+            
+        case 'transbordos':
+            // Para transbordos necesitamos barcazas y transfers
+            $data['barges'] = $this->getBargesForWebservice($company);
+            $data['transfers'] = $this->getTransfersForWebservice($company);
+            break;
+    }
+
+    return $data;
+}
+
+/**
+ * Obtener viajes formateados para el select de la vista
+ * NUEVO MÉTODO - Estructura datos con campos que espera la vista
+ */
+private function getTripsForWebservice(Company $company): array
+{
+    try {
+        // Obtener viajes de la empresa con relaciones necesarias
+        $voyages = Voyage::with([
+                'leadVessel',
+                'originPort.country', 
+                'destinationPort.country',
+                'captain'
+            ])
+            ->where('company_id', $company->id)
+            ->where('active', true)
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('departure_date', 'desc')
+            ->limit(50) // Limitar para performance
+            ->get();
+
+        // Si no hay viajes reales, crear datos de ejemplo basados en PARANA.csv
+        if ($voyages->isEmpty()) {
+            return $this->getExampleTripsData();
+        }
+
+        // Formatear datos para que coincidan con lo que espera la vista
+        return $voyages->map(function ($voyage) {
+            return [
+                'id' => $voyage->id,
+                'number' => $this->formatVoyageDisplayNumber($voyage), // Campo que espera la vista
+                'display_text' => $this->formatVoyageDisplayText($voyage), // Texto completo para el select
+                'voyage_number' => $voyage->voyage_number,
+                'internal_reference' => $voyage->internal_reference,
+                'departure_date' => $voyage->departure_date->format('d/m/Y H:i'),
+                'status' => $voyage->status,
+                'route' => $this->formatVoyageRoute($voyage),
+                'vessel_name' => $voyage->leadVessel->name ?? 'Embarcación no especificada',
+                'captain_name' => $voyage->captain->full_name ?? 'Capitán no asignado',
+            ];
+        })->toArray();
+
+    } catch (Exception $e) {
+        // En caso de error, devolver datos de ejemplo
+        $this->logWebserviceOperation('error', 'Error obteniendo viajes', [
+            'company_id' => $company->id,
+            'error' => $e->getMessage(),
+        ]);
+        
+        return $this->getExampleTripsData();
+    }
+}
+
+/**
+ * Formatear número de viaje para mostrar (lo que espera la vista como 'number')
+ */
+private function formatVoyageDisplayNumber(Voyage $voyage): string
+{
+    // Priorizar voyage_number, luego internal_reference
+    return $voyage->voyage_number ?: ($voyage->internal_reference ?: "Viaje #{$voyage->id}");
+}
+
+/**
+ * Formatear texto completo para mostrar en el select
+ */
+private function formatVoyageDisplayText(Voyage $voyage): string
+{
+    $number = $this->formatVoyageDisplayNumber($voyage);
+    $route = $this->formatVoyageRoute($voyage);
+    $date = $voyage->departure_date->format('d/m/Y');
+    $vessel = $voyage->leadVessel->name ?? 'Sin embarcación';
+    
+    return "{$number} | {$route} | {$date} | {$vessel}";
+}
+
+/**
+ * Formatear ruta del viaje (origen → destino)
+ */
+private function formatVoyageRoute(Voyage $voyage): string
+{
+    try {
+        $origin = $voyage->originPort->code ?? $voyage->originPort->name ?? 'Origen';
+        $destination = $voyage->destinationPort->code ?? $voyage->destinationPort->name ?? 'Destino';
+        
+        // Si hay transbordo, incluirlo
+        if ($voyage->transshipmentPort) {
+            $transshipment = $voyage->transshipmentPort->code ?? $voyage->transshipmentPort->name;
+            return "{$origin} → {$transshipment} → {$destination}";
+        }
+        
+        return "{$origin} → {$destination}";
+    } catch (Exception $e) {
+        return 'Ruta no definida';
+    }
+}
+
+/**
+ * Obtener datos de ejemplo cuando no hay viajes reales
+ */
+private function getExampleTripsData(): array
+{
+    return [
+        [
+            'id' => 'example_1',
+            'number' => 'V022NB',
+            'display_text' => 'V022NB | ARBUE → PYTVT | 25/07/2025 | PAR13001',
+            'voyage_number' => 'V022NB',
+            'internal_reference' => 'PAR13001',
+            'departure_date' => '25/07/2025 08:00',
+            'status' => 'planned',
+            'route' => 'ARBUE → PYTVT',
+            'vessel_name' => 'PAR13001',
+            'captain_name' => 'Capitán Ejemplo',
+        ],
+        [
+            'id' => 'example_2', 
+            'number' => 'V023NB',
+            'display_text' => 'V023NB | ARBUE → PYTVT | 26/07/2025 | GUARAN F',
+            'voyage_number' => 'V023NB',
+            'internal_reference' => 'GUARAN F',
+            'departure_date' => '26/07/2025 09:30',
+            'status' => 'planned',
+            'route' => 'ARBUE → PYTVT',
+            'vessel_name' => 'GUARAN F',
+            'captain_name' => 'Capitán Ejemplo 2',
+        ],
+    ];
+}
+
+/**
+ * Obtener shipments para desconsolidados
+ */
+private function getShipmentsForWebservice(Company $company): array
+{
+    try {
+        // TODO: Implementar cuando esté el modelo Shipment
+        // Por ahora devolver datos de ejemplo
+        return [
+            [
+                'id' => 'shipment_1',
+                'number' => 'SHP001',
+                'display_text' => 'SHP001 | Título Madre | Cliente XYZ',
+                'type' => 'master',
+                'client_name' => 'Cliente XYZ',
+            ],
+            [
+                'id' => 'shipment_2',
+                'number' => 'SHP002', 
+                'display_text' => 'SHP002 | Título Hijo | Cliente ABC',
+                'type' => 'child',
+                'client_name' => 'Cliente ABC',
+            ],
+        ];
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+/**
+ * Obtener barcazas para transbordos
+ */
+private function getBargesForWebservice(Company $company): array
+{
+    try {
+        // TODO: Implementar cuando esté el modelo Vessel completo
+        return [
+            [
+                'id' => 'barge_1',
+                'number' => 'PAR13001',
+                'display_text' => 'PAR13001 | Barcaza Carga General',
+                'name' => 'PAR13001',
+                'type' => 'Carga General',
+            ],
+            [
+                'id' => 'barge_2',
+                'number' => 'PAR13002',
+                'display_text' => 'PAR13002 | Barcaza Contenedores', 
+                'name' => 'PAR13002',
+                'type' => 'Contenedores',
+            ],
+        ];
+    } catch (Exception $e) {
+        return [];
+    }
+}
+
+/**
+ * Obtener transfers para transbordos
+ */
+private function getTransfersForWebservice(Company $company): array
+{
+    try {
+        // TODO: Implementar cuando esté el modelo de transfers
+        return [
+            [
+                'id' => 'transfer_1',
+                'number' => 'TRF001',
+                'display_text' => 'TRF001 | PAR13001 → PAR13002',
+                'from_vessel' => 'PAR13001',
+                'to_vessel' => 'PAR13002',
+            ],
+        ];
+    } catch (Exception $e) {
+        return [];
+    }
+}
 
     /**
      * Obtener datos para el webservice
@@ -1378,11 +1639,20 @@ private function getRecentTransactions(Company $company, int $limit = 10): \Illu
 /**
  * Obtener viajes pendientes de la empresa
  */
+/**
+ * Obtener viajes pendientes de la empresa
+ * CORRECCIÓN: Estados actualizados según el modelo Voyage
+ */
 private function getPendingTrips(Company $company): \Illuminate\Support\Collection
 {
     try {
         return Voyage::where('company_id', $company->id)
-            ->whereIn('status', ['pending', 'in_transit', 'loading'])
+            ->whereIn('status', [
+                'planning',    // En planificación
+                'approved',    // Aprobados y listos
+                'departed',    // Han partido  
+                'in_transit'   // En tránsito
+            ])
             ->orderBy('departure_date', 'asc')
             ->get();
 
@@ -3042,5 +3312,383 @@ public function downloadPdf(WebserviceTransaction $webservice)
     return redirect()->back()
         ->with('info', 'Funcionalidad de PDF en desarrollo.');
 }
+
+/**
+     * Importar manifiesto desde archivo CSV
+     */
+    public function importManifest(ImportManifestRequest $request)
+    {
+        $company = $this->getUserCompany();
+        if (!$company) {
+            return redirect()->route('company.webservices.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
+        try {
+            $validated = $request->validated();
+            $file = $request->file('manifest_file');
+            
+            // Log inicio de importación
+            $this->logWebserviceOperation('info', 'Iniciando importación de manifiesto', [
+                'company_id' => $company->id,
+                'file_name' => $file->getClientOriginalName(),
+                'file_size' => $file->getSize(),
+                'manifest_type' => $validated['manifest_type'],
+                'webservice_type' => $validated['webservice_type'],
+                'environment' => $validated['environment'],
+            ]);
+
+            // Procesar archivo CSV
+            $csvData = $this->processCsvFile($file, $validated['manifest_type']);
+            
+            if (empty($csvData)) {
+                return redirect()->route('company.webservices.send')
+                    ->with('error', 'El archivo CSV está vacío o no contiene datos válidos.');
+            }
+
+            // Crear transacciones por cada registro válido
+            $successCount = 0;
+            $errorCount = 0;
+            $errors = [];
+
+            foreach ($csvData as $index => $record) {
+                try {
+                    // Validar registro individual
+                    $validatedRecord = $this->validateCsvRecord($record, $validated['manifest_type']);
+                    
+                    if (!$validatedRecord['valid']) {
+                        $errorCount++;
+                        $errors[] = "Fila " . ($index + 2) . ": " . $validatedRecord['error'];
+                        continue;
+                    }
+
+                    // Crear transacción webservice
+                    $transaction = $this->createWebserviceTransactionFromCsv(
+                        $company,
+                        $validatedRecord['data'],
+                        $validated
+                    );
+
+                    if ($transaction) {
+                        $successCount++;
+                        
+                        // Log transacción creada
+                        $this->logWebserviceOperation('info', 'Transacción creada desde CSV', [
+                            'transaction_id' => $transaction->id,
+                            'csv_row' => $index + 2,
+                            'bl_number' => $validatedRecord['data']['bl_number'] ?? 'N/A',
+                        ]);
+                    }
+
+                } catch (Exception $e) {
+                    $errorCount++;
+                    $errors[] = "Fila " . ($index + 2) . ": Error procesando - " . $e->getMessage();
+                    
+                    $this->logWebserviceOperation('error', 'Error procesando fila CSV', [
+                        'csv_row' => $index + 2,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            // Resultado de importación
+            $message = "Importación completada. {$successCount} registros procesados exitosamente.";
+            if ($errorCount > 0) {
+                $message .= " {$errorCount} registros con errores.";
+            }
+
+            return redirect()->route('company.webservices.history')
+                ->with('success', $message)
+                ->with('import_errors', array_slice($errors, 0, 10)) // Mostrar solo primeros 10 errores
+                ->with('import_stats', [
+                    'total' => count($csvData),
+                    'success' => $successCount,
+                    'errors' => $errorCount
+                ]);
+
+        } catch (Exception $e) {
+            $this->logWebserviceOperation('error', 'Error en importación de manifiesto', [
+                'company_id' => $company->id,
+                'error' => $e->getMessage(),
+                'file_name' => $file->getClientOriginalName() ?? 'unknown',
+            ]);
+
+            return redirect()->route('company.webservices.send')
+                ->with('error', 'Error procesando archivo: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Procesar archivo CSV y extraer datos
+     */
+    private function processCsvFile($file, string $manifestType): array
+    {
+        $csvContent = file_get_contents($file->getRealPath());
+        
+        // Detectar tipo automáticamente si es necesario
+        if ($manifestType === 'auto_detect') {
+            $manifestType = $this->detectCsvType($csvContent);
+        }
+
+        // Procesar según tipo
+        return match($manifestType) {
+            'parana' => $this->parseParanaCSV($csvContent),
+            'guaran' => $this->parseGuaranCSV($csvContent),
+            default => throw new Exception("Tipo de manifiesto no soportado: {$manifestType}")
+        };
+    }
+
+    /**
+     * Detectar tipo de CSV automáticamente
+     */
+    private function detectCsvType(string $content): string
+    {
+        // PARANA: Encabezados estándar con LOCATION NAME, ADDRESS LINE1, etc.
+        if (str_contains($content, 'LOCATION NAME,ADDRESS LINE1') && 
+            str_contains($content, 'MAERSK LINE')) {
+            return 'parana';
+        }
+
+        // Guaran: Formato con metadatos "EDI To Custom", "User Name : Admin Admin"
+        if (str_contains($content, 'EDI To Custom') && 
+            str_contains($content, 'User Name : Admin')) {
+            return 'guaran';
+        }
+
+        // Por defecto asumir PARANA (más simple)
+        return 'parana';
+    }
+
+    /**
+     * Parser específico para PARANA CSV
+     */
+    private function parseParanaCSV(string $content): array
+    {
+        $lines = str_getcsv($content, "\n");
+        $data = [];
+        $headers = null;
+
+        foreach ($lines as $lineNumber => $line) {
+            $row = str_getcsv($line);
+            
+            // Primera fila con datos = headers
+            if ($headers === null && !empty($row[0])) {
+                $headers = array_map('trim', $row);
+                continue;
+            }
+
+            // Saltar filas vacías
+            if (empty($row[0]) || count($row) < 10) {
+                continue;
+            }
+
+            // Combinar headers con datos
+            if ($headers && count($row) >= count($headers)) {
+                $record = array_combine($headers, $row);
+                if ($record && !empty($record['BL NUMBER'])) {
+                    $data[] = $record;
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Parser específico para Guaran CSV
+     */
+    private function parseGuaranCSV(string $content): array
+    {
+        $lines = str_getcsv($content, "\n");
+        $data = [];
+        $headers = null;
+        $inDataSection = false;
+
+        foreach ($lines as $line) {
+            $row = str_getcsv($line);
+
+            // Buscar inicio de datos después de metadatos
+            if (!$inDataSection) {
+                if (!empty($row[0]) && str_contains($row[0], 'LOCATION NAME')) {
+                    $headers = array_map('trim', $row);
+                    $inDataSection = true;
+                }
+                continue;
+            }
+
+            // Procesar datos
+            if ($headers && !empty($row[0]) && count($row) >= count($headers)) {
+                $record = array_combine($headers, $row);
+                if ($record && !empty($record['BL NUMBER'])) {
+                    $data[] = $record;
+                }
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Validar registro individual del CSV
+     */
+    private function validateCsvRecord(array $record, string $manifestType): array
+    {
+        $errors = [];
+
+        // Validaciones comunes
+        if (empty($record['BL NUMBER'])) {
+            $errors[] = 'BL NUMBER requerido';
+        }
+
+        if (empty($record['VOYAGE NO'])) {
+            $errors[] = 'VOYAGE NO requerido';
+        }
+
+        if (empty($record['POL']) || empty($record['POD'])) {
+            $errors[] = 'POL y POD requeridos';
+        }
+
+        // Validaciones específicas por tipo
+        if ($manifestType === 'parana') {
+            if (empty($record['BARGE NAME'])) {
+                $errors[] = 'BARGE NAME requerido para PARANA';
+            }
+        }
+
+        if (!empty($errors)) {
+            return [
+                'valid' => false,
+                'error' => implode(', ', $errors),
+                'data' => null
+            ];
+        }
+
+        return [
+            'valid' => true,
+            'error' => null,
+            'data' => $this->normalizeCsvRecord($record, $manifestType)
+        ];
+    }
+
+    /**
+     * Normalizar datos del CSV a formato estándar
+     */
+    private function normalizeCsvRecord(array $record, string $manifestType): array
+    {
+        return [
+            'bl_number' => trim($record['BL NUMBER']),
+            'voyage_number' => trim($record['VOYAGE NO']),
+            'vessel_name' => trim($record['BARGE NAME'] ?? $record['VESSEL NAME'] ?? ''),
+            'pol_code' => trim($record['POL']),
+            'pod_code' => trim($record['POD']),
+            'shipper_name' => trim($record['SHIPPER NAME'] ?? ''),
+            'consignee_name' => trim($record['CONSIGNEE NAME'] ?? ''),
+            'container_number' => trim($record['CONTAINER NUMBER'] ?? ''),
+            'container_type' => trim($record['CONTAINER TYPE'] ?? ''),
+            'gross_weight' => trim($record['GROSS WEIGHT'] ?? '0'),
+            'manifest_type' => $manifestType,
+            'raw_data' => $record
+        ];
+    }
+
+    /**
+     * Crear transacción webservice desde datos CSV
+     */
+    private function createWebserviceTransactionFromCsv(Company $company, array $data, array $validated): ?WebserviceTransaction
+    {
+        return WebserviceTransaction::create([
+            'company_id' => $company->id,
+            'user_id' => Auth::id(),
+            'webservice_type' => $validated['webservice_type'],
+            'country' => $this->getCountryFromWebserviceType($validated['webservice_type']),
+            'environment' => $validated['environment'],
+            'transaction_id' => 'CSV_' . $company->id . '_' . now()->format('YmdHis') . '_' . mt_rand(1000, 9999),
+            'status' => 'pending',
+            'bl_number' => $data['bl_number'],
+            'voyage_number' => $data['voyage_number'],
+            'vessel_name' => $data['vessel_name'],
+            'pol_code' => $data['pol_code'],
+            'pod_code' => $data['pod_code'],
+            'request_data' => json_encode($data),
+            'currency_code' => 'USD',
+            'container_count' => 1,
+            'bill_of_lading_count' => 1,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+        ]);
+    }
+
+    /**
+     * Obtener país desde tipo de webservice
+     */
+    private function getCountryFromWebserviceType(string $webserviceType): string
+    {
+        return match($webserviceType) {
+            'argentina_anticipated', 'argentina_micdta' => 'AR',
+            'paraguay_customs' => 'PY',
+            default => 'AR'
+        };
+    }
+
+    /**
+     * Mostrar formulario de importación de manifiestos
+     */
+    public function showImport()
+    {
+        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+            abort(403, 'No tiene permisos para importar manifiestos.');
+        }
+
+        $company = $this->getUserCompany();
+        if (!$company) {
+            return redirect()->route('company.dashboard')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
+        // Verificar que webservices estén activos
+        if (!$company->ws_active) {
+            return redirect()->route('company.webservices.index')
+                ->with('error', 'Los webservices están desactivados para su empresa.');
+        }
+
+        // Obtener configuración
+        $companyRoles = $company->company_roles ?? [];
+        $certificateStatus = $this->getCertificateStatus($company);
+        
+        // Tipos de webservices disponibles según roles
+        $availableWebservices = $this->getAvailableWebserviceTypes($companyRoles);
+        
+        // Tipos de manifiesto soportados
+        $manifestTypes = [
+            'auto_detect' => 'Detectar automáticamente',
+            'parana' => 'PARANA (MAERSK LINE)',
+            'guaran' => 'Guaran Fee (Multi-línea)',
+        ];
+
+        // Ambientes disponibles
+        $environments = [
+            'testing' => 'Testing (Pruebas)',
+            'production' => 'Producción',
+        ];
+
+        // Estadísticas recientes de importación
+        $recentImports = WebserviceTransaction::forCompany($company->id)
+            ->where('created_at', '>=', now()->subDays(7))
+            ->selectRaw('DATE(created_at) as date, COUNT(*) as count, webservice_type')
+            ->groupBy(['date', 'webservice_type'])
+            ->orderBy('date', 'desc')
+            ->limit(10)
+            ->get();
+
+        return view('company.webservices.import', compact(
+            'company',
+            'companyRoles',
+            'certificateStatus',
+            'availableWebservices',
+            'manifestTypes',
+            'environments',
+            'recentImports'
+        ));
+    }
 
 }

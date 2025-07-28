@@ -202,6 +202,10 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     // Datos PARANA para autocompletar (AJAX)
     Route::get('/parana-data', [WebserviceController::class, 'getParanaData'])->name('parana-data');
 
+    // Importación de manifiestos
+    Route::get('/import', [WebserviceController::class, 'showImport'])->name('import');
+    Route::post('/import', [WebserviceController::class, 'importManifest'])->name('process-import');
+
 });
 
 // Reportes
