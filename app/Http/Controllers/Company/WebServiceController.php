@@ -2719,13 +2719,13 @@ public function showWebservice(Request $request, WebserviceTransaction $webservi
         ->where('id', '!=', $webservice->id)
         ->where(function($query) use ($webservice) {
             if ($webservice->voyage_id) {
-                $query->where('voyage_number', $webservice->voyage_id);
+                $query->where('voyage_id', $webservice->voyage_id);
             }
             if ($webservice->shipment_id) {
                 $query->where('destination_country_id', $webservice->shipment_id);
             }
             if ($webservice->external_reference) {
-                $query->where('internal_reference', $webservice->external_reference);
+                $query->where('external_reference', $webservice->external_reference);
             }
         })
         ->with('user:id,name')
@@ -2746,9 +2746,7 @@ public function showWebservice(Request $request, WebserviceTransaction $webservi
 public function retryTransaction(Request $request, WebserviceTransaction $webservice)
 {
     $company = $this->getUserCompany();
-    if (!$company || $webservice->company_id !== $company->id) {
-        abort(403, 'No tiene permisos para esta transacción.');
-    }
+    
 
     // Verificar que la transacción pueda reenviarse
     if (!$webservice->can_retry) {
@@ -2781,6 +2779,7 @@ public function retryTransaction(Request $request, WebserviceTransaction $webser
             'status' => 'pending',
             'retry_count' => 0,
             'max_retries' => 3,
+            'webservice_url' => $webservice->webservice_url,
             'additional_metadata' => [
                 'is_retry' => true,
                 'original_transaction_id' => $webservice->id,
@@ -3820,6 +3819,192 @@ public function downloadPdf(WebserviceTransaction $webservice)
             'environments',
             'recentImports'
         ));
+    }
+
+    /**
+     * =========================================================================
+     * PROCESAR TRANSACCIÓN PENDING INDIVIDUAL
+     * =========================================================================
+     * 
+     * Permite procesar una transacción específica con status 'pending'
+     * usando la misma lógica de processWebserviceByType() existente.
+     * 
+     * FUNCIONALIDAD:
+     * - Toma transacción 'pending' específica
+     * - Usa servicios existentes (ArgentinaMicDtaService, ParaguayCustomsService, etc.)
+     * - Procesa según tipo de webservice
+     * - Actualiza status a 'success'/'error'
+     * - Manejo completo de errores y logs
+     * 
+     * USO: Botón "Enviar Ahora" en historial de transacciones
+     */
+
+    /**
+     * Procesar transacción pending individual
+     * 
+     * @param WebserviceTransaction $transaction
+     * @return \Illuminate\Http\RedirectResponse
+     */
+/**
+ * MÉTODO CORREGIDO: Procesar transacción pending individual
+ * AGREGAR AL FINAL DE WebServiceController.php
+ * 
+ * Versión simplificada que usa ID directamente desde la ruta
+ * Evita problemas de objetos sin ID
+ */
+public function processPendingTransaction(WebserviceTransaction $webservice)
+{
+    // 1. Validaciones básicas
+    if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+        abort(403, 'No tiene permisos para procesar transacciones.');
+    }
+
+    $company = $this->getUserCompany();
+    if (!$company || $webservice->company_id !== $company->id) {
+        abort(403, 'No tiene permisos para esta transacción.');
+    }
+
+    // 2. Verificar estado
+    if ($webservice->status !== 'pending') {
+        return redirect()->back()
+            ->with('error', "La transacción no está en estado 'pending'. Estado actual: {$webservice->status}");
+    }
+
+    try {
+        // 3. Log del procesamiento
+        $this->logWebserviceOperation('info', 'Procesando transacción pending individual', [
+            'transaction_id' => $webservice->id,
+            'internal_transaction_id' => $webservice->transaction_id,
+            'webservice_type' => $webservice->webservice_type,
+            'user_id' => Auth::id(),
+        ]);
+
+        // 4. Preparar datos básicos
+        $sendData = [
+            'company' => $company,
+            'environment' => $webservice->environment ?? 'testing',
+        ];
+
+        // 5. Cargar relaciones necesarias según el tipo
+        if ($webservice->voyage_id) {
+            $voyage = Voyage::with(['vessel', 'shipments', 'containers'])->find($webservice->voyage_id);
+            if ($voyage) {
+                $sendData['voyage'] = $voyage;
+                if ($voyage->shipments->isNotEmpty()) {
+                    $sendData['shipments'] = $voyage->shipments;
+                }
+            }
+        }
+
+        if ($webservice->shipment_id) {
+            $shipment = Shipment::with(['voyage', 'containers', 'billsOfLading'])->find($webservice->shipment_id);
+            if ($shipment) {
+                $sendData['shipment'] = $shipment;
+                if ($shipment->voyage) {
+                    $sendData['voyage'] = $shipment->voyage;
+                }
+            }
+        }
+
+        // 6. Datos de validación simulados
+        $validated = [
+            'webservice_type' => $webservice->webservice_type,
+            'country' => $webservice->country,
+            'environment' => $webservice->environment ?? 'testing',
+            'data_source' => $webservice->voyage_id ? 'voyage_id' : ($webservice->shipment_id ? 'shipment_id' : 'manual'),
+            'voyage_id' => $webservice->voyage_id,
+            'shipment_id' => $webservice->shipment_id,
+            'send_immediately' => true,
+        ];
+
+        // 7. Actualizar a estado "sending"
+        $webservice->update([
+            'status' => 'sending',
+            'sent_at' => now(),
+        ]);
+
+        // 8. PROCESAR usando método existente
+        $result = $this->processWebserviceByType($webservice, $sendData, $validated);
+
+        // 9. Actualizar resultado final
+        $webservice->update([
+            'status' => $result['success'] ? 'success' : 'error',
+            'response_at' => now(),
+            'confirmation_number' => $result['confirmation_number'] ?? null,
+            'error_code' => $result['error_code'] ?? null,
+            'error_message' => $result['error_message'] ?? null,
+            'success_data' => $result['success_data'] ?? null,
+        ]);
+
+        // 10. Respuesta al usuario
+        if ($result['success']) {
+            return redirect()->route('company.webservices.history', ['search' => $webservice->transaction_id])
+                ->with('success', 'Transacción procesada exitosamente: ' . $result['message'])
+                ->with('confirmation_number', $result['confirmation_number']);
+        } else {
+            return redirect()->route('company.webservices.history', ['search' => $webservice->transaction_id])
+                ->with('error', 'Error procesando transacción: ' . $result['message'])
+                ->with('error_details', $result['error_details'] ?? null);
+        }
+
+    } catch (Exception $e) {
+        // Error crítico
+        $webservice->update([
+            'status' => 'error',
+            'response_at' => now(),
+            'error_code' => 'PROCESSING_ERROR',
+            'error_message' => $e->getMessage(),
+        ]);
+
+        $this->logWebserviceOperation('error', 'Error crítico procesando pending', [
+            'transaction_id' => $webservice->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return redirect()->route('company.webservices.history', ['search' => $webservice->transaction_id])
+            ->with('error', 'Error interno. Contacte al administrador.');
+    }
+}
+
+    /**
+     * Preparar datos para el envío desde transacción existente
+     * 
+     * @param WebserviceTransaction $transaction
+     * @param Company $company
+     * @return array
+     */
+    private function prepareSendDataFromTransaction(WebserviceTransaction $transaction, Company $company): array
+    {
+        $data = [
+            'company' => $company,
+            'environment' => $transaction->environment ?? 'testing',
+        ];
+
+        // Cargar datos relacionados según disponibilidad
+        if ($transaction->voyage_id) {
+            $voyage = Voyage::with(['vessel', 'shipments', 'containers'])->find($transaction->voyage_id);
+            $data['voyage'] = $voyage;
+            
+            if ($voyage && $voyage->shipments->isNotEmpty()) {
+                $data['shipments'] = $voyage->shipments;
+            }
+        }
+
+        if ($transaction->shipment_id) {
+            $shipment = Shipment::with(['voyage', 'containers', 'billsOfLading'])->find($transaction->shipment_id);
+            $data['shipment'] = $shipment;
+            
+            if ($shipment && $shipment->voyage) {
+                $data['voyage'] = $shipment->voyage;
+            }
+        }
+
+        // Si hay datos manuales en metadata
+        if (isset($transaction->additional_metadata['manual_data'])) {
+            $data['manual_data'] = $transaction->additional_metadata['manual_data'];
+        }
+
+        return $data;
     }
 
 }

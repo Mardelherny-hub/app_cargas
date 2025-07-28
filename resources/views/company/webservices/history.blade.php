@@ -427,69 +427,48 @@
                                 </td>
 
                                 {{-- Acciones --}}
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <div class="flex space-x-2">
-                                        {{-- Ver detalle --}}
+                               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <div class="flex items-center space-x-2">
+                                        {{-- Ver detalles --}}
                                         <a href="{{ route('company.webservices.show-webservice', $transaction) }}" 
-                                           class="text-blue-600 hover:text-blue-900"
-                                           title="Ver detalle">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                            </svg>
+                                        class="text-indigo-600 hover:text-indigo-900">
+                                            Ver
                                         </a>
 
-                                        {{-- Reenviar si es error --}}
-                                        @if(in_array($transaction->status, ['error', 'expired']) && $transaction->retry_count < $transaction->max_retries)
+                                        {{-- BOTÓN ENVIAR AHORA - Solo para pending --}}
+                                        @if($transaction->status === 'pending')
                                             <form method="POST" 
-                                                  action="{{ route('company.webservices.retry-transaction', $transaction) }}" 
-                                                  class="inline"
-                                                  onsubmit="return confirm('¿Reenviar esta transacción?')">
+                                                action="{{ route('company.webservices.send-pending-transaction', $transaction) }}" 
+                                                style="display: inline;"
+                                                onsubmit="return confirm('¿Confirma enviar {{ $transaction->transaction_id }}?')">
                                                 @csrf
                                                 <button type="submit" 
-                                                        class="text-yellow-600 hover:text-yellow-900"
-                                                        title="Reenviar">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0V9a8 8 0 1115.356 2M15 15v5h-.582M4.644 15A8.001 8.001 0 0019.418 13m0 0V13a8 8 0 10-15.356-2"></path>
-                                                    </svg>
+                                                        class="text-green-600 hover:text-green-900 text-xs font-medium">
+                                                    🚀 Enviar
                                                 </button>
                                             </form>
                                         @endif
 
-                                        {{-- Descargar XML/PDF --}}
-                                        @if($transaction->response_xml || $transaction->confirmation_number)
-                                            <div class="relative">
-                                                <button type="button" 
-                                                        class="text-gray-600 hover:text-gray-900" 
-                                                        onclick="toggleDownloadMenu({{ $transaction->id }})"
-                                                        title="Descargar">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                    </svg>
+                                        {{-- Botón Reintentar - Solo para error --}}
+                                        @if($transaction->status === 'error' && ($transaction->can_retry ?? false))
+                                            <form method="POST" 
+                                                action="{{ route('company.webservices.retry-transaction', $transaction) }}" 
+                                                style="display: inline;"
+                                                onsubmit="return confirm('¿Reintentar {{ $transaction->transaction_id }}?')">
+                                                @csrf
+                                                <button type="submit" 
+                                                        class="text-orange-600 hover:text-orange-900 text-xs font-medium">
+                                                    ↻ Retry
                                                 </button>
-                                                <div class="hidden absolute right-0 z-10 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5" id="downloadMenu{{ $transaction->id }}">
-                                                    <div class="py-1">
-                                                        @if($transaction->response_xml)
-                                                            <a href="{{ route('company.webservices.download-xml', $transaction) }}" 
-                                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
-                                                                </svg>
-                                                                XML Response
-                                                            </a>
-                                                        @endif
-                                                        @if($transaction->confirmation_number)
-                                                            <a href="{{ route('company.webservices.download-pdf', $transaction) }}" 
-                                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                                </svg>
-                                                                PDF Report
-                                                            </a>
-                                                        @endif
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            </form>
+                                        @endif
+
+                                        {{-- Descargar XML --}}
+                                        @if($transaction->response_xml)
+                                            <a href="{{ route('company.webservices.download-xml', $transaction) }}" 
+                                            class="text-blue-600 hover:text-blue-900 text-xs">
+                                                XML
+                                            </a>
                                         @endif
                                     </div>
                                 </td>

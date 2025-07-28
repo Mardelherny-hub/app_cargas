@@ -191,8 +191,9 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/history', [WebserviceController::class, 'history'])->name('history');
     Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
 
-   // Acciones adicionales del historial - NUEVAS RUTAS
+   // Acciones adicionales del historial
     Route::post('/retry/{webservice}', [WebserviceController::class, 'retryTransaction'])->name('retry-transaction');
+    Route::post('/send-pending/{webservice}', [WebserviceController::class, 'processPendingTransaction'])->name('send-pending-transaction');
     Route::post('/export', [WebserviceController::class, 'export'])->name('export');
     
     // Descargas - NUEVAS RUTAS

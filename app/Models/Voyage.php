@@ -431,6 +431,41 @@ public function destinationCountry(): BelongsTo
 // === RELACIONES CON OTROS MÓDULOS ===
 //
 
+/**
+ * Embarcación principal (alias de leadVessel para compatibilidad)
+ */
+public function vessel(): BelongsTo
+{
+    return $this->leadVessel();
+}
+
+/**
+ * Contenedores a través de eager loading (más simple)
+ */
+public function getAllContainers()
+{
+    return Container::whereIn('shipment_id', $this->shipments->pluck('id'));
+}
+
+/**
+ * Todas las embarcaciones del convoy (más simple)
+ */
+public function getAllVessels()
+{
+    return Vessel::whereIn('id', $this->shipments->pluck('vessel_id'));
+}
+
+public function vessels()
+{
+    return $this->hasManyThrough(
+        Vessel::class,
+        Shipment::class,
+        'voyage_id',      // Foreign key en shipments
+        'id',             // Foreign key en vessels  
+        'id',             // Local key en voyages
+        'vessel_id'       // Local key en shipments
+    );
+}
 
 
 //
