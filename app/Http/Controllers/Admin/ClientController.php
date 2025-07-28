@@ -322,16 +322,456 @@ class ClientController extends Controller
     }
 
     /**
-     * Importación masiva (placeholder).
+     * Importación masiva de clientes desde CSV
+     * Basado en estructura real de PARANA.csv y Guaran.csv
      */
-    public function bulkImport(Request $request)
+    public function bulkImport(BulkClientImportRequest $request)
     {
-        $request->validate([
-            'import_file' => 'required|file|mimes:csv,xlsx,xls|max:10240',
-            'import_type' => 'required|in:clients,client_data'
-        ]);
+        try {
+            $file = $request->file('import_file');
+            $importType = $request->input('import_type', 'clients');
+            
+            // Leer contenido del archivo
+            $csvContent = file_get_contents($file->getRealPath());
+            
+            // Detectar tipo de CSV
+            $manifestType = $this->detectCsvType($csvContent);
+            
+            // Procesar datos según tipo
+            $records = $this->processCsvData($csvContent, $manifestType);
+            
+            if (empty($records)) {
+                return back()->with('error', 'No se encontraron registros válidos en el archivo CSV.');
+            }
+            
+            // Procesar clientes
+            $results = $this->processClientRecords($records);
+            
+            return back()->with('success', 
+                "Importación completada: {$results['created']} creados, {$results['updated']} actualizados, {$results['errors']} errores."
+            );
+            
+        } catch (Exception $e) {
+            return back()->with('error', 'Error en importación: ' . $e->getMessage());
+        }
+    }
 
-        return back()->with('info', 'Funcionalidad de importación masiva en desarrollo');
+    /**
+     * Detectar tipo de CSV basado en contenido real
+     */
+    private function detectCsvType(string $content): string
+    {
+        // PARANA: Inicia directamente con headers
+        if (str_contains($content, 'LOCATION NAME,ADDRESS LINE1') && 
+            str_contains($content, 'MAERSK')) {
+            return 'parana';
+        }
+        
+        // Guaran: Tiene metadata inicial "EDI To Custom"
+        if (str_contains($content, 'EDI To Custom') && 
+            str_contains($content, 'User Name : Admin')) {
+            return 'guaran';
+        }
+        
+        return 'parana'; // Por defecto
+    }
+
+    /**
+     * Procesar datos CSV según tipo detectado
+     */
+    private function processCsvData(string $content, string $manifestType): array
+    {
+        $lines = str_getcsv($content, "\n");
+        $data = [];
+        $headers = null;
+        $startProcessing = false;
+        
+        foreach ($lines as $lineNumber => $line) {
+            $row = str_getcsv($line);
+            
+            if ($manifestType === 'guaran' && !$startProcessing) {
+                // Guaran: Buscar línea de headers después de metadata
+                if (!empty($row[0]) && str_contains($row[0], 'LOCATION NAME')) {
+                    $headers = array_map('trim', $row);
+                    $startProcessing = true;
+                }
+                continue;
+            }
+            
+            if ($manifestType === 'parana' && $headers === null) {
+                // PARANA: Primera línea no vacía son los headers
+                if (!empty($row[0])) {
+                    $headers = array_map('trim', $row);
+                    continue;
+                }
+            }
+            
+            // Procesar datos
+            if ($headers && !empty($row[0]) && count($row) >= count($headers)) {
+                $record = array_combine($headers, $row);
+                if ($record && !empty($record['BL NUMBER'])) {
+                    $data[] = $record;
+                }
+            }
+        }
+        
+        return $data;
+    }
+
+    /**
+     * Procesar registros y crear/actualizar clientes
+     * CORREGIDO: Maneja "SAME AS CONSIGNEE" encontrado en datos reales
+     */
+    private function processClientRecords(array $records): array
+    {
+        $results = ['created' => 0, 'updated' => 0, 'errors' => 0];
+        $processedClients = []; // Evitar duplicados en mismo import
+        
+        foreach ($records as $record) {
+            try {
+                // Extraer datos de cada tipo de cliente
+                $clientData = $this->extractClientData($record);
+                
+                // Manejar caso especial "SAME AS CONSIGNEE"
+                $consigneeClient = null;
+                
+                foreach ($clientData as $clientInfo) {
+                    $key = $clientInfo['legal_name'] . '_' . ($clientInfo['tax_id'] ?? 'no_cuit');
+                    
+                    // Evitar procesar mismo cliente múltiples veces
+                    if (isset($processedClients[$key])) {
+                        $client = $processedClients[$key];
+                        // Agregar rol si no lo tiene
+                        if (!$client->hasRole($clientInfo['role'])) {
+                            $roles = $client->client_roles;
+                            $roles[] = $clientInfo['role'];
+                            $client->update(['client_roles' => array_unique($roles)]);
+                            $results['updated']++;
+                        }
+                        
+                        // Guardar referencia si es consignee para "SAME AS CONSIGNEE"
+                        if ($clientInfo['role'] === 'consignee') {
+                            $consigneeClient = $client;
+                        }
+                        continue;
+                    }
+                    
+                    // Buscar cliente existente por CUIT o nombre
+                    $existingClient = $this->findExistingClient($clientInfo);
+                    
+                    if ($existingClient) {
+                        // Actualizar roles del cliente existente
+                        if (!$existingClient->hasRole($clientInfo['role'])) {
+                            $roles = $existingClient->client_roles;
+                            $roles[] = $clientInfo['role'];
+                            $existingClient->update(['client_roles' => array_unique($roles)]);
+                            $results['updated']++;
+                        }
+                        $processedClients[$key] = $existingClient;
+                        
+                        // Guardar referencia si es consignee
+                        if ($clientInfo['role'] === 'consignee') {
+                            $consigneeClient = $existingClient;
+                        }
+                    } else {
+                        // Crear nuevo cliente
+                        $client = $this->createNewClient($clientInfo);
+                        if ($client) {
+                            $results['created']++;
+                            $processedClients[$key] = $client;
+                            
+                            // Guardar referencia si es consignee
+                            if ($clientInfo['role'] === 'consignee') {
+                                $consigneeClient = $client;
+                            }
+                        } else {
+                            $results['errors']++;
+                        }
+                    }
+                }
+                
+                // Manejar "SAME AS CONSIGNEE" - agregar rol notify_party al consignee
+                if ($consigneeClient && !empty($record['NOTIFY PARTY NAME'])) {
+                    $notifyName = trim($record['NOTIFY PARTY NAME']);
+                    if (strtoupper($notifyName) === 'SAME AS CONSIGNEE') {
+                        if (!$consigneeClient->hasRole('notify_party')) {
+                            $roles = $consigneeClient->client_roles;
+                            $roles[] = 'notify_party';
+                            $consigneeClient->update(['client_roles' => array_unique($roles)]);
+                            $results['updated']++;
+                        }
+                    }
+                }
+                
+            } catch (Exception $e) {
+                $results['errors']++;
+                \Log::error("Error procesando registro CSV: " . $e->getMessage());
+            }
+        }
+        
+        return $results;
+    }
+
+    /**
+     * Extraer datos de clientes desde registro CSV
+     * Basado en estructura real encontrada en PARANA/Guaran
+     */
+    private function extractClientData(array $record): array
+    {
+        $clients = [];
+        
+        // 1. SHIPPER (Cargador/Exportador)
+        if (!empty($record['SHIPPER NAME'])) {
+            $shipperData = [
+                'legal_name' => trim($record['SHIPPER NAME']),
+                'role' => 'shipper',
+                'tax_id' => $this->extractTaxId($record['SHIPPER ADDRESS1'] ?? ''),
+                'country_id' => 1, // Argentina por defecto para PARANA
+                'document_type_id' => 1, // CUIT por defecto
+                'created_by_company_id' => auth()->user()->getUserCompany()?->id ?? 1,
+            ];
+            
+            if (!empty($shipperData['legal_name'])) {
+                $clients[] = $shipperData;
+            }
+        }
+        
+        // 2. CONSIGNEE (Consignatario/Importador)  
+        if (!empty($record['CONSIGNEE NAME'])) {
+            $consigneeData = [
+                'legal_name' => trim($record['CONSIGNEE NAME']),
+                'role' => 'consignee',
+                'tax_id' => $this->extractTaxId($record['CONSIGNEE ADDRESS1'] ?? ''),
+                'country_id' => $this->detectCountry($record['CONSIGNEE COUNTRY'] ?? 'PARAGUAY'),
+                'document_type_id' => 1, // CUIT/RUC
+                'created_by_company_id' => auth()->user()->getUserCompany()?->id ?? 1,
+            ];
+            
+            if (!empty($consigneeData['legal_name'])) {
+                $clients[] = $consigneeData;
+            }
+        }
+        
+        // 3. NOTIFY PARTY (Notificatario)
+        if (!empty($record['NOTIFY PARTY NAME'])) {
+            $notifyName = trim($record['NOTIFY PARTY NAME']);
+            
+            // Saltar si es "SAME AS CONSIGNEE" - ya procesamos el consignee
+            if (strtoupper($notifyName) === 'SAME AS CONSIGNEE') {
+                // Agregar rol notify_party al consignee si existe
+                if (!empty($clients) && $clients[count($clients)-1]['role'] === 'consignee') {
+                    // No crear registro separado, será manejado en processClientRecords
+                }
+            } else {
+                $notifyData = [
+                    'legal_name' => $notifyName,
+                    'role' => 'notify_party',
+                    'tax_id' => $this->extractTaxId($record['NOTIFY PARTY ADDRESS1'] ?? ''),
+                    'country_id' => $this->detectCountry($record['NOTIFY PARTY COUNTRY'] ?? 'PARAGUAY'),
+                    'document_type_id' => 1,
+                    'created_by_company_id' => auth()->user()->getUserCompany()?->id ?? 1,
+                ];
+                
+                if (!empty($notifyData['legal_name'])) {
+                    $clients[] = $notifyData;
+                }
+            }
+        }
+        
+        return $clients;
+    }
+
+    /**
+     * Extraer CUIT/RUC de texto de dirección
+     * Patrón encontrado: "CUIT: 30688415531"
+     */
+    private function extractTaxId(string $addressText): ?string
+    {
+        if (empty($addressText)) {
+            return null;
+        }
+        
+        // Patrón CUIT: seguido de números
+        if (preg_match('/CUIT:\s*(\d{11})/', $addressText, $matches)) {
+            return $matches[1];
+        }
+        
+        // Patrón RUC: seguido de números  
+        if (preg_match('/RUC:\s*(\d+)/', $addressText, $matches)) {
+            return $matches[1];
+        }
+        
+        // Buscar solo números de 11 dígitos (CUIT) o 8+ dígitos (RUC)
+        if (preg_match('/\b(\d{11})\b/', $addressText, $matches)) {
+            return $matches[1]; // CUIT argentino
+        }
+        
+        if (preg_match('/\b(\d{8,10})\b/', $addressText, $matches)) {
+            return $matches[1]; // RUC paraguayo u otros
+        }
+        
+        return null;
+    }
+
+    /**
+     * Detectar país basado en campo COUNTRY
+     */
+    private function detectCountry(string $countryText): int
+    {
+        $countryUpper = strtoupper(trim($countryText));
+        
+        switch ($countryUpper) {
+            case 'ARGENTINA':
+            case 'ARG':
+                return 1; // ID de Argentina en BD
+                
+            case 'PARAGUAY':
+            case 'PAR':
+            case 'PY':
+                return 2; // ID de Paraguay en BD
+                
+            default:
+                return 1; // Por defecto Argentina
+        }
+    }
+
+    /**
+     * Buscar cliente existente por CUIT/RUC o nombre
+     * Usa métodos existentes del modelo Client
+     */
+    private function findExistingClient(array $clientInfo): ?Client
+    {
+        // 1. Buscar por CUIT/RUC si está disponible (más confiable)
+        if (!empty($clientInfo['tax_id'])) {
+            $client = Client::findByTaxId(
+                $clientInfo['tax_id'], 
+                $clientInfo['country_id']
+            );
+            
+            if ($client) {
+                return $client;
+            }
+        }
+        
+        // 2. Buscar por nombre legal como fallback
+        if (!empty($clientInfo['legal_name'])) {
+            $client = Client::where('legal_name', $clientInfo['legal_name'])
+                ->where('country_id', $clientInfo['country_id'])
+                ->first();
+                
+            if ($client) {
+                return $client;
+            }
+        }
+        
+        // 3. Búsqueda aproximada por nombre (para casos con variaciones menores)
+        if (!empty($clientInfo['legal_name']) && strlen($clientInfo['legal_name']) > 10) {
+            $cleanName = $this->cleanCompanyName($clientInfo['legal_name']);
+            
+            $client = Client::where('country_id', $clientInfo['country_id'])
+                ->where(function($query) use ($cleanName) {
+                    $query->where('legal_name', 'like', "%{$cleanName}%")
+                        ->orWhere('legal_name', 'like', "%{$cleanName}%");
+                })
+                ->first();
+                
+            if ($client) {
+                return $client;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Limpiar nombre de empresa para búsqueda aproximada
+     * Remueve sufijos comunes y normaliza
+     */
+    private function cleanCompanyName(string $companyName): string
+    {
+        $name = trim($companyName);
+        
+        // Remover sufijos comunes
+        $suffixes = [
+            ' S.A.', ' S.R.L.', ' LTDA.', ' S.A.C.I.', 
+            ' S.A', ' SRL', ' LTDA', ' SACI',
+            ' SA', ' LIMITADA'
+        ];
+        
+        foreach ($suffixes as $suffix) {
+            if (str_ends_with(strtoupper($name), strtoupper($suffix))) {
+                $name = substr($name, 0, -strlen($suffix));
+                break;
+            }
+        }
+        
+        // Normalizar espacios
+        $name = preg_replace('/\s+/', ' ', trim($name));
+        
+        // Remover caracteres especiales para búsqueda
+        $name = preg_replace('/[^\w\s]/', '', $name);
+        
+        return trim($name);
+    }
+
+    /**
+     * Crear nuevo cliente con rol asignado
+     * Usa estructura existente del modelo Client
+     */
+    private function createNewClient(array $clientInfo): ?Client
+    {
+        try {
+            // Preparar datos usando campos fillable del modelo
+            $clientData = [
+                'tax_id' => $this->cleanTaxId($clientInfo['tax_id'] ?? null),
+                'country_id' => $clientInfo['country_id'],
+                'document_type_id' => $clientInfo['document_type_id'],
+                'client_roles' => [$clientInfo['role']], // Array JSON como requiere el modelo
+                'legal_name' => $clientInfo['legal_name'],
+                'status' => 'active', // Por defecto activo
+                'created_by_company_id' => $clientInfo['created_by_company_id'],
+                'verified_at' => null, // Sin verificar inicialmente
+                'notes' => 'Creado desde importación CSV'
+            ];
+            
+            // Validar datos mínimos requeridos
+            if (empty($clientData['legal_name'])) {
+                \Log::warning("Cliente sin nombre legal: " . json_encode($clientInfo));
+                return null;
+            }
+            
+            // Crear cliente usando el modelo existente
+            $client = Client::create($clientData);
+            
+            \Log::info("Cliente creado desde CSV: {$client->legal_name} con rol {$clientInfo['role']}");
+            
+            return $client;
+            
+        } catch (Exception $e) {
+            \Log::error("Error creando cliente: " . $e->getMessage() . " - Datos: " . json_encode($clientInfo));
+            return null;
+        }
+    }
+
+    /**
+     * Limpiar CUIT/RUC para almacenamiento
+     * Basado en el evento saving() del modelo Client
+     */
+    private function cleanTaxId(?string $taxId): ?string
+    {
+        if (empty($taxId)) {
+            return null;
+        }
+        
+        // Limpiar caracteres no numéricos (como hace el modelo)
+        $cleaned = preg_replace('/[^0-9]/', '', $taxId);
+        
+        // Validar longitud mínima
+        if (strlen($cleaned) < 7) {
+            return null;
+        }
+        
+        return $cleaned;
     }
 
     /**

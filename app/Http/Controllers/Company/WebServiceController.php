@@ -3313,8 +3313,9 @@ public function downloadPdf(WebserviceTransaction $webservice)
         ->with('info', 'Funcionalidad de PDF en desarrollo.');
 }
 
-/**
-     * Importar manifiesto desde archivo CSV
+    /**
+     * Importar manifiesto desde archivo CSV + CREAR/ACTUALIZAR CLIENTES
+     * INTEGRACIÓN COMPLETA: Webservice Transactions + Client Management
      */
     public function importManifest(ImportManifestRequest $request)
     {
@@ -3328,17 +3329,15 @@ public function downloadPdf(WebserviceTransaction $webservice)
             $validated = $request->validated();
             $file = $request->file('manifest_file');
             
-            // Log inicio de importación
+            // Log inicio
             $this->logWebserviceOperation('info', 'Iniciando importación de manifiesto', [
                 'company_id' => $company->id,
                 'file_name' => $file->getClientOriginalName(),
                 'file_size' => $file->getSize(),
                 'manifest_type' => $validated['manifest_type'],
-                'webservice_type' => $validated['webservice_type'],
-                'environment' => $validated['environment'],
             ]);
 
-            // Procesar archivo CSV
+            // 1. Procesar archivo CSV (EXISTENTE)
             $csvData = $this->processCsvFile($file, $validated['manifest_type']);
             
             if (empty($csvData)) {
@@ -3346,14 +3345,16 @@ public function downloadPdf(WebserviceTransaction $webservice)
                     ->with('error', 'El archivo CSV está vacío o no contiene datos válidos.');
             }
 
-            // Crear transacciones por cada registro válido
+            // 2. ✨ NUEVO: Procesar clientes desde CSV
+            $clientResults = $this->processClientsFromManifest($csvData);
+            
+            // 3. Crear transacciones webservice (EXISTENTE)
             $successCount = 0;
             $errorCount = 0;
             $errors = [];
 
             foreach ($csvData as $index => $record) {
                 try {
-                    // Validar registro individual
                     $validatedRecord = $this->validateCsvRecord($record, $validated['manifest_type']);
                     
                     if (!$validatedRecord['valid']) {
@@ -3362,7 +3363,6 @@ public function downloadPdf(WebserviceTransaction $webservice)
                         continue;
                     }
 
-                    // Crear transacción webservice
                     $transaction = $this->createWebserviceTransactionFromCsv(
                         $company,
                         $validatedRecord['data'],
@@ -3371,50 +3371,181 @@ public function downloadPdf(WebserviceTransaction $webservice)
 
                     if ($transaction) {
                         $successCount++;
-                        
-                        // Log transacción creada
-                        $this->logWebserviceOperation('info', 'Transacción creada desde CSV', [
-                            'transaction_id' => $transaction->id,
-                            'csv_row' => $index + 2,
-                            'bl_number' => $validatedRecord['data']['bl_number'] ?? 'N/A',
-                        ]);
                     }
 
                 } catch (Exception $e) {
                     $errorCount++;
                     $errors[] = "Fila " . ($index + 2) . ": Error procesando - " . $e->getMessage();
-                    
-                    $this->logWebserviceOperation('error', 'Error procesando fila CSV', [
-                        'csv_row' => $index + 2,
-                        'error' => $e->getMessage(),
-                    ]);
                 }
             }
 
-            // Resultado de importación
-            $message = "Importación completada. {$successCount} registros procesados exitosamente.";
+            // 4. Resultado integrado
+            $message = "Importación completada: {$successCount} transacciones, ";
+            $message .= "{$clientResults['created']} clientes creados, {$clientResults['updated']} actualizados.";
+            
             if ($errorCount > 0) {
-                $message .= " {$errorCount} registros con errores.";
+                $message .= " {$errorCount} errores.";
             }
 
             return redirect()->route('company.webservices.history')
                 ->with('success', $message)
-                ->with('import_errors', array_slice($errors, 0, 10)) // Mostrar solo primeros 10 errores
-                ->with('import_stats', [
-                    'total' => count($csvData),
-                    'success' => $successCount,
-                    'errors' => $errorCount
-                ]);
+                ->with('client_stats', $clientResults)
+                ->with('import_errors', array_slice($errors, 0, 10));
 
         } catch (Exception $e) {
-            $this->logWebserviceOperation('error', 'Error en importación de manifiesto', [
-                'company_id' => $company->id,
+            $this->logWebserviceOperation('error', 'Error en importación', [
                 'error' => $e->getMessage(),
-                'file_name' => $file->getClientOriginalName() ?? 'unknown',
             ]);
 
             return redirect()->route('company.webservices.send')
                 ->with('error', 'Error procesando archivo: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * ✨ NUEVO: Procesar clientes desde datos de manifiesto
+     */
+    private function processClientsFromManifest(array $csvData): array
+    {
+        $results = ['created' => 0, 'updated' => 0, 'errors' => 0];
+        $processedClients = [];
+        
+        foreach ($csvData as $record) {
+            try {
+                // Usar mismo método del ClientController
+                $clientData = $this->extractClientDataFromManifest($record);
+                
+                foreach ($clientData as $clientInfo) {
+                    $key = $clientInfo['legal_name'] . '_' . ($clientInfo['tax_id'] ?? 'no_cuit');
+                    
+                    if (isset($processedClients[$key])) {
+                        $client = $processedClients[$key];
+                        if (!$client->hasRole($clientInfo['role'])) {
+                            $roles = $client->client_roles;
+                            $roles[] = $clientInfo['role'];
+                            $client->update(['client_roles' => array_unique($roles)]);
+                            $results['updated']++;
+                        }
+                        continue;
+                    }
+                    
+                    $existingClient = $this->findExistingClientInManifest($clientInfo);
+                    
+                    if ($existingClient) {
+                        if (!$existingClient->hasRole($clientInfo['role'])) {
+                            $roles = $existingClient->client_roles;
+                            $roles[] = $clientInfo['role'];
+                            $existingClient->update(['client_roles' => array_unique($roles)]);
+                            $results['updated']++;
+                        }
+                        $processedClients[$key] = $existingClient;
+                    } else {
+                        $client = $this->createClientFromManifest($clientInfo);
+                        if ($client) {
+                            $results['created']++;
+                            $processedClients[$key] = $client;
+                        } else {
+                            $results['errors']++;
+                        }
+                    }
+                }
+                
+            } catch (Exception $e) {
+                $results['errors']++;
+                \Log::error("Error procesando cliente desde manifiesto: " . $e->getMessage());
+            }
+        }
+        
+        return $results;
+    }
+
+    /**
+     * Extraer datos de cliente desde registro de manifiesto
+     */
+    private function extractClientDataFromManifest(array $record): array
+    {
+        $clients = [];
+        
+        // Shipper
+        if (!empty($record['SHIPPER NAME'])) {
+            $clients[] = [
+                'legal_name' => trim($record['SHIPPER NAME']),
+                'role' => 'shipper',
+                'tax_id' => $this->extractTaxIdFromManifest($record['SHIPPER ADDRESS1'] ?? ''),
+                'country_id' => 1, // Argentina
+                'document_type_id' => 1,
+                'created_by_company_id' => auth()->user()->getUserCompany()?->id ?? 1,
+            ];
+        }
+        
+        // Consignee
+        if (!empty($record['CONSIGNEE NAME'])) {
+            $clients[] = [
+                'legal_name' => trim($record['CONSIGNEE NAME']),
+                'role' => 'consignee',
+                'tax_id' => $this->extractTaxIdFromManifest($record['CONSIGNEE ADDRESS1'] ?? ''),
+                'country_id' => 2, // Paraguay
+                'document_type_id' => 1,
+                'created_by_company_id' => auth()->user()->getUserCompany()?->id ?? 1,
+            ];
+        }
+        
+        // Notify Party
+        if (!empty($record['NOTIFY PARTY NAME'])) {
+            $notifyName = trim($record['NOTIFY PARTY NAME']);
+            if (strtoupper($notifyName) !== 'SAME AS CONSIGNEE') {
+                $clients[] = [
+                    'legal_name' => $notifyName,
+                    'role' => 'notify_party',
+                    'tax_id' => $this->extractTaxIdFromManifest($record['NOTIFY PARTY ADDRESS1'] ?? ''),
+                    'country_id' => 2,
+                    'document_type_id' => 1,
+                    'created_by_company_id' => auth()->user()->getUserCompany()?->id ?? 1,
+                ];
+            }
+        }
+        
+        return $clients;
+    }
+
+    private function extractTaxIdFromManifest(string $text): ?string
+    {
+        if (preg_match('/CUIT:\s*(\d{11})/', $text, $matches)) {
+            return $matches[1];
+        }
+        if (preg_match('/\b(\d{11})\b/', $text, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+
+    private function findExistingClientInManifest(array $clientInfo): ?Client
+    {
+        if (!empty($clientInfo['tax_id'])) {
+            return Client::findByTaxId($clientInfo['tax_id'], $clientInfo['country_id']);
+        }
+        
+        return Client::where('legal_name', $clientInfo['legal_name'])
+            ->where('country_id', $clientInfo['country_id'])
+            ->first();
+    }
+
+    private function createClientFromManifest(array $clientInfo): ?Client
+    {
+        try {
+            return Client::create([
+                'tax_id' => $clientInfo['tax_id'],
+                'country_id' => $clientInfo['country_id'],
+                'document_type_id' => $clientInfo['document_type_id'],
+                'client_roles' => [$clientInfo['role']],
+                'legal_name' => $clientInfo['legal_name'],
+                'status' => 'active',
+                'created_by_company_id' => $clientInfo['created_by_company_id'],
+                'notes' => 'Creado desde import manifiesto'
+            ]);
+        } catch (Exception $e) {
+            \Log::error("Error creando cliente: " . $e->getMessage());
+            return null;
         }
     }
 
