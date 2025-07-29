@@ -1,496 +1,628 @@
 <?php
 
-namespace Database\Seeders;
+namespace App\Models;
 
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\User;
 
-class CargoTypesSeeder extends Seeder
+class CargoType extends Model
 {
+    use HasFactory;
+
+    protected $fillable = [
+        'code',
+        'name',
+        'short_name',
+        'description',
+        'parent_id',
+        'level',
+        'full_path',
+        'imdg_class',
+        'hs_code_prefix',
+        'unece_code',
+        'cargo_nature',
+        'packaging_type',
+        'requires_refrigeration',
+        'requires_special_handling',
+        'is_dangerous_goods',
+        'requires_permits',
+        'is_perishable',
+        'is_fragile',
+        'requires_fumigation',
+        'temperature_range',
+        'humidity_requirements',
+        'stacking_limitations',
+        'can_be_mixed',
+        'incompatible_with',
+        'requires_certificate_origin',
+        'requires_health_certificate',
+        'requires_fumigation_certificate',
+        'requires_insurance',
+        'required_documents',
+        'subject_to_inspection',
+        'inspection_percentage',
+        'customs_requirements',
+        'prohibited_countries',
+        'typical_density',
+        'max_weight_per_container',
+        'dimension_restrictions',
+        'tariff_classification',
+        'insurance_rate',
+        'freight_rates',
+        'webservice_code',
+        'webservice_mapping',
+        'allows_consolidation',
+        'allows_deconsolidation',
+        'allows_transshipment',
+        'typical_loading_time',
+        'active',
+        'is_common',
+        'display_order',
+        'icon',
+        'color_code',
+        'seasonal_restrictions',
+        'embargo_periods',
+        'created_date',
+        'created_by_user_id',
+    ];
+
+    protected $casts = [
+        // Relationships
+        'parent_id' => 'integer',
+        'created_by_user_id' => 'integer',
+        
+        // Boolean fields
+        'requires_refrigeration' => 'boolean',
+        'requires_special_handling' => 'boolean',
+        'is_dangerous_goods' => 'boolean',
+        'requires_permits' => 'boolean',
+        'is_perishable' => 'boolean',
+        'is_fragile' => 'boolean',
+        'requires_fumigation' => 'boolean',
+        'can_be_mixed' => 'boolean',
+        'requires_certificate_origin' => 'boolean',
+        'requires_health_certificate' => 'boolean',
+        'requires_fumigation_certificate' => 'boolean',
+        'requires_insurance' => 'boolean',
+        'subject_to_inspection' => 'boolean',
+        'allows_consolidation' => 'boolean',
+        'allows_deconsolidation' => 'boolean',
+        'allows_transshipment' => 'boolean',
+        'active' => 'boolean',
+        'is_common' => 'boolean',
+        
+        // JSON fields
+        'temperature_range' => 'array',
+        'humidity_requirements' => 'array',
+        'stacking_limitations' => 'array',
+        'incompatible_with' => 'array',
+        'required_documents' => 'array',
+        'customs_requirements' => 'array',
+        'prohibited_countries' => 'array',
+        'dimension_restrictions' => 'array',
+        'freight_rates' => 'array',
+        'webservice_mapping' => 'array',
+        'seasonal_restrictions' => 'array',
+        'embargo_periods' => 'array',
+        
+        // Decimal fields
+        'typical_density' => 'decimal:3',
+        'max_weight_per_container' => 'decimal:2',
+        'insurance_rate' => 'decimal:4',
+        
+        // Integer fields
+        'level' => 'integer',
+        'inspection_percentage' => 'integer',
+        'typical_loading_time' => 'integer',
+        'display_order' => 'integer',
+        
+        // Datetime fields
+        'created_date' => 'datetime',
+    ];
+
+    // ========================================
+    // RELATIONSHIPS
+    // ========================================
+
     /**
-     * Run the database seeds.
-     * 
-     * MÓDULO 3: VIAJES Y CARGAS
-     * Seeder para tipos de carga más comunes en transporte fluvial/marítimo
-     * Compatible con estándares internacionales y webservices AR/PY
+     * Parent cargo type (for hierarchy)
      */
-    public function run(): void
+    public function parent(): BelongsTo
     {
-        $now = Carbon::now();
+        return $this->belongsTo(CargoType::class, 'parent_id');
+    }
 
-        // ========================================
-        // TIPOS PRINCIPALES (NIVEL 1)
-        // ========================================
-        
-        $mainTypes = [
-            // Carga General
-            [
-                'id' => 1,
-                'code' => 'GEN001',
-                'name' => 'Carga General',
-                'short_name' => 'General',
-                'description' => 'Mercadería diversa empacada en bultos individuales',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Carga General',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'break_bulk',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => false,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'can_be_mixed' => true,
-                'allows_consolidation' => true,
-                'allows_deconsolidation' => true,
-                'allows_transshipment' => true,
-                'typical_density' => 500.000,
-                'typical_loading_time' => 12,
-                'webservice_code' => 'GEN',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 10,
-                'icon' => '📋',
-                'color_code' => '#10B981',
-                'created_date' => $now,
-            ],
+    /**
+     * Child cargo types (subcategories)
+     */
+    public function children(): HasMany
+    {
+        return $this->hasMany(CargoType::class, 'parent_id');
+    }
 
-            // Contenedores
-            [
-                'id' => 2,
-                'code' => 'CON001',
-                'name' => 'Contenedores',
-                'short_name' => 'Containers',
-                'description' => 'Carga en contenedores estándar ISO',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Contenedores',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => false,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'can_be_mixed' => true,
-                'allows_consolidation' => true,
-                'allows_deconsolidation' => true,
-                'allows_transshipment' => true,
-                'typical_density' => 800.000,
-                'max_weight_per_container' => 28000.00,
-                'typical_loading_time' => 2,
-                'webservice_code' => 'CONT',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 20,
-                'icon' => '📦',
-                'color_code' => '#3B82F6',
-                'created_date' => $now,
-            ],
+    /**
+     * All descendants (recursive)
+     */
+    public function descendants(): HasMany
+    {
+        return $this->children()->with('descendants');
+    }
 
-            // Carga a Granel
-            [
-                'id' => 3,
-                'code' => 'BLK001',
-                'name' => 'Carga a Granel',
-                'short_name' => 'Granel',
-                'description' => 'Mercadería sin empacar transportada a granel',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Carga a Granel',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'bulk',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => true,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'can_be_mixed' => false,
-                'allows_consolidation' => false,
-                'allows_deconsolidation' => false,
-                'allows_transshipment' => true,
-                'typical_density' => 1500.000,
-                'typical_loading_time' => 8,
-                'webservice_code' => 'BULK',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 30,
-                'icon' => '🚛',
-                'color_code' => '#EF4444',
-                'created_date' => $now,
-            ],
+    /**
+     * User who created this record
+     * Note: FK is commented in migration, uncomment when User model is ready
+     */
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
 
-            // Carga Refrigerada
-            [
-                'id' => 4,
-                'code' => 'REF001',
-                'name' => 'Carga Refrigerada',
-                'short_name' => 'Refrigerada',
-                'description' => 'Mercadería que requiere control de temperatura',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Carga Refrigerada',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => true,
-                'requires_special_handling' => true,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => true,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'temperature_range' => ['min' => -25, 'max' => 15],
-                'can_be_mixed' => false,
-                'allows_consolidation' => true,
-                'allows_deconsolidation' => true,
-                'allows_transshipment' => true,
-                'typical_density' => 600.000,
-                'max_weight_per_container' => 27000.00,
-                'typical_loading_time' => 3,
-                'webservice_code' => 'REEF',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 40,
-                'icon' => '🧊',
-                'color_code' => '#06B6D4',
-                'created_date' => $now,
-            ],
+    // Note: Shipments/Cargo relationships will be added in future phases
 
-            // Mercancías Peligrosas
-            [
-                'id' => 5,
-                'code' => 'DNG001',
-                'name' => 'Mercancías Peligrosas',
-                'short_name' => 'Peligrosas',
-                'description' => 'Mercadería clasificada como peligrosa según IMDG',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Mercancías Peligrosas',
-                'imdg_class' => '9',
-                'cargo_nature' => 'mixed',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => true,
-                'is_dangerous_goods' => true,
-                'requires_permits' => true,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'requires_certificate_origin' => true,
-                'requires_insurance' => true,
-                'can_be_mixed' => false,
-                'allows_consolidation' => false,
-                'allows_deconsolidation' => false,
-                'allows_transshipment' => true,
-                'subject_to_inspection' => true,
-                'inspection_percentage' => 25,
-                'typical_density' => 700.000,
-                'typical_loading_time' => 4,
-                'insurance_rate' => 0.0050,
-                'webservice_code' => 'DANG',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 50,
-                'icon' => '⚠️',
-                'color_code' => '#F59E0B',
-                'created_date' => $now,
-            ],
+    // ========================================
+    // SCOPES
+    // ========================================
 
-            // Carga Líquida
-            [
-                'id' => 6,
-                'code' => 'LIQ001',
-                'name' => 'Carga Líquida',
-                'short_name' => 'Líquida',
-                'description' => 'Líquidos transportados en tanques o contenedores especiales',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Carga Líquida',
-                'cargo_nature' => 'liquid',
-                'packaging_type' => 'bulk',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => true,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'can_be_mixed' => false,
-                'allows_consolidation' => false,
-                'allows_deconsolidation' => false,
-                'allows_transshipment' => true,
-                'typical_density' => 1000.000,
-                'typical_loading_time' => 6,
-                'webservice_code' => 'LIQ',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 60,
-                'icon' => '🫗',
-                'color_code' => '#8B5CF6',
-                'created_date' => $now,
-            ],
+    /**
+     * Scope for active cargo types
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('active', true);
+    }
 
-            // Vehículos
-            [
-                'id' => 7,
-                'code' => 'VEH001',
-                'name' => 'Vehículos',
-                'short_name' => 'Vehículos',
-                'description' => 'Automóviles, camiones, maquinaria y equipos rodantes',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Vehículos',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'ro_ro',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => true,
-                'is_dangerous_goods' => false,
-                'requires_permits' => true,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'requires_certificate_origin' => true,
-                'can_be_mixed' => false,
-                'allows_consolidation' => false,
-                'allows_deconsolidation' => false,
-                'allows_transshipment' => true,
-                'typical_density' => 200.000,
-                'typical_loading_time' => 1,
-                'webservice_code' => 'RORO',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 70,
-                'icon' => '🚗',
-                'color_code' => '#F59E0B',
-                'created_date' => $now,
-            ],
+    /**
+     * Scope for common cargo types
+     */
+    public function scopeCommon($query)
+    {
+        return $query->where('is_common', true);
+    }
 
-            // Gases
-            [
-                'id' => 8,
-                'code' => 'GAS001',
-                'name' => 'Gases',
-                'short_name' => 'Gases',
-                'description' => 'Gases comprimidos o licuados',
-                'parent_id' => null,
-                'level' => 1,
-                'full_path' => 'Gases',
-                'imdg_class' => '2',
-                'cargo_nature' => 'gas',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => true,
-                'is_dangerous_goods' => true,
-                'requires_permits' => true,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'requires_certificate_origin' => true,
-                'requires_insurance' => true,
-                'can_be_mixed' => false,
-                'allows_consolidation' => false,
-                'allows_deconsolidation' => false,
-                'allows_transshipment' => false,
-                'subject_to_inspection' => true,
-                'inspection_percentage' => 50,
-                'typical_density' => 300.000,
-                'typical_loading_time' => 3,
-                'insurance_rate' => 0.0075,
-                'webservice_code' => 'GAS',
-                'active' => true,
-                'is_common' => false,
-                'display_order' => 80,
-                'icon' => '🫧',
-                'color_code' => '#64748B',
-                'created_date' => $now,
-            ],
+    /**
+     * Scope for dangerous goods
+     */
+    public function scopeDangerous($query)
+    {
+        return $query->where('is_dangerous_goods', true);
+    }
+
+    /**
+     * Scope for perishable goods
+     */
+    public function scopePerishable($query)
+    {
+        return $query->where('is_perishable', true);
+    }
+
+    /**
+     * Scope for refrigerated cargo
+     */
+    public function scopeRefrigerated($query)
+    {
+        return $query->where('requires_refrigeration', true);
+    }
+
+    /**
+     * Scope by packaging type
+     */
+    public function scopeByPackaging($query, string $packaging)
+    {
+        return $query->where('packaging_type', $packaging);
+    }
+
+    /**
+     * Scope by cargo nature
+     */
+    public function scopeByNature($query, string $nature)
+    {
+        return $query->where('cargo_nature', $nature);
+    }
+
+    /**
+     * Scope for containerized cargo
+     */
+    public function scopeContainerized($query)
+    {
+        return $query->where('packaging_type', 'containerized');
+    }
+
+    /**
+     * Scope for bulk cargo
+     */
+    public function scopeBulk($query)
+    {
+        return $query->where('packaging_type', 'bulk');
+    }
+
+    /**
+     * Scope by hierarchy level
+     */
+    public function scopeByLevel($query, int $level)
+    {
+        return $query->where('level', $level);
+    }
+
+    /**
+     * Scope for root level cargo types
+     */
+    public function scopeRoot($query)
+    {
+        return $query->whereNull('parent_id');
+    }
+
+    /**
+     * Scope for cargo requiring permits
+     */
+    public function scopeRequiringPermits($query)
+    {
+        return $query->where('requires_permits', true);
+    }
+
+    /**
+     * Scope for ordering
+     */
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('level')->orderBy('display_order')->orderBy('name');
+    }
+
+    // ========================================
+    // HIERARCHY METHODS
+    // ========================================
+
+    /**
+     * Get full hierarchy path as string
+     */
+    public function getFullHierarchyPath(): string
+    {
+        if ($this->full_path) {
+            return $this->full_path;
+        }
+
+        $path = [$this->name];
+        $current = $this->parent;
+
+        while ($current) {
+            array_unshift($path, $current->name);
+            $current = $current->parent;
+        }
+
+        return implode(' > ', $path);
+    }
+
+    /**
+     * Get all ancestors
+     */
+    public function getAncestors()
+    {
+        $ancestors = collect();
+        $current = $this->parent;
+
+        while ($current) {
+            $ancestors->prepend($current);
+            $current = $current->parent;
+        }
+
+        return $ancestors;
+    }
+
+    /**
+     * Check if is root level
+     */
+    public function isRoot(): bool
+    {
+        return is_null($this->parent_id);
+    }
+
+    /**
+     * Check if has children
+     */
+    public function hasChildren(): bool
+    {
+        return $this->children()->exists();
+    }
+
+    /**
+     * Update full path for this node and descendants
+     */
+    public function updateFullPath(): void
+    {
+        $this->full_path = $this->getFullHierarchyPath();
+        $this->save();
+
+        // Update children paths
+        foreach ($this->children as $child) {
+            $child->updateFullPath();
+        }
+    }
+
+    // ========================================
+    // VALIDATION AND COMPATIBILITY METHODS
+    // ========================================
+
+    /**
+     * Check if compatible with another cargo type
+     */
+    public function isCompatibleWith(CargoType $other): bool
+    {
+        // Check if explicitly incompatible
+        if ($this->incompatible_with && in_array($other->code, $this->incompatible_with)) {
+            return false;
+        }
+
+        if ($other->incompatible_with && in_array($this->code, $other->incompatible_with)) {
+            return false;
+        }
+
+        // Dangerous goods compatibility rules
+        if ($this->is_dangerous_goods && $other->is_dangerous_goods) {
+            return $this->checkDangerousGoodsCompatibility($other);
+        }
+
+        // Temperature requirements compatibility
+        if ($this->requires_refrigeration || $other->requires_refrigeration) {
+            return $this->checkTemperatureCompatibility($other);
+        }
+
+        // Check if both allow mixing
+        return $this->can_be_mixed && $other->can_be_mixed;
+    }
+
+    /**
+     * Check dangerous goods compatibility (basic IMDG classes)
+     */
+    private function checkDangerousGoodsCompatibility(CargoType $other): bool
+    {
+        if (!$this->imdg_class || !$other->imdg_class) {
+            return false; // Cannot determine compatibility
+        }
+
+        // Basic incompatible IMDG class combinations
+        $incompatibleCombinations = [
+            ['1', '5.2'], // Explosives with Organic Peroxides
+            ['2.3', '8'], // Toxic Gases with Corrosives
+            ['4.2', '5.1'], // Spontaneously Combustible with Oxidizers
         ];
 
-        // ========================================
-        // SUBCATEGORÍAS (NIVEL 2)
-        // ========================================
-        
-        $subTypes = [
-            // Subcategorías de Contenedores
-            [
-                'code' => 'CON002',
-                'name' => 'Contenedor Dry 20ft',
-                'short_name' => 'Dry 20',
-                'description' => 'Contenedor seco estándar de 20 pies',
-                'parent_id' => 2,
-                'level' => 2,
-                'full_path' => 'Contenedores > Contenedor Dry 20ft',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'max_weight_per_container' => 21600.00,
-                'dimension_restrictions' => ['length' => 589, 'width' => 235, 'height' => 239],
-                'webservice_code' => 'DRY20',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 21,
-                'created_date' => $now,
-            ],
-            [
-                'code' => 'CON003',
-                'name' => 'Contenedor Dry 40ft',
-                'short_name' => 'Dry 40',
-                'description' => 'Contenedor seco estándar de 40 pies',
-                'parent_id' => 2,
-                'level' => 2,
-                'full_path' => 'Contenedores > Contenedor Dry 40ft',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'max_weight_per_container' => 26680.00,
-                'dimension_restrictions' => ['length' => 1203, 'width' => 235, 'height' => 239],
-                'webservice_code' => 'DRY40',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 22,
-                'created_date' => $now,
-            ],
+        foreach ($incompatibleCombinations as $combo) {
+            if (in_array($this->imdg_class, $combo) && in_array($other->imdg_class, $combo)) {
+                return false;
+            }
+        }
 
-            // Subcategorías de Granel
-            [
-                'code' => 'BLK002',
-                'name' => 'Granel Sólido Seco',
-                'short_name' => 'Granel Seco',
-                'description' => 'Cereales, minerales, fertilizantes',
-                'parent_id' => 3,
-                'level' => 2,
-                'full_path' => 'Carga a Granel > Granel Sólido Seco',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'bulk',
-                'requires_fumigation' => true,
-                'typical_density' => 1200.000,
-                'webservice_code' => 'BDRY',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 31,
-                'created_date' => $now,
-            ],
-            [
-                'code' => 'BLK003',
-                'name' => 'Granel Líquido',
-                'short_name' => 'Granel Líq.',
-                'description' => 'Combustibles, aceites, químicos líquidos',
-                'parent_id' => 3,
-                'level' => 2,
-                'full_path' => 'Carga a Granel > Granel Líquido',
-                'cargo_nature' => 'liquid',
-                'packaging_type' => 'bulk',
-                'is_dangerous_goods' => true,
-                'requires_permits' => true,
-                'typical_density' => 900.000,
-                'webservice_code' => 'BLIQ',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 32,
-                'created_date' => $now,
-            ],
+        return true;
+    }
 
-            // Subcategorías de Mercancías Peligrosas
-            [
-                'code' => 'DNG002',
-                'name' => 'Explosivos',
-                'short_name' => 'Explosivos',
-                'description' => 'Clase 1 IMDG - Sustancias explosivas',
-                'parent_id' => 5,
-                'level' => 2,
-                'full_path' => 'Mercancías Peligrosas > Explosivos',
-                'imdg_class' => '1',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'is_dangerous_goods' => true,
-                'requires_permits' => true,
-                'requires_insurance' => true,
-                'incompatible_with' => ['DNG003', 'DNG004', 'DNG005'],
-                'inspection_percentage' => 100,
-                'insurance_rate' => 0.0150,
-                'webservice_code' => 'EXP',
-                'active' => true,
-                'is_common' => false,
-                'display_order' => 51,
-                'created_date' => $now,
-            ],
-            [
-                'code' => 'DNG003',
-                'name' => 'Gases Inflamables',
-                'short_name' => 'Gas Infl.',
-                'description' => 'Clase 2.1 IMDG - Gases inflamables',
-                'parent_id' => 5,
-                'level' => 2,
-                'full_path' => 'Mercancías Peligrosas > Gases Inflamables',
-                'imdg_class' => '2.1',
-                'cargo_nature' => 'gas',
-                'packaging_type' => 'containerized',
-                'is_dangerous_goods' => true,
-                'requires_permits' => true,
-                'incompatible_with' => ['DNG002', 'DNG004'],
-                'inspection_percentage' => 75,
-                'insurance_rate' => 0.0100,
-                'webservice_code' => 'GINF',
-                'active' => true,
-                'is_common' => false,
-                'display_order' => 52,
-                'created_date' => $now,
-            ],
+    /**
+     * Check temperature compatibility
+     */
+    private function checkTemperatureCompatibility(CargoType $other): bool
+    {
+        if (!$this->temperature_range || !$other->temperature_range) {
+            return true; // Cannot determine, assume compatible
+        }
 
-            // Subcategorías de Refrigerados
-            [
-                'code' => 'REF002',
-                'name' => 'Congelados',
-                'short_name' => 'Congelados',
-                'description' => 'Productos que requieren temperaturas bajo cero',
-                'parent_id' => 4,
-                'level' => 2,
-                'full_path' => 'Carga Refrigerada > Congelados',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => true,
-                'is_perishable' => true,
-                'temperature_range' => ['min' => -25, 'max' => -18],
-                'webservice_code' => 'FRZN',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 41,
-                'created_date' => $now,
-            ],
-            [
-                'code' => 'REF003',
-                'name' => 'Refrigerados',
-                'short_name' => 'Refriger.',
-                'description' => 'Productos frescos que requieren refrigeración',
-                'parent_id' => 4,
-                'level' => 2,
-                'full_path' => 'Carga Refrigerada > Refrigerados',
-                'cargo_nature' => 'solid',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => true,
-                'is_perishable' => true,
-                'temperature_range' => ['min' => 0, 'max' => 15],
-                'webservice_code' => 'REFR',
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 42,
-                'created_date' => $now,
-            ],
-        ];
+        $thisMin = $this->temperature_range['min'] ?? null;
+        $thisMax = $this->temperature_range['max'] ?? null;
+        $otherMin = $other->temperature_range['min'] ?? null;
+        $otherMax = $other->temperature_range['max'] ?? null;
 
-        // Insertar tipos principales
-        DB::table('cargo_types')->insert($mainTypes);
-        $this->command->info('✅ Tipos principales de carga creados (8 registros)');
+        if (!$thisMin || !$thisMax || !$otherMin || !$otherMax) {
+            return true; // Incomplete data, assume compatible
+        }
 
-        // Insertar subcategorías
-        DB::table('cargo_types')->insert($subTypes);
-        $this->command->info('✅ Subcategorías de carga creadas (8 registros)');
+        // Check if temperature ranges overlap
+        return !($thisMax < $otherMin || $otherMax < $thisMin);
+    }
 
-        $this->command->info('🎉 Total: 16 tipos de carga con jerarquía completa');
+    // ========================================
+    // REQUIREMENTS METHODS
+    // ========================================
+
+    /**
+     * Get all required documents
+     */
+    public function getRequiredDocuments(): array
+    {
+        $documents = [];
+
+        if ($this->requires_certificate_origin) $documents[] = 'certificate_of_origin';
+        if ($this->requires_health_certificate) $documents[] = 'health_certificate';
+        if ($this->requires_fumigation_certificate) $documents[] = 'fumigation_certificate';
+        if ($this->requires_insurance) $documents[] = 'insurance_certificate';
+
+        // Add custom required documents
+        if ($this->required_documents) {
+            $documents = array_merge($documents, $this->required_documents);
+        }
+
+        return array_unique($documents);
+    }
+
+    /**
+     * Get all special handling requirements
+     */
+    public function getSpecialRequirements(): array
+    {
+        $requirements = [];
+
+        if ($this->requires_refrigeration) $requirements[] = 'refrigeration';
+        if ($this->requires_special_handling) $requirements[] = 'special_handling';
+        if ($this->requires_permits) $requirements[] = 'permits';
+        if ($this->requires_fumigation) $requirements[] = 'fumigation';
+        if ($this->is_fragile) $requirements[] = 'fragile_handling';
+
+        return $requirements;
+    }
+
+    /**
+     * Check if prohibited in specific country
+     */
+    public function isProhibitedInCountry(string $countryCode): bool
+    {
+        return $this->prohibited_countries && in_array($countryCode, $this->prohibited_countries);
+    }
+
+    /**
+     * Check if subject to seasonal restrictions
+     */
+    public function hasSeasonalRestrictions(): bool
+    {
+        return !empty($this->seasonal_restrictions);
+    }
+
+    // ========================================
+    // OPERATIONAL METHODS
+    // ========================================
+
+    /**
+     * Calculate container capacity for this cargo type
+     */
+    public function calculateContainerCapacity(float $containerVolume): ?float
+    {
+        if (!$this->typical_density) {
+            return null;
+        }
+
+        $maxByWeight = $this->max_weight_per_container;
+        $maxByVolume = $containerVolume * $this->typical_density;
+
+        return $maxByWeight ? min($maxByWeight, $maxByVolume) : $maxByVolume;
+    }
+
+    /**
+     * Get estimated loading time
+     */
+    public function getEstimatedLoadingTime(float $weight = null): int
+    {
+        if ($this->typical_loading_time) {
+            return $this->typical_loading_time;
+        }
+
+        // Estimate based on cargo characteristics
+        $baseTime = match($this->packaging_type) {
+            'containerized' => 2, // hours
+            'bulk' => 8,
+            'break_bulk' => 12,
+            'ro_ro' => 1,
+            default => 6,
+        };
+
+        // Add time for special requirements
+        if ($this->requires_special_handling) $baseTime *= 1.5;
+        if ($this->is_dangerous_goods) $baseTime *= 1.3;
+        if ($this->is_fragile) $baseTime *= 1.2;
+
+        return (int) round($baseTime);
+    }
+
+    // ========================================
+    // HELPER METHODS
+    // ========================================
+
+    /**
+     * Get display color for charts/UI
+     */
+    public function getDisplayColorAttribute(): string
+    {
+        if ($this->color_code) {
+            return $this->color_code;
+        }
+
+        // Default colors based on type
+        return match($this->packaging_type) {
+            'containerized' => '#3B82F6', // Blue
+            'bulk' => '#EF4444', // Red
+            'break_bulk' => '#10B981', // Green
+            'ro_ro' => '#F59E0B', // Orange
+            default => '#6B7280', // Gray
+        };
+    }
+
+    /**
+     * Get icon for UI display
+     */
+    public function getIconAttribute(): string
+    {
+        if ($this->attributes['icon']) {
+            return $this->attributes['icon'];
+        }
+
+        // Default icons based on type
+        return match($this->packaging_type) {
+            'containerized' => '📦',
+            'bulk' => '🚛',
+            'break_bulk' => '📋',
+            'ro_ro' => '🚗',
+            'neo_bulk' => '⚙️',
+            default => '📄',
+        };
+    }
+
+    // ========================================
+    // STATIC METHODS
+    // ========================================
+
+    /**
+     * Get cargo types for select dropdown
+     */
+    public static function forSelect(?int $level = null): array
+    {
+        $query = static::active()->ordered();
+
+        if ($level) {
+            $query->byLevel($level);
+        }
+
+        return $query->pluck('name', 'id')->toArray();
+    }
+
+    /**
+     * Get common cargo types
+     */
+    public static function commonTypes()
+    {
+        return static::active()->common()->ordered()->get();
+    }
+
+    /**
+     * Get dangerous goods types
+     */
+    public static function dangerousGoods()
+    {
+        return static::active()->dangerous()->ordered()->get();
+    }
+
+    /**
+     * Get root level cargo types
+     */
+    public static function rootTypes()
+    {
+        return static::active()->root()->ordered()->get();
+    }
+
+    /**
+     * Get cargo types by packaging
+     */
+    public static function byPackaging(string $packaging)
+    {
+        return static::active()->byPackaging($packaging)->ordered()->get();
+    }
+
+    /**
+     * Find compatible cargo types for a given type
+     */
+    public static function compatibleWith(CargoType $cargoType)
+    {
+        return static::active()
+            ->where('id', '!=', $cargoType->id)
+            ->get()
+            ->filter(function ($type) use ($cargoType) {
+                return $cargoType->isCompatibleWith($type);
+            });
     }
 }

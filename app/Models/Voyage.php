@@ -9,11 +9,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Log; 
 use Illuminate\Support\Facades\Schema; 
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\Company;
 use App\Models\WebserviceTransaction;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\Shipment;
+use App\Models\ShipmentStatus;
+use App\Models\Vessel;
+
 
 
 /**
@@ -746,6 +750,7 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
 
     /**
      * Recalcular estadísticas basadas en shipments
+     * CORREGIDO: Usa campos que realmente existen en la tabla voyages
      */
     public function recalculateShipmentStats(): void
     {
@@ -757,23 +762,233 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
         $shipments = $this->shipments;
         
         // Verificar que la colección no sea null
-        if ($shipments === null) {
-            $shipments = $this->shipments()->get();
+        if ($shipments === null || $shipments->isEmpty()) {
+            $this->updateEmptyStats();
+            return;
         }
 
+        // Calcular estadísticas básicas
+        $totalVessels = $shipments->count();
+        $totalCapacityTons = $shipments->sum('cargo_capacity_tons');
+        $totalContainerCapacity = $shipments->sum('container_capacity');
+        $totalCargoLoaded = $shipments->sum('cargo_weight_loaded');
+        $totalContainersLoaded = $shipments->sum('containers_loaded');
+        
         // Calcular utilización promedio manualmente
         $avgUtilization = $shipments->count() > 0 
             ? $shipments->avg('utilization_percentage') ?? 0 
             : 0;
 
+        // Verificar si hay carga peligrosa en algún shipment
+        $hasDangerousCargo = $shipments->contains(function ($shipment) {
+            return $shipment->has_dangerous_cargo ?? false;
+        });
+
+        // Verificar si requiere manejo especial
+        $requiresSpecialHandling = $shipments->contains(function ($shipment) {
+            return ($shipment->has_dangerous_cargo ?? false) || 
+                ($shipment->requires_refrigeration ?? false) ||
+                ($shipment->oversized_cargo ?? false);
+        });
+
+        // ACTUALIZACIÓN CON CAMPOS QUE EXISTEN EN LA MIGRACIÓN
         $this->update([
-            'vessel_count' => $shipments->count(),
-            'total_cargo_capacity_tons' => $shipments->sum('cargo_capacity_tons'),
-            'total_container_capacity' => $shipments->sum('container_capacity'),
-            'total_cargo_weight_loaded' => $shipments->sum('cargo_weight_loaded'),
-            'total_containers_loaded' => $shipments->sum('containers_loaded'),
-            'capacity_utilization_percentage' => $avgUtilization, // ✅ Campo correcto
+            // Estadísticas básicas de capacidad (✅ EXISTEN)
+            'vessel_count' => $totalVessels,
+            'total_cargo_capacity_tons' => $totalCapacityTons,
+            'total_container_capacity' => $totalContainerCapacity,
+            'total_cargo_weight_loaded' => $totalCargoLoaded,
+            'total_containers_loaded' => $totalContainersLoaded,
+            'capacity_utilization_percentage' => round($avgUtilization, 2),
+            
+            // Campos alias para compatibilidad (✅ EXISTEN)
+            'total_containers' => $totalContainersLoaded,
+            'total_cargo_weight' => $totalCargoLoaded,
+            
+            // Campos agregados para estadísticas de items (✅ EXISTEN EN MIGRACIÓN)
+            'has_dangerous_cargo' => $hasDangerousCargo,
+            'requires_special_handling' => $requiresSpecialHandling,
+            
+            // Actualizar timestamp
+            'last_updated_date' => now(),
         ]);
+    }
+
+    /**
+     * Actualizar estadísticas cuando no hay shipments
+     */
+    private function updateEmptyStats(): void
+    {
+        $this->update([
+            'vessel_count' => 0,
+            'total_cargo_capacity_tons' => 0,
+            'total_container_capacity' => 0,
+            'total_cargo_weight_loaded' => 0,
+            'total_containers_loaded' => 0,
+            'capacity_utilization_percentage' => 0,
+            'total_containers' => 0,
+            'total_cargo_weight' => 0,
+            'has_dangerous_cargo' => false,
+            'requires_special_handling' => false,
+            'last_updated_date' => now(),
+        ]);
+    }
+
+    /**
+     * Obtener estadísticas agregadas de todos los items del viaje
+     */
+    private function getAggregatedItemsStats(): array
+    {
+        // Usar query optimizada para obtener estadísticas de items
+        $stats = DB::table('shipment_items')
+                   ->join('shipments', 'shipment_items.shipment_id', '=', 'shipments.id')
+                   ->where('shipments.voyage_id', $this->id)
+                   ->selectRaw('
+                       COUNT(*) as total_items,
+                       SUM(package_quantity) as total_packages,
+                       SUM(gross_weight_kg) as total_weight_kg,
+                       SUM(volume_m3) as total_volume_m3,
+                       SUM(declared_value) as total_value,
+                       SUM(CASE WHEN is_dangerous_goods = 1 THEN 1 ELSE 0 END) as dangerous_goods_count,
+                       SUM(CASE WHEN requires_refrigeration = 1 THEN 1 ELSE 0 END) as refrigerated_count,
+                       SUM(CASE WHEN has_discrepancies = 1 THEN 1 ELSE 0 END) as discrepancies_count
+                   ')
+                   ->first();
+
+        return [
+            'total_items' => $stats->total_items ?? 0,
+            'total_packages' => $stats->total_packages ?? 0,
+            'total_weight_kg' => $stats->total_weight_kg ?? 0,
+            'total_volume_m3' => $stats->total_volume_m3 ?? 0,
+            'total_value' => $stats->total_value ?? 0,
+            'dangerous_goods_count' => $stats->dangerous_goods_count ?? 0,
+            'refrigerated_count' => $stats->refrigerated_count ?? 0,
+            'discrepancies_count' => $stats->discrepancies_count ?? 0,
+        ];
+    }
+
+    /**
+     * Actualizar estadísticas del viaje
+     */
+    private function updateShipmentStatistics(
+        int $totalShipments,
+        float $totalCapacityTons,
+        float $totalLoadedTons,
+        int $totalContainerCapacity,
+        int $totalContainersLoaded,
+        array $itemsStats = []
+    ): void {
+        $utilizationPercentage = $totalCapacityTons > 0 
+            ? min(100, ($totalLoadedTons / $totalCapacityTons) * 100) 
+            : 0;
+
+        $updateData = [
+            'total_shipments' => $totalShipments,
+            'total_cargo_capacity_tons' => $totalCapacityTons,
+            'total_cargo_loaded_tons' => $totalLoadedTons,
+            'cargo_utilization_percentage' => round($utilizationPercentage, 2),
+            'total_container_capacity' => $totalContainerCapacity,
+            'total_containers_loaded' => $totalContainersLoaded,
+        ];
+
+        // Agregar estadísticas de items si están disponibles
+        if (!empty($itemsStats)) {
+            $updateData = array_merge($updateData, [
+                'total_items' => $itemsStats['total_items'],
+                'total_packages' => $itemsStats['total_packages'],
+                'has_dangerous_cargo' => $itemsStats['dangerous_goods_count'] > 0,
+                'requires_special_handling' => $itemsStats['refrigerated_count'] > 0 || $itemsStats['dangerous_goods_count'] > 0,
+            ]);
+        }
+
+        $this->update($updateData);
+    }
+
+    /**
+     * Obtener resumen completo del viaje incluyendo items
+     */
+    public function getCompleteSummary(): array
+    {
+        $shipmentsStats = $this->getShipmentsSummary();
+        $itemsStats = $this->getAggregatedItemsStats();
+        
+        return [
+            'voyage_info' => [
+                'voyage_number' => $this->voyage_number,
+                'status' => $this->status,
+                'route' => $this->origin_port . ' → ' . $this->destination_port,
+                'departure_date' => $this->departure_date?->format('Y-m-d H:i'),
+                'estimated_arrival' => $this->estimated_arrival_date?->format('Y-m-d H:i'),
+            ],
+            'shipments' => $shipmentsStats,
+            'items' => $itemsStats,
+            'capacity_analysis' => [
+                'weight_utilization' => $this->cargo_utilization_percentage,
+                'is_near_capacity' => $this->cargo_utilization_percentage > 90,
+                'available_capacity_tons' => $this->total_cargo_capacity_tons - $this->total_cargo_loaded_tons,
+            ],
+            'special_requirements' => [
+                'has_dangerous_goods' => $itemsStats['dangerous_goods_count'] > 0,
+                'requires_refrigeration' => $itemsStats['refrigerated_count'] > 0,
+                'has_discrepancies' => $itemsStats['discrepancies_count'] > 0,
+            ],
+        ];
+    }
+
+    /**
+     * Verificar si el viaje está listo para partir (incluyendo items)
+     */
+    public function isReadyForDeparture(): bool
+    {
+        // Verificaciones básicas del viaje
+        if (!parent::isReadyForDeparture()) {
+            return false;
+        }
+
+        // Verificar que todos los shipments tengan items validados
+        foreach ($this->shipments as $shipment) {
+            if (!$shipment->areAllItemsValidated()) {
+                return false;
+            }
+            
+            if ($shipment->hasPendingDiscrepancies()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Obtener todos los items del viaje agrupados por shipment
+     */
+    public function getAllItemsByShipment(): array
+    {
+        return $this->shipments()
+                   ->with(['shipmentItems' => function ($query) {
+                       $query->orderBy('line_number');
+                   }])
+                   ->get()
+                   ->mapWithKeys(function ($shipment) {
+                       return [$shipment->shipment_number => [
+                           'shipment_info' => [
+                               'id' => $shipment->id,
+                               'vessel' => $shipment->vessel->name ?? 'N/A',
+                               'status' => $shipment->status,
+                           ],
+                           'items' => $shipment->shipmentItems->map(function ($item) {
+                               return [
+                                   'line_number' => $item->line_number,
+                                   'description' => $item->item_description,
+                                   'packages' => $item->package_quantity,
+                                   'weight_kg' => $item->gross_weight_kg,
+                                   'status' => $item->status,
+                                   'has_issues' => $item->has_discrepancies || $item->requires_review,
+                               ];
+                           })->toArray(),
+                       ]];
+                   })
+                   ->toArray();
     }
 
     /**

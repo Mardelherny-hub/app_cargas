@@ -40,7 +40,7 @@ class ShipmentSeeder extends Seeder
             return;
         }
 
-        // Obtener capitanes disponibles
+        // Obtener capitanes disponibles 
         $captains = Captain::active()->get();
         if ($captains->isEmpty()) {
             $this->command->error('❌ No se encontraron capitanes. Ejecutar CaptainSeeder primero.');

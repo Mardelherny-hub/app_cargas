@@ -269,6 +269,42 @@ class BillOfLadingController extends Controller
         // Datos para el formulario
         $formData = $this->getFormData($company, $request);
 
+            // === DIAGNÓSTICO TEMPORAL ===
+    // Agregar estas líneas para debuggear:
+    
+    \Log::debug('=== DIAGNÓSTICO SHIPMENTS ===');
+    \Log::debug('Company ID: ' . $company->id);
+    \Log::debug('Company Name: ' . $company->legal_name);
+    
+    // Verificar Voyages de la empresa
+    $voyagesCount = \App\Models\Voyage::where('company_id', $company->id)->count();
+    \Log::debug('Voyages de la empresa: ' . $voyagesCount);
+    
+    if ($voyagesCount > 0) {
+        $voyages = \App\Models\Voyage::where('company_id', $company->id)->get(['id', 'voyage_number']);
+        \Log::debug('Voyages encontrados: ' . $voyages->pluck('voyage_number')->implode(', '));
+        
+        // Verificar Shipments asociados a estos voyages
+        $shipmentsCount = \App\Models\Shipment::whereIn('voyage_id', $voyages->pluck('id'))->count();
+        \Log::debug('Shipments asociados a estos voyages: ' . $shipmentsCount);
+        
+        if ($shipmentsCount > 0) {
+            $shipments = \App\Models\Shipment::whereIn('voyage_id', $voyages->pluck('id'))
+                ->get(['id', 'shipment_number', 'voyage_id']);
+            \Log::debug('Shipments encontrados: ' . $shipments->pluck('shipment_number')->implode(', '));
+        }
+    }
+    
+    // Verificar la consulta actual que usa getFormData
+    \Log::debug('Shipments en formData: ' . count($formData['shipments']));
+    
+    // Verificar si hay shipments sin voyage_id
+    $orphanShipments = \App\Models\Shipment::whereNull('voyage_id')->count();
+    \Log::debug('Shipments sin voyage_id: ' . $orphanShipments);
+    
+    \Log::debug('=== FIN DIAGNÓSTICO ===');
+    // === FIN DIAGNÓSTICO TEMPORAL ===
+
         return view('company.bills-of-lading.create', compact('formData', 'company'));
     }
 

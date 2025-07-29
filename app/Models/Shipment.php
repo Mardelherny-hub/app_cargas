@@ -939,4 +939,282 @@ class Shipment extends Model
         // Impacto basado en minutos de retraso (máximo 100 para 6+ horas)
         return min(100, ($this->delay_minutes / 360) * 100);
     }
+
+    /**
+     * Recalcular estadísticas de items del shipment
+     * NUEVO: Método para mantener consistencia
+     */
+    public function recalculateItemStats(): void
+    {
+        $items = $this->shipmentItems;
+        
+        if ($items->isEmpty()) {
+            $this->updateItemStatistics(0, 0, 0, 0, false, false);
+            return;
+        }
+
+        // Agregaciones básicas
+        $totalWeight = $items->sum('gross_weight_kg');
+        $totalVolume = $items->sum('volume_m3');
+        $totalValue = $items->sum('declared_value');
+        $totalPackages = $items->sum('package_quantity');
+        
+        // Características especiales
+        $hasDangerousGoods = $items->where('is_dangerous_goods', true)->isNotEmpty();
+        $requiresRefrigeration = $items->where('requires_refrigeration', true)->isNotEmpty();
+        
+        $this->updateItemStatistics(
+            $totalWeight,
+            $totalVolume, 
+            $totalValue,
+            $totalPackages,
+            $hasDangerousGoods,
+            $requiresRefrigeration
+        );
+    }
+
+    /**
+     * Actualizar estadísticas calculadas
+     */
+    private function updateItemStatistics(
+        float $totalWeight,
+        float $totalVolume,
+        float $totalValue,
+        int $totalPackages,
+        bool $hasDangerousGoods,
+        bool $requiresRefrigeration
+    ): void {
+        $this->update([
+            'cargo_weight_loaded' => $totalWeight,
+            'utilization_percentage' => $this->calculateWeightUtilization($totalWeight),
+            'has_dangerous_cargo' => $hasDangerousGoods,
+            // Actualizar otros campos relacionados con la carga
+        ]);
+    }
+
+    /**
+     * Calcular utilización por peso
+     */
+    private function calculateWeightUtilization(float $loadedWeight): float
+    {
+        if ($this->cargo_capacity_tons <= 0) {
+            return 0;
+        }
+        
+        return min(100, ($loadedWeight / ($this->cargo_capacity_tons * 1000)) * 100);
+    }
+
+    /**
+     * Obtener resumen de items
+     */
+    public function getItemsSummary(): array
+    {
+        $items = $this->shipmentItems;
+        
+        return [
+            'total_items' => $items->count(),
+            'total_lines' => $items->max('line_number') ?? 0,
+            'total_packages' => $items->sum('package_quantity'),
+            'total_weight_kg' => $items->sum('gross_weight_kg'),
+            'total_volume_m3' => $items->sum('volume_m3'),
+            'total_value_usd' => $items->sum('declared_value'),
+            'dangerous_goods_count' => $items->where('is_dangerous_goods', true)->count(),
+            'perishable_count' => $items->where('is_perishable', true)->count(),
+            'refrigerated_count' => $items->where('requires_refrigeration', true)->count(),
+            'items_with_discrepancies' => $items->where('has_discrepancies', true)->count(),
+            'items_requiring_review' => $items->where('requires_review', true)->count(),
+        ];
+    }
+
+    /**
+     * Obtener items por estado
+     */
+    public function getItemsByStatus(): array
+    {
+        return $this->shipmentItems()
+                   ->selectRaw('status, COUNT(*) as count')
+                   ->groupBy('status')
+                   ->pluck('count', 'status')
+                   ->toArray();
+    }
+
+    /**
+     * Obtener items por tipo de carga
+     */
+    public function getItemsByCargoType(): array
+    {
+        return $this->shipmentItems()
+                   ->with('cargoType')
+                   ->get()
+                   ->groupBy('cargoType.name')
+                   ->map(function ($items) {
+                       return [
+                           'count' => $items->count(),
+                           'total_weight' => $items->sum('gross_weight_kg'),
+                           'total_packages' => $items->sum('package_quantity'),
+                       ];
+                   })
+                   ->toArray();
+    }
+
+    /**
+     * Verificar si todos los items están validados
+     */
+    public function areAllItemsValidated(): bool
+    {
+        return $this->shipmentItems()
+                   ->whereNotIn('status', ['validated', 'submitted', 'accepted'])
+                   ->doesntExist();
+    }
+
+    /**
+     * Verificar si hay items con discrepancias pendientes
+     */
+    public function hasPendingDiscrepancies(): bool
+    {
+        return $this->shipmentItems()
+                   ->where('has_discrepancies', true)
+                   ->where('requires_review', true)
+                   ->exists();
+    }
+
+    /**
+     * Obtener items que requieren atención
+     */
+    public function getItemsRequiringAttention(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->shipmentItems()
+                   ->where(function ($query) {
+                       $query->where('has_discrepancies', true)
+                             ->orWhere('requires_review', true)
+                             ->orWhere('status', 'rejected');
+                   })
+                   ->orderBy('line_number')
+                   ->get();
+    }
+
+    /**
+     * Validar todos los items del shipment
+     */
+    public function validateAllItems(): array
+    {
+        $results = [
+            'validated' => 0,
+            'errors' => [],
+        ];
+
+        $this->shipmentItems()->where('status', 'draft')->each(function ($item) use (&$results) {
+            try {
+                $item->validate();
+                $results['validated']++;
+            } catch (\Exception $e) {
+                $results['errors'][] = "Item línea {$item->line_number}: " . $e->getMessage();
+            }
+        });
+
+        return $results;
+    }
+
+    /**
+     * Generar manifiesto de carga desde items
+     */
+    public function generateCargoManifest(): array
+    {
+        $items = $this->shipmentItems()->with(['cargoType', 'packagingType'])->get();
+        
+        $manifest = [
+            'shipment_number' => $this->shipment_number,
+            'vessel_name' => $this->vessel->name ?? 'N/A',
+            'generated_at' => now()->toISOString(),
+            'summary' => $this->getItemsSummary(),
+            'items' => [],
+        ];
+
+        foreach ($items as $item) {
+            $manifest['items'][] = [
+                'line_number' => $item->line_number,
+                'item_reference' => $item->full_reference,
+                'description' => $item->item_description,
+                'commodity_code' => $item->commodity_code,
+                'cargo_type' => $item->cargoType->name ?? 'N/A',
+                'packaging_type' => $item->packagingType->name ?? 'N/A',
+                'packages' => $item->package_quantity,
+                'gross_weight_kg' => $item->gross_weight_kg,
+                'net_weight_kg' => $item->effective_net_weight,
+                'volume_m3' => $item->volume_m3,
+                'declared_value' => $item->declared_value,
+                'currency' => $item->currency_code,
+                'special_requirements' => $item->special_requirements,
+                'status' => $item->status,
+            ];
+        }
+
+        return $manifest;
+    }
+
+    /**
+     * Obtener items por país de origen
+     */
+    public function getItemsByCountryOfOrigin(): array
+    {
+        return $this->shipmentItems()
+                   ->whereNotNull('country_of_origin')
+                   ->selectRaw('country_of_origin, COUNT(*) as count, SUM(gross_weight_kg) as total_weight')
+                   ->groupBy('country_of_origin')
+                   ->get()
+                   ->mapWithKeys(function ($item) {
+                       return [$item->country_of_origin => [
+                           'count' => $item->count,
+                           'total_weight' => $item->total_weight,
+                       ]];
+                   })
+                   ->toArray();
+    }
+
+    /**
+     * Verificar capacidad de carga vs items
+     */
+    public function checkCapacityVsItems(): array
+    {
+        $summary = $this->getItemsSummary();
+        $capacityTons = $this->cargo_capacity_tons;
+        $loadedTons = $summary['total_weight_kg'] / 1000;
+        
+        return [
+            'capacity_tons' => $capacityTons,
+            'loaded_tons' => $loadedTons,
+            'available_tons' => $capacityTons - $loadedTons,
+            'utilization_percentage' => $capacityTons > 0 ? ($loadedTons / $capacityTons) * 100 : 0,
+            'is_overloaded' => $loadedTons > $capacityTons,
+            'weight_status' => $loadedTons > $capacityTons ? 'overloaded' : 
+                              ($loadedTons > $capacityTons * 0.9 ? 'near_capacity' : 'within_limits'),
+        ];
+    }
+
+    /**
+     * Obtener estadísticas de temperaturas requeridas
+     */
+    public function getTemperatureRequirements(): array
+    {
+        $refrigeratedItems = $this->shipmentItems()
+                                 ->where('requires_refrigeration', true)
+                                 ->whereNotNull('temperature_min')
+                                 ->whereNotNull('temperature_max')
+                                 ->get();
+
+        if ($refrigeratedItems->isEmpty()) {
+            return ['requires_refrigeration' => false];
+        }
+
+        return [
+            'requires_refrigeration' => true,
+            'min_temperature' => $refrigeratedItems->min('temperature_min'),
+            'max_temperature' => $refrigeratedItems->max('temperature_max'),
+            'optimal_range' => [
+                'min' => $refrigeratedItems->max('temperature_min'), // El mínimo más alto
+                'max' => $refrigeratedItems->min('temperature_max'), // El máximo más bajo
+            ],
+            'refrigerated_items_count' => $refrigeratedItems->count(),
+        ];
+    }
 }

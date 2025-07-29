@@ -131,11 +131,14 @@ class DatabaseSeeder extends Seeder
         // === FASE 8: MÓDULO 3 - VIAJES Y CARGAS (DATOS REALES PARANA) ===
         //
         $this->command->info('🚢 FASE 8: Viajes y Cargas');
-        $this->command->line('  └── Creando capitanes, viajes y cargas con datos reales PARANA...');
+        $this->command->line('  └── Creando capitanes, viajes, envíos y mercadería con datos reales PARANA...');
         
         $this->call([
             CaptainSeeder::class,
             VoyagesFromParanaSeeder::class,
+            //BillOfLadingSeeder::class,       // AGREGADO: Crear bills of lading por shipment
+            ShipmentSeeder::class,           // AGREGADO: Crear shipments por voyage            
+            ShipmentItemSeeder::class,       // AGREGADO: Crear items por bill of lading
         ]);
         
         $this->command->info('  ✅ Viajes y cargas completados');

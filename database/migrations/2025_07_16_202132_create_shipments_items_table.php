@@ -10,12 +10,10 @@ return new class extends Migration
      * Run the migrations.
      * 
      * MÓDULO 3: VIAJES Y CARGAS - shipment_items
-     * Tabla de ítems de mercadería por conocimiento de embarque
-     * Cada ítem representa una línea de mercadería específica
+     * Tabla de ítems de mercadería por shipment
      * 
-     * REFERENCIAS CONFIRMADAS DEL SISTEMA:
-     * - bills_of_lading, cargo_types, packaging_types (obligatorias)
-     * - container_types (opcional para contenedores específicos)
+     * JERARQUÍA CORREGIDA:
+     * Voyages → Shipments → Shipment Items → (después) Bills of Lading
      * 
      * COMPATIBLE CON WEBSERVICES AR/PY:
      * - LineaMercaderia (RegistrarTitulosCbc)
@@ -27,11 +25,11 @@ return new class extends Migration
             // Primary key
             $table->id();
 
-            // Reference to bill of lading (confirmed table)
-            $table->unsignedBigInteger('bill_of_lading_id')->comment('Conocimiento de embarque');
+            // CORREGIDO: Reference to shipment (jerarquía correcta)
+            $table->unsignedBigInteger('shipment_id')->comment('Shipment al que pertenece');
 
             // Item identification
-            $table->integer('line_number')->comment('Número de línea en el conocimiento');
+            $table->integer('line_number')->comment('Número de línea en el shipment');
             $table->string('item_reference', 100)->nullable()->comment('Referencia del ítem');
             $table->string('lot_number', 50)->nullable()->comment('Número de lote');
             $table->string('serial_number', 100)->nullable()->comment('Número de serie');
@@ -109,7 +107,7 @@ return new class extends Migration
             $table->timestamps();
 
             // Performance indexes
-            $table->index(['bill_of_lading_id', 'line_number'], 'idx_shipment_items_bill_line');
+            $table->index(['shipment_id', 'line_number'], 'idx_shipment_items_shipment_line');
             $table->index(['cargo_type_id', 'status'], 'idx_shipment_items_cargo_status');
             $table->index(['packaging_type_id'], 'idx_shipment_items_packaging');
             $table->index(['status', 'requires_review'], 'idx_shipment_items_status_review');
@@ -120,11 +118,10 @@ return new class extends Migration
             $table->index(['created_date'], 'idx_shipment_items_created_date');
 
             // Unique constraints
-            $table->unique(['bill_of_lading_id', 'line_number'], 'uk_shipment_items_bill_line');
+            $table->unique(['shipment_id', 'line_number'], 'uk_shipment_items_shipment_line');
 
-            // Foreign key constraints (only to confirmed existing tables)
-            // Foreign key constraints con nombres explícitos
-            $table->foreign('bill_of_lading_id', 'fk_shipment_items_bill')->references('id')->on('bills_of_lading')->onDelete('cascade');
+            // CORREGIDO: Foreign key constraints a shipments (jerarquía correcta)
+            $table->foreign('shipment_id', 'fk_shipment_items_shipment')->references('id')->on('shipments')->onDelete('cascade');
             $table->foreign('cargo_type_id', 'fk_shipment_items_cargo_type')->references('id')->on('cargo_types')->onDelete('restrict');
             $table->foreign('packaging_type_id', 'fk_shipment_items_packaging_type')->references('id')->on('packaging_types')->onDelete('restrict');
             // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');

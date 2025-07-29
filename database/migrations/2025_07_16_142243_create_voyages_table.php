@@ -193,6 +193,12 @@ return new class extends Migration
             $table->unsignedBigInteger('last_updated_by_user_id')->nullable()->comment('Último usuario que actualizó');
             $table->timestamps();
 
+            //agregar campos para estadísticas de items en voyages
+            // Campos para estadísticas de items en voyages
+            $table->integer('total_packages')->default(0)->comment('Total paquetes en el viaje');
+            $table->decimal('has_dangerous_cargo')->default(false)->comment('Tiene carga peligrosa');
+            $table->decimal('requires_special_handling')->default(false)->comment('Requiere manejo especial');
+
             // Performance indexes
             $table->index(['company_id', 'status'], 'idx_voyages_company_status');
             $table->index(['status', 'departure_date'], 'idx_voyages_status_departure');
@@ -208,6 +214,8 @@ return new class extends Migration
             $table->index(['requires_follow_up'], 'idx_voyages_follow_up');
             $table->index(['is_convoy'], 'idx_voyages_convoy');
             $table->index(['priority_level'], 'idx_voyages_priority');
+            $table->index(['has_dangerous_cargo'], 'idx_voyages_dangerous_cargo');
+            $table->index(['requires_special_handling'], 'idx_voyages_special_handling');
 
             // Foreign key constraints con nombres explícitos
             $table->foreign('company_id', 'fk_voyages_company')->references('id')->on('companies')->onDelete('cascade');
