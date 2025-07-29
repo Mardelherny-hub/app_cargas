@@ -1,461 +1,459 @@
-@extends('layouts.company')
+<x-app-layout>
+    <x-slot name="header">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+            {{ __('Conocimiento de Embarque') }} - {{ $billOfLading->bill_number }}
+        </h2>
+    </x-slot>
 
-@section('title', 'Conocimiento ' . $billOfLading->bill_number)
+    <div class="py-12">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            
+            {{-- Header con acciones --}}
+            <div class="bg-white shadow rounded-lg mb-6">
+                <div class="px-4 py-5 sm:px-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-900">
+                                Conocimiento de Embarque
+                            </h1>
+                            <p class="mt-1 text-sm text-gray-600">
+                                {{ $billOfLading->bill_number }} - {{ $billOfLading->status_label }}
+                            </p>
+                        </div>
+                        
+                        <div class="flex space-x-3">
+                            {{-- Botón Volver --}}
+                            <a href="{{ route('company.bills-of-lading.index') }}" 
+                               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                </svg>
+                                Volver
+                            </a>
 
-@section('content')
-<div class="container-fluid">
-    {{-- Header --}}
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h3 mb-0">
-                Conocimiento {{ $billOfLading->bill_number }}
-                @if($billOfLading->contains_dangerous_goods)
-                    <span class="badge bg-warning ms-2" title="Mercadería Peligrosa">
-                        <i class="fas fa-exclamation-triangle"></i> Peligrosa
-                    </span>
-                @endif
-                @if($billOfLading->requires_refrigeration)
-                    <span class="badge bg-info ms-2" title="Requiere Refrigeración">
-                        <i class="fas fa-snowflake"></i> Refrigerado
-                    </span>
-                @endif
-            </h1>
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{{ route('company.dashboard') }}">Dashboard</a></li>
-                    <li class="breadcrumb-item"><a href="{{ route('company.bills-of-lading.index') }}">Conocimientos</a></li>
-                    <li class="breadcrumb-item active">{{ $billOfLading->bill_number }}</li>
-                </ol>
-            </nav>
-        </div>
-        <div class="btn-group" role="group">
-            <a href="{{ route('company.bills-of-lading.index') }}" class="btn btn-outline-secondary">
-                <i class="fas fa-arrow-left me-2"></i>Volver
-            </a>
-            @if($canEdit)
-                <a href="{{ route('company.bills-of-lading.edit', $billOfLading) }}" class="btn btn-warning">
-                    <i class="fas fa-edit me-2"></i>Editar
-                </a>
-            @endif
-            <button type="button" class="btn btn-info">
-                <i class="fas fa-print me-2"></i>Imprimir
-            </button>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-lg-8">
-            {{-- Estado y Información Principal --}}
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Información Principal</h5>
-                    @php
-                        $statusColors = [
-                            'draft' => 'secondary', 'pending_review' => 'warning', 'verified' => 'info',
-                            'sent_to_customs' => 'primary', 'accepted' => 'success', 'rejected' => 'danger',
-                            'completed' => 'success', 'cancelled' => 'dark'
-                        ];
-                        $statusColor = $statusColors[$billOfLading->status] ?? 'secondary';
-                    @endphp
-                    <span class="badge bg-{{ $statusColor }} fs-6">{{ $billOfLading->status_label }}</span>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <strong>Número:</strong><br>
-                            <span class="fs-5">{{ $billOfLading->bill_number }}</span>
-                        </div>
-                        <div class="col-md-3">
-                            <strong>Fecha:</strong><br>
-                            {{ $billOfLading->bill_date->format('d/m/Y') }}
-                        </div>
-                        <div class="col-md-3">
-                            <strong>Envío:</strong><br>
-                            {{ $billOfLading->shipment->shipment_number ?? 'N/A' }}<br>
-                            <small class="text-muted">{{ $billOfLading->shipment->voyage->voyage_number ?? 'N/A' }}</small>
-                        </div>
-                        <div class="col-md-3">
-                            <strong>Términos Flete:</strong><br>
-                            {{ ucfirst(str_replace('_', ' ', $billOfLading->freight_terms)) }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Clientes --}}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-users me-2"></i>Clientes</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row g-4">
-                        {{-- Cargador --}}
-                        <div class="col-md-6">
-                            <div class="border-start border-primary border-3 ps-3">
-                                <h6 class="text-primary mb-2">Cargador/Exportador</h6>
-                                @if($billOfLading->shipper)
-                                    <strong>{{ $billOfLading->shipper->legal_name }}</strong><br>
-                                    @if($billOfLading->shipper->commercial_name && $billOfLading->shipper->commercial_name !== $billOfLading->shipper->legal_name)
-                                        <em>{{ $billOfLading->shipper->commercial_name }}</em><br>
-                                    @endif
-                                    <strong>{{ $billOfLading->shipper->tax_id }}</strong><br>
-                                    {{ $billOfLading->shipper->address }}<br>
-                                    {{ $billOfLading->shipper->city }}
-                                @else
-                                    <span class="text-muted">No especificado</span>
-                                @endif
-                            </div>
-                        </div>
-
-                        {{-- Consignatario --}}
-                        <div class="col-md-6">
-                            <div class="border-start border-success border-3 ps-3">
-                                <h6 class="text-success mb-2">Consignatario/Importador</h6>
-                                @if($billOfLading->consignee)
-                                    <strong>{{ $billOfLading->consignee->legal_name }}</strong><br>
-                                    @if($billOfLading->consignee->commercial_name && $billOfLading->consignee->commercial_name !== $billOfLading->consignee->legal_name)
-                                        <em>{{ $billOfLading->consignee->commercial_name }}</em><br>
-                                    @endif
-                                    <strong>{{ $billOfLading->consignee->tax_id }}</strong><br>
-                                    {{ $billOfLading->consignee->address }}<br>
-                                    {{ $billOfLading->consignee->city }}
-                                @else
-                                    <span class="text-muted">No especificado</span>
-                                @endif
-                            </div>
-                        </div>
-
-                        {{-- Parte a Notificar --}}
-                        @if($billOfLading->notifyParty)
-                        <div class="col-md-6">
-                            <div class="border-start border-info border-3 ps-3">
-                                <h6 class="text-info mb-2">Parte a Notificar</h6>
-                                <strong>{{ $billOfLading->notifyParty->legal_name }}</strong><br>
-                                <strong>{{ $billOfLading->notifyParty->tax_id }}</strong>
-                            </div>
-                        </div>
-                        @endif
-
-                        {{-- Propietario de Carga --}}
-                        @if($billOfLading->cargoOwner)
-                        <div class="col-md-6">
-                            <div class="border-start border-warning border-3 ps-3">
-                                <h6 class="text-warning mb-2">Propietario de la Carga</h6>
-                                <strong>{{ $billOfLading->cargoOwner->legal_name }}</strong><br>
-                                <strong>{{ $billOfLading->cargoOwner->tax_id }}</strong>
-                            </div>
-                        </div>
-                        @endif
-                    </div>
-                </div>
-            </div>
-
-            {{-- Ruta y Puertos --}}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-route me-2"></i>Ruta y Puertos</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-5">
-                            <div class="text-center">
-                                <div class="border rounded p-3 bg-light">
-                                    <i class="fas fa-anchor fa-2x text-primary mb-2"></i>
-                                    <h6 class="mb-1">Puerto de Carga</h6>
-                                    <strong>{{ $billOfLading->loadingPort->name ?? 'N/A' }}</strong><br>
-                                    <small class="text-muted">{{ $billOfLading->loadingPort->code ?? '' }}</small>
-                                </div>
-                                @if($billOfLading->loading_date)
-                                    <small class="text-muted mt-2 d-block">
-                                        Carga: {{ $billOfLading->loading_date->format('d/m/Y') }}
-                                    </small>
-                                @endif
-                            </div>
-                        </div>
-                        <div class="col-md-2 text-center">
-                            <i class="fas fa-arrow-right fa-2x text-muted"></i>
-                        </div>
-                        <div class="col-md-5">
-                            <div class="text-center">
-                                <div class="border rounded p-3 bg-light">
-                                    <i class="fas fa-anchor fa-2x text-success mb-2"></i>
-                                    <h6 class="mb-1">Puerto de Descarga</h6>
-                                    <strong>{{ $billOfLading->dischargePort->name ?? 'N/A' }}</strong><br>
-                                    <small class="text-muted">{{ $billOfLading->dischargePort->code ?? '' }}</small>
-                                </div>
-                                @if($billOfLading->discharge_date)
-                                    <small class="text-muted mt-2 d-block">
-                                        Descarga: {{ $billOfLading->discharge_date->format('d/m/Y') }}
-                                    </small>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Puertos adicionales --}}
-                    @if($billOfLading->transshipmentPort || $billOfLading->finalDestinationPort)
-                        <hr class="my-4">
-                        <div class="row">
-                            @if($billOfLading->transshipmentPort)
-                                <div class="col-md-6">
-                                    <h6 class="text-info">Puerto de Transbordo</h6>
-                                    <strong>{{ $billOfLading->transshipmentPort->name }}</strong>
-                                    ({{ $billOfLading->transshipmentPort->code }})
-                                </div>
-                            @endif
-                            @if($billOfLading->finalDestinationPort)
-                                <div class="col-md-6">
-                                    <h6 class="text-success">Destino Final</h6>
-                                    <strong>{{ $billOfLading->finalDestinationPort->name }}</strong>
-                                    ({{ $billOfLading->finalDestinationPort->code }})
-                                </div>
-                            @endif
-                        </div>
-                    @endif
-                </div>
-            </div>
-
-            {{-- Ítems de Mercadería --}}
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="fas fa-boxes me-2"></i>Ítems de Mercadería</h5>
-                    @if($canAddItems)
-                        <a href="{{ route('company.shipment-items.create', ['bill_of_lading_id' => $billOfLading->id]) }}" class="btn btn-sm btn-success">
-                            <i class="fas fa-plus me-1"></i>Agregar Ítem
-                        </a>
-                    @endif
-                </div>
-                <div class="card-body">
-                    @if($billOfLading->shipmentItems->count() > 0)
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <thead>
-                                    <tr>
-                                        <th>Línea</th>
-                                        <th>Descripción</th>
-                                        <th>Tipo Carga</th>
-                                        <th class="text-end">Bultos</th>
-                                        <th class="text-end">Peso (kg)</th>
-                                        <th class="text-center">Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach($billOfLading->shipmentItems as $item)
-                                        <tr>
-                                            <td>{{ $item->line_number }}</td>
-                                            <td>{{ Str::limit($item->cargo_description, 50) }}</td>
-                                            <td>{{ $item->cargoType->name ?? 'N/A' }}</td>
-                                            <td class="text-end">{{ number_format($item->package_quantity) }}</td>
-                                            <td class="text-end">{{ number_format($item->gross_weight_kg, 2) }}</td>
-                                            <td class="text-center">
-                                                <a href="{{ route('company.shipment-items.show', $item) }}" class="btn btn-sm btn-outline-primary">
-                                                    <i class="fas fa-eye"></i>
-                                                </a>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @else
-                        <div class="text-center py-4">
-                            <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                            <p class="text-muted">No hay ítems de mercadería registrados</p>
-                            @if($canAddItems)
-                                <a href="{{ route('company.shipment-items.create', ['bill_of_lading_id' => $billOfLading->id]) }}" class="btn btn-primary">
-                                    <i class="fas fa-plus me-2"></i>Agregar Primer Ítem
+                            {{-- Botón Editar (si tiene permisos) --}}
+                            @if(isset($permissions['can_edit']) && $permissions['can_edit'])
+                                <a href="{{ route('company.bills-of-lading.edit', $billOfLading) }}" 
+                                   class="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                    Editar
                                 </a>
                             @endif
                         </div>
-                    @endif
+                    </div>
                 </div>
             </div>
-        </div>
 
-        {{-- Sidebar --}}
-        <div class="col-lg-4">
-            {{-- Medidas y Pesos --}}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-weight me-2"></i>Medidas y Pesos</h5>
+            {{-- Información Principal del Conocimiento --}}
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-3 mb-6">
+                
+                {{-- Datos Básicos --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Información Básica
+                        </h3>
+                        
+                        <dl class="space-y-3">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Número de Conocimiento</dt>
+                                <dd class="text-sm text-gray-900 font-mono">{{ $billOfLading->bill_number }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->internal_reference)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Referencia Interna</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->internal_reference }}</dd>
+                            </div>
+                            @endif
+                            
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Fecha del Conocimiento</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->bill_date->format('d/m/Y') }}</dd>
+                            </div>
+                            
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Estado</dt>
+                                <dd>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                        @switch($billOfLading->status)
+                                            @case('draft') bg-gray-100 text-gray-800 @break
+                                            @case('verified') bg-green-100 text-green-800 @break
+                                            @case('pending_review') bg-yellow-100 text-yellow-800 @break
+                                            @case('accepted') bg-blue-100 text-blue-800 @break
+                                            @case('rejected') bg-red-100 text-red-800 @break
+                                            @default bg-gray-100 text-gray-800
+                                        @endswitch">
+                                        {{ $billOfLading->status_label }}
+                                    </span>
+                                </dd>
+                            </div>
+                            
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Prioridad</dt>
+                                <dd>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                        @switch($billOfLading->priority_level)
+                                            @case('low') bg-gray-100 text-gray-800 @break
+                                            @case('normal') bg-green-100 text-green-800 @break
+                                            @case('high') bg-yellow-100 text-yellow-800 @break
+                                            @case('urgent') bg-red-100 text-red-800 @break
+                                        @endswitch">
+                                        {{ $billOfLading->priority_label }}
+                                    </span>
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <h3 class="text-primary mb-1">{{ number_format($billOfLading->total_packages) }}</h3>
-                                <small class="text-muted">Total Bultos</small>
+
+                {{-- Envío Asociado --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                            Envío
+                        </h3>
+                        
+                        <dl class="space-y-3">
+                            @if($billOfLading->shipment)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Número de Envío</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->shipment->shipment_number ?? 'N/A' }}</dd>
                             </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <h3 class="text-success mb-1">{{ number_format($billOfLading->gross_weight_kg, 0) }}</h3>
-                                <small class="text-muted">Peso Bruto (kg)</small>
+                            @endif
+                            
+                            @if($billOfLading->shipment?->voyage)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Viaje</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->shipment->voyage->voyage_number }}</dd>
                             </div>
-                        </div>
-                        @if($billOfLading->net_weight_kg)
-                        <div class="col-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <h3 class="text-info mb-1">{{ number_format($billOfLading->net_weight_kg, 0) }}</h3>
-                                <small class="text-muted">Peso Neto (kg)</small>
+                            @endif
+                            
+                            @if($billOfLading->shipment?->vessel)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Embarcación</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->shipment->vessel->name }}</dd>
                             </div>
-                        </div>
+                            @endif
+
+                            @if($billOfLading->manifest_number)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Manifiesto</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->manifest_number }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->manifest_line_number)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Línea de Manifiesto</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->manifest_line_number }}</dd>
+                            </div>
+                            @endif
+                        </dl>
+                    </div>
+                </div>
+
+                {{-- Fechas --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            Fechas Operacionales
+                        </h3>
+                        
+                        <dl class="space-y-3">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Fecha de Carga</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->loading_date->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->discharge_date)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Fecha de Descarga</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->discharge_date->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            @endif
+                            
+                            @if($billOfLading->arrival_date)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Fecha de Arribo</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->arrival_date->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->delivery_date)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Fecha de Entrega</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->delivery_date->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->free_time_expires_at)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Vence Tiempo Libre</dt>
+                                <dd class="text-sm text-gray-900 @if($billOfLading->is_expired) text-red-600 font-medium @endif">
+                                    {{ $billOfLading->free_time_expires_at->format('d/m/Y H:i') }}
+                                    @if($billOfLading->is_expired)
+                                        <span class="text-red-600 text-xs">(Vencido)</span>
+                                    @endif
+                                </dd>
+                            </div>
+                            @endif
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Partes Involucradas --}}
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
+                
+                {{-- Cargador --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                            Cargador/Exportador
+                        </h3>
+                        
+                        @if($billOfLading->shipper)
+                        <dl class="space-y-2">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Razón Social</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->shipper->legal_name }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->shipper->commercial_name)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Nombre Comercial</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->shipper->commercial_name }}</dd>
+                            </div>
+                            @endif
+                            
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">CUIT/RUC</dt>
+                                <dd class="text-sm text-gray-900 font-mono">{{ $billOfLading->shipper->tax_id }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->shipper->address)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Dirección</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->shipper->address }}</dd>
+                            </div>
+                            @endif
+                        </dl>
+                        @else
+                        <p class="text-sm text-gray-500 italic">No especificado</p>
                         @endif
-                        @if($billOfLading->volume_m3)
-                        <div class="col-6">
-                            <div class="text-center p-3 bg-light rounded">
-                                <h3 class="text-warning mb-1">{{ number_format($billOfLading->volume_m3, 2) }}</h3>
-                                <small class="text-muted">Volumen (m³)</small>
+                    </div>
+                </div>
+
+                {{-- Consignatario --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                            Consignatario/Importador
+                        </h3>
+                        
+                        @if($billOfLading->consignee)
+                        <dl class="space-y-2">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Razón Social</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->consignee->legal_name }}</dd>
                             </div>
-                        </div>
+                            
+                            @if($billOfLading->consignee->commercial_name)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Nombre Comercial</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->consignee->commercial_name }}</dd>
+                            </div>
+                            @endif
+                            
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">CUIT/RUC</dt>
+                                <dd class="text-sm text-gray-900 font-mono">{{ $billOfLading->consignee->tax_id }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->consignee->address)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Dirección</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->consignee->address }}</dd>
+                            </div>
+                            @endif
+                        </dl>
+                        @else
+                        <p class="text-sm text-gray-500 italic">No especificado</p>
                         @endif
                     </div>
                 </div>
             </div>
 
-            {{-- Características --}}
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-tags me-2"></i>Características</h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-flex flex-wrap gap-2">
-                        @if($billOfLading->requires_inspection)
-                            <span class="badge bg-warning">Requiere Inspección</span>
-                        @endif
-                        @if($billOfLading->contains_dangerous_goods)
-                            <span class="badge bg-danger">Mercadería Peligrosa</span>
-                        @endif
-                        @if($billOfLading->requires_refrigeration)
-                            <span class="badge bg-info">Refrigerado</span>
-                        @endif
-                        @if($billOfLading->is_transhipment)
-                            <span class="badge bg-primary">Transbordo</span>
-                        @endif
-                        @if($billOfLading->is_partial_shipment)
-                            <span class="badge bg-secondary">Envío Parcial</span>
-                        @endif
-                        @if($billOfLading->allows_partial_delivery)
-                            <span class="badge bg-success">Permite Entrega Parcial</span>
-                        @endif
+            {{-- Carga y Medidas --}}
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
+                
+                {{-- Descripción de Carga --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                            Descripción de Carga
+                        </h3>
+                        
+                        <dl class="space-y-3">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Descripción</dt>
+                                <dd class="text-sm text-gray-900 whitespace-pre-line">{{ $billOfLading->cargo_description }}</dd>
+                            </div>
+
+                            @if($billOfLading->cargo_marks)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Marcas</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->cargo_marks }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->commodity_code)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Código NCM</dt>
+                                <dd class="text-sm text-gray-900 font-mono">{{ $billOfLading->commodity_code }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->primaryCargoType)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Tipo de Carga</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->primaryCargoType->name }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->primaryPackagingType)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Tipo de Embalaje</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->primaryPackagingType->name }}</dd>
+                            </div>
+                            @endif
+                        </dl>
                     </div>
-                    
-                    @if($billOfLading->primaryCargoType)
-                        <hr>
-                        <div>
-                            <strong>Tipo de Carga:</strong><br>
-                            {{ $billOfLading->primaryCargoType->name }}
-                        </div>
-                    @endif
-                    
-                    @if($billOfLading->primaryPackagingType)
-                        <div class="mt-2">
-                            <strong>Tipo de Embalaje:</strong><br>
-                            {{ $billOfLading->primaryPackagingType->name }}
-                        </div>
-                    @endif
                 </div>
-            </div>
 
-            {{-- Webservices --}}
-            @if($billOfLading->webservice_status)
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-cloud me-2"></i>Estado Webservices</h5>
-                </div>
-                <div class="card-body">
-                    @php
-                        $wsColors = ['sent' => 'primary', 'accepted' => 'success', 'rejected' => 'danger'];
-                        $wsColor = $wsColors[$billOfLading->webservice_status] ?? 'secondary';
-                    @endphp
-                    <span class="badge bg-{{ $wsColor }} mb-2">
-                        {{ ucfirst($billOfLading->webservice_status) }}
-                    </span>
-                    
-                    @if($billOfLading->webservice_reference)
-                        <div class="small">
-                            <strong>Referencia:</strong> {{ $billOfLading->webservice_reference }}
-                        </div>
-                    @endif
-                    
-                    @if($billOfLading->webservice_sent_at)
-                        <div class="small text-muted">
-                            Enviado: {{ $billOfLading->webservice_sent_at->format('d/m/Y H:i') }}
-                        </div>
-                    @endif
-                    
-                    @if($billOfLading->webservice_error_message)
-                        <div class="small text-danger mt-2">
-                            <strong>Error:</strong> {{ $billOfLading->webservice_error_message }}
-                        </div>
-                    @endif
-                </div>
-            </div>
-            @endif
-
-            {{-- Observaciones --}}
-            @if($billOfLading->special_instructions || $billOfLading->handling_instructions || $billOfLading->customs_remarks)
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-comment-alt me-2"></i>Observaciones</h5>
-                </div>
-                <div class="card-body">
-                    @if($billOfLading->special_instructions)
-                        <div class="mb-3">
-                            <strong>Instrucciones Especiales:</strong><br>
-                            <p class="mb-0">{{ $billOfLading->special_instructions }}</p>
-                        </div>
-                    @endif
-                    
-                    @if($billOfLading->handling_instructions)
-                        <div class="mb-3">
-                            <strong>Instrucciones de Manejo:</strong><br>
-                            <p class="mb-0">{{ $billOfLading->handling_instructions }}</p>
-                        </div>
-                    @endif
-                    
-                    @if($billOfLading->customs_remarks)
-                        <div class="mb-3">
-                            <strong>Observaciones Aduaneras:</strong><br>
-                            <p class="mb-0">{{ $billOfLading->customs_remarks }}</p>
-                        </div>
-                    @endif
-                </div>
-            </div>
-            @endif
-
-            {{-- Auditoría --}}
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-history me-2"></i>Auditoría</h5>
-                </div>
-                <div class="card-body">
-                    <div class="small">
-                        <div class="mb-2">
-                            <strong>Creado:</strong><br>
-                            {{ $billOfLading->created_at->format('d/m/Y H:i') }}<br>
-                            <span class="text-muted">por {{ $billOfLading->createdByUser->name ?? 'Sistema' }}</span>
-                        </div>
+                {{-- Medidas y Pesos --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/>
+                            </svg>
+                            Medidas y Pesos
+                        </h3>
                         
-                        @if($billOfLading->updated_at != $billOfLading->created_at)
-                        <div class="mb-2">
-                            <strong>Última actualización:</strong><br>
-                            {{ $billOfLading->updated_at->format('d/m/Y H:i') }}<br>
-                            <span class="text-muted">por {{ $billOfLading->lastUpdatedByUser->name ?? 'Sistema' }}</span>
-                        </div>
-                        @endif
-                        
+                        <dl class="space-y-3">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Total Bultos</dt>
+                                <dd class="text-sm text-gray-900 font-semibold">{{ number_format($billOfLading->total_packages) }}</dd>
+                            </div>
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Peso Bruto</dt>
+                                <dd class="text-sm text-gray-900 font-semibold">{{ number_format($billOfLading->gross_weight_kg, 2) }} kg</dd>
+                            </div>
+
+                            @if($billOfLading->net_weight_kg)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Peso Neto</dt>
+                                <dd class="text-sm text-gray-900">{{ number_format($billOfLading->net_weight_kg, 2) }} kg</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->volume_m3)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Volumen</dt>
+                                <dd class="text-sm text-gray-900">{{ number_format($billOfLading->volume_m3, 3) }} m³</dd>
+                            </div>
+                            @endif
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Contenedores</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->container_count }}</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Información de Auditoría --}}
+            <div class="bg-white shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Información de Auditoría
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                        <dl class="space-y-2">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Creado</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->created_at->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->createdByUser)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Creado por</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->createdByUser->name }}</dd>
+                            </div>
+                            @endif
+                        </dl>
+
+                        <dl class="space-y-2">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Actualizado</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->updated_at->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->lastUpdatedByUser)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Actualizado por</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->lastUpdatedByUser->name }}</dd>
+                            </div>
+                            @endif
+                        </dl>
+
                         @if($billOfLading->verified_at)
-                        <div class="mb-2">
-                            <strong>Verificado:</strong><br>
-                            {{ $billOfLading->verified_at->format('d/m/Y H:i') }}<br>
-                            <span class="text-muted">por {{ $billOfLading->verifiedByUser->name ?? 'Sistema' }}</span>
-                        </div>
+                        <dl class="space-y-2">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Verificado</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->verified_at->format('d/m/Y H:i') }}</dd>
+                            </div>
+                            
+                            @if($billOfLading->verifiedByUser)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Verificado por</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->verifiedByUser->name }}</dd>
+                            </div>
+                            @endif
+                        </dl>
                         @endif
                     </div>
                 </div>
             </div>
+
         </div>
     </div>
-</div>
-@endsection
+</x-app-layout>

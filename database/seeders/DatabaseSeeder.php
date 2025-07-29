@@ -136,8 +136,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             CaptainSeeder::class,
             VoyagesFromParanaSeeder::class,
-            //BillOfLadingSeeder::class,       // AGREGADO: Crear bills of lading por shipment
-            ShipmentSeeder::class,           // AGREGADO: Crear shipments por voyage            
+            ShipmentSeeder::class,           // AGREGADO: Crear shipments por voyage      
+            BillOfLadingSeeder::class,       // AGREGADO: Crear bills of lading por shipment      
             ShipmentItemSeeder::class,       // AGREGADO: Crear items por bill of lading
         ]);
         

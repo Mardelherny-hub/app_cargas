@@ -425,10 +425,10 @@ class BillOfLading extends Model
     /**
      * Archivos adjuntos (relación polimórfica)
      */
-    public function attachments(): MorphMany
-    {
-        return $this->morphMany(Attachment::class, 'attachable');
-    }
+    //public function attachments(): MorphMany
+    //{
+    //    return $this->morphMany(Attachment::class, 'attachable');
+    //}
 
     // ========================================
     // SCOPES

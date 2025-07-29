@@ -390,24 +390,24 @@ class BillOfLadingController extends Controller
         $billOfLading->load([
             'shipment.voyage:id,voyage_number,company_id',
             'shipment.vessel:id,name',
-            'shipper:id,legal_name,commercial_name,tax_id,address,city,country_id',
-            'consignee:id,legal_name,commercial_name,tax_id,address,city,country_id',
-            'notifyParty:id,legal_name,commercial_name,tax_id',
-            'cargoOwner:id,legal_name,commercial_name,tax_id',
+            'shipment.shipmentItems' => function ($q) {
+                $q->with(['cargoType:id,name', 'packagingType:id,name']);
+            },
+            'shipper:id,legal_name,tax_id,country_id,status',
+            'consignee:id,legal_name,tax_id,country_id,status', 
+            'notifyParty:id,legal_name,tax_id,country_id',
+            'cargoOwner:id,legal_name,tax_id,country_id',
             'loadingPort:id,name,code,country_id',
             'dischargePort:id,name,code,country_id',
-            'transshipmentPort:id,name,code,country_id',
+            'transshipmentPort:id,name,code,country_id',  
             'finalDestinationPort:id,name,code,country_id',
             'loadingCustoms:id,name,code',
             'dischargeCustoms:id,name,code',
             'primaryCargoType:id,name,description',
             'primaryPackagingType:id,name,description',
-            'shipmentItems' => function ($q) {
-                $q->with(['cargoType:id,name', 'packagingType:id,name']);
-            },
-            'attachments',
+            //'attachments',
             'createdByUser:id,name',
-            'verifiedByUser:id,name',
+            'verifiedByUser:id,name', 
             'lastUpdatedByUser:id,name'
         ]);
 
@@ -736,7 +736,7 @@ class BillOfLadingController extends Controller
     }
 
     /**
-     * Obtener datos para formularios (ACTUALIZADO)
+     * Obtener datos para formularios (CORREGIDO)
      */
     private function getFormData($company, Request $request, ?BillOfLading $billOfLading = null): array
     {
@@ -910,7 +910,22 @@ class BillOfLadingController extends Controller
             // CONFIGURACIÓN DEL FORMULARIO
             'isEditing' => !is_null($billOfLading),
             'canEditConsolidation' => is_null($billOfLading) || $billOfLading->canBeEdited(),
-            'hasRelatedItems' => $billOfLading ? $billOfLading->shipmentItems()->count() > 0 : false,
+            
+            // ✅ CORRECCIÓN: Acceder a shipmentItems a través del shipment
+            'hasRelatedItems' => $billOfLading && $billOfLading->shipment ? 
+                $billOfLading->shipment->shipmentItems()->count() > 0 : false,
+                
+            // FILTROS ADICIONALES para formularios
+            'statuses' => [
+                'draft' => 'Borrador',
+                'pending_review' => 'Pendiente Revisión',
+                'verified' => 'Verificado',
+                'sent_to_customs' => 'Enviado a Aduana',
+                'accepted' => 'Aceptado',
+                'rejected' => 'Rechazado',
+                'completed' => 'Completado',
+                'cancelled' => 'Cancelado',
+            ],
         ];
     }
 
@@ -1130,7 +1145,7 @@ class BillOfLadingController extends Controller
     }
 
     /**
-     * Generar PDF del conocimiento
+     * Generar PDF del conocimiento (CORREGIDO)
      */
     public function generatePdf(BillOfLading $billOfLading)
     {
@@ -1144,7 +1159,7 @@ class BillOfLadingController extends Controller
             abort(403, 'No tiene permisos para generar PDF de este conocimiento.');
         }
 
-        // Cargar todas las relaciones necesarias para el PDF
+        // ✅ CORRECCIÓN: Cargar relaciones a través de la jerarquía correcta
         $billOfLading->load([
             'shipment.voyage.vessel',
             'shipment.voyage.company',
@@ -1160,8 +1175,11 @@ class BillOfLadingController extends Controller
             'dischargeCustoms',
             'primaryCargoType',
             'primaryPackagingType',
-            'shipmentItems.cargoType',
-            'shipmentItems.packagingType',
+            
+            // ✅ CORRECCIÓN: Acceder a shipmentItems a través del shipment
+            'shipment.shipmentItems.cargoType',
+            'shipment.shipmentItems.packagingType',
+            
             'createdByUser',
             'verifiedByUser'
         ]);
@@ -1172,7 +1190,7 @@ class BillOfLadingController extends Controller
     }
 
     /**
-     * Vista de impresión
+     * Vista de impresión (CORREGIDO)
      */
     public function print(BillOfLading $billOfLading)
     {
@@ -1186,7 +1204,7 @@ class BillOfLadingController extends Controller
             abort(403, 'No tiene permisos para imprimir este conocimiento.');
         }
 
-        // Cargar relaciones para impresión
+        // ✅ CORRECCIÓN: Cargar relaciones a través de la jerarquía correcta
         $billOfLading->load([
             'shipment.voyage.vessel',
             'shipment.voyage.company',
@@ -1200,12 +1218,16 @@ class BillOfLadingController extends Controller
             'finalDestinationPort',
             'primaryCargoType',
             'primaryPackagingType',
-            'shipmentItems.cargoType',
-            'shipmentItems.packagingType'
+            
+            // ✅ CORRECCIÓN: Acceder a shipmentItems a través del shipment
+            'shipment.shipmentItems.cargoType',
+            'shipment.shipmentItems.packagingType'
         ]);
 
         return view('company.bills-of-lading.print', compact('billOfLading'));
     }
+
+
 
     /**
      * Gestionar archivos adjuntos
