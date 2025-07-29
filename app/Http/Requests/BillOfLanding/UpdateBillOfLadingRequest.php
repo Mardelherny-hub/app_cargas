@@ -17,6 +17,8 @@ use App\Models\BillOfLading;
  * - Permitir mismo bill_number si es el mismo registro
  * - Bloquear edición si ya fue enviado a webservices
  * - Validar cambios críticos que afecten manifiestos
+ * 
+ * ACTUALIZADO: Incluye todos los campos de la migración bills_of_lading
  */
 class UpdateBillOfLadingRequest extends FormRequest
 {
@@ -145,6 +147,21 @@ class UpdateBillOfLadingRequest extends FormRequest
                     ->ignore($billOfLading?->id)
                     ->whereNull('deleted_at'),
             ],
+            'master_bill_number' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+            'house_bill_number' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+            'internal_reference' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
             'bill_date' => [
                 'required',
                 'date',
@@ -160,7 +177,7 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'nullable',
                 'integer',
                 'min:1',
-                'max:9999',
+                'max:99999',
             ],
 
             // === FECHAS OPERACIONALES ===
@@ -168,7 +185,6 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'nullable',
                 'date',
                 'after_or_equal:bill_date',
-                'before_or_equal:today',
             ],
             'discharge_date' => [
                 'nullable',
@@ -180,32 +196,40 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'date',
                 'after_or_equal:loading_date',
             ],
+            'delivery_date' => [
+                'nullable',
+                'date',
+                'after_or_equal:arrival_date',
+            ],
+            'cargo_ready_date' => [
+                'nullable',
+                'date',
+                'after_or_equal:bill_date',
+            ],
             'free_time_expires_at' => [
                 'nullable',
                 'date',
-                'after:today',
+                'after:arrival_date',
             ],
 
             // === TÉRMINOS COMERCIALES ===
             'freight_terms' => [
                 'required',
-                Rule::in(['prepaid', 'collect', 'prepaid_collect', 'prepaid_partial']),
+                Rule::in(['prepaid', 'collect', 'prepaid_collect', 'third_party']),
             ],
             'payment_terms' => [
                 'nullable',
-                Rule::in(['cash', 'credit', 'prepaid', 'collect', 'cash_on_delivery']),
+                Rule::in(['cash', 'credit', 'advance', 'cod', 'letter_of_credit']),
             ],
             'incoterms' => [
                 'nullable',
-                'string',
-                'max:10',
                 Rule::in(['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF']),
             ],
             'currency_code' => [
                 'nullable',
                 'string',
                 'size:3',
-                'regex:/^[A-Z]{3}$/', // Códigos de moneda ISO (USD, BRL, ARS, etc.)
+                'regex:/^[A-Z]{3}$/', // Exactamente 3 letras mayúsculas
             ],
 
             // === MEDIDAS Y PESOS ===
@@ -219,14 +243,13 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'required',
                 'numeric',
                 'min:0.01',
-                'max:999999.99',
+                'max:999999.999',
             ],
             'net_weight_kg' => [
                 'nullable',
                 'numeric',
                 'min:0',
-                'max:999999.99',
-                'lte:gross_weight_kg', // Peso neto ≤ peso bruto
+                'lte:gross_weight_kg', // El peso neto no puede ser mayor al bruto
             ],
             'volume_m3' => [
                 'nullable',
@@ -236,24 +259,47 @@ class UpdateBillOfLadingRequest extends FormRequest
             ],
             'measurement_unit' => [
                 'nullable',
-                Rule::in(['kg', 'ton', 'm3', 'cbm', 'packages', 'units']),
+                Rule::in(['KG', 'TON', 'M3', 'LTR', 'PCS']),
+            ],
+            'container_count' => [
+                'nullable',
+                'integer',
+                'min:0',
+                'max:999',
             ],
 
-            // === ESTADOS Y CONTROL ===
+            // === DESCRIPCIÓN DE CARGA ===
+            'cargo_description' => [
+                'nullable',
+                'string',
+                'max:2000',
+            ],
+            'cargo_marks' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+            'commodity_code' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+
+            // === TIPO Y CARACTERÍSTICAS DEL CONOCIMIENTO ===
+            'bill_type' => [
+                'nullable',
+                Rule::in(['original', 'copy', 'duplicate', 'amendment']),
+            ],
             'status' => [
-                'sometimes',
-                Rule::in(['draft', 'pending_review', 'verified', 'sent_to_customs', 'accepted', 'rejected', 'completed', 'cancelled']),
-                function ($attribute, $value, $fail) use ($billOfLading) {
-                    // Validar transiciones de estado permitidas
-                    if ($billOfLading && !$this->isValidStatusTransition($billOfLading->status, $value)) {
-                        $fail('La transición de estado no es válida.');
-                    }
-                },
+                'nullable',
+                Rule::in(['draft', 'confirmed', 'loaded', 'in_transit', 'discharged', 'delivered', 'returned', 'cancelled']),
             ],
             'priority_level' => [
                 'nullable',
                 Rule::in(['low', 'normal', 'high', 'urgent']),
             ],
+
+            // === CARACTERÍSTICAS ESPECIALES DE CARGA ===
             'requires_inspection' => [
                 'boolean',
             ],
@@ -276,7 +322,59 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'boolean',
             ],
 
-            // === OBSERVACIONES ===
+            // === CONSOLIDACIÓN ===
+            'is_consolidated' => [
+                'boolean',
+            ],
+            'is_master_bill' => [
+                'boolean',
+            ],
+            'is_house_bill' => [
+                'boolean',
+            ],
+            'requires_surrender' => [
+                'boolean',
+            ],
+
+            // === MERCANCÍAS PELIGROSAS ===
+            'un_number' => [
+                'nullable',
+                'string',
+                'max:10',
+                'required_if:contains_dangerous_goods,true',
+            ],
+            'imdg_class' => [
+                'nullable',
+                'string',
+                'max:10',
+                'required_if:contains_dangerous_goods,true',
+            ],
+
+            // === INFORMACIÓN FINANCIERA ===
+            'freight_amount' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
+            ],
+            'insurance_amount' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
+            ],
+            'declared_value' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
+            ],
+            'additional_charges' => [
+                'nullable',
+                'json',
+            ],
+
+            // === INSTRUCCIONES Y OBSERVACIONES ===
             'special_instructions' => [
                 'nullable',
                 'string',
@@ -297,8 +395,38 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'string',
                 'max:2000',
             ],
+            'loading_remarks' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+            'discharge_remarks' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+            'delivery_remarks' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
 
-            // === CONTROL DE CALIDAD ===
+            // === CONTROL DE CALIDAD Y CONDICIÓN ===
+            'cargo_condition_loading' => [
+                'nullable',
+                Rule::in(['good', 'fair', 'poor', 'damaged']),
+            ],
+            'cargo_condition_discharge' => [
+                'nullable',
+                Rule::in(['good', 'fair', 'poor', 'damaged']),
+            ],
+            'condition_remarks' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+
+            // === VERIFICACIÓN Y DISCREPANCIAS ===
             'has_discrepancies' => [
                 'boolean',
             ],
@@ -307,6 +435,71 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'string',
                 'max:2000',
                 'required_if:has_discrepancies,true',
+            ],
+
+            // === ENTREGA Y RECOGIDA ===
+            'delivery_address' => [
+                'nullable',
+                'string',
+                'max:500',
+            ],
+            'pickup_address' => [
+                'nullable',
+                'string',
+                'max:500',
+            ],
+            'delivery_contact_name' => [
+                'nullable',
+                'string',
+                'max:200',
+            ],
+            'delivery_contact_phone' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+            'delivery_instructions' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+
+            // === DOCUMENTOS ===
+            'required_documents' => [
+                'nullable',
+                'json',
+            ],
+            'attached_documents' => [
+                'nullable',
+                'json',
+            ],
+            'original_released' => [
+                'boolean',
+            ],
+            'original_release_date' => [
+                'nullable',
+                'date',
+                'required_if:original_released,true',
+            ],
+            'documentation_complete' => [
+                'boolean',
+            ],
+            'ready_for_delivery' => [
+                'boolean',
+            ],
+
+            // === CONTROL ADUANERO ===
+            'customs_cleared' => [
+                'boolean',
+            ],
+            'customs_bond_required' => [
+                'boolean',
+            ],
+            'customs_bond_number' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:customs_bond_required,true',
             ],
         ];
     }
@@ -351,6 +544,14 @@ class UpdateBillOfLadingRequest extends FormRequest
             'gross_weight_kg.min' => 'El peso bruto debe ser mayor a 0.',
             'net_weight_kg.lte' => 'El peso neto no puede ser mayor al peso bruto.',
 
+            // Mercancías peligrosas
+            'un_number.required_if' => 'Debe especificar el número UN para mercancía peligrosa.',
+            'imdg_class.required_if' => 'Debe especificar la clase IMDG para mercancía peligrosa.',
+
+            // Documentos
+            'original_release_date.required_if' => 'Debe especificar la fecha cuando marca el original como entregado.',
+            'customs_bond_number.required_if' => 'Debe especificar el número de garantía aduanera.',
+
             // Discrepancias
             'discrepancy_details.required_if' => 'Debe especificar los detalles cuando marca que hay discrepancias.',
 
@@ -393,6 +594,12 @@ class UpdateBillOfLadingRequest extends FormRequest
             'has_discrepancies' => 'tiene discrepancias',
             'discrepancy_details' => 'detalles de discrepancias',
             'special_instructions' => 'instrucciones especiales',
+            'un_number' => 'número UN',
+            'imdg_class' => 'clase IMDG',
+            'original_release_date' => 'fecha entrega del original',
+            'customs_bond_number' => 'número de garantía aduanera',
+            'cargo_condition_loading' => 'condición carga en origen',
+            'cargo_condition_discharge' => 'condición carga en destino',
         ];
     }
 
@@ -421,144 +628,30 @@ class UpdateBillOfLadingRequest extends FormRequest
                 }
             }
 
-            // Validación personalizada: verificar coherencia de fechas
-            if ($this->has(['loading_date', 'discharge_date'])) {
-                $loadingDate = $this->input('loading_date');
-                $dischargeDate = $this->input('discharge_date');
-                
-                if ($loadingDate && $dischargeDate && $dischargeDate < $loadingDate) {
-                    $validator->errors()->add(
-                        'discharge_date', 
-                        'La fecha de descarga no puede ser anterior a la fecha de carga.'
-                    );
+            // Validación: Si es conocimiento hijo, debe tener un maestro
+            if ($this->input('is_house_bill') && !$this->input('master_bill_number')) {
+                $validator->errors()->add('master_bill_number', 'Los conocimientos hijo deben tener un número de conocimiento maestro.');
+            }
+
+            // Validación: Si es conocimiento maestro, no puede ser hijo
+            if ($this->input('is_master_bill') && $this->input('is_house_bill')) {
+                $validator->errors()->add('is_house_bill', 'Un conocimiento no puede ser maestro e hijo a la vez.');
+            }
+
+            // Validación: Si contiene mercancía peligrosa, algunos campos son obligatorios
+            if ($this->input('contains_dangerous_goods')) {
+                if (!$this->input('un_number')) {
+                    $validator->errors()->add('un_number', 'El número UN es obligatorio para mercancía peligrosa.');
+                }
+                if (!$this->input('imdg_class')) {
+                    $validator->errors()->add('imdg_class', 'La clase IMDG es obligatoria para mercancía peligrosa.');
                 }
             }
 
-            // Validación personalizada: coherencia de puertos para transbordo
-            if ($this->input('is_transhipment') && !$this->input('transshipment_port_id')) {
-                $validator->errors()->add(
-                    'transshipment_port_id',
-                    'Debe especificar el puerto de transbordo cuando se marca como transbordo.'
-                );
+            // Validación: Evitar cambio de estado a "cancelled" si tiene documentos originales entregados
+            if ($billOfLading && $this->input('status') === 'cancelled' && $billOfLading->original_released) {
+                $validator->errors()->add('status', 'No se puede cancelar un conocimiento con originales ya entregados.');
             }
-
-            // Validación personalizada: verificar que los clientes pueden realizar las operaciones
-            $this->validateClientCapabilities($validator);
-
-            // Validación personalizada: coherencia con ítems existentes
-            $this->validateConsistencyWithItems($validator, $billOfLading);
         });
-    }
-
-    /**
-     * Validar capacidades de los clientes seleccionados
-     */
-    private function validateClientCapabilities($validator): void
-    {
-        $shipperId = $this->input('shipper_id');
-        $consigneeId = $this->input('consignee_id');
-
-        if ($shipperId) {
-            $shipper = \App\Models\Client::find($shipperId);
-            if ($shipper && !in_array('shipper', $shipper->client_roles ?? [])) {
-                $validator->errors()->add(
-                    'shipper_id',
-                    'El cliente seleccionado no tiene habilitado el rol de cargador/exportador.'
-                );
-            }
-        }
-
-        if ($consigneeId) {
-            $consignee = \App\Models\Client::find($consigneeId);
-            if ($consignee && !in_array('consignee', $consignee->client_roles ?? [])) {
-                $validator->errors()->add(
-                    'consignee_id',
-                    'El cliente seleccionado no tiene habilitado el rol de consignatario/importador.'
-                );
-            }
-        }
-    }
-
-    /**
-     * Validar consistencia con ítems de mercadería existentes
-     */
-    private function validateConsistencyWithItems($validator, ?BillOfLading $billOfLading): void
-    {
-        if (!$billOfLading || $billOfLading->shipmentItems->isEmpty()) {
-            return;
-        }
-
-        $itemsWeight = $billOfLading->calculateTotalItemsWeight();
-        $newGrossWeight = $this->input('gross_weight_kg');
-
-        // El peso bruto del conocimiento debe ser coherente con el peso de los ítems
-        if ($newGrossWeight && $itemsWeight > 0 && abs($newGrossWeight - $itemsWeight) > ($itemsWeight * 0.1)) {
-            $validator->errors()->add(
-                'gross_weight_kg',
-                "El peso bruto ({$newGrossWeight} kg) difiere significativamente del peso total de los ítems ({$itemsWeight} kg)."
-            );
-        }
-    }
-
-    /**
-     * Validar transiciones de estado permitidas
-     */
-    private function isValidStatusTransition(string $currentStatus, string $newStatus): bool
-    {
-        $allowedTransitions = [
-            'draft' => ['pending_review', 'verified', 'cancelled'],
-            'pending_review' => ['draft', 'verified', 'cancelled'],
-            'verified' => ['sent_to_customs', 'cancelled'],
-            'sent_to_customs' => ['accepted', 'rejected'],
-            'accepted' => ['completed'],
-            'rejected' => ['draft', 'pending_review'],
-            'completed' => [], // Estado final
-            'cancelled' => [], // Estado final
-        ];
-
-        return in_array($newStatus, $allowedTransitions[$currentStatus] ?? []);
-    }
-
-    /**
-     * Prepare the data for validation.
-     */
-    protected function prepareForValidation(): void
-    {
-        // Normalizar el número de conocimiento
-        if ($this->has('bill_number')) {
-            $this->merge([
-                'bill_number' => strtoupper(trim($this->input('bill_number')))
-            ]);
-        }
-
-        // Normalizar código de moneda
-        if ($this->has('currency_code')) {
-            $this->merge([
-                'currency_code' => strtoupper(trim($this->input('currency_code')))
-            ]);
-        }
-
-        // Asegurar que los checkboxes sean boolean
-        $booleanFields = [
-            'requires_inspection',
-            'contains_dangerous_goods', 
-            'requires_refrigeration',
-            'is_transhipment',
-            'is_partial_shipment',
-            'allows_partial_delivery',
-            'requires_documents_on_arrival',
-            'has_discrepancies'
-        ];
-
-        foreach ($booleanFields as $field) {
-            if ($this->has($field)) {
-                $this->merge([$field => (bool) $this->input($field)]);
-            }
-        }
-
-        // Agregar usuario que actualiza
-        $this->merge([
-            'last_updated_by_user_id' => auth()->id()
-        ]);
     }
 }
