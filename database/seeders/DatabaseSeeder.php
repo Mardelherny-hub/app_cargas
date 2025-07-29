@@ -12,12 +12,13 @@ use Illuminate\Database\Seeder;
  * ORDEN CRÍTICO POR DEPENDENCIAS:
  * 1. Catálogos base (países, puertos, aduanas)
  * 2. Sistema de usuarios y permisos
- * 3. Tipos y propietarios (para embarcaciones)
- * 4. Embarcaciones (requiere tipos y propietarios)
- * 5. Clientes y contactos
- * 6. Dependencias básicas webservices (países específicos, MAERSK, puertos)
- * 7. Módulo 3: Capitanes, Viajes y Cargas (CON DATOS REALES PARANA)
- * 8. Módulo 4: Transacciones Webservices (CON DATOS REALES MAERSK)
+ * 3. Tipos de carga y embalaje (AGREGADO - requerido por módulo cargas)
+ * 4. Tipos y propietarios (para embarcaciones)
+ * 5. Embarcaciones (requiere tipos y propietarios)
+ * 6. Clientes y contactos
+ * 7. Dependencias básicas webservices (países específicos, MAERSK, puertos)
+ * 8. Módulo 3: Capitanes, Viajes y Cargas (CON DATOS REALES PARANA)
+ * 9. Módulo 4: Transacciones Webservices (CON DATOS REALES MAERSK)
  * 
  * USO: php artisan migrate:fresh --seed
  */
@@ -59,9 +60,24 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 3: TIPOS Y PROPIETARIOS (PRE-EMBARCACIONES) ===
+        // === FASE 3: TIPOS DE CARGA Y EMBALAJE ===
         //
-        $this->command->info('🏭 FASE 3: Tipos y Propietarios');
+        $this->command->info('📦 FASE 3: Tipos de Carga y Embalaje');
+        $this->command->line('  └── Creando tipos de carga y tipos de embalaje...');
+        
+        $this->call([
+            CargoTypesSeederTemp::class,
+            PackagingTypesSeeder::class,
+            ContainerTypesSeeder::class,
+        ]);
+        
+        $this->command->info('  ✅ Tipos de carga, embalaje y tipos de containers completados');
+        $this->command->info('');
+
+        //
+        // === FASE 4: TIPOS Y PROPIETARIOS (PRE-EMBARCACIONES) ===
+        //
+        $this->command->info('🏭 FASE 4: Tipos y Propietarios');
         $this->command->line('  └── Creando tipos de embarcaciones y propietarios...');
         
         $this->call([
@@ -73,9 +89,9 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 4: EMBARCACIONES ===
+        // === FASE 5: EMBARCACIONES ===
         //
-        $this->command->info('🛳️ FASE 4: Embarcaciones');
+        $this->command->info('🛳️ FASE 5: Embarcaciones');
         $this->command->line('  └── Creando flota de embarcaciones fluviales...');
         
         $this->call([
@@ -86,9 +102,9 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 5: CLIENTES ===
+        // === FASE 6: CLIENTES ===
         //
-        $this->command->info('🏢 FASE 5: Clientes');
+        $this->command->info('🏢 FASE 6: Clientes');
         $this->command->line('  └── Creando empresas y clientes de Argentina y Paraguay...');
         
         $this->call([
@@ -99,9 +115,9 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 6: DEPENDENCIAS WEBSERVICES ===
+        // === FASE 7: DEPENDENCIAS WEBSERVICES ===
         //
-        $this->command->info('🔧 FASE 6: Dependencias Webservices');
+        $this->command->info('🔧 FASE 7: Dependencias Webservices');
         $this->command->line('  └── Creando empresa MAERSK, puertos específicos y usuarios...');
         
         $this->call([
@@ -112,9 +128,9 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 7: MÓDULO 3 - VIAJES Y CARGAS (DATOS REALES PARANA) ===
+        // === FASE 8: MÓDULO 3 - VIAJES Y CARGAS (DATOS REALES PARANA) ===
         //
-        $this->command->info('🚢 FASE 7: Viajes y Cargas');
+        $this->command->info('🚢 FASE 8: Viajes y Cargas');
         $this->command->line('  └── Creando capitanes, viajes y cargas con datos reales PARANA...');
         
         $this->call([
@@ -126,9 +142,9 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
-        // === FASE 8: MÓDULO 4 - TRANSACCIONES WEBSERVICES (DATOS REALES MAERSK) ===
+        // === FASE 9: MÓDULO 4 - TRANSACCIONES WEBSERVICES (DATOS REALES MAERSK) ===
         //
-        $this->command->info('📡 FASE 8: Transacciones Webservices');
+        $this->command->info('📡 FASE 9: Transacciones Webservices');
         $this->command->line('  └── Creando transacciones webservice con datos reales MAERSK...');
         
         $this->call([
@@ -163,6 +179,16 @@ class DatabaseSeeder extends Seeder
             if (class_exists('\App\Models\Company')) {
                 $companies = \App\Models\Company::count();
                 $this->command->line("  • Empresas: {$companies}");
+            }
+
+            if (class_exists('\App\Models\CargoType')) {
+                $cargoTypes = \App\Models\CargoType::count();
+                $this->command->line("  • Tipos de carga: {$cargoTypes}");
+            }
+
+            if (class_exists('\App\Models\PackagingType')) {
+                $packagingTypes = \App\Models\PackagingType::count();
+                $this->command->line("  • Tipos de embalaje: {$packagingTypes}");
             }
             
             if (class_exists('\App\Models\Vessel')) {
@@ -205,6 +231,8 @@ class DatabaseSeeder extends Seeder
         $this->command->info('📋 Próximos pasos:');
         $this->command->line('  • Verificar datos: php artisan tinker');
         $this->command->line('  • Ver usuarios: User::with(\'userable\')->get()');
+        $this->command->line('  • Ver tipos de carga: CargoType::active()->common()->get()');
+        $this->command->line('  • Ver tipos de embalaje: PackagingType::active()->common()->get()');
         $this->command->line('  • Ver viajes PARANA: Voyage::with(\'company\')->get()');
         $this->command->line('  • Ver viajes por número: Voyage::where(\'voyage_number\', \'V022NB\')->first()');
         $this->command->line('  • Ver capitanes: Captain::with(\'country\')->get()');
@@ -213,11 +241,32 @@ class DatabaseSeeder extends Seeder
         $this->command->info('✅ Base de datos poblada exitosamente con DATOS REALES PARANA.csv');
         $this->command->info('🚢 Sistema listo para pruebas de webservices con datos reales');
         $this->command->info('📡 Transacciones webservice MAERSK creadas y listas para testing');
+        $this->command->info('📦 Tipos de carga y embalaje configurados según estándares internacionales');
         $this->command->info('');
         $this->command->info('🎯 CREDENCIALES PARA EL CLIENTE:');
         $this->command->line('  • Email: admin.maersk@cargas.com');
         $this->command->line('  • Password: Maersk2025!');
         $this->command->line('  • Empresa: MAERSK LINE ARGENTINA S.A.');
         $this->command->line('  • CUIT: 30688415531');
+        $this->command->info('');
+        $this->command->info('📊 TIPOS DE CARGA DISPONIBLES:');
+        $this->command->line('  • GEN001: Carga General');
+        $this->command->line('  • CON001: Contenedores');
+        $this->command->line('  • BLK001: Carga a Granel');
+        $this->command->line('  • REF001: Carga Refrigerada');
+        $this->command->line('  • DNG001: Mercancías Peligrosas');
+        $this->command->line('  • LIQ001: Carga Líquida');
+        $this->command->line('  • VEH001: Vehículos');
+        $this->command->line('  • GAS001: Gases');
+        $this->command->info('');
+        $this->command->info('📦 TIPOS DE EMBALAJE DISPONIBLES:');
+        $this->command->line('  • PAL001: Pallet Estándar (ISPM-15)');
+        $this->command->line('  • BOX001: Cajas de Cartón (FDA, reciclable)');
+        $this->command->line('  • BAG001: Sacos de Polipropileno (granos)');
+        $this->command->line('  • DRM001: Tambores Metálicos (UN_SPEC)');
+        $this->command->line('  • CTR001: Contenedores Plásticos (reutilizables)');
+        $this->command->line('  • BND001: Fardos Textiles');
+        $this->command->line('  • BLK001: Carga a Granel (sin embalaje)');
+        $this->command->line('  • ROL001: Rollos de Papel (FSC)');
     }
 }

@@ -10,7 +10,7 @@ use App\Models\Country;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
-class VesselOwnersSeeder extends Seeder
+class VesselOwnersTestSeeder extends Seeder
 {
     /**
      * CORRECCIÓN 1 - SEEDER PROPIETARIOS DE EMBARCACIONES

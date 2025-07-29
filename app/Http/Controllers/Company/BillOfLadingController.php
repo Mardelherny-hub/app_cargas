@@ -728,27 +728,27 @@ class BillOfLadingController extends Controller
                 ->orderBy('legal_name')
                 ->get(['id', 'legal_name', 'tax_id']),
             
-            'loadingPorts' => Port::where('status', 'active')
+            'loadingPorts' => Port::where('active', true)
                 ->with('country:id,name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'country_id']),
             
-            'dischargePorts' => Port::where('status', 'active')
+            'dischargePorts' => Port::where('active', true)
                 ->with('country:id,name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'country_id']),
             
-            'transshipmentPorts' => Port::where('status', 'active')
+            'transshipmentPorts' => Port::where('active', true)
                 ->with('country:id,name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'country_id']),
             
-            'finalDestinationPorts' => Port::where('status', 'active')
+            'finalDestinationPorts' => Port::where('active', true)
                 ->with('country:id,name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'code', 'country_id']),
             
-            'customsOffices' => CustomOffice::where('status', 'active')
+            'customsOffices' => CustomOffice::where('active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'code']),
             
