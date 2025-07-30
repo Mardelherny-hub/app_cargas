@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * JERARQUÍA CORREGIDA: Voyages → Shipments → Shipment Items → (después) Bills of Lading
  * 
  * @property int $id
+ * @property int|null $client_id
  * @property int $shipment_id
  * @property int $cargo_type_id
  * @property int $packaging_type_id
@@ -344,6 +345,7 @@ class ShipmentItem extends Model
      */
     protected $fillable = [
         // Foreign keys
+        'client_id',
         'shipment_id',
         'cargo_type_id',
         'packaging_type_id',

@@ -25,6 +25,9 @@ return new class extends Migration
             // Primary key
             $table->id();
 
+            // Referencia a cliente el dueño de la mercadería
+            $table->unsignedBigInteger('client_id')->nullable()->comment('Cliente dueño de la mercadería');
+
             // CORREGIDO: Reference to shipment (jerarquía correcta)
             $table->unsignedBigInteger('shipment_id')->comment('Shipment al que pertenece');
 
@@ -107,6 +110,7 @@ return new class extends Migration
             $table->timestamps();
 
             // Performance indexes
+            $table->index(['client_id'], 'idx_shipment_items_client');
             $table->index(['shipment_id', 'line_number'], 'idx_shipment_items_shipment_line');
             $table->index(['cargo_type_id', 'status'], 'idx_shipment_items_cargo_status');
             $table->index(['packaging_type_id'], 'idx_shipment_items_packaging');

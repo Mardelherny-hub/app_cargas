@@ -366,7 +366,7 @@ class Voyage extends Model
     //
 // === RELACIONES PRINCIPALES ===
 //
-
+ 
 /**
  * Empresa organizadora del viaje.
  */
