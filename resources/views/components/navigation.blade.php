@@ -169,7 +169,7 @@
                                 <div class="relative h-full flex items-center" x-data="{ open: false }">
                                     <button @click="open = ! open" 
                                             class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
-                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.shipments.*', 'company.trips.*') ? 'true' : 'false' }} }">
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.shipments.*', 'company.voyages.*') ? 'true' : 'false' }} }">
                                         {{ __('Operaciones') }}
                                         <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -189,8 +189,8 @@
                                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.shipments.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                                 {{ __('Cargas') }}
                                             </a>
-                                            <a href="{{ route('company.trips.index') }}" 
-                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.trips.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                            <a href="{{ route('company.voyages.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.voyages.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                                 {{ __('Viajes') }}
                                             </a>
 
@@ -370,7 +370,7 @@
                                 <div class="relative" x-data="{ open: false }">
                                     <button @click="open = ! open" 
                                             class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
-                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.shipments.*', 'company.trips.*', 'company.deconsolidation.*', 'company.transfers.*') ? 'true' : 'false' }} }">
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.shipments.*', 'company.voyages.*', 'company.deconsolidation.*', 'company.transfers.*') ? 'true' : 'false' }} }">
                                         {{ __('Operaciones') }}
                                         <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -391,8 +391,8 @@
                                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.shipments.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                                     {{ __('Cargas') }}
                                                 </a>
-                                                <a href="{{ route('company.trips.index') }}" 
-                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.trips.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                <a href="{{ route('company.voyages.index') }}" 
+                                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.voyages.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                                     {{ __('Viajes') }}
                                                 </a>
                                             @endif
@@ -585,7 +585,7 @@
                         <x-responsive-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')" class="pl-6">
                             {{ __('Cargas') }}
                         </x-responsive-nav-link>
-                        <x-responsive-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')" class="pl-6">
+                        <x-responsive-nav-link :href="route('company.voyages.index')" :active="request()->routeIs('company.voyages.*')" class="pl-6">
                             {{ __('Viajes') }}
                         </x-responsive-nav-link>
                         
@@ -660,7 +660,7 @@
                             <x-responsive-nav-link :href="route('company.shipments.index')" :active="request()->routeIs('company.shipments.*')" class="pl-6">
                                 {{ __('Cargas') }}
                             </x-responsive-nav-link>
-                            <x-responsive-nav-link :href="route('company.trips.index')" :active="request()->routeIs('company.trips.*')" class="pl-6">
+                            <x-responsive-nav-link :href="route('company.voyages.index')" :active="request()->routeIs('company.voyages.*')" class="pl-6">
                                 {{ __('Viajes') }}
                             </x-responsive-nav-link>
                         @endif

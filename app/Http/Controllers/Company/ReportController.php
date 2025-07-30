@@ -361,7 +361,7 @@ class ReportController extends Controller
      * Reporte de viajes.
      * Solo disponible para empresas con rol "Cargas".
      */
-    public function trips(Request $request)
+    public function voyages(Request $request)
     {
         // 1. Verificar permisos básicos
         if (!$this->canPerform('reports_trips')) {
@@ -390,13 +390,13 @@ class ReportController extends Controller
         }
 
         // TODO: Implementar cuando esté el módulo de viajes
-        $trips = collect();
+        $voyages = collect();
 
         $stats = $this->getTripsStats($company);
         $filters = $this->getTripsFilters();
 
-        return view('company.reports.trips', compact(
-            'trips',
+        return view('company.reports.voyages', compact(
+            'voyages',
             'stats',
             'filters',
             'company'
@@ -559,13 +559,13 @@ class ReportController extends Controller
                 'route' => route('company.reports.arrival-notices'),
             ];
 
-            $reportTypes['trips'] = [
+            $reportTypes['voyages'] = [
                 'name' => 'Reportes de Viajes',
                 'description' => 'Información detallada sobre viajes realizados.',
                 'icon' => 'truck',
                 'color' => 'indigo',
                 'available' => $this->canPerform('reports_trips'),
-                'route' => route('company.reports.trips'),
+                'route' => route('company.reports.voyages'),
             ];
         }
 
@@ -984,7 +984,7 @@ class ReportController extends Controller
                 return $this->canPerform('reports_customs');
             case 'shipments':
                 return ($this->hasCompanyRole('Cargas') || $this->hasCompanyRole('Desconsolidador')) && $this->canPerform('reports_shipments');
-            case 'trips':
+            case 'voyages':
                 return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_trips');
             case 'operators':
                 return $this->isCompanyAdmin() && $this->canPerform('reports_operators');

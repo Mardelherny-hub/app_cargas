@@ -122,7 +122,7 @@ class ImportController extends Controller
         // 4. Validación
         $request->validate([
             'excel_file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // 10MB máximo
-            'import_type' => 'required|in:shipments,containers,titles,trips',
+            'import_type' => 'required|in:shipments,containers,titles,voyages',
             'has_headers' => 'boolean',
             'start_row' => 'nullable|integer|min:1|max:100',
             'preview_only' => 'boolean',
@@ -549,7 +549,7 @@ class ImportController extends Controller
         }
 
         if (in_array('Transbordos', $roles)) {
-            $templates['trips'] = [
+            $templates['voyages'] = [
                 'name' => 'Viajes',
                 'description' => 'Plantilla para importar información de viajes',
                 'required_columns' => [
@@ -642,7 +642,7 @@ class ImportController extends Controller
                 return $this->processContainersExcel($filePath, $company, $options);
             case 'titles':
                 return $this->processTitlesExcel($filePath, $company, $options);
-            case 'trips':
+            case 'voyages':
                 return $this->processTripsExcel($filePath, $company, $options);
             default:
                 throw new \Exception('Tipo de importación no válido: ' . $type);
@@ -739,7 +739,7 @@ class ImportController extends Controller
      */
     private function processTripsExcel(string $filePath, Company $company, array $options): array
     {
-        // TODO: Implementar cuando esté el modelo Trip
+        // TODO: Implementar cuando esté el modelo voyage
         $previewData = [
             ['Viaje' => 'V001', 'Nave' => 'MS Explorer', 'Origen' => 'Buenos Aires'],
             ['Viaje' => 'V002', 'Nave' => 'MS Navigator', 'Origen' => 'Montevideo'],
@@ -747,7 +747,7 @@ class ImportController extends Controller
 
         if ($options['preview_only']) {
             return [
-                'type' => 'trips',
+                'type' => 'voyages',
                 'rows_found' => count($previewData),
                 'preview' => array_slice($previewData, 0, 5),
                 'valid_rows' => count($previewData),

@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Company\DashboardController;
 use App\Http\Controllers\Company\ShipmentController;
-use App\Http\Controllers\Company\TripController;
+use App\Http\Controllers\Company\VoyageController;
 use App\Http\Controllers\Company\OperatorController;
 use App\Http\Controllers\Company\ReportController;
 use App\Http\Controllers\Company\CertificateController;
@@ -102,29 +102,29 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
 });
 
 // Gestión de Viajes
-Route::prefix('trips')->name('company.trips.')->group(function () {
-    Route::get('/', [TripController::class, 'index'])->name('index');
-    Route::get('/create', [TripController::class, 'create'])->name('create');
-    Route::post('/', [TripController::class, 'store'])->name('store');
-    Route::get('/{trip}', [TripController::class, 'show'])->name('show');
-    Route::get('/{trip}/edit', [TripController::class, 'edit'])->name('edit');
-    Route::put('/{trip}', [TripController::class, 'update'])->name('update');
-    Route::delete('/{trip}', [TripController::class, 'destroy'])->name('destroy');
+Route::prefix('voyages')->name('company.voyages.')->group(function () {
+    Route::get('/', [VoyageController::class, 'index'])->name('index');
+    Route::get('/create', [VoyageController::class, 'create'])->name('create');
+    Route::post('/', [VoyageController::class, 'store'])->name('store');
+    Route::get('/{voyage}', [VoyageController::class, 'show'])->name('show');
+    Route::get('/{voyage}/edit', [VoyageController::class, 'edit'])->name('edit');
+    Route::put('/{voyage}', [VoyageController::class, 'update'])->name('update');
+    Route::delete('/{voyage}', [VoyageController::class, 'destroy'])->name('destroy');
 
     // Acciones específicas de viajes
-    Route::patch('/{trip}/status', [TripController::class, 'updateStatus'])->name('update-status');
-    Route::patch('/{trip}/close', [TripController::class, 'close'])->name('close');
-    Route::post('/{trip}/duplicate', [TripController::class, 'duplicate'])->name('duplicate');
-    Route::get('/{trip}/pdf', [TripController::class, 'generatePdf'])->name('pdf');
+    Route::patch('/{voyage}/status', [VoyageController::class, 'updateStatus'])->name('update-status');
+    Route::patch('/{voyage}/close', [VoyageController::class, 'close'])->name('close');
+    Route::post('/{voyage}/duplicate', [VoyageController::class, 'duplicate'])->name('duplicate');
+    Route::get('/{voyage}/pdf', [VoyageController::class, 'generatePdf'])->name('pdf');
 
     // Manifiestos
-    Route::get('/{trip}/manifest', [TripController::class, 'manifest'])->name('manifest');
-    Route::get('/{trip}/manifest/pdf', [TripController::class, 'manifestPdf'])->name('manifest-pdf');
+    Route::get('/{voyage}/manifest', [VoyageController::class, 'manifest'])->name('manifest');
+    Route::get('/{voyage}/manifest/pdf', [VoyageController::class, 'manifestPdf'])->name('manifest-pdf');
 
     // Contenedores
-    Route::get('/{trip}/containers', [TripController::class, 'containers'])->name('containers');
-    Route::post('/{trip}/containers', [TripController::class, 'addContainer'])->name('add-container');
-    Route::delete('/{trip}/containers/{container}', [TripController::class, 'removeContainer'])->name('remove-container');
+    Route::get('/{voyage}/containers', [VoyageController::class, 'containers'])->name('containers');
+    Route::post('/{voyage}/containers', [VoyageController::class, 'addContainer'])->name('add-container');
+    Route::delete('/{voyage}/containers/{container}', [VoyageController::class, 'removeContainer'])->name('remove-container');
 });
 
 // Gestión de Propietarios de Embarcaciones
@@ -258,7 +258,7 @@ Route::prefix('reports')->name('company.reports.')->group(function () {
     Route::get('/arrival-notices', [ReportController::class, 'arrivalNotices'])->name('arrival-notices');
     Route::get('/customs', [ReportController::class, 'customs'])->name('customs');
     Route::get('/shipments', [ReportController::class, 'shipments'])->name('shipments');
-    Route::get('/trips', [ReportController::class, 'trips'])->name('trips');
+    Route::get('/voyages', [ReportController::class, 'voyages'])->name('voyages');
     Route::get('/operators', [ReportController::class, 'operators'])->name('operators');
 
     // Exportación de reportes

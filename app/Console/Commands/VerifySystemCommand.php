@@ -106,7 +106,7 @@ class VerifySystemCommand extends Command
             // Company
             'company.dashboard',
             'company.shipments.index',
-            'company.trips.index',
+            'company.voyages.index',
             'company.operators.index',
 
             // Internal
@@ -115,7 +115,7 @@ class VerifySystemCommand extends Command
             // Operator
             'operator.dashboard',
             'operator.shipments.index',
-            'operator.trips.index',
+            'operator.voyages.index',
         ];
 
         foreach ($criticalRoutes as $routeName) {
@@ -178,10 +178,10 @@ class VerifySystemCommand extends Command
             'admin.users.index',
             'admin.companies.index',
             'company.shipments.index',
-            'company.trips.index',
+            'company.voyages.index',
             'company.operators.index',
             'operator.shipments.index',
-            'operator.trips.index',
+            'operator.voyages.index',
         ];
 
         foreach ($criticalViews as $viewName) {

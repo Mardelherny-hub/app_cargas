@@ -43,7 +43,7 @@ class ShipmentController extends Controller
             $query->where('created_by', Auth::id());
         }
 
-        $shipments = $query->with(['trip', 'containers'])
+        $shipments = $query->with(['voyage', 'containers'])
             ->latest()
             ->paginate(20);
 
@@ -152,7 +152,7 @@ class ShipmentController extends Controller
             abort(403, 'No tiene permisos para ver esta carga.');
         }
 
-        $shipment->load(['company', 'trip', 'containers', 'attachments']);
+        $shipment->load(['company', 'voyage', 'containers', 'attachments']);
 
         return view('company.shipments.show', compact('shipment'));
     }
@@ -187,7 +187,7 @@ class ShipmentController extends Controller
                 ->with('error', 'No se puede editar una carga completada o cancelada.');
         }
 
-        $shipment->load(['company', 'trip', 'containers']);
+        $shipment->load(['company', 'voyage', 'containers']);
 
         return view('company.shipments.edit', compact('shipment'));
     }

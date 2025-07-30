@@ -5,21 +5,21 @@
                 {{ __('Gestión de Viajes') }}
             </h2>
             <div class="flex space-x-2">
-                <a href="{{ route('company.trips.create') }}"
+                <a href="{{ route('company.voyages.create') }}"
                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                     <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                     </svg>
                     Nuevo Viaje
                 </a>
-                <a href="{{-- route('company.reports.trips') --}}#"
+                <a href="{{-- route('company.reports.voyages') --}}#"
                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                     <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
                     Reportes
                 </a>
-                <a href="{{-- route('company.trips.calendar') --}}#"
+                <a href="{{-- route('company.voyages.calendar') --}}#"
                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                     <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -119,7 +119,7 @@
             <!-- Filtros y Búsqueda -->
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6">
-                    <form method="GET" action="{{ route('company.trips.index') }}" class="space-y-4">
+                    <form method="GET" action="{{ route('company.voyages.index') }}" class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <!-- Búsqueda general -->
                             <div class="md:col-span-2">
@@ -205,7 +205,7 @@
                                         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                                     Filtrar
                                 </button>
-                                <a href="{{ route('company.trips.index') }}"
+                                <a href="{{ route('company.voyages.index') }}"
                                    class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-md text-sm font-medium">
                                     Limpiar
                                 </a>
@@ -218,7 +218,7 @@
             <!-- Lista de Viajes -->
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="overflow-x-auto">
-                    @if(isset($trips) && $trips->count() > 0)
+                    @if(isset($voyages) && $voyages->count() > 0)
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
@@ -256,32 +256,32 @@
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($trips as $trip)
+                                @foreach($voyages as $voyage)
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            <a href="{{ route('company.trips.show', $trip) }}" class="text-blue-600 hover:text-blue-500">
-                                                #{{ $trip->number ?? 'N/A' }}
+                                            <a href="{{ route('company.voyages.show', $voyage) }}" class="text-blue-600 hover:text-blue-500">
+                                                #{{ $voyage->number ?? 'N/A' }}
                                             </a>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm text-gray-900">{{ $trip->vessel_name ?? 'Embarcación no especificada' }}</div>
-                                            <div class="text-sm text-gray-500">{{ $trip->route_name ?? 'Ruta no definida' }}</div>
+                                            <div class="text-sm text-gray-900">{{ $voyage->vessel_name ?? 'Embarcación no especificada' }}</div>
+                                            <div class="text-sm text-gray-500">{{ $voyage->route_name ?? 'Ruta no definida' }}</div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="text-sm text-gray-900">
-                                                {{ $trip->origin_port ?? 'Puerto origen' }} → {{ $trip->destination_port ?? 'Puerto destino' }}
+                                                {{ $voyage->origin_port ?? 'Puerto origen' }} → {{ $voyage->destination_port ?? 'Puerto destino' }}
                                             </div>
                                             <div class="text-sm text-gray-500">
-                                                {{ $trip->origin_country ?? 'AR' }} → {{ $trip->destination_country ?? 'AR' }}
+                                                {{ $voyage->origin_country ?? 'AR' }} → {{ $voyage->destination_country ?? 'AR' }}
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="text-sm text-gray-900">
-                                                <span class="font-medium">Salida:</span> {{ $trip->departure_date ? $trip->departure_date->format('d/m/Y H:i') : 'Por definir' }}
+                                                <span class="font-medium">Salida:</span> {{ $voyage->departure_date ? $voyage->departure_date->format('d/m/Y H:i') : 'Por definir' }}
                                             </div>
-                                            @if($trip->arrival_date)
+                                            @if($voyage->arrival_date)
                                                 <div class="text-sm text-gray-500">
-                                                    <span class="font-medium">Llegada:</span> {{ $trip->arrival_date->format('d/m/Y H:i') }}
+                                                    <span class="font-medium">Llegada:</span> {{ $voyage->arrival_date->format('d/m/Y H:i') }}
                                                 </div>
                                             @endif
                                         </td>
@@ -301,34 +301,34 @@
                                                     'cancelled' => 'Cancelado',
                                                     'delayed' => 'Retrasado',
                                                 ];
-                                                $status = $trip->status ?? 'planned';
+                                                $status = $voyage->status ?? 'planned';
                                             @endphp
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $statusColors[$status] ?? 'bg-gray-100 text-gray-800' }}">
                                                 {{ $statusLabels[$status] ?? ucfirst($status) }}
                                             </span>
 
-                                            @if($trip->status === 'in_progress' && $trip->estimated_arrival)
+                                            @if($voyage->status === 'in_progress' && $voyage->estimated_arrival)
                                                 <div class="text-xs text-gray-500 mt-1">
-                                                    ETA: {{ $trip->estimated_arrival->format('d/m H:i') }}
+                                                    ETA: {{ $voyage->estimated_arrival->format('d/m H:i') }}
                                                 </div>
                                             @endif
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             <div class="flex items-center">
-                                                <span class="font-medium text-gray-900">{{ $trip->shipments_count ?? 0 }}</span>
-                                                @if(($trip->shipments_count ?? 0) > 0)
+                                                <span class="font-medium text-gray-900">{{ $voyage->shipments_count ?? 0 }}</span>
+                                                @if(($voyage->shipments_count ?? 0) > 0)
                                                     <span class="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                                        {{ number_format($trip->total_weight ?? 0, 0) }} kg
+                                                        {{ number_format($voyage->total_weight ?? 0, 0) }} kg
                                                     </span>
                                                 @endif
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {{ $trip->operator ? $trip->operator->first_name . ' ' . $trip->operator->last_name : 'Sin asignar' }}
+                                            {{ $voyage->operator ? $voyage->operator->first_name . ' ' . $voyage->operator->last_name : 'Sin asignar' }}
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                             <div class="flex items-center space-x-2">
-                                                <a href="{{ route('company.trips.show', $trip) }}"
+                                                <a href="{{ route('company.voyages.show', $voyage) }}"
                                                    class="text-blue-600 hover:text-blue-500"
                                                    title="Ver detalles">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -337,8 +337,8 @@
                                                     </svg>
                                                 </a>
 
-                                                @if(in_array($trip->status ?? 'planned', ['planned', 'delayed']))
-                                                    <a href="{{ route('company.trips.edit', $trip) }}"
+                                                @if(in_array($voyage->status ?? 'planned', ['planned', 'delayed']))
+                                                    <a href="{{ route('company.voyages.edit', $voyage) }}"
                                                        class="text-yellow-600 hover:text-yellow-500"
                                                        title="Editar">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -347,7 +347,7 @@
                                                     </a>
                                                 @endif
 
-                                                <a href="{{ route('company.trips.tracking', $trip) }}"
+                                                <a href="{{-- route('company.shipment.tracking', $voyage) --}}#"
                                                    class="text-green-600 hover:text-green-500"
                                                    title="Seguimiento">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -356,16 +356,16 @@
                                                     </svg>
                                                 </a>
 
-                                                @if($trip->status === 'planned')
-                                                    <button onclick="startTrip({{ $trip->id }})"
+                                                @if($voyage->status === 'planned')
+                                                    <button onclick="startTrip({{ $voyage->id }})"
                                                             class="text-purple-600 hover:text-purple-500"
                                                             title="Iniciar viaje">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                                         </svg>
                                                     </button>
-                                                @elseif($trip->status === 'in_progress')
-                                                    <button onclick="completeTrip({{ $trip->id }})"
+                                                @elseif($voyage->status === 'in_progress')
+                                                    <button onclick="completeTrip({{ $voyage->id }})"
                                                             class="text-green-600 hover:text-green-500"
                                                             title="Completar viaje">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,7 +374,7 @@
                                                     </button>
                                                 @endif
 
-                                                <a href="{{ route('company.trips.manifest', $trip) }}"
+                                                <a href="{{ route('company.voyages.manifest', $voyage) }}"
                                                    class="text-indigo-600 hover:text-indigo-500"
                                                    title="Manifiesto">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -389,9 +389,9 @@
                         </table>
 
                         <!-- Paginación -->
-                        @if(method_exists($trips, 'links'))
+                        @if(method_exists($voyages, 'links'))
                             <div class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
-                                {{ $trips->appends(request()->query())->links() }}
+                                {{ $voyages->appends(request()->query())->links() }}
                             </div>
                         @endif
 
@@ -411,12 +411,12 @@
                             </p>
                             <div class="mt-6">
                                 @if(request()->hasAny(['search', 'status', 'operator', 'date_from', 'date_to', 'route']))
-                                    <a href="{{ route('company.trips.index') }}"
+                                    <a href="{{ route('company.voyages.index') }}"
                                        class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
                                         Limpiar filtros
                                     </a>
                                 @else
-                                    <a href="{{ route('company.trips.create') }}"
+                                    <a href="{{ route('company.voyages.create') }}"
                                        class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
                                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
@@ -438,7 +438,7 @@
             if (confirm('¿Estás seguro de que quieres iniciar este viaje? Una vez iniciado, se registrará la hora de salida.')) {
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = `/company/trips/${tripId}/start`;
+                form.action = `/company/voyages/${tripId}/start`;
 
                 const token = document.createElement('input');
                 token.type = 'hidden';
@@ -461,7 +461,7 @@
             if (confirm('¿Estás seguro de que quieres completar este viaje? Se registrará la hora de llegada y se cerrarán todas las cargas asociadas.')) {
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = `/company/trips/${tripId}/complete`;
+                form.action = `/company/voyages/${tripId}/complete`;
 
                 const token = document.createElement('input');
                 token.type = 'hidden';

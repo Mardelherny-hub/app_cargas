@@ -142,7 +142,7 @@
                                class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                                 Volver al Dashboard
                             </a>
-                            <a href="{{ route('company.trips.index') }}"
+                            <a href="{{ route('company.voyages.index') }}"
                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                                 Ver Viajes
                             </a>

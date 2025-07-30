@@ -203,7 +203,7 @@
                                         'name' => 'Operaciones Masivas',
                                         'description' => 'Permite realizar operaciones en lote sobre múltiples cargas o viajes simultáneamente.'
                                     ],
-                                    'force-close-trips' => [
+                                    'force-close-voyages' => [
                                         'name' => 'Forzar Cierre de Viajes',
                                         'description' => 'Puede cerrar viajes forzosamente aunque tengan cargas pendientes.'
                                     ],
@@ -354,7 +354,7 @@
         // Mostrar advertencia si se seleccionan permisos especiales sensibles
         document.addEventListener('DOMContentLoaded', function() {
             const sensitivePermissions = [
-                'force-close-trips',
+                'force-close-voyages',
                 'emergency-rectification',
                 'cross-company-view'
             ];

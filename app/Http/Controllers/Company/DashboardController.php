@@ -259,7 +259,7 @@ class DashboardController extends Controller
             $actions[] = [
                 'title' => 'Gestionar Viajes',
                 'icon' => 'truck',
-                'route' => route('company.trips.index'),
+                'route' => route('company.voyages.index'),
             ];
         }
 

@@ -28,13 +28,13 @@ class RolesAndPermissionsSeeder extends Seeder
             'companies.delete',
             'companies.certificates',
 
-            // Trips management
-            'trips.view',
-            'trips.create',
-            'trips.edit',
-            'trips.delete',
-            'trips.close',
-            'trips.transfer',
+            // voyages management
+            'voyages.view',
+            'voyages.create',
+            'voyages.edit',
+            'voyages.delete',
+            'voyages.close',
+            'voyages.transfer',
 
             // Shipments/Loads management
             'shipments.view',
@@ -133,12 +133,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'users.delete',
 
             // All company operations (will be filtered by company roles)
-            'trips.view',
-            'trips.create',
-            'trips.edit',
-            'trips.delete',
-            'trips.close',
-            'trips.transfer',
+            'voyages.view',
+            'voyages.create',
+            'voyages.edit',
+            'voyages.delete',
+            'voyages.close',
+            'voyages.transfer',
             'shipments.view',
             'shipments.create',
             'shipments.edit',
@@ -185,12 +185,12 @@ class RolesAndPermissionsSeeder extends Seeder
         $user = Role::firstOrCreate(['name' => 'user']);
         $user->givePermissionTo([
             // All operational permissions (will be filtered by company roles)
-            'trips.view',
-            'trips.create',
-            'trips.edit',
-            'trips.delete',
-            'trips.close',
-            'trips.transfer',
+            'voyages.view',
+            'voyages.create',
+            'voyages.edit',
+            'voyages.delete',
+            'voyages.close',
+            'voyages.transfer',
             'shipments.view',
             'shipments.create',
             'shipments.edit',

@@ -122,7 +122,7 @@ class ExportController extends Controller
 
         // 4. Validación
         $request->validate([
-            'export_type' => 'required|in:operators,shipments,containers,trips,manifests',
+            'export_type' => 'required|in:operators,shipments,containers,voyages,manifests',
             'format' => 'required|in:xlsx,csv',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
@@ -495,7 +495,7 @@ class ExportController extends Controller
         }
 
         if (in_array('Transbordos', $roles)) {
-            $formats['trips'] = [
+            $formats['voyages'] = [
                 'name' => 'Viajes',
                 'description' => 'Información de viajes y rutas',
                 'fields' => [
@@ -596,7 +596,7 @@ class ExportController extends Controller
                 return $this->generateShipmentsExcel($company, $options);
             case 'containers':
                 return $this->generateContainersExcel($company, $options);
-            case 'trips':
+            case 'voyages':
                 return $this->generateTripsExcel($company, $options);
             case 'manifests':
                 return $this->generateManifestsExcel($company, $options);
@@ -692,7 +692,7 @@ class ExportController extends Controller
      */
     private function generateTripsExcel(Company $company, array $options): \Symfony\Component\HttpFoundation\StreamedResponse
     {
-        // TODO: Implementar cuando esté el modelo Trip
+        // TODO: Implementar cuando esté el modelo voyage
         $data = collect([
             [
                 'ID' => 1,

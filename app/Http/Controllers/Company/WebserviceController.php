@@ -140,7 +140,7 @@ private function prepareFormData(Company $company, string $webserviceType): arra
         case 'anticipada':
         case 'micdta':
             // Para Información Anticipada y MIC/DTA necesitamos viajes
-            $data['trips'] = $this->getTripsForWebservice($company);
+            $data['voyages'] = $this->getTripsForWebservice($company);
             break;
             
         case 'desconsolidados':
@@ -375,7 +375,7 @@ private function getTransfersForWebservice(Company $company): array
             case 'micdta':
                 // Obtener viajes pendientes de envío
                 return [
-                    'trips' => $this->getPendingTrips($company),
+                    'voyages' => $this->getPendingTrips($company),
                     'vessels' => $this->getCompanyVessels($company),
                 ];
                 

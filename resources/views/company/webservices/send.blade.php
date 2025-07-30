@@ -116,15 +116,15 @@
             <select name="trip_id" id="trip_id" required 
                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">Selecciona un viaje</option>
-                @forelse($data['trips'] ?? [] as $trip)
-                    <option value="{{ $trip['id'] }}" 
-                            data-voyage-number="{{ $trip['voyage_number'] ?? '' }}"
-                            data-vessel="{{ $trip['vessel_name'] ?? '' }}"
-                            data-route="{{ $trip['route'] ?? '' }}"
-                            data-date="{{ $trip['departure_date'] ?? '' }}"
-                            data-captain="{{ $trip['captain_name'] ?? '' }}"
-                            data-status="{{ $trip['status'] ?? '' }}">
-                        {{ $trip['display_text'] ?? $trip['number'] ?? 'Viaje sin nombre' }}
+                @forelse($data['voyages'] ?? [] as $voyage)
+                    <option value="{{ $voyage['id'] }}" 
+                            data-voyage-number="{{ $voyage['voyage_number'] ?? '' }}"
+                            data-vessel="{{ $voyage['vessel_name'] ?? '' }}"
+                            data-route="{{ $voyage['route'] ?? '' }}"
+                            data-date="{{ $voyage['departure_date'] ?? '' }}"
+                            data-captain="{{ $voyage['captain_name'] ?? '' }}"
+                            data-status="{{ $voyage['status'] ?? '' }}">
+                        {{ $voyage['display_text'] ?? $voyage['number'] ?? 'Viaje sin nombre' }}
                     </option>
                 @empty
                     <option value="" disabled>No hay viajes disponibles para webservices</option>
@@ -132,7 +132,7 @@
             </select>
             
             {{-- Información adicional del viaje seleccionado --}}
-            <div id="trip-info" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md" style="display: none;">
+            <div id="voyage-info" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md" style="display: none;">
                 <h4 class="text-sm font-semibold text-blue-800 mb-2">📋 Información del Viaje</h4>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700">
                     <div><strong>Viaje:</strong> <span id="info-voyage" class="text-blue-600"></span></div>
@@ -426,7 +426,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Funcionalidad para el select de viajes
     const tripSelect = document.getElementById('trip_id');
-    const tripInfo = document.getElementById('trip-info');
+    const tripInfo = document.getElementById('voyage-info');
     
     if (tripSelect && tripInfo) {
         tripSelect.addEventListener('change', function() {

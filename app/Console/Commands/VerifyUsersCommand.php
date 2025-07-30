@@ -119,7 +119,7 @@ class VerifyUsersCommand extends Command
         $permissionCategories = [
             'users' => 'User management',
             'companies' => 'Company management',
-            'trips' => 'Trip management',
+            'voyages' => 'voyage management',
             'shipments' => 'Shipment management',
             'containers' => 'Container management',
             'transshipments' => 'Transshipment management',

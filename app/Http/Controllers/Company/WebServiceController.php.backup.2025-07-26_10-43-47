@@ -109,7 +109,7 @@ class WebserviceController extends Controller
             case 'micdta':
                 // Obtener viajes pendientes de envío
                 return [
-                    'trips' => $this->getPendingTrips($company),
+                    'voyages' => $this->getPendingTrips($company),
                     'vessels' => $this->getCompanyVessels($company),
                 ];
                 
