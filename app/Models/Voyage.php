@@ -448,7 +448,9 @@ public function vessel(): BelongsTo
  */
 public function getAllContainers()
 {
-    return Container::whereIn('shipment_id', $this->shipments->pluck('id'));
+    return Container::whereHas('shipmentItems.shipment', function($query) {
+        $query->where('voyage_id', $this->id);
+    });
 }
 
 /**

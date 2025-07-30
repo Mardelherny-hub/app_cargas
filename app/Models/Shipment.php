@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Carbon\Carbon;
@@ -290,11 +291,49 @@ class Shipment extends Model
     }
 
     /**
-     * Contenedores asignados a este envío
+     * Contenedores asignados a este envío (many-to-many)
      */
-    public function containers(): HasMany
+    //public function containers(): BelongsToMany
+    //{
+    //    return $this->belongsToMany(Container::class, 'container_shipment_item')
+    //                ->withPivot([
+    //                    'package_quantity',
+    //                    'gross_weight_kg', 
+    //                    'net_weight_kg',
+    //                    'volume_m3',
+    //                   'loaded_at',
+    //                    'sealed_at'
+    //                ])
+    //                ->withTimestamps();
+    //}
+
+    /**
+     * Empresa propietaria del viaje (a través de voyage)
+     * Relación indirecta para facilitar consultas
+     */
+    public function company(): BelongsTo
     {
-        return $this->hasMany(Container::class);
+        return $this->belongsTo(Company::class)
+            ->through('voyage');
+    }
+
+    /**
+     * Método alternativo para obtener la empresa
+     * Si la relación through no funciona en tu versión de Laravel
+     */
+    public function getCompanyAttribute()
+    {
+        return $this->voyage ? $this->voyage->company : null;
+    }
+
+    /**
+     * Scope para filtrar shipments por empresa
+     */
+    public function scopeForCompany(Builder $query, int $companyId): Builder
+    {
+        return $query->whereHas('voyage', function($q) use ($companyId) {
+            $q->where('company_id', $companyId);
+        });
     }
 
     //
@@ -399,6 +438,14 @@ class Shipment extends Model
     //
     // === ACCESSORS & MUTATORS ===
     //
+
+    // En Shipment.php
+    public function getContainers()
+    {
+        return Container::whereHas('shipmentItems', function($query) {
+            $query->where('shipment_id', $this->id);
+        })->get();
+    }
 
     /**
      * Obtener descripción del rol en español

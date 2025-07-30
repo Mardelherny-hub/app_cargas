@@ -115,6 +115,16 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         //
+        // === FASE 6.1: Containers ===
+        //
+        $this->command->info('📦 FASE 6.1: Contenedores');
+        $this->command->line('  └── Creando contenedores físicos usando datos reales...');
+
+        $this->call([
+            ContainerSeeder::class,
+        ]);
+
+        //
         // === FASE 7: DEPENDENCIAS WEBSERVICES ===
         //
         $this->command->info('🔧 FASE 7: Dependencias Webservices');

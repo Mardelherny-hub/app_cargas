@@ -34,20 +34,89 @@ class ShipmentController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Construir consulta base
-        $query = Shipment::where('company_id', $company->id);
-
-        // Aplicar filtros adicionales según el rol
-        if ($this->isUser() && $this->isOperator()) {
-            // Los usuarios operadores solo ven sus propias cargas
-            $query->where('created_by', Auth::id());
-        }
-
-        $shipments = $query->with(['voyage', 'containers'])
-            ->latest()
+        // Consulta con LEFT JOIN directo para estadísticas
+        $shipments = Shipment::whereHas('voyage', function($q) use ($company) {
+                $q->where('company_id', $company->id);
+            })
+            ->when($this->isUser() && $this->isOperator(), function($query) {
+                $query->where('created_by_user_id', Auth::id());
+            })
+            ->with([
+                'voyage' => function($q) {
+                    $q->select('id', 'voyage_number', 'company_id', 'status', 'departure_date', 'estimated_arrival_date');
+                },
+                'voyage.company:id,legal_name,commercial_name',
+                'vessel:id,name,vessel_type_id,registration_number',
+                'vessel.vesselType:id,name,code,category'
+            ])
+            ->leftJoin('shipment_items', 'shipments.id', '=', 'shipment_items.shipment_id')
+            ->select(
+                'shipments.id',
+                'shipments.voyage_id',
+                'shipments.vessel_id', 
+                'shipments.shipment_number',
+                'shipments.status',
+                'shipments.cargo_weight_loaded',
+                'shipments.containers_loaded',
+                'shipments.utilization_percentage',
+                'shipments.created_at',
+                \DB::raw('COUNT(shipment_items.id) as shipment_items_count'),
+                \DB::raw('SUM(shipment_items.package_quantity) as shipment_items_sum_package_quantity'),
+                \DB::raw('SUM(shipment_items.gross_weight_kg) as shipment_items_sum_gross_weight_kg')
+            )
+            ->groupBy(
+                'shipments.id',
+                'shipments.voyage_id',
+                'shipments.vessel_id',
+                'shipments.shipment_number',
+                'shipments.status',
+                'shipments.cargo_weight_loaded',
+                'shipments.containers_loaded',
+                'shipments.utilization_percentage',
+                'shipments.created_at'
+            )
+            ->latest('shipments.created_at')
             ->paginate(20);
 
-        return view('company.shipments.index', compact('shipments'));
+        // Calcular estadísticas generales
+        $stats = $this->calculateShipmentStats($company);
+
+        return view('company.shipments.index', compact('shipments', 'stats'));
+    }
+
+    /**
+     * Calcular estadísticas de shipments para el dashboard.
+     * AGREGAR ESTE MÉTODO AL FINAL DE LA CLASE ShipmentController
+     */
+    private function calculateShipmentStats($company): array
+    {
+        $baseQuery = Shipment::whereHas('voyage', function($q) use ($company) {
+            $q->where('company_id', $company->id);
+        });
+
+        // Aplicar filtros según el rol del usuario
+        if ($this->isUser() && $this->isOperator()) {
+            $baseQuery->where('created_by_user_id', Auth::id());
+        }
+
+        // Contar total
+        $total = $baseQuery->count();
+        
+        // Contar por estado
+        $byStatus = $baseQuery
+            ->select('status', \DB::raw('COUNT(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        return [
+            'total' => $total,
+            'pending' => ($byStatus['planning'] ?? 0) + ($byStatus['loading'] ?? 0) + ($byStatus['loaded'] ?? 0),
+            'in_transit' => $byStatus['in_transit'] ?? 0,
+            'delivered' => ($byStatus['arrived'] ?? 0) + ($byStatus['discharging'] ?? 0) + ($byStatus['completed'] ?? 0),
+            'delayed' => $byStatus['delayed'] ?? 0,
+            'by_status' => $byStatus,
+        ];
     }
 
     /**
@@ -102,57 +171,59 @@ class ShipmentController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Validar datos
-        $request->validate([
-            'shipment_number' => 'required|string|max:255',
-            'origin' => 'required|string|max:255',
-            'destination' => 'required|string|max:255',
-            'weight' => 'required|numeric|min:0',
-            'description' => 'required|string',
-            // Agregar más validaciones según necesidades
+        // Validación básica
+        $validated = $request->validate([
+            'voyage_id' => 'required|exists:voyages,id',
+            'vessel_id' => 'required|exists:vessels,id',
+            'shipment_number' => 'required|string|max:50',
+            'cargo_capacity_tons' => 'required|numeric|min:0',
+            'container_capacity' => 'required|integer|min:0',
+            // Agregar más validaciones según necesidad
         ]);
 
-        // Crear la carga
-        $shipment = Shipment::create([
-            'company_id' => $company->id,
-            'shipment_number' => $request->shipment_number,
-            'origin' => $request->origin,
-            'destination' => $request->destination,
-            'weight' => $request->weight,
-            'description' => $request->description,
-            'created_by' => Auth::id(),
-            'status' => 'draft',
-        ]);
+        // CORREGIDO: Verificar que el voyage pertenezca a la empresa
+        $voyage = \App\Models\Voyage::where('id', $validated['voyage_id'])
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$voyage) {
+            return redirect()->back()
+                ->withErrors(['voyage_id' => 'El viaje seleccionado no pertenece a su empresa.'])
+                ->withInput();
+        }
+
+        // Crear el shipment
+        $validated['created_by_user_id'] = Auth::id();
+        $validated['created_date'] = now();
+        $validated['status'] = 'planning';
+
+        $shipment = \App\Models\Shipment::create($validated);
 
         return redirect()->route('company.shipments.show', $shipment)
             ->with('success', 'Carga creada exitosamente.');
     }
 
     /**
-     * Mostrar detalles de una carga.
+     * Mostrar carga específica.
      */
-    public function show(Shipment $shipment)
+    public function show(\App\Models\Shipment $shipment)
     {
-        // Verificar permisos para ver cargas
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para ver cargas.');
+        // Verificar que la carga pertenezca a la empresa del usuario
+        $company = $this->getUserCompany();
+        
+        if (!$company || $shipment->voyage->company_id !== $company->id) {
+            abort(404, 'Carga no encontrada.');
         }
 
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
-
-        // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($shipment->company_id)) {
-            abort(403, 'No tiene permisos para ver esta carga.');
-        }
-
-        // Verificar si el usuario puede ver esta carga específica
-        if ($this->isUser() && $this->isOperator() && $shipment->created_by !== Auth::id()) {
-            abort(403, 'No tiene permisos para ver esta carga.');
-        }
-
-        $shipment->load(['company', 'voyage', 'containers', 'attachments']);
+        // Cargar relaciones necesarias
+        $shipment->load([
+            'voyage',
+            'vessel',
+            'captain',
+            'shipmentItems.cargoType',
+            'shipmentItems.packagingType',
+            'billsOfLading'
+        ]);
 
         return view('company.shipments.show', compact('shipment'));
     }
