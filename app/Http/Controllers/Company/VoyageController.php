@@ -83,134 +83,209 @@ class VoyageController extends Controller
         return view('company.voyages.index', compact('voyages', 'stats', 'company'));
     }
 
-/**
- * Mostrar formulario para crear viaje.
- */
- public function create()
-    {
-        // 1. Verificar permisos
-        if (!$this->canPerform('access_trips')) {
-            abort(403, 'No tiene permisos para acceder a viajes.');
-        }
-
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
-
-        // 2. Obtener empresa del usuario
-        $company = $this->getUserCompany();
-        if (!$company) {
-            return redirect()->route('company.voyages.index')
-                ->with('error', 'No se encontró la empresa asociada.');
-        }
-
-        // 3. Consultar embarcaciones disponibles de la empresa
-        $vessels = Vessel::where('active', true)
-            ->where('available_for_charter', true)
-            ->where('operational_status', 'active')
-            ->where('company_id', $company->id)
-            ->with('vesselType:id,name')
-            ->select('id', 'name', 'vessel_type_id')
-            ->orderBy('name')
-            ->get();
-
-        // 4. Consultar capitanes activos y disponibles
-        $captains = Captain::where('active', true)
-            ->where('available_for_hire', true)
-            ->where('license_status', 'valid')
-            ->where(function($query) {
-                $query->whereNull('license_expires_at')
-                      ->orWhere('license_expires_at', '>', now());
-            })
-            ->select('id', 'full_name', 'license_number')
-            ->orderBy('full_name')
-            ->get();
-
-        // 5. Consultar países activos para rutas
-        $countries = Country::where('active', true)
-            ->where(function($query) {
-                $query->where('allows_import', true)
-                      ->orWhere('allows_export', true);
-            })
-            ->select('id', 'name', 'iso_code')
-            ->orderBy('display_order')
-            ->orderBy('name')
-            ->get();
-
-        // 6. Consultar todos los puertos activos (agrupados por país para JavaScript)
-        $ports = Port::where('active', true)
-            ->where('accepts_new_vessels', true)
-            ->with('country:id,name')
-            ->select('id', 'name', 'code', 'city', 'country_id')
-            ->orderBy('country_id')
-            ->orderBy('name')
-            ->get();
-
-        // Agrupar puertos por país para JavaScript
-        $portsByCountry = $ports->groupBy('country_id');
-
-        // 7. Validar datos mínimos requeridos
-        if ($vessels->isEmpty()) {
-            return redirect()->route('company.voyages.index')
-                ->with('error', 'No hay embarcaciones disponibles para crear un viaje. Verifique el estado de sus embarcaciones.');
-        }
-
-        if ($countries->isEmpty()) {
-            return redirect()->route('company.voyages.index')
-                ->with('error', 'No hay países disponibles para crear rutas. Contacte al administrador.');
-        }
-
-        // 8. Preparar datos para la vista
-        return view('company.voyages.create', [
-            'company' => $company,
-            'vessels' => $vessels,
-            'captains' => $captains,
-            'countries' => $countries,
-            'ports' => $ports,
-            'portsByCountry' => $portsByCountry,
-            'canManageAll' => $this->isCompanyAdmin(),
-            //'userInfo' => $this->getUserInfo(),
-        ]);
-    }
     /**
-     * Almacenar nuevo viaje.
+     * Mostrar formulario para crear viaje.
      */
-    public function store(Request $request)
-    {
-         // 1. Verificar permisos
-        if (!$this->canPerform('access_trips')) {
-            abort(403, 'No tiene permisos para acceder a viajes.');
+    public function create()
+        {
+            // 1. Verificar permisos
+            if (!$this->canPerform('access_trips')) {
+                abort(403, 'No tiene permisos para acceder a viajes.');
+            }
+
+            if (!$this->hasCompanyRole('Cargas')) {
+                abort(403, 'Su empresa no tiene el rol de Cargas.');
+            }
+
+            // 2. Obtener empresa del usuario
+            $company = $this->getUserCompany();
+            if (!$company) {
+                return redirect()->route('company.voyages.index')
+                    ->with('error', 'No se encontró la empresa asociada.');
+            }
+
+            // 3. Consultar embarcaciones disponibles de la empresa
+            $vessels = Vessel::where('active', true)
+                ->where('available_for_charter', true)
+                ->where('operational_status', 'active')
+                ->where('company_id', $company->id)
+                ->with('vesselType:id,name')
+                ->select('id', 'name', 'vessel_type_id')
+                ->orderBy('name')
+                ->get();
+
+            // 4. Consultar capitanes activos y disponibles
+            $captains = Captain::where('active', true)
+                ->where('available_for_hire', true)
+                ->where('license_status', 'valid')
+                ->where(function($query) {
+                    $query->whereNull('license_expires_at')
+                        ->orWhere('license_expires_at', '>', now());
+                })
+                ->select('id', 'full_name', 'license_number')
+                ->orderBy('full_name')
+                ->get();
+
+            // 5. Consultar países activos para rutas
+            $countries = Country::where('active', true)
+                ->where(function($query) {
+                    $query->where('allows_import', true)
+                        ->orWhere('allows_export', true);
+                })
+                ->select('id', 'name', 'iso_code')
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->get();
+
+            // 6. Consultar todos los puertos activos (agrupados por país para JavaScript)
+            $ports = Port::where('active', true)
+                ->where('accepts_new_vessels', true)
+                ->with('country:id,name')
+                ->select('id', 'name', 'code', 'city', 'country_id')
+                ->orderBy('country_id')
+                ->orderBy('name')
+                ->get();
+
+            // Agrupar puertos por país para JavaScript
+            $portsByCountry = $ports->groupBy('country_id');
+
+            // 7. Validar datos mínimos requeridos
+            if ($vessels->isEmpty()) {
+                return redirect()->route('company.voyages.index')
+                    ->with('error', 'No hay embarcaciones disponibles para crear un viaje. Verifique el estado de sus embarcaciones.');
+            }
+
+            if ($countries->isEmpty()) {
+                return redirect()->route('company.voyages.index')
+                    ->with('error', 'No hay países disponibles para crear rutas. Contacte al administrador.');
+            }
+
+            // 8. Preparar datos para la vista
+            return view('company.voyages.create', [
+                'company' => $company,
+                'vessels' => $vessels,
+                'captains' => $captains,
+                'countries' => $countries,
+                'ports' => $ports,
+                'portsByCountry' => $portsByCountry,
+                'canManageAll' => $this->isCompanyAdmin(),
+                //'userInfo' => $this->getUserInfo(),
+            ]);
+        }
+    /**
+ * Almacenar nuevo viaje - MÉTODO CORREGIDO
+ */
+public function store(Request $request)
+{
+    // 1. Verificar permisos
+    if (!$this->canPerform('access_trips')) {
+        abort(403, 'No tiene permisos para acceder a viajes.');
+    }
+
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'Su empresa no tiene el rol de Cargas.');
+    }
+
+    // 2. Obtener empresa
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return redirect()->route('company.voyages.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
+    // 3. Mapeo de valores del formulario a ENUM de BD
+    $voyageTypeMapping = [
+        'regular' => 'single_vessel',
+        'charter' => 'convoy',
+        'emergency' => 'fleet'
+    ];
+
+    $cargoTypeMapping = [
+        'containers' => 'export',
+        'bulk' => 'import', 
+        'general' => 'transit',
+        'liquid' => 'transshipment'
+    ];
+
+    // 4. Validar datos con valores ENUM correctos
+    $request->validate([
+        'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number',
+        'internal_reference' => 'nullable|string|max:100',
+        'lead_vessel_id' => 'required|exists:vessels,id',
+        'captain_id' => 'nullable|exists:captains,id',
+        'origin_country_id' => 'required|exists:countries,id',
+        'origin_port_id' => 'required|exists:ports,id',
+        'destination_country_id' => 'required|exists:countries,id',
+        'destination_port_id' => 'required|exists:ports,id',
+        'departure_date' => 'required|date|after:now',
+        'estimated_arrival_date' => 'required|date|after:departure_date',
+        'voyage_type' => 'required|in:regular,charter,emergency',
+        'cargo_type' => 'required|in:containers,bulk,general,liquid',
+    ], [
+        // Mensajes personalizados
+        'voyage_number.unique' => 'Ya existe un viaje con este número.',
+        'lead_vessel_id.exists' => 'La embarcación seleccionada no existe.',
+        'captain_id.exists' => 'El capitán seleccionado no existe.',
+        'origin_port_id.exists' => 'El puerto de origen seleccionado no existe.',
+        'destination_port_id.exists' => 'El puerto de destino seleccionado no existe.',
+        'departure_date.after' => 'La fecha de salida debe ser posterior a la fecha actual.',
+        'estimated_arrival_date.after' => 'La fecha de llegada debe ser posterior a la fecha de salida.',
+    ]);
+
+    // 5. Validaciones de ownership y coherencia
+    try {
+        DB::beginTransaction();
+
+        // Verificar que la embarcación pertenece a la empresa
+        $vessel = Vessel::where('id', $request->lead_vessel_id)
+                       ->where('company_id', $company->id)
+                       ->where('active', true)
+                       ->first();
+
+        if (!$vessel) {
+            throw new \Exception('La embarcación seleccionada no pertenece a su empresa o no está disponible.');
         }
 
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        // Verificar capitán disponible (si se seleccionó)
+        if ($request->captain_id) {
+            $captain = Captain::where('id', $request->captain_id)
+                             ->where('active', true)
+                             ->where('available_for_hire', true)
+                             ->where('license_status', 'valid')
+                             ->first();
+
+            if (!$captain) {
+                throw new \Exception('El capitán seleccionado no está disponible o no tiene licencia válida.');
+            }
         }
 
-        // 2. Obtener empresa
-        $company = $this->getUserCompany();
+        // Verificar coherencia puerto-país (origen)
+        $originPort = Port::where('id', $request->origin_port_id)
+                         ->where('country_id', $request->origin_country_id)
+                         ->where('active', true)
+                         ->first();
 
-        if (!$company) {
-            return redirect()->route('company.voyages.index')
-                ->with('error', 'No se encontró la empresa asociada.');
+        if (!$originPort) {
+            throw new \Exception('El puerto de origen no corresponde al país seleccionado.');
         }
 
-        // 3. Validar datos (usando campos reales de la migración)
-        $request->validate([
-            'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number',
-            'internal_reference' => 'nullable|string|max:100',
-            'lead_vessel_id' => 'required|exists:vessels,id',
-            'captain_id' => 'nullable|exists:captains,id',
-            'origin_country_id' => 'required|exists:countries,id',
-            'origin_port_id' => 'required|exists:ports,id',
-            'destination_country_id' => 'required|exists:countries,id',
-            'destination_port_id' => 'required|exists:ports,id',
-            'departure_date' => 'required|date|after:now',
-            'estimated_arrival_date' => 'required|date|after:departure_date',
-            'voyage_type' => 'required|in:regular,charter,emergency',
-            'cargo_type' => 'required|in:containers,bulk,general,liquid',
-        ]);
+        // Verificar coherencia puerto-país (destino)
+        $destinationPort = Port::where('id', $request->destination_port_id)
+                              ->where('country_id', $request->destination_country_id)
+                              ->where('active', true)
+                              ->first();
 
-        // 4. Crear el viaje
+        if (!$destinationPort) {
+            throw new \Exception('El puerto de destino no corresponde al país seleccionado.');
+        }
+
+        // Verificar que origen y destino sean diferentes
+        if ($request->origin_port_id == $request->destination_port_id) {
+            throw new \Exception('El puerto de origen y destino no pueden ser el mismo.');
+        }
+
+        // 6. Crear el viaje con valores correctos
         $voyage = Voyage::create([
             'company_id' => $company->id,
             'voyage_number' => $request->voyage_number,
@@ -223,16 +298,27 @@ class VoyageController extends Controller
             'destination_port_id' => $request->destination_port_id,
             'departure_date' => $request->departure_date,
             'estimated_arrival_date' => $request->estimated_arrival_date,
-            'voyage_type' => $request->voyage_type,
-            'cargo_type' => $request->cargo_type,
+            // Mapear valores del formulario a ENUM de BD
+            'voyage_type' => $voyageTypeMapping[$request->voyage_type],
+            'cargo_type' => $cargoTypeMapping[$request->cargo_type],
             'status' => 'planning',
             'created_by_user_id' => Auth::id(),
-            'created_date' => now(),
+            // REMOVIDO 'created_date' - Laravel maneja created_at automáticamente
         ]);
+
+        DB::commit();
 
         return redirect()->route('company.voyages.show', $voyage)
             ->with('success', 'Viaje creado exitosamente.');
+
+    } catch (\Exception $e) {
+        DB::rollback();
+        
+        return redirect()->back()
+            ->withInput()
+            ->with('error', 'Error al crear el viaje: ' . $e->getMessage());
     }
+}
 
     /**
      * Mostrar detalles del viaje.
@@ -461,5 +547,68 @@ class VoyageController extends Controller
             'completed' => $baseQuery->where('status', 'completed')->count(),
             'this_month' => $baseQuery->whereMonth('departure_date', now()->month)->count(),
         ];
+    }
+
+    /**
+     * Mostrar gestión de contenedores del viaje.
+     */
+    public function containers(Voyage $voyage)
+    {
+        // 1. Verificar permisos básicos
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para gestionar contenedores.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
+        // 2. Verificar ownership del viaje
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No tiene permisos para gestionar contenedores de este viaje.');
+        }
+
+        // 3. Verificar si el usuario puede gestionar este viaje específico
+        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
+            abort(403, 'No tiene permisos para gestionar contenedores de este viaje.');
+        }
+
+        // 4. Verificar que el viaje esté en estado editable
+        if (!in_array($voyage->status, ['planning', 'loading'])) {
+            return redirect()->route('company.voyages.show', $voyage)
+                ->with('error', 'Solo se pueden gestionar contenedores en viajes en estado de planificación o carga.');
+        }
+
+        // 5. Cargar datos necesarios para la vista
+        $voyage->load([
+            'shipments.vessel',
+            'shipments.captain',
+            'company',
+            'leadVessel',
+            'originPort',
+            'destinationPort'
+        ]);
+
+        // 6. Obtener contenedores existentes del viaje usando la relación existente
+        $existingContainers = $voyage->getAllContainers()->get();
+
+        // 7. Obtener estadísticas de contenedores por shipment
+        $shipmentStats = $voyage->shipments->map(function ($shipment) {
+            return [
+                'id' => $shipment->id,
+                'shipment_number' => $shipment->shipment_number,
+                'vessel_name' => $shipment->vessel->name ?? 'Sin embarcación',
+                'container_capacity' => $shipment->container_capacity,
+                'containers_loaded' => $shipment->containers_loaded,
+                'available_capacity' => $shipment->container_capacity - $shipment->containers_loaded,
+            ];
+        });
+
+        // 8. Preparar datos para la vista
+        return view('company.voyages.containers', compact(
+            'voyage',
+            'existingContainers', 
+            'shipmentStats'
+        ));
     }
 }

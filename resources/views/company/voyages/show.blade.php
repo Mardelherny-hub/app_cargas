@@ -224,98 +224,27 @@
                             Cargas Asociadas ({{ $voyage->shipments->count() }})
                         </h3>
                         @if($voyage->status === 'planning')
-                            <a href="{{ route('company.voyages.containers', $voyage) }}" 
-                               class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                </svg>
-                                Agregar Contenedores
-                            </a>
+                            <div class="flex items-center space-x-3">
+                                <!-- Botón Gestionar Shipments -->
+                                <a href="{{ route('company.shipments.index', ['voyage_id' => $voyage->id]) }}" 
+                                class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                    Gestionar Shipments
+                                </a>
+                                
+                                <!-- Botón Agregar Contenedores -->
+                                <a href="{{ route('company.voyages.containers', $voyage) }}" 
+                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                    </svg>
+                                    Gestionar Contenedores
+                                </a>
+                            </div>
                         @endif
                     </div>
-
-                    @if($voyage->shipments->count() > 0)
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Embarcación
-                                        </th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Contenedores
-                                        </th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Peso Cargado
-                                        </th>
-                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Estado
-                                        </th>
-                                        <th scope="col" class="relative px-6 py-3">
-                                            <span class="sr-only">Acciones</span>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    @foreach($voyage->shipments as $shipment)
-                                        <tr class="hover:bg-gray-50">
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    {{ $shipment->vessel->name ?? 'Sin embarcación' }}
-                                                </div>
-                                                @if($shipment->is_lead_vessel)
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                        Líder
-                                                    </span>
-                                                @endif
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {{ $shipment->containers_loaded ?? 0 }} / {{ $shipment->container_capacity ?? 0 }}
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                {{ number_format($shipment->cargo_weight_loaded ?? 0, 2) }} Tn
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                                    @switch($shipment->status)
-                                                        @case('loading')
-                                                            bg-yellow-100 text-yellow-800
-                                                            @break
-                                                        @case('loaded')
-                                                            bg-green-100 text-green-800
-                                                            @break
-                                                        @case('in_transit')
-                                                            bg-blue-100 text-blue-800
-                                                            @break
-                                                        @case('delivered')
-                                                            bg-gray-100 text-gray-800
-                                                            @break
-                                                        @default
-                                                            bg-gray-100 text-gray-800
-                                                    @endswitch">
-                                                    {{ ucfirst(str_replace('_', ' ', $shipment->status)) }}
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <a href="{{ route('company.shipments.show', $shipment) }}" 
-                                                   class="text-indigo-600 hover:text-indigo-900">Ver</a>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @else
-                        <div class="text-center py-6">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2 2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-2.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 009.586 13H7"/>
-                            </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">Sin cargas asociadas</h3>
-                            <p class="mt-1 text-sm text-gray-500">Este viaje aún no tiene cargas asignadas.</p>
-                        </div>
-                    @endif
-                </div>
-            </div>
 
             <!-- Información Adicional -->
             @if($voyage->special_instructions || $voyage->operational_notes)
