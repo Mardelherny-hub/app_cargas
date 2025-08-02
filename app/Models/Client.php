@@ -435,7 +435,7 @@ class Client extends Model
                     ->first();
     }
 
-     /**
+    /**
      * Verificar si puede recibir notificaciones por email.
      */
     public function canReceiveEmailNotifications(): bool
@@ -444,6 +444,14 @@ class Client extends Model
         return $contact && 
                $contact->accepts_email_notifications && 
                !empty($contact->email);
+    }
+
+    /**
+     * Relación con conocimientos de embarque como cargador.
+     */
+    public function shipper_bills(): HasMany
+    {
+        return $this->hasMany(BillOfLading::class, 'shipper_id');
     }
 
 }

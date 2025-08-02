@@ -128,7 +128,7 @@ class ReportController extends Controller
     public function billsOfLading(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports_bills_of_lading')) {
+        if (!$this->isCompanyAdmin() && !$this->isUser()) {
             abort(403, 'No tiene permisos para ver reportes de conocimientos de embarque.');
         }
 
@@ -174,7 +174,7 @@ class ReportController extends Controller
     public function micdta(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports_micdta')) {
+        if (!$this->isCompanyAdmin() && !$this->isUser()) {
             abort(403, 'No tiene permisos para ver reportes MIC/DTA.');
         }
 
@@ -272,7 +272,7 @@ class ReportController extends Controller
     public function customs(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports_customs')) {
+        if (!$this->isCompanyAdmin() && !$this->isUser()) {
             abort(403, 'No tiene permisos para ver reportes aduaneros.');
         }
 
@@ -416,12 +416,12 @@ class ReportController extends Controller
     public function operators(Request $request)
     {
         // 1. Verificar que sea company-admin
-        if (!$this->isCompanyAdmin()) {
+        if (!$this->isCompanyAdmin() && !$this->isUser()) {
             abort(403, 'Solo los administradores de empresa pueden ver reportes de operadores.');
         }
 
         // 2. Verificar permisos específicos
-        if (!$this->canPerform('reports_operators')) {
+        if (!$this->isCompanyAdmin() && !$this->isUser()) {
             abort(403, 'No tiene permisos para ver reportes de operadores.');
         }
 
@@ -972,8 +972,8 @@ class ReportController extends Controller
             'status' => ['pending', 'issued', 'in_transit', 'delivered'],
             'period' => ['today', 'week', 'month', 'quarter'],
             'shipper' => Client::whereHas('shipper_bills')
-                ->orderBy('business_name')
-                ->pluck('business_name', 'id')
+                ->orderBy('legal_name')
+                ->pluck('legal_name', 'id')
                 ->toArray(),
         ];
     }
