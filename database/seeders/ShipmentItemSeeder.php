@@ -43,7 +43,7 @@ class ShipmentItemSeeder extends Seeder
             'packaging_type' => 'packages',
             'brand' => 'OEM PARTS',
             'country_origin' => 'CHN',
-        ],
+        ], 
         [
             'description' => 'GALVANIZED WIRE 721720 - HS CODE 721720 - Total 1221 Rolls',
             'ncm_code' => '7217.20',

@@ -796,93 +796,329 @@ class ShipmentController extends Controller
         return $this->canEditShipment($shipment);
     }
 
-    /**
-     * Mostrar formulario para editar carga.
-     */
-    public function edit(Shipment $shipment)
-    {
-        // Verificar permisos para editar cargas
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para editar cargas.');
-        }
 
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
-
-        // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($shipment->company_id)) {
-            abort(403, 'No tiene permisos para editar esta carga.');
-        }
-
-        // Verificar si el usuario puede editar esta carga específica
-        if ($this->isUser() && $this->isOperator() && $shipment->created_by !== Auth::id()) {
-            abort(403, 'No tiene permisos para editar esta carga.');
-        }
-
-        // Verificar estado de la carga
-        if (in_array($shipment->status, ['completed', 'cancelled'])) {
-            return redirect()->route('company.shipments.show', $shipment)
-                ->with('error', 'No se puede editar una carga completada o cancelada.');
-        }
-
-        $shipment->load(['company', 'voyage', 'containers']);
-
-        return view('company.shipments.edit', compact('shipment'));
+/**
+ * Mostrar formulario para editar carga.
+ * MÉTODO CORREGIDO - EXACTOS permisos que index/show/create
+ */
+public function edit(Shipment $shipment)
+{
+    // COPIADO EXACTO de index/show/create
+    // Verificar si el usuario puede ver cargas
+    if (!$this->canPerform('view_cargas')) {
+        abort(403, 'No tiene permisos para editar cargas.');
     }
 
-    /**
-     * Actualizar carga.
-     */
-    public function update(Request $request, Shipment $shipment)
-    {
-        // Verificar permisos para editar cargas
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para editar cargas.');
-        }
+    // Verificar que la empresa tenga rol "Cargas"
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'Su empresa no tiene el rol de Cargas.');
+    }
 
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
+    $company = $this->getUserCompany();
 
-        // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($shipment->company_id)) {
+    if (!$company) {
+        return redirect()->route('company.shipments.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
+    // COPIADO EXACTO de show() - Verificar que la carga pertenezca a la empresa del usuario
+    if ($shipment->voyage->company_id !== $company->id) {
+        abort(404, 'Carga no encontrada.');
+    }
+
+    // COPIADO EXACTO de show() - Verificar permisos adicionales para usuarios operadores
+    if ($this->isUser() && $this->isOperator()) {
+        // Los operadores solo pueden ver cargas que crearon
+        if ($shipment->created_by_user_id !== Auth::id()) {
             abort(403, 'No tiene permisos para editar esta carga.');
         }
+    }
 
-        // Verificar si el usuario puede editar esta carga específica
-        if ($this->isUser() && $this->isOperator() && $shipment->created_by !== Auth::id()) {
-            abort(403, 'No tiene permisos para editar esta carga.');
-        }
-
-        // Verificar estado de la carga
-        if (in_array($shipment->status, ['completed', 'cancelled'])) {
-            return redirect()->route('company.shipments.show', $shipment)
-                ->with('error', 'No se puede editar una carga completada o cancelada.');
-        }
-
-        // Validar datos
-        $request->validate([
-            'shipment_number' => 'required|string|max:255',
-            'origin' => 'required|string|max:255',
-            'destination' => 'required|string|max:255',
-            'weight' => 'required|numeric|min:0',
-            'description' => 'required|string',
-        ]);
-
-        // Actualizar la carga
-        $shipment->update([
-            'shipment_number' => $request->shipment_number,
-            'origin' => $request->origin,
-            'destination' => $request->destination,
-            'weight' => $request->weight,
-            'description' => $request->description,
-            'updated_by' => Auth::id(),
-        ]);
-
+    // Verificar estado de la carga
+    if (in_array($shipment->status, ['completed', 'cancelled'])) {
         return redirect()->route('company.shipments.show', $shipment)
-            ->with('success', 'Carga actualizada exitosamente.');
+            ->with('error', 'No se puede editar una carga completada o cancelada.');
     }
+
+    // Cargar relaciones necesarias para el formulario
+    $shipment->load([
+        'voyage:id,voyage_number,company_id,origin_port_id,destination_port_id',
+        'voyage.company:id,legal_name,commercial_name',  // ← Agregar esta línea
+        'voyage.originPort:id,name',
+        'voyage.destinationPort:id,name',
+        'vessel:id,name',
+        'captain:id,first_name,last_name',
+        //'containers'
+    ]);
+
+    // Obtener datos para el formulario
+    $formData = $this->getFormData($company);
+
+    // Extraer las variables para la vista
+    $captains = $formData['captains'];
+    $vesselRoles = $formData['vesselRoles'];
+    $statusOptions = $formData['statusOptions'];
+
+    return view('company.shipments.edit', compact(
+        'shipment', 
+        'formData', 
+        'company',
+        'captains',
+        'vesselRoles', 
+        'statusOptions'
+    ));
+}
+
+/**
+ * MÉTODO CORREGIDO: Obtener datos para formularios - AGREGANDO EMBARCACIONES
+ * Basado en el método create() del mismo controlador
+ */
+private function getFormData($company): array
+{
+    // COPIADO EXACTO del método create() - Obtener embarcaciones disponibles
+    $vessels = \App\Models\Vessel::where('company_id', $company->id)
+        ->where('active', true)
+        ->where('available_for_charter', true)
+        ->where('operational_status', 'active')
+        ->with(['vesselType'])
+        ->orderBy('name')
+        ->get()
+        ->map(function ($vessel) {
+            $vesselTypeName = $vessel->vesselType->name ?? 'N/A';
+            return [
+                'id' => $vessel->id,
+                'name' => $vessel->name,
+                'vessel_type' => $vesselTypeName,
+                'registration_number' => $vessel->registration_number,
+                'cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 0,
+                'container_capacity' => $vessel->container_capacity ?? 0,
+                'display_name' => "{$vessel->name} ({$vesselTypeName}) - {$vessel->registration_number}"
+            ];
+        });
+    
+    // COPIADO EXACTO del método create() - Obtener capitanes disponibles
+    $captains = \App\Models\Captain::where('active', true)
+        ->where('available_for_hire', true)
+        ->where('license_status', 'valid')
+        ->where(function($query) {
+            $query->whereNull('license_expires_at')
+                  ->orWhere('license_expires_at', '>=', now());
+        })
+        ->orderBy('last_name')
+        ->orderBy('first_name')
+        ->get()
+        ->map(function ($captain) {
+            $yearsExperience = $captain->years_of_experience ?? 0;
+            return [
+                'id' => $captain->id,
+                'full_name' => $captain->full_name,
+                'license_number' => $captain->license_number,
+                'years_of_experience' => $yearsExperience,
+                'display_name' => "{$captain->full_name} - Lic: {$captain->license_number} ({$yearsExperience} años)"
+            ];
+        });
+
+    // Opciones para los selects - MISMO CÓDIGO QUE CREATE
+    $vesselRoles = [
+        'single' => 'Embarcación Única',
+        'lead' => 'Líder de Convoy',
+        'towed' => 'Remolcada',
+        'pushed' => 'Empujada',
+        'escort' => 'Escolta'
+    ];
+
+    $statusOptions = [
+        'planning' => 'Planificación',
+        'loading' => 'Cargando',
+        'loaded' => 'Cargado'
+    ];
+
+    // CORREGIDO: Ahora incluye embarcaciones para shipments que requieren atención
+    return [
+        'vessels' => $vessels,        // ✅ AGREGADO: Para shipments duplicados
+        'captains' => $captains,
+        'vesselRoles' => $vesselRoles,
+        'statusOptions' => $statusOptions,
+    ];
+}
+
+/**
+ * CORRECCIÓN ADICIONAL: Actualizar carga - EXACTOS permisos que otros métodos
+ * Usar las mismas verificaciones que funcionan en index/show/create
+ */
+public function update(Request $request, Shipment $shipment)
+{
+    // COPIADO EXACTO de index/show/create
+    // Verificar si el usuario puede ver cargas
+    if (!$this->canPerform('view_cargas')) {
+        abort(403, 'No tiene permisos para editar cargas.');
+    }
+
+    // Verificar que la empresa tenga rol "Cargas"
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'Su empresa no tiene el rol de Cargas.');
+    }
+
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return redirect()->route('company.shipments.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
+    // COPIADO EXACTO de show() - Verificar que la carga pertenezca a la empresa del usuario
+    if ($shipment->voyage->company_id !== $company->id) {
+        abort(404, 'Carga no encontrada.');
+    }
+
+    // COPIADO EXACTO de show() - Verificar permisos adicionales para usuarios operadores
+    if ($this->isUser() && $this->isOperator()) {
+        // Los operadores solo pueden ver cargas que crearon
+        if ($shipment->created_by_user_id !== Auth::id()) {
+            abort(403, 'No tiene permisos para editar esta carga.');
+        }
+    }
+
+    // Verificar estado de la carga
+    if (in_array($shipment->status, ['completed', 'cancelled'])) {
+        return redirect()->route('company.shipments.show', $shipment)
+            ->with('error', 'No se puede editar una carga completada o cancelada.');
+    }
+
+    // Determinar si vessel_id es editable (solo si requires_attention)
+    $vesselValidation = $shipment->requires_attention ? 'required|exists:vessels,id' : 'sometimes';
+
+    // Validar datos - ACTUALIZAR LA VALIDACIÓN EXISTENTE
+    $validated = $request->validate([
+        'shipment_number' => 'required|string|max:50|unique:shipments,shipment_number,' . $shipment->id,
+        'vessel_id' => $vesselValidation,  // ✅ CONDICIONAL: requerido solo si requires_attention
+        'captain_id' => 'nullable|exists:captains,id',
+        'vessel_role' => 'required|in:single,lead,towed,pushed,escort',
+        'convoy_position' => 'nullable|integer|min:1|max:20',
+        'is_lead_vessel' => 'boolean',
+        'cargo_capacity_tons' => 'required|numeric|min:0|max:99999.99',
+        'container_capacity' => 'nullable|integer|min:0|max:9999',
+        'status' => 'required|in:planning,loading,loaded,in_transit,arrived,discharging,completed,delayed',
+    ]);
+
+    // Si cambió vessel_id (de placeholder a embarcación real), quitar requires_attention
+if ($shipment->requires_attention && !empty($validated['vessel_id']) && $validated['vessel_id'] != $shipment->vessel_id) {
+    $validated['requires_attention'] = false;
+    
+    // Limpiar notas de placeholder si existen
+    if (strpos($shipment->handling_notes ?? '', '🔄 DUPLICADO DE:') !== false) {
+        $validated['handling_notes'] = preg_replace('/🔄 DUPLICADO DE:.*?(?=\n\n|\n[^⚠️]|$)/s', '', $shipment->handling_notes ?? '');
+        $validated['handling_notes'] = trim($validated['handling_notes']);
+    }
+    
+    Log::info('Shipment actualizado: embarcación placeholder reemplazada', [
+        'shipment_id' => $shipment->id,
+        'old_vessel_id' => $shipment->vessel_id,
+        'new_vessel_id' => $validated['vessel_id'],
+        'user_id' => Auth::id()
+    ]);
+}
+
+// Si vessel_id no está en la validación (readonly), no incluirlo en updateData
+$updateData = [
+    'shipment_number' => $validated['shipment_number'],
+    'captain_id' => $validated['captain_id'],
+    'vessel_role' => $validated['vessel_role'],
+    'convoy_position' => $validated['convoy_position'],
+    'is_lead_vessel' => $validated['is_lead_vessel'] ?? false,
+    'cargo_capacity_tons' => $validated['cargo_capacity_tons'],
+    'container_capacity' => $validated['container_capacity'] ?? 0,
+    'status' => $validated['status'],
+];
+
+// Solo agregar vessel_id si está permitido editarlo
+if ($shipment->requires_attention && !empty($validated['vessel_id'])) {
+    $updateData['vessel_id'] = $validated['vessel_id'];
+    $updateData['requires_attention'] = $validated['requires_attention'] ?? false;
+    $updateData['handling_notes'] = $validated['handling_notes'] ?? $shipment->handling_notes;
+}
+
+    try {
+        DB::beginTransaction();
+
+        // Validaciones de lógica de convoy - COPIADO de store()
+        if ($validated['vessel_role'] === 'single') {
+            $validated['convoy_position'] = null;
+            $validated['is_lead_vessel'] = false;
+        } else {
+            if (!empty($validated['convoy_position'])) {
+                $duplicatePosition = \App\Models\Shipment::where('voyage_id', $shipment->voyage_id)
+                    ->where('convoy_position', $validated['convoy_position'])
+                    ->where('id', '!=', $shipment->id) // Excluir el shipment actual
+                    ->exists();
+
+                if ($duplicatePosition) {
+                    throw new \Exception('Ya existe otra embarcación en la posición ' . $validated['convoy_position'] . ' del convoy.');
+                }
+            }
+        }
+
+        // Validar capitán si se proporciona - COPIADO de store()
+        if (!empty($validated['captain_id'])) {
+            $captain = \App\Models\Captain::where('id', $validated['captain_id'])
+                ->where('active', true)
+                ->where('available_for_hire', true)
+                ->where('license_status', 'valid')
+                ->first();
+
+            if (!$captain) {
+                throw new \Exception('El capitán seleccionado no está disponible o no tiene licencia válida.');
+            }
+        }
+
+        // Actualizar campos editables solamente
+        $updateData = [
+            'shipment_number' => $validated['shipment_number'],
+            'captain_id' => $validated['captain_id'],
+            'vessel_role' => $validated['vessel_role'],
+            'convoy_position' => $validated['convoy_position'],
+            'is_lead_vessel' => $validated['is_lead_vessel'] ?? false,
+            'cargo_capacity_tons' => $validated['cargo_capacity_tons'],
+            'container_capacity' => $validated['container_capacity'] ?? 0,
+            'status' => $validated['status'],
+        ];
+
+        $shipment->update($updateData);
+
+        // Si cambió a embarcación líder, actualizar el voyage
+        if ($validated['is_lead_vessel'] && !$shipment->getOriginal('is_lead_vessel')) {
+            $voyage = $shipment->voyage;
+            $voyage->update([
+                'lead_vessel_id' => $shipment->vessel_id,
+                'captain_id' => $validated['captain_id'],
+            ]);
+        }
+
+        DB::commit();
+
+        Log::info('Shipment actualizado', [
+            'shipment_id' => $shipment->id,
+            'shipment_number' => $shipment->shipment_number,
+            'user_id' => Auth::id()
+        ]);
+
+        return redirect()->route('company.shipments.index')
+            ->with('success', 'Carga actualizada exitosamente.');
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        
+        Log::error('Error actualizando shipment', [
+            'shipment_id' => $shipment->id,
+            'error' => $e->getMessage(),
+            'user_id' => Auth::id()
+        ]);
+
+        return redirect()->back()
+            ->withInput()
+            ->with('error', 'Error al actualizar la carga: ' . $e->getMessage());
+    }
+}
 
     /**
      * Eliminar carga.
@@ -958,30 +1194,181 @@ class ShipmentController extends Controller
     /**
      * Duplicar carga.
      */
-    public function duplicate(Shipment $shipment)
-    {
-        // Verificar permisos para crear cargas
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para crear cargas.');
-        }
+/**
+ * Duplicar carga - MÉTODO SEGURO SIN MODIFICAR ESTRUCTURA DB
+ * Usa una embarcación placeholder temporal que debe ser cambiada
+ */
+public function duplicate(Shipment $shipment)
+{
+    // COPIADO EXACTO de edit() - mismos permisos que funcionan
+    if (!$this->canPerform('view_cargas')) {
+        abort(403, 'No tiene permisos para crear cargas.');
+    }
 
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'Su empresa no tiene el rol de Cargas.');
+    }
 
-        // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($shipment->company_id)) {
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return redirect()->route('company.shipments.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
+    // COPIADO EXACTO de edit() - Verificar que la carga pertenezca a la empresa del usuario
+    if ($shipment->voyage->company_id !== $company->id) {
+        abort(404, 'Carga no encontrada.');
+    }
+
+    // COPIADO EXACTO de edit() - Verificar permisos adicionales para usuarios operadores
+    if ($this->isUser() && $this->isOperator()) {
+        if ($shipment->created_by_user_id !== Auth::id()) {
             abort(403, 'No tiene permisos para duplicar esta carga.');
+        }
+    }
+
+    try {
+        DB::beginTransaction();
+
+        // 🔧 ESTRATEGIA: Buscar una embarcación disponible como placeholder temporal
+        $placeholderVessel = $this->findPlaceholderVessel($company, $shipment->voyage_id);
+        
+        if (!$placeholderVessel) {
+            throw new \Exception('No hay embarcaciones disponibles para crear el duplicado. Debe tener al menos una embarcación disponible en su empresa.');
         }
 
         // Crear nueva carga basada en la existente
         $newShipment = $shipment->replicate();
-        $newShipment->shipment_number = $shipment->shipment_number . '-COPY';
-        $newShipment->status = 'draft';
-        $newShipment->created_by = Auth::id();
+        
+        // Generar nuevo número único
+        $newShipmentNumber = $this->generateNextShipmentNumber($company);
+        $newShipment->shipment_number = $newShipmentNumber;
+        
+        // ✅ CORRECCIÓN: Usar embarcación placeholder temporal
+        $newShipment->vessel_id = $placeholderVessel->id;  // Placeholder temporal
+        $newShipment->captain_id = null;                   // Sin capitán hasta seleccionar embarcación real
+        $newShipment->convoy_position = null;              // Se recalculará
+        
+        // Resetear estado y metadatos
+        $newShipment->status = 'planning';
+        $newShipment->created_by_user_id = Auth::id();
+        $newShipment->created_date = now();
+        
+        // ✅ Mantener voyage_id (mismo viaje)
+        // ✅ Recalcular secuencia automáticamente
+        $maxSequence = \App\Models\Shipment::where('voyage_id', $shipment->voyage_id)
+            ->max('sequence_in_voyage');
+        $newShipment->sequence_in_voyage = ($maxSequence ?? 0) + 1;
+        
+        // Resetear campos operacionales
+        $newShipment->cargo_weight_loaded = 0;
+        $newShipment->containers_loaded = 0;
+        $newShipment->utilization_percentage = 0;
+        $newShipment->loading_start_time = null;
+        $newShipment->loading_end_time = null;
+        $newShipment->departure_time = null;
+        $newShipment->arrival_time = null;
+        $newShipment->discharge_start_time = null;
+        $newShipment->discharge_end_time = null;
+        
+        // Resetear campos de tracking
+        $newShipment->current_latitude = null;
+        $newShipment->current_longitude = null;
+        $newShipment->position_updated_at = null;
+        $newShipment->last_communication = null;
+        
+        // Resetear flags de control
+        $newShipment->safety_approved = false;
+        $newShipment->customs_cleared = false;
+        $newShipment->documentation_complete = false;
+        $newShipment->cargo_inspected = false;
+        $newShipment->requires_attention = true;  // ⚠️ IMPORTANTE: Requiere atención hasta cambiar embarcación
+        $newShipment->has_delays = false;
+        $newShipment->on_schedule = true;
+        
+        // Limpiar campos de costos
+        $newShipment->freight_cost = null;
+        $newShipment->fuel_cost = null;
+        $newShipment->port_charges = null;
+        $newShipment->total_cost = null;
+        
+        // Limpiar incidentes y retrasos
+        $newShipment->incidents = null;
+        $newShipment->delay_reason = null;
+        $newShipment->delay_minutes = null;
+        
+        // Agregar notas explicativas sobre el placeholder
+        $originalVesselName = $shipment->vessel->name ?? 'N/A';
+        $newShipment->handling_notes = "🔄 DUPLICADO DE: {$shipment->shipment_number} (Embarcación original: {$originalVesselName})\n" .
+                                      "⚠️ ATENCIÓN: Este shipment usa embarcación temporal '{$placeholderVessel->name}'. " .
+                                      "DEBE seleccionar la embarcación correcta antes de continuar.\n" .
+                                      ($newShipment->handling_notes ?? '');
+
         $newShipment->save();
 
+        DB::commit();
+
+        Log::info('Shipment duplicado exitosamente con embarcación placeholder', [
+            'original_id' => $shipment->id,
+            'duplicate_id' => $newShipment->id,
+            'original_number' => $shipment->shipment_number,
+            'duplicate_number' => $newShipment->shipment_number,
+            'original_vessel_id' => $shipment->vessel_id,
+            'placeholder_vessel_id' => $placeholderVessel->id,
+            'placeholder_vessel_name' => $placeholderVessel->name,
+            'voyage_id' => $shipment->voyage_id,
+            'user_id' => Auth::id(),
+            'company_id' => $company->id
+        ]);
+
         return redirect()->route('company.shipments.edit', $newShipment)
-            ->with('success', 'Carga duplicada exitosamente. Ajuste los datos según sea necesario.');
+            ->with('warning', "Carga duplicada exitosamente con número {$newShipmentNumber}. ⚠️ IMPORTANTE: Debe seleccionar la embarcación correcta ya que se asignó una embarcación temporal ({$placeholderVessel->name}).");
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        
+        Log::error('Error al duplicar shipment', [
+            'shipment_id' => $shipment->id,
+            'error' => $e->getMessage(),
+            'user_id' => Auth::id(),
+            'company_id' => $company->id
+        ]);
+
+        return redirect()->back()
+            ->with('error', 'Error al duplicar la carga: ' . $e->getMessage());
     }
+}
+
+/**
+ * Buscar embarcación placeholder para duplicar shipments
+ * MÉTODO AUXILIAR NUEVO
+ */
+private function findPlaceholderVessel($company, $voyageId): ?\App\Models\Vessel
+{
+    // Estrategia 1: Buscar embarcaciones de la empresa que NO estén asignadas a ningún shipment activo
+    $availableVessel = \App\Models\Vessel::where('company_id', $company->id)
+        ->where('active', true)
+        ->where('available_for_charter', true)
+        ->where('operational_status', 'active')
+        ->whereNotIn('id', function($query) {
+            $query->select('vessel_id')
+                  ->from('shipments')
+                  ->whereIn('status', ['planning', 'loading', 'loaded', 'in_transit'])
+                  ->whereNotNull('vessel_id');
+        })
+        ->first();
+        
+    if ($availableVessel) {
+        return $availableVessel;
+    }
+    
+    // Estrategia 2: Si no hay embarcaciones disponibles, usar cualquier embarcación de la empresa
+    // (El usuario deberá resolverlo cambiando a una embarcación disponible)
+    $anyVessel = \App\Models\Vessel::where('company_id', $company->id)
+        ->where('active', true)
+        ->first();
+        
+    return $anyVessel;
+}
 }

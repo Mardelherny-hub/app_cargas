@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Company\DashboardController;
 use App\Http\Controllers\Company\ShipmentController;
+use App\Http\Controllers\Company\ShipmentItemController;
 use App\Http\Controllers\Company\VoyageController;
 use App\Http\Controllers\Company\OperatorController;
 use App\Http\Controllers\Company\ReportController;
@@ -61,6 +62,24 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
     // Historial y seguimiento
     Route::get('/{shipment}/history', [ShipmentController::class, 'history'])->name('history');
     Route::get('/{shipment}/tracking', [ShipmentController::class, 'tracking'])->name('tracking');
+});
+
+// Gestión de Items de Cargas
+Route::prefix('shipment-items')->name('company.shipment-items.')->group(function () {
+    Route::get('/create', [ShipmentItemController::class, 'create'])->name('create');
+    Route::post('/', [ShipmentItemController::class, 'store'])->name('store');
+    Route::get('/{shipmentItem}', [ShipmentItemController::class, 'show'])->name('show');
+    Route::get('/{shipmentItem}/edit', [ShipmentItemController::class, 'edit'])->name('edit');
+    Route::put('/{shipmentItem}', [ShipmentItemController::class, 'update'])->name('update');
+    Route::delete('/{shipmentItem}', [ShipmentItemController::class, 'destroy'])->name('destroy');
+    
+    // Acciones específicas de items
+    Route::patch('/{shipmentItem}/toggle-status', [ShipmentItemController::class, 'toggleStatus'])->name('toggle-status');
+    Route::post('/{shipmentItem}/duplicate', [ShipmentItemController::class, 'duplicate'])->name('duplicate');
+    
+    // Búsqueda y filtros
+    Route::get('/search', [ShipmentItemController::class, 'search'])->name('search');
+    Route::post('/search', [ShipmentItemController::class, 'searchResults'])->name('search-results');
 });
 
 // Gestión de Conocimientos de Embarque

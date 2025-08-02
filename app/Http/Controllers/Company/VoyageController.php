@@ -359,13 +359,13 @@ public function store(Request $request)
         return view('company.voyages.show', compact('voyage'));
     }
 
-    /**
+/**
      * Mostrar formulario para editar viaje.
      */
     public function edit(Voyage $voyage)
     {
-        // 1. Verificar permisos
-        if (!$this->canPerform('trips_edit')) {
+        // 1. Verificar permisos - CORREGIDO
+        if (!Auth::user()->can('voyages.edit')) {
             abort(403, 'No tiene permisos para editar viajes.');
         }
 
@@ -388,19 +388,67 @@ public function store(Request $request)
                 ->with('error', 'No se puede editar un viaje completado o cancelado.');
         }
 
-        // 4. Cargar datos necesarios
-        $voyage->load(['company', 'leadVessel', 'captain', 'originPort', 'destinationPort']);
+        // 4. Obtener datos del formulario - AGREGADO
+        $formData = $this->getFormData();
 
-        return view('company.voyages.edit', compact('voyage'));
+        // 5. Determinar permisos del usuario para la vista - AGREGADO
+        $userPermissions = [
+            'can_edit' => $this->isCompanyAdmin() || (Auth::user()->can('voyages.edit') && $this->hasCompanyRole('Cargas')),
+            'can_delete' => $this->isCompanyAdmin() && Auth::user()->can('voyages.delete') && $this->hasCompanyRole('Cargas'),
+        ];
+
+        // 6. Cargar datos necesarios del voyage - RELACIONES EXISTENTES
+        $voyage->load([
+            'company', 
+            'vessel' => function($query) {
+                $query->select('id', 'name', 'imo_number', 'max_cargo_capacity');
+            }, 
+            'captain' => function($query) {
+                $query->select('id', 'full_name', 'license_number');
+            }, 
+            'originPort' => function($query) {
+                $query->select('id', 'name', 'code');
+            }, 
+            'destinationPort' => function($query) {
+                $query->select('id', 'name', 'code');
+            },
+            'originCountry' => function($query) {
+                $query->select('id', 'name', 'iso_code');
+            },
+            'destinationCountry' => function($query) {
+                $query->select('id', 'name', 'iso_code');
+            }
+        ]);
+
+        // 7. Si hay operator_id, cargar el operador manualmente
+        if ($voyage->operator_id) {
+            $voyage->operator = \App\Models\Operator::select('id', 'first_name', 'last_name', 'position')
+                ->find($voyage->operator_id);
+            if ($voyage->operator) {
+                $voyage->operator->full_name = trim($voyage->operator->first_name . ' ' . $voyage->operator->last_name);
+            }
+        }
+
+        // 7. Pasar todas las variables necesarias a la vista - CORREGIDO
+        return view('company.voyages.edit', compact('voyage', 'formData', 'userPermissions'));
     }
+
+    /**
+     * Obtener datos para formularios (create/edit)
+     * MÉTODO CORREGIDO - USANDO SOLO COLUMNAS EXISTENTES
+     */
+
 
     /**
      * Actualizar viaje.
      */
+/**
+     * CORRECCIÓN DEFINITIVA - Método update()
+     */
     public function update(Request $request, Voyage $voyage)
     {
-        // 1. Verificar permisos (misma lógica que edit)
-        if (!$this->canPerform('trips_edit')) {
+        // 1. Verificar permisos
+        if (!Auth::user()->can('voyages.edit')) {
             abort(403, 'No tiene permisos para editar viajes.');
         }
 
@@ -412,40 +460,81 @@ public function store(Request $request)
             abort(403, 'No tiene permisos para editar este viaje.');
         }
 
-        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
-            abort(403, 'No tiene permisos para editar este viaje.');
-        }
-
-        // 2. Verificar estado
-        if (in_array($voyage->status, ['completed', 'cancelled'])) {
-            return redirect()->route('company.voyages.show', $voyage)
-                ->with('error', 'No se puede editar un viaje completado o cancelado.');
-        }
-
-        // 3. Validar datos
+        // 2. Validar datos - EXACTOS según ENUM de BD
         $request->validate([
             'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number,' . $voyage->id,
             'internal_reference' => 'nullable|string|max:100',
-            'lead_vessel_id' => 'required|exists:vessels,id',
+            'status' => 'required|string|in:planning,approved,in_transit,at_destination,completed,cancelled,delayed',
+            'vessel_id' => 'required|exists:vessels,id',
             'captain_id' => 'nullable|exists:captains,id',
-            'departure_date' => 'required|date',
-            'estimated_arrival_date' => 'required|date|after:departure_date',
+            'origin_country_id' => 'required|exists:countries,id',
+            'origin_port_id' => 'required|exists:ports,id',
+            'destination_country_id' => 'required|exists:countries,id',
+            'destination_port_id' => 'required|exists:ports,id',
+            'planned_departure_date' => 'required|date',
+            'planned_arrival_date' => 'required|date|after:planned_departure_date',
         ]);
 
-        // 4. Actualizar
-        $voyage->update([
-            'voyage_number' => $request->voyage_number,
-            'internal_reference' => $request->internal_reference,
-            'lead_vessel_id' => $request->lead_vessel_id,
-            'captain_id' => $request->captain_id,
-            'departure_date' => $request->departure_date,
-            'estimated_arrival_date' => $request->estimated_arrival_date,
-            'last_updated_by_user_id' => Auth::id(),
-            'last_updated_date' => now(),
-        ]);
+        try {
+            DB::beginTransaction();
 
-        return redirect()->route('company.voyages.show', $voyage)
-            ->with('success', 'Viaje actualizado exitosamente.');
+            // 3. Actualizar con campos EXACTOS de la migración
+            $voyage->update([
+                'voyage_number' => $request->voyage_number,
+                'internal_reference' => $request->internal_reference,
+                'status' => $request->status,
+                'lead_vessel_id' => $request->vessel_id,
+                'captain_id' => $request->captain_id,
+                'origin_country_id' => $request->origin_country_id,
+                'origin_port_id' => $request->origin_port_id,
+                'destination_country_id' => $request->destination_country_id,
+                'destination_port_id' => $request->destination_port_id,
+                'departure_date' => $request->planned_departure_date,
+                'estimated_arrival_date' => $request->planned_arrival_date,
+                'last_updated_by_user_id' => Auth::id(),
+                'last_updated_date' => now(),
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('company.voyages.show', $voyage)
+                ->with('success', 'Viaje actualizado exitosamente.');
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error al actualizar el viaje: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * CORRECCIÓN DEFINITIVA - getFormData()
+     */
+    private function getFormData()
+    {
+        $company = $this->getUserCompany();
+
+        return [
+            'vessels' => \App\Models\Vessel::where('company_id', $company->id)
+                ->where('active', true)
+                ->get(['id', 'name', 'imo_number', 'max_cargo_capacity']),
+            
+            'captains' => \App\Models\Captain::where('primary_company_id', $company->id)
+                ->where('active', true)
+                ->get(['id', 'full_name', 'license_number']),
+            
+            'operators' => \App\Models\Operator::where('company_id', $company->id)
+                ->where('active', true)
+                ->selectRaw('id, CONCAT(first_name, " ", last_name) as full_name, position')
+                ->get(),
+            
+            'countries' => \App\Models\Country::where('active', true)
+                ->get(['id', 'name', 'iso_code']),
+            
+            'ports' => \App\Models\Port::where('active', true)
+                ->get(['id', 'name', 'code', 'country_id']),
+        ];
     }
 
     /**

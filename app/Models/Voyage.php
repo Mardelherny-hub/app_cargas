@@ -1220,4 +1220,91 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
         
         return collect($milestones)->sortBy('datetime')->values()->toArray();
     }
+
+    /**
+     * Verificar si el viaje puede ser eliminado
+     * 
+     * Un viaje NO puede ser eliminado si:
+     * - Tiene shipments asociados
+     * - Está en progreso, completado o en tránsito
+     * - Tiene documentación oficial generada
+     * - Tiene bills of lading asociados
+     */
+    public function canBeDeleted(): bool
+    {
+        // No se puede eliminar si tiene shipments
+        if ($this->shipments()->count() > 0) {
+            return false;
+        }
+
+        // No se puede eliminar si tiene bills of lading
+        if ($this->billsOfLading()->count() > 0) {
+            return false;
+        }
+
+        // No se puede eliminar si está en estados avanzados
+        $nonDeletableStatuses = [
+            'loading',      // Ya se está cargando
+            'in_transit',   // En tránsito
+            'discharging',  // Descargando
+            'completed',    // Completado
+            'departed'      // Ya partió
+        ];
+
+        if (in_array($this->status, $nonDeletableStatuses)) {
+            return false;
+        }
+
+        // No se puede eliminar si ya partió (tiene fecha de salida real)
+        if ($this->actual_departure_date) {
+            return false;
+        }
+
+        // Solo se pueden eliminar viajes en estados iniciales
+        $deletableStatuses = ['draft', 'planned', 'confirmed', 'cancelled'];
+        
+        return in_array($this->status, $deletableStatuses);
+    }
+
+    /**
+     * Verificar si el viaje puede ser editado
+     * 
+     * Un viaje NO puede ser editado si:
+     * - Está completado o cancelado
+     * - Ya partió (tiene fecha de salida real)
+     * - Está en tránsito
+     */
+    public function canBeEdited(): bool
+    {
+        // No se puede editar si está completado o cancelado
+        if (in_array($this->status, ['completed', 'cancelled'])) {
+            return false;
+        }
+
+        // No se puede editar si ya partió
+        if ($this->actual_departure_date) {
+            return false;
+        }
+
+        // No se puede editar si está en tránsito
+        if ($this->status === 'in_transit') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Verificar si ciertos campos críticos pueden ser editados
+     * 
+     * Algunos campos no se pueden editar una vez que el viaje está confirmado
+     */
+    public function canEditCriticalFields(): bool
+    {
+        // Los campos críticos (embarcación, ruta, fechas) solo se pueden
+        // editar en estados iniciales
+        $allowedStatuses = ['draft', 'planned'];
+        
+        return in_array($this->status, $allowedStatuses);
+    }
 }

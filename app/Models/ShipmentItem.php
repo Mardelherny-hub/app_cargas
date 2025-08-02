@@ -475,6 +475,15 @@ class ShipmentItem extends Model
         return $this->belongsTo(PackagingType::class);
     }
 
+ 
+    /**
+     * Cliente dueño de la mercadería (opcional)
+     */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+
     /**
      * Usuario que creó el ítem
      */
@@ -490,7 +499,7 @@ class ShipmentItem extends Model
     {
         return $this->belongsTo(User::class, 'last_updated_by_user_id');
     }
-
+    
     //
     // === SCOPES ===
     //

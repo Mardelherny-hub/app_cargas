@@ -1,4 +1,3 @@
-{{-- resources/views/company/shipments/show.blade.php --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
@@ -26,6 +25,84 @@
             </div>
         </div>
     </x-slot>
+
+
+    {{-- Mensajes Flash de Éxito/Error/Información --}}
+    @if(session('success'))
+        <div class="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
+            <span class="block sm:inline">{{ session('success') }}</span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3">
+                <svg onclick="this.parentElement.parentElement.style.display='none'" 
+                    class="fill-current h-6 w-6 text-green-500 cursor-pointer" 
+                    role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <title>Cerrar</title>
+                    <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                </svg>
+            </span>
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <span class="block sm:inline">{{ session('error') }}</span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3">
+                <svg onclick="this.parentElement.parentElement.style.display='none'" 
+                    class="fill-current h-6 w-6 text-red-500 cursor-pointer" 
+                    role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <title>Cerrar</title>
+                    <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                </svg>
+            </span>
+        </div>
+    @endif
+
+    @if(session('warning'))
+        <div class="mb-6 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative" role="alert">
+            <span class="block sm:inline">{{ session('warning') }}</span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3">
+                <svg onclick="this.parentElement.parentElement.style.display='none'" 
+                    class="fill-current h-6 w-6 text-yellow-500 cursor-pointer" 
+                    role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <title>Cerrar</title>
+                    <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                </svg>
+            </span>
+        </div>
+    @endif
+
+    @if(session('info'))
+        <div class="mb-6 bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded relative" role="alert">
+            <span class="block sm:inline">{{ session('info') }}</span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3">
+                <svg onclick="this.parentElement.parentElement.style.display='none'" 
+                    class="fill-current h-6 w-6 text-blue-500 cursor-pointer" 
+                    role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <title>Cerrar</title>
+                    <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                </svg>
+            </span>
+        </div>
+    @endif
+
+    {{-- Errores de Validación --}}
+    @if($errors->any())
+        <div class="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <strong class="font-bold">¡Errores de validación!</strong>
+            <ul class="mt-2 list-disc list-inside">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3">
+                <svg onclick="this.parentElement.style.display='none'" 
+                    class="fill-current h-6 w-6 text-red-500 cursor-pointer" 
+                    role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <title>Cerrar</title>
+                    <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                </svg>
+            </span>
+        </div>
+    @endif
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
@@ -365,87 +442,240 @@
                         </div>
                     </div>
 
-                    {{-- Items de Mercadería --}}
-                    @if($stats['total_items'] > 0)
-                        <div class="bg-white shadow rounded-lg">
-                            <div class="px-4 py-5 sm:p-6">
-                                <div class="flex justify-between items-center mb-4">
-                                    <h3 class="text-lg leading-6 font-medium text-gray-900">Items de Mercadería</h3>
-                                    @if($userPermissions['can_manage_items'])
-                                        <a href="{{ route('company.shipment-items.create', ['shipment' => $shipment->id]) }}" 
-                                           class="bg-blue-500 hover:bg-blue-700 text-white text-sm font-bold py-1 px-3 rounded">
-                                            Agregar Item
-                                        </a>
-                                    @endif
+
+                    {{-- Gestión de Items de Carga - VERSIÓN MEJORADA --}}
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <div class="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 class="text-lg leading-6 font-medium text-gray-900">Items de Carga</h3>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        Gestione los items y mercaderías de este shipment
+                                    </p>
                                 </div>
                                 
+                                @if($userPermissions['can_manage_items'])
+                                    <div class="flex space-x-3">
+                                        <a href="{{ route('company.shipment-items.create', ['shipment' => $shipment->id]) }}" 
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                            </svg>
+                                            Agregar Item
+                                        </a>
+                                        
+                                        @if($stats['total_items'] > 0)
+                                            <button type="button" 
+                                                    onclick="showBulkActionsModal()"
+                                                    class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                                </svg>
+                                                Acciones Masivas
+                                            </button>
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
+
+                            @if($stats['total_items'] > 0)
+                                {{-- Estadísticas Rápidas de Items --}}
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                    <div class="bg-blue-50 rounded-lg p-3">
+                                        <div class="text-sm font-medium text-blue-600">Total Items</div>
+                                        <div class="text-2xl font-bold text-blue-900">{{ $stats['total_items'] }}</div>
+                                    </div>
+                                    <div class="bg-green-50 rounded-lg p-3">
+                                        <div class="text-sm font-medium text-green-600">Bultos</div>
+                                        <div class="text-2xl font-bold text-green-900">{{ number_format($stats['total_packages']) }}</div>
+                                    </div>
+                                    <div class="bg-purple-50 rounded-lg p-3">
+                                        <div class="text-sm font-medium text-purple-600">Peso Bruto</div>
+                                        <div class="text-2xl font-bold text-purple-900">{{ number_format($stats['total_gross_weight_kg'] / 1000, 1) }}t</div>
+                                    </div>
+                                    <div class="bg-yellow-50 rounded-lg p-3">
+                                        <div class="text-sm font-medium text-yellow-600">Volumen</div>
+                                        <div class="text-2xl font-bold text-yellow-900">{{ number_format($stats['total_volume_m3'], 1) }}m³</div>
+                                    </div>
+                                </div>
+
+                                {{-- Alertas de Items --}}
+                                @if($stats['dangerous_goods_count'] > 0 || $stats['items_requiring_permits'] > 0 || $stats['items_with_discrepancies'] > 0)
+                                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                                        <div class="flex">
+                                            <div class="flex-shrink-0">
+                                                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                                </svg>
+                                            </div>
+                                            <div class="ml-3">
+                                                <h3 class="text-sm font-medium text-yellow-800">Atención Requerida</h3>
+                                                <div class="mt-2 text-sm text-yellow-700">
+                                                    <ul class="list-disc pl-5 space-y-1">
+                                                        @if($stats['dangerous_goods_count'] > 0)
+                                                            <li><strong>{{ $stats['dangerous_goods_count'] }}</strong> items con mercaderías peligrosas</li>
+                                                        @endif
+                                                        @if($stats['items_requiring_permits'] > 0)
+                                                            <li><strong>{{ $stats['items_requiring_permits'] }}</strong> items requieren permisos especiales</li>
+                                                        @endif
+                                                        @if($stats['items_with_discrepancies'] > 0)
+                                                            <li><strong>{{ $stats['items_with_discrepancies'] }}</strong> items con discrepancias</li>
+                                                        @endif
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
+
+                                {{-- Tabla de Items Mejorada --}}
                                 <div class="overflow-x-auto">
                                     <table class="min-w-full divide-y divide-gray-200">
                                         <thead class="bg-gray-50">
                                             <tr>
+                                                @if($userPermissions['can_manage_items'])
+                                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                        <input type="checkbox" id="select-all-items" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                                    </th>
+                                                @endif
                                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Línea</th>
                                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
                                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo de Carga</th>
                                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bultos</th>
                                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peso (kg)</th>
                                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody class="bg-white divide-y divide-gray-200">
                                             @foreach($shipment->shipmentItems as $item)
-                                                <tr>
+                                                <tr class="hover:bg-gray-50">
+                                                    @if($userPermissions['can_manage_items'])
+                                                        <td class="px-6 py-4 whitespace-nowrap">
+                                                            <input type="checkbox" 
+                                                                class="item-checkbox rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" 
+                                                                value="{{ $item->id }}">
+                                                        </td>
+                                                    @endif
                                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                         {{ $item->line_number }}
                                                     </td>
                                                     <td class="px-6 py-4 text-sm text-gray-900">
-                                                        <div>{{ $item->item_description }}</div>
+                                                        <div class="font-medium">{{ $item->item_description }}</div>
                                                         @if($item->commodity_description)
                                                             <div class="text-xs text-gray-500">{{ $item->commodity_description }}</div>
                                                         @endif
+                                                        {{-- Indicadores especiales --}}
+                                                        <div class="flex flex-wrap gap-1 mt-1">
+                                                            @if($item->is_dangerous_goods)
+                                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                                    ⚠️ Peligroso
+                                                                </span>
+                                                            @endif
+                                                            @if($item->requires_refrigeration)
+                                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                                    ❄️ Refrigerado
+                                                                </span>
+                                                            @endif
+                                                            @if($item->is_fragile)
+                                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                                    📦 Frágil
+                                                                </span>
+                                                            @endif
+                                                        </div>
                                                     </td>
                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                         {{ $item->cargoType->name ?? 'N/A' }}
-                                                        @if($item->is_dangerous_goods)
-                                                            <span class="ml-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                                Peligroso
-                                                            </span>
-                                                        @endif
                                                     </td>
                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                         {{ number_format($item->package_quantity) }}
-                                                        @if($item->packagingType)
-                                                            <div class="text-xs text-gray-500">{{ $item->packagingType->name }}</div>
-                                                        @endif
+                                                        <div class="text-xs text-gray-500">{{ $item->packagingType->name ?? 'N/A' }}</div>
                                                     </td>
                                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                        {{ number_format($item->gross_weight_kg, 1) }}
-                                                        @if($item->net_weight_kg)
-                                                            <div class="text-xs text-gray-500">Neto: {{ number_format($item->net_weight_kg, 1) }}</div>
-                                                        @endif
+                                                        <div>Bruto: <strong>{{ number_format($item->gross_weight_kg) }}</strong></div>
+                                                        <div class="text-xs text-gray-500">Neto: {{ number_format($item->net_weight_kg) }}</div>
                                                     </td>
                                                     <td class="px-6 py-4 whitespace-nowrap">
                                                         <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full 
-                                                            @if($item->has_discrepancies) bg-red-100 text-red-800 
-                                                            @elseif($item->requires_review) bg-yellow-100 text-yellow-800 
-                                                            @else bg-green-100 text-green-800 @endif">
-                                                            @if($item->has_discrepancies) Con Discrepancias
-                                                            @elseif($item->requires_review) Requiere Revisión
-                                                            @else OK @endif
+                                                            @switch($item->status)
+                                                                @case('draft') bg-gray-100 text-gray-800 @break
+                                                                @case('validated') bg-blue-100 text-blue-800 @break
+                                                                @case('submitted') bg-yellow-100 text-yellow-800 @break
+                                                                @case('accepted') bg-green-100 text-green-800 @break
+                                                                @case('rejected') bg-red-100 text-red-800 @break
+                                                                @default bg-gray-100 text-gray-800
+                                                            @endswitch">
+                                                            @switch($item->status)
+                                                                @case('draft') Borrador @break
+                                                                @case('validated') Validado @break
+                                                                @case('submitted') Enviado @break
+                                                                @case('accepted') Aceptado @break
+                                                                @case('rejected') Rechazado @break
+                                                                @default {{ ucfirst($item->status) }}
+                                                            @endswitch
                                                         </span>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                        <div class="flex space-x-2">
+                                                            <a href="{{-- route('company.shipment-items.show', $item) --}}#" 
+                                                            class="text-indigo-600 hover:text-indigo-900" title="Ver detalle">
+                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                                                </svg>
+                                                            </a>
+                                                            
+                                                            @if($userPermissions['can_manage_items'])
+                                                                <a href="{{ route('company.shipment-items.edit', $item) }}" 
+                                                                class="text-yellow-600 hover:text-yellow-900" title="Editar">
+                                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                                                    </svg>
+                                                                </a>
+                                                                
+                                                                <button onclick="deleteItem({{ $item->id }}, '{{ $item->item_description }}')" 
+                                                                        class="text-red-600 hover:text-red-900" title="Eliminar">
+                                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                                    </svg>
+                                                                </button>
+                                                            @endif
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             @endforeach
                                         </tbody>
                                     </table>
                                 </div>
-                            </div>
+                            @else
+                                {{-- Estado Vacío Mejorado --}}
+                                <div class="text-center py-12">
+                                    <svg class="mx-auto h-24 w-24 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                                    </svg>
+                                    <h3 class="mt-4 text-lg font-medium text-gray-900">Carga sin items</h3>
+                                    <p class="mt-2 text-gray-500">Este shipment aún no tiene items de carga agregados.</p>
+                                    @if($userPermissions['can_manage_items'])
+                                        <div class="mt-6">
+                                            <a href="{{ route('company.shipment-items.create', ['shipment' => $shipment->id]) }}" 
+                                            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                                </svg>
+                                                Agregar Primer Item
+                                            </a>
+                                        </div>
+                                    @else
+                                        <p class="mt-4 text-sm text-gray-400">No tiene permisos para agregar items a este shipment.</p>
+                                    @endif
+                                </div>
+                            @endif
                         </div>
-                    @endif
+                    </div>
                 </div>
 
                 {{-- Panel Lateral --}}
-                <div class="space-y-6">
-                    
+                <div class="space-y-6">                    
                     {{-- Navegación de Shipments --}}
                     @if($voyageShipments->count() > 0)
                         <div class="bg-white shadow rounded-lg">
@@ -629,4 +859,51 @@
             @endif
         </div>
     </div>
+
+
+{{-- Scripts para funcionalidad de items --}}
+<script>
+function deleteItem(itemId, itemDescription) {
+    if (confirm(`¿Está seguro de eliminar el item "${itemDescription}"?`)) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/company/shipment-items/${itemId}`;
+        
+        const methodField = document.createElement('input');
+        methodField.type = 'hidden';
+        methodField.name = '_method';
+        methodField.value = 'DELETE';
+        
+        const tokenField = document.createElement('input');
+        tokenField.type = 'hidden';
+        tokenField.name = '_token';
+        tokenField.value = '{{ csrf_token() }}';
+        
+        form.appendChild(methodField);
+        form.appendChild(tokenField);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function showBulkActionsModal() {
+    const selectedItems = document.querySelectorAll('.item-checkbox:checked');
+    if (selectedItems.length === 0) {
+        alert('Debe seleccionar al menos un item para realizar acciones masivas.');
+        return;
+    }
+    
+    // TODO: Implementar modal de acciones masivas
+    alert(`${selectedItems.length} items seleccionados. Funcionalidad de acciones masivas pendiente.`);
+}
+
+// Funcionalidad de seleccionar todos
+document.getElementById('select-all-items')?.addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.item-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = this.checked;
+    });
+});
+</script>
 </x-app-layout>
+
