@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * MÓDULO 3: VIAJES Y CARGAS - SHIPMENT ITEMS
+ * MÓD SHIPMENT ITEMS
  * 
  * Controlador de Items de Shipments para Company Admin y Users
  * Maneja CRUD completo con control de acceso por rol "Cargas"
