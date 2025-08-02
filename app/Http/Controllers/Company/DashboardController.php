@@ -9,6 +9,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use App\Models\VesselOwner;  
+use App\Models\Shipment;
+use App\Models\Voyage;
+use App\Models\BillOfLading;
+use App\Models\WebserviceTransaction;
+use App\Models\Port;
+use App\Models\Client;
 
 class DashboardController extends Controller
 {
@@ -595,26 +601,38 @@ class DashboardController extends Controller
         // Estadísticas específicas por rol de empresa
         $companyRoles = $company->company_roles ?? [];
 
-        if (in_array('Cargas', $companyRoles)) {
+         if (in_array('Cargas', $companyRoles)) {
+            $shipments = Shipment::whereHas('voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            });
+
+            $voyages = Voyage::where('company_id', $company->id)->where('active', true);
+
             $stats['cargas_stats'] = [
-                'recent_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-                'pending_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-                'completed_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
-                'active_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
+                'recent_shipments' => $shipments->where('created_at', '>=', now()->subDays(7))->count(),
+                'pending_shipments' => $shipments->where('status', 'pending')->count(),
+                'completed_trips' => $voyages->where('status', 'completed')->count(),
+                'active_trips' => $voyages->whereIn('status', ['in_progress', 'loading'])->count(),
             ];
         }
 
         if (in_array('Desconsolidador', $companyRoles)) {
+            $deconsolidations = WebserviceTransaction::where('company_id', $company->id)
+                ->where('webservice_type', 'desconsolidados');
+
             $stats['desconsolidacion_stats'] = [
-                'pending_deconsolidations' => 0, // TODO: Implementar cuando esté el módulo
-                'completed_deconsolidations' => 0, // TODO: Implementar cuando esté el módulo
+                'pending_deconsolidations' => $deconsolidations->where('status', 'pending')->count(),
+                'completed_deconsolidations' => $deconsolidations->where('status', 'success')->count(),
             ];
         }
 
         if (in_array('Transbordos', $companyRoles)) {
+            $transfers = WebserviceTransaction::where('company_id', $company->id)
+                ->where('webservice_type', 'transbordos');
+
             $stats['transbordos_stats'] = [
-                'pending_transfers' => 0, // TODO: Implementar cuando esté el módulo
-                'completed_transfers' => 0, // TODO: Implementar cuando esté el módulo
+                'pending_transfers' => $transfers->where('status', 'pending')->count(),
+                'completed_transfers' => $transfers->where('status', 'success')->count(),
             ];
         }
 

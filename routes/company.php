@@ -279,6 +279,8 @@ Route::prefix('reports')->name('company.reports.')->group(function () {
     Route::get('/shipments', [ReportController::class, 'shipments'])->name('shipments');
     Route::get('/voyages', [ReportController::class, 'voyages'])->name('voyages');
     Route::get('/operators', [ReportController::class, 'operators'])->name('operators');
+    Route::get('/deconsolidation', [ReportController::class, 'deconsolidation'])->name('deconsolidation');
+    Route::get('/transshipment', [ReportController::class, 'transshipment'])->name('transshipment');
 
     // Exportación de reportes
     Route::post('/export/{report}', [ReportController::class, 'export'])->name('export');

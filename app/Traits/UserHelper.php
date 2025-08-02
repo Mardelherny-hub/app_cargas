@@ -4,6 +4,10 @@ namespace App\Traits;
 
 use Illuminate\Support\Facades\Auth;
 use App\Models\Company;
+use App\Models\Vessel;
+use App\Models\Voyage;
+use App\Models\WebserviceTransaction;
+use App\Models\BillOfLading;
 use App\Models\User;
 use Carbon\Carbon;
 
@@ -544,45 +548,181 @@ trait UserHelper
      * Obtener actividad reciente de la empresa.
      * MÉTODO FALTANTE: Usado en DashboardController para company-admin
      */
+    /**
+     * Obtener actividad reciente de la empresa.
+     * REEMPLAZAR: // TODO: Implementar cuando estén los módulos de auditoría
+     */
     protected function getRecentActivity(Company $company): array
     {
-        // TODO: Implementar cuando estén los módulos de auditoría
-        return [
-            'recent_logins' => [],
-            'recent_operations' => [],
-            'recent_changes' => [],
-        ];
+        try {
+            $recentActivity = [];
+
+            // Obtener logins recientes de usuarios de la empresa
+            $recentLogins = User::whereHas('userable', function($query) use ($company) {
+                    $query->where('company_id', $company->id);
+                })
+                ->whereNotNull('last_access')
+                ->where('last_access', '>=', now()->subDays(7))
+                ->orderBy('last_access', 'desc')
+                ->take(5)
+                ->get(['name', 'last_access']);
+
+            foreach ($recentLogins as $user) {
+                $recentActivity[] = [
+                    'type' => 'login',
+                    'description' => "Login de {$user->name}",
+                    'timestamp' => $user->last_access,
+                    'user' => $user->name,
+                ];
+            }
+
+            // Obtener operaciones recientes (viajes creados)
+            $recentVoyages = Voyage::where('company_id', $company->id)
+                ->with('createdByUser')
+                ->where('created_at', '>=', now()->subDays(7))
+                ->orderBy('created_at', 'desc')
+                ->take(3)
+                ->get();
+
+            foreach ($recentVoyages as $voyage) {
+                $recentActivity[] = [
+                    'type' => 'voyage_created',
+                    'description' => "Viaje {$voyage->voyage_number} creado",
+                    'timestamp' => $voyage->created_at,
+                    'user' => $voyage->createdByUser->name ?? 'Sistema',
+                ];
+            }
+
+            // Obtener transacciones de webservice recientes
+            $recentWebservices = WebserviceTransaction::where('company_id', $company->id)
+                ->with('user')
+                ->where('created_at', '>=', now()->subDays(7))
+                ->orderBy('created_at', 'desc')
+                ->take(3)
+                ->get();
+
+            foreach ($recentWebservices as $ws) {
+                $recentActivity[] = [
+                    'type' => 'webservice',
+                    'description' => "Webservice {$ws->webservice_type} - " . ucfirst($ws->status),
+                    'timestamp' => $ws->created_at,
+                    'user' => $ws->user->name ?? 'Sistema',
+                ];
+            }
+
+            // Ordenar por timestamp más reciente
+            usort($recentActivity, function($a, $b) {
+                return $b['timestamp'] <=> $a['timestamp'];
+            });
+
+            return array_slice($recentActivity, 0, 10);
+
+        } catch (Exception $e) {
+            return [
+                [
+                    'type' => 'error',
+                    'description' => 'Error cargando actividad reciente',
+                    'timestamp' => now(),
+                    'user' => 'Sistema',
+                ]
+            ];
+        }
     }
 
     /**
      * Obtener tareas pendientes de la empresa.
      * MÉTODO FALTANTE: Usado en DashboardController para company-admin
      */
+    /**
+     * Obtener tareas pendientes de la empresa.
+     * REEMPLAZAR: Verificar certificado
+     */
     protected function getPendingTasks(Company $company): array
     {
         $tasks = [];
 
-        // Verificar certificado
-        $certStatus = $this->getCertificateStatus($company);
-        if ($certStatus['needs_renewal']) {
-            $tasks[] = [
-                'title' => 'Renovar certificado',
-                'priority' => $certStatus['is_expired'] ? 'high' : 'medium',
-                'due_date' => $certStatus['expires_at'],
+        try {
+            // Verificar certificado
+            $certStatus = $this->getCertificateStatus($company);
+            if ($certStatus['needs_renewal']) {
+                $tasks[] = [
+                    'title' => 'Renovar certificado digital',
+                    'priority' => $certStatus['is_expired'] ? 'high' : 'medium',
+                    'due_date' => $certStatus['expires_at'],
+                    'route' => route('company.certificates.index'),
+                ];
+            }
+
+            // Verificar operadores inactivos
+            $inactiveOperators = $company->operators()->where('active', false)->count();
+            if ($inactiveOperators > 0) {
+                $tasks[] = [
+                    'title' => "Revisar {$inactiveOperators} operador(es) inactivo(s)",
+                    'priority' => 'low',
+                    'due_date' => null,
+                    'route' => route('company.operators.index'),
+                ];
+            }
+
+            // Verificar viajes con retraso
+            $delayedVoyages = Voyage::where('company_id', $company->id)
+                ->whereDate('departure_date', '<', now())
+                ->whereIn('status', ['pending', 'planning'])
+                ->count();
+
+            if ($delayedVoyages > 0) {
+                $tasks[] = [
+                    'title' => "Actualizar {$delayedVoyages} viaje(s) con retraso",
+                    'priority' => 'high',
+                    'due_date' => now(),
+                    'route' => route('company.voyages.index'),
+                ];
+            }
+
+            // Verificar transacciones de webservice fallidas
+            $failedTransactions = WebserviceTransaction::where('company_id', $company->id)
+                ->where('status', 'error')
+                ->where('created_at', '>=', now()->subDays(7))
+                ->count();
+
+            if ($failedTransactions > 0) {
+                $tasks[] = [
+                    'title' => "Revisar {$failedTransactions} transacción(es) fallida(s)",
+                    'priority' => 'medium',
+                    'due_date' => now()->addDays(3),
+                    'route' => route('company.webservices.history'),
+                ];
+            }
+
+            // Verificar conocimientos pendientes de verificación
+            $pendingBills = BillOfLading::whereHas('shipment.voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->where('status', 'draft')
+            ->whereNull('verified_at')
+            ->count();
+
+            if ($pendingBills > 0) {
+                $tasks[] = [
+                    'title' => "Verificar {$pendingBills} conocimiento(s) de embarque",
+                    'priority' => 'medium',
+                    'due_date' => now()->addDays(2),
+                    'route' => route('company.bills-of-lading.index'),
+                ];
+            }
+
+            return $tasks;
+
+        } catch (Exception $e) {
+            return [
+                [
+                    'title' => 'Error cargando tareas pendientes',
+                    'priority' => 'low',
+                    'due_date' => null,
+                    'route' => '#',
+                ]
             ];
         }
-
-        // Verificar operadores inactivos
-        $inactiveOperators = $company->operators()->where('active', false)->count();
-        if ($inactiveOperators > 0) {
-            $tasks[] = [
-                'title' => 'Revisar operadores inactivos',
-                'priority' => 'low',
-                'due_date' => null,
-            ];
-        }
-
-        return $tasks;
     }
 
     /**

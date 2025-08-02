@@ -12,6 +12,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Models\Voyage;
+use App\Models\Shipment; 
+use App\Models\BillOfLading;
+use App\Models\WebserviceTransaction;
+use App\Models\Port;
+use App\Models\Client;
 
 class ReportController extends Controller
 {
@@ -597,6 +603,30 @@ class ReportController extends Controller
             ];
         }
 
+        // Reportes para empresas con rol "Desconsolidador"
+        if ($this->hasCompanyRole('Desconsolidador')) {
+            $reportTypes['deconsolidation'] = [
+                'name' => 'Reportes de Desconsolidación',
+                'description' => 'Títulos de desconsolidación y proceso de fraccionamiento.',
+                'icon' => 'cube-transparent',
+                'color' => 'orange',
+                'available' => $this->canPerform('reports_deconsolidation'),
+                'route' => route('company.reports.deconsolidation'),
+            ];
+        }
+
+        // Reportes para empresas con rol "Transbordos"
+        if ($this->hasCompanyRole('Transbordos')) {
+            $reportTypes['transshipment'] = [
+                'name' => 'Reportes de Transbordos',
+                'description' => 'Operaciones de transbordo y transferencia entre embarcaciones.',
+                'icon' => 'switch-horizontal',
+                'color' => 'cyan',
+                'available' => $this->canPerform('reports_transshipment'),
+                'route' => route('company.reports.transshipment'),
+            ];
+        }
+
         // Reportes de operadores (solo company-admin)
         if ($this->isCompanyAdmin()) {
             $reportTypes['operators'] = [
@@ -618,22 +648,46 @@ class ReportController extends Controller
      */
     private function getRecentReports($company): array
     {
-        // TODO: Implementar cuando estén los módulos de reportes
-        // Los usuarios regulares solo ven sus propios reportes
-        // Los company-admin ven todos los reportes de la empresa
+        $recentReports = [];
 
-        return [
-            // Estructura de ejemplo:
-            // [
-            //     'type' => 'manifest',
-            //     'name' => 'Manifiesto #12345',
-            //     'generated_at' => Carbon::now()->subHours(2),
-            //     'generated_by' => 'María González',
-            //     'status' => 'completed',
-            // ],
-        ];
+        // Obtener últimos manifiestos
+        $recentVoyages = Voyage::where('company_id', $company->id)
+            ->whereHas('shipments.billsOfLading')
+            ->with('leadVessel')
+            ->orderBy('created_at', 'desc')
+            ->take(3)
+            ->get();
+
+        foreach ($recentVoyages as $voyage) {
+            $recentReports[] = [
+                'type' => 'manifest',
+                'name' => "Manifiesto #{$voyage->voyage_number}",
+                'generated_at' => $voyage->created_at,
+                'generated_by' => $voyage->createdByUser->name ?? 'Sistema',
+                'status' => $voyage->status,
+            ];
+        }
+
+        // Obtener últimas transacciones de webservice
+        $recentWebservices = WebserviceTransaction::where('company_id', $company->id)
+            ->with('user')
+            ->orderBy('created_at', 'desc')
+            ->take(2)
+            ->get();
+
+        foreach ($recentWebservices as $ws) {
+            $recentReports[] = [
+                'type' => strtoupper($ws->webservice_type),
+                'name' => "Transacción {$ws->webservice_type} #{$ws->transaction_id}",
+                'generated_at' => $ws->created_at,
+                'generated_by' => $ws->user->name ?? 'Sistema',
+                'status' => $ws->status,
+            ];
+        }
+
+        return $recentReports;
     }
-
+        
     // =========================================================================
     // MÉTODOS AUXILIARES - QUERIES Y FILTROS
     // =========================================================================
@@ -643,8 +697,11 @@ class ReportController extends Controller
      */
     private function buildManifestsQuery($company)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return collect();
+        return Voyage::with(['shipments.billsOfLading', 'leadVessel', 'originPort', 'destinationPort'])
+            ->where('company_id', $company->id)
+            ->where('active', true)
+            ->whereHas('shipments.billsOfLading')
+            ->orderBy('departure_date', 'desc');
     }
 
     /**
@@ -652,8 +709,12 @@ class ReportController extends Controller
      */
     private function buildBillsOfLadingQuery($company)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return collect();
+        return BillOfLading::with(['shipment.voyage', 'shipper', 'consignee', 'loadingPort', 'dischargePort'])
+            ->whereHas('shipment.voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('bill_date', 'desc');
     }
 
     /**
@@ -661,8 +722,11 @@ class ReportController extends Controller
      */
     private function buildMicdtaQuery($company)
     {
-        // TODO: Implementar cuando esté el módulo de webservices
-        return collect();
+        return WebserviceTransaction::with(['voyage', 'shipment'])
+            ->where('company_id', $company->id)
+            ->whereIn('webservice_type', ['micdta', 'anticipada'])
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('created_at', 'desc');
     }
 
     /**
@@ -670,8 +734,13 @@ class ReportController extends Controller
      */
     private function buildArrivalNoticesQuery($company)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return collect();
+        return BillOfLading::with(['shipment.voyage', 'consignee', 'notifyParty', 'dischargePort'])
+            ->whereHas('shipment.voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->whereNotNull('arrival_date')
+            ->where('status', 'in_transit')
+            ->orderBy('arrival_date', 'desc');
     }
 
     /**
@@ -679,8 +748,11 @@ class ReportController extends Controller
      */
     private function buildCustomsQuery($company)
     {
-        // TODO: Implementar cuando estén los módulos correspondientes
-        return collect();
+        return WebserviceTransaction::with(['voyage', 'shipment'])
+            ->where('company_id', $company->id)
+            ->whereIn('webservice_type', ['micdta', 'anticipada', 'desconsolidados', 'transbordos'])
+            ->whereIn('status', ['success', 'error', 'pending'])
+            ->orderBy('created_at', 'desc');
     }
 
     /**
@@ -688,8 +760,12 @@ class ReportController extends Controller
      */
     private function buildShipmentsQuery($company)
     {
-        // TODO: Implementar cuando esté el módulo de cargas
-        return collect();
+        return Shipment::with(['voyage', 'vessel', 'billsOfLading', 'shipmentItems'])
+            ->whereHas('voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->where('active', true)
+            ->orderBy('created_date', 'desc');
     }
 
     /**
@@ -697,10 +773,11 @@ class ReportController extends Controller
      */
     private function buildTripsQuery($company)
     {
-        // TODO: Implementar cuando esté el módulo de viajes
-        return collect();
+        return Voyage::with(['shipments', 'leadVessel', 'originPort', 'destinationPort'])
+            ->where('company_id', $company->id)
+            ->where('active', true)
+            ->orderBy('departure_date', 'desc');
     }
-
     /**
      * Aplicar filtros específicos para reportes de operadores.
      */
@@ -739,12 +816,15 @@ class ReportController extends Controller
      */
     private function getManifestStats($company): array
     {
-        // TODO: Implementar cuando esté el módulo de cargas
+        $voyages = Voyage::where('company_id', $company->id)
+            ->where('active', true)
+            ->whereHas('shipments.billsOfLading');
+
         return [
-            'total' => 0,
-            'this_month' => 0,
-            'pending' => 0,
-            'completed' => 0,
+            'total' => $voyages->count(),
+            'this_month' => $voyages->whereMonth('created_at', now()->month)->count(),
+            'pending' => $voyages->where('status', 'pending')->count(),
+            'completed' => $voyages->where('status', 'completed')->count(),
         ];
     }
 
@@ -753,12 +833,15 @@ class ReportController extends Controller
      */
     private function getBillsOfLadingStats($company): array
     {
-        // TODO: Implementar cuando esté el módulo de cargas
+        $bills = BillOfLading::whereHas('shipment.voyage', function($query) use ($company) {
+            $query->where('company_id', $company->id);
+        });
+
         return [
-            'total' => 0,
-            'this_month' => 0,
-            'pending' => 0,
-            'completed' => 0,
+            'total' => $bills->count(),
+            'this_month' => $bills->whereMonth('created_at', now()->month)->count(),
+            'pending' => $bills->where('status', 'pending')->count(),
+            'completed' => $bills->where('status', 'issued')->count(),
         ];
     }
 
@@ -767,12 +850,17 @@ class ReportController extends Controller
      */
     private function getMicdtaStats($company): array
     {
-        // TODO: Implementar cuando esté el módulo de webservices
+        $transactions = WebserviceTransaction::where('company_id', $company->id)
+            ->whereIn('webservice_type', ['micdta', 'anticipada']);
+
+        $total = $transactions->count();
+        $successful = $transactions->where('status', 'success')->count();
+
         return [
-            'sent' => 0,
-            'pending' => 0,
-            'failed' => 0,
-            'success_rate' => 0,
+            'sent' => $total,
+            'pending' => $transactions->where('status', 'pending')->count(),
+            'failed' => $transactions->where('status', 'error')->count(),
+            'success_rate' => $total > 0 ? round(($successful / $total) * 100, 1) : 0,
         ];
     }
 
@@ -781,11 +869,14 @@ class ReportController extends Controller
      */
     private function getArrivalNoticesStats($company): array
     {
-        // TODO: Implementar cuando esté el módulo de cargas
+        $notices = BillOfLading::whereHas('shipment.voyage', function($query) use ($company) {
+            $query->where('company_id', $company->id);
+        })->whereNotNull('arrival_date');
+
         return [
-            'sent' => 0,
-            'pending' => 0,
-            'this_month' => 0,
+            'sent' => $notices->whereNotNull('notify_party_id')->count(),
+            'pending' => $notices->where('status', 'in_transit')->count(),
+            'this_month' => $notices->whereMonth('arrival_date', now()->month)->count(),
         ];
     }
 
@@ -794,11 +885,12 @@ class ReportController extends Controller
      */
     private function getCustomsStats($company): array
     {
-        // TODO: Implementar cuando estén los módulos correspondientes
+        $transactions = WebserviceTransaction::where('company_id', $company->id);
+
         return [
-            'reports_generated' => 0,
-            'pending_submissions' => 0,
-            'approved' => 0,
+            'reports_generated' => $transactions->count(),
+            'pending_submissions' => $transactions->where('status', 'pending')->count(),
+            'approved' => $transactions->where('status', 'success')->count(),
         ];
     }
 
@@ -807,12 +899,15 @@ class ReportController extends Controller
      */
     private function getShipmentsStats($company): array
     {
-        // TODO: Implementar cuando esté el módulo de cargas
+        $shipments = Shipment::whereHas('voyage', function($query) use ($company) {
+            $query->where('company_id', $company->id);
+        });
+
         return [
-            'total' => 0,
-            'this_month' => 0,
-            'pending' => 0,
-            'completed' => 0,
+            'total' => $shipments->count(),
+            'this_month' => $shipments->whereMonth('created_at', now()->month)->count(),
+            'pending' => $shipments->where('status', 'pending')->count(),
+            'completed' => $shipments->where('status', 'completed')->count(),
         ];
     }
 
@@ -821,12 +916,13 @@ class ReportController extends Controller
      */
     private function getTripsStats($company): array
     {
-        // TODO: Implementar cuando esté el módulo de viajes
+        $voyages = Voyage::where('company_id', $company->id)->where('active', true);
+
         return [
-            'total' => 0,
-            'this_month' => 0,
-            'active' => 0,
-            'completed' => 0,
+            'total' => $voyages->count(),
+            'this_month' => $voyages->whereMonth('created_at', now()->month)->count(),
+            'active' => $voyages->whereIn('status', ['in_progress', 'loading'])->count(),
+            'completed' => $voyages->where('status', 'completed')->count(),
         ];
     }
 
@@ -860,7 +956,10 @@ class ReportController extends Controller
         return [
             'status' => ['pending', 'completed', 'sent'],
             'period' => ['today', 'week', 'month', 'quarter'],
-            'destination' => [], // TODO: Obtener destinos disponibles
+            'destination' => Port::where('active', true)
+                ->orderBy('name')
+                ->pluck('name', 'id')
+                ->toArray(),
         ];
     }
 
@@ -870,9 +969,12 @@ class ReportController extends Controller
     private function getBillsOfLadingFilters(): array
     {
         return [
-            'status' => ['draft', 'issued', 'delivered'],
+            'status' => ['pending', 'issued', 'in_transit', 'delivered'],
             'period' => ['today', 'week', 'month', 'quarter'],
-            'shipper' => [], // TODO: Obtener cargadores disponibles
+            'shipper' => Client::whereHas('shipper_bills')
+                ->orderBy('business_name')
+                ->pluck('business_name', 'id')
+                ->toArray(),
         ];
     }
 
@@ -963,6 +1065,8 @@ class ReportController extends Controller
             'canViewShipments' => ($this->hasCompanyRole('Cargas') || $this->hasCompanyRole('Desconsolidador')) && $this->canPerform('reports_shipments'),
             'canViewTrips' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports_trips'),
             'canViewOperators' => $this->isCompanyAdmin() && $this->canPerform('reports_operators'),
+             'canViewDeconsolidation' => $this->hasCompanyRole('Desconsolidador') && $this->canPerform('reports_deconsolidation'),
+            'canViewTransshipment' => $this->hasCompanyRole('Transbordos') && $this->canPerform('reports_transshipment'),
         ];
     }
 
@@ -988,6 +1092,10 @@ class ReportController extends Controller
                 return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_trips');
             case 'operators':
                 return $this->isCompanyAdmin() && $this->canPerform('reports_operators');
+            case 'deconsolidation':
+                return $this->hasCompanyRole('Desconsolidador') && $this->canPerform('reports_deconsolidation');
+            case 'transshipment':
+                return $this->hasCompanyRole('Transbordos') && $this->canPerform('reports_transshipment');
             default:
                 return false;
         }
@@ -1025,4 +1133,198 @@ class ReportController extends Controller
     {
         // TODO: Implementar filtros específicos cuando esté el módulo de cargas
     }
+
+    /**
+ * Reporte de desconsolidación.
+ * Solo disponible para empresas con rol "Desconsolidador".
+ */
+public function deconsolidation(Request $request)
+{
+    // 1. Verificar permisos básicos
+    if (!$this->canPerform('reports_deconsolidation')) {
+        abort(403, 'No tiene permisos para ver reportes de desconsolidación.');
+    }
+
+    $company = $this->getUserCompany();
+
+    // 2. Verificar empresa y acceso
+    if (!$company || !$this->canAccessCompany($company->id)) {
+        abort(403, 'No tiene permisos para acceder a esta empresa.');
+    }
+
+    // 3. Verificar que la empresa tenga rol "Desconsolidador"
+    if (!$this->hasCompanyRole('Desconsolidador')) {
+        abort(403, 'Su empresa no tiene permisos para ver reportes de desconsolidación. Se requiere rol "Desconsolidador".');
+    }
+
+    // Aplicar filtros de ownership si es usuario regular
+    $deconsolidationQuery = $this->buildDeconsolidationQuery($company);
+
+    // Si es usuario regular, filtrar solo sus propios registros
+    if ($this->isUser()) {
+        // TODO: Aplicar filtros de ownership cuando estén los módulos
+        // $deconsolidationQuery->where('created_by', $this->getCurrentUser()->id);
+    }
+
+    // Aplicar filtros de búsqueda
+    $this->applyDeconsolidationFilters($deconsolidationQuery, $request);
+
+    // TODO: Implementar cuando esté el módulo de desconsolidación
+    $deconsolidations = collect(); // Colección vacía por ahora
+
+    // Obtener estadísticas filtradas
+    $stats = $this->getDeconsolidationStats($company);
+
+    // Filtros disponibles
+    $filters = $this->getDeconsolidationFilters();
+
+    return view('company.reports.deconsolidation', compact(
+        'deconsolidations',
+        'stats',
+        'filters',
+        'company'
+    ));
+}
+
+/**
+ * Reporte de transbordos.
+ * Solo disponible para empresas con rol "Transbordos".
+ */
+public function transshipment(Request $request)
+{
+    // 1. Verificar permisos básicos
+    if (!$this->canPerform('reports_transshipment')) {
+        abort(403, 'No tiene permisos para ver reportes de transbordos.');
+    }
+
+    $company = $this->getUserCompany();
+
+    // 2. Verificar empresa y acceso
+    if (!$company || !$this->canAccessCompany($company->id)) {
+        abort(403, 'No tiene permisos para acceder a esta empresa.');
+    }
+
+    // 3. Verificar que la empresa tenga rol "Transbordos"
+    if (!$this->hasCompanyRole('Transbordos')) {
+        abort(403, 'Su empresa no tiene permisos para ver reportes de transbordos. Se requiere rol "Transbordos".');
+    }
+
+    // Aplicar filtros de ownership si es usuario regular
+    $transshipmentQuery = $this->buildTransshipmentQuery($company);
+
+    // Si es usuario regular, filtrar solo sus propios registros
+    if ($this->isUser()) {
+        // TODO: Aplicar filtros de ownership cuando estén los módulos
+        // $transshipmentQuery->where('created_by', $this->getCurrentUser()->id);
+    }
+
+    // Aplicar filtros de búsqueda
+    $this->applyTransshipmentFilters($transshipmentQuery, $request);
+
+    // TODO: Implementar cuando esté el módulo de transbordos
+    $transshipments = collect(); // Colección vacía por ahora
+
+    // Obtener estadísticas filtradas
+    $stats = $this->getTransshipmentStats($company);
+
+    // Filtros disponibles
+    $filters = $this->getTransshipmentFilters();
+
+    return view('company.reports.transshipment', compact(
+        'transshipments',
+        'stats',
+        'filters',
+        'company'
+    ));
+}
+
+// =========================================================================
+// MÉTODOS AUXILIARES A AGREGAR
+// =========================================================================
+
+/**
+ * Construir query base para desconsolidación.
+ */
+private function buildDeconsolidationQuery($company)
+{
+    // TODO: Implementar cuando esté el módulo de desconsolidación
+    return collect();
+}
+
+/**
+ * Construir query base para transbordos.
+ */
+private function buildTransshipmentQuery($company)
+{
+    // TODO: Implementar cuando esté el módulo de transbordos
+    return collect();
+}
+
+/**
+ * Aplicar filtros de desconsolidación.
+ */
+private function applyDeconsolidationFilters($query, Request $request)
+{
+    // TODO: Implementar filtros cuando esté el módulo
+}
+
+/**
+ * Aplicar filtros de transbordos.
+ */
+private function applyTransshipmentFilters($query, Request $request)
+{
+    // TODO: Implementar filtros cuando esté el módulo
+}
+
+/**
+ * Obtener estadísticas de desconsolidación.
+ */
+private function getDeconsolidationStats($company): array
+{
+    // TODO: Implementar cuando esté el módulo de desconsolidación
+    return [
+        'total' => 0,
+        'this_month' => 0,
+        'pending' => 0,
+        'completed' => 0,
+    ];
+}
+
+/**
+ * Obtener estadísticas de transbordos.
+ */
+private function getTransshipmentStats($company): array
+{
+    // TODO: Implementar cuando esté el módulo de transbordos
+    return [
+        'total' => 0,
+        'this_month' => 0,
+        'pending' => 0,
+        'completed' => 0,
+    ];
+}
+
+/**
+ * Obtener filtros para desconsolidación.
+ */
+private function getDeconsolidationFilters(): array
+{
+    return [
+        'status' => ['pending', 'processing', 'completed'],
+        'period' => ['today', 'week', 'month', 'quarter'],
+        'container_type' => [], // TODO: Obtener tipos disponibles
+    ];
+}
+
+/**
+ * Obtener filtros para transbordos.
+ */
+private function getTransshipmentFilters(): array
+{
+    return [
+        'status' => ['pending', 'in_transit', 'completed'],
+        'period' => ['today', 'week', 'month', 'quarter'],
+        'route' => [], // TODO: Obtener rutas disponibles
+    ];
+}
 }

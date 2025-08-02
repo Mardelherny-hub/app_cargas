@@ -20,6 +20,7 @@ use App\Http\Requests\Company\ImportManifestRequest;
 use App\Models\Voyage;
 use App\Models\Shipment;
 use App\Models\Client;
+use App\Models\Vessel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -188,15 +189,15 @@ private function getTripsForWebservice(Company $company): array
         return $voyages->map(function ($voyage) {
             return [
                 'id' => $voyage->id,
-                'number' => $this->formatVoyageDisplayNumber($voyage), // Campo que espera la vista
-                'display_text' => $this->formatVoyageDisplayText($voyage), // Texto completo para el select
+                'number' => $this->formatVoyageDisplayNumber($voyage),
+                'display_text' => $this->formatVoyageDisplayText($voyage),
                 'voyage_number' => $voyage->voyage_number,
                 'internal_reference' => $voyage->internal_reference,
                 'departure_date' => $voyage->departure_date->format('d/m/Y H:i'),
                 'status' => $voyage->status,
                 'route' => $this->formatVoyageRoute($voyage),
-                'vessel_name' => $voyage->leadVessel->name ?? 'Embarcación no especificada',
-                'captain_name' => $voyage->captain->full_name ?? 'Capitán no asignado',
+                'vessel_name' => $voyage->leadVessel->name ?? 'Sin embarcación',
+                'shipment_count' => $voyage->shipments_count ?? $voyage->shipments->count(),
             ];
         })->toArray();
 
@@ -216,8 +217,7 @@ private function getTripsForWebservice(Company $company): array
  */
 private function formatVoyageDisplayNumber(Voyage $voyage): string
 {
-    // Priorizar voyage_number, luego internal_reference
-    return $voyage->voyage_number ?: ($voyage->internal_reference ?: "Viaje #{$voyage->id}");
+    return $voyage->voyage_number ?: "V{$voyage->id}";
 }
 
 /**
@@ -227,7 +227,7 @@ private function formatVoyageDisplayText(Voyage $voyage): string
 {
     $number = $this->formatVoyageDisplayNumber($voyage);
     $route = $this->formatVoyageRoute($voyage);
-    $date = $voyage->departure_date->format('d/m/Y');
+    $date = $voyage->departure_date ? $voyage->departure_date->format('d/m/Y') : 'Sin fecha';
     $vessel = $voyage->leadVessel->name ?? 'Sin embarcación';
     
     return "{$number} | {$route} | {$date} | {$vessel}";
@@ -293,77 +293,195 @@ private function getExampleTripsData(): array
 private function getShipmentsForWebservice(Company $company): array
 {
     try {
-        // TODO: Implementar cuando esté el modelo Shipment
-        // Por ahora devolver datos de ejemplo
-        return [
-            [
-                'id' => 'shipment_1',
-                'number' => 'SHP001',
-                'display_text' => 'SHP001 | Título Madre | Cliente XYZ',
-                'type' => 'master',
-                'client_name' => 'Cliente XYZ',
-            ],
-            [
-                'id' => 'shipment_2',
-                'number' => 'SHP002', 
-                'display_text' => 'SHP002 | Título Hijo | Cliente ABC',
-                'type' => 'child',
-                'client_name' => 'Cliente ABC',
-            ],
-        ];
+        $shipments = Shipment::with([
+                'voyage.originPort',
+                'voyage.destinationPort', 
+                'vessel',
+                'billsOfLading.shipper',
+                'billsOfLading.consignee'
+            ])
+            ->whereHas('voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->where('active', true)
+            ->whereHas('billsOfLading') // Solo shipments con conocimientos
+            ->orderBy('created_date', 'desc')
+            ->limit(100)
+            ->get();
+
+        if ($shipments->isEmpty()) {
+            return [
+                [
+                    'id' => 'example_1',
+                    'number' => 'SHIP-001',
+                    'display_text' => 'SHIP-001 | PAR13001 | 253 Conocimientos',
+                    'vessel_name' => 'PAR13001',
+                    'bills_count' => 253,
+                    'status' => 'loaded',
+                    'voyage_number' => 'V022NB',
+                ],
+            ];
+        }
+
+        return $shipments->map(function ($shipment) {
+            $billsCount = $shipment->billsOfLading->count();
+            
+            return [
+                'id' => $shipment->id,
+                'number' => $shipment->shipment_number,
+                'display_text' => $shipment->shipment_number . ' | ' . ($shipment->vessel->name ?? 'N/A') . ' | ' . $billsCount . ' Conocimientos',
+                'vessel_name' => $shipment->vessel->name ?? 'Sin embarcación',
+                'bills_count' => $billsCount,
+                'status' => $shipment->status,
+                'voyage_number' => $shipment->voyage->voyage_number ?? 'N/A',
+                'route' => $this->formatShipmentRoute($shipment),
+            ];
+        })->toArray();
+
     } catch (Exception $e) {
+        Log::error('Error obteniendo shipments para webservice', [
+            'company_id' => $company->id,
+            'error' => $e->getMessage(),
+        ]);
+        
         return [];
     }
 }
 
+/**
+ * Formatear ruta del shipment.
+ * MÉTODO AUXILIAR NUEVO
+ */
+private function formatShipmentRoute(Shipment $shipment): string
+{
+    try {
+        return $this->formatVoyageRoute($shipment->voyage);
+    } catch (Exception $e) {
+        return 'Ruta no definida';
+  
+    }
+}
 /**
  * Obtener barcazas para transbordos
  */
 private function getBargesForWebservice(Company $company): array
 {
     try {
-        // TODO: Implementar cuando esté el modelo Vessel completo
-        return [
-            [
-                'id' => 'barge_1',
-                'number' => 'PAR13001',
-                'display_text' => 'PAR13001 | Barcaza Carga General',
-                'name' => 'PAR13001',
-                'type' => 'Carga General',
-            ],
-            [
-                'id' => 'barge_2',
-                'number' => 'PAR13002',
-                'display_text' => 'PAR13002 | Barcaza Contenedores', 
-                'name' => 'PAR13002',
-                'type' => 'Contenedores',
-            ],
-        ];
+        // Obtener embarcaciones que han sido usadas como barcazas en transbordos
+        $barges = Vessel::whereHas('shipments.voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->where('vessel_type', 'barge')
+            ->where('active', true)
+            ->with(['shipments' => function($query) {
+                $query->orderBy('created_date', 'desc')->limit(5);
+            }])
+            ->get();
+
+        if ($barges->isEmpty()) {
+            return [
+                [
+                    'id' => 'example_barge_1',
+                    'name' => 'PAR13001',
+                    'display_text' => 'PAR13001 | Barcaza | Activa',
+                    'type' => 'barge',
+                    'status' => 'active',
+                    'last_voyage' => 'V022NB',
+                ],
+                [
+                    'id' => 'example_barge_2',
+                    'name' => 'GUARAN F',
+                    'display_text' => 'GUARAN F | Barcaza | Activa',
+                    'type' => 'barge',
+                    'status' => 'active',
+                    'last_voyage' => 'V023NB',
+                ],
+            ];
+        }
+
+        return $barges->map(function ($barge) {
+            $lastShipment = $barge->shipments->first();
+            $lastVoyage = $lastShipment ? $lastShipment->voyage->voyage_number : 'N/A';
+            
+            return [
+                'id' => $barge->id,
+                'name' => $barge->name,
+                'display_text' => "{$barge->name} | {$barge->vessel_type} | {$barge->status}",
+                'type' => $barge->vessel_type,
+                'status' => $barge->status,
+                'last_voyage' => $lastVoyage,
+                'capacity_tons' => $barge->cargo_capacity_tons,
+                'container_capacity' => $barge->container_capacity,
+            ];
+        })->toArray();
+
     } catch (Exception $e) {
+        Log::error('Error obteniendo barcazas para webservice', [
+            'company_id' => $company->id,
+            'error' => $e->getMessage(),
+        ]);
+        
         return [];
     }
 }
-
 /**
  * Obtener transfers para transbordos
+ * NUEVO MÉTODO - Estructura datos con campos que espera la vista
+**
+ * Obtener transfers para transbordos con datos reales.
+ * MÉTODO NUEVO
  */
 private function getTransfersForWebservice(Company $company): array
 {
     try {
-        // TODO: Implementar cuando esté el modelo de transfers
-        return [
-            [
-                'id' => 'transfer_1',
-                'number' => 'TRF001',
-                'display_text' => 'TRF001 | PAR13001 → PAR13002',
-                'from_vessel' => 'PAR13001',
-                'to_vessel' => 'PAR13002',
-            ],
-        ];
+        // Obtener transacciones de transbordo recientes
+        $transfers = WebserviceTransaction::where('company_id', $company->id)
+            ->where('webservice_type', 'transbordos')
+            ->with(['voyage', 'user'])
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
+
+        if ($transfers->isEmpty()) {
+            return [
+                [
+                    'id' => 'example_transfer_1',
+                    'transaction_id' => 'TRF001',
+                    'display_text' => 'TRF001 | ARBUE → PYTVT | Completado',
+                    'status' => 'success',
+                    'created_at' => now()->subDays(1)->format('d/m/Y H:i'),
+                ],
+            ];
+        }
+
+        return $transfers->map(function ($transfer) {
+            $route = 'Ruta no definida';
+            if ($transfer->voyage) {
+                $route = $this->formatVoyageRoute($transfer->voyage);
+            }
+            
+            return [
+                'id' => $transfer->id,
+                'transaction_id' => $transfer->transaction_id,
+                'display_text' => "{$transfer->transaction_id} | {$route} | " . ucfirst($transfer->status),
+                'status' => $transfer->status,
+                'created_at' => $transfer->created_at->format('d/m/Y H:i'),
+                'voyage_number' => $transfer->voyage->voyage_number ?? 'N/A',
+                'user_name' => $transfer->user->name ?? 'Sistema',
+            ];
+        })->toArray();
+
     } catch (Exception $e) {
+        Log::error('Error obteniendo transfers para webservice', [
+            'company_id' => $company->id,
+            'error' => $e->getMessage(),
+        ]);
+        
         return [];
     }
 }
+
+
 
     /**
      * Obtener datos para el webservice
