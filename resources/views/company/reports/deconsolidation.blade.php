@@ -3,10 +3,10 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ __('Reporte de Manifiestos') }}
+                    {{ __('Reporte de Desconsolidación') }}
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    Consulta y exporta los manifiestos de la empresa.
+                    Consulta y exporta los reportes de desconsolidación.
                 </p>
             </div>
         </div>
@@ -21,7 +21,7 @@
                     <h3 class="text-lg font-medium text-gray-900">Filtros de Búsqueda</h3>
                 </div>
                 <div class="px-6 py-4">
-                    <form method="GET" action="{{ route('company.reports.manifests') }}">
+                    <form method="GET" action="{{ route('company.reports.deconsolidation') }}">
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div>
                                 <label for="search" class="block text-sm font-medium text-gray-700">Buscar</label>
@@ -29,7 +29,7 @@
                                        name="search" 
                                        id="search" 
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                       placeholder="ID de Manifiesto, Buque..."
+                                       placeholder="Contenedor, Manifiesto..."
                                        value="{{ request('search') }}">
                             </div>
                             <div>
@@ -62,55 +62,38 @@
                 </div>
             </div>
 
-            <!-- Listado de Manifiestos -->
+            <!-- Listado de Reportes de Desconsolidación -->
             <div class="bg-white shadow rounded-lg">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">
-                        Manifiestos Encontrados
+                        Reportes de Desconsolidación Encontrados
                     </h3>
                 </div>
                 <div class="overflow-hidden">
-                    @if(isset($manifests) && $manifests->count() > 0)
+                    @if(isset($deconsolidations) && $deconsolidations->count() > 0)
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buque</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Viaje</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contenedor</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Manifiesto Padre</th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                                     <th scope="col" class="relative px-6 py-3">
                                         <span class="sr-only">Acciones</span>
                                     </th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($manifests as $manifest)
-                                    <tr>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            {{ $manifest->id }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $manifest->leadVessel->name ?? 'Sin embarcación' }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $manifest->voyage_number ?? 'N/A' }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $manifest->departure_date ? $manifest->departure_date->format('d/m/Y') : 'Sin fecha' }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <a href="#" class="text-indigo-600 hover:text-indigo-900">Ver</a>
-                                        </td>
-                                    </tr>
-                                @endforeach
+                                {{-- Aquí se iterará sobre los reportes de desconsolidación --}}
                             </tbody>
                         </table>
                     @else
                         <div class="text-center py-12">
                             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m-7 10h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 1.1.9 2 2 2h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2zm12-4h.01M8 3h8M8 21h8"/>
                             </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">No se encontraron manifiestos</h3>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900">No se encontraron reportes de desconsolidación</h3>
                             <p class="mt-1 text-sm text-gray-500">
                                Intenta ajustar los filtros de búsqueda.
                             </p>

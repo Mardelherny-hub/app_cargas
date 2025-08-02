@@ -2,95 +2,24 @@
 
 namespace App\Traits;
 
-use Illuminate\Support\Facades\Auth;
 use App\Models\Company;
-use App\Models\Vessel;
-use App\Models\Voyage;
-use App\Models\WebserviceTransaction;
-use App\Models\BillOfLading;
-use App\Models\User;
+use App\Models\Operator;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 trait UserHelper
 {
     /**
-     * Obtener el usuario actual autenticado.
+     * Obtener el usuario autenticado actual.
      */
-    protected function getCurrentUser(): ?User
+    protected function getCurrentUser()
     {
         return Auth::user();
     }
 
     /**
-     * Obtener la empresa del usuario actual.
-     */
-    protected function getUserCompany(): ?Company
-    {
-        $user = $this->getCurrentUser();
-
-        if (!$user) {
-            return null;
-        }
-
-        // Si el usuario está directamente asociado a una empresa
-        if ($user->userable_type === 'App\Models\Company') {
-            return $user->userable;
-        }
-
-        // Si el usuario es un operador asociado a una empresa
-        if ($user->userable_type === 'App\Models\Operator' && $user->userable) {
-            return $user->userable->company;
-        }
-
-        return null;
-    }
-
-    /**
-     * Verificar si el usuario puede acceder a una empresa específica.
-     */
-    protected function canAccessCompany($companyId): bool
-    {
-        $user = $this->getCurrentUser();
-
-        if (!$user) {
-            return false;
-        }
-
-        // Solo super admin puede acceder a cualquier empresa
-        if ($user->hasRole('super-admin')) {
-            return true;
-        }
-
-        // Company admin y users solo pueden acceder a su propia empresa
-        $userCompany = $this->getUserCompany();
-        return $userCompany && $userCompany->id == $companyId;
-    }
-
-    /**
-     * Obtener el ID de la empresa del usuario (para consultas).
-     */
-    protected function getUserCompanyId(): ?int
-    {
-        $company = $this->getUserCompany();
-        return $company?->id;
-    }
-
-    /**
-     * Verificar si el usuario tiene acceso administrativo.
-     */
-    protected function hasAdminAccess(): bool
-    {
-        $user = $this->getCurrentUser();
-
-        if (!$user) {
-            return false;
-        }
-
-        return $user->hasRole('super-admin') || $user->hasRole('company-admin');
-    }
-
-    /**
-     * Verificar si el usuario es super administrador.
+     * Verificar si el usuario es super admin.
      */
     protected function isSuperAdmin(): bool
     {
@@ -156,52 +85,27 @@ trait UserHelper
     }
 
     /**
-     * Obtener información resumida del usuario para mostrar en la interfaz.
+     * Obtener empresa del usuario según su rol.
      */
-    public function getUserSummaryInfo(): array
+    protected function getUserCompany(): ?Company
     {
         $user = $this->getCurrentUser();
-        $company = $this->getUserCompany();
 
         if (!$user) {
-            return [
-                'name' => 'Invitado',
-                'email' => null,
-                'type' => 'Invitado',
-                'company' => null,
-                'roles' => [],
-                'permissions' => []
-            ];
+            return null;
         }
 
-        $info = [
-            'name' => $user->name,
-            'email' => $user->email,
-            'type' => $this->getUserType(),
-            'company' => $company ? $company->legal_name : null,
-            'roles' => $user->roles->pluck('name')->toArray(),
-            'permissions' => $user->getAllPermissions()->pluck('name')->toArray()
-        ];
-
-        // Agregar información específica de empresa si aplica
-        if ($company) {
-            $info['company_id'] = $company->id;
-            $info['company_roles'] = $company->company_roles ?? [];
-            $info['company_active'] = $company->active;
+        // Company admin: empresa directamente asociada
+        if ($user->hasRole('company-admin') && $user->userable_type === 'App\Models\Company') {
+            return $user->userable;
         }
 
-        // Agregar información específica de operador si aplica
-        if ($user->userable_type === 'App\Models\Operator' && $user->userable) {
-            $operator = $user->userable;
-            $info['operator_permissions'] = [
-                'can_import' => $operator->can_import ?? false,
-                'can_export' => $operator->can_export ?? false,
-                'can_transfer' => $operator->can_transfer ?? false,
-            ];
-            $info['operator_active'] = $operator->active;
+        // User: empresa a través del operador
+        if ($user->hasRole('user') && $user->userable_type === 'App\Models\Operator') {
+            return $user->userable->company ?? null;
         }
 
-        return $info;
+        return null;
     }
 
     /**
@@ -220,8 +124,34 @@ trait UserHelper
     }
 
     /**
+     * Verificar si el usuario puede acceder a una empresa específica.
+     */
+    protected function canAccessCompany(int $companyId): bool
+    {
+        $user = $this->getCurrentUser();
+
+        if (!$user) {
+            return false;
+        }
+
+        // Super admin puede acceder a todas las empresas
+        if ($user->hasRole('super-admin')) {
+            return true;
+        }
+
+        $userCompany = $this->getUserCompany();
+
+        if (!$userCompany) {
+            return false;
+        }
+
+        // Puede acceder solo a su propia empresa
+        return $userCompany->id === $companyId;
+    }
+
+    /**
      * Verificar si el usuario puede realizar una acción específica.
-     * MÉTODO CORREGIDO: Se agregaron todas las acciones faltantes
+     * ⚠️ IMPORTANTE: Para reportes, usar hasCompanyRole() directamente
      */
     protected function canPerform(string $action): bool
     {
@@ -272,6 +202,35 @@ trait UserHelper
                 case 'view_transfers':
                     return $this->hasCompanyRole('Transbordos');
 
+                // ⚠️ REPORTES: Casos específicos agregados para evitar 41 cambios
+                case 'reports.manifests':
+                case 'reports.bills_of_lading':
+                case 'reports.micdta':
+                case 'reports.arrival_notices':
+                case 'reports.trips':
+                    return $this->hasCompanyRole('Cargas');
+                    
+                case 'reports.deconsolidation':
+                    return $this->hasCompanyRole('Desconsolidador');
+                    
+                case 'reports.transshipment':
+                    return $this->hasCompanyRole('Transbordos');
+                    
+                case 'reports.customs':
+                    return $this->hasCompanyRole('Cargas') || 
+                           $this->hasCompanyRole('Desconsolidador') || 
+                           $this->hasCompanyRole('Transbordos');
+                           
+                case 'reports.shipments':
+                    return $this->hasCompanyRole('Cargas') || 
+                           $this->hasCompanyRole('Desconsolidador');
+                           
+                case 'reports.operators':
+                    return true; // Solo company-admin puede llegar aquí
+                    
+                case 'reports.export':
+                    return true; // Todos los que lleguen aquí pueden exportar
+
                 default:
                     return false;
             }
@@ -317,6 +276,38 @@ trait UserHelper
                 case 'manage_settings':
                 case 'manage_webservices':
                     return false;
+
+                // ⚠️ REPORTES: Casos específicos para users según roles de empresa
+                case 'reports.manifests':
+                case 'reports.bills_of_lading':
+                case 'reports.micdta':
+                case 'reports.arrival_notices':
+                case 'reports.trips':
+                    return $this->hasCompanyRole('Cargas');
+                    
+                case 'reports.deconsolidation':
+                    return $this->hasCompanyRole('Desconsolidador');
+                    
+                case 'reports.transshipment':
+                    return $this->hasCompanyRole('Transbordos');
+                    
+                case 'reports.customs':
+                    return $this->hasCompanyRole('Cargas') || 
+                           $this->hasCompanyRole('Desconsolidador') || 
+                           $this->hasCompanyRole('Transbordos');
+                           
+                case 'reports.shipments':
+                    return $this->hasCompanyRole('Cargas') || 
+                           $this->hasCompanyRole('Desconsolidador');
+                           
+                case 'reports.operators':
+                    return false; // Users NO pueden ver reportes de operadores
+                    
+                case 'reports.export':
+                    return true; // Users pueden exportar sus reportes permitidos
+
+                // ⚠️ REPORTES: Usar hasCompanyRole() directamente en ReportController
+                // NO agregar casos de reports.* aquí para mantener simplicidad
 
                 default:
                     return false;
@@ -398,7 +389,6 @@ trait UserHelper
 
     /**
      * Verificar si el usuario tiene permisos de operador válidos.
-     * MÉTODO FALTANTE: Movido desde DashboardController
      */
     protected function hasValidOperatorPermissions(): bool
     {
@@ -422,135 +412,100 @@ trait UserHelper
 
     /**
      * Obtener estado del certificado de la empresa.
-     * MÉTODO FALTANTE: Usado en DashboardController
      */
     protected function getCertificateStatus(Company $company): array
     {
-        $status = [
-            'has_certificate' => !empty($company->certificate_path),
-            'is_valid' => false,
-            'expires_at' => $company->certificate_expires_at,
-            'days_until_expiry' => null,
-            'is_expired' => false,
-            'needs_renewal' => false,
-        ];
-
-        if ($company->certificate_expires_at) {
-            $now = Carbon::now();
-            $expiryDate = Carbon::parse($company->certificate_expires_at);
-
-            $status['days_until_expiry'] = $now->diffInDays($expiryDate, false);
-            $status['is_expired'] = $expiryDate->isPast();
-            $status['is_valid'] = !$status['is_expired'];
-            $status['needs_renewal'] = $status['days_until_expiry'] <= 30; // Renovar si quedan 30 días o menos
+        if (!$company->certificate_path) {
+            return [
+                'has_certificate' => false,
+                'is_expired' => false,
+                'expires_at' => null,
+                'needs_renewal' => true,
+                'days_until_expiry' => null,
+            ];
         }
 
-        return $status;
-    }
+        $expiresAt = $company->certificate_expires_at;
+        $now = Carbon::now();
 
-    /**
-     * Obtener estado de webservices de la empresa.
-     * MÉTODO FALTANTE: Usado en DashboardController
-     */
-    protected function getWebserviceStatus(Company $company): array
-    {
+        if (!$expiresAt) {
+            return [
+                'has_certificate' => true,
+                'is_expired' => false,
+                'expires_at' => null,
+                'needs_renewal' => false,
+                'days_until_expiry' => null,
+            ];
+        }
+
+        $daysUntilExpiry = $now->diffInDays($expiresAt, false);
+        $isExpired = $expiresAt->isPast();
+        $needsRenewal = $isExpired || $daysUntilExpiry <= 30;
+
         return [
-            'is_active' => $company->ws_active ?? false,
-            'environment' => $company->ws_environment ?? 'testing',
-            'last_connection' => $company->ws_last_connection,
-            'connection_status' => $company->ws_status ?? 'disconnected',
-            'has_errors' => $company->ws_last_error !== null,
-            'last_error' => $company->ws_last_error,
+            'has_certificate' => true,
+            'is_expired' => $isExpired,
+            'expires_at' => $expiresAt,
+            'needs_renewal' => $needsRenewal,
+            'days_until_expiry' => $daysUntilExpiry,
         ];
     }
 
     /**
-     * Obtener alertas de la empresa.
-     * MÉTODO FALTANTE: Usado en DashboardController
+     * Obtener información resumida del usuario para mostrar en la interfaz.
      */
-    protected function getCompanyAlerts(Company $company): array
+    public function getUserSummaryInfo(): array
     {
-        $alerts = [];
+        $user = $this->getCurrentUser();
+        $company = $this->getUserCompany();
 
-        // Alertas de certificado
-        $certStatus = $this->getCertificateStatus($company);
-        if ($certStatus['is_expired']) {
-            $alerts[] = [
-                'type' => 'error',
-                'title' => 'Certificado vencido',
-                'message' => 'El certificado digital de la empresa ha vencido.',
-            ];
-        } elseif ($certStatus['needs_renewal']) {
-            $alerts[] = [
-                'type' => 'warning',
-                'title' => 'Certificado por vencer',
-                'message' => "El certificado vence en {$certStatus['days_until_expiry']} días.",
+        if (!$user) {
+            return [
+                'name' => 'Invitado',
+                'email' => null,
+                'type' => 'Invitado',
+                'company' => null,
+                'roles' => [],
+                'permissions' => []
             ];
         }
 
-        // Alertas de webservices
-        $wsStatus = $this->getWebserviceStatus($company);
-        if ($wsStatus['has_errors']) {
-            $alerts[] = [
-                'type' => 'warning',
-                'title' => 'Error en webservice',
-                'message' => 'Se detectaron errores en la conexión a webservices.',
-            ];
-        }
-
-        // Alertas de operadores
-        $inactiveOperators = $company->operators()->where('active', false)->count();
-        if ($inactiveOperators > 0) {
-            $alerts[] = [
-                'type' => 'info',
-                'title' => 'Operadores inactivos',
-                'message' => "Hay {$inactiveOperators} operadores inactivos.",
-            ];
-        }
-
-        return $alerts;
-    }
-
-    /**
-     * Obtener estadísticas de operadores.
-     * MÉTODO FALTANTE: Usado en DashboardController para company-admin
-     */
-    protected function getOperatorStats(Company $company): array
-    {
-        return [
-            'total' => $company->operators()->count(),
-            'active' => $company->operators()->where('active', true)->count(),
-            'inactive' => $company->operators()->where('active', false)->count(),
-            'with_import_permission' => $company->operators()->where('can_import', true)->count(),
-            'with_export_permission' => $company->operators()->where('can_export', true)->count(),
-            'with_transfer_permission' => $company->operators()->where('can_transfer', true)->count(),
-            'external' => $company->operators()->where('type', 'external')->count(),
-            'internal' => $company->operators()->where('type', 'internal')->count(),
+        $info = [
+            'name' => $user->name,
+            'email' => $user->email,
+            'type' => $this->getUserType(),
+            'company' => $company ? $company->legal_name : null,
+            'roles' => $user->roles->pluck('name')->toArray(),
+            'permissions' => $user->getAllPermissions()->pluck('name')->toArray()
         ];
+
+        // Agregar información específica de empresa si aplica
+        if ($company) {
+            $info['company_id'] = $company->id;
+            $info['company_roles'] = $company->company_roles ?? [];
+            $info['company_active'] = $company->active;
+        }
+
+        // Agregar información específica de operador si aplica
+        if ($user->userable_type === 'App\Models\Operator' && $user->userable) {
+            $operator = $user->userable;
+            $info['operator_permissions'] = [
+                'can_import' => $operator->can_import ?? false,
+                'can_export' => $operator->can_export ?? false,
+                'can_transfer' => $operator->can_transfer ?? false,
+            ];
+            $info['operator_active'] = $operator->active;
+        }
+
+        return $info;
     }
 
-    /**
-     * Obtener estado del sistema para la empresa.
-     * MÉTODO FALTANTE: Usado en DashboardController para company-admin
-     */
-    protected function getSystemHealth(Company $company): array
-    {
-        return [
-            'database_status' => 'online', // TODO: Implementar verificación real
-            'webservice_status' => $company->ws_active ? 'active' : 'inactive',
-            'certificate_status' => $this->getCertificateStatus($company)['is_valid'] ? 'valid' : 'invalid',
-            'last_backup' => null, // TODO: Implementar cuando esté el sistema de backups
-            'storage_usage' => 0, // TODO: Implementar verificación de almacenamiento
-        ];
-    }
+    // =========================================================================
+    // MÉTODOS AUXILIARES PARA DASHBOARD (faltantes)
+    // =========================================================================
 
     /**
      * Obtener actividad reciente de la empresa.
-     * MÉTODO FALTANTE: Usado en DashboardController para company-admin
-     */
-    /**
-     * Obtener actividad reciente de la empresa.
-     * REEMPLAZAR: // TODO: Implementar cuando estén los módulos de auditoría
      */
     protected function getRecentActivity(Company $company): array
     {
@@ -558,7 +513,7 @@ trait UserHelper
             $recentActivity = [];
 
             // Obtener logins recientes de usuarios de la empresa
-            $recentLogins = User::whereHas('userable', function($query) use ($company) {
+            $recentLogins = \App\Models\User::whereHas('userable', function($query) use ($company) {
                     $query->where('company_id', $company->id);
                 })
                 ->whereNotNull('last_access')
@@ -577,37 +532,41 @@ trait UserHelper
             }
 
             // Obtener operaciones recientes (viajes creados)
-            $recentVoyages = Voyage::where('company_id', $company->id)
-                ->with('createdByUser')
-                ->where('created_at', '>=', now()->subDays(7))
-                ->orderBy('created_at', 'desc')
-                ->take(3)
-                ->get();
+            if (class_exists(\App\Models\Voyage::class)) {
+                $recentVoyages = \App\Models\Voyage::where('company_id', $company->id)
+                    ->with('createdByUser')
+                    ->where('created_at', '>=', now()->subDays(7))
+                    ->orderBy('created_at', 'desc')
+                    ->take(3)
+                    ->get();
 
-            foreach ($recentVoyages as $voyage) {
-                $recentActivity[] = [
-                    'type' => 'voyage_created',
-                    'description' => "Viaje {$voyage->voyage_number} creado",
-                    'timestamp' => $voyage->created_at,
-                    'user' => $voyage->createdByUser->name ?? 'Sistema',
-                ];
+                foreach ($recentVoyages as $voyage) {
+                    $recentActivity[] = [
+                        'type' => 'voyage_created',
+                        'description' => "Viaje {$voyage->voyage_number} creado",
+                        'timestamp' => $voyage->created_at,
+                        'user' => $voyage->createdByUser->name ?? 'Sistema',
+                    ];
+                }
             }
 
             // Obtener transacciones de webservice recientes
-            $recentWebservices = WebserviceTransaction::where('company_id', $company->id)
-                ->with('user')
-                ->where('created_at', '>=', now()->subDays(7))
-                ->orderBy('created_at', 'desc')
-                ->take(3)
-                ->get();
+            if (class_exists(\App\Models\WebserviceTransaction::class)) {
+                $recentWebservices = \App\Models\WebserviceTransaction::where('company_id', $company->id)
+                    ->with('user')
+                    ->where('created_at', '>=', now()->subDays(7))
+                    ->orderBy('created_at', 'desc')
+                    ->take(3)
+                    ->get();
 
-            foreach ($recentWebservices as $ws) {
-                $recentActivity[] = [
-                    'type' => 'webservice',
-                    'description' => "Webservice {$ws->webservice_type} - " . ucfirst($ws->status),
-                    'timestamp' => $ws->created_at,
-                    'user' => $ws->user->name ?? 'Sistema',
-                ];
+                foreach ($recentWebservices as $ws) {
+                    $recentActivity[] = [
+                        'type' => 'webservice',
+                        'description' => "Webservice {$ws->webservice_type} - " . ucfirst($ws->status),
+                        'timestamp' => $ws->created_at,
+                        'user' => $ws->user->name ?? 'Sistema',
+                    ];
+                }
             }
 
             // Ordenar por timestamp más reciente
@@ -617,7 +576,7 @@ trait UserHelper
 
             return array_slice($recentActivity, 0, 10);
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return [
                 [
                     'type' => 'error',
@@ -631,11 +590,6 @@ trait UserHelper
 
     /**
      * Obtener tareas pendientes de la empresa.
-     * MÉTODO FALTANTE: Usado en DashboardController para company-admin
-     */
-    /**
-     * Obtener tareas pendientes de la empresa.
-     * REEMPLAZAR: Verificar certificado
      */
     protected function getPendingTasks(Company $company): array
     {
@@ -664,56 +618,62 @@ trait UserHelper
                 ];
             }
 
-            // Verificar viajes con retraso
-            $delayedVoyages = Voyage::where('company_id', $company->id)
-                ->whereDate('departure_date', '<', now())
-                ->whereIn('status', ['pending', 'planning'])
-                ->count();
+            // Verificar viajes con retraso (solo si existe el modelo)
+            if (class_exists(\App\Models\Voyage::class)) {
+                $delayedVoyages = \App\Models\Voyage::where('company_id', $company->id)
+                    ->whereDate('departure_date', '<', now())
+                    ->whereIn('status', ['pending', 'planning'])
+                    ->count();
 
-            if ($delayedVoyages > 0) {
-                $tasks[] = [
-                    'title' => "Actualizar {$delayedVoyages} viaje(s) con retraso",
-                    'priority' => 'high',
-                    'due_date' => now(),
-                    'route' => route('company.voyages.index'),
-                ];
+                if ($delayedVoyages > 0) {
+                    $tasks[] = [
+                        'title' => "Actualizar {$delayedVoyages} viaje(s) con retraso",
+                        'priority' => 'high',
+                        'due_date' => now(),
+                        'route' => route('company.voyages.index'),
+                    ];
+                }
             }
 
-            // Verificar transacciones de webservice fallidas
-            $failedTransactions = WebserviceTransaction::where('company_id', $company->id)
-                ->where('status', 'error')
-                ->where('created_at', '>=', now()->subDays(7))
-                ->count();
+            // Verificar transacciones de webservice fallidas (solo si existe el modelo)
+            if (class_exists(\App\Models\WebserviceTransaction::class)) {
+                $failedTransactions = \App\Models\WebserviceTransaction::where('company_id', $company->id)
+                    ->where('status', 'error')
+                    ->where('created_at', '>=', now()->subDays(7))
+                    ->count();
 
-            if ($failedTransactions > 0) {
-                $tasks[] = [
-                    'title' => "Revisar {$failedTransactions} transacción(es) fallida(s)",
-                    'priority' => 'medium',
-                    'due_date' => now()->addDays(3),
-                    'route' => route('company.webservices.history'),
-                ];
+                if ($failedTransactions > 0) {
+                    $tasks[] = [
+                        'title' => "Revisar {$failedTransactions} transacción(es) fallida(s)",
+                        'priority' => 'medium',
+                        'due_date' => now()->addDays(3),
+                        'route' => route('company.webservices.history'),
+                    ];
+                }
             }
 
-            // Verificar conocimientos pendientes de verificación
-            $pendingBills = BillOfLading::whereHas('shipment.voyage', function($query) use ($company) {
-                $query->where('company_id', $company->id);
-            })
-            ->where('status', 'draft')
-            ->whereNull('verified_at')
-            ->count();
+            // Verificar conocimientos pendientes de verificación (solo si existe el modelo)
+            if (class_exists(\App\Models\BillOfLading::class)) {
+                $pendingBills = \App\Models\BillOfLading::whereHas('shipment.voyage', function($query) use ($company) {
+                    $query->where('company_id', $company->id);
+                })
+                ->where('status', 'draft')
+                ->whereNull('verified_at')
+                ->count();
 
-            if ($pendingBills > 0) {
-                $tasks[] = [
-                    'title' => "Verificar {$pendingBills} conocimiento(s) de embarque",
-                    'priority' => 'medium',
-                    'due_date' => now()->addDays(2),
-                    'route' => route('company.bills-of-lading.index'),
-                ];
+                if ($pendingBills > 0) {
+                    $tasks[] = [
+                        'title' => "Verificar {$pendingBills} conocimiento(s) de embarque",
+                        'priority' => 'medium',
+                        'due_date' => now()->addDays(2),
+                        'route' => route('company.bills-of-lading.index'),
+                    ];
+                }
             }
 
             return $tasks;
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return [
                 [
                     'title' => 'Error cargando tareas pendientes',
@@ -727,7 +687,6 @@ trait UserHelper
 
     /**
      * Obtener estadísticas personales del usuario.
-     * MÉTODO FALTANTE: Usado en DashboardController para users
      */
     protected function getPersonalStats($user): array
     {

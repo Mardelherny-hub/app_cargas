@@ -91,6 +91,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.micdta',
             'reports.arrival_notices',
             'reports.customs',
+            'reports.deconsolidation',    // Desconsolidador
+            'reports.transshipment',      // Transbordos  
+            'reports.shipments',          // Cargas + Desconsolidador
+            'reports.trips',              // Cargas (viajes)
+            'reports.operators',          // Solo company-admin
+            'reports.export',             // Exportar reportes
 
             // Administration
             'admin.configuration',

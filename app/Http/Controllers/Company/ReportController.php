@@ -98,7 +98,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $manifestsQuery->where('created_by', $this->getCurrentUser()->id);
+            $manifestsQuery->where('created_by', $this->getCurrentUser()->id);
         }
 
         // Aplicar filtros de búsqueda
@@ -128,7 +128,7 @@ class ReportController extends Controller
     public function billsOfLading(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->isCompanyAdmin() && !$this->isUser()) {
+        if (!$this->canPerform('reports.bills_of_lading')) {
             abort(403, 'No tiene permisos para ver reportes de conocimientos de embarque.');
         }
 
@@ -174,7 +174,7 @@ class ReportController extends Controller
     public function micdta(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->isCompanyAdmin() && !$this->isUser()) {
+        if (!$this->canPerform('reports.micdta')) {
             abort(403, 'No tiene permisos para ver reportes MIC/DTA.');
         }
 
@@ -202,7 +202,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $micdtaQuery->where('created_by', $this->getCurrentUser()->id);
+            $micdtaQuery->where('created_by', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de webservices
@@ -226,7 +226,7 @@ class ReportController extends Controller
     public function arrivalNotices(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports_arrival_notices')) {
+        if (!$this->canPerform('reports.arrival_notices')) {
             abort(403, 'No tiene permisos para ver reportes de cartas de aviso.');
         }
 
@@ -248,7 +248,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $noticesQuery->where('created_by', $this->getCurrentUser()->id);
+            $noticesQuery->where('created_by', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de cargas
@@ -272,7 +272,7 @@ class ReportController extends Controller
     public function customs(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->isCompanyAdmin() && !$this->isUser()) {
+        if (!$this->canPerform('reports.customs')) {
             abort(403, 'No tiene permisos para ver reportes aduaneros.');
         }
 
@@ -298,7 +298,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $customsQuery->where('created_by', $this->getCurrentUser()->id);
+            $customsQuery->where('created_by', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando estén los módulos correspondientes
@@ -322,7 +322,7 @@ class ReportController extends Controller
     public function shipments(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports_shipments')) {
+        if (!$this->canPerform('reports.shipments')) {
             abort(403, 'No tiene permisos para ver reportes de cargas.');
         }
 
@@ -346,7 +346,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $shipmentsQuery->where('created_by', $this->getCurrentUser()->id);
+            $shipmentsQuery->where('created_by', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de cargas
@@ -370,7 +370,7 @@ class ReportController extends Controller
     public function voyages(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports_trips')) {
+        if (!$this->canPerform('reports.trips')) {
             abort(403, 'No tiene permisos para ver reportes de viajes.');
         }
 
@@ -392,7 +392,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $tripsQuery->where('created_by', $this->getCurrentUser()->id);
+            $tripsQuery->where('created_by', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de viajes
@@ -416,12 +416,12 @@ class ReportController extends Controller
     public function operators(Request $request)
     {
         // 1. Verificar que sea company-admin
-        if (!$this->isCompanyAdmin() && !$this->isUser()) {
+        if (!$this->isCompanyAdmin()) {
             abort(403, 'Solo los administradores de empresa pueden ver reportes de operadores.');
         }
 
         // 2. Verificar permisos específicos
-        if (!$this->isCompanyAdmin() && !$this->isUser()) {
+        if (!$this->canPerform('reports.operators')) {
             abort(403, 'No tiene permisos para ver reportes de operadores.');
         }
 
@@ -458,7 +458,7 @@ class ReportController extends Controller
     public function export(Request $request, $reportType)
     {
         // 1. Verificar permisos básicos para exportar
-        if (!$this->canPerform('reports_export')) {
+        if (!$this->canPerform('reports.export')) {
             abort(403, 'No tiene permisos para exportar reportes.');
         }
 
@@ -533,7 +533,7 @@ class ReportController extends Controller
                 'description' => 'Documentos que detallan todas las cargas de un viaje específico.',
                 'icon' => 'document-text',
                 'color' => 'blue',
-                'available' => $this->canPerform('reports_manifests'),
+                'available' => $this->canPerform('reports.manifests'),
                 'route' => route('company.reports.manifests'),
             ];
 
@@ -542,7 +542,7 @@ class ReportController extends Controller
                 'description' => 'Documentos contractuales entre el transportista y el cargador.',
                 'icon' => 'clipboard-list',
                 'color' => 'green',
-                'available' => $this->canPerform('reports_bills_of_lading'),
+                'available' => $this->canPerform('reports.bills_of_lading'),
                 'route' => route('company.reports.bills-of-lading'),
             ];
 
@@ -551,7 +551,7 @@ class ReportController extends Controller
                 'description' => 'Manifiestos Internacionales de Carga y Declaraciones de Tránsito Aduanero.',
                 'icon' => 'shield-check',
                 'color' => 'purple',
-                'available' => $company->ws_active && $this->canPerform('reports_micdta'),
+                'available' => $company->ws_active && $this->canPerform('reports.micdta'),
                 'route' => route('company.reports.micdta'),
                 'requires_webservice' => true,
             ];
@@ -561,7 +561,7 @@ class ReportController extends Controller
                 'description' => 'Notificaciones de llegada de mercadería para consignatarios.',
                 'icon' => 'mail',
                 'color' => 'yellow',
-                'available' => $this->canPerform('reports_arrival_notices'),
+                'available' => $this->canPerform('reports.arrival_notices'),
                 'route' => route('company.reports.arrival-notices'),
             ];
 
@@ -570,7 +570,7 @@ class ReportController extends Controller
                 'description' => 'Información detallada sobre viajes realizados.',
                 'icon' => 'truck',
                 'color' => 'indigo',
-                'available' => $this->canPerform('reports_trips'),
+                'available' => $this->canPerform('reports.trips'),
                 'route' => route('company.reports.voyages'),
             ];
         }
@@ -582,7 +582,7 @@ class ReportController extends Controller
                 'description' => 'Información detallada sobre cargas procesadas.',
                 'icon' => 'archive',
                 'color' => 'gray',
-                'available' => $this->canPerform('reports_shipments'),
+                'available' => $this->canPerform('reports.shipments'),
                 'route' => route('company.reports.shipments'),
             ];
         }
@@ -598,7 +598,7 @@ class ReportController extends Controller
                 'description' => 'Documentación requerida por las autoridades aduaneras.',
                 'icon' => 'flag',
                 'color' => 'red',
-                'available' => $this->canPerform('reports_customs'),
+                'available' => $this->canPerform('reports.customs'),
                 'route' => route('company.reports.customs'),
             ];
         }
@@ -610,7 +610,7 @@ class ReportController extends Controller
                 'description' => 'Títulos de desconsolidación y proceso de fraccionamiento.',
                 'icon' => 'cube-transparent',
                 'color' => 'orange',
-                'available' => $this->canPerform('reports_deconsolidation'),
+                'available' => $this->canPerform('reports.deconsolidation'),
                 'route' => route('company.reports.deconsolidation'),
             ];
         }
@@ -622,7 +622,7 @@ class ReportController extends Controller
                 'description' => 'Operaciones de transbordo y transferencia entre embarcaciones.',
                 'icon' => 'switch-horizontal',
                 'color' => 'cyan',
-                'available' => $this->canPerform('reports_transshipment'),
+                'available' => $this->canPerform('reports.transshipment'),
                 'route' => route('company.reports.transshipment'),
             ];
         }
@@ -634,7 +634,7 @@ class ReportController extends Controller
                 'description' => 'Estadísticas y actividad de operadores de la empresa.',
                 'icon' => 'user-group',
                 'color' => 'teal',
-                'available' => $this->canPerform('reports_operators'),
+                'available' => $this->canPerform('reports.operators'),
                 'route' => route('company.reports.operators'),
                 'admin_only' => true,
             ];
@@ -1056,17 +1056,17 @@ class ReportController extends Controller
     private function getReportPermissions(): array
     {
         return [
-            'canExport' => $this->canPerform('reports_export'),
-            'canViewManifests' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports_manifests'),
-            'canViewBillsOfLading' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports_bills_of_lading'),
-            'canViewMicdta' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports_micdta'),
-            'canViewArrivalNotices' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports_arrival_notices'),
-            'canViewCustoms' => $this->canPerform('reports_customs'),
-            'canViewShipments' => ($this->hasCompanyRole('Cargas') || $this->hasCompanyRole('Desconsolidador')) && $this->canPerform('reports_shipments'),
-            'canViewTrips' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports_trips'),
-            'canViewOperators' => $this->isCompanyAdmin() && $this->canPerform('reports_operators'),
-             'canViewDeconsolidation' => $this->hasCompanyRole('Desconsolidador') && $this->canPerform('reports_deconsolidation'),
-            'canViewTransshipment' => $this->hasCompanyRole('Transbordos') && $this->canPerform('reports_transshipment'),
+            'canExport' => $this->canPerform('reports.export'),
+            'canViewManifests' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports.manifests'),
+            'canViewBillsOfLading' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports.bills_of_lading'),
+            'canViewMicdta' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports.micdta'),
+            'canViewArrivalNotices' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports.arrival_notices'),
+            'canViewCustoms' => $this->canPerform('reports.customs'),
+            'canViewShipments' => ($this->hasCompanyRole('Cargas') || $this->hasCompanyRole('Desconsolidador')) && $this->canPerform('reports.shipments'),
+            'canViewTrips' => $this->hasCompanyRole('Cargas') && $this->canPerform('reports.trips'),
+            'canViewOperators' => $this->isCompanyAdmin() && $this->canPerform('reports.operators'),
+             'canViewDeconsolidation' => $this->hasCompanyRole('Desconsolidador') && $this->canPerform('reports.deconsolidation'),
+            'canViewTransshipment' => $this->hasCompanyRole('Transbordos') && $this->canPerform('reports.transshipment'),
         ];
     }
 
@@ -1077,25 +1077,25 @@ class ReportController extends Controller
     {
         switch ($reportType) {
             case 'manifests':
-                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_manifests');
+                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports.manifests');
             case 'bills-of-lading':
-                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_bills_of_lading');
+                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports.bills_of_lading');
             case 'micdta':
-                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_micdta');
+                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports.micdta');
             case 'arrival-notices':
-                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_arrival_notices');
+                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports.arrival_notices');
             case 'customs':
-                return $this->canPerform('reports_customs');
+                return $this->canPerform('reports.customs');
             case 'shipments':
-                return ($this->hasCompanyRole('Cargas') || $this->hasCompanyRole('Desconsolidador')) && $this->canPerform('reports_shipments');
+                return ($this->hasCompanyRole('Cargas') || $this->hasCompanyRole('Desconsolidador')) && $this->canPerform('reports.shipments');
             case 'voyages':
-                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports_trips');
+                return $this->hasCompanyRole('Cargas') && $this->canPerform('reports.trips');
             case 'operators':
-                return $this->isCompanyAdmin() && $this->canPerform('reports_operators');
+                return $this->isCompanyAdmin() && $this->canPerform('reports.operators');
             case 'deconsolidation':
-                return $this->hasCompanyRole('Desconsolidador') && $this->canPerform('reports_deconsolidation');
+                return $this->hasCompanyRole('Desconsolidador') && $this->canPerform('reports.deconsolidation');
             case 'transshipment':
-                return $this->hasCompanyRole('Transbordos') && $this->canPerform('reports_transshipment');
+                return $this->hasCompanyRole('Transbordos') && $this->canPerform('reports.transshipment');
             default:
                 return false;
         }
@@ -1141,7 +1141,7 @@ class ReportController extends Controller
 public function deconsolidation(Request $request)
 {
     // 1. Verificar permisos básicos
-    if (!$this->canPerform('reports_deconsolidation')) {
+    if (!$this->canPerform('reports.deconsolidation')) {
         abort(403, 'No tiene permisos para ver reportes de desconsolidación.');
     }
 
@@ -1163,7 +1163,7 @@ public function deconsolidation(Request $request)
     // Si es usuario regular, filtrar solo sus propios registros
     if ($this->isUser()) {
         // TODO: Aplicar filtros de ownership cuando estén los módulos
-        // $deconsolidationQuery->where('created_by', $this->getCurrentUser()->id);
+        $deconsolidationQuery->where('created_by', $this->getCurrentUser()->id);
     }
 
     // Aplicar filtros de búsqueda
@@ -1193,7 +1193,7 @@ public function deconsolidation(Request $request)
 public function transshipment(Request $request)
 {
     // 1. Verificar permisos básicos
-    if (!$this->canPerform('reports_transshipment')) {
+    if (!$this->canPerform('reports.transshipment')) {
         abort(403, 'No tiene permisos para ver reportes de transbordos.');
     }
 
@@ -1215,7 +1215,7 @@ public function transshipment(Request $request)
     // Si es usuario regular, filtrar solo sus propios registros
     if ($this->isUser()) {
         // TODO: Aplicar filtros de ownership cuando estén los módulos
-        // $transshipmentQuery->where('created_by', $this->getCurrentUser()->id);
+        $transshipmentQuery->where('created_by', $this->getCurrentUser()->id);
     }
 
     // Aplicar filtros de búsqueda
@@ -1247,8 +1247,11 @@ public function transshipment(Request $request)
  */
 private function buildDeconsolidationQuery($company)
 {
-    // TODO: Implementar cuando esté el módulo de desconsolidación
-    return collect();
+    return WebserviceTransaction::with(['voyage', 'shipment'])
+        ->where('company_id', $company->id)
+        ->where('webservice_type', 'desconsolidados')
+        ->where('status', '!=', 'cancelled')
+        ->orderBy('created_at', 'desc');
 }
 
 /**
@@ -1256,8 +1259,11 @@ private function buildDeconsolidationQuery($company)
  */
 private function buildTransshipmentQuery($company)
 {
-    // TODO: Implementar cuando esté el módulo de transbordos
-    return collect();
+     return WebserviceTransaction::with(['voyage', 'shipment'])
+        ->where('company_id', $company->id)
+        ->where('webservice_type', 'transbordos')
+        ->where('status', '!=', 'cancelled')
+        ->orderBy('created_at', 'desc');
 }
 
 /**
@@ -1265,7 +1271,31 @@ private function buildTransshipmentQuery($company)
  */
 private function applyDeconsolidationFilters($query, Request $request)
 {
-    // TODO: Implementar filtros cuando esté el módulo
+    if ($request->filled('status')) {
+        $query->where('status', $request->status);
+    }
+
+    if ($request->filled('period')) {
+        $this->applyPeriodFilter($query, $request->period);
+    }
+
+    if ($request->filled('date_from')) {
+        $query->where('created_at', '>=', $request->date_from);
+    }
+
+    if ($request->filled('date_to')) {
+        $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+    }
+
+    if ($request->filled('search')) {
+        $search = $request->search;
+        $query->where(function($q) use ($search) {
+            $q->where('transaction_id', 'like', "%{$search}%")
+              ->orWhereHas('voyage', function($voyage) use ($search) {
+                  $voyage->where('voyage_number', 'like', "%{$search}%");
+              });
+        });
+    }
 }
 
 /**
@@ -1273,20 +1303,55 @@ private function applyDeconsolidationFilters($query, Request $request)
  */
 private function applyTransshipmentFilters($query, Request $request)
 {
-    // TODO: Implementar filtros cuando esté el módulo
-}
+    if ($request->filled('status')) {
+        $query->where('status', $request->status);
+    }
 
+    if ($request->filled('period')) {
+        $this->applyPeriodFilter($query, $request->period);
+    }
+
+    if ($request->filled('date_from')) {
+        $query->where('created_at', '>=', $request->date_from);
+    }
+
+    if ($request->filled('date_to')) {
+        $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+    }
+
+    if ($request->filled('route')) {
+        $query->whereHas('voyage', function($voyage) use ($request) {
+            $voyage->whereHas('originPort', function($port) use ($request) {
+                $port->where('code', 'like', "%{$request->route}%");
+            })->orWhereHas('destinationPort', function($port) use ($request) {
+                $port->where('code', 'like', "%{$request->route}%");
+            });
+        });
+    }
+
+    if ($request->filled('search')) {
+        $search = $request->search;
+        $query->where(function($q) use ($search) {
+            $q->where('transaction_id', 'like', "%{$search}%")
+              ->orWhereHas('voyage', function($voyage) use ($search) {
+                  $voyage->where('voyage_number', 'like', "%{$search}%");
+              });
+        });
+    }
+}
 /**
  * Obtener estadísticas de desconsolidación.
  */
 private function getDeconsolidationStats($company): array
 {
-    // TODO: Implementar cuando esté el módulo de desconsolidación
+    $transactions = WebserviceTransaction::where('company_id', $company->id)
+        ->where('webservice_type', 'desconsolidados');
+
     return [
-        'total' => 0,
-        'this_month' => 0,
-        'pending' => 0,
-        'completed' => 0,
+        'total' => $transactions->count(),
+        'this_month' => $transactions->whereMonth('created_at', now()->month)->count(),
+        'pending' => $transactions->where('status', 'pending')->count(),
+        'completed' => $transactions->where('status', 'success')->count(),
     ];
 }
 
@@ -1295,24 +1360,35 @@ private function getDeconsolidationStats($company): array
  */
 private function getTransshipmentStats($company): array
 {
-    // TODO: Implementar cuando esté el módulo de transbordos
+    $transactions = WebserviceTransaction::where('company_id', $company->id)
+        ->where('webservice_type', 'transbordos');
+
     return [
-        'total' => 0,
-        'this_month' => 0,
-        'pending' => 0,
-        'completed' => 0,
+        'total' => $transactions->count(),
+        'this_month' => $transactions->whereMonth('created_at', now()->month)->count(),
+        'pending' => $transactions->where('status', 'pending')->count(),
+        'completed' => $transactions->where('status', 'success')->count(),
     ];
 }
-
 /**
  * Obtener filtros para desconsolidación.
  */
 private function getDeconsolidationFilters(): array
 {
     return [
-        'status' => ['pending', 'processing', 'completed'],
-        'period' => ['today', 'week', 'month', 'quarter'],
-        'container_type' => [], // TODO: Obtener tipos disponibles
+        'status' => [
+            'pending' => 'Pendiente',
+            'processing' => 'Procesando', 
+            'success' => 'Completado',
+            'error' => 'Error'
+        ],
+        'period' => [
+            'today' => 'Hoy',
+            'week' => 'Esta semana',
+            'month' => 'Este mes',
+            'quarter' => 'Este trimestre'
+        ],
+        'container_type' => $this->getAvailableContainerTypes(),
     ];
 }
 
@@ -1322,9 +1398,91 @@ private function getDeconsolidationFilters(): array
 private function getTransshipmentFilters(): array
 {
     return [
-        'status' => ['pending', 'in_transit', 'completed'],
-        'period' => ['today', 'week', 'month', 'quarter'],
-        'route' => [], // TODO: Obtener rutas disponibles
+        'status' => [
+            'pending' => 'Pendiente',
+            'in_transit' => 'En tránsito',
+            'success' => 'Completado',
+            'error' => 'Error'
+        ],
+        'period' => [
+            'today' => 'Hoy',
+            'week' => 'Esta semana', 
+            'month' => 'Este mes',
+            'quarter' => 'Este trimestre'
+        ],
+        'route' => $this->getAvailableRoutes(),
+    ];
+}
+
+/**
+ * Aplicar filtro de período.
+ */
+private function applyPeriodFilter($query, $period)
+{
+    switch ($period) {
+        case 'today':
+            $query->whereDate('created_at', now()->toDateString());
+            break;
+        case 'week':
+            $query->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]);
+            break;
+        case 'month':
+            $query->whereMonth('created_at', now()->month)
+                  ->whereYear('created_at', now()->year);
+            break;
+        case 'quarter':
+            $query->whereBetween('created_at', [now()->startOfQuarter(), now()->endOfQuarter()]);
+            break;
+    }
+}
+
+/**
+ * Obtener tipos de contenedor disponibles.
+ */
+private function getAvailableContainerTypes(): array
+{
+    try {
+        if (class_exists(\App\Models\ContainerType::class)) {
+            return \App\Models\ContainerType::where('active', true)
+                ->pluck('name', 'code')
+                ->toArray();
+        }
+    } catch (\Exception $e) {
+        // Si no existe el modelo, devolver tipos comunes
+    }
+    
+    return [
+        '20GP' => 'Contenedor 20\' General',
+        '40GP' => 'Contenedor 40\' General', 
+        '40HC' => 'Contenedor 40\' High Cube',
+        '20RF' => 'Contenedor 20\' Refrigerado',
+        '40RF' => 'Contenedor 40\' Refrigerado',
+    ];
+}
+
+/**
+ * Obtener rutas disponibles.
+ */
+private function getAvailableRoutes(): array
+{
+    try {
+        if (class_exists(\App\Models\Port::class)) {
+            $ports = \App\Models\Port::where('active', true)
+                ->orderBy('code')
+                ->pluck('code', 'code')
+                ->toArray();
+            
+            return $ports;
+        }
+    } catch (\Exception $e) {
+        // Si no existe el modelo, devolver rutas comunes
+    }
+    
+    return [
+        'ARBUE' => 'Buenos Aires, AR',
+        'PYASU' => 'Asunción, PY',
+        'PYTVT' => 'Villeta, PY',
+        'PYCON' => 'Concepción, PY',
     ];
 }
 }
