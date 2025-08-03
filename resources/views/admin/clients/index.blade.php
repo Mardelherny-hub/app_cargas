@@ -3,46 +3,42 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    Gestión de Clientes
+                    {{ __('Gestión de Clientes') }}
                 </h2>
-                <p class="text-sm text-gray-600 mt-1">
-                    Base de datos compartida - {{ $stats['total'] ?? 0 }} clientes activos y verificados
+                <p class="mt-1 text-sm text-gray-600">
+                    Gestionar empresas propietarias de mercadería
                 </p>
             </div>
-            <div class="flex space-x-2">
-                @can('create', App\Models\Client::class)
-                    <a href="{{ route('admin.clients.create') }}" 
-                       class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                        <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                        </svg>
-                        Nuevo Cliente
-                    </a>
-                @endcan
-                <button type="button" 
-                        onclick="toggleFilters()" 
+            <div class="flex space-x-3">
+                <button id="toggle-filters" 
                         class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
                     </svg>
                     Filtros
                 </button>
+                <a href="{{ route('admin.clients.create') }}"
+                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    Nuevo Cliente
+                </a>
             </div>
         </div>
     </x-slot>
 
     <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            
-            <!-- Estadísticas rápidas -->
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-                <!-- Total de Clientes -->
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+
+            <!-- Estadísticas -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="p-5">
                         <div class="flex items-center">
                             <div class="flex-shrink-0">
-                                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
                                 </svg>
                             </div>
                             <div class="ml-5 w-0 flex-1">
@@ -50,8 +46,10 @@
                                     <dt class="text-sm font-medium text-gray-500 truncate">
                                         Total Clientes
                                     </dt>
-                                    <dd class="text-lg font-medium text-gray-900">
-                                        {{ number_format($stats['total'] ?? 0) }}
+                                    <dd class="flex items-baseline">
+                                        <div class="text-2xl font-semibold text-gray-900">
+                                            {{ number_format($stats['total'] ?? 0) }}
+                                        </div>
                                     </dd>
                                 </dl>
                             </div>
@@ -59,13 +57,12 @@
                     </div>
                 </div>
 
-                <!-- Verificados -->
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="p-5">
                         <div class="flex items-center">
                             <div class="flex-shrink-0">
-                                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                <svg class="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
                             </div>
                             <div class="ml-5 w-0 flex-1">
@@ -73,31 +70,10 @@
                                     <dt class="text-sm font-medium text-gray-500 truncate">
                                         Verificados
                                     </dt>
-                                    <dd class="text-lg font-medium text-gray-900">
-                                        {{ number_format($stats['verified'] ?? 0) }}
-                                    </dd>
-                                </dl>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- CORRECCIÓN: Estadísticas por roles (múltiples) -->
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="p-5">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                                </svg>
-                            </div>
-                            <div class="ml-5 w-0 flex-1">
-                                <dl>
-                                    <dt class="text-sm font-medium text-gray-500 truncate">
-                                        Cargadores
-                                    </dt>
-                                    <dd class="text-lg font-medium text-gray-900">
-                                        {{ number_format($stats['shippers'] ?? 0) }}
+                                    <dd class="flex items-baseline">
+                                        <div class="text-2xl font-semibold text-gray-900">
+                                            {{ number_format($stats['verified'] ?? 0) }}
+                                        </div>
                                     </dd>
                                 </dl>
                             </div>
@@ -109,17 +85,19 @@
                     <div class="p-5">
                         <div class="flex items-center">
                             <div class="flex-shrink-0">
-                                <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                                <svg class="h-6 w-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.314 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
                                 </svg>
                             </div>
                             <div class="ml-5 w-0 flex-1">
                                 <dl>
                                     <dt class="text-sm font-medium text-gray-500 truncate">
-                                        Consignatarios
+                                        Pendientes
                                     </dt>
-                                    <dd class="text-lg font-medium text-gray-900">
-                                        {{ number_format($stats['consignees'] ?? 0) }}
+                                    <dd class="flex items-baseline">
+                                        <div class="text-2xl font-semibold text-gray-900">
+                                            {{ number_format($stats['pending'] ?? 0) }}
+                                        </div>
                                     </dd>
                                 </dl>
                             </div>
@@ -127,22 +105,23 @@
                     </div>
                 </div>
 
-                <!-- Recientes -->
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="p-5">
                         <div class="flex items-center">
                             <div class="flex-shrink-0">
-                                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                <svg class="h-6 w-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728"></path>
                                 </svg>
                             </div>
                             <div class="ml-5 w-0 flex-1">
                                 <dl>
                                     <dt class="text-sm font-medium text-gray-500 truncate">
-                                        Últimos 30 días
+                                        Inactivos
                                     </dt>
-                                    <dd class="text-lg font-medium text-gray-900">
-                                        {{ number_format($stats['recent'] ?? 0) }}
+                                    <dd class="flex items-baseline">
+                                        <div class="text-2xl font-semibold text-gray-900">
+                                            {{ number_format($stats['inactive'] ?? 0) }}
+                                        </div>
                                     </dd>
                                 </dl>
                             </div>
@@ -152,7 +131,7 @@
             </div>
 
             <!-- Panel de filtros (colapsable) -->
-            <div id="filters-panel" class="hidden bg-white shadow rounded-lg mb-6">
+            <div id="filters-panel" class="hidden bg-white shadow rounded-lg">
                 <div class="px-6 py-4">
                     <form method="GET" action="{{ route('admin.clients.index') }}" class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -163,23 +142,8 @@
                                        name="search" 
                                        id="search"
                                        value="{{ request('search') }}" 
-                                       placeholder="CUIT/RUC, razón social..."
+                                       placeholder="CUIT/RUC, razón social, nombre comercial..."
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                            </div>
-
-                            <!-- CORRECCIÓN: Filtro por roles (múltiples) -->
-                            <div>
-                                <label for="client_role" class="block text-sm font-medium text-gray-700">Rol de Cliente</label>
-                                <select name="client_role" 
-                                        id="client_role"
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="">Todos los roles</option>
-                                    @foreach($availableRoles as $roleKey => $roleLabel)
-                                        <option value="{{ $roleKey }}" {{ request('client_role') === $roleKey ? 'selected' : '' }}>
-                                            {{ $roleLabel }}
-                                        </option>
-                                    @endforeach
-                                </select>
                             </div>
 
                             <!-- País -->
@@ -197,281 +161,380 @@
                                 </select>
                             </div>
 
-                            <!-- Estado de verificación -->
+                            <!-- Estado -->
+                            <div>
+                                <label for="status" class="block text-sm font-medium text-gray-700">Estado</label>
+                                <select name="status" 
+                                        id="status"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                    <option value="">Todos los estados</option>
+                                    <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Activos</option>
+                                    <option value="inactive" {{ request('status') === 'inactive' ? 'selected' : '' }}>Inactivos</option>
+                                    <option value="suspended" {{ request('status') === 'suspended' ? 'selected' : '' }}>Suspendidos</option>
+                                </select>
+                            </div>
+
+                            <!-- Verificación -->
                             <div>
                                 <label for="verified" class="block text-sm font-medium text-gray-700">Verificación</label>
                                 <select name="verified" 
                                         id="verified"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                     <option value="">Todos</option>
-                                    <option value="yes" {{ request('verified') === 'yes' ? 'selected' : '' }}>
-                                        Solo verificados
-                                    </option>
-                                    <option value="no" {{ request('verified') === 'no' ? 'selected' : '' }}>
-                                        Sin verificar
-                                    </option>
+                                    <option value="yes" {{ request('verified') === 'yes' ? 'selected' : '' }}>Verificados</option>
+                                    <option value="no" {{ request('verified') === 'no' ? 'selected' : '' }}>Sin verificar</option>
                                 </select>
                             </div>
                         </div>
 
-                        <div class="flex justify-between">
-                            <div class="flex space-x-2">
-                                <button type="submit" 
-                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                    Aplicar Filtros
-                                </button>
-                                <a href="{{ route('admin.clients.index') }}" 
-                                   class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-md text-sm font-medium">
-                                    Limpiar
-                                </a>
-                            </div>
-                            <div class="text-sm text-gray-500">
-                                Mostrando {{ $clients->count() }} de {{ $clients->total() }} resultados
-                            </div>
+                        <div class="flex justify-end space-x-3">
+                            <a href="{{ route('admin.clients.index') }}" 
+                               class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Limpiar
+                            </a>
+                            <button type="submit" 
+                                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Filtrar
+                            </button>
                         </div>
                     </form>
                 </div>
             </div>
 
-            <!-- Tabla de Clientes -->
+            <!-- Tabla de clientes -->
             <div class="bg-white shadow overflow-hidden sm:rounded-md">
-                <div class="px-4 py-5 sm:p-6">
-                    @if($clients->count() > 0)
-                        <div class="overflow-x-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Cliente
-                                        </th>
-                                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            <!-- CORRECCIÓN: Cambio de "Tipo" a "Roles" -->
-                                            Roles
-                                        </th>
-                                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            País
-                                        </th>
-                                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Contacto
-                                        </th>
-                                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Estado
-                                        </th>
-                                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                            Creado Por
-                                        </th>
-                                        <th scope="col" class="relative px-4 py-3">
-                                            <span class="sr-only">Acciones</span>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    @foreach($clients as $client)
-                                        <tr class="hover:bg-gray-50">
-                                            <!-- Información del Cliente -->
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <div class="flex items-center">
-                                                    <div class="flex-shrink-0 h-10 w-10">
-                                                        <div class="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center">
-                                                            <span class="text-sm font-medium text-white">
-                                                                {{ strtoupper(substr($client->legal_name, 0, 2)) }}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="ml-4">
-                                                        <div class="text-sm font-medium text-gray-900">
-                                                            {{ $client->legal_name }}
-                                                        </div>
-                                                        <div class="text-sm text-gray-500">
-                                                            {{ $client->tax_id }}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
+                <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                                Lista de Clientes
+                            </h3>
+                            <p class="mt-1 max-w-2xl text-sm text-gray-500">
+                                {{ $clients->total() }} cliente{{ $clients->total() !== 1 ? 's' : '' }} encontrado{{ $clients->total() !== 1 ? 's' : '' }}
+                            </p>
+                        </div>
+                        <div class="flex space-x-2">
+                            <!-- Botón de importación CSV -->
+                            <button type="button" 
+                                    onclick="document.getElementById('csv-import-modal').classList.remove('hidden')"
+                                    class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-md text-sm font-medium">
+                                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                </svg>
+                                Importar CSV
+                            </button>
+                            <!-- Ordenamiento -->
+                            <div class="relative">
+                                <select onchange="window.location.href=this.value" 
+                                        class="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="{{ request()->fullUrlWithQuery(['sort' => 'updated_at', 'order' => 'desc']) }}"
+                                            {{ request('sort') === 'updated_at' && request('order') === 'desc' ? 'selected' : '' }}>
+                                        Actualización (recientes)
+                                    </option>
+                                    <option value="{{ request()->fullUrlWithQuery(['sort' => 'updated_at', 'order' => 'asc']) }}"
+                                            {{ request('sort') === 'updated_at' && request('order') === 'asc' ? 'selected' : '' }}>
+                                        Actualización (antiguos)
+                                    </option>
+                                    <option value="{{ request()->fullUrlWithQuery(['sort' => 'legal_name', 'order' => 'asc']) }}"
+                                            {{ request('sort') === 'legal_name' && request('order') === 'asc' ? 'selected' : '' }}>
+                                        Nombre (A-Z)
+                                    </option>
+                                    <option value="{{ request()->fullUrlWithQuery(['sort' => 'legal_name', 'order' => 'desc']) }}"
+                                            {{ request('sort') === 'legal_name' && request('order') === 'desc' ? 'selected' : '' }}>
+                                        Nombre (Z-A)
+                                    </option>
+                                    <option value="{{ request()->fullUrlWithQuery(['sort' => 'created_at', 'order' => 'desc']) }}"
+                                            {{ request('sort') === 'created_at' && request('order') === 'desc' ? 'selected' : '' }}>
+                                        Creación (recientes)
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                                            <!-- CORRECCIÓN: Mostrar múltiples roles -->
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <div class="flex flex-wrap gap-1">
-                                                    @forelse($client->client_roles ?? [] as $role)
-                                                        @php
-                                                            $roleColors = [
-                                                                'shipper' => 'bg-purple-100 text-purple-800',
-                                                                'consignee' => 'bg-orange-100 text-orange-800', 
-                                                                'notify_party' => 'bg-blue-100 text-blue-800'
-                                                            ];
-                                                            $colorClass = $roleColors[$role] ?? 'bg-gray-100 text-gray-800';
-                                                        @endphp
-                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $colorClass }}">
-                                                            {{ $availableRoles[$role] ?? $role }}
-                                                        </span>
-                                                    @empty
-                                                        <span class="text-sm text-gray-500">Sin roles</span>
-                                                    @endforelse
-                                                </div>
-                                            </td>
-
-                                            <!-- País -->
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <div class="text-sm text-gray-900">
-                                                    {{ $client->country->name ?? 'No definido' }}
-                                                </div>
-                                                <div class="text-sm text-gray-500">
-                                                    {{ $client->country->alpha2_code ?? '' }}
-                                                </div>
-                                            </td>
-
-                                            <!-- Contacto -->
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                @if($client->primaryContact)
-                                                    <div class="text-sm text-gray-900">
-                                                        {{ $client->primaryContact->email ?: 'Sin email' }}
-                                                    </div>
-                                                    <div class="text-sm text-gray-500">
-                                                        {{ $client->primaryContact->phone ?: 'Sin teléfono' }}
-                                                    </div>
-                                                @else
-                                                    <span class="text-sm text-gray-500">Sin contacto</span>
-                                                @endif
-                                            </td>
-
-                                            <!-- Estado -->
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <div class="flex flex-col space-y-1">
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                                        {{ $client->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
-                                                        {{ $client->status === 'active' ? 'Activo' : 'Inactivo' }}
+                @if($clients->count() > 0)
+                    <ul class="divide-y divide-gray-200">
+                        @foreach($clients as $client)
+                            <li class="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center min-w-0 flex-1">
+                                        <!-- Información principal -->
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center space-x-3">
+                                                <div class="flex-shrink-0">
+                                                    <!-- Indicador de estado -->
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                        {{ $client->status === 'active' ? 'bg-green-100 text-green-800' : 
+                                                           ($client->status === 'inactive' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800') }}">
+                                                        {{ ucfirst($client->status) }}
                                                     </span>
                                                     @if($client->verified_at)
-                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 ml-2">
                                                             <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
                                                             </svg>
                                                             Verificado
                                                         </span>
-                                                    @else
-                                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                            Pendiente
+                                                    @endif
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="mt-2">
+                                                <div class="flex items-center space-x-2">
+                                                    <p class="text-sm font-medium text-gray-900 truncate">
+                                                        {{ $client->legal_name }}
+                                                    </p>
+                                                    @if($client->commercial_name && $client->commercial_name !== $client->legal_name)
+                                                        <span class="text-gray-500 text-sm">
+                                                            ({{ $client->commercial_name }})
                                                         </span>
                                                     @endif
                                                 </div>
-                                            </td>
-
-                                            <!-- Creado Por -->
-                                            <td class="px-4 py-4 whitespace-nowrap">
-                                                <div class="text-sm text-gray-900">
-                                                    {{ $client->createdByCompany->legal_name ?? 'Sistema' }}
-                                                </div>
-                                                @if($client->created_at)
-                                                    <div class="text-xs text-gray-500">
-                                                        {{ $client->created_at->format('d/m/Y') }}
-                                                    </div>
-                                                @endif
-                                            </td>
-                                            
-                                            <!-- Acciones -->
-                                            <td class="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <div class="flex items-center justify-end space-x-1">
-                                                    <!-- Ver Detalles -->
-                                                    @can('view', $client)
-                                                        <a href="{{ route('admin.clients.show', $client) }}" 
-                                                           class="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50"
-                                                           title="Ver detalles">
-                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                                
+                                                <div class="mt-1 flex items-center space-x-4 text-sm text-gray-500">
+                                                    @if($client->tax_id)
+                                                        <span class="flex items-center">
+                                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                                             </svg>
-                                                        </a>
-                                                    @endcan
-
-                                                    <!-- Editar -->
-                                                    @can('update', $client)
-                                                        <a href="{{ route('admin.clients.edit', $client) }}" 
-                                                           class="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50"
-                                                           title="Editar">
-                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                                            {{ $client->getFormattedTaxId() }}
+                                                        </span>
+                                                    @endif
+                                                    
+                                                    @if($client->country)
+                                                        <span class="flex items-center">
+                                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                                             </svg>
-                                                        </a>
-                                                    @endcan
+                                                            {{ $client->country->name }}
+                                                        </span>
+                                                    @endif
 
-                                                    <!-- Verificar -->
-                                                    @if(!$client->verified_at && auth()->user()->hasRole('super-admin'))
-                                                        <button onclick="verifyClient({{ $client->id }})"
-                                                                class="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50"
-                                                                title="Verificar CUIT">
-                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    @if($client->primaryContact && $client->primaryContact->email)
+                                                        <span class="flex items-center">
+                                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
                                                             </svg>
-                                                        </button>
+                                                            {{ $client->primaryContact->email }}
+                                                        </span>
+                                                    @endif
+
+                                                    @if($client->createdByCompany)
+                                                        <span class="flex items-center">
+                                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                                            </svg>
+                                                            {{ $client->createdByCompany->legal_name }}
+                                                        </span>
                                                     @endif
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                        <!-- Paginación -->
-                        <div class="mt-6">
-                            {{ $clients->appends(request()->query())->links() }}
-                        </div>
-                    @else
-                        <!-- Estado vacío -->
-                        <div class="text-center py-12">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">No hay clientes</h3>
-                            <p class="mt-1 text-sm text-gray-500">
-                                No se encontraron clientes con los filtros aplicados.
-                            </p>
-                            @can('create', App\Models\Client::class)
-                                <div class="mt-6">
-                                    <a href="{{ route('admin.clients.create') }}" 
-                                       class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                        </svg>
-                                        Crear primer cliente
-                                    </a>
+                                    <!-- Acciones -->
+                                    <div class="flex items-center space-x-2">
+                                        <a href="{{ route('admin.clients.show', $client) }}" 
+                                           class="text-blue-600 hover:text-blue-900 text-sm font-medium">
+                                            Ver
+                                        </a>
+                                        <a href="{{ route('admin.clients.edit', $client) }}" 
+                                           class="text-indigo-600 hover:text-indigo-900 text-sm font-medium">
+                                            Editar
+                                        </a>
+                                        
+                                        @if(!$client->verified_at)
+                                            <form method="POST" action="{{ route('admin.clients.verify', $client) }}" class="inline-block">
+                                                @csrf
+                                                <button type="submit" 
+                                                        class="text-green-600 hover:text-green-900 text-sm font-medium"
+                                                        onclick="return confirm('¿Verificar este cliente?')">
+                                                    Verificar
+                                                </button>
+                                            </form>
+                                        @endif
+
+                                        <form method="POST" action="{{ route('admin.clients.toggle-status', $client) }}" class="inline-block">
+                                            @csrf
+                                            @method('PATCH')
+                                            <button type="submit" 
+                                                    class="text-{{ $client->status === 'active' ? 'red' : 'green' }}-600 hover:text-{{ $client->status === 'active' ? 'red' : 'green' }}-900 text-sm font-medium"
+                                                    onclick="return confirm('¿Cambiar estado del cliente?')">
+                                                {{ $client->status === 'active' ? 'Desactivar' : 'Activar' }}
+                                            </button>
+                                        </form>
+
+                                        <!-- Dropdown de más acciones -->
+                                        <div class="relative inline-block text-left">
+                                            <button type="button" 
+                                                    class="text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                                    onclick="toggleDropdown({{ $client->id }})">
+                                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"></path>
+                                                </svg>
+                                            </button>
+                                            <div id="dropdown-{{ $client->id }}" class="hidden origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                                                <div class="py-1">
+                                                    <form method="POST" action="{{ route('admin.clients.destroy', $client) }}" class="block">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" 
+                                                                class="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-gray-100"
+                                                                onclick="return confirm('¿Estás seguro de eliminar este cliente? Esta acción no se puede deshacer.')">
+                                                            Eliminar
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            @endcan
+                            </li>
+                        @endforeach
+                    </ul>
+
+                    <!-- Paginación -->
+                    <div class="px-4 py-3 border-t border-gray-200 sm:px-6">
+                        {{ $clients->links() }}
+                    </div>
+                @else
+                    <div class="px-4 py-12 text-center">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                        </svg>
+                        <h3 class="mt-2 text-sm font-medium text-gray-900">Sin clientes</h3>
+                        <p class="mt-1 text-sm text-gray-500">No se encontraron clientes con los filtros aplicados.</p>
+                        <div class="mt-6">
+                            <a href="{{ route('admin.clients.create') }}" 
+                               class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Crear primer cliente
+                            </a>
                         </div>
-                    @endif
-                </div>
+                    </div>
+                @endif
             </div>
         </div>
     </div>
 
+    <!-- Modal de importación CSV -->
+    <div id="csv-import-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Importar Clientes desde CSV</h3>
+                    <button type="button" 
+                            onclick="document.getElementById('csv-import-modal').classList.add('hidden')"
+                            class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <form method="POST" action="{{ route('admin.clients.bulk-import') }}" enctype="multipart/form-data">
+                    @csrf
+                    <div class="mb-4">
+                        <label for="import_file" class="block text-sm font-medium text-gray-700 mb-2">
+                            Archivo CSV <span class="text-red-500">*</span>
+                        </label>
+                        <input type="file" 
+                               name="import_file" 
+                               id="import_file" 
+                               accept=".csv,.xlsx,.xls" 
+                               required
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <p class="mt-1 text-xs text-gray-500">
+                            Formatos soportados: CSV, Excel (.xlsx, .xls). Máximo 10MB.
+                        </p>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="import_type" class="block text-sm font-medium text-gray-700 mb-2">
+                            Tipo de Importación
+                        </label>
+                        <select name="import_type" id="import_type" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                            <option value="clients">Importar solo clientes</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-6">
+                        <div class="bg-blue-50 border border-blue-200 rounded-md p-3">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                    </svg>
+                                </div>
+                                <div class="ml-3 flex-1 md:flex md:justify-between">
+                                    <p class="text-sm text-blue-700">
+                                        El sistema detectará automáticamente el formato de manifiestos PARANA o GUARAN y extraerá la información de clientes correspondiente.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" 
+                                onclick="document.getElementById('csv-import-modal').classList.add('hidden')"
+                                class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md text-sm font-medium">
+                            Cancelar
+                        </button>
+                        <button type="submit" 
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            Importar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    @push('scripts')
     <script>
-        function toggleFilters() {
+        // Toggle filtros
+        document.getElementById('toggle-filters').addEventListener('click', function() {
             const panel = document.getElementById('filters-panel');
             panel.classList.toggle('hidden');
+        });
+
+        // Toggle dropdown menus
+        function toggleDropdown(clientId) {
+            const dropdown = document.getElementById('dropdown-' + clientId);
+            const allDropdowns = document.querySelectorAll('[id^="dropdown-"]');
+            
+            // Cerrar todos los otros dropdowns
+            allDropdowns.forEach(function(d) {
+                if (d.id !== 'dropdown-' + clientId) {
+                    d.classList.add('hidden');
+                }
+            });
+            
+            // Toggle el dropdown actual
+            dropdown.classList.toggle('hidden');
         }
 
-        function verifyClient(clientId) {
-            if (confirm('¿Está seguro de que desea verificar este cliente?')) {
-                fetch(`/admin/clients/${clientId}/verify`, {
-                    method: 'PATCH',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        location.reload();
-                    } else {
-                        alert('Error al verificar cliente: ' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error de conexión');
+        // Cerrar dropdowns al hacer click fuera
+        document.addEventListener('click', function(event) {
+            if (!event.target.matched('button')) {
+                const allDropdowns = document.querySelectorAll('[id^="dropdown-"]');
+                allDropdowns.forEach(function(d) {
+                    d.classList.add('hidden');
                 });
             }
-        }
+        });
+
+        // Cerrar modal al hacer click fuera
+        document.getElementById('csv-import-modal').addEventListener('click', function(event) {
+            if (event.target === this) {
+                this.classList.add('hidden');
+            }
+        });
     </script>
+    @endpush
 </x-app-layout>

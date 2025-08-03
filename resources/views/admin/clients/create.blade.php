@@ -111,35 +111,6 @@
                                 @enderror
                             </div>
 
-                            <!-- Tipo de Cliente -->
-                            <div class="sm:col-span-1">
-                                <label for="client_roles" class="block text-sm font-medium text-gray-700">
-                                    Roles de Cliente <span class="text-red-500">*</span>
-                                </label>
-                                <select id="client_roles" name="client_roles[]" multiple required
-                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    @php
-                                        $oldRoles = old('client_roles', []);
-                                        if (!is_array($oldRoles)) {
-                                            $oldRoles = [$oldRoles];
-                                        }
-                                        $roles = [
-                                            'shipper' => 'Cargador/Exportador',
-                                            'consignee' => 'Consignatario/Importador',
-                                            'notify_party' => 'Notificatario',
-                                        ];
-                                    @endphp
-                                    @foreach($roles as $key => $label)
-                                        <option value="{{ $key }}" {{ in_array($key, $oldRoles) ? 'selected' : '' }}>
-                                            {{ $label }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('client_roles')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
                             <!-- Tipo de Documento -->
                             <div class="sm:col-span-1">
                                 <label for="document_type_id" class="block text-sm font-medium text-gray-700">
@@ -224,7 +195,7 @@
                                 <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
                                 </svg>
-                                <h3 class="text-lg leading-6 font-medium text-gray-900">Contactos por Tipo de Uso</h3>
+                                <h3 class="text-lg leading-6 font-medium text-gray-900">Contactos</h3>
                                 <span class="ml-2 text-sm text-gray-500">(Opcional - puede agregarse después)</span>
                             </div>
                             <button type="button" id="addContactBtn" 
@@ -248,28 +219,20 @@
                             <p class="text-xs text-gray-400 mt-1">Puedes agregar contactos ahora o después de crear el cliente</p>
                         </div>
 
-                        <!-- Información de tipos de contacto -->
+                        <!-- Información sobre emails múltiples 
                         <div class="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
                             <div class="flex">
                                 <div class="flex-shrink-0">
                                     <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                                    </svg>
-                                </div>
-                                <div class="ml-3 text-sm text-blue-700">
-                                    <p class="font-medium">Tipos de contacto disponibles:</p>
-                                    <ul class="mt-1 list-disc list-inside space-y-1">
-                                        <li><strong>AFIP/Webservices:</strong> Para trámites oficiales y webservices</li>
-                                        <li><strong>Cartas de Arribo:</strong> Para envío de avisos de llegada de barcos</li>
-                                        <li><strong>Manifiestos:</strong> Para envío de manifiestos y documentación</li>
-                                        <li><strong>Operaciones:</strong> Para coordinación operativa</li>
-                                        <li><strong>Facturación:</strong> Para temas comerciales y cobranzas</li>
-                                        <li><strong>Emergencias:</strong> Para situaciones urgentes</li>
-                                        <li><strong>General:</strong> Contacto administrativo general</li>
-                                    </ul>
-                                </div>
+                                </svg>
                             </div>
-                        </div>
+                            <div class="ml-3 text-sm text-blue-700">
+                                <p class="font-medium">Sobre los emails de contacto:</p>
+                                <p class="mt-1">En el campo email puede ingresar múltiples direcciones separadas por punto y coma (;) para enviar cartas y notificaciones a varias direcciones a la vez.</p>
+                                <p class="mt-1 text-xs text-blue-600">Ejemplo: carta1@empresa.com; carta2@empresa.com; operaciones@empresa.com</p>
+                            </div>
+                        </div>-->
                     </div>
                 </div>
 
@@ -297,7 +260,6 @@
             <div class="flex items-center justify-between mb-4">
                 <h4 class="text-md font-medium text-gray-900">
                     <span class="contact-number">__NUMBER__</span>. Nuevo Contacto
-                    <span class="contact-type-label ml-2 text-sm text-gray-500"></span>
                 </h4>
                 <button type="button" class="remove-contact text-red-600 hover:text-red-800 text-sm font-medium">
                     <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -308,20 +270,9 @@
             </div>
 
             <div class="grid grid-cols-1 gap-y-4 gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
-                <!-- Tipo de Contacto -->
-                <div class="sm:col-span-1">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Tipo de Uso <span class="text-red-500">*</span>
-                    </label>
-                    <select name="contacts[__INDEX__][contact_type]" required
-                            class="contact-type-select mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                        <option value="">Seleccionar tipo</option>
-                        @foreach(\App\Models\ClientContactData::CONTACT_TYPES as $key => $label)
-                            <option value="{{ $key }}">{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
+                <!-- Campo oculto para contact_type -->
+                <input type="hidden" name="contacts[__INDEX__][contact_type]" value="general">
+                
                 <!-- Es Principal -->
                 <div class="sm:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -362,7 +313,7 @@
                         Email
                     </label>
                     <input type="email" name="contacts[__INDEX__][email]" maxlength="255"
-                           placeholder="Ej: contacto@empresa.com"
+                           placeholder="contacto@empresa.com"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -457,13 +408,8 @@
             }
         });
         
-        // Event delegation para cambios en tipo de contacto
+        // Event delegation para control de contacto principal único
         document.getElementById('contactsContainer').addEventListener('change', function(e) {
-            if (e.target.classList.contains('contact-type-select')) {
-                updateContactTypeLabel(e.target);
-            }
-            
-            // Control de contacto principal único
             if (e.target.name && e.target.name.includes('[is_primary]')) {
                 if (e.target.checked) {
                     // Desmarcar otros checkboxes de contacto principal
@@ -526,17 +472,6 @@
             });
         }
         
-        function updateContactTypeLabel(selectElement) {
-            const selectedOption = selectElement.options[selectElement.selectedIndex];
-            const label = selectedOption.text;
-            const contactItem = selectElement.closest('.contact-item');
-            const labelElement = contactItem.querySelector('.contact-type-label');
-            
-            if (labelElement) {
-                labelElement.textContent = selectedOption.value ? `(${label})` : '';
-            }
-        }
-        
         function hideNoContactsMessage() {
             const message = document.getElementById('noContactsMessage');
             if (message) {
@@ -556,7 +491,7 @@
             const contactItems = document.querySelectorAll('.contact-item');
             let hasValidContact = true;
             
-            // Si hay contactos, al menos uno debe tener email o teléfono
+                            // Si hay contactos, al menos uno debe tener email o teléfono
             if (contactItems.length > 0) {
                 hasValidContact = false;
                 contactItems.forEach(item => {
@@ -576,11 +511,6 @@
                 }
             }
         });
-
-        // Agregar primer contacto automáticamente si el usuario lo desea
-        // Opcional: descomenta estas líneas si quieres que aparezca un contacto por defecto
-        // addNewContact();
-        // hideNoContactsMessage();
     });
     </script>
 </x-app-layout>

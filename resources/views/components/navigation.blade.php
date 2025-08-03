@@ -86,6 +86,46 @@
                                                 </svg>
                                                 Empresas
                                             </a>
+                                            <a href="{{ route('admin.clients.index') }}"
+                                                class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                <svg class="w-4 h-4 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5 0a2.5 2.5 0 100-5.197m0 5.197a2.5 2.5 0 100 5.197" />
+                                                </svg>
+                                                Clientes
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- ADMINISTRACIÓN Dropdown for Super Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('admin.reports.*', 'admin.system.*') ? 'true' : 'false' }} }">
+                                        {{ __('Administración') }}
+                                        <svg class="ml-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    <div x-show="open" 
+                                         @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-200"
+                                         x-transition:enter-start="opacity-0 transform scale-95"
+                                         x-transition:enter-end="opacity-100 transform scale-100"
+                                         x-transition:leave="transition ease-in duration-150"
+                                         x-transition:leave-start="opacity-100 transform scale-100"
+                                         x-transition:leave-end="opacity-0 transform scale-95"
+                                         class="absolute z-50 top-full mt-0 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                        <div class="py-1">
+                                            <a href="{{ route('admin.reports.index') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.reports.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Reportes') }}
+                                            </a>
+                                            <a href="{{ route('admin.system.settings') }}" 
+                                               class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.system.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                {{ __('Sistema') }}
+                                            </a>
                                         </div>
                                     </div>
                                 </div>

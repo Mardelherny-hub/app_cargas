@@ -22,7 +22,7 @@ class CreateClientRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()->can('clients.create');
+        return $this->user()->can('create', \App\Models\Client::class);
     }
 
     /**
@@ -92,10 +92,10 @@ class CreateClientRequest extends FormRequest
         $validated = parent::validated($key, $default);
 
         // Agregar automáticamente la empresa del usuario
-        $companyId = $this->getUserCompanyId();
-        if ($companyId) {
-            $validated['created_by_company_id'] = $companyId;
-        }
+        //$companyId = $this->getUserCompanyId();
+        //if ($companyId) {
+        //    $validated['created_by_company_id'] = $companyId;
+        //}
 
         // Establecer estado por defecto
         $validated['status'] = 'active';

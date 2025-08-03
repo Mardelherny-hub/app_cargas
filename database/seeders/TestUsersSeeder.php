@@ -19,6 +19,24 @@ class TestUsersSeeder extends Seeder
             'userable_id' => null,
         ])->assignRole('super-admin');
 
+        // ===== EMPRESA SISTEMA - ID 999 para Super Admin =====
+        Company::create([
+            'id' => 999,
+            'legal_name' => 'SISTEMA ADMINISTRADOR',
+            'commercial_name' => 'Sistema',
+            'tax_id' => '99999999999',
+            'email' => 'sistema@cargas.com',
+            'country' => 'AR',
+            'city' => 'Sistema',
+            'phone' => '+54 11 0000-0000',
+            'address' => 'Sistema Central',
+            'active' => true,
+            'ws_active' => false,
+            'ws_environment' => 'production',
+            'certificate_expires_at' => null,
+            'company_roles' => [], // Sin roles específicos
+        ]);
+
         // ===== EMPRESA ARGENTINA - RIO DE LA PLATA =====
         $companyAR = Company::factory()->create([
             'legal_name' => 'Rio de la Plata Transport S.A.',
