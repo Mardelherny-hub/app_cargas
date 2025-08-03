@@ -105,7 +105,7 @@ class ReportController extends Controller
         $this->applyManifestFilters($manifestsQuery, $request);
 
         // TODO: Implementar cuando esté el módulo de cargas
-        $manifests = collect(); // Colección vacía por ahora
+        $manifests = $manifestsQuery->paginate(15);
 
         // Obtener estadísticas filtradas
         $stats = $this->getManifestStats($company);
@@ -150,17 +150,17 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            // $billsQuery->where('created_by', $this->getCurrentUser()->id);
+            $billsQuery->where('created_by_user_id', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de cargas
-        $bills = collect();
+        $billsOfLading = $billsQuery->paginate(15);
 
         $stats = $this->getBillsOfLadingStats($company);
         $filters = $this->getBillsOfLadingFilters();
 
         return view('company.reports.bills-of-lading', compact(
-            'bills',
+            'billsOfLading',
             'stats',
             'filters',
             'company'
@@ -707,15 +707,20 @@ class ReportController extends Controller
     /**
      * Construir query base para conocimientos de embarque.
      */
-    private function buildBillsOfLadingQuery($company)
-    {
-        return BillOfLading::with(['shipment.voyage', 'shipper', 'consignee', 'loadingPort', 'dischargePort'])
-            ->whereHas('shipment.voyage', function($query) use ($company) {
-                $query->where('company_id', $company->id);
-            })
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('bill_date', 'desc');
-    }
+private function buildBillsOfLadingQuery($company)
+{
+    return BillOfLading::with([
+        'shipment.voyage:id,voyage_number,company_id',
+        'shipper:id,legal_name,tax_id',
+        'consignee:id,legal_name,tax_id',
+        'loadingPort:id,name,country_id',
+        'dischargePort:id,name,country_id'
+    ])
+    ->whereHas('shipment.voyage', function ($q) use ($company) {
+        $q->where('company_id', $company->id);
+    })
+    ->orderBy('created_at', 'desc'); // Cambiar por created_at que siempre existe
+}
 
     /**
      * Construir query base para reportes MIC/DTA.
