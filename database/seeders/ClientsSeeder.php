@@ -14,13 +14,13 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * SEEDER CORREGIDO - Clientes con client_roles JSON array
+ * SEEDER SIMPLIFICADO - Clientes sin roles
  * 
- * CORRECCIÓN CRÍTICA:
- * - ✅ CORREGIDO: client_type → client_roles (JSON array)
- * - ✅ ADAPTADO: Base de datos compartida (sin ClientCompanyRelation)
- * - ✅ MANTIENE: shipper, consignee, notify_party
- * - ✅ CASOS DE PRUEBA: Clientes con múltiples roles
+ * SIMPLIFICACIÓN APLICADA:
+ * - ❌ REMOVIDO: client_roles (según feedback del cliente)
+ * - ✅ SIMPLIFICADO: Los clientes son solo empresas propietarias de mercadería
+ * - ✅ MANTIENE: Base de datos compartida
+ * - ✅ NUEVOS CAMPOS: commercial_name, address, email básicos
  */
 class ClientsSeeder extends Seeder
 {
@@ -29,7 +29,7 @@ class ClientsSeeder extends Seeder
      */
     public function run(): void
     {
-        $this->command->info('🚢 Creando clientes para base de datos compartida...');
+        $this->command->info('🚢 Creando clientes simplificados para base de datos compartida...');
 
         // Verificar datos relacionados necesarios
         if (!$this->checkRequiredData()) {
@@ -63,7 +63,7 @@ class ClientsSeeder extends Seeder
             // Crear clientes paraguayos realistas
             $this->createParaguayanClients($paraguay, $documentTypes, $ports, $customs, $companies);
             
-            // Crear casos de prueba específicos (incluyendo múltiples roles)
+            // Crear casos de prueba específicos
             $this->createTestCases($argentina, $paraguay, $documentTypes, $ports, $customs, $companies);
         });
 
@@ -76,25 +76,23 @@ class ClientsSeeder extends Seeder
     private function checkRequiredData(): bool
     {
         $errors = [];
-        
-        if (Country::count() === 0) {
-            $errors[] = '❌ No hay países registrados';
+
+        if (!Country::exists()) {
+            $errors[] = 'Countries no encontrados. Ejecute BaseCatalogsSeeder.';
         }
-        
-        if (DocumentType::count() === 0) {
-            $errors[] = '❌ No hay tipos de documento registrados';
+
+        if (!DocumentType::exists()) {
+            $errors[] = 'DocumentTypes no encontrados. Ejecute BaseCatalogsSeeder.';
         }
-        
-        if (Company::where('active', true)->count() === 0) {
-            $errors[] = '❌ No hay empresas activas registradas';
+
+        if (!Company::exists()) {
+            $errors[] = 'Companies no encontradas. Ejecute CompaniesSeeder.';
         }
 
         if (!empty($errors)) {
-            $this->command->error('Faltan datos requeridos:');
             foreach ($errors as $error) {
-                $this->command->line("  {$error}");
+                $this->command->error('❌ ' . $error);
             }
-            $this->command->info('💡 Ejecute primero: php artisan db:seed --class=BaseCatalogsSeeder');
             return false;
         }
 
@@ -102,278 +100,269 @@ class ClientsSeeder extends Seeder
     }
 
     /**
-     * Crear clientes argentinos realistas con múltiples roles.
+     * Crear clientes argentinos realistas
      */
-    private function createArgentinianClients($country, $documentTypes, $ports, $customs, $companies): void
-    {
+    private function createArgentinianClients(
+        Country $argentina,
+        $documentTypes,
+        $ports,
+        $customs,
+        $companies
+    ): void {
         $this->command->info('🇦🇷 Creando clientes argentinos...');
 
         $argentinianClients = [
             [
-                'tax_id' => '30712345678',
-                'legal_name' => 'MAERSK ARGENTINA S.A.',
-                'client_roles' => ['shipper', 'consignee'], // Múltiples roles
-                'verified' => true,
-                'notes' => 'Línea naviera internacional - múltiples roles'
+                'tax_id' => '20123456781',
+                'legal_name' => 'Agropecuaria San Miguel S.A.',
+                'commercial_name' => 'San Miguel Agro',
+                'address' => 'Av. del Libertador 1234, CABA',
+                'email' => 'contacto@sanmiguelagro.com.ar;operaciones@sanmiguelagro.com.ar',
             ],
             [
-                'tax_id' => '20123456780',
-                'legal_name' => 'TERMINAL 4 S.A.',
-                'client_roles' => ['consignee'],
-                'verified' => true,
-                'notes' => 'Terminal portuaria especializada'
+                'tax_id' => '30234567892',
+                'legal_name' => 'Frigorífico del Norte S.A.',
+                'commercial_name' => 'Frigorífico Norte',
+                'address' => 'Ruta Nacional 9 Km 45, Rosario',
+                'email' => 'info@frigonorte.com.ar;logistica@frigonorte.com.ar',
             ],
             [
-                'tax_id' => '30587654321',
-                'legal_name' => 'CARGILL S.A.C.I.',
-                'client_roles' => ['shipper'],
-                'verified' => true,
-                'notes' => 'Exportador de granos'
+                'tax_id' => '27345678903',
+                'legal_name' => 'Cereales Río de la Plata S.R.L.',
+                'commercial_name' => 'Cereales Río Plata',
+                'address' => 'Puerto de Buenos Aires, Dock Sud',
+                'email' => 'cereales@rioplata.com.ar;exportaciones@rioplata.com.ar',
             ],
             [
-                'tax_id' => '27456789012',
-                'legal_name' => 'LOGÍSTICA FEDERAL S.R.L.',
-                'client_roles' => ['shipper', 'notify_party'], // Combinación común
-                'verified' => true,
-                'notes' => 'Operador logístico regional'
+                'tax_id' => '33456789014',
+                'legal_name' => 'Logística Integral del Sur S.A.',
+                'commercial_name' => 'LIS Logística',
+                'address' => 'Av. Corrientes 3456, Buenos Aires',
+                'email' => 'contacto@lislogistica.com.ar',
             ],
             [
-                'tax_id' => '30345678901',
-                'legal_name' => 'IMPORTACIONES DEL SUR S.A.',
-                'client_roles' => ['consignee', 'notify_party'],
-                'verified' => true,
-                'notes' => 'Importador especializado'
+                'tax_id' => '20567890125',
+                'legal_name' => 'Exportadora Buenos Aires S.A.',
+                'commercial_name' => 'Exportadora BA',
+                'address' => 'Florida 567, Microcentro, CABA',
+                'email' => 'ventas@exportadoraba.com.ar;admin@exportadoraba.com.ar',
             ],
             [
-                'tax_id' => '20987654321',
-                'legal_name' => 'AGENCIA MARÍTIMA BUENOS AIRES S.A.',
-                'client_roles' => ['shipper', 'consignee', 'notify_party'], // Todos los roles
-                'verified' => true,
-                'notes' => 'Agencia marítima full service'
+                'tax_id' => '30678901236',
+                'legal_name' => 'Terminal Portuaria del Plata S.A.',
+                'commercial_name' => 'TP Plata',
+                'address' => 'Puerto de Rosario, Terminal 3',
+                'email' => 'terminal@tpplata.com.ar;operaciones@tpplata.com.ar;gerencia@tpplata.com.ar',
             ],
             [
-                'tax_id' => '30234567890',
-                'legal_name' => 'FRIGORÍFICO EXPORTADOR S.A.',
-                'client_roles' => ['shipper'],
-                'verified' => true,
-                'notes' => 'Exportador de carne'
+                'tax_id' => '27789012347',
+                'legal_name' => 'Containers Argentina S.R.L.',
+                'commercial_name' => 'Containers AR',
+                'address' => 'Av. Madero 789, Puerto Madero',
+                'email' => 'info@containersarg.com.ar',
             ],
             [
-                'tax_id' => '27345678901',
-                'legal_name' => 'CONTAINERS DEL PLATA S.R.L.',
-                'client_roles' => ['consignee'],
-                'verified' => true,
-                'notes' => 'Especialista en contenedores'
+                'tax_id' => '33890123458',
+                'legal_name' => 'Naviera del Paraná S.A.',
+                'commercial_name' => 'Naviera Paraná',
+                'address' => 'Costanera Norte 1234, Buenos Aires',
+                'email' => 'contacto@navparana.com.ar;flota@navparana.com.ar',
             ],
             [
-                'tax_id' => '30456789012',
-                'legal_name' => 'TEXTIL INTERNACIONAL S.A.',
-                'client_roles' => ['shipper', 'consignee'],
-                'verified' => false,
-                'notes' => 'Pendiente de verificación AFIP'
+                'tax_id' => '20901234569',
+                'legal_name' => 'Importadora del Litoral S.A.',
+                'commercial_name' => 'Importadora Litoral',
+                'address' => 'San Martín 2345, Santa Fe',
+                'email' => 'importaciones@litoral.com.ar;admin@litoral.com.ar',
             ],
             [
-                'tax_id' => '20567890123',
-                'legal_name' => 'QUÍMICA ARGENTINA S.A.',
-                'client_roles' => ['shipper'],
-                'verified' => true,
-                'notes' => 'Exportador de productos químicos'
-            ]
+                'tax_id' => '30012345670',
+                'legal_name' => 'Agencia Marítima del Río S.R.L.',
+                'commercial_name' => 'AM Río',
+                'address' => 'Dársena Norte, Puerto de Buenos Aires',
+                'email' => 'agencia@amrio.com.ar;capitania@amrio.com.ar',
+            ],
         ];
 
         foreach ($argentinianClients as $clientData) {
-            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $companies);
+            $this->createClient($clientData, $argentina, $documentTypes, $ports, $customs, $companies);
         }
 
-        $this->command->info("✓ " . count($argentinianClients) . " clientes argentinos creados");
+        $this->command->info('  ✅ ' . count($argentinianClients) . ' clientes argentinos creados');
     }
 
     /**
-     * Crear clientes paraguayos realistas con múltiples roles.
+     * Crear clientes paraguayos realistas
      */
-    private function createParaguayanClients($country, $documentTypes, $ports, $customs, $companies): void
-    {
+    private function createParaguayanClients(
+        Country $paraguay,
+        $documentTypes,
+        $ports,
+        $customs,
+        $companies
+    ): void {
         $this->command->info('🇵🇾 Creando clientes paraguayos...');
 
         $paraguayanClients = [
             [
-                'tax_id' => '80012345-7',
-                'legal_name' => 'NAVIERA DEL PARAGUAY S.A.',
-                'client_roles' => ['shipper', 'consignee'],
-                'verified' => true,
-                'notes' => 'Naviera fluvial principal'
+                'tax_id' => '80123456781',
+                'legal_name' => 'Agroindustrias Paraguay S.A.',
+                'commercial_name' => 'Agro Paraguay',
+                'address' => 'Av. Mariscal López 1234, Asunción',
+                'email' => 'contacto@agroparaguay.com.py;ventas@agroparaguay.com.py',
             ],
             [
-                'tax_id' => '80023456-8',
-                'legal_name' => 'TERMINAL VILLETA S.A.',
-                'client_roles' => ['consignee', 'notify_party'],
-                'verified' => true,
-                'notes' => 'Terminal fluvial especializada'
+                'tax_id' => '80234567892',
+                'legal_name' => 'Frigorífico Guaraní S.A.',
+                'commercial_name' => 'Frigorífico Guaraní',
+                'address' => 'Ruta 1 Km 25, San Lorenzo',
+                'email' => 'info@frigoguarani.com.py;exportaciones@frigoguarani.com.py',
             ],
             [
-                'tax_id' => '80034567-9',
-                'legal_name' => 'SOJA PARAGUAYA S.A.',
-                'client_roles' => ['shipper'],
-                'verified' => true,
-                'notes' => 'Exportador de oleaginosas'
+                'tax_id' => '80345678903',
+                'legal_name' => 'Exportadora del Paraguay S.R.L.',
+                'commercial_name' => 'Export Paraguay',
+                'address' => 'Centro de Asunción, Paraguay',
+                'email' => 'export@paraguay.com.py;admin@paraguay.com.py',
             ],
             [
-                'tax_id' => '80045678-0',
-                'legal_name' => 'LOGÍSTICA HIDROVÍA S.R.L.',
-                'client_roles' => ['shipper', 'consignee', 'notify_party'],
-                'verified' => true,
-                'notes' => 'Operador integral hidrovía'
+                'tax_id' => '80456789014',
+                'legal_name' => 'Terminal Villeta S.A.',
+                'commercial_name' => 'Terminal Villeta',
+                'address' => 'Puerto de Villeta, Paraguay',
+                'email' => 'terminal@villeta.com.py;operaciones@villeta.com.py;puerto@villeta.com.py',
             ],
             [
-                'tax_id' => '80056789-1',
-                'legal_name' => 'MADERAS DEL CHACO S.A.',
-                'client_roles' => ['shipper'],
-                'verified' => true,
-                'notes' => 'Exportador forestal'
+                'tax_id' => '80567890125',
+                'legal_name' => 'Logística del Paraguay S.A.',
+                'commercial_name' => 'Logi Paraguay',
+                'address' => 'Av. España 567, Asunción',
+                'email' => 'logistica@paraguay.com.py',
             ],
             [
-                'tax_id' => '80067890-2',
-                'legal_name' => 'IMPORTADORA ASUNCIÓN S.A.',
-                'client_roles' => ['consignee'],
-                'verified' => false,
-                'notes' => 'Pendiente verificación SET'
+                'tax_id' => '80678901236',
+                'legal_name' => 'Cereales de la Región S.R.L.',
+                'commercial_name' => 'Cereales Región',
+                'address' => 'Ciudad del Este, Paraguay',
+                'email' => 'cereales@region.com.py;ventas@region.com.py',
             ],
             [
-                'tax_id' => '80078901-3',
-                'legal_name' => 'CARGA GENERAL LTDA.',
-                'client_roles' => ['shipper', 'notify_party'],
-                'verified' => true,
-                'notes' => 'Carga general multipropósito'
+                'tax_id' => '80789012347',
+                'legal_name' => 'Naviera Paraguay S.A.',
+                'commercial_name' => 'Naviera PY',
+                'address' => 'Puerto de Asunción, Paraguay',
+                'email' => 'naviera@paraguay.com.py',
             ],
             [
-                'tax_id' => '80089012-4',
-                'legal_name' => 'AGENCIA FLUVIAL PARAGUAY S.A.',
-                'client_roles' => ['consignee', 'notify_party'],
-                'verified' => true,
-                'notes' => 'Agencia especializada río Paraguay'
-            ]
+                'tax_id' => '80890123458',
+                'legal_name' => 'Importadora Guaraní S.A.',
+                'commercial_name' => 'Import Guaraní',
+                'address' => 'Av. Artigas 890, Asunción',
+                'email' => 'import@guarani.com.py;contacto@guarani.com.py',
+            ],
         ];
 
         foreach ($paraguayanClients as $clientData) {
-            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $companies);
+            $this->createClient($clientData, $paraguay, $documentTypes, $ports, $customs, $companies);
         }
 
-        $this->command->info("✓ " . count($paraguayanClients) . " clientes paraguayos creados");
+        $this->command->info('  ✅ ' . count($paraguayanClients) . ' clientes paraguayos creados');
     }
 
     /**
-     * Crear casos de prueba específicos.
+     * Crear casos de prueba específicos
      */
-    private function createTestCases($argentina, $paraguay, $documentTypes, $ports, $customs, $companies): void
-    {
+    private function createTestCases(
+        Country $argentina,
+        Country $paraguay,
+        $documentTypes,
+        $ports,
+        $customs,
+        $companies
+    ): void {
         $this->command->info('🧪 Creando casos de prueba...');
 
         $testCases = [
-            // Caso 1: Cliente con datos mínimos
             [
-                'tax_id' => '30999999990',
-                'legal_name' => 'CASO PRUEBA MÍNIMO S.A.',
-                'client_roles' => ['shipper'],
-                'verified' => false,
+                'tax_id' => '20999888777',
+                'legal_name' => 'Cliente de Prueba Argentina S.A.',
+                'commercial_name' => 'Test Cliente AR',
+                'address' => 'Dirección de Prueba 123, Buenos Aires',
+                'email' => 'test@cliente.com.ar',
                 'country' => $argentina,
-                'notes' => 'Caso de prueba: datos mínimos requeridos'
             ],
-            // Caso 2: Cliente con TODOS los roles
             [
-                'tax_id' => '30888888881',
-                'legal_name' => 'MULTI ROL COMPLETO S.A.',
-                'client_roles' => ['shipper', 'consignee', 'notify_party'],
-                'verified' => true,
-                'country' => $argentina,
-                'notes' => 'Cliente con todos los roles posibles'
-            ],
-            // Caso 3: Cliente paraguayo con múltiples roles
-            [
-                'tax_id' => '80999888-7',
-                'legal_name' => 'MULTIROL TRANSPORT S.A.',
-                'client_roles' => ['shipper', 'consignee'],
-                'verified' => true,
+                'tax_id' => '80999888777',
+                'legal_name' => 'Cliente de Prueba Paraguay S.A.',
+                'commercial_name' => 'Test Cliente PY',
+                'address' => 'Dirección de Prueba 456, Asunción',
+                'email' => 'test@cliente.com.py;admin@cliente.com.py',
                 'country' => $paraguay,
-                'notes' => 'Cliente paraguayo múltiples roles'
             ],
-            // Caso 4: Cliente suspendido
-            [
-                'tax_id' => '20888777666',
-                'legal_name' => 'EMPRESA SUSPENDIDA S.R.L.',
-                'client_roles' => ['shipper'],
-                'verified' => true,
-                'status' => 'suspended',
-                'country' => $argentina,
-                'notes' => 'Suspendido por documentación vencida'
-            ],
-            // Caso 5: Solo notify_party
-            [
-                'tax_id' => '30777666555',
-                'legal_name' => 'NOTIFICACIONES ESPECIALES S.A.',
-                'client_roles' => ['notify_party'],
-                'verified' => true,
-                'country' => $argentina,
-                'notes' => 'Cliente especializado en notificaciones'
-            ]
         ];
 
-        foreach ($testCases as $clientData) {
-            $country = $clientData['country'];
-            unset($clientData['country']);
-            $this->createClient($clientData, $country, $documentTypes, $ports, $customs, $companies);
+        foreach ($testCases as $testCase) {
+            $this->createClient($testCase, $testCase['country'], $documentTypes, $ports, $customs, $companies);
         }
 
-        $this->command->info('✓ Casos de prueba creados');
+        $this->command->info('  ✅ ' . count($testCases) . ' casos de prueba creados');
     }
 
     /**
-     * Crear un cliente individual con la nueva estructura.
+     * Crear un cliente individual
      */
-    private function createClient(array $data, $country, $documentTypes, $ports, $customs, $companies): void
-    {
+    private function createClient(
+        array $clientData,
+        Country $country,
+        $documentTypes,
+        $ports,
+        $customs,
+        $companies
+    ): void {
         try {
-            // Limpiar CUIT/RUC (solo números)
-            $cleanTaxId = preg_replace('/[^0-9]/', '', $data['tax_id']);
+            // Verificar si ya existe
+            $existing = Client::where('tax_id', $clientData['tax_id'])
+                             ->where('country_id', $country->id)
+                             ->first();
 
-            // Verificar que no exista
-            if (Client::where('tax_id', $cleanTaxId)->where('country_id', $country->id)->exists()) {
-                $this->command->warn("⚠️ Cliente {$cleanTaxId} ya existe, omitiendo...");
+            if ($existing) {
+                $this->command->warn("  ⚠️ Cliente {$clientData['legal_name']} ya existe");
                 return;
             }
 
-            // Obtener tipo de documento apropiado para el país
+            // Obtener tipo de documento del país
             $documentType = $documentTypes->where('country_id', $country->id)->first();
             if (!$documentType) {
-                $this->command->error("❌ No hay tipos de documento para {$country->name}");
+                $this->command->error("  ❌ No se encontró tipo de documento para {$country->name}");
                 return;
             }
 
             // Seleccionar empresa creadora aleatoria
-            $createdByCompany = $companies->random();
+            $creatorCompany = $companies->random();
 
             // Preparar datos del cliente
-            $clientData = [
-                'tax_id' => $cleanTaxId,
+            $clientRecord = [
+                'tax_id' => $clientData['tax_id'],
                 'country_id' => $country->id,
                 'document_type_id' => $documentType->id,
-                'client_roles' => $data['client_roles'], // ✅ CORRECCIÓN: JSON array
-                'legal_name' => $data['legal_name'],
-                'primary_port_id' => $ports->random()->id ?? null,
+                'legal_name' => $clientData['legal_name'],
+                'commercial_name' => $clientData['commercial_name'] ?? null,
+                'address' => $clientData['address'] ?? null,
+                'email' => $clientData['email'] ?? null,
+                'primary_port_id' => $ports->where('country_id', $country->id)->random()->id ?? null,
                 'customs_offices_id' => $customs->where('country_id', $country->id)->random()->id ?? null,
-                'status' => $data['status'] ?? 'active',
-                'created_by_company_id' => $createdByCompany->id,
-                'verified_at' => ($data['verified'] ?? false) ? now() : null,
-                'notes' => $data['notes'] ?? null,
+                'status' => 'active',
+                'created_by_company_id' => $creatorCompany->id,
+                'verified_at' => now()->subDays(rand(1, 365)),
+                'notes' => 'Cliente creado por seeder - datos de prueba',
             ];
 
-            // Crear cliente
-            Client::create($clientData);
+            Client::create($clientRecord);
 
-            $rolesStr = implode(', ', $data['client_roles']);
-            $this->command->line("  ✓ {$data['legal_name']} ({$cleanTaxId}) - Roles: {$rolesStr}");
+            $this->command->line("  ✓ {$clientData['legal_name']}");
 
         } catch (\Exception $e) {
-            $this->command->error("❌ Error creando cliente {$data['legal_name']}: " . $e->getMessage());
+            $this->command->error("  ❌ Error al crear {$clientData['legal_name']}: " . $e->getMessage());
         }
     }
 }

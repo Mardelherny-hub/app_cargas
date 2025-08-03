@@ -11,7 +11,12 @@ return new class extends Migration
      *
      * FASE 1 - MÓDULO EMPRESAS Y CLIENTES
      * Tabla principal para gestión de clientes con CUIT/RUC
-     * Resuelve la problemática de registro simple y datos variables
+     * 
+     * SIMPLIFICACIÓN APLICADA:
+     * - ❌ REMOVIDO: client_roles (según feedback del cliente)
+     * - Los clientes son solo empresas propietarias de mercadería a transportar
+     * - No requieren roles específicos en el sistema
+     * - Los propietarios de barcos están separados en vessel_owners
      */
     public function up(): void
     {
@@ -32,13 +37,23 @@ return new class extends Migration
                 ->constrained('document_types')
                 ->comment('Tipo de documento según país');
 
-            // CORRECCIÓN: Roles múltiples del cliente en operaciones (JSON)
-            $table->json('client_roles')
-                ->comment('Array de roles del cliente: [shipper, consignee, notify_party]');
-
             // Datos oficiales del cliente
             $table->string('legal_name', 255)
                 ->comment('Razón social oficial registrada');
+
+            // Nombre comercial opcional
+            $table->string('commercial_name', 255)
+                ->nullable()
+                ->comment('Nombre comercial del cliente');
+
+            // Datos de contacto básicos para webservices
+            $table->string('address', 500)
+                ->nullable()
+                ->comment('Dirección principal - utilizada en webservices');
+
+            $table->string('email', 500)
+                ->nullable()
+                ->comment('Emails principales separados por punto y coma para cartas de aviso');
 
             // Referencias opcionales a catálogos operativos
             $table->foreignId('primary_port_id')
@@ -76,29 +91,25 @@ return new class extends Migration
             // ÍNDICES OPTIMIZADOS PARA CONSULTAS FRECUENTES
 
             // Índice único para evitar duplicados CUIT por país
-            $table->unique(['tax_id', 'country_id'], 'unique_tax_id_per_country');
+            $table->unique(['tax_id', 'country_id'], 'uk_clients_tax_country');
 
-            // Índices compuestos para consultas por empresa
-            $table->index(['created_by_company_id', 'status'], 'idx_company_status');
+            // Índices de búsqueda frecuente
+            $table->index(['status', 'verified_at'], 'idx_clients_active_verified');
+            $table->index(['country_id', 'status'], 'idx_clients_country_status');
+            $table->index(['created_by_company_id', 'status'], 'idx_clients_company_status');
 
-            // Índices para ubicación y operaciones
-            $table->index(['primary_port_id', 'status'], 'idx_port_status');
-            $table->index(['customs_offices_id', 'status'], 'idx_customs_status');
-            $table->index(['country_id', 'status'], 'idx_country_status');
+            // Índices para búsquedas por texto
+            $table->index('legal_name', 'idx_clients_legal_name');
+            $table->index('commercial_name', 'idx_clients_commercial_name');
+            $table->index('tax_id', 'idx_clients_tax_id');
 
-            // Índices para búsquedas rápidas por CUIT
-            $table->index('tax_id', 'idx_tax_id_search');
-            $table->index(['tax_id', 'status'], 'idx_tax_id_status');
+            // Índices para relaciones operativas
+            $table->index(['primary_port_id', 'status'], 'idx_clients_port_status');
+            $table->index(['customs_offices_id', 'status'], 'idx_clients_customs_status');
 
-            // Índices para verificación y auditoría
-            $table->index(['verified_at', 'status'], 'idx_verified_status');
-            $table->index(['created_at', 'created_by_company_id'], 'idx_created_audit');
-
-            // Índice compuesto para webservices (clientes operativos)
-            $table->index(['status', 'verified_at', 'country_id'], 'idx_webservice_ready');
-
-            // Índice para búsquedas por nombre (útil para autocompletado)
-            $table->index('legal_name', 'idx_legal_name_search');
+            // Índices de auditoría
+            $table->index('created_at', 'idx_clients_created');
+            $table->index('verified_at', 'idx_clients_verified');
         });
     }
 

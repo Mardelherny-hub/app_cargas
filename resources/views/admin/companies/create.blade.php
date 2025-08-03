@@ -90,14 +90,13 @@
                                         <span id="tax_id_label">CUIT/RUC *</span>
                                     </label>
                                     <input type="text" 
-                                           name="tax_id" 
-                                           id="tax_id" 
-                                           value="{{ old('tax_id') }}"
-                                           required
-                                           maxlength="11"
-                                           pattern="[0-9]{11}"
-                                           placeholder="11 dígitos"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        name="tax_id" 
+                                        id="tax_id" 
+                                        value="{{ old('tax_id') }}"
+                                        required
+                                        maxlength="11"
+                                        placeholder="Ingrese CUIT/RUC"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                     <p id="tax_id_help" class="mt-1 text-sm text-gray-500">Formato: 11 dígitos numéricos</p>
                                 </div>
                             </div>
@@ -312,177 +311,231 @@
         </div>
     </div>
 
-    <script>
-        // Configuraciones predefinidas por país
-        const countryConfigs = {
-            'AR': {
-                tax_id_prefix: '20',
-                tax_id_label: 'CUIT Argentina *',
-                tax_id_help: 'Formato: 20XXXXXXXXX (11 dígitos, debe empezar con 20)',
-                phone_example: '+54 11 4567-8900',
-                city_example: 'Buenos Aires'
-            },
-            'PY': {
-                tax_id_prefix: '80',
-                tax_id_label: 'RUC Paraguay *',
-                tax_id_help: 'Formato: 80XXXXXXXXX (11 dígitos, debe empezar con 80)',
-                phone_example: '+595 21 123-456',
-                city_example: 'Asunción'
+    // FIX COMPLETO PARA: resources/views/admin/companies/create.blade.php
+// Reemplazar todo el bloque JavaScript existente con este código corregido
+
+<script>
+    // CONFIGURACIÓN CORREGIDA - Validaciones específicas por país
+    const countryConfigs = {
+        'AR': {
+            validation_type: 'prefix_based',
+            valid_prefixes: ['20', '23', '24', '27', '30', '33', '34'], // ← FIX: Lista completa
+            required_length: 11,
+            tax_id_label: 'CUIT Argentina *',
+            tax_id_help: 'Formato: 11 dígitos. Prefijos válidos: 20, 23, 24, 27, 30 (empresas), 33, 34',
+            phone_example: '+54 11 4567-8900',
+            city_example: 'Buenos Aires',
+            prefix_descriptions: {
+                '20': 'Personas físicas masculinas',
+                '23': 'Personas físicas monotributo masculinas',
+                '24': 'Personas físicas monotributo femeninas',
+                '27': 'Personas físicas femeninas',
+                '30': 'Personas jurídicas (empresas)',
+                '33': 'Personas jurídicas especiales',
+                '34': 'Personas jurídicas extranjeras'
             }
-        };
+        },
+        'PY': {
+            validation_type: 'length_based',
+            min_length: 6,
+            max_length: 9,
+            tax_id_label: 'RUC Paraguay *',
+            tax_id_help: 'Formato: 6-9 dígitos sin guion (ej: 12345678). Sin prefijos obligatorios',
+            phone_example: '+595 21 123-456',
+            city_example: 'Asunción'
+        }
+    };
 
-        // Configuraciones de webservices según roles
-        const roleWebservices = {
-            'Cargas': ['anticipada', 'micdta'],
-            'Desconsolidador': ['desconsolidados'],
-            'Transbordos': ['transbordos']
-        };
+    // Configuraciones de webservices según roles (sin cambios)
+    const roleWebservices = {
+        'Cargas': ['anticipada', 'micdta'],
+        'Desconsolidador': ['desconsolidados'],
+        'Transbordos': ['transbordos']
+    };
 
-        const roleFeatures = {
-            'Cargas': ['contenedores', 'manifiestos'],
-            'Desconsolidador': ['titulos_madre', 'titulos_hijos'],
-            'Transbordos': ['barcazas', 'tracking_posicion']
-        };
+    const roleFeatures = {
+        'Cargas': ['contenedores', 'manifiestos'],
+        'Desconsolidador': ['titulos_madre', 'titulos_hijos'],
+        'Transbordos': ['barcazas', 'tracking_posicion']
+    };
 
-        // Actualizar campos según el país seleccionado
-        function updateCountryFields() {
-            const country = document.getElementById('country').value;
-            const taxIdField = document.getElementById('tax_id');
-            const taxIdLabel = document.getElementById('tax_id_label');
-            const taxIdHelp = document.getElementById('tax_id_help');
-            const phoneField = document.getElementById('phone');
-            const cityField = document.getElementById('city');
+    // FUNCIÓN CORREGIDA: Actualizar campos según el país seleccionado
+    function updateCountryFields() {
+        const country = document.getElementById('country').value;
+        const taxIdField = document.getElementById('tax_id');
+        const taxIdLabel = document.getElementById('tax_id_label');
+        const taxIdHelp = document.getElementById('tax_id_help');
+        const phoneField = document.getElementById('phone');
+        const cityField = document.getElementById('city');
 
-            if (country && countryConfigs[country]) {
-                const config = countryConfigs[country];
+        if (country && countryConfigs[country]) {
+            const config = countryConfigs[country];
+            
+            // Actualizar etiquetas y placeholders
+            taxIdLabel.textContent = config.tax_id_label;
+            taxIdHelp.textContent = config.tax_id_help;
+            phoneField.placeholder = config.phone_example;
+            cityField.placeholder = config.city_example;
+
+            // ELIMINADO: Auto-completar prefijo automático
+            // NO forzamos ningún prefijo específico
+
+            // NUEVA VALIDACIÓN: Verificar prefijos válidos
+            taxIdField.addEventListener('input', function() {
+                let value = this.value.replace(/\D/g, ''); // Solo números
                 
-                // Actualizar etiquetas y placeholders
-                taxIdLabel.textContent = config.tax_id_label;
-                taxIdHelp.textContent = config.tax_id_help;
-                phoneField.placeholder = config.phone_example;
-                cityField.placeholder = config.city_example;
-
-                // Auto-completar prefijo del CUIT si está vacío
-                if (!taxIdField.value || taxIdField.value.length < 2) {
-                    taxIdField.value = config.tax_id_prefix;
+                if (value.length > 11) {
+                    value = value.substring(0, 11);
                 }
 
-                // Validar formato según país
-                taxIdField.addEventListener('input', function() {
-                    let value = this.value.replace(/\D/g, ''); // Solo números
-                    
-                    if (value.length > 11) {
-                        value = value.substring(0, 11);
-                    }
+                this.value = value;
+                
+                // Validación visual mejorada
+                validateTaxIdFormat(value, config);
+            });
+        }
+    }
 
-                    // Verificar prefijo según país
-                    if (value.length >= 2 && !value.startsWith(config.tax_id_prefix)) {
-                        value = config.tax_id_prefix + value.substring(2);
-                    }
-
-                    this.value = value;
-                    
-                    // Validación visual
-                    if (value.length === 11 && value.startsWith(config.tax_id_prefix)) {
-                        this.classList.remove('border-red-300');
-                        this.classList.add('border-green-300');
-                    } else if (value.length > 0) {
-                        this.classList.remove('border-green-300');
-                        this.classList.add('border-red-300');
-                    } else {
-                        this.classList.remove('border-red-300', 'border-green-300');
-                    }
-                });
-            }
+    // NUEVA FUNCIÓN: Validar formato de CUIT/RUC
+    function validateTaxIdFormat(value, config) {
+        const taxIdField = document.getElementById('tax_id');
+        const validationMessage = document.getElementById('tax_id_validation_message');
+        
+        // Crear elemento de mensaje si no existe
+        if (!validationMessage) {
+            const messageDiv = document.createElement('div');
+            messageDiv.id = 'tax_id_validation_message';
+            messageDiv.className = 'mt-1 text-sm';
+            taxIdField.parentNode.appendChild(messageDiv);
         }
 
-        // Actualizar información de roles y vista previa de webservices
-        function updateRoleInfo() {
-            const checkboxes = document.querySelectorAll('input[name="company_roles[]"]:checked');
-            const selectedRoles = Array.from(checkboxes).map(cb => cb.value);
-            const warningDiv = document.getElementById('roleWarning');
-            const previewDiv = document.getElementById('wsConfigPreview');
-            const previewContent = document.getElementById('wsConfigContent');
-
-            // Mostrar/ocultar advertencia
-            if (selectedRoles.length === 0) {
-                warningDiv.classList.remove('hidden');
-            } else {
-                warningDiv.classList.add('hidden');
-            }
-
-            // Generar vista previa de configuración
-            if (selectedRoles.length > 0) {
-                const webservices = [];
-                const features = [];
-
-                selectedRoles.forEach(role => {
-                    if (roleWebservices[role]) {
-                        webservices.push(...roleWebservices[role]);
-                    }
-                    if (roleFeatures[role]) {
-                        features.push(...roleFeatures[role]);
-                    }
-                });
-
-                const uniqueWebservices = [...new Set(webservices)];
-                const uniqueFeatures = [...new Set(features)];
-
-                previewContent.innerHTML = `
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <h5 class="font-medium text-gray-700 mb-2">Webservices habilitados:</h5>
-                            <ul class="space-y-1">
-                                ${uniqueWebservices.map(ws => `<li class="text-green-600">• ${ws}</li>`).join('')}
-                            </ul>
-                        </div>
-                        <div>
-                            <h5 class="font-medium text-gray-700 mb-2">Funcionalidades disponibles:</h5>
-                            <ul class="space-y-1">
-                                ${uniqueFeatures.map(feature => `<li class="text-blue-600">• ${feature.replace('_', ' ')}</li>`).join('')}
-                            </ul>
-                        </div>
-                    </div>
-                `;
-                previewDiv.classList.remove('hidden');
-            } else {
-                previewDiv.classList.add('hidden');
-            }
+        if (value.length === 0) {
+            // Campo vacío - estado neutral
+            taxIdField.classList.remove('border-red-300', 'border-green-300');
+            document.getElementById('tax_id_validation_message').innerHTML = '';
+            return;
         }
 
-        // Validación del formulario antes del envío
-        document.getElementById('companyForm').addEventListener('submit', function(e) {
-            const selectedRoles = document.querySelectorAll('input[name="company_roles[]"]:checked');
+        if (value.length >= 2) {
+            const prefix = value.substring(0, 2);
             
-            if (selectedRoles.length === 0) {
-                e.preventDefault();
-                alert('Debe seleccionar al menos un rol para la empresa');
-                document.getElementById('roleWarning').scrollIntoView({ behavior: 'smooth' });
+            if (!config.valid_prefixes.includes(prefix)) {
+                // Prefijo inválido
+                taxIdField.classList.remove('border-green-300');
+                taxIdField.classList.add('border-red-300');
+                document.getElementById('tax_id_validation_message').innerHTML = 
+                    `<span class="text-red-600">⚠️ Prefijo inválido. Use: ${config.valid_prefixes.join(', ')}</span>`;
                 return false;
             }
+        }
 
-            const taxId = document.getElementById('tax_id').value;
-            const country = document.getElementById('country').value;
+        if (value.length === 11) {
+            const prefix = value.substring(0, 2);
             
-            if (country && taxId.length === 11) {
-                const expectedPrefix = countryConfigs[country]?.tax_id_prefix;
-                if (expectedPrefix && !taxId.startsWith(expectedPrefix)) {
-                    e.preventDefault();
-                    alert(`El CUIT/RUC debe empezar con ${expectedPrefix} para ${country === 'AR' ? 'Argentina' : 'Paraguay'}`);
-                    return false;
-                }
+            if (config.valid_prefixes.includes(prefix)) {
+                // CUIT completo y válido
+                taxIdField.classList.remove('border-red-300');
+                taxIdField.classList.add('border-green-300');
+                document.getElementById('tax_id_validation_message').innerHTML = 
+                    '<span class="text-green-600">✓ Formato correcto</span>';
+                return true;
             }
+        } else if (value.length > 0 && value.length < 11) {
+            // En progreso
+            taxIdField.classList.remove('border-red-300', 'border-green-300');
+            document.getElementById('tax_id_validation_message').innerHTML = 
+                `<span class="text-gray-500">Faltan ${11 - value.length} dígitos</span>`;
+        }
+
+        return false;
+    }
+
+    // FUNCIÓN MEJORADA: Actualizar información de roles
+    function updateRoleInfo() {
+        const selectedRoles = Array.from(document.querySelectorAll('input[name="company_roles[]"]:checked')).map(cb => cb.value);
+        const previewDiv = document.getElementById('rolePreview');
+        const warningDiv = document.getElementById('roleWarning');
+
+        if (selectedRoles.length === 0) {
+            warningDiv.classList.remove('hidden');
+            previewDiv.classList.add('hidden');
+            return;
+        } else {
+            warningDiv.classList.add('hidden');
+        }
+
+        if (selectedRoles.length > 0) {
+            const availableWebservices = selectedRoles.flatMap(role => roleWebservices[role] || []);
+            const availableFeatures = selectedRoles.flatMap(role => roleFeatures[role] || []);
+            const uniqueWebservices = [...new Set(availableWebservices)];
+            const uniqueFeatures = [...new Set(availableFeatures)];
+
+            previewDiv.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h5 class="font-medium text-gray-700 mb-2">Webservices habilitados:</h5>
+                        <ul class="space-y-1">
+                            ${uniqueWebservices.map(ws => `<li class="text-green-600">• ${ws}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div>
+                        <h5 class="font-medium text-gray-700 mb-2">Funcionalidades disponibles:</h5>
+                        <ul class="space-y-1">
+                            ${uniqueFeatures.map(feature => `<li class="text-blue-600">• ${feature.replace('_', ' ')}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+            previewDiv.classList.remove('hidden');
+        } else {
+            previewDiv.classList.add('hidden');
+        }
+    }
+
+    // VALIDACIÓN MEJORADA del formulario antes del envío
+    document.getElementById('companyForm').addEventListener('submit', function(e) {
+        const selectedRoles = document.querySelectorAll('input[name="company_roles[]"]:checked');
+        
+        if (selectedRoles.length === 0) {
+            e.preventDefault();
+            alert('Debe seleccionar al menos un rol para la empresa');
+            document.getElementById('roleWarning').scrollIntoView({ behavior: 'smooth' });
+            return false;
+        }
+
+        const taxId = document.getElementById('tax_id').value;
+        const country = document.getElementById('country').value;
+        
+        if (country && taxId.length === 11) {
+            const config = countryConfigs[country];
+            const prefix = taxId.substring(0, 2);
+            
+            if (config && !config.valid_prefixes.includes(prefix)) {
+                e.preventDefault();
+                alert(`El CUIT/RUC debe empezar con uno de estos prefijos: ${config.valid_prefixes.join(', ')}`);
+                document.getElementById('tax_id').focus();
+                return false;
+            }
+        }
+    });
+
+    // Inicializar cuando la página carga
+    document.addEventListener('DOMContentLoaded', function() {
+        // Configurar eventos
+        document.getElementById('country').addEventListener('change', updateCountryFields);
+        
+        // Configurar eventos para checkboxes de roles
+        document.querySelectorAll('input[name="company_roles[]"]').forEach(checkbox => {
+            checkbox.addEventListener('change', updateRoleInfo);
         });
 
-        // Inicializar cuando la página carga
-        document.addEventListener('DOMContentLoaded', function() {
-            // Restaurar estado si hay errores de validación
-            const country = document.getElementById('country').value;
-            if (country) {
-                updateCountryFields();
-            }
-            
-            updateRoleInfo();
-        });
-    </script>
+        // Restaurar estado si hay errores de validación
+        const country = document.getElementById('country').value;
+        if (country) {
+            updateCountryFields();
+        }
+        
+        updateRoleInfo();
+    });
+</script>
 </x-app-layout>

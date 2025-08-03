@@ -105,7 +105,7 @@
                                     <div x-show="open" @click.away="open = false" x-transition
                                         class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                         <div class="py-1">
-                                            <a href="{{ route('admin.countries.index') }}"
+                                            <a href="{{-- route('admin.countries.index') --}}#"
                                                 class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                 <svg class="w-4 h-4 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -113,7 +113,7 @@
                                                 </svg>
                                                 Países
                                             </a>
-                                            <a href="{{ route('admin.ports.index') }}"
+                                            <a href="{{-- route('admin.ports.index') --}}#"
                                                 class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                 <svg class="w-4 h-4 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -121,7 +121,7 @@
                                                 </svg>
                                                 Puertos
                                             </a>
-                                            <a href="{{ route('admin.customs.index') }}"
+                                            <a href="{{-- route('admin.customs.index') --}}#"
                                                 class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                 <svg class="w-4 h-4 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"

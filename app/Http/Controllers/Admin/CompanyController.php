@@ -180,7 +180,37 @@ class CompanyController extends Controller
         $request->validate([
             'legal_name' => 'required|string|max:255',
             'commercial_name' => 'nullable|string|max:255',
-            'tax_id' => 'required|string|size:11|unique:companies,tax_id',
+            'tax_id' => [
+                'required',
+                'string',
+                'unique:companies,tax_id',
+                function ($attribute, $value, $fail) {
+                    $country = request('country');
+                    $cleanTaxId = preg_replace('/[^0-9]/', '', $value);
+                    
+                    if ($country === 'AR') {
+                        // Argentina: exactamente 11 dígitos
+                        if (strlen($cleanTaxId) !== 11) {
+                            $fail('El CUIT debe tener exactamente 11 dígitos.');
+                            return;
+                        }
+                        
+                        // Validar prefijo
+                        $prefix = substr($cleanTaxId, 0, 2);
+                        $validPrefixes = ['20', '23', '24', '27', '30', '33', '34'];
+                        if (!in_array($prefix, $validPrefixes)) {
+                            $fail('Prefijo de CUIT inválido. Válidos: ' . implode(', ', $validPrefixes));
+                            return;
+                        }
+                    } elseif ($country === 'PY') {
+                        // Paraguay: entre 6 y 9 dígitos
+                        if (strlen($cleanTaxId) < 6 || strlen($cleanTaxId) > 9) {
+                            $fail('El RUC debe tener entre 6 y 9 dígitos.');
+                            return;
+                        }
+                    }
+                }
+            ],
             'country' => 'required|in:AR,PY',
             'email' => 'required|email|max:255',
             'phone' => 'nullable|string|max:20',
