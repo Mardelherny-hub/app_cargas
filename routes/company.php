@@ -17,6 +17,8 @@ use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
 use App\Http\Controllers\Company\VesselOwnerController;
 use App\Http\Controllers\Company\BillOfLadingController;
+// ImporterController para KLine.DAT
+use App\Http\Controllers\Company\ImporterController;
 
 
 /*
@@ -338,3 +340,8 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
     Route::put('/notifications', [SettingsController::class, 'updateNotifications'])->name('update-notifications');
     Route::put('/preferences', [SettingsController::class, 'updatePreferences'])->name('update-preferences');
 });
+
+// Importación de archivos KLine.DAT
+Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
+Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
+

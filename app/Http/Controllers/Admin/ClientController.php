@@ -131,6 +131,7 @@ class ClientController extends Controller
             Log::info('Client creation debug', [
                 'all_data' => $allData,
                 'validated_data' => $validatedData,
+                'contacts_data' => $request->contacts ?? 'No contacts provided',
                 'user_id' => Auth::id()
             ]);
 
@@ -160,6 +161,11 @@ class ClientController extends Controller
 
             // Crear múltiples contactos si se proporcionan
             if ($request->has('contacts') && is_array($request->contacts)) {
+                Log::info('Creating contacts for client', [
+                    'client_id' => $client->id,
+                    'contacts_count' => count($request->contacts),
+                    'contacts_data' => $request->contacts
+                ]);
                 $this->createMultipleContacts($client, $request->contacts);
             }
 
@@ -610,25 +616,89 @@ class ClientController extends Controller
 
     /**
      * Crear múltiples contactos para un cliente
+     *
+     * 🔧 CORRECCIÓN CRÍTICA: El método actual tiene mapeo incorrecto de campos
      */
     private function createMultipleContacts(Client $client, array $contacts): void
     {
-        foreach ($contacts as $contactData) {
-            if (empty($contactData['email']) && empty($contactData['phone'])) {
-                continue; // Saltar contactos vacíos
+        // Agregar logging detallado para debug
+        Log::info('createMultipleContacts - START', [
+            'client_id' => $client->id,
+            'contacts_count' => count($contacts),
+            'raw_contacts_data' => $contacts
+        ]);
+
+        foreach ($contacts as $index => $contactData) {
+            Log::info("Processing contact #{$index}", [
+                'contact_data' => $contactData,
+                'keys' => array_keys($contactData)
+            ]);
+
+            // Saltar contactos completamente vacíos
+            if (empty($contactData['email']) && 
+                empty($contactData['phone']) && 
+                empty($contactData['mobile_phone']) && 
+                empty($contactData['contact_person_name'])) {
+                Log::info("Skipping empty contact #{$index}");
+                continue;
             }
             
-            $client->contactData()->create([
-                'contact_person_name' => $contactData['name'] ?? '',
+            // 🔧 CORRECCIÓN PRINCIPAL: Mapeo correcto de todos los campos
+            $contactRecord = $client->contactData()->create([
+                'contact_type' => 'general', // Siempre 'general' según requerimientos FASE 6
+                
+                // 🔧 CAMPOS PERSONALES - Mapeo correcto
+                'contact_person_name' => $contactData['contact_person_name'] ?? null,
+                'contact_person_position' => $contactData['contact_person_position'] ?? null,
+                'contact_person_phone' => $contactData['contact_person_phone'] ?? null,
+                'contact_person_email' => $contactData['contact_person_email'] ?? null,
+                
+                // 🔧 CAMPOS DE COMUNICACIÓN - Mapeo correcto
                 'email' => $contactData['email'] ?? null,
+                'secondary_email' => $contactData['secondary_email'] ?? null,
                 'phone' => $contactData['phone'] ?? null,
-                'contact_person_position' => $contactData['position'] ?? null,
-                'is_primary' => $contactData['is_primary'] ?? false,
+                'mobile_phone' => $contactData['mobile_phone'] ?? null,
+                'fax' => $contactData['fax'] ?? null,
+                
+                // 🔧 CAMPOS DE DIRECCIÓN - Mapeo correcto
+                'address_line_1' => $contactData['address_line_1'] ?? null,
+                'address_line_2' => $contactData['address_line_2'] ?? null,
+                'city' => $contactData['city'] ?? null,
+                'state_province' => $contactData['state_province'] ?? null,
+                'postal_code' => $contactData['postal_code'] ?? null,
+                'country_id' => $contactData['country_id'] ?? null,
+                
+                // 🔧 CAMPOS DE CONFIGURACIÓN
                 'notes' => $contactData['notes'] ?? null,
+                'internal_notes' => $contactData['internal_notes'] ?? null,
+                'timezone' => $contactData['timezone'] ?? 'America/Argentina/Buenos_Aires',
+                'accepts_email_notifications' => isset($contactData['accepts_email_notifications']) ? (bool) $contactData['accepts_email_notifications'] : true,
+                'accepts_sms_notifications' => isset($contactData['accepts_sms_notifications']) ? (bool) $contactData['accepts_sms_notifications'] : false,
+                
+                // 🔧 CAMPOS DE ESTADO
+                'is_primary' => isset($contactData['is_primary']) ? (bool) $contactData['is_primary'] : ($index === 0),
+                'active' => true,
+                'verified' => false,
+                
+                // 🔧 CAMPOS DE AUDITORÍA
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            Log::info("Contact created successfully", [
+                'contact_id' => $contactRecord->id,
+                'client_id' => $client->id,
+                'contact_person_name' => $contactRecord->contact_person_name,
+                'email' => $contactRecord->email,
+                'phone' => $contactRecord->phone,
+                'is_primary' => $contactRecord->is_primary
             ]);
         }
-    }
 
+        Log::info('createMultipleContacts - END', [
+            'client_id' => $client->id,
+            'total_contacts_created' => $client->contactData()->count()
+        ]);
+    }
     /**
      * Actualizar múltiples contactos de un cliente
      */

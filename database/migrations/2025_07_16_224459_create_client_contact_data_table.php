@@ -217,8 +217,13 @@ return new class extends Migration
             $table->index(['active', 'accepts_sms_notifications'], 'idx_sms_notifications');
 
             // Índice único para evitar múltiples contactos primarios por cliente
-            $table->unique(['client_id', 'is_primary'], 'unique_primary_contact_per_client');
+            // Cambiado a índice parcial para que solo aplique cuando is_primary = 1
+            // Laravel no soporta índices parciales nativamente, se usa raw statement después de crear la tabla
         });
+
+        // Se elimina el índice único para is_primary porque MySQL no soporta índices parciales
+        // La unicidad del contacto primario se maneja en la lógica de la aplicación (modelo)
+
     }
 
     /**

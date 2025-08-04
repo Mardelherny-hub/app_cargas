@@ -344,7 +344,7 @@
                                 @endif
 
                                 <!-- IMPORTACIÓN/EXPORTACIÓN (Para usuarios con permisos especiales) -->
-                                @if ($canImport || $canExport)
+                                @if ($canImport || $canExport || $user->hasRole('company-admin'))
                                     <div class="relative h-full flex items-center" x-data="{ open: false }">
                                         <button @click="open = !open"
                                             class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out h-full"
@@ -359,7 +359,7 @@
                                         <div x-show="open" @click.away="open = false" x-transition
                                             class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                             <div class="py-1">
-                                                @if($canImport)
+                                                @if($canImport || $user->hasRole('company-admin'))
                                                     <div class="px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
                                                         Importación
                                                     </div>
@@ -379,6 +379,11 @@
                                                         </svg>
                                                         Desde XML
                                                     </a>
+                                                    <a href="{{ route('company.imports.kline') }}" 
+                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                        📥 Importar KLine.DAT
+                                                    </a>
+
                                                 @endif
 
                                                 @if($canExport)

@@ -41,6 +41,30 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
+            @if ($errors->any())
+                <div class="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-red-800">
+                                Hay errores en el formulario
+                            </h3>
+                            <div class="mt-2 text-sm text-red-700">
+                                <ul class="list-disc pl-5 space-y-1">
+                                    @foreach ($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <form method="POST" action="{{ route('admin.clients.update', $client) }}" id="clientForm">
                 @csrf
                 @method('PUT')
@@ -63,10 +87,12 @@
                                 </label>
                                 <input type="text" id="tax_id" name="tax_id" required maxlength="15"
                                        value="{{ old('tax_id', $client->tax_id) }}"
+                                       placeholder="Ej: 20123456789"
                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                 @error('tax_id')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
+                                <p class="mt-1 text-xs text-gray-500">Solo números, sin guiones ni espacios</p>
                             </div>
 
                             <!-- País -->
@@ -96,37 +122,9 @@
                                 </label>
                                 <input type="text" id="legal_name" name="legal_name" required maxlength="255"
                                        value="{{ old('legal_name', $client->legal_name) }}"
+                                       placeholder="Ej: EMPRESA TRANSPORTADORA S.A."
                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                 @error('legal_name')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Tipo de Cliente -->
-                            <div class="sm:col-span-1">
-                                <label for="client_roles" class="block text-sm font-medium text-gray-700">
-                                    Roles de Cliente <span class="text-red-500">*</span>
-                                </label>
-                                <select id="client_roles" name="client_roles[]" multiple required
-                                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    @php
-                                        $oldRoles = old('client_roles', $client->client_roles ?? []);
-                                        if (!is_array($oldRoles)) {
-                                            $oldRoles = [$oldRoles];
-                                        }
-                                        $roles = [
-                                            'shipper' => 'Cargador/Exportador',
-                                            'consignee' => 'Consignatario/Importador',
-                                            'notify_party' => 'Notificatario',
-                                        ];
-                                    @endphp
-                                    @foreach($roles as $key => $label)
-                                        <option value="{{ $key }}" {{ in_array($key, $oldRoles) ? 'selected' : '' }}>
-                                            {{ $label }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('client_roles')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
@@ -219,6 +217,7 @@
                                     Observaciones
                                 </label>
                                 <textarea id="notes" name="notes" rows="3" maxlength="1000"
+                                          placeholder="Observaciones adicionales sobre el cliente..."
                                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ old('notes', $client->notes) }}</textarea>
                                 @error('notes')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -236,7 +235,7 @@
                                 <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
                                 </svg>
-                                <h3 class="text-lg leading-6 font-medium text-gray-900">Contactos por Tipo de Uso</h3>
+                                <h3 class="text-lg leading-6 font-medium text-gray-900">Contactos</h3>
                                 <span class="ml-2 text-sm text-gray-500">
                                     ({{ $client->contactData->count() }} contactos registrados)
                                 </span>
@@ -254,10 +253,12 @@
                             @foreach($client->contactData as $index => $contact)
                                 <div class="contact-item border border-gray-200 rounded-lg p-4 mb-4" data-index="{{ $index }}">
                                     <input type="hidden" name="contacts[{{ $index }}][id]" value="{{ $contact->id }}">
+                                    <!-- Campo oculto para contact_type (FASE 6: siempre 'general') -->
+                                    <input type="hidden" name="contacts[{{ $index }}][contact_type]" value="general">
                                     
                                     <div class="flex items-center justify-between mb-4">
                                         <h4 class="text-md font-medium text-gray-900 flex items-center">
-                                            <span class="contact-number">{{ $index + 1 }}</span>. {{ $contact->getContactTypeLabel() }}
+                                            <span class="contact-number">{{ $index + 1 }}</span>. Contacto
                                             @if($contact->is_primary)
                                                 <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                                                     Principal
@@ -273,22 +274,6 @@
                                     </div>
 
                                     <div class="grid grid-cols-1 gap-y-4 gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
-                                        <!-- Tipo de Contacto -->
-                                        <div class="sm:col-span-1">
-                                            <label class="block text-sm font-medium text-gray-700">
-                                                Tipo de Uso <span class="text-red-500">*</span>
-                                            </label>
-                                            <select name="contacts[{{ $index }}][contact_type]" required
-                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                                <option value="">Seleccionar tipo</option>
-                                                @foreach(\App\Models\ClientContactData::CONTACT_TYPES as $key => $label)
-                                                    <option value="{{ $key }}" {{ $contact->contact_type == $key ? 'selected' : '' }}>
-                                                        {{ $label }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-
                                         <!-- Es Principal -->
                                         <div class="sm:col-span-1">
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -311,6 +296,7 @@
                                             </label>
                                             <input type="text" name="contacts[{{ $index }}][contact_person_name]" maxlength="150"
                                                    value="{{ $contact->contact_person_name }}"
+                                                   placeholder="Ej: Juan Pérez"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -321,6 +307,7 @@
                                             </label>
                                             <input type="text" name="contacts[{{ $index }}][contact_person_position]" maxlength="100"
                                                    value="{{ $contact->contact_person_position }}"
+                                                   placeholder="Ej: Gerente de Operaciones"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -331,6 +318,7 @@
                                             </label>
                                             <input type="email" name="contacts[{{ $index }}][email]" maxlength="255"
                                                    value="{{ $contact->email }}"
+                                                   placeholder="contacto@empresa.com"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -341,6 +329,7 @@
                                             </label>
                                             <input type="tel" name="contacts[{{ $index }}][phone]" maxlength="20"
                                                    value="{{ $contact->phone }}"
+                                                   placeholder="Ej: +54 11 4555-1234"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -351,6 +340,7 @@
                                             </label>
                                             <input type="tel" name="contacts[{{ $index }}][mobile_phone]" maxlength="20"
                                                    value="{{ $contact->mobile_phone }}"
+                                                   placeholder="Ej: +54 9 11 1234-5678"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -361,6 +351,7 @@
                                             </label>
                                             <input type="text" name="contacts[{{ $index }}][address_line_1]" maxlength="255"
                                                    value="{{ $contact->address_line_1 }}"
+                                                   placeholder="Ej: Av. Corrientes 1234"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -371,6 +362,7 @@
                                             </label>
                                             <input type="text" name="contacts[{{ $index }}][address_line_2]" maxlength="255"
                                                    value="{{ $contact->address_line_2 }}"
+                                                   placeholder="Ej: Piso 5, Oficina 12"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -381,6 +373,7 @@
                                             </label>
                                             <input type="text" name="contacts[{{ $index }}][city]" maxlength="100"
                                                    value="{{ $contact->city }}"
+                                                   placeholder="Ej: Buenos Aires"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -391,6 +384,7 @@
                                             </label>
                                             <input type="text" name="contacts[{{ $index }}][state_province]" maxlength="100"
                                                    value="{{ $contact->state_province }}"
+                                                   placeholder="Ej: CABA"
                                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                         </div>
 
@@ -400,6 +394,7 @@
                                                 Observaciones
                                             </label>
                                             <textarea name="contacts[{{ $index }}][notes]" rows="2" maxlength="500"
+                                                      placeholder="Observaciones adicionales sobre este contacto..."
                                                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">{{ $contact->notes }}</textarea>
                                         </div>
                                     </div>
@@ -412,7 +407,16 @@
                                 <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
                                 </svg>
-                                <p>No hay contactos registrados. Agrega al menos un contacto.</p>
+                                <p class="text-sm">No hay contactos registrados</p>
+                                <p class="text-xs text-gray-400 mt-1">Puedes agregar contactos usando el botón de arriba</p>
+                            </div>
+                        @else
+                            <div id="noContactsMessage" style="display: none;" class="text-center py-8 text-gray-500">
+                                <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2v10a2 2 0 002 2z"/>
+                                </svg>
+                                <p class="text-sm">No hay contactos registrados</p>
+                                <p class="text-xs text-gray-400 mt-1">Puedes agregar contactos usando el botón de arriba</p>
                             </div>
                         @endif
                     </div>
@@ -426,6 +430,9 @@
                     </a>
                     <button type="submit" 
                             class="bg-blue-600 text-white hover:bg-blue-700 px-6 py-2 rounded-md text-sm font-medium">
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
                         Actualizar Cliente
                     </button>
                 </div>
@@ -449,20 +456,9 @@
             </div>
 
             <div class="grid grid-cols-1 gap-y-4 gap-x-4 sm:grid-cols-2 lg:grid-cols-3">
-                <!-- Tipo de Contacto -->
-                <div class="sm:col-span-1">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Tipo de Uso <span class="text-red-500">*</span>
-                    </label>
-                    <select name="contacts[__INDEX__][contact_type]" required
-                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                        <option value="">Seleccionar tipo</option>
-                        @foreach(\App\Models\ClientContactData::CONTACT_TYPES as $key => $label)
-                            <option value="{{ $key }}">{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
+                <!-- Campo oculto para contact_type (FASE 6: siempre 'general') -->
+                <input type="hidden" name="contacts[__INDEX__][contact_type]" value="general">
+                
                 <!-- Es Principal -->
                 <div class="sm:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -483,6 +479,7 @@
                         Nombre de Contacto
                     </label>
                     <input type="text" name="contacts[__INDEX__][contact_person_name]" maxlength="150"
+                           placeholder="Ej: Juan Pérez"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -492,6 +489,7 @@
                         Cargo/Posición
                     </label>
                     <input type="text" name="contacts[__INDEX__][contact_person_position]" maxlength="100"
+                           placeholder="Ej: Gerente de Operaciones"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -501,6 +499,7 @@
                         Email
                     </label>
                     <input type="email" name="contacts[__INDEX__][email]" maxlength="255"
+                           placeholder="contacto@empresa.com"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -510,6 +509,7 @@
                         Teléfono Fijo
                     </label>
                     <input type="tel" name="contacts[__INDEX__][phone]" maxlength="20"
+                           placeholder="Ej: +54 11 4555-1234"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -519,6 +519,7 @@
                         Teléfono Móvil
                     </label>
                     <input type="tel" name="contacts[__INDEX__][mobile_phone]" maxlength="20"
+                           placeholder="Ej: +54 9 11 1234-5678"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -528,6 +529,7 @@
                         Dirección Principal
                     </label>
                     <input type="text" name="contacts[__INDEX__][address_line_1]" maxlength="255"
+                           placeholder="Ej: Av. Corrientes 1234"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -537,6 +539,7 @@
                         Dirección Complementaria
                     </label>
                     <input type="text" name="contacts[__INDEX__][address_line_2]" maxlength="255"
+                           placeholder="Ej: Piso 5, Oficina 12"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -546,6 +549,7 @@
                         Ciudad
                     </label>
                     <input type="text" name="contacts[__INDEX__][city]" maxlength="100"
+                           placeholder="Ej: Buenos Aires"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -555,6 +559,7 @@
                         Provincia/Estado
                     </label>
                     <input type="text" name="contacts[__INDEX__][state_province]" maxlength="100"
+                           placeholder="Ej: CABA"
                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                 </div>
 
@@ -564,6 +569,7 @@
                         Observaciones
                     </label>
                     <textarea name="contacts[__INDEX__][notes]" rows="2" maxlength="500"
+                              placeholder="Observaciones adicionales sobre este contacto..."
                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></textarea>
                 </div>
             </div>
@@ -588,7 +594,7 @@
             }
         });
         
-        // Event delegation para checkboxes de contacto principal
+        // Event delegation para control de contacto principal único
         document.getElementById('contactsContainer').addEventListener('change', function(e) {
             if (e.target.name && e.target.name.includes('[is_primary]')) {
                 if (e.target.checked) {
@@ -638,6 +644,17 @@
                 if (numberSpan) {
                     numberSpan.textContent = index + 1;
                 }
+                
+                // Actualizar atributo data-index
+                item.setAttribute('data-index', index);
+                
+                // Actualizar nombres de campos
+                const inputs = item.querySelectorAll('input, select, textarea');
+                inputs.forEach(input => {
+                    if (input.name && !input.name.includes('[id]')) {
+                        input.name = input.name.replace(/\[\d+\]/, `[${index}]`);
+                    }
+                });
             });
         }
         
@@ -658,22 +675,26 @@
         // Validación del formulario
         document.getElementById('clientForm').addEventListener('submit', function(e) {
             const contactItems = document.querySelectorAll('.contact-item');
-            let hasValidContact = false;
+            let hasValidContact = true;
             
-            contactItems.forEach(item => {
-                const email = item.querySelector('input[name*="[email]"]').value;
-                const phone = item.querySelector('input[name*="[phone]"]').value;
-                const mobile = item.querySelector('input[name*="[mobile_phone]"]').value;
+            // Si hay contactos, al menos uno debe tener email o teléfono
+            if (contactItems.length > 0) {
+                hasValidContact = false;
+                contactItems.forEach(item => {
+                    const email = item.querySelector('input[name*="[email]"]').value;
+                    const phone = item.querySelector('input[name*="[phone]"]').value;
+                    const mobile = item.querySelector('input[name*="[mobile_phone]"]').value;
+                    
+                    if (email || phone || mobile) {
+                        hasValidContact = true;
+                    }
+                });
                 
-                if (email || phone || mobile) {
-                    hasValidContact = true;
+                if (!hasValidContact) {
+                    e.preventDefault();
+                    alert('Si agrega contactos, debe incluir al menos un email o teléfono en algún contacto.');
+                    return false;
                 }
-            });
-            
-            if (contactItems.length > 0 && !hasValidContact) {
-                e.preventDefault();
-                alert('Debe agregar al menos un email o teléfono en algún contacto.');
-                return false;
             }
         });
     });
