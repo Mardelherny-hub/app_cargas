@@ -976,11 +976,11 @@ private function buildBillsOfLadingQuery($company)
         return [
             'status' => ['pending', 'issued', 'in_transit', 'delivered'],
             'period' => ['today', 'week', 'month', 'quarter'],
-            'shipper' => Client::whereHas('shipper_bills')
+            'shipper' => Client::where('status', 'active')
                 ->orderBy('legal_name')
                 ->pluck('legal_name', 'id')
                 ->toArray(),
-        ];
+            ];
     }
 
     /**

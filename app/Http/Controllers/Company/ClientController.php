@@ -439,4 +439,216 @@ class ClientController extends Controller
         // Por ahora retorna vista básica
         return view('company.clients.contacts', compact('client'));
     }
+
+   
+
+    /**
+     * Almacenar nuevo contacto para el cliente
+     */
+    public function storeContact(Request $request, Client $client)
+    {
+        $this->authorize('update', $client);
+        
+        $validated = $request->validate([
+            'contact_person_name' => 'nullable|string|max:255',
+            'contact_person_position' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:50',
+            'mobile_phone' => 'nullable|string|max:50',
+            'address_line_1' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:100',
+            'notes' => 'nullable|string|max:1000',
+            'is_primary' => 'boolean',
+            'contact_type' => 'required|string|in:general,afip,manifests,arrival_notices,emergency,billing,operations'
+        ]);
+
+        // Validar que tenga al menos un método de contacto
+        if (empty($validated['email']) && empty($validated['phone']) && empty($validated['mobile_phone'])) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['email' => ['Debe proporcionar al menos un email o teléfono']]
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Si se marca como principal, quitar principal de otros contactos
+            if ($validated['is_primary'] ?? false) {
+                $client->contactData()->update(['is_primary' => false]);
+            }
+
+            // Crear el contacto
+            $contact = $client->contactData()->create([
+                'contact_type' => $validated['contact_type'],
+                'contact_person_name' => $validated['contact_person_name'],
+                'contact_person_position' => $validated['contact_person_position'],
+                'email' => $validated['email'],
+                'phone' => $validated['phone'],
+                'mobile_phone' => $validated['mobile_phone'],
+                'address_line_1' => $validated['address_line_1'],
+                'city' => $validated['city'],
+                'notes' => $validated['notes'],
+                'is_primary' => $validated['is_primary'] ?? false,
+                'active' => true,
+                'created_by_user_id' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Contacto creado exitosamente',
+                'contact' => $contact
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error creating contact', [
+                'client_id' => $client->id,
+                'data' => $validated,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al crear el contacto'
+            ], 500);
+        }
+    }
+
+    /**
+     * Actualizar contacto existente
+     */
+    public function updateContact(Request $request, Client $client, $contactId)
+    {
+        $this->authorize('update', $client);
+        
+        $contact = $client->contactData()->findOrFail($contactId);
+        
+        $validated = $request->validate([
+            'contact_person_name' => 'nullable|string|max:255',
+            'contact_person_position' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:50',
+            'mobile_phone' => 'nullable|string|max:50',
+            'address_line_1' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:100',
+            'notes' => 'nullable|string|max:1000',
+            'is_primary' => 'boolean',
+            'contact_type' => 'required|string|in:general,afip,manifests,arrival_notices,emergency,billing,operations'
+        ]);
+
+        // Validar que tenga al menos un método de contacto
+        if (empty($validated['email']) && empty($validated['phone']) && empty($validated['mobile_phone'])) {
+            return response()->json([
+                'success' => false,
+                'errors' => ['email' => ['Debe proporcionar al menos un email o teléfono']]
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Si se marca como principal, quitar principal de otros contactos
+            if ($validated['is_primary'] ?? false) {
+                $client->contactData()->where('id', '!=', $contact->id)->update(['is_primary' => false]);
+            }
+
+            // Actualizar el contacto
+            $contact->update([
+                'contact_type' => $validated['contact_type'],
+                'contact_person_name' => $validated['contact_person_name'],
+                'contact_person_position' => $validated['contact_person_position'],
+                'email' => $validated['email'],
+                'phone' => $validated['phone'],
+                'mobile_phone' => $validated['mobile_phone'],
+                'address_line_1' => $validated['address_line_1'],
+                'city' => $validated['city'],
+                'notes' => $validated['notes'],
+                'is_primary' => $validated['is_primary'] ?? false,
+                'updated_by_user_id' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Contacto actualizado exitosamente',
+                'contact' => $contact
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error updating contact', [
+                'client_id' => $client->id,
+                'contact_id' => $contact->id,
+                'data' => $validated,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar el contacto'
+            ], 500);
+        }
+    }
+
+    /**
+     * Eliminar contacto
+     */
+    public function destroyContact(Client $client, $contactId)
+    {
+        $this->authorize('update', $client);
+        
+        $contact = $client->contactData()->findOrFail($contactId);
+        
+        // No permitir eliminar el contacto principal si es el único
+        if ($contact->is_primary && $client->contactData()->count() === 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se puede eliminar el único contacto del cliente'
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Si eliminamos el contacto principal y hay otros, marcar el siguiente como principal
+            if ($contact->is_primary) {
+                $nextContact = $client->contactData()->where('id', '!=', $contact->id)->first();
+                if ($nextContact) {
+                    $nextContact->update(['is_primary' => true]);
+                }
+            }
+
+            $contact->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Contacto eliminado exitosamente'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error deleting contact', [
+                'client_id' => $client->id,
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar el contacto'
+            ], 500);
+        }
+    }
 }

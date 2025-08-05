@@ -343,6 +343,116 @@
                                     </div>
                                 @endif
 
+                                                                <!-- WEBSERVICES Dropdown for Company Admin -->
+                                <div class="relative h-full flex items-center" x-data="{ open: false }">
+                                    <button @click="open = ! open" 
+                                            class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out"
+                                            :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.webservices.*', 'company.certificates.*') ? 'true' : 'false' }} }">
+                                        {{ __('Webservices') }}
+                                        <svg class="ml-1 h-4 w-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                        </svg>
+                                    </button>
+
+                                    <div x-show="open" 
+                                        @click.away="open = false"
+                                        x-transition:enter="transition ease-out duration-200"
+                                        x-transition:enter-start="opacity-0 transform scale-95"
+                                        x-transition:enter-end="opacity-100 transform scale-100"
+                                        x-transition:leave="transition ease-in duration-150"
+                                        x-transition:leave-start="opacity-100 transform scale-100"
+                                        x-transition:leave-end="opacity-0 transform scale-95"
+                                        class="absolute top-16 left-0 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
+                                        <div class="py-1">
+                                            <a href="{{ route('company.webservices.index') }}" 
+                                            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.webservices.index') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                <div class="flex items-center">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                                    </svg>
+                                                    {{ __('Dashboard') }}
+                                                </div>
+                                            </a>
+
+                                            @if(in_array('Cargas', $companyRoles))
+                                                <a href="{{ route('company.webservices.send') }}" 
+                                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.webservices.send') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                    <div class="flex items-center">
+                                                        <span class="inline-block w-4 h-4 mr-2 text-xs">🇦🇷</span>
+                                                        {{ __('Argentina MIC/DTA') }}
+                                                    </div>
+                                                </a>
+                                            @endif
+
+                                            @if(in_array('Desconsolidador', $companyRoles))
+                                                <a href="{{ route('company.webservices.send') }}?type=desconsolidados" 
+                                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                    <div class="flex items-center">
+                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                                        </svg>
+                                                        {{ __('Desconsolidados') }}
+                                                    </div>
+                                                </a>
+                                            @endif
+
+                                            @if(in_array('Transbordos', $companyRoles))
+                                                <a href="{{ route('company.webservices.send') }}?type=transbordos" 
+                                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                    <div class="flex items-center">
+                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                        </svg>
+                                                        {{ __('Transbordos') }}
+                                                    </div>
+                                                </a>
+                                            @endif
+
+                                            <a href="{{ route('company.webservices.import') }}" 
+                                            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.webservices.import') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                <div class="flex items-center">
+                                                    <svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                                    </svg>
+                                                    {{ __('📄 Importar Manifiestos') }}
+                                                </div>
+                                            </a>
+
+                                            <div class="border-t border-gray-100 my-1"></div>
+                                            
+                                            <a href="{{ route('company.webservices.query') }}" 
+                                            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.webservices.query') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                <div class="flex items-center">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                    </svg>
+                                                    {{ __('Consultas') }}
+                                                </div>
+                                            </a>
+
+                                            <a href="{{ route('company.webservices.history') }}" 
+                                            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.webservices.history') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                <div class="flex items-center">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    {{ __('Historial') }}
+                                                </div>
+                                            </a>
+
+                                            <a href="{{ route('company.certificates.index') }}" 
+                                            class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.certificates.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                                <div class="flex items-center">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                                    </svg>
+                                                    {{ __('Certificados') }}
+                                                </div>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- IMPORTACIÓN/EXPORTACIÓN (Para usuarios con permisos especiales) -->
                                 @if ($canImport || $canExport || $user->hasRole('company-admin'))
                                     <div class="relative h-full flex items-center" x-data="{ open: false }">

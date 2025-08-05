@@ -3547,25 +3547,25 @@ public function downloadXml(WebserviceTransaction $webservice)
     ]);
 }
 
-/**
- * Descargar PDF del reporte
- */
-public function downloadPdf(WebserviceTransaction $webservice)
-{
-    $company = $this->getUserCompany();
-    if (!$company || $webservice->company_id !== $company->id) {
-        abort(403, 'No tiene permisos para esta transacción.');
-    }
+    /**
+     * Descargar PDF del reporte
+     */
+    public function downloadPdf(WebserviceTransaction $webservice)
+    {
+        $company = $this->getUserCompany();
+        if (!$company || $webservice->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para esta transacción.');
+        }
 
-    if (!$webservice->confirmation_number) {
+        if (!$webservice->confirmation_number) {
+            return redirect()->back()
+                ->with('error', 'No hay confirmación disponible para generar PDF.');
+        }
+
+        // TODO: Implementar generación de PDF
         return redirect()->back()
-            ->with('error', 'No hay confirmación disponible para generar PDF.');
+            ->with('info', 'Funcionalidad de PDF en desarrollo.');
     }
-
-    // TODO: Implementar generación de PDF
-    return redirect()->back()
-        ->with('info', 'Funcionalidad de PDF en desarrollo.');
-}
 
     /**
      * Importar manifiesto desde archivo CSV + CREAR/ACTUALIZAR CLIENTES

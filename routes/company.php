@@ -19,6 +19,10 @@ use App\Http\Controllers\Company\VesselOwnerController;
 use App\Http\Controllers\Company\BillOfLadingController;
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
+use App\Http\Controllers\Company\Manifests\ManifestController;
+use App\Http\Controllers\Company\Manifests\ManifestImportController;
+use App\Http\Controllers\Company\Manifests\ManifestExportController;
+use App\Http\Controllers\Company\Manifests\ManifestCustomsController;
 
 
 /*
@@ -332,6 +336,31 @@ Route::prefix('clients')->name('company.clients.')->group(function () {
     });
 });
 
+Route::prefix('manifests')->name('company.manifests.')->group(function () {
+    Route::get('/', [ManifestController::class, 'index'])->name('index');
+    Route::get('/create', [ManifestController::class, 'create'])->name('create');
+    Route::post('/', [ManifestController::class, 'store'])->name('store');
+    Route::get('/{id}', [ManifestController::class, 'show'])->name('show');
+    Route::get('/{id}/edit', [ManifestController::class, 'edit'])->name('edit');
+    Route::put('/{id}', [ManifestController::class, 'update'])->name('update');
+    Route::delete('/{id}', [ManifestController::class, 'destroy'])->name('destroy');
+
+   
+});
+
+Route::prefix('company/manifests')->name('company.manifests.')->group(function () {
+    Route::get('import', [ManifestImportController::class, 'showForm'])->name('import.form');
+    Route::post('import', [ManifestImportController::class, 'store'])->name('import');
+    Route::get('{voyageId}/export/parana', [ManifestExportController::class, 'exportParana'])->name('export.parana');
+    Route::get('{voyageId}/export/guaran', [ManifestExportController::class, 'exportGuaran'])->name('export.guaran');
+});
+
+
+Route::post('company/manifests/{voyageId}/send', [ManifestCustomsController::class, 'send'])
+    ->name('company.manifests.send_to_customs');
+
+
+
 // Configuración (solo company-admin)
 Route::prefix('settings')->name('company.settings.')->group(function () {
     Route::get('/', [SettingsController::class, 'index'])->name('index');
@@ -344,4 +373,6 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
 // Importación de archivos KLine.DAT
 Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
 Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
+
+
 
