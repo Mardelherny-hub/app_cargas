@@ -3657,7 +3657,7 @@ public function downloadPdf(WebserviceTransaction $webservice)
     }
 
     /**
-     * ✨ NUEVO: Procesar clientes desde datos de manifiesto
+     * ✨ CORREGIDO: Procesar clientes desde datos de manifiesto (SIN ROLES)
      */
     private function processClientsFromManifest(array $csvData): array
     {
@@ -3666,32 +3666,19 @@ public function downloadPdf(WebserviceTransaction $webservice)
         
         foreach ($csvData as $record) {
             try {
-                // Usar mismo método del ClientController
                 $clientData = $this->extractClientDataFromManifest($record);
                 
                 foreach ($clientData as $clientInfo) {
                     $key = $clientInfo['legal_name'] . '_' . ($clientInfo['tax_id'] ?? 'no_cuit');
                     
                     if (isset($processedClients[$key])) {
-                        $client = $processedClients[$key];
-                        if (!$client->hasRole($clientInfo['role'])) {
-                            $roles = $client->client_roles;
-                            $roles[] = $clientInfo['role'];
-                            $client->update(['client_roles' => array_unique($roles)]);
-                            $results['updated']++;
-                        }
-                        continue;
+                        continue; // Ya procesado
                     }
                     
                     $existingClient = $this->findExistingClientInManifest($clientInfo);
                     
                     if ($existingClient) {
-                        if (!$existingClient->hasRole($clientInfo['role'])) {
-                            $roles = $existingClient->client_roles;
-                            $roles[] = $clientInfo['role'];
-                            $existingClient->update(['client_roles' => array_unique($roles)]);
-                            $results['updated']++;
-                        }
+                        $existingClient->touch();
                         $processedClients[$key] = $existingClient;
                     } else {
                         $client = $this->createClientFromManifest($clientInfo);
@@ -3706,7 +3693,7 @@ public function downloadPdf(WebserviceTransaction $webservice)
                 
             } catch (Exception $e) {
                 $results['errors']++;
-                \Log::error("Error procesando cliente desde manifiesto: " . $e->getMessage());
+                Log::error("Error procesando cliente: " . $e->getMessage());
             }
         }
         
@@ -3724,7 +3711,6 @@ public function downloadPdf(WebserviceTransaction $webservice)
         if (!empty($record['SHIPPER NAME'])) {
             $clients[] = [
                 'legal_name' => trim($record['SHIPPER NAME']),
-                'role' => 'shipper',
                 'tax_id' => $this->extractTaxIdFromManifest($record['SHIPPER ADDRESS1'] ?? ''),
                 'country_id' => 1, // Argentina
                 'document_type_id' => 1,
@@ -3736,7 +3722,6 @@ public function downloadPdf(WebserviceTransaction $webservice)
         if (!empty($record['CONSIGNEE NAME'])) {
             $clients[] = [
                 'legal_name' => trim($record['CONSIGNEE NAME']),
-                'role' => 'consignee',
                 'tax_id' => $this->extractTaxIdFromManifest($record['CONSIGNEE ADDRESS1'] ?? ''),
                 'country_id' => 2, // Paraguay
                 'document_type_id' => 1,
@@ -3750,7 +3735,6 @@ public function downloadPdf(WebserviceTransaction $webservice)
             if (strtoupper($notifyName) !== 'SAME AS CONSIGNEE') {
                 $clients[] = [
                     'legal_name' => $notifyName,
-                    'role' => 'notify_party',
                     'tax_id' => $this->extractTaxIdFromManifest($record['NOTIFY PARTY ADDRESS1'] ?? ''),
                     'country_id' => 2,
                     'document_type_id' => 1,
@@ -3791,7 +3775,6 @@ public function downloadPdf(WebserviceTransaction $webservice)
                 'tax_id' => $clientInfo['tax_id'],
                 'country_id' => $clientInfo['country_id'],
                 'document_type_id' => $clientInfo['document_type_id'],
-                'client_roles' => [$clientInfo['role']],
                 'legal_name' => $clientInfo['legal_name'],
                 'status' => 'active',
                 'created_by_company_id' => $clientInfo['created_by_company_id'],

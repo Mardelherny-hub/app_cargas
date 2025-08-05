@@ -22,7 +22,7 @@ class UpdateClientRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()->can('create', \App\Models\Client::class);
+        return $this->user()->can('update', $this->route('client'));
     }
 
     /**

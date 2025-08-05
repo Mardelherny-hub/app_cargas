@@ -60,16 +60,7 @@ class ClientController extends Controller
 
         if ($request->filled('document_type_id')) {
             $query->where('document_type_id', $request->get('document_type_id'));
-        }
-
-        // CORRECCIÓN: Agregar filtro por roles de cliente (JSON)
-        if ($request->filled('client_role')) {
-            $role = $request->get('client_role');
-            $validRoles = ['shipper', 'consignee', 'notify_party'];
-            if (in_array($role, $validRoles)) {
-                $query->whereJsonContains('client_roles', $role);
-            }
-        }
+        }       
 
         // Paginación
         $clients = $query->orderBy('legal_name')->paginate(25);
@@ -78,9 +69,6 @@ class ClientController extends Controller
         $countries = Country::where('active', true)->orderBy('name')->get();
         $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
         
-        // CORRECCIÓN: Agregar roles disponibles para filtros
-        $availableRoles = Client::CLIENT_ROLES;
-        
         // Estadísticas básicas
         $stats = [
             'total' => Client::where('status', 'active')->count(),
@@ -88,7 +76,7 @@ class ClientController extends Controller
             'recent' => Client::where('status', 'active')->where('created_at', '>=', now()->subDays(30))->count(),
         ];
 
-        return view('company.clients.index', compact('clients', 'countries', 'documentTypes', 'availableRoles', 'stats'));
+        return view('company.clients.index', compact('clients', 'countries', 'documentTypes','stats'));
     }
 
     /**
@@ -206,7 +194,7 @@ class ClientController extends Controller
             'country',
             'documentType', 
             'primaryPort',
-            'customOffice',
+            'customsOffice',
             'createdByCompany'
         ]);
 

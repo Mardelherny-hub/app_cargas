@@ -124,19 +124,7 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div>
-                                <label for="client_role" class="block text-sm font-medium text-gray-700">Rol de Cliente</label>
-                                <select name="client_role" 
-                                        id="client_role" 
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                                    <option value="">Todos los roles</option>
-                                    @foreach($availableRoles as $roleKey => $roleLabel)
-                                        <option value="{{ $roleKey }}" {{ request('client_role') === $roleKey ? 'selected' : '' }}>
-                                            {{ $roleLabel }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
+                            
                             <div class="flex items-end">
                                 <button type="submit" 
                                         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium w-full">
@@ -168,9 +156,6 @@
                                     </th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         CUIT/RUC
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Roles
                                     </th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         País
@@ -205,32 +190,12 @@
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                                 {{ $client->tax_id }}
                                             </span>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="flex flex-wrap gap-1">
-                                                @forelse($client->client_roles ?? [] as $role)
-                                                    @php
-                                                        $roleColors = [
-                                                            'shipper' => 'bg-green-100 text-green-800',
-                                                            'consignee' => 'bg-blue-100 text-blue-800',
-                                                            'notify_party' => 'bg-yellow-100 text-yellow-800'
-                                                        ];
-                                                        $colorClass = $roleColors[$role] ?? 'bg-gray-100 text-gray-800';
-                                                    @endphp
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $colorClass }}">
-                                                        {{ $availableRoles[$role] ?? ucfirst($role) }}
-                                                    </span>
-                                                @empty
-                                                    <span class="text-sm text-gray-500 italic">Sin roles</span>
-                                                @endforelse
-                                            </div>
-                                        </td>
+                                        </td>                                        
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-2">
                                                     {{ $client->country->iso_code }}
                                                 </span>
-                                                <span class="text-sm text-gray-900">{{ $client->country->name }}</span>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">

@@ -649,7 +649,104 @@ class BillOfLadingController extends Controller
     }
 
     /**
-     * Obtener datos para filtros (ACTUALIZADO)
+     * Obtener datos para formularios (CORREGIDO - SIN CLIENT_ROLES)
+     */
+    private function getFormData($company, Request $request, ?BillOfLading $billOfLading = null): array
+    {
+        return [
+            'shipments' => Shipment::whereHas('voyage', function ($q) use ($company) {
+                $q->where('company_id', $company->id);
+            })->with('voyage:id,voyage_number')->get(['id', 'shipment_number', 'voyage_id']),
+            
+            // CORREGIDO: Todos los clientes pueden ser cualquier cosa
+            'shippers' => Client::where('status', 'active')
+                ->orderBy('legal_name')
+                ->get(['id', 'legal_name', 'tax_id']),
+
+            'consignees' => Client::where('status', 'active')
+                ->orderBy('legal_name')
+                ->get(['id', 'legal_name', 'tax_id']),
+
+            'notifyParties' => Client::where('status', 'active')
+                ->orderBy('legal_name')
+                ->get(['id', 'legal_name', 'tax_id']),
+            
+            'cargoOwners' => Client::where('status', 'active')
+                ->orderBy('legal_name')
+                ->get(['id', 'legal_name', 'tax_id']),
+            
+            'loadingPorts' => Port::where('active', true)
+                ->with('country:id,name')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'country_id']),
+            
+            'dischargePorts' => Port::where('active', true)
+                ->with('country:id,name')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'country_id']),
+            
+            'transshipmentPorts' => Port::where('active', true)
+                ->with('country:id,name')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'country_id']),
+            
+            'finalDestinationPorts' => Port::where('active', true)
+                ->with('country:id,name')
+                ->orderBy('name')
+                ->get(['id', 'name', 'code', 'country_id']),
+            
+            'customsOffices' => CustomOffice::where('active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'code']),
+            
+            'cargoTypes' => CargoType::where('active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'description']),
+            
+            'packagingTypes' => PackagingType::where('active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'description']),
+
+            // NUEVAS OPCIONES PARA FORMULARIOS
+            'billTypes' => [
+                'original' => 'Original',
+                'copy' => 'Copia',
+                'duplicate' => 'Duplicado',
+                'amendment' => 'Enmienda',
+            ],
+
+            'priorityLevels' => [
+                'low' => 'Baja',
+                'normal' => 'Normal',
+                'high' => 'Alta',
+                'urgent' => 'Urgente',
+            ],
+
+            'freightTerms' => [
+                'prepaid' => 'Flete Pagado',
+                'collect' => 'Flete por Cobrar',
+                'prepaid_and_collect' => 'Flete Pagado y por Cobrar',
+            ],
+
+            'paymentMethods' => [
+                'cash' => 'Efectivo',
+                'credit' => 'Crédito',
+                'wire_transfer' => 'Transferencia',
+                'check' => 'Cheque',
+                'letter_of_credit' => 'Carta de Crédito',
+            ],
+
+            'deliveryTerms' => [
+                'door_to_door' => 'Puerta a Puerta',
+                'port_to_port' => 'Puerto a Puerto',
+                'door_to_port' => 'Puerta a Puerto',
+                'port_to_door' => 'Puerto a Puerta',
+            ],
+        ];
+    }
+
+    /**
+     * Obtener datos para filtros (CORREGIDO - SIN CLIENT_ROLES)
      */
     private function getFilterData($company): array
     {
@@ -658,13 +755,12 @@ class BillOfLadingController extends Controller
                 $q->where('company_id', $company->id);
             })->with('voyage:id,voyage_number')->get(['id', 'shipment_number', 'voyage_id']),
             
-            'shippers' => Client::whereJsonContains('client_roles', 'shipper')
-                ->where('status', 'active')
+            // CORREGIDO: Todos los clientes pueden ser cualquier cosa
+            'shippers' => Client::where('status', 'active')
                 ->orderBy('legal_name')
                 ->get(['id', 'legal_name']),
             
-            'consignees' => Client::whereJsonContains('client_roles', 'consignee')
-                ->where('status', 'active')
+            'consignees' => Client::where('status', 'active')
                 ->orderBy('legal_name')
                 ->get(['id', 'legal_name']),
             
@@ -672,7 +768,7 @@ class BillOfLadingController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name', 'country_id']),
             
-            'dischargePorts' => Port::where('active', false)
+            'dischargePorts' => Port::where('active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'country_id']),
             
@@ -731,200 +827,6 @@ class BillOfLadingController extends Controller
                 'incomplete' => 'Documentación Incompleta',
                 'original_released' => 'Original Liberado',
                 'original_pending' => 'Original Pendiente',
-            ],
-        ];
-    }
-
-    /**
-     * Obtener datos para formularios (CORREGIDO)
-     */
-    private function getFormData($company, Request $request, ?BillOfLading $billOfLading = null): array
-    {
-        return [
-            'shipments' => Shipment::whereHas('voyage', function ($q) use ($company) {
-                $q->where('company_id', $company->id);
-            })->with('voyage:id,voyage_number')->get(['id', 'shipment_number', 'voyage_id']),
-            
-            'shippers' => Client::whereJsonContains('client_roles', 'shipper')
-                ->where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
-            
-            'consignees' => Client::whereJsonContains('client_roles', 'consignee')
-                ->where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
-            
-            'notifyParties' => Client::whereJsonContains('client_roles', 'notify_party')
-                ->where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
-            
-            'cargoOwners' => Client::where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
-            
-            'loadingPorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'dischargePorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'transshipmentPorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'finalDestinationPorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'customsOffices' => CustomOffice::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'code']),
-            
-            'cargoTypes' => CargoType::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'description']),
-            
-            'packagingTypes' => PackagingType::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'description']),
-
-            // NUEVAS OPCIONES PARA FORMULARIOS
-            'billTypes' => [
-                'original' => 'Original',
-                'copy' => 'Copia',
-                'duplicate' => 'Duplicado',
-                'amendment' => 'Enmienda',
-            ],
-
-            'priorityLevels' => [
-                'low' => 'Baja',
-                'normal' => 'Normal',
-                'high' => 'Alta',
-                'urgent' => 'Urgente',
-            ],
-
-            'freightTerms' => [
-                'prepaid' => 'Prepagado',
-                'collect' => 'Por Cobrar',
-                'third_party' => 'Tercero',
-            ],
-
-            'paymentTerms' => [
-                'cash' => 'Contado',
-                'credit' => 'Crédito',
-                'letter_of_credit' => 'Carta de Crédito',
-                'other' => 'Otro',
-            ],
-
-            'incotermsList' => [
-                'EXW' => 'EXW - Ex Works',
-                'FCA' => 'FCA - Free Carrier',
-                'CPT' => 'CPT - Carriage Paid To',
-                'CIP' => 'CIP - Carriage and Insurance Paid',
-                'DAP' => 'DAP - Delivered at Place',
-                'DPU' => 'DPU - Delivered at Place Unloaded',
-                'DDP' => 'DDP - Delivered Duty Paid',
-                'FAS' => 'FAS - Free Alongside Ship',
-                'FOB' => 'FOB - Free on Board',
-                'CFR' => 'CFR - Cost and Freight',
-                'CIF' => 'CIF - Cost, Insurance and Freight',
-            ],
-
-            'currencies' => [
-                'USD' => 'Dólar Americano',
-                'EUR' => 'Euro',
-                'ARS' => 'Peso Argentino',
-                'PYG' => 'Guaraní Paraguayo',
-                'BRL' => 'Real Brasileño',
-                'UYU' => 'Peso Uruguayo',
-            ],
-
-            'measurementUnits' => [
-                'KG' => 'Kilogramos',
-                'LB' => 'Libras',
-                'TON' => 'Toneladas',
-                'CBM' => 'Metros Cúbicos',
-                'CFT' => 'Pies Cúbicos',
-            ],
-
-            'cargoConditions' => [
-                'good' => 'Buena',
-                'fair' => 'Regular',
-                'poor' => 'Mala',
-                'damaged' => 'Dañada',
-                'not_inspected' => 'No Inspeccionada',
-            ],
-
-            // OPCIONES DE CONSOLIDACIÓN
-            'consolidationOptions' => [
-                'single' => 'Conocimiento Simple',
-                'master' => 'Conocimiento Madre (Master)',
-                'house' => 'Conocimiento Hijo (House)',
-            ],
-
-            // CONFIGURACIONES PREDETERMINADAS
-            'defaultValues' => [
-                'bill_date' => now()->format('Y-m-d'),
-                'loading_date' => now()->addDays(1)->format('Y-m-d'),
-                'currency_code' => 'USD',
-                'measurement_unit' => 'KG',
-                'freight_terms' => 'prepaid',
-                'payment_terms' => 'cash',
-                'bill_type' => 'original',
-                'priority_level' => 'normal',
-                'cargo_condition_loading' => 'good',
-            ],
-
-            // CONFIGURACIONES ESPECIALES
-            'requiresInspectionOptions' => [
-                'general_cargo' => 'Carga General',
-                'dangerous_goods' => 'Mercancías Peligrosas',
-                'refrigerated' => 'Carga Refrigerada',
-                'live_animals' => 'Animales Vivos',
-                'vehicles' => 'Vehículos',
-                'bulk_cargo' => 'Carga a Granel',
-            ],
-
-            // PLANTILLAS DE CARGOS ADICIONALES
-            'additionalChargeTemplates' => [
-                'handling' => ['concept' => 'Manipuleo', 'currency' => 'USD'],
-                'storage' => ['concept' => 'Almacenaje', 'currency' => 'USD'],
-                'documentation' => ['concept' => 'Documentación', 'currency' => 'USD'],
-                'inspection' => ['concept' => 'Inspección', 'currency' => 'USD'],
-                'customs' => ['concept' => 'Despacho Aduanero', 'currency' => 'USD'],
-            ],
-
-            // VALORES PRESELECCIONADOS
-            'preselectedShipment' => $request->get('shipment_id'),
-            'preselectedShipper' => $request->get('shipper_id'),
-            'preselectedConsignee' => $request->get('consignee_id'),
-
-            // CONFIGURACIÓN DEL FORMULARIO
-            'isEditing' => !is_null($billOfLading),
-            'canEditConsolidation' => is_null($billOfLading) || $billOfLading->canBeEdited(),
-            
-            // ✅ CORRECCIÓN: Acceder a shipmentItems a través del shipment
-            'hasRelatedItems' => $billOfLading && $billOfLading->shipment ? 
-                $billOfLading->shipment->shipmentItems()->count() > 0 : false,
-                
-            // FILTROS ADICIONALES para formularios
-            'statuses' => [
-                'draft' => 'Borrador',
-                'pending_review' => 'Pendiente Revisión',
-                'verified' => 'Verificado',
-                'sent_to_customs' => 'Enviado a Aduana',
-                'accepted' => 'Aceptado',
-                'rejected' => 'Rechazado',
-                'completed' => 'Completado',
-                'cancelled' => 'Cancelado',
             ],
         ];
     }

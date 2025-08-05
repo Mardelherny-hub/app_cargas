@@ -6,18 +6,16 @@
                     {{ __('Crear Nuevo Cliente') }}
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    Agregar cliente a la base compartida del sistema
+                    Complete la información para registrar un nuevo cliente
                 </p>
             </div>
-            <div class="flex space-x-2">
-                <a href="{{ route('company.clients.index') }}" 
-                   class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                    </svg>
-                    Volver al Listado
-                </a>
-            </div>
+            <a href="{{ route('company.clients.index') }}" 
+               class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                Volver al Listado
+            </a>
         </div>
     </x-slot>
 
@@ -27,271 +25,244 @@
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">Información del Cliente</h3>
                     <p class="text-sm text-gray-600 mt-1">
-                        Complete los datos básicos del cliente. Los campos marcados con * son obligatorios.
+                        Complete todos los campos obligatorios marcados con *
                     </p>
                 </div>
 
-                <form method="POST" action="{{ route('company.clients.store') }}" class="px-6 py-4">
+                <form method="POST" action="{{ route('company.clients.store') }}">
                     @csrf
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        
-                        <!-- Datos Legales -->
-                        <div class="md:col-span-2">
-                            <div class="border-b border-gray-200 pb-4 mb-6">
-                                <h4 class="text-md font-medium text-gray-900">Datos Legales</h4>
+                    <div class="px-6 py-6 space-y-6">
+                        <!-- Información Básica -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Razón Social -->
+                            <div>
+                                <label for="legal_name" class="block text-sm font-medium text-gray-700">
+                                    Razón Social <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" 
+                                       name="legal_name" 
+                                       id="legal_name" 
+                                       required
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('legal_name') border-red-300 @enderror"
+                                       value="{{ old('legal_name') }}"
+                                       placeholder="Ingrese la razón social"
+                                       maxlength="255">
+                                @error('legal_name')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Nombre Comercial -->
+                            <div>
+                                <label for="commercial_name" class="block text-sm font-medium text-gray-700">Nombre Comercial</label>
+                                <input type="text" 
+                                       name="commercial_name" 
+                                       id="commercial_name" 
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('commercial_name') border-red-300 @enderror"
+                                       value="{{ old('commercial_name') }}"
+                                       placeholder="Nombre comercial (opcional)"
+                                       maxlength="255">
+                                @error('commercial_name')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Tipo de Documento -->
+                            <div>
+                                <label for="document_type_id" class="block text-sm font-medium text-gray-700">
+                                    Tipo de Documento <span class="text-red-500">*</span>
+                                </label>
+                                <select name="document_type_id" 
+                                        id="document_type_id" 
+                                        required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('document_type_id') border-red-300 @enderror">
+                                    <option value="">Seleccione un tipo</option>
+                                    @foreach($documentTypes as $documentType)
+                                        <option value="{{ $documentType->id }}" {{ old('document_type_id') == $documentType->id ? 'selected' : '' }}>
+                                            {{ $documentType->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('document_type_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Número de Documento -->
+                            <div>
+                                <label for="tax_id" class="block text-sm font-medium text-gray-700">
+                                    Número de Documento <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" 
+                                       name="tax_id" 
+                                       id="tax_id" 
+                                       required
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('tax_id') border-red-300 @enderror"
+                                       value="{{ old('tax_id') }}"
+                                       placeholder="Ingrese el número de documento"
+                                       maxlength="50">
+                                @error('tax_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <div id="validation-result"></div>
+                            </div>
+
+                            <!-- País -->
+                            <div>
+                                <label for="country_id" class="block text-sm font-medium text-gray-700">
+                                    País <span class="text-red-500">*</span>
+                                </label>
+                                <select name="country_id" 
+                                        id="country_id" 
+                                        required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('country_id') border-red-300 @enderror">
+                                    <option value="">Seleccione un país</option>
+                                    @foreach($countries as $country)
+                                        <option value="{{ $country->id }}" {{ old('country_id') == $country->id ? 'selected' : '' }}>
+                                            {{ $country->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('country_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Aduana Habitual -->
+                            <div>
+                                <label for="custom_office_id" class="block text-sm font-medium text-gray-700">Aduana Habitual</label>
+                                <select name="custom_office_id" 
+                                        id="custom_office_id" 
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('customs_office_id') border-red-300 @enderror">
+                                    <option value="">Seleccione una aduana</option>
+                                    @foreach($customOffices as $office)
+                                        <option value="{{ $office->id }}" {{ old('custom_office_id') == $office->id ? 'selected' : '' }}>
+                                            {{ $office->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('custom_office_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
                         </div>
 
-                        <!-- País -->
-                        <div>
-                            <label for="country_id" class="block text-sm font-medium text-gray-700">País *</label>
-                            <select name="country_id" 
-                                    id="country_id" 
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('country_id') border-red-300 @enderror"
-                                    required>
-                                <option value="">Seleccione un país</option>
-                                @foreach($countries as $country)
-                                    <option value="{{ $country->id }}" {{ old('country_id') == $country->id ? 'selected' : '' }}>
-                                        {{ $country->name }} ({{ $country->iso_code }})
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('country_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
+                        <!-- Información de Contacto Principal -->
+                        <div class="border-t border-gray-200 pt-6">
+                            <h4 class="text-lg font-medium text-gray-900 mb-4">Información de Contacto</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Email -->
+                                <div>
+                                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                                    <input type="email" 
+                                           name="email" 
+                                           id="email" 
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('email') border-red-300 @enderror"
+                                           value="{{ old('email') }}"
+                                           placeholder="correo@empresa.com">
+                                    @error('email')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
 
-                        <!-- Tipo de Documento -->
-                        <div>
-                            <label for="document_type_id" class="block text-sm font-medium text-gray-700">Tipo de Documento *</label>
-                            <select name="document_type_id" 
-                                    id="document_type_id" 
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('document_type_id') border-red-300 @enderror"
-                                    required>
-                                <option value="">Seleccione tipo de documento</option>
-                                @foreach($documentTypes as $type)
-                                    <option value="{{ $type->id }}" {{ old('document_type_id') == $type->id ? 'selected' : '' }}>
-                                        {{ $type->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('document_type_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
+                                <!-- Teléfono -->
+                                <div>
+                                    <label for="phone" class="block text-sm font-medium text-gray-700">Teléfono</label>
+                                    <input type="text" 
+                                           name="phone" 
+                                           id="phone" 
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('phone') border-red-300 @enderror"
+                                           value="{{ old('phone') }}"
+                                           placeholder="+54 11 1234-5678">
+                                    @error('phone')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
 
-                        <!-- CUIT/RUC -->
-                        <div>
-                            <label for="tax_id" class="block text-sm font-medium text-gray-700">CUIT/RUC *</label>
-                            <input type="text" 
-                                   name="tax_id" 
-                                   id="tax_id" 
-                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('tax_id') border-red-300 @enderror"
-                                   value="{{ old('tax_id') }}"
-                                   placeholder="Ingrese CUIT/RUC"
-                                   maxlength="20"
-                                   required>
-                            @error('tax_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
+                                <!-- Dirección -->
+                                <div class="md:col-span-2">
+                                    <label for="address_line_1" class="block text-sm font-medium text-gray-700">Dirección</label>
+                                    <input type="text" 
+                                           name="address_line_1" 
+                                           id="address_line_1" 
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('address_line_1') border-red-300 @enderror"
+                                           value="{{ old('address_line_1') }}"
+                                           placeholder="Dirección completa"
+                                           maxlength="255">
+                                    @error('address_line_1')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
 
-                        <!-- Validación Visual -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">Validación</label>
-                            <div id="validation-result" class="mt-1 p-3 rounded-md border border-gray-200 bg-gray-50">
-                                <div class="flex items-center">
-                                    <svg class="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                    <span class="text-sm text-gray-600">Ingrese CUIT/RUC y país para validar</span>
+                                <!-- Ciudad -->
+                                <div>
+                                    <label for="city" class="block text-sm font-medium text-gray-700">Ciudad</label>
+                                    <input type="text" 
+                                           name="city" 
+                                           id="city" 
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('city') border-red-300 @enderror"
+                                           value="{{ old('city') }}"
+                                           placeholder="Ciudad"
+                                           maxlength="100">
+                                    @error('city')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <!-- Observaciones -->
+                                <div class="md:col-span-2">
+                                    <label for="notes" class="block text-sm font-medium text-gray-700">Observaciones</label>
+                                    <textarea name="notes" 
+                                              id="notes" 
+                                              rows="3"
+                                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('notes') border-red-300 @enderror"
+                                              placeholder="Información adicional o notas sobre el cliente">{{ old('notes') }}</textarea>
+                                    @error('notes')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Razón Social -->
-                        <div>
-                            <label for="legal_name" class="block text-sm font-medium text-gray-700">Razón Social *</label>
-                            <input type="text" 
-                                   name="legal_name" 
-                                   id="legal_name" 
-                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('legal_name') border-red-300 @enderror"
-                                   value="{{ old('legal_name') }}"
-                                   placeholder="Razón social completa"
-                                   maxlength="255"
-                                   required>
-                            @error('legal_name')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <!-- Nombre Comercial -->
-                        <div>
-                            <label for="commercial_name" class="block text-sm font-medium text-gray-700">Nombre Comercial</label>
-                            <input type="text" 
-                                   name="commercial_name" 
-                                   id="commercial_name" 
-                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('commercial_name') border-red-300 @enderror"
-                                   value="{{ old('commercial_name') }}"
-                                   placeholder="Nombre comercial (opcional)"
-                                   maxlength="255">
-                            @error('commercial_name')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <!-- AGREGAR después del campo "Nombre Comercial" en company/clients/create.blade.php -->
-
-<!-- Roles de Cliente - CORRECCIÓN: Selector múltiple -->
-<div class="sm:col-span-1">
-    <label for="client_roles" class="block text-sm font-medium text-gray-700">
-        Roles de Cliente <span class="text-red-500">*</span>
-    </label>
-    <select id="client_roles" name="client_roles[]" multiple required
-            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            size="3">
-        @php
-            $oldRoles = old('client_roles', []);
-            if (!is_array($oldRoles)) {
-                $oldRoles = [$oldRoles];
-            }
-        @endphp
-        @foreach(\App\Models\Client::CLIENT_ROLES as $key => $label)
-            <option value="{{ $key }}" {{ in_array($key, $oldRoles) ? 'selected' : '' }}>
-                {{ $label }}
-            </option>
-        @endforeach
-    </select>
-    <p class="mt-1 text-xs text-gray-500">
-        Mantenga presionado Ctrl (Windows) o Cmd (Mac) para seleccionar múltiples roles.
-    </p>
-    @error('client_roles')
-        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-    @enderror
-    @error('client_roles.*')
-        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-    @enderror
-</div>
-
-
-                        <!-- Configuración Operativa -->
-                        <div class="md:col-span-2">
-                            <div class="border-b border-gray-200 pb-4 mb-6 mt-6">
-                                <h4 class="text-md font-medium text-gray-900">Configuración Operativa</h4>
-                            </div>
-                        </div>
-
-                        <!-- Puerto Principal -->
-                        <div>
-                            <label for="primary_port_id" class="block text-sm font-medium text-gray-700">Puerto Principal</label>
-                            <select name="primary_port_id" 
-                                    id="primary_port_id" 
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('primary_port_id') border-red-300 @enderror">
-                                <option value="">Seleccione puerto (opcional)</option>
-                                @foreach($ports as $port)
-                                    <option value="{{ $port->id }}" {{ old('primary_port_id') == $port->id ? 'selected' : '' }}>
-                                        {{ $port->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('primary_port_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <!-- Aduana -->
-                        <div>
-                            <label for="custom_office_id" class="block text-sm font-medium text-gray-700">Aduana</label>
-                            <select name="custom_office_id" 
-                                    id="custom_office_id" 
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('custom_office_id') border-red-300 @enderror">
-                                <option value="">Seleccione aduana (opcional)</option>
-                                @foreach($customOffices as $office)
-                                    <option value="{{ $office->id }}" {{ old('custom_office_id') == $office->id ? 'selected' : '' }}>
-                                        {{ $office->name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('custom_office_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <!-- Notas -->
-                        <div class="md:col-span-2">
-                            <label for="notes" class="block text-sm font-medium text-gray-700">Notas</label>
-                            <textarea name="notes" 
-                                      id="notes" 
-                                      rows="4"
-                                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('notes') border-red-300 @enderror"
-                                      placeholder="Observaciones adicionales sobre el cliente"
-                                      maxlength="1000">{{ old('notes') }}</textarea>
-                            @error('notes')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-                    </div>
-
-                    <!-- Contactos Múltiples -->
-                    <div class="mt-8">
-                        <div class="border-b border-gray-200 pb-4 mb-6">
-                            <div class="flex items-center justify-between">
-                                <h4 class="text-md font-medium text-gray-900">Contactos del Cliente</h4>
+                        <!-- Contactos Adicionales -->
+                        <div class="border-t border-gray-200 pt-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <div>
+                                    <h4 class="text-lg font-medium text-gray-900">Contactos Adicionales</h4>
+                                    <p class="text-sm text-gray-600 mt-1">
+                                        Agregue contactos adicionales para este cliente
+                                    </p>
+                                </div>
                                 <button type="button" 
-                                        id="addContactBtn" 
-                                        class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md text-sm font-medium">
-                                    <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        id="addContactBtn"
+                                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                                     </svg>
                                     Agregar Contacto
                                 </button>
                             </div>
-                            <p class="text-sm text-gray-600 mt-1">
-                                Agregue los contactos del cliente organizados por tipo (general, AFIP, manifiestos, etc.)
-                            </p>
-                        </div>
-
-                        <div id="contactsContainer">
-                            <!-- Los contactos se agregarán aquí dinámicamente -->
-                        </div>
-
-                        <!-- Información sobre tipos de contacto -->
-                        <div class="mt-4 p-4 bg-blue-50 rounded-md">
-                            <h5 class="text-sm font-medium text-blue-900 mb-2">Tipos de Contacto Disponibles:</h5>
-                            <div class="text-sm text-blue-800 space-y-1">
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <strong>General:</strong> Contacto administrativo general<br>
-                                        <strong>AFIP:</strong> Para trámites y consultas AFIP<br>
-                                        <strong>Manifiestos:</strong> Para envío de manifiestos<br>
-                                        <strong>Avisos de Arribo:</strong> Para cartas de aviso
-                                    </div>
-                                    <div>
-                                        <strong>Emergencias:</strong> Para situaciones urgentes<br>
-                                        <strong>Facturación:</strong> Para temas comerciales<br>
-                                        <strong>Operaciones:</strong> Para coordinación operativa
-                                    </div>
-                                </div>
+                            
+                            <div id="contactsContainer" class="space-y-4">
+                                <!-- Los contactos se agregan dinámicamente aquí -->
                             </div>
                         </div>
                     </div>
 
-                    <!-- Botones -->
-                    <div class="mt-6 pt-6 border-t border-gray-200">
-                        <div class="flex justify-end space-x-3">
-                            <a href="{{ route('company.clients.index') }}" 
-                               class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                Cancelar
-                            </a>
-                            <button type="submit" 
-                                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                Crear Cliente
-                            </button>
-                        </div>
+                    <!-- Botones de Acción -->
+                    <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end space-x-3">
+                        <a href="{{ route('company.clients.index') }}" 
+                           class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-6 py-2 rounded-md text-sm font-medium">
+                            Cancelar
+                        </a>
+                        <button type="submit" 
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Crear Cliente
+                        </button>
                     </div>
                 </form>
             </div>
@@ -315,33 +286,27 @@
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Tipo de Contacto -->
+                <!-- Campo oculto para contact_type = 'general' -->
+                <input type="hidden" name="contacts[__INDEX__][contact_type]" value="general">
+                
+                <!-- Nombre del Contacto -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Tipo de Contacto *</label>
-                    <select name="contacts[__INDEX__][contact_type]" 
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                            required>
-                        <option value="">Seleccione tipo</option>
-                        <option value="general">General</option>
-                        <option value="afip">AFIP</option>
-                        <option value="manifests">Manifiestos</option>
-                        <option value="arrival_notices">Avisos de Arribo</option>
-                        <option value="emergency">Emergencias</option>
-                        <option value="billing">Facturación</option>
-                        <option value="operations">Operaciones</option>
-                    </select>
+                    <label class="block text-sm font-medium text-gray-700">Nombre del Contacto</label>
+                    <input type="text" 
+                           name="contacts[__INDEX__][contact_person_name]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           placeholder="Nombre completo"
+                           maxlength="255">
                 </div>
 
-                <!-- Contacto Principal -->
+                <!-- Posición/Cargo -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Contacto Principal</label>
-                    <div class="mt-1 flex items-center">
-                        <input type="checkbox" 
-                               name="contacts[__INDEX__][is_primary]" 
-                               value="1"
-                               class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        <span class="ml-2 text-sm text-gray-600">Marcar como contacto principal</span>
-                    </div>
+                    <label class="block text-sm font-medium text-gray-700">Posición/Cargo</label>
+                    <input type="text" 
+                           name="contacts[__INDEX__][contact_person_position]" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                           placeholder="Cargo o posición"
+                           maxlength="255">
                 </div>
 
                 <!-- Email -->
@@ -350,7 +315,7 @@
                     <input type="email" 
                            name="contacts[__INDEX__][email]" 
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="email@dominio.com">
+                           placeholder="contacto@empresa.com">
                 </div>
 
                 <!-- Teléfono -->
@@ -359,7 +324,7 @@
                     <input type="text" 
                            name="contacts[__INDEX__][phone]" 
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="Número de teléfono">
+                           placeholder="+54 11 1234-5678">
                 </div>
 
                 <!-- Teléfono Móvil -->
@@ -368,25 +333,17 @@
                     <input type="text" 
                            name="contacts[__INDEX__][mobile_phone]" 
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="Número de móvil">
-                </div>
-
-                <!-- Persona de Contacto -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Persona de Contacto</label>
-                    <input type="text" 
-                           name="contacts[__INDEX__][contact_person_name]" 
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="Nombre completo">
+                           placeholder="+54 9 11 1234-5678">
                 </div>
 
                 <!-- Dirección -->
-                <div class="md:col-span-2">
+                <div>
                     <label class="block text-sm font-medium text-gray-700">Dirección</label>
                     <input type="text" 
                            name="contacts[__INDEX__][address_line_1]" 
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="Dirección completa">
+                           placeholder="Dirección completa"
+                           maxlength="255">
                 </div>
 
                 <!-- Ciudad -->
@@ -395,16 +352,22 @@
                     <input type="text" 
                            name="contacts[__INDEX__][city]" 
                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="Ciudad">
+                           placeholder="Ciudad"
+                           maxlength="100">
                 </div>
 
-                <!-- Cargo -->
+                <!-- Contacto Principal -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Cargo</label>
-                    <input type="text" 
-                           name="contacts[__INDEX__][contact_person_position]" 
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                           placeholder="Cargo o posición">
+                    <div class="flex items-center">
+                        <input type="checkbox" 
+                               name="contacts[__INDEX__][is_primary]" 
+                               value="1"
+                               class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <label class="ml-2 block text-sm font-medium text-gray-700">
+                            Contacto Principal
+                        </label>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Solo puede haber un contacto principal por cliente</p>
                 </div>
 
                 <!-- Notas -->
@@ -413,65 +376,92 @@
                     <textarea name="contacts[__INDEX__][notes]" 
                               rows="2"
                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                              placeholder="Observaciones adicionales"></textarea>
+                              placeholder="Información adicional sobre este contacto"></textarea>
                 </div>
             </div>
         </div>
     </template>
-</x-app-layout>
 
-@push('scripts')
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const taxIdInput = document.getElementById('tax_id');
-        const countrySelect = document.getElementById('country_id');
-        const validationResult = document.getElementById('validation-result');
-        const addContactBtn = document.getElementById('addContactBtn');
+    <script>
+        let contactIndex = 0;
         const contactsContainer = document.getElementById('contactsContainer');
         const contactTemplate = document.getElementById('contactTemplate');
-        
-        let contactIndex = 0;
+        const addContactBtn = document.getElementById('addContactBtn');
 
-        // Función para validar CUIT/RUC
-        function validateTaxId() {
-            const taxId = taxIdInput.value.trim();
-            const countryId = countrySelect.value;
+        // Agregar contacto al hacer clic en el botón
+        addContactBtn.addEventListener('click', function() {
+            addContact();
+        });
 
-            if (!taxId || !countryId) {
-                showValidationResult('info', 'Ingrese CUIT/RUC y país para validar');
-                return;
+        // Event delegation para remover contactos
+        contactsContainer.addEventListener('click', function(e) {
+            if (e.target.closest('.remove-contact')) {
+                e.preventDefault();
+                removeContact(e.target.closest('.contact-item'));
             }
+        });
+        
+        // Event delegation para control de contacto principal único
+        contactsContainer.addEventListener('change', function(e) {
+            if (e.target.name && e.target.name.includes('[is_primary]')) {
+                if (e.target.checked) {
+                    // Desmarcar otros checkboxes de contacto principal
+                    const otherCheckboxes = contactsContainer.querySelectorAll('input[name*="[is_primary]"]');
+                    otherCheckboxes.forEach(checkbox => {
+                        if (checkbox !== e.target) {
+                            checkbox.checked = false;
+                        }
+                    });
+                }
+            }
+        });
 
-            showValidationResult('loading', 'Validando...');
+        // Validación en tiempo real del número de documento
+        document.getElementById('tax_id').addEventListener('blur', function() {
+            const taxId = this.value.trim();
+            const documentTypeId = document.getElementById('document_type_id').value;
+            
+            if (taxId && documentTypeId) {
+                validateTaxId(taxId, documentTypeId);
+            }
+        });
 
-            fetch('{{ route("company.clients.validate-tax-id") }}', {
+        function validateTaxId(taxId, documentTypeId) {
+            const validationResult = document.getElementById('validation-result');
+            
+            showValidationMessage('loading', 'Validando documento...');
+            
+            fetch(`{{ route('company.clients.store') }}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'X-Validation-Only': 'true'
                 },
                 body: JSON.stringify({
                     tax_id: taxId,
-                    country_id: countryId
+                    document_type_id: documentTypeId
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.valid) {
-                    showValidationResult('success', data.message);
+                    showValidationMessage('success', 'Documento válido');
                 } else {
-                    showValidationResult('error', data.message);
+                    showValidationMessage('error', data.message || 'El documento ya está registrado o no es válido');
                 }
             })
             .catch(error => {
-                showValidationResult('error', 'Error al validar');
+                console.error('Error:', error);
+                showValidationMessage('error', 'Error al validar el documento');
             });
         }
 
-        // Función para mostrar resultado de validación
-        function showValidationResult(type, message) {
+        function showValidationMessage(type, message) {
+            const validationResult = document.getElementById('validation-result');
+            
             const icons = {
-                info: '<svg class="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+                info: '<svg class="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
                 loading: '<svg class="w-5 h-5 text-blue-500 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>',
                 success: '<svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>',
                 error: '<svg class="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
@@ -512,79 +502,26 @@
             
             contactsContainer.appendChild(newContact);
             
-            // Agregar event listener para eliminar
-            newContact.querySelector('.remove-contact').addEventListener('click', function() {
-                newContact.remove();
-                updateContactNumbers();
-            });
-            
             contactIndex++;
+        }
+
+        // Función para remover contacto
+        function removeContact(contactItem) {
+            if (confirm('¿Está seguro de eliminar este contacto?')) {
+                contactItem.remove();
+                updateContactNumbers();
+            }
         }
 
         // Función para actualizar números de contacto
         function updateContactNumbers() {
             const contacts = contactsContainer.querySelectorAll('.contact-item');
             contacts.forEach((contact, index) => {
-                contact.querySelector('.contact-number').textContent = `Contacto ${index + 1}`;
+                const numberSpan = contact.querySelector('.contact-number');
+                if (numberSpan) {
+                    numberSpan.textContent = `Contacto ${index + 1}`;
+                }
             });
         }
-
-        // Event listeners
-        taxIdInput.addEventListener('blur', validateTaxId);
-        countrySelect.addEventListener('change', validateTaxId);
-        addContactBtn.addEventListener('click', addContact);
-
-        // Agregar un contacto inicial
-        addContact();
-    });
-</script>
-
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const rolesSelect = document.getElementById('client_roles');
-    const selectedRolesContainer = document.createElement('div');
-    selectedRolesContainer.className = 'mt-2 flex flex-wrap gap-2';
-    selectedRolesContainer.id = 'selected-roles-display';
-    
-    // Insertar después del select
-    rolesSelect.parentNode.insertBefore(selectedRolesContainer, rolesSelect.nextSibling.nextSibling);
-    
-    // Colores para los badges
-    const roleColors = {
-        'shipper': 'bg-green-100 text-green-800',
-        'consignee': 'bg-blue-100 text-blue-800', 
-        'notify_party': 'bg-yellow-100 text-yellow-800'
-    };
-    
-    function updateSelectedRolesDisplay() {
-        const selectedOptions = Array.from(rolesSelect.selectedOptions);
-        selectedRolesContainer.innerHTML = '';
-        
-        if (selectedOptions.length === 0) {
-            selectedRolesContainer.innerHTML = '<span class="text-sm text-gray-500 italic">Ningún rol seleccionado</span>';
-            return;
-        }
-        
-        selectedOptions.forEach(option => {
-            const badge = document.createElement('span');
-            const colorClass = roleColors[option.value] || 'bg-gray-100 text-gray-800';
-            badge.className = `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClass}`;
-            badge.textContent = option.text;
-            selectedRolesContainer.appendChild(badge);
-        });
-    }
-    
-    // Actualizar display cuando cambie la selección
-    rolesSelect.addEventListener('change', updateSelectedRolesDisplay);
-    
-    // Inicializar display
-    updateSelectedRolesDisplay();
-    
-    // Mejorar la accesibilidad
-    rolesSelect.addEventListener('focus', function() {
-        this.setAttribute('aria-describedby', 'roles-help');
-    });
-});
-</script>
-@endpush
+    </script>
+</x-app-layout>
