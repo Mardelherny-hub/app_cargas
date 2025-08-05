@@ -336,7 +336,13 @@ Route::prefix('clients')->name('company.clients.')->group(function () {
     });
 });
 
+// =============================================================================
+// RUTAS DE MANIFIESTOS - CONSOLIDADAS Y ORGANIZADAS
+// =============================================================================
+
 Route::prefix('manifests')->name('company.manifests.')->group(function () {
+    
+    // === CRUD BÁSICO ===
     Route::get('/', [ManifestController::class, 'index'])->name('index');
     Route::get('/create', [ManifestController::class, 'create'])->name('create');
     Route::post('/', [ManifestController::class, 'store'])->name('store');
@@ -345,19 +351,35 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     Route::put('/{id}', [ManifestController::class, 'update'])->name('update');
     Route::delete('/{id}', [ManifestController::class, 'destroy'])->name('destroy');
 
-   
+    // === IMPORTACIÓN ===
+    Route::prefix('import')->name('import.')->group(function () {
+        Route::get('/', [ManifestImportController::class, 'showForm'])->name('index');
+        Route::post('/', [ManifestImportController::class, 'store'])->name('store');
+        Route::get('/history', [ManifestImportController::class, 'history'])->name('history');
+    });
+
+    // === EXPORTACIÓN ===
+    Route::prefix('export')->name('export.')->group(function () {
+        Route::get('/', [ManifestExportController::class, 'index'])->name('index');
+        Route::get('/{voyageId}/parana', [ManifestExportController::class, 'exportParana'])->name('parana');
+        Route::get('/{voyageId}/guaran', [ManifestExportController::class, 'exportGuaran'])->name('guaran');
+        Route::get('/{voyageId}/login', [ManifestExportController::class, 'exportLogin'])->name('login');
+        Route::get('/{voyageId}/tfp', [ManifestExportController::class, 'exportTfp'])->name('tfp');
+        Route::get('/{voyageId}/edi', [ManifestExportController::class, 'exportEdi'])->name('edi');
+    });
+
+    // === ENVÍO A ADUANA ===
+    Route::prefix('customs')->name('customs.')->group(function () {
+        Route::get('/', [ManifestCustomsController::class, 'index'])->name('index');
+        Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
+        Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
+        Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
+    });
+
+    // === UTILIDADES ===
+    Route::get('/summary', [ManifestController::class, 'summary'])->name('summary');
+    Route::get('/reports', [ManifestController::class, 'reports'])->name('reports');
 });
-
-Route::prefix('company/manifests')->name('company.manifests.')->group(function () {
-    Route::get('import', [ManifestImportController::class, 'showForm'])->name('import.form');
-    Route::post('import', [ManifestImportController::class, 'store'])->name('import');
-    Route::get('{voyageId}/export/parana', [ManifestExportController::class, 'exportParana'])->name('export.parana');
-    Route::get('{voyageId}/export/guaran', [ManifestExportController::class, 'exportGuaran'])->name('export.guaran');
-});
-
-
-Route::post('company/manifests/{voyageId}/send', [ManifestCustomsController::class, 'send'])
-    ->name('company.manifests.send_to_customs');
 
 
 
