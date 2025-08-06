@@ -16,364 +16,491 @@
 
     <div class="py-12">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
-            <form method="POST" action="{{ route('admin.users.update', $user) }}" class="space-y-6">
+
+            @if ($errors->any())
+                <div class="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
+                    <div class="flex">
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-red-800">
+                                Hay errores en el formulario
+                            </h3>
+                            <div class="mt-2 text-sm text-red-700">
+                                <ul class="list-disc space-y-1 pl-5">
+                                    @foreach ($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('admin.users.update', $user) }}" class="space-y-6" id="editUserForm">
                 @csrf
                 @method('PUT')
 
-                <!-- Información Básica -->
+                <!-- Información básica del usuario -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Información Básica</h3>
-
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Información Básica</h3>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Nombre -->
                             <div>
-                                <label for="name" class="block text-sm font-medium text-gray-700">
-                                    Nombre Completo *
+                                <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Nombre completo *
                                 </label>
-                                <input type="text"
-                                       name="name"
-                                       id="name"
+                                <input type="text" 
+                                       name="name" 
+                                       id="name" 
                                        value="{{ old('name', $user->name) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('name') border-red-300 @enderror"
-                                       required>
+                                       required
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 @error('name')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            <!-- Email -->
                             <div>
-                                <label for="email" class="block text-sm font-medium text-gray-700">
+                                <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
                                     Email *
                                 </label>
-                                <input type="email"
-                                       name="email"
-                                       id="email"
+                                <input type="email" 
+                                       name="email" 
+                                       id="email" 
                                        value="{{ old('email', $user->email) }}"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('email') border-red-300 @enderror"
-                                       required>
+                                       required
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 @error('email')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
+                        </div>
 
-                            <!-- Zona Horaria -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                             <div>
-                                <label for="timezone" class="block text-sm font-medium text-gray-700">
-                                    Zona Horaria
+                                <label for="timezone" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Zona horaria
                                 </label>
-                                <select name="timezone"
+                                <select name="timezone" 
                                         id="timezone"
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="America/Argentina/Buenos_Aires" {{ old('timezone', $user->timezone) === 'America/Argentina/Buenos_Aires' ? 'selected' : '' }}>Argentina (Buenos Aires)</option>
+                                    <option value="America/Asuncion" {{ old('timezone', $user->timezone) === 'America/Asuncion' ? 'selected' : '' }}>Paraguay (Asunción)</option>
                                     <option value="UTC" {{ old('timezone', $user->timezone) === 'UTC' ? 'selected' : '' }}>UTC</option>
-                                    <option value="America/Argentina/Buenos_Aires" {{ old('timezone', $user->timezone) === 'America/Argentina/Buenos_Aires' ? 'selected' : '' }}>Buenos Aires (GMT-3)</option>
-                                    <option value="America/Asuncion" {{ old('timezone', $user->timezone) === 'America/Asuncion' ? 'selected' : '' }}>Asunción (GMT-3)</option>
                                 </select>
-                                @error('timezone')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
                             </div>
 
-                            <!-- Estado -->
-                            <div>
-                                <label for="active" class="block text-sm font-medium text-gray-700">
-                                    Estado
+                            <div class="flex items-center">
+                                <input type="hidden" name="active" value="0">
+                                <input type="checkbox" 
+                                       name="active" 
+                                       id="active" 
+                                       value="1"
+                                       {{ old('active', $user->active) ? 'checked' : '' }}
+                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                <label for="active" class="ml-2 block text-sm text-gray-700">
+                                    Usuario activo
                                 </label>
-                                <select name="active"
-                                        id="active"
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                    <option value="1" {{ old('active', $user->active) ? 'selected' : '' }}>Activo</option>
-                                    <option value="0" {{ !old('active', $user->active) ? 'selected' : '' }}>Inactivo</option>
-                                </select>
-                                @error('active')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gestión de Roles -->
+                <!-- Tipo de Usuario -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Roles del Usuario</h3>
-
-                        <div class="space-y-3">
-                            @foreach($roles as $role)
-                                <div class="flex items-center">
-                                    <input type="checkbox"
-                                           name="roles[]"
-                                           value="{{ $role->name }}"
-                                           id="role_{{ $role->id }}"
-                                           {{ $user->hasRole($role->name) ? 'checked' : '' }}
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="role_{{ $role->id }}" class="ml-3 flex-1">
-                                        <div class="text-sm font-medium text-gray-900">
-                                            {{ ucfirst(str_replace('-', ' ', $role->name)) }}
-                                        </div>
-                                        <div class="text-xs text-gray-500">
-                                            {{ $role->permissions->count() }} permisos incluidos
-                                        </div>
-                                    </label>
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Tipo de Usuario</h3>
+                        
+                        <div>
+                            <label for="role" class="block text-sm font-medium text-gray-700 mb-2">
+                                Tipo de Usuario *
+                            </label>
+                            <select name="role" 
+                                    id="role" 
+                                    required
+                                    onchange="toggleRoleFields()"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Selecciona un tipo de usuario</option>
+                                <option value="super-admin" {{ old('role', $user->roles->first()?->name) === 'super-admin' ? 'selected' : '' }}>
+                                    Super Administrador
+                                </option>
+                                <option value="company-admin" {{ old('role', $user->roles->first()?->name) === 'company-admin' ? 'selected' : '' }}>
+                                    Administrador de Empresa
+                                </option>
+                                <option value="user" {{ old('role', $user->roles->first()?->name) === 'user' ? 'selected' : '' }}>
+                                    Operador
+                                </option>
+                            </select>
+                            <div class="mt-2 text-sm text-gray-600">
+                                <div id="roleDescription" class="hidden">
+                                    <strong>Tipos de usuario:</strong>
+                                    <ul class="mt-1 ml-4 list-disc space-y-1">
+                                        <li><strong>Super Administrador:</strong> Acceso total al sistema, crea empresas</li>
+                                        <li><strong>Administrador de Empresa:</strong> Gestiona usuarios de su empresa</li>
+                                        <li><strong>Operador:</strong> Realiza operaciones según permisos asignados</li>
+                                    </ul>
                                 </div>
-                            @endforeach
-                        </div>
-
-                        @error('roles')
-                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                        @enderror
-
-                        <div class="mt-4 p-3 bg-blue-50 rounded-lg">
-                            <div class="text-sm text-blue-800">
-                                <strong>Nota:</strong> Los cambios en roles afectarán los permisos del usuario inmediatamente.
                             </div>
+                            @error('role')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
                         </div>
                     </div>
                 </div>
 
-                <!-- Información de Relación Polimórfica -->
-                @if($user->userable)
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <!-- Campos específicos para Company Admin -->
+                <div id="companyFields" class="hidden bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
-                            @if($user->userable_type === 'App\Models\Company')
-                                Información de la Empresa Asociada
-                            @elseif($user->userable_type === 'App\Models\Operator')
-                                Información del Operador Asociado
-                            @else
-                                Información de la Entidad Asociada
-                            @endif
-                        </h3>
-
-                        <div class="bg-gray-50 rounded-lg p-4">
-                            @if($user->userable_type === 'App\Models\Company')
-                                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">Razón Social</dt>
-                                        <dd class="text-sm text-gray-900">{{ $user->userable->legal_name }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">CUIT</dt>
-                                        <dd class="text-sm text-gray-900">{{ $user->userable->tax_id }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">País</dt>
-                                        <dd class="text-sm text-gray-900">
-                                            {{ $user->userable->country === 'AR' ? 'Argentina' : 'Paraguay' }}
-                                        </dd>
-                                    </div>
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">Estado</dt>
-                                        <dd class="text-sm text-gray-900">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $user->userable->active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
-                                                {{ $user->userable->active ? 'Activa' : 'Inactiva' }}
-                                            </span>
-                                        </dd>
-                                    </div>
-                                </dl>
-                                <div class="mt-4">
-                                    <a href="{{ route('admin.companies.show', $user->userable->id) }}"
-                                       class="text-sm text-blue-600 hover:text-blue-500">
-                                        Ver/Editar detalles de la empresa →
-                                    </a>
-                                </div>
-                            @elseif($user->userable_type === 'App\Models\Operator')
-                                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">Nombre Completo</dt>
-                                        <dd class="text-sm text-gray-900">{{ $user->userable->first_name }} {{ $user->userable->last_name }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">Documento</dt>
-                                        <dd class="text-sm text-gray-900">{{ $user->userable->document_number }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="text-sm font-medium text-gray-500">Tipo</dt>
-                                        <dd class="text-sm text-gray-900">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $user->userable->type === 'internal' ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800' }}">
-                                                {{ $user->userable->type === 'internal' ? 'Interno' : 'Externo' }}
-                                            </span>
-                                        </dd>
-                                    </div>
-                                    @if($user->userable->company)
-                                        <div>
-                                            <dt class="text-sm font-medium text-gray-500">Empresa</dt>
-                                            <dd class="text-sm text-gray-900">
-                                                <a href="{{ route('admin.companies.show', $user->userable->company->id) }}"
-                                                   class="text-blue-600 hover:text-blue-500">
-                                                    {{ $user->userable->company->legal_name }}
-                                                </a>
-                                            </dd>
-                                        </div>
-                                    @endif
-                                </dl>
-                                <div class="mt-4">
-                                    <div class="text-sm text-gray-600">
-                                        <strong>Nota:</strong> Para editar los detalles del operador, utiliza la sección de gestión de operadores.
-                                    </div>
-                                </div>
-                            @endif
+                        <h3 class="text-lg font-medium text-blue-900 mb-4">Información de Empresa</h3>
+                        
+                        <div>
+                            <label for="company_id" class="block text-sm font-medium text-gray-700 mb-2">
+                                Empresa *
+                            </label>
+                            <select name="company_id" 
+                                    id="company_id"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Selecciona una empresa</option>
+                                @foreach($companies as $company)
+                                    <option value="{{ $company->id }}" 
+                                        {{ old('company_id', $user->userable_type === 'App\Models\Company' ? $user->userable_id : '') == $company->id ? 'selected' : '' }}>
+                                        {{ $company->legal_name }} ({{ $company->tax_id }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-sm text-gray-500">El usuario será el administrador de esta empresa</p>
                         </div>
                     </div>
                 </div>
-                @endif
 
-                <!-- Cambio de Contraseña -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <!-- Campos específicos para Operadores -->
+                <div id="operatorFields" class="hidden bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Cambiar Contraseña</h3>
+                        <h3 class="text-lg font-medium text-green-900 mb-4">Información del Operador</h3>
+                        
+                        @php
+                            $operator = $user->userable_type === 'App\Models\Operator' ? $user->userable : null;
+                        @endphp
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Nueva contraseña -->
                             <div>
-                                <label for="password" class="block text-sm font-medium text-gray-700">
-                                    Nueva Contraseña
+                                <label for="first_name" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Nombre *
                                 </label>
-                                <input type="password"
-                                       name="password"
-                                       id="password"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('password') border-red-300 @enderror">
-                                @error('password')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                                <p class="mt-1 text-xs text-gray-500">Deja en blanco para mantener la contraseña actual</p>
+                                <input type="text" 
+                                       name="first_name" 
+                                       id="first_name" 
+                                       value="{{ old('first_name', $operator?->first_name) }}"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
 
-                            <!-- Confirmar contraseña -->
                             <div>
-                                <label for="password_confirmation" class="block text-sm font-medium text-gray-700">
-                                    Confirmar Contraseña
+                                <label for="last_name" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Apellido *
                                 </label>
-                                <input type="password"
-                                       name="password_confirmation"
-                                       id="password_confirmation"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <input type="text" 
+                                       name="last_name" 
+                                       id="last_name" 
+                                       value="{{ old('last_name', $operator?->last_name) }}"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                             </div>
                         </div>
 
-                        <div class="mt-4 p-3 bg-yellow-50 rounded-lg">
-                            <div class="text-sm text-yellow-800">
-                                <strong>Importante:</strong> Si cambias la contraseña, el usuario recibirá una notificación por email.
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <label for="document_number" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Documento (DNI/Cédula)
+                                </label>
+                                <input type="text" 
+                                       name="document_number" 
+                                       id="document_number" 
+                                       value="{{ old('document_number', $operator?->document_number) }}"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+
+                            <div>
+                                <label for="phone" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Teléfono
+                                </label>
+                                <input type="text" 
+                                       name="phone" 
+                                       id="phone" 
+                                       value="{{ old('phone', $operator?->phone) }}"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <label for="position" class="block text-sm font-medium text-gray-700 mb-2">
+                                Cargo *
+                            </label>
+                            <input type="text" 
+                                   name="position" 
+                                   id="position" 
+                                   value="{{ old('position', $operator?->position) }}"
+                                   placeholder="Ej: Despachante, Operador de cargas, etc."
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+
+                        <!-- Tipo de Operador -->
+                        <div class="mt-6">
+                            <label for="operator_type" class="block text-sm font-medium text-gray-700 mb-2">
+                                Tipo de Operador *
+                            </label>
+                            <select name="operator_type" 
+                                    id="operator_type"
+                                    onchange="toggleOperatorCompany()"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Seleccione el tipo</option>
+                                <option value="external" {{ old('operator_type', $operator?->type) === 'external' ? 'selected' : '' }}>
+                                    Externo (Empleado de empresa)
+                                </option>
+                                <option value="internal" {{ old('operator_type', $operator?->type) === 'internal' ? 'selected' : '' }}>
+                                    Interno (Empleado del sistema)
+                                </option>
+                            </select>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Los operadores externos trabajan para una empresa específica. Los internos tienen acceso global.
+                            </p>
+                        </div>
+
+                        <!-- Empresa para operador externo -->
+                        <div id="operatorCompanyField" class="hidden mt-6">
+                            <label for="operator_company_id" class="block text-sm font-medium text-gray-700 mb-2">
+                                Empresa del operador *
+                            </label>
+                            <select name="operator_company_id" 
+                                    id="operator_company_id"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Selecciona una empresa</option>
+                                @foreach($companies as $company)
+                                    <option value="{{ $company->id }}" 
+                                        {{ old('operator_company_id', $operator?->company_id) == $company->id ? 'selected' : '' }}>
+                                        {{ $company->legal_name }} ({{ $company->tax_id }})
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <!-- Permisos del operador -->
+                        <div class="mt-6 border-t pt-4">
+                            <h4 class="text-md font-medium text-gray-700 mb-3">Permisos del Operador</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="flex items-center">
+                                    <input type="hidden" name="can_import" value="0">
+                                    <input type="checkbox" 
+                                           name="can_import" 
+                                           id="can_import" 
+                                           value="1"
+                                           {{ old('can_import', $operator?->can_import) ? 'checked' : '' }}
+                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    <label for="can_import" class="ml-2 block text-sm text-gray-700">
+                                        Puede importar datos
+                                    </label>
+                                </div>
+
+                                <div class="flex items-center">
+                                    <input type="hidden" name="can_export" value="0">
+                                    <input type="checkbox" 
+                                           name="can_export" 
+                                           id="can_export" 
+                                           value="1"
+                                           {{ old('can_export', $operator?->can_export) ? 'checked' : '' }}
+                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    <label for="can_export" class="ml-2 block text-sm text-gray-700">
+                                        Puede exportar datos
+                                    </label>
+                                </div>
+
+                                <div class="flex items-center">
+                                    <input type="hidden" name="can_transfer" value="0">
+                                    <input type="checkbox" 
+                                           name="can_transfer" 
+                                           id="can_transfer" 
+                                           value="1"
+                                           {{ old('can_transfer', $operator?->can_transfer) ? 'checked' : '' }}
+                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    <label for="can_transfer" class="ml-2 block text-sm text-gray-700">
+                                        Puede transferir entre empresas
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Configuraciones Adicionales -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Configuraciones Adicionales</h3>
-
-                        <div class="space-y-4">
-                            <!-- Forzar verificación de email -->
-                            <div class="flex items-center">
-                                <input type="checkbox"
-                                       name="force_email_verification"
-                                       id="force_email_verification"
-                                       value="1"
-                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                <label for="force_email_verification" class="ml-3">
-                                    <div class="text-sm font-medium text-gray-900">
-                                        Marcar email como verificado
-                                    </div>
-                                    <div class="text-xs text-gray-500">
-                                        Útil si el usuario tiene problemas con la verificación automática
-                                    </div>
-                                </label>
-                            </div>
-
-                            <!-- Notificar al usuario -->
-                            <div class="flex items-center">
-                                <input type="checkbox"
-                                       name="notify_user"
-                                       id="notify_user"
-                                       value="1"
-                                       checked
-                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                <label for="notify_user" class="ml-3">
-                                    <div class="text-sm font-medium text-gray-900">
-                                        Notificar cambios al usuario
-                                    </div>
-                                    <div class="text-xs text-gray-500">
-                                        El usuario recibirá un email con los cambios realizados
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Botones de Acción -->
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <div class="flex items-center justify-between">
-                            <div class="flex space-x-3">
-                                <button type="submit"
-                                        class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md text-sm font-medium">
-                                    Guardar Cambios
-                                </button>
-                                <a href="{{ route('admin.users.show', $user) }}"
-                                   class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-6 py-2 rounded-md text-sm font-medium">
-                                    Cancelar
-                                </a>
-                            </div>
-
-                            <div class="text-right">
-                                <button type="button"
-                                        onclick="return confirm('¿Estás seguro de que quieres eliminar este usuario? Esta acción no se puede deshacer.') && document.getElementById('delete-form').submit()"
-                                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                    Eliminar Usuario
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                <!-- Botones de acción -->
+                <div class="flex items-center justify-end space-x-4 pt-6">
+                    <a href="{{ route('admin.users.show', $user) }}"
+                       class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-md text-sm font-medium">
+                        Cancelar
+                    </a>
+                    <button type="submit"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md text-sm font-medium">
+                        Guardar Cambios
+                    </button>
                 </div>
             </form>
 
-            <!-- Formulario de eliminación separado -->
-            <form id="delete-form"
-                  method="POST"
-                  action="{{ route('admin.users.destroy', $user) }}"
-                  class="hidden">
-                @csrf
-                @method('DELETE')
-            </form>
+            <!-- FORMULARIO SEPARADO: Cambio de Contraseña -->
+            <div class="mt-6 bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Cambiar Contraseña</h3>
+                    
+                    <form method="POST" action="{{ route('admin.users.reset-password', $user) }}" class="space-y-4">
+                        @csrf
+                        @method('PATCH')
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="new_password" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Nueva Contraseña *
+                                </label>
+                                <input type="password" 
+                                       name="password" 
+                                       id="new_password" 
+                                       required
+                                       minlength="8"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+
+                            <div>
+                                <label for="new_password_confirmation" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Confirmar Contraseña *
+                                </label>
+                                <input type="password" 
+                                       name="password_confirmation" 
+                                       id="new_password_confirmation" 
+                                       required
+                                       minlength="8"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-end">
+                            <button type="submit"
+                                    class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Cambiar Contraseña
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
-    @push('scripts')
     <script>
-        // Validación del formulario en el lado del cliente
-        document.addEventListener('DOMContentLoaded', function() {
-            const passwordField = document.getElementById('password');
-            const confirmPasswordField = document.getElementById('password_confirmation');
+        // Misma lógica JavaScript que la vista create
+        function toggleRoleFields() {
+            const role = document.getElementById('role').value;
+            const companyFields = document.getElementById('companyFields');
+            const operatorFields = document.getElementById('operatorFields');
+            const roleDescription = document.getElementById('roleDescription');
 
-            function validatePasswords() {
-                if (passwordField.value && confirmPasswordField.value) {
-                    if (passwordField.value !== confirmPasswordField.value) {
-                        confirmPasswordField.setCustomValidity('Las contraseñas no coinciden');
-                    } else {
-                        confirmPasswordField.setCustomValidity('');
+            // Ocultar todos los campos específicos
+            companyFields.classList.add('hidden');
+            operatorFields.classList.add('hidden');
+
+            // Limpiar campos requeridos
+            document.getElementById('company_id').removeAttribute('required');
+            document.getElementById('first_name').removeAttribute('required');
+            document.getElementById('last_name').removeAttribute('required');
+            document.getElementById('operator_type').removeAttribute('required');
+
+            if (role) {
+                roleDescription.classList.remove('hidden');
+                
+                if (role === 'super-admin') {
+                    // Super admin no necesita campos adicionales
+                    
+                } else if (role === 'company-admin') {
+                    companyFields.classList.remove('hidden');
+                    document.getElementById('company_id').setAttribute('required', 'required');
+                    
+                } else if (role === 'user') {
+                    operatorFields.classList.remove('hidden');
+                    document.getElementById('first_name').setAttribute('required', 'required');
+                    document.getElementById('last_name').setAttribute('required', 'required');
+                    document.getElementById('operator_type').setAttribute('required', 'required');
+                    
+                    // Restaurar estado del tipo de operador
+                    toggleOperatorCompany();
+                }
+            } else {
+                roleDescription.classList.add('hidden');
+            }
+        }
+
+        function toggleOperatorCompany() {
+            const operatorType = document.getElementById('operator_type').value;
+            const operatorCompanyField = document.getElementById('operatorCompanyField');
+            
+            if (operatorType === 'external') {
+                operatorCompanyField.classList.remove('hidden');
+                document.getElementById('operator_company_id').setAttribute('required', 'required');
+            } else {
+                operatorCompanyField.classList.add('hidden');
+                document.getElementById('operator_company_id').removeAttribute('required');
+            }
+        }
+
+        // Validación de contraseñas
+        document.getElementById('password_confirmation').addEventListener('input', function() {
+            const password = document.getElementById('password').value;
+            const confirmation = this.value;
+            
+            if (password && confirmation && password !== confirmation) {
+                this.setCustomValidity('Las contraseñas no coinciden');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+
+        // Restaurar estado al cargar
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleRoleFields();
+        });
+
+        // Validación del formulario antes del envío (igual que create)
+        document.getElementById('editUserForm').addEventListener('submit', function(e) {
+            const role = document.getElementById('role').value;
+            
+            if (role === 'company-admin') {
+                const companyId = document.getElementById('company_id').value;
+                if (!companyId) {
+                    e.preventDefault();
+                    alert('Debe seleccionar una empresa para el Administrador de Empresa');
+                    return false;
+                }
+            } else if (role === 'user') {
+                const operatorType = document.getElementById('operator_type').value;
+                if (!operatorType) {
+                    e.preventDefault();
+                    alert('Debe seleccionar el tipo de operador');
+                    return false;
+                }
+                
+                if (operatorType === 'external') {
+                    const operatorCompanyId = document.getElementById('operator_company_id').value;
+                    if (!operatorCompanyId) {
+                        e.preventDefault();
+                        alert('Debe seleccionar una empresa para el operador externo');
+                        return false;
                     }
                 }
+                
+                // Validar que tenga al menos un permiso
+                const canImport = document.getElementById('can_import').checked;
+                const canExport = document.getElementById('can_export').checked;
+                const canTransfer = document.getElementById('can_transfer').checked;
+                
+                if (!canImport && !canExport && !canTransfer) {
+                    e.preventDefault();
+                    alert('El operador debe tener al menos un permiso (Importar, Exportar o Transferir)');
+                    return false;
+                }
             }
-
-            passwordField.addEventListener('input', validatePasswords);
-            confirmPasswordField.addEventListener('input', validatePasswords);
-
-            // Advertencia al cambiar roles
-            const roleCheckboxes = document.querySelectorAll('input[name="roles[]"]');
-            roleCheckboxes.forEach(checkbox => {
-                checkbox.addEventListener('change', function() {
-                    if (this.checked && this.value === 'super-admin') {
-                        if (!confirm('¿Estás seguro de asignar el rol de Super Administrador? Este rol tiene acceso completo al sistema.')) {
-                            this.checked = false;
-                        }
-                    }
-                });
-            });
         });
     </script>
-    @endpush
 </x-app-layout>

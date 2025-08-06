@@ -10,6 +10,7 @@ use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\DB;
 
 class UserController extends Controller
 {
@@ -86,11 +87,22 @@ class UserController extends Controller
      */
     public function store(Request $request)
     {
+        // 1. AGREGAR DEBUG: Ver qué datos llegan
+        \Log::info('AdminUserController store() - Datos recibidos:', [
+            'role' => $request->role,
+            'operator_type' => $request->operator_type,
+            'company_id' => $request->company_id,
+            'operator_company_id' => $request->operator_company_id,
+            'first_name' => $request->first_name,
+            'last_name' => $request->last_name,
+            'all_request' => $request->all()
+        ]);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
-            'role' => 'required|exists:roles,name',
+            'role' => 'required|in:super-admin,company-admin,user',
             'active' => 'boolean',
             'timezone' => 'nullable|string|max:50',
         ]);
@@ -100,29 +112,37 @@ class UserController extends Controller
             $request->validate([
                 'company_id' => 'required|exists:companies,id',
             ]);
-        } elseif ($request->role === 'external-operator') {
+        } elseif ($request->role === 'user') {
+            \Log::info('AdminUserController - Validando rol user');
+            
             $request->validate([
-                'company_id' => 'required|exists:companies,id',
                 'first_name' => 'required|string|max:255',
                 'last_name' => 'required|string|max:255',
                 'document_number' => 'nullable|string|max:50',
                 'phone' => 'nullable|string|max:20',
-                'position' => 'nullable|string|max:255',
+                'position' => 'required|string|max:255',
+                'operator_type' => 'required|in:external,internal',
                 'can_import' => 'boolean',
                 'can_export' => 'boolean',
                 'can_transfer' => 'boolean',
             ]);
-        } elseif ($request->role === 'internal-operator') {
-            $request->validate([
-                'first_name' => 'required|string|max:255',
-                'last_name' => 'required|string|max:255',
-                'document_number' => 'nullable|string|max:50',
-                'phone' => 'nullable|string|max:20',
-                'position' => 'nullable|string|max:255',
-            ]);
+
+            if ($request->operator_type === 'external') {
+                $request->validate([
+                    'operator_company_id' => 'required|exists:companies,id',
+                ]);
+            }
+
+            if (!$request->boolean('can_import') && !$request->boolean('can_export') && !$request->boolean('can_transfer')) {
+                \Log::warning('AdminUserController - Sin permisos seleccionados');
+                return back()->withInput()
+                    ->with('error', 'El operador debe tener al menos un permiso (importar, exportar o transferir).');
+            }
         }
 
         try {
+            \Log::info('AdminUserController - Iniciando creación de usuario');
+            
             // Crear usuario
             $user = User::create([
                 'name' => $request->name,
@@ -132,43 +152,66 @@ class UserController extends Controller
                 'timezone' => $request->timezone ?? 'America/Argentina/Buenos_Aires',
             ]);
 
+            \Log::info('AdminUserController - Usuario creado:', ['user_id' => $user->id]);
+
             // Asignar rol
             $user->assignRole($request->role);
+            \Log::info('AdminUserController - Rol asignado:', ['role' => $request->role]);
 
             // Crear entidad relacionada según el rol
             if ($request->role === 'company-admin') {
-                // El usuario es el administrador de la empresa
                 $user->update([
                     'userable_type' => 'App\\Models\\Company',
                     'userable_id' => $request->company_id,
                 ]);
-            } elseif (in_array($request->role, ['external-operator', 'internal-operator'])) {
-                // Crear operador
-                $operator = Operator::create([
+                \Log::info('AdminUserController - Company admin configurado');
+
+            } elseif ($request->role === 'user') {
+                \Log::info('AdminUserController - Creando operador para user');
+                
+                // DATOS PARA CREAR OPERADOR
+                $operatorData = [
                     'first_name' => $request->first_name,
                     'last_name' => $request->last_name,
                     'document_number' => $request->document_number,
                     'phone' => $request->phone,
                     'position' => $request->position,
-                    'company_id' => $request->role === 'external-operator' ? $request->company_id : null,
-                    'type' => $request->role === 'external-operator' ? 'external' : 'internal',
+                    'company_id' => $request->operator_type === 'external' ? $request->operator_company_id : null,
+                    'type' => $request->operator_type,
                     'can_import' => $request->boolean('can_import', false),
                     'can_export' => $request->boolean('can_export', false),
                     'can_transfer' => $request->boolean('can_transfer', false),
                     'active' => true,
                     'created_date' => now(),
-                ]);
+                ];
 
+                \Log::info('AdminUserController - Datos para crear operador:', $operatorData);
+
+                // CREAR OPERADOR
+                $operator = Operator::create($operatorData);
+                \Log::info('AdminUserController - Operador creado:', ['operator_id' => $operator->id]);
+
+                // CONECTAR USUARIO CON OPERADOR
                 $user->update([
                     'userable_type' => 'App\\Models\\Operator',
                     'userable_id' => $operator->id,
                 ]);
+                \Log::info('AdminUserController - Usuario conectado con operador');
             }
+
+            \Log::info('AdminUserController - Proceso completado exitosamente');
 
             return redirect()->route('admin.users.index')
                 ->with('success', 'Usuario creado correctamente.');
 
         } catch (\Exception $e) {
+            \Log::error('AdminUserController - Error en creación:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return back()->withInput()
                 ->with('error', 'Error al crear el usuario: ' . $e->getMessage());
         }
@@ -199,58 +242,229 @@ class UserController extends Controller
     /**
      * Actualizar usuario.
      */
-    public function update(Request $request, User $user)
-    {
+public function update(Request $request, User $user)
+{
+    \Log::info('AdminUserController update() - Datos recibidos:', [
+        'user_id' => $user->id,
+        'current_role' => $user->roles->first()?->name,
+        'new_role' => $request->role,
+        'userable_type' => $user->userable_type,
+        'has_password' => $request->filled('password'),
+        'password_length' => $request->password ? strlen($request->password) : 0,
+        'confirmation_length' => $request->password_confirmation ? strlen($request->password_confirmation) : 0,
+    ]);
+
+    // LIMPIAR CAMPOS DE CONTRASEÑA SI ESTÁN VACÍOS
+    if (!$request->filled('password')) {
+        $request->merge([
+            'password' => null,
+            'password_confirmation' => null
+        ]);
+        \Log::info('AdminUserController update() - Campos de contraseña limpiados');
+    }
+
+    // Validaciones básicas (SIN password aquí)
+    $rules = [
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email,' . $user->id,
+        'role' => 'required|in:super-admin,company-admin,user',
+        'active' => 'boolean',
+        'timezone' => 'nullable|string|max:50',
+    ];
+
+    // VALIDACIÓN CONDICIONAL DE PASSWORD
+    if ($request->filled('password')) {
+        $rules['password'] = 'required|string|min:8|confirmed';
+        \Log::info('AdminUserController update() - Validando contraseña nueva');
+    } else {
+        \Log::info('AdminUserController update() - Sin cambio de contraseña');
+    }
+
+    $request->validate($rules);
+
+    // Validaciones específicas por rol (igual que store)
+    if ($request->role === 'company-admin') {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $user->id,
-            'active' => 'boolean',
-            'timezone' => 'nullable|string|max:50',
+            'company_id' => 'required|exists:companies,id',
+        ]);
+    } elseif ($request->role === 'user') {
+        $request->validate([
+            'first_name' => 'required|string|max:255',
+            'last_name' => 'required|string|max:255',
+            'document_number' => 'nullable|string|max:50',
+            'phone' => 'nullable|string|max:20',
+            'position' => 'required|string|max:255',
+            'operator_type' => 'required|in:external,internal',
+            'can_import' => 'boolean',
+            'can_export' => 'boolean',
+            'can_transfer' => 'boolean',
         ]);
 
-        try {
-            $user->update([
-                'name' => $request->name,
-                'email' => $request->email,
-                'active' => $request->boolean('active'),
-                'timezone' => $request->timezone,
+        if ($request->operator_type === 'external') {
+            $request->validate([
+                'operator_company_id' => 'required|exists:companies,id',
             ]);
+        }
 
-            // Actualizar entidad relacionada si existe
-            if ($user->userable) {
-                if ($user->userable_type === 'App\\Models\\Operator') {
-                    $request->validate([
-                        'first_name' => 'required|string|max:255',
-                        'last_name' => 'required|string|max:255',
-                        'phone' => 'nullable|string|max:20',
-                        'position' => 'nullable|string|max:255',
-                        'can_import' => 'boolean',
-                        'can_export' => 'boolean',
-                        'can_transfer' => 'boolean',
-                    ]);
-
-                    $user->userable->update([
-                        'first_name' => $request->first_name,
-                        'last_name' => $request->last_name,
-                        'phone' => $request->phone,
-                        'position' => $request->position,
-                        'can_import' => $request->boolean('can_import'),
-                        'can_export' => $request->boolean('can_export'),
-                        'can_transfer' => $request->boolean('can_transfer'),
-                        'active' => $request->boolean('active'),
-                    ]);
-                }
-            }
-
-            return redirect()->route('admin.users.index')
-                ->with('success', 'Usuario actualizado correctamente.');
-
-        } catch (\Exception $e) {
+        if (!$request->boolean('can_import') && !$request->boolean('can_export') && !$request->boolean('can_transfer')) {
             return back()->withInput()
-                ->with('error', 'Error al actualizar el usuario: ' . $e->getMessage());
+                ->with('error', 'El operador debe tener al menos un permiso (importar, exportar o transferir).');
         }
     }
 
+    try {
+        DB::beginTransaction();
+        
+        \Log::info('AdminUserController update() - Iniciando actualización');
+
+        // Preparar datos para actualizar usuario
+        $userData = [
+            'name' => $request->name,
+            'email' => $request->email,
+            'active' => $request->boolean('active'),
+            'timezone' => $request->timezone,
+        ];
+
+        // Agregar contraseña solo si se proporciona
+        if ($request->filled('password')) {
+            $userData['password'] = Hash::make($request->password);
+            \Log::info('AdminUserController update() - Contraseña incluida en actualización');
+        }
+
+        // Actualizar datos del usuario
+        $user->update($userData);
+
+        // Actualizar rol si cambió
+        $currentRole = $user->roles->first()?->name;
+        if ($currentRole !== $request->role) {
+            $user->syncRoles([$request->role]);
+            \Log::info('AdminUserController update() - Rol cambiado', [
+                'from' => $currentRole,
+                'to' => $request->role
+            ]);
+        }
+
+        // MANEJO DE ENTIDADES RELACIONADAS
+        $this->handleUserEntity($user, $request);
+
+        DB::commit();
+        \Log::info('AdminUserController update() - Actualización completada');
+
+        return redirect()->route('admin.users.index')
+            ->with('success', 'Usuario actualizado correctamente.');
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        \Log::error('AdminUserController update() - Error:', [
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ]);
+
+        return back()->withInput()
+            ->with('error', 'Error al actualizar el usuario: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Manejar la entidad relacionada del usuario según su rol.
+ */
+private function handleUserEntity(User $user, Request $request)
+{
+    $newRole = $request->role;
+    $currentEntityType = $user->userable_type;
+
+    \Log::info('AdminUserController - Manejando entidad relacionada', [
+        'new_role' => $newRole,
+        'current_entity' => $currentEntityType
+    ]);
+
+    if ($newRole === 'super-admin') {
+        // Super admin no tiene entidad relacionada
+        if ($user->userable) {
+            $user->userable->delete(); // Eliminar entidad anterior
+        }
+        $user->update([
+            'userable_type' => null,
+            'userable_id' => null,
+        ]);
+
+    } elseif ($newRole === 'company-admin') {
+        // Administrador de empresa
+        if ($currentEntityType === 'App\\Models\\Operator') {
+            // Cambio de operador a company-admin: eliminar operador
+            $user->userable->delete();
+        }
+        
+        $user->update([
+            'userable_type' => 'App\\Models\\Company',
+            'userable_id' => $request->company_id,
+        ]);
+
+    } elseif ($newRole === 'user') {
+        // Usuario operador
+        if ($currentEntityType === 'App\\Models\\Operator') {
+            // Ya es operador: actualizar datos
+            $this->updateOperator($user->userable, $request);
+        } else {
+            // No es operador: crear nuevo operador
+            if ($user->userable && $currentEntityType === 'App\\Models\\Company') {
+                // Era company-admin, no eliminamos la empresa
+            }
+            
+            $operator = $this->createOperator($request);
+            $user->update([
+                'userable_type' => 'App\\Models\\Operator',
+                'userable_id' => $operator->id,
+            ]);
+        }
+    }
+}
+
+/**
+ * Actualizar operador existente.
+ */
+private function updateOperator(Operator $operator, Request $request)
+{
+    \Log::info('AdminUserController - Actualizando operador existente', ['operator_id' => $operator->id]);
+
+    $operator->update([
+        'first_name' => $request->first_name,
+        'last_name' => $request->last_name,
+        'document_number' => $request->document_number,
+        'phone' => $request->phone,
+        'position' => $request->position,
+        'company_id' => $request->operator_type === 'external' ? $request->operator_company_id : null,
+        'type' => $request->operator_type,
+        'can_import' => $request->boolean('can_import', false),
+        'can_export' => $request->boolean('can_export', false),
+        'can_transfer' => $request->boolean('can_transfer', false),
+        'active' => $request->boolean('active', true),
+    ]);
+}
+
+/**
+ * Crear nuevo operador.
+ */
+private function createOperator(Request $request): Operator
+{
+    \Log::info('AdminUserController - Creando nuevo operador');
+
+    return Operator::create([
+        'first_name' => $request->first_name,
+        'last_name' => $request->last_name,
+        'document_number' => $request->document_number,
+        'phone' => $request->phone,
+        'position' => $request->position,
+        'company_id' => $request->operator_type === 'external' ? $request->operator_company_id : null,
+        'type' => $request->operator_type,
+        'can_import' => $request->boolean('can_import', false),
+        'can_export' => $request->boolean('can_export', false),
+        'can_transfer' => $request->boolean('can_transfer', false),
+        'active' => true,
+        'created_date' => now(),
+    ]);
+}
     /**
      * Eliminar usuario.
      */

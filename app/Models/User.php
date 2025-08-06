@@ -12,6 +12,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use OwenIt\Auditing\Contracts\Auditable;
 use OwenIt\Auditing\Auditable as AuditableTrait;
+use Illuminate\Support\Str;
 
 class User extends Authenticatable implements Auditable
 {
@@ -299,6 +300,94 @@ class User extends Authenticatable implements Auditable
         }
 
         return $info;
+    }
+
+    /**
+     * Obtener información de display para la vista index de admin
+     */
+    public function getDisplayInfoAttribute(): array
+    {
+        $role = $this->roles->first();
+        
+        if (!$role) {
+            return [
+                'type' => 'Sin Rol',
+                'badge_class' => 'bg-gray-100 text-gray-800',
+                'icon' => 'question',
+                'subtitle' => null,
+                'permissions' => []
+            ];
+        }
+
+        switch ($role->name) {
+            case 'super-admin':
+                return [
+                    'type' => 'Super Administrador',
+                    'badge_class' => 'bg-purple-100 text-purple-800',
+                    'icon' => 'star',
+                    'subtitle' => 'Acceso total al sistema',
+                    'permissions' => []
+                ];
+
+            case 'company-admin':
+                $company = $this->userable_type === 'App\\Models\\Company' ? $this->userable : null;
+                return [
+                    'type' => 'Admin Empresa',
+                    'badge_class' => 'bg-blue-100 text-blue-800',
+                    'icon' => 'shield-check',
+                    'subtitle' => $company ? Str::limit($company->legal_name, 25) : 'Sin empresa',
+                    'permissions' => []
+                ];
+
+            case 'user':
+                if ($this->userable_type === 'App\\Models\\Operator' && $this->userable) {
+                    $operator = $this->userable;
+                    
+                    if ($operator->type === 'internal') {
+                        return [
+                            'type' => 'Operador Interno',
+                            'badge_class' => 'bg-indigo-100 text-indigo-800',
+                            'icon' => 'users',
+                            'subtitle' => 'Acceso global al sistema',
+                            'permissions' => [
+                                'can_import' => $operator->can_import,
+                                'can_export' => $operator->can_export,
+                                'can_transfer' => $operator->can_transfer,
+                            ]
+                        ];
+                    } else {
+                        $company = $operator->company;
+                        return [
+                            'type' => 'Operador Externo',
+                            'badge_class' => 'bg-green-100 text-green-800',
+                            'icon' => 'user',
+                            'subtitle' => $company ? Str::limit($company->legal_name, 25) : 'Sin empresa',
+                            'permissions' => [
+                                'can_import' => $operator->can_import,
+                                'can_export' => $operator->can_export,
+                                'can_transfer' => $operator->can_transfer,
+                            ]
+                        ];
+                    }
+                } else {
+                    return [
+                        'type' => 'Usuario Mal Configurado',
+                        'badge_class' => 'bg-red-100 text-red-800',
+                        'icon' => 'exclamation-triangle',
+                        'subtitle' => 'Requiere configuración',
+                        'permissions' => []
+                    ];
+                }
+
+            default:
+                return [
+                    'type' => ucfirst(str_replace('-', ' ', $role->name)),
+                    'badge_class' => 'bg-gray-100 text-gray-800',
+                    'icon' => 'user',
+                    'subtitle' => null,
+                    'permissions' => []
+                ];
+        }
     }
 
     /**

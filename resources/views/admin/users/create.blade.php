@@ -96,28 +96,31 @@
                         <!-- Rol del usuario -->
                         <div>
                             <label for="role" class="block text-sm font-medium text-gray-700 mb-2">
-                                Rol del usuario *
+                                Tipo de Usuario *
                             </label>
                             <select name="role" 
                                     id="role" 
                                     required
                                     onchange="toggleRoleFields()"
                                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <option value="">Selecciona un rol</option>
-                                @foreach($roles as $role)
-                                    <option value="{{ $role->name }}" {{ old('role') === $role->name ? 'selected' : '' }}>
-                                        {{ ucfirst(str_replace('-', ' ', $role->name)) }}
-                                    </option>
-                                @endforeach
+                                <option value="">Selecciona un tipo de usuario</option>
+                                <option value="super-admin" {{ old('role') === 'super-admin' ? 'selected' : '' }}>
+                                    Super Administrador
+                                </option>
+                                <option value="company-admin" {{ old('role') === 'company-admin' ? 'selected' : '' }}>
+                                    Administrador de Empresa
+                                </option>
+                                <option value="user" {{ old('role') === 'user' ? 'selected' : '' }}>
+                                    Operador
+                                </option>
                             </select>
                             <div class="mt-2 text-sm text-gray-600">
                                 <div id="roleDescription" class="hidden">
-                                    <strong>Descripciones de roles:</strong>
+                                    <strong>Tipos de usuario:</strong>
                                     <ul class="mt-1 ml-4 list-disc space-y-1">
-                                        <li><strong>Super Admin:</strong> Acceso total al sistema</li>
-                                        <li><strong>Company Admin:</strong> Administrador de una empresa específica</li>
-                                        <li><strong>Internal Operator:</strong> Operador interno del sistema</li>
-                                        <li><strong>External Operator:</strong> Operador de una empresa específica</li>
+                                        <li><strong>Super Administrador:</strong> Acceso total al sistema, crea empresas</li>
+                                        <li><strong>Administrador de Empresa:</strong> Gestiona usuarios de su empresa</li>
+                                        <li><strong>Operador:</strong> Realiza operaciones según permisos asignados</li>
                                     </ul>
                                 </div>
                             </div>
@@ -241,6 +244,27 @@
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 </div>
 
+                                <div>
+                                    <label for="operator_type" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tipo de Operador *
+                                    </label>
+                                    <select name="operator_type" 
+                                            id="operator_type"
+                                            onchange="toggleOperatorCompany()"
+                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccione el tipo</option>
+                                        <option value="external" {{ old('operator_type') === 'external' ? 'selected' : '' }}>
+                                            Externo (Empleado de empresa)
+                                        </option>
+                                        <option value="internal" {{ old('operator_type') === 'internal' ? 'selected' : '' }}>
+                                            Interno (Empleado del sistema)
+                                        </option>
+                                    </select>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        Los operadores externos trabajan para una empresa específica. Los internos tienen acceso global.
+                                    </p>
+                                </div>
+
                                 <!-- Empresa para operador externo -->
                                 <div id="operatorCompanyField" class="hidden">
                                     <label for="operator_company_id" class="block text-sm font-medium text-gray-700 mb-2">
@@ -322,85 +346,122 @@
         </div>
     </div>
 
-    <script>
-        function toggleRoleFields() {
-            const role = document.getElementById('role').value;
-            const companyFields = document.getElementById('companyFields');
-            const operatorFields = document.getElementById('operatorFields');
-            const operatorCompanyField = document.getElementById('operatorCompanyField');
-            const roleDescription = document.getElementById('roleDescription');
+<script>
+function toggleRoleFields() {
+    const role = document.getElementById('role').value;
+    const companyFields = document.getElementById('companyFields');
+    const operatorFields = document.getElementById('operatorFields');
+    const roleDescription = document.getElementById('roleDescription');
 
-            // Ocultar todos los campos específicos
-            companyFields.classList.add('hidden');
-            operatorFields.classList.add('hidden');
-            operatorCompanyField.classList.add('hidden');
+    // Ocultar todos los campos específicos
+    companyFields.classList.add('hidden');
+    operatorFields.classList.add('hidden');
 
-            // Limpiar campos requeridos
-            document.getElementById('company_id').removeAttribute('required');
-            document.getElementById('first_name').removeAttribute('required');
-            document.getElementById('last_name').removeAttribute('required');
-            document.getElementById('document_number').removeAttribute('required');
-            document.getElementById('operator_company_id').removeAttribute('required');
+    // Limpiar campos requeridos
+    document.getElementById('company_id').removeAttribute('required');
+    document.getElementById('first_name').removeAttribute('required');
+    document.getElementById('last_name').removeAttribute('required');
+    document.getElementById('operator_type').removeAttribute('required');
 
-            // Mostrar descripción de roles
-            roleDescription.classList.remove('hidden');
+    if (role) {
+        roleDescription.classList.remove('hidden');
+        
+        if (role === 'super-admin') {
+            // Super admin no necesita campos adicionales
+            
+        } else if (role === 'company-admin') {
+            companyFields.classList.remove('hidden');
+            document.getElementById('company_id').setAttribute('required', 'required');
+            
+        } else if (role === 'user') {
+            operatorFields.classList.remove('hidden');
+            document.getElementById('first_name').setAttribute('required', 'required');
+            document.getElementById('last_name').setAttribute('required', 'required');
+            document.getElementById('operator_type').setAttribute('required', 'required');
+        }
+    } else {
+        roleDescription.classList.add('hidden');
+    }
+}
 
-            // Mostrar campos específicos según el rol
-            if (role === 'company-admin') {
-                companyFields.classList.remove('hidden');
-                document.getElementById('company_id').setAttribute('required', 'required');
-            } else if (role === 'internal-operator' || role === 'external-operator') {
-                operatorFields.classList.remove('hidden');
-                document.getElementById('first_name').setAttribute('required', 'required');
-                document.getElementById('last_name').setAttribute('required', 'required');
-                document.getElementById('document_number').setAttribute('required', 'required');
+function toggleOperatorCompany() {
+    const operatorType = document.getElementById('operator_type').value;
+    const operatorCompanyField = document.getElementById('operatorCompanyField');
+    
+    if (operatorType === 'external') {
+        operatorCompanyField.classList.remove('hidden');
+        document.getElementById('operator_company_id').setAttribute('required', 'required');
+    } else {
+        operatorCompanyField.classList.add('hidden');
+        document.getElementById('operator_company_id').removeAttribute('required');
+    }
+}
 
-                if (role === 'external-operator') {
-                    operatorCompanyField.classList.remove('hidden');
-                    document.getElementById('operator_company_id').setAttribute('required', 'required');
-                }
+// Validación de contraseñas
+document.getElementById('password_confirmation').addEventListener('input', function() {
+    const password = document.getElementById('password').value;
+    const confirmation = this.value;
+    
+    if (password !== confirmation) {
+        this.setCustomValidity('Las contraseñas no coinciden');
+    } else {
+        this.setCustomValidity('');
+    }
+});
+
+// Restaurar estado si hay errores de validación
+document.addEventListener('DOMContentLoaded', function() {
+    const role = document.getElementById('role').value;
+    if (role) {
+        toggleRoleFields();
+        
+        // Restaurar estado del tipo de operador
+        const operatorType = document.getElementById('operator_type').value;
+        if (operatorType) {
+            toggleOperatorCompany();
+        }
+    }
+});
+
+// Validación del formulario antes del envío
+document.getElementById('userForm').addEventListener('submit', function(e) {
+    const role = document.getElementById('role').value;
+    
+    if (role === 'company-admin') {
+        const companyId = document.getElementById('company_id').value;
+        if (!companyId) {
+            e.preventDefault();
+            alert('Debe seleccionar una empresa para el Administrador de Empresa');
+            return false;
+        }
+    } else if (role === 'user') {
+        const operatorType = document.getElementById('operator_type').value;
+        if (!operatorType) {
+            e.preventDefault();
+            alert('Debe seleccionar el tipo de operador');
+            return false;
+        }
+        
+        if (operatorType === 'external') {
+            const operatorCompanyId = document.getElementById('operator_company_id').value;
+            if (!operatorCompanyId) {
+                e.preventDefault();
+                alert('Debe seleccionar una empresa para el operador externo');
+                return false;
             }
         }
-
-        // Validación de contraseñas
-        document.getElementById('password_confirmation').addEventListener('input', function() {
-            const password = document.getElementById('password').value;
-            const confirmation = this.value;
-            
-            if (password !== confirmation) {
-                this.setCustomValidity('Las contraseñas no coinciden');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
-
-        // Restaurar estado si hay errores de validación
-        document.addEventListener('DOMContentLoaded', function() {
-            const role = document.getElementById('role').value;
-            if (role) {
-                toggleRoleFields();
-            }
-        });
-
-        // Validación del formulario antes del envío
-        document.getElementById('userForm').addEventListener('submit', function(e) {
-            const role = document.getElementById('role').value;
-            
-            if (role === 'company-admin') {
-                const companyId = document.getElementById('company_id').value;
-                if (!companyId) {
-                    e.preventDefault();
-                    alert('Debe seleccionar una empresa para el rol Company Admin');
-                    return false;
-                }
-            } else if (role === 'external-operator') {
-                const operatorCompanyId = document.getElementById('operator_company_id').value;
-                if (!operatorCompanyId) {
-                    e.preventDefault();
-                    alert('Debe seleccionar una empresa para el operador externo');
-                    return false;
-                }
-            }
-        });
-    </script>
+        
+        // Validar que tenga al menos un permiso
+        const canImport = document.getElementById('can_import').checked;
+        const canExport = document.getElementById('can_export').checked;
+        const canTransfer = document.getElementById('can_transfer').checked;
+        
+        if (!canImport && !canExport && !canTransfer) {
+            e.preventDefault();
+            alert('El operador debe tener al menos un permiso (Importar, Exportar o Transferir)');
+            return false;
+        }
+    }
+});
+</script>
 </x-app-layout>

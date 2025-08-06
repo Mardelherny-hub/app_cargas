@@ -261,7 +261,14 @@ class ParanaExcelParser implements ManifestParserInterface
         ]);
         
         // Usar la relación correcta
-        $companyId = $user->company_id ?? $user->userable_id;
+        // CORREGIDO: Obtener company_id correctamente
+        if ($user->company_id) {
+            $companyId = $user->company_id;
+        } elseif ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+            $companyId = (int) $user->userable_id;
+        } else {
+            $companyId = null;
+        }
         
         if (!$companyId) {
             throw new \Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
@@ -270,19 +277,21 @@ class ParanaExcelParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($data['pol'], 'Buenos Aires');
         $destPort = $this->findOrCreatePort($data['pod'], 'Terminal Villeta');
 
-        $voyageNumber = 'PARANA-' . ($data['voyage_number'] ?: uniqid()) . '-' . now()->format('Ymd');
+        $voyageNumber = 'TEST-4-PARANA-' . ($data['voyage_number'] ?: uniqid()) . '-' . now()->format('Ymd');
 
         return Voyage::create([
             'company_id' => $companyId,
             'voyage_number' => $voyageNumber,
             'origin_port_id' => $originPort->id,
             'destination_port_id' => $destPort->id,
-            'vessel_name' => $data['barge_name'] ?: 'PAR13001',
+            'lead_vessel_id' => 1, // ID vessel por defecto
+            'origin_country_id' => 1, // Argentina
+            'destination_country_id' => 2, // Paraguay  
+            'departure_date' => now(),
+            'estimated_arrival_date' => now()->addDays(3),
             'status' => 'planning',
-            'cargo_type' => 'container',
-            'created_by_user_id' => auth()->id(),
-            'manifest_format' => 'PARANA_EXCEL',
-            'import_source' => 'parana_parser'
+            'cargo_type' => 'import',
+            'created_by_user_id' => auth()->id()
         ]);
     }
 
@@ -290,8 +299,12 @@ class ParanaExcelParser implements ManifestParserInterface
     {
         return Shipment::create([
             'voyage_id' => $voyage->id,
+            'vessel_id' => 1, // ID vessel por defecto
             'shipment_number' => 'PARANA-' . now()->format('YmdHis'),
-            'vessel_role' => 'primary',
+            'sequence_in_voyage' => 1,
+            'vessel_role' => 'single',
+            'cargo_capacity_tons' => 1000.00,
+            'container_capacity' => 50,
             'status' => 'planning',
             'active' => true,
             'created_by_user_id' => auth()->id()
@@ -381,15 +394,13 @@ class ParanaExcelParser implements ManifestParserInterface
         }
 
         $client = Client::where('legal_name', $clientData['name'])
-            ->where('company_id', auth()->user()->company_id)
             ->first();
 
         if (!$client) {
             $client = Client::create([
-                'company_id' => auth()->user()->company_id,
                 'legal_name' => $clientData['name'],
                 'commercial_name' => $clientData['name'],
-                'tax_id' => 'PARANA-' . uniqid(),
+                'tax_id' => substr(uniqid(), -8),
                 'client_type' => 'business',
                 'status' => 'active',
                 'address' => $clientData['address'],
