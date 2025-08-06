@@ -281,8 +281,8 @@ class ManifestCustomsController extends Controller
             'bl_number' => $voyage->shipments->first()->billsOfLading->first()->bl_number ?? null,
             'voyage_number' => $voyage->voyage_number,
             'vessel_name' => $voyage->shipments->first()->vessel->name ?? 'N/A',
-            'pol_code' => $voyage->origin_port->port_code ?? 'UNKNOWN',
-            'pod_code' => $voyage->destination_port->port_code ?? 'UNKNOWN',
+            'pol_code' => $voyage->origin_port->code ?? 'UNKNOWN',
+            'pod_code' => $voyage->destination_port->code ?? 'UNKNOWN',
             'container_count' => $voyage->shipments->sum('containers_loaded'),
             'bill_of_lading_count' => $voyage->shipments->sum(function($s) { 
                 return $s->billsOfLading->count(); 

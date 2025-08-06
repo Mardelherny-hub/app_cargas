@@ -336,29 +336,28 @@ Route::prefix('clients')->name('company.clients.')->group(function () {
     });
 });
 
+
 // =============================================================================
-// RUTAS DE MANIFIESTOS - CONSOLIDADAS Y ORGANIZADAS
+// RUTAS DE MANIFIESTOS - ORDEN CORREGIDO PARA EVITAR CONFLICTOS
 // =============================================================================
 
 Route::prefix('manifests')->name('company.manifests.')->group(function () {
     
-    // === CRUD BÁSICO ===
+    // === RUTAS ESPECÍFICAS PRIMERO (antes de rutas con parámetros) ===
     Route::get('/', [ManifestController::class, 'index'])->name('index');
     Route::get('/create', [ManifestController::class, 'create'])->name('create');
+    Route::get('/summary', [ManifestController::class, 'summary'])->name('summary');
+    Route::get('/reports', [ManifestController::class, 'reports'])->name('reports');
     Route::post('/', [ManifestController::class, 'store'])->name('store');
-    Route::get('/{id}', [ManifestController::class, 'show'])->name('show');
-    Route::get('/{id}/edit', [ManifestController::class, 'edit'])->name('edit');
-    Route::put('/{id}', [ManifestController::class, 'update'])->name('update');
-    Route::delete('/{id}', [ManifestController::class, 'destroy'])->name('destroy');
 
-    // === IMPORTACIÓN ===
+    // === IMPORTACIÓN - ANTES DE RUTAS CON PARÁMETROS ===
     Route::prefix('import')->name('import.')->group(function () {
         Route::get('/', [ManifestImportController::class, 'showForm'])->name('index');
         Route::post('/', [ManifestImportController::class, 'store'])->name('store');
         Route::get('/history', [ManifestImportController::class, 'history'])->name('history');
     });
 
-    // === EXPORTACIÓN ===
+    // === EXPORTACIÓN - ANTES DE RUTAS CON PARÁMETROS ===
     Route::prefix('export')->name('export.')->group(function () {
         Route::get('/', [ManifestExportController::class, 'index'])->name('index');
         Route::get('/{voyageId}/parana', [ManifestExportController::class, 'exportParana'])->name('parana');
@@ -368,7 +367,7 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::get('/{voyageId}/edi', [ManifestExportController::class, 'exportEdi'])->name('edi');
     });
 
-    // === ENVÍO A ADUANA ===
+    // === ENVÍO A ADUANA - ANTES DE RUTAS CON PARÁMETROS ===
     Route::prefix('customs')->name('customs.')->group(function () {
         Route::get('/', [ManifestCustomsController::class, 'index'])->name('index');
         Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
@@ -376,13 +375,12 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
     });
 
-    // === UTILIDADES ===
-    Route::get('/summary', [ManifestController::class, 'summary'])->name('summary');
-    Route::get('/reports', [ManifestController::class, 'reports'])->name('reports');
+    // === RUTAS CON PARÁMETROS AL FINAL (para evitar conflictos) ===
+    Route::get('/{id}', [ManifestController::class, 'show'])->name('show');
+    Route::get('/{id}/edit', [ManifestController::class, 'edit'])->name('edit');
+    Route::put('/{id}', [ManifestController::class, 'update'])->name('update');
+    Route::delete('/{id}', [ManifestController::class, 'destroy'])->name('destroy');
 });
-
-
-
 // Configuración (solo company-admin)
 Route::prefix('settings')->name('company.settings.')->group(function () {
     Route::get('/', [SettingsController::class, 'index'])->name('index');

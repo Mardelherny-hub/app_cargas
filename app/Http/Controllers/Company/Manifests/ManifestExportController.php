@@ -293,8 +293,8 @@ class ManifestExportController extends Controller
         $segments[] = "TDT+20+{$voyage->voyage_number}++3:{$vesselName}'";
         
         // LOC - Place/Location Identification
-        $originCode = $voyage->origin_port->port_code ?? 'ARUNKNOWN';
-        $destCode = $voyage->destination_port->port_code ?? 'PYUNKNOWN';
+        $originCode = $voyage->origin_port->code ?? 'ARUNKNOWN';
+        $destCode = $voyage->destination_port->code ?? 'PYUNKNOWN';
         $segments[] = "LOC+5+{$originCode}:139:6'";
         $segments[] = "LOC+61+{$destCode}:139:6'";
         

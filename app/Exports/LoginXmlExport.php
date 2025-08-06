@@ -171,8 +171,8 @@ class EdiCuscarExport implements FromCollection, WithCustomStartCell
         $segments->push("TDT+20+{$this->voyage->voyage_number}++3:{$vesselName}'");
         
         // LOC - Place/Location Identification
-        $originCode = $this->voyage->origin_port->port_code ?? 'ARUNKNOWN';
-        $destCode = $this->voyage->destination_port->port_code ?? 'PYUNKNOWN';
+        $originCode = $this->voyage->origin_port->code ?? 'ARUNKNOWN';
+        $destCode = $this->voyage->destination_port->code ?? 'PYUNKNOWN';
         $segments->push("LOC+5+{$originCode}:139:6'");
         $segments->push("LOC+61+{$destCode}:139:6'");
         

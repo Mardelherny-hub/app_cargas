@@ -248,6 +248,24 @@ class ParanaExcelParser implements ManifestParserInterface
 
     protected function createVoyage(array $data): Voyage
     {
+
+         // DEBUG: Verificar estado del usuario y company
+        $user = auth()->user();
+        Log::info('createVoyage Debug', [
+            'user_id' => $user?->id,
+            'user_email' => $user?->email,
+            'user_company_id' => $user?->company_id,
+            'user_userable_type' => $user?->userable_type,
+            'user_userable_id' => $user?->userable_id,
+            'user_company_relation' => $user?->company?->id ?? 'NO COMPANY RELATION',
+        ]);
+        
+        // Usar la relación correcta
+        $companyId = $user->company_id ?? $user->userable_id;
+        
+        if (!$companyId) {
+            throw new \Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
+        }
         // Crear/buscar puertos
         $originPort = $this->findOrCreatePort($data['pol'], 'Buenos Aires');
         $destPort = $this->findOrCreatePort($data['pod'], 'Terminal Villeta');
@@ -255,7 +273,7 @@ class ParanaExcelParser implements ManifestParserInterface
         $voyageNumber = 'PARANA-' . ($data['voyage_number'] ?: uniqid()) . '-' . now()->format('Ymd');
 
         return Voyage::create([
-            'company_id' => auth()->user()->company_id,
+            'company_id' => $companyId,
             'voyage_number' => $voyageNumber,
             'origin_port_id' => $originPort->id,
             'destination_port_id' => $destPort->id,
@@ -338,17 +356,20 @@ class ParanaExcelParser implements ManifestParserInterface
 
     protected function findOrCreatePort(string $code, string $defaultName): Port
     {
-        $port = Port::where('port_code', $code)->first();
+        $port = Port::where('code', $code)->first();
         
-        if (!$port) {
-            $port = Port::create([
-                'port_code' => $code,
-                'name' => $defaultName,
-                'country_id' => $code === 'ARBUE' ? 1 : 2, // AR=1, PY=2
-                'is_active' => true,
-                'created_by_import' => true
-            ]);
-        }
+        $port = Port::where('code', $code)->first();
+    
+    if (!$port) {
+        $port = Port::create([
+            'code' => $code,
+            'name' => $defaultName,
+            'city' => $defaultName,  // ← AGREGAR ESTE CAMPO REQUERIDO
+            'country_id' => $code === 'ARBUE' ? 1 : 2, // AR=1, PY=2
+            'port_type' => 'river',  // ← AGREGAR TIPO DE PUERTO
+            'active' => true,        // ← CAMBIAR is_active por active
+        ]);
+    }
         
         return $port;
     }
@@ -373,10 +394,10 @@ class ParanaExcelParser implements ManifestParserInterface
                 'status' => 'active',
                 'address' => $clientData['address'],
                 'phone' => $clientData['phone'],
-                'created_by_import' => true,
                 'created_by_user_id' => auth()->id()
             ]);
         }
+
 
         return $client;
     }

@@ -575,17 +575,20 @@ class GuaranCsvParser implements ManifestParserInterface
 
     protected function findOrCreatePort(string $code, string $defaultName): Port
     {
-        $port = Port::where('port_code', $code)->first();
+        $port = Port::where('code', $code)->first();
         
-        if (!$port) {
-            $port = Port::create([
-                'port_code' => $code,
-                'name' => $defaultName,
-                'country_id' => $code === 'PYASU' ? 2 : 1, // PY=2, AR=1
-                'is_active' => true,
-                'created_by_import' => true
-            ]);
-        }
+        $port = Port::where('code', $code)->first();
+    
+    if (!$port) {
+        $port = Port::create([
+            'code' => $code,
+            'name' => $defaultName,
+            'city' => $defaultName,  // ← AGREGAR ESTE CAMPO REQUERIDO
+            'country_id' => $code === 'ARBUE' ? 1 : 2, // AR=1, PY=2
+            'port_type' => 'river',  // ← AGREGAR TIPO DE PUERTO
+            'active' => true,        // ← CAMBIAR is_active por active
+        ]);
+    }
         
         return $port;
     }
@@ -605,14 +608,15 @@ class GuaranCsvParser implements ManifestParserInterface
                 'company_id' => auth()->user()->company_id,
                 'legal_name' => $clientData['name'],
                 'commercial_name' => $clientData['name'],
-                'tax_id' => 'GUARAN-' . uniqid(),
+                'tax_id' => 'PARANA-' . uniqid(),
                 'client_type' => 'business',
                 'status' => 'active',
                 'address' => $clientData['address'],
-                'created_by_import' => true,
+                'phone' => $clientData['phone'],
                 'created_by_user_id' => auth()->id()
             ]);
         }
+
 
         return $client;
     }

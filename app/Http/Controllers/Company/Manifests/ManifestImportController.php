@@ -18,9 +18,9 @@ use Exception;
  * auto-detección de formato y parsers especializados.
  * 
  * FORMATOS SOPORTADOS:
- * - KLine.DAT (ya integrado)
- * - PARANA.xlsx (pendiente)
- * - Guaran.csv (pendiente)
+ * - KLine.DAT (✅ integrado)
+ * - PARANA.xlsx (✅ integrado) 
+ * - Guaran.csv (✅ integrado)
  * - Login.xml (pendiente)
  * - TFP.txt (pendiente)
  * - CMSP.EDI (pendiente)
@@ -120,6 +120,15 @@ class ManifestImportController extends Controller
     }
 
     /**
+     * Mostrar historial de importaciones
+     */
+    public function history(Request $request)
+    {
+        // Por ahora retornamos vista simple, se puede expandir para mostrar logs de importación
+        return view('company.manifests.import-history');
+    }
+
+    /**
      * Manejar resultado de importación y generar respuesta apropiada
      */
     protected function handleImportResult(ManifestParseResult $result, string $fileName): \Illuminate\Http\RedirectResponse
@@ -189,15 +198,11 @@ class ManifestImportController extends Controller
             $message .= "🚢 Viaje creado: {$result->voyage->voyage_number}\n";
         }
         
-        $message .= "📊 Resumen:\n";
-        $message .= "• {$stats['shipments_count']} embarque(s)\n";
-        $message .= "• {$stats['bills_count']} conocimiento(s) de embarque\n";
-        $message .= "• {$stats['processed_items']} elemento(s) procesado(s)";
-
-        if ($stats['containers_count'] > 0) {
-            $message .= "\n• {$stats['containers_count']} contenedor(es)";
-        }
-
+        $message .= "📊 Estadísticas:\n";
+        $message .= "• Embarques procesados: {$stats['shipments']}\n";
+        $message .= "• Contenedores procesados: {$stats['containers']}\n";
+        $message .= "• BL procesados: {$stats['bills_of_lading']}\n";
+        
         return $message;
     }
 
@@ -214,19 +219,16 @@ class ManifestImportController extends Controller
             $message .= "🚢 Viaje creado: {$result->voyage->voyage_number}\n";
         }
         
-        $message .= "📊 Resumen:\n";
-        $message .= "• {$stats['processed_items']} elemento(s) procesado(s)\n";
-        $message .= "• {$stats['warnings_count']} advertencia(s)\n\n";
+        $message .= "📊 Estadísticas:\n";
+        $message .= "• Embarques procesados: {$stats['shipments']}\n";
+        $message .= "• Contenedores procesados: {$stats['containers']}\n";
+        $message .= "• BL procesados: {$stats['bills_of_lading']}\n\n";
         
         $message .= "⚠️ Advertencias encontradas:\n";
-        foreach (array_slice($result->warnings, 0, 3) as $warning) {
-            $message .= "• " . $warning . "\n";
+        foreach ($result->warnings as $warning) {
+            $message .= "• {$warning}\n";
         }
         
-        if (count($result->warnings) > 3) {
-            $message .= "• ... y " . (count($result->warnings) - 3) . " más";
-        }
-
         return $message;
     }
 
@@ -235,105 +237,13 @@ class ManifestImportController extends Controller
      */
     protected function buildErrorMessage(ManifestParseResult $result, string $fileName): string
     {
-        $stats = $result->getStatsSummary();
-        
         $message = "❌ Error al importar archivo '{$fileName}'.\n\n";
         
-        if ($stats['errors_count'] > 0) {
-            $message .= "Errores encontrados:\n";
-            foreach (array_slice($result->errors, 0, 3) as $error) {
-                $message .= "• " . $error . "\n";
-            }
-            
-            if (count($result->errors) > 3) {
-                $message .= "• ... y " . (count($result->errors) - 3) . " errores más";
-            }
+        $message .= "❌ Errores encontrados:\n";
+        foreach ($result->errors as $error) {
+            $message .= "• {$error}\n";
         }
-
-        $message .= "\n💡 Sugerencias:\n";
-        $message .= "• Verifique que el archivo tenga el formato correcto\n";
-        $message .= "• Revise que los datos estén completos\n";
-        $message .= "• Contacte al administrador si el problema persiste";
-
+        
         return $message;
-    }
-
-    /**
-     * Mostrar historial de importaciones
-     */
-    public function history(Request $request)
-    {
-        // TODO: Implementar historial de importaciones
-        // Por ahora, redirigir al índice de manifiestos
-        return redirect()->route('company.manifests.index')
-            ->with('info', 'Historial de importaciones: funcionalidad pendiente de implementación.');
-    }
-
-    /**
-     * Obtener información de formatos soportados (AJAX)
-     */
-    public function getSupportedFormats(): \Illuminate\Http\JsonResponse
-    {
-        try {
-            $formats = $this->parserFactory->getSupportedFormats();
-            $stats = $this->parserFactory->getFormatStatistics();
-
-            return response()->json([
-                'success' => true,
-                'formats' => $formats,
-                'statistics' => $stats
-            ]);
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Validar archivo antes de subir (AJAX)
-     */
-    public function validateFile(Request $request): \Illuminate\Http\JsonResponse
-    {
-        $request->validate([
-            'file' => 'required|file|max:10240'
-        ]);
-
-        try {
-            $file = $request->file('file');
-            $tempPath = $file->store('temp', 'local');
-            $fullPath = Storage::path($tempPath);
-
-            // Verificar si algún parser puede procesar el archivo
-            $canProcess = $this->parserFactory->canProcessFile($fullPath);
-            
-            // Limpiar archivo temporal
-            Storage::delete($tempPath);
-
-            if ($canProcess) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Archivo válido y procesable',
-                    'file_info' => [
-                        'name' => $file->getClientOriginalName(),
-                        'size' => $file->getSize(),
-                        'extension' => $file->getClientOriginalExtension()
-                    ]
-                ]);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Formato de archivo no soportado',
-                    'suggestion' => 'Verifique que el archivo sea de uno de los formatos soportados'
-                ], 422);
-            }
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Error al validar archivo: ' . $e->getMessage()
-            ], 500);
-        }
     }
 }

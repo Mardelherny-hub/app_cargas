@@ -569,20 +569,22 @@ class KlineDataParser implements ManifestParserInterface
             return null;
         }
 
-        $port = Port::where('port_code', $portCode)->first();
+        $port = Port::where('code', $portCode)->first();
         
         if (!$port) {
             // Crear puerto si no existe
-            $port = Port::create([
-                'port_code' => $portCode,
-                'name' => $this->getPortNameFromCode($portCode),
-                'country_id' => $this->getCountryFromPortCode($portCode),
-                'latitude' => 0, // Placeholder
-                'longitude' => 0, // Placeholder
-                'timezone' => 'America/Argentina/Buenos_Aires', // Default
-                'is_active' => true,
-                'created_by_import' => true
-            ]);
+            $port = Port::where('code', $code)->first();
+    
+    if (!$port) {
+        $port = Port::create([
+            'code' => $code,
+            'name' => $defaultName,
+            'city' => $defaultName,  // ← AGREGAR ESTE CAMPO REQUERIDO
+            'country_id' => $code === 'ARBUE' ? 1 : 2, // AR=1, PY=2
+            'port_type' => 'river',  // ← AGREGAR TIPO DE PUERTO
+            'active' => true,        // ← CAMBIAR is_active por active
+        ]);
+    }
             
             Log::info("Created new port: {$portCode} as {$type}");
         }
@@ -747,16 +749,17 @@ class KlineDataParser implements ManifestParserInterface
         if (!$client) {
             $client = Client::create([
                 'company_id' => auth()->user()->company_id,
-                'legal_name' => $clientInfo['name'],
-                'commercial_name' => $clientInfo['name'],
-                'tax_id' => $clientInfo['tax_id'] ?? 'KLINE-' . uniqid(),
+                'legal_name' => $clientData['name'],
+                'commercial_name' => $clientData['name'],
+                'tax_id' => 'PARANA-' . uniqid(),
                 'client_type' => 'business',
                 'status' => 'active',
-                'address' => $clientInfo['address'],
-                'created_by_import' => true,
+                'address' => $clientData['address'],
+                'phone' => $clientData['phone'],
                 'created_by_user_id' => auth()->id()
             ]);
         }
+
 
         return $client->id;
     }
