@@ -118,10 +118,10 @@ class ShipmentItemController extends Controller
         $shipment = Shipment::findOrFail($request->shipment_id);
 
         // Verificar acceso al shipment
-        if (!$this->canAccessCompany($shipment->company_id)) {
-            abort(403, 'No tiene permisos para agregar items a este shipment.');
+        $company = $this->getUserCompany();
+        if (!$company || !$this->canAccessCompany($company->id)) {
+            abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
-
         // Verificar si el usuario puede gestionar items de este shipment
         if (!$this->canManageShipmentItems($shipment)) {
             return redirect()->route('company.shipments.show', $shipment)

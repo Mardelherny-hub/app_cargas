@@ -277,7 +277,7 @@ class ParanaExcelParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($data['pol'], 'Buenos Aires');
         $destPort = $this->findOrCreatePort($data['pod'], 'Terminal Villeta');
 
-        $voyageNumber = 'TEST-4-PARANA-' . ($data['voyage_number'] ?: uniqid()) . '-' . now()->format('Ymd');
+        $voyageNumber = 'TEST-5-PARANA-' . ($data['voyage_number'] ?: uniqid()) . '-' . now()->format('Ymd');
 
         return Voyage::create([
             'company_id' => $companyId,
@@ -387,30 +387,31 @@ class ParanaExcelParser implements ManifestParserInterface
         return $port;
     }
 
-    protected function findOrCreateClient(array $clientData): ?Client
+    protected function findOrCreateClient(array $clientData, int $companyId): ?Client
     {
         if (empty($clientData['name'])) {
             return null;
         }
 
-        $client = Client::where('legal_name', $clientData['name'])
-            ->first();
+        // Buscar cliente existente por nombre
+        $client = Client::where('legal_name', $clientData['name'])->first();
 
-        if (!$client) {
-            $client = Client::create([
-                'legal_name' => $clientData['name'],
-                'commercial_name' => $clientData['name'],
-                'tax_id' => substr(uniqid(), -8),
-                'client_type' => 'business',
-                'status' => 'active',
-                'address' => $clientData['address'],
-                'phone' => $clientData['phone'],
-                'created_by_user_id' => auth()->id()
-            ]);
+        if ($client) {
+            return $client; // Cliente ya existe, devolverlo
         }
 
-
-        return $client;
+        // Crear nuevo cliente con campos correctos
+        return Client::create([
+            'legal_name' => $clientData['name'],
+            'commercial_name' => $clientData['name'],
+            'tax_id' => substr(uniqid(), -8), // 8 caracteres únicos
+            'country_id' => 1, // Argentina por defecto
+            'document_type_id' => 1, // Tipo por defecto
+            'status' => 'active',
+            'address' => $clientData['address'] ?? null,
+            'created_by_company_id' => $companyId,
+            'verified_at' => now()
+        ]);
     }
 
     protected function parseWeight(?string $weight): float

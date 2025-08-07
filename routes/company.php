@@ -370,6 +370,7 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     // === ENVÍO A ADUANA - ANTES DE RUTAS CON PARÁMETROS ===
     Route::prefix('customs')->name('customs.')->group(function () {
         Route::get('/', [ManifestCustomsController::class, 'index'])->name('index');
+            Route::post('/send-batch', [ManifestCustomsController::class, 'sendBatch'])->name('sendBatch'); 
         Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
         Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
         Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');

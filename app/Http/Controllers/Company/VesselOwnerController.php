@@ -22,7 +22,8 @@ class VesselOwnerController extends Controller
      */
     public function index(Request $request)
     {
-        $companyId = $this->getUserCompanyId();
+        $company = $this->getUserCompany();
+        $companyId = $company ? $company->id : null;
         if (is_null($companyId)) {
             abort(403, 'No autorizado: usuario sin empresa asignada.');
         }

@@ -353,6 +353,9 @@ class ManifestCustomsController extends Controller
     private function getCustomsStats(): array
     {
         $companyId = auth()->user()->company_id;
+        
+        // Ensure company_id is an integer, default to 0 if null
+        $companyId = (int) $companyId;
 
         return [
             'total_voyages' => Voyage::where('company_id', $companyId)

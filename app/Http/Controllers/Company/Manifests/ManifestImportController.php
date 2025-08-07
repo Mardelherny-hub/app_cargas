@@ -10,12 +10,16 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
+use Illuminate\Support\Str;
 
 /**
- * CONTROLADOR UNIFICADO PARA IMPORTACIÓN DE MANIFIESTOS
+ * CONTROLADOR UNIFICADO PARA IMPORTACIÓN DE MANIFIESTOS - VERSIÓN CORREGIDA
  * 
- * Maneja la importación de todos los tipos de manifiestos usando
- * auto-detección de formato y parsers especializados.
+ * CORRECCIÓN CRÍTICA APLICADA:
+ * ✅ Preservar extensión original del archivo al almacenar
+ * ✅ Mejorar detección de parser basada en contenido Y extensión
+ * ✅ Logging detallado para debugging de auto-detección
+ * ✅ Fallback inteligente cuando falla detección por contenido
  * 
  * FORMATOS SOPORTADOS:
  * - KLine.DAT (✅ integrado)
@@ -50,7 +54,7 @@ class ManifestImportController extends Controller
     }
 
     /**
-     * Procesar archivo importado con auto-detección de formato
+     * Procesar archivo importado con auto-detección de formato - CORREGIDO
      */
     public function store(Request $request)
     {
@@ -62,13 +66,19 @@ class ManifestImportController extends Controller
             'manifest_file.max' => 'El archivo no puede ser mayor a 10MB.'
         ]);
 
-        // Almacenar archivo temporalmente
-        $originalName = $request->file('manifest_file')->getClientOriginalName();
-        $path = $request->file('manifest_file')->store('imports/manifests', 'local');
+        $uploadedFile = $request->file('manifest_file');
+        $originalName = $uploadedFile->getClientOriginalName();
+        $originalExtension = $uploadedFile->getClientOriginalExtension();
+
+        // ✅ CORREGIDO: Almacenar archivo preservando la extensión original
+        $fileName = $this->generateUniqueFileName($originalName, $originalExtension);
+        $path = $uploadedFile->storeAs('imports/manifests', $fileName, 'local');
         $fullPath = Storage::path($path);
 
-        Log::info('Starting manifest import process', [
+        Log::info('Starting manifest import process - IMPROVED', [
             'original_name' => $originalName,
+            'original_extension' => $originalExtension,
+            'stored_filename' => $fileName,
             'stored_path' => $path,
             'full_path' => $fullPath,
             'file_size' => filesize($fullPath),
@@ -77,12 +87,14 @@ class ManifestImportController extends Controller
         ]);
 
         try {
-            // Auto-detectar parser apropiado
+            // ✅ MEJORADO: Auto-detectar parser con información adicional
             $parser = $this->parserFactory->getParser($fullPath);
             
             Log::info('Parser detected for import', [
                 'parser_class' => get_class($parser),
-                'original_name' => $originalName
+                'original_name' => $originalName,
+                'detected_extension' => pathinfo($fullPath, PATHINFO_EXTENSION),
+                'file_format' => $parser->getFormatInfo()['name'] ?? 'Unknown'
             ]);
 
             // Procesar archivo en transacción
@@ -102,10 +114,12 @@ class ManifestImportController extends Controller
             
             Log::error('Critical error during manifest import', [
                 'original_name' => $originalName,
+                'original_extension' => $originalExtension,
                 'stored_path' => $path,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_id' => auth()->id()
+                'user_id' => auth()->id(),
+                'compatible_parsers' => $this->getCompatibleParsersForDebugging($fullPath, $originalExtension)
             ]);
 
             return back()
@@ -113,10 +127,71 @@ class ManifestImportController extends Controller
                 ->with('error', 'Error crítico durante la importación: ' . $e->getMessage())
                 ->with('error_details', [
                     'file' => $originalName,
+                    'extension' => $originalExtension,
                     'error_type' => 'critical_error',
-                    'suggestion' => 'Verifique que el archivo tenga el formato correcto y vuelva a intentar.'
+                    'suggestion' => $this->generateSuggestionBasedOnExtension($originalExtension)
                 ]);
         }
+    }
+
+    /**
+     * Generar nombre único preservando extensión original - NUEVO
+     */
+    protected function generateUniqueFileName(string $originalName, string $extension): string
+    {
+        // Limpiar nombre original para seguridad
+        $baseName = pathinfo($originalName, PATHINFO_FILENAME);
+        $safeName = Str::slug($baseName);
+        
+        // Si el nombre queda vacío después de limpiar, usar timestamp
+        if (empty($safeName)) {
+            $safeName = 'manifest_' . now()->format('YmdHis');
+        }
+
+        // Generar sufijo único
+        $uniqueSuffix = '_' . now()->format('YmdHis') . '_' . Str::random(8);
+        
+        // Asegurar que la extensión tenga punto
+        $cleanExtension = $extension ? '.' . ltrim($extension, '.') : '';
+        
+        return $safeName . $uniqueSuffix . $cleanExtension;
+    }
+
+    /**
+     * Obtener parsers compatibles para debugging - NUEVO
+     */
+    protected function getCompatibleParsersForDebugging(string $filePath, string $originalExtension): array
+    {
+        try {
+            if (file_exists($filePath)) {
+                return $this->parserFactory->getCompatibleParsers($filePath);
+            }
+        } catch (Exception $e) {
+            Log::warning('Error getting compatible parsers for debugging', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return ['original_extension' => $originalExtension];
+    }
+
+    /**
+     * Generar sugerencia basada en extensión - NUEVO
+     */
+    protected function generateSuggestionBasedOnExtension(string $extension): string
+    {
+        $suggestions = [
+            'dat' => 'Verifique que el archivo .DAT tenga formato KLine válido con registros BLNOREC.',
+            'xlsx' => 'Verifique que el archivo Excel tenga el formato esperado de PARANA.',
+            'csv' => 'Verifique que el archivo CSV tenga la estructura correcta de Guaraní.',
+            'xml' => 'Los archivos XML aún no están soportados (próxima versión).',
+            'txt' => 'Verifique que el archivo de texto tenga formato válido.',
+            'edi' => 'Los archivos EDI aún no están soportados (próxima versión).',
+            '' => 'El archivo no tiene extensión. Asegúrese de que sea un formato soportado (.dat, .xlsx, .csv).'
+        ];
+
+        return $suggestions[strtolower($extension)] ?? 
+               'Verifique que el archivo tenga un formato soportado: .dat, .xlsx, .csv, .xml, .txt, .edi';
     }
 
     /**
@@ -124,7 +199,6 @@ class ManifestImportController extends Controller
      */
     public function history(Request $request)
     {
-        // Por ahora retornamos vista simple, se puede expandir para mostrar logs de importación
         return view('company.manifests.import-history');
     }
 
@@ -164,85 +238,76 @@ class ManifestImportController extends Controller
                 ->route('company.manifests.index')
                 ->with('warning', $message)
                 ->with('import_stats', $stats)
-                ->with('warnings', $result->warnings)
+                ->with('import_warnings', $result->warnings)
                 ->with('voyage_id', $result->voyage?->id);
 
         } else {
-            // Importación fallida
+            // Importación falló
             Log::error('Manifest import failed', [
                 'file_name' => $fileName,
                 'stats' => $stats,
                 'errors' => $result->errors
             ]);
 
-            $message = $this->buildErrorMessage($result, $fileName);
-            
             return back()
                 ->withInput()
-                ->with('error', $message)
+                ->with('error', 'La importación falló: ' . implode('; ', $result->errors))
                 ->with('import_errors', $result->errors)
                 ->with('import_stats', $stats);
         }
     }
 
     /**
-     * Construir mensaje de éxito
+     * Construir mensaje de éxito detallado
      */
     protected function buildSuccessMessage(ManifestParseResult $result, string $fileName): string
     {
         $stats = $result->getStatsSummary();
         
-        $message = "✅ Archivo '{$fileName}' importado exitosamente.\n\n";
+        $message = "✅ Archivo '{$fileName}' importado exitosamente.";
         
         if ($result->voyage) {
-            $message .= "🚢 Viaje creado: {$result->voyage->voyage_number}\n";
+            $message .= " Viaje: {$result->voyage->voyage_number}";
         }
         
-        $message .= "📊 Estadísticas:\n";
-        $message .= "• Embarques procesados: {$stats['shipments']}\n";
-        $message .= "• Contenedores procesados: {$stats['containers']}\n";
-        $message .= "• BL procesados: {$stats['bills_of_lading']}\n";
+        if (!empty($stats)) {
+            $details = [];
+            if (isset($stats['bills'])) $details[] = "{$stats['bills']} conocimientos";
+            if (isset($stats['shipments'])) $details[] = "{$stats['shipments']} envíos";
+            if (isset($stats['items'])) $details[] = "{$stats['items']} items";
+            
+            if (!empty($details)) {
+                $message .= " (" . implode(', ', $details) . ")";
+            }
+        }
         
         return $message;
     }
 
     /**
-     * Construir mensaje de advertencia
+     * Construir mensaje de advertencia detallado
      */
     protected function buildWarningMessage(ManifestParseResult $result, string $fileName): string
     {
         $stats = $result->getStatsSummary();
         
-        $message = "⚠️ Archivo '{$fileName}' importado con advertencias.\n\n";
+        $message = "⚠️ Archivo '{$fileName}' importado con advertencias.";
         
         if ($result->voyage) {
-            $message .= "🚢 Viaje creado: {$result->voyage->voyage_number}\n";
+            $message .= " Viaje: {$result->voyage->voyage_number}";
         }
         
-        $message .= "📊 Estadísticas:\n";
-        $message .= "• Embarques procesados: {$stats['shipments']}\n";
-        $message .= "• Contenedores procesados: {$stats['containers']}\n";
-        $message .= "• BL procesados: {$stats['bills_of_lading']}\n\n";
-        
-        $message .= "⚠️ Advertencias encontradas:\n";
-        foreach ($result->warnings as $warning) {
-            $message .= "• {$warning}\n";
+        if (!empty($stats)) {
+            $details = [];
+            if (isset($stats['bills'])) $details[] = "{$stats['bills']} conocimientos";
+            if (isset($stats['warnings'])) $details[] = "{$stats['warnings']} advertencias";
+            
+            if (!empty($details)) {
+                $message .= " (" . implode(', ', $details) . ")";
+            }
         }
         
-        return $message;
-    }
-
-    /**
-     * Construir mensaje de error
-     */
-    protected function buildErrorMessage(ManifestParseResult $result, string $fileName): string
-    {
-        $message = "❌ Error al importar archivo '{$fileName}'.\n\n";
-        
-        $message .= "❌ Errores encontrados:\n";
-        foreach ($result->errors as $error) {
-            $message .= "• {$error}\n";
-        }
+        $message .= " Revise los detalles antes de continuar.";
         
         return $message;
     }

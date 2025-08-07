@@ -40,7 +40,7 @@ class WebserviceController extends Controller
     public function index()
     {
         // 1. Verificar permisos básicos (company-admin o user con empresa)
-        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+        if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
             abort(403, 'No tiene permisos para acceder a webservices.');
         }
 
@@ -85,7 +85,7 @@ class WebserviceController extends Controller
 public function send(Request $request)
 {
     // 1. Validación básica de permisos
-    if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+    if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
         abort(403, 'No tiene permisos para enviar manifiestos.');
     }
 
@@ -992,7 +992,7 @@ private function getTransfersForWebservice(Company $company): array
     public function processSend(Request $request)
     {
         // 1. Validación básica de permisos
-        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+        if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
             abort(403, 'No tiene permisos para enviar manifiestos.');
         }
 
@@ -2204,7 +2204,7 @@ private function getAvailableBarges(Company $company): \Illuminate\Support\Colle
     public function process(Request $request)
     {
         // 1. Validación básica de permisos
-        if (!$this->canPerform('webservices.') && !$this->hasRole('user')) {
+        if (!$this->canPerform('webservices.') && !$this->isUser()) {
             abort(403, 'No tiene permisos para consultar webservices.');
         }
 
@@ -3080,7 +3080,7 @@ public function retryTransaction(Request $request, WebserviceTransaction $webser
 public function showQueryForm(Request $request)
 {
     // 1. Validación básica de permisos
-    if (!$this->canPerform('webservices.') && !$this->hasRole('user')) {
+    if (!$this->canPerform('webservices.') && !$this->isUser()) {
         abort(403, 'No tiene permisos para consultar webservices.');
     }
 
@@ -4003,7 +4003,7 @@ public function downloadXml(WebserviceTransaction $webservice)
      */
     public function showImport()
     {
-        if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+        if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
             abort(403, 'No tiene permisos para importar manifiestos.');
         }
 
@@ -4100,7 +4100,7 @@ public function processPendingTransaction(WebserviceTransaction $webservice)
     ]);
 
     // 1. Validaciones básicas
-    if (!$this->canPerform('manage_webservices') && !$this->hasRole('user')) {
+    if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
         abort(403, 'No tiene permisos para procesar transacciones.');
     }
 
