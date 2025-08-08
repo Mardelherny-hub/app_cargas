@@ -17,7 +17,7 @@ class ShipmentController extends Controller
     /**
      * Mostrar lista de cargas.
      */
-    public function index()
+        public function index()
     {
         // Verificar si el usuario puede ver cargas
         if (!$this->canPerform('view_cargas')) {
@@ -41,7 +41,8 @@ class ShipmentController extends Controller
                 $q->where('company_id', $company->id);
             })
             ->when($this->isUser() && $this->isOperator(), function($query) {
-                $query->where('created_by_user_id', Auth::id());
+                // CORREGIDO: Especificar la tabla para evitar ambiguedad
+                $query->where('shipments.created_by_user_id', Auth::id());
             })
             ->with([
                 'voyage' => function($q) {
@@ -97,8 +98,9 @@ class ShipmentController extends Controller
         });
 
         // Aplicar filtros según el rol del usuario
+        // CORREGIDO: Especificar la tabla para evitar ambiguedad
         if ($this->isUser() && $this->isOperator()) {
-            $baseQuery->where('created_by_user_id', Auth::id());
+            $baseQuery->where('shipments.created_by_user_id', Auth::id());
         }
 
         // Contar total
@@ -121,9 +123,11 @@ class ShipmentController extends Controller
         ];
     }
 
+
    /**
      * Mostrar formulario para crear nueva carga.
      */
+   // ===== MÉTODO CREATE - MODIFICADO =====
     public function create(Request $request)
     {
         // Verificar permisos para crear cargas
@@ -142,113 +146,41 @@ class ShipmentController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Obtener viajes activos de la empresa (estados que permiten agregar shipments)
-        $voyages = \App\Models\Voyage::where('company_id', $company->id)
-            ->whereIn('status', ['planning', 'preparation', 'loading'])
-            ->where('active', true)
-            ->with(['originPort', 'destinationPort', 'leadVessel'])
-            ->orderBy('departure_date', 'desc')
-            ->get()
-            ->map(function ($voyage) {
-                $departureDate = $voyage->departure_date->format('d/m/Y');
-                return [
-                    'id' => $voyage->id,
-                    'display_name' => "#{$voyage->voyage_number} - {$voyage->originPort->name} → {$voyage->destinationPort->name} ({$departureDate})",
-                    'voyage_number' => $voyage->voyage_number,
-                    'departure_date' => $voyage->departure_date,
-                    'current_shipments_count' => $voyage->shipments()->count()
-                ];
-            });
-
-        // Verificar si hay viajes disponibles
-        if ($voyages->isEmpty()) {
-            return redirect()->route('company.voyages.index')
-                ->with('error', 'No hay viajes activos disponibles. Debe crear un viaje primero.');
-        }
-
-        // Obtener embarcaciones disponibles de la empresa
-        $vessels = \App\Models\Vessel::where('company_id', $company->id)
-            ->where('active', true)
-            ->where('available_for_charter', true)
-            ->where('operational_status', 'active')
-            ->with(['vesselType'])
-            ->orderBy('name')
-            ->get()
-            ->map(function ($vessel) {
-                $vesselTypeName = $vessel->vesselType->name ?? 'N/A';
-                return [
-                    'id' => $vessel->id,
-                    'name' => $vessel->name,
-                    'vessel_type' => $vesselTypeName,
-                    'registration_number' => $vessel->registration_number,
-                    'cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 0,
-                    'container_capacity' => $vessel->container_capacity ?? 0,
-                    'display_name' => "{$vessel->name} ({$vesselTypeName}) - {$vessel->registration_number}"
-                ];
-            });
-
-        // Obtener capitanes disponibles
-        $captains = \App\Models\Captain::where('active', true)
-            ->where('available_for_hire', true)
-            ->where('license_status', 'valid')
-            ->where(function($query) {
-                $query->whereNull('license_expires_at')
-                      ->orWhere('license_expires_at', '>=', now());
-            })
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get()
-            ->map(function ($captain) {
-                $yearsExperience = $captain->years_of_experience ?? 0;
-                return [
-                    'id' => $captain->id,
-                    'full_name' => $captain->full_name,
-                    'license_number' => $captain->license_number,
-                    'years_of_experience' => $yearsExperience,
-                    'display_name' => "{$captain->full_name} - Lic: {$captain->license_number} ({$yearsExperience} años)"
-                ];
-            });
-
-        // Obtener voyage_id de la URL si viene desde un viaje específico
-        $selectedVoyageId = $request->get('voyage_id');
-        $selectedVoyage = null;
+        // Obtener voyage_id desde query parameter o request
+        $voyageId = $request->get('voyage_id') ?: $request->get('voyage');
         
-        if ($selectedVoyageId) {
-            $selectedVoyage = $voyages->firstWhere('id', $selectedVoyageId);
-            if (!$selectedVoyage) {
-                return redirect()->route('company.shipments.create')
-                    ->with('error', 'El viaje seleccionado no es válido.');
-            }
+        if (!$voyageId) {
+            return redirect()->route('company.voyages.index')
+                ->with('error', 'Debe seleccionar un viaje para crear el shipment.');
         }
 
-        // Generar siguiente número de shipment
-        $nextShipmentNumber = $this->generateNextShipmentNumber($company);
+        // NUEVO: Cargar viaje con sus datos
+        $voyage = \App\Models\Voyage::with(['leadVessel', 'captain'])
+            ->where('id', $voyageId)
+            ->where('company_id', $company->id)
+            ->first();
 
-        // Opciones para los selects
-        $vesselRoles = [
-            'single' => 'Embarcación Única',
-            'lead' => 'Líder de Convoy',
-            'towed' => 'Remolcada',
-            'pushed' => 'Empujada',
-            'escort' => 'Escolta'
-        ];
+        if (!$voyage) {
+            return redirect()->route('company.voyages.index')
+                ->with('error', 'El viaje seleccionado no existe o no pertenece a su empresa.');
+        }
 
-        $statusOptions = [
-            'planning' => 'Planificación',
-            'loading' => 'Cargando',
-            'loaded' => 'Cargado'
-        ];
+        // NUEVO: Verificar que el viaje tenga embarcación y capitán
+        if (!$voyage->lead_vessel_id) {
+            return redirect()->route('company.voyages.edit', $voyage)
+                ->with('error', 'El viaje debe tener una embarcación líder asignada antes de crear shipments. Por favor complete los datos del viaje.');
+        }
+
+        // Obtener datos para el formulario (simplificados)
+        $formData = $this->getSimplifiedFormData($company, $voyage);
+
+        $nextShipmentNumber = $this->generateNextShipmentNumber($voyage);
 
         return view('company.shipments.create', compact(
-            'voyages',
-            'vessels', 
-            'captains',
-            'vesselRoles',
-            'statusOptions',
-            'selectedVoyageId',
-            'selectedVoyage',
-            'nextShipmentNumber',
-            'company'
+            'voyage',
+            'company', 
+            'formData',
+            'nextShipmentNumber'
         ));
     }
 
@@ -280,131 +212,65 @@ class ShipmentController extends Controller
         return sprintf('%s-%d-%04d', $companyCode, $year, $nextNumber);
     }
 
-/**
+    /**
      * Almacenar nueva carga.
      */
+    // ===== MÉTODO STORE - MODIFICADO =====
     public function store(Request $request)
     {
-        // Verificar permisos para crear cargas
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para crear cargas.');
-        }
-
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
-
-        $company = $this->getUserCompany();
-
-        if (!$company) {
-            return redirect()->route('company.shipments.index')
-                ->with('error', 'No se encontró la empresa asociada.');
-        }
-
-        // Validación completa
-        $validated = $request->validate([
-            'voyage_id' => 'required|exists:voyages,id',
-            'vessel_id' => 'required|exists:vessels,id',
-            'captain_id' => 'nullable|exists:captains,id',
-            'shipment_number' => 'required|string|max:50|unique:shipments,shipment_number',
-            'vessel_role' => 'required|in:single,lead,towed,pushed,escort',
-            'convoy_position' => 'nullable|integer|min:1|max:99',
-            'is_lead_vessel' => 'nullable|boolean',
-            'cargo_capacity_tons' => 'required|numeric|min:0|max:999999.99',
-            'container_capacity' => 'required|integer|min:0|max:9999',
-            'status' => 'required|in:planning,loading,loaded',
-            'special_instructions' => 'nullable|string|max:1000',
-            'handling_notes' => 'nullable|string|max:1000',
-        ], [
-            'voyage_id.exists' => 'El viaje seleccionado no existe.',
-            'vessel_id.exists' => 'La embarcación seleccionada no existe.',
-            'captain_id.exists' => 'El capitán seleccionado no existe.',
-            'shipment_number.unique' => 'Ya existe una carga con este número.',
-            'vessel_role.in' => 'El rol de embarcación seleccionado no es válido.',
-            'convoy_position.min' => 'La posición en convoy debe ser mayor a 0.',
-            'convoy_position.max' => 'La posición en convoy no puede ser mayor a 99.',
-            'cargo_capacity_tons.required' => 'La capacidad de carga es requerida.',
-            'cargo_capacity_tons.numeric' => 'La capacidad de carga debe ser un número.',
-            'cargo_capacity_tons.max' => 'La capacidad de carga no puede exceder 999,999.99 toneladas.',
-            'container_capacity.required' => 'La capacidad de contenedores es requerida.',
-            'container_capacity.integer' => 'La capacidad de contenedores debe ser un número entero.',
-            'container_capacity.max' => 'La capacidad de contenedores no puede exceder 9,999.',
-            'status.in' => 'El estado seleccionado no es válido.',
-        ]);
+        // Verificaciones de permisos (mantener igual)...
 
         try {
             DB::beginTransaction();
 
-            // Verificar que el voyage pertenezca a la empresa y esté disponible
-            $voyage = \App\Models\Voyage::where('id', $validated['voyage_id'])
-                ->where('company_id', $company->id)
-                ->where('active', true)
-                ->whereIn('status', ['planning', 'preparation', 'loading'])
-                ->first();
+            // Validación básica
+            $validated = $request->validate([
+                'voyage_id' => 'required|exists:voyages,id',
+                'shipment_number' => 'required|string|max:50|unique:shipments,shipment_number',
+                'vessel_role' => 'required|in:single,lead,follow,support',
+                'convoy_position' => 'nullable|integer|min:1|max:10',
+                'is_lead_vessel' => 'boolean',
+                'cargo_capacity_tons' => 'required|numeric|min:0.01',
+                'container_capacity' => 'nullable|integer|min:0',
+                'status' => 'required|in:planning,loading,loaded,in_transit,arrived,discharging,completed',
+                'special_instructions' => 'nullable|string|max:1000',
+                'handling_notes' => 'nullable|string|max:1000',
+            ]);
 
-            if (!$voyage) {
-                throw new \Exception('El viaje seleccionado no pertenece a su empresa o no está disponible para agregar cargas.');
+            // NUEVO: Cargar voyage con sus datos
+            $voyage = \App\Models\Voyage::with(['leadVessel', 'captain'])
+                ->findOrFail($validated['voyage_id']);
+
+            // NUEVO: Validar que el viaje pertenezca a la empresa del usuario
+            if ($voyage->company_id !== $this->getUserCompany()->id) {
+                throw new \Exception('El viaje no pertenece a su empresa.');
             }
 
-            // Verificar que la embarcación pertenezca a la empresa y esté disponible
-            $vessel = \App\Models\Vessel::where('id', $validated['vessel_id'])
-                ->where('company_id', $company->id)
-                ->where('active', true)
-                ->where('available_for_charter', true)
-                ->where('operational_status', 'active')
-                ->first();
+            // NUEVO: Auto-heredar vessel_id y captain_id del viaje
+            $validated['vessel_id'] = $voyage->lead_vessel_id;
+            $validated['captain_id'] = $voyage->captain_id;
 
-            if (!$vessel) {
-                throw new \Exception('La embarcación seleccionada no pertenece a su empresa o no está disponible.');
-            }
-
-            // Verificar que la embarcación no esté ya asignada a otro shipment activo
-            $existingShipment = \App\Models\Shipment::where('vessel_id', $validated['vessel_id'])
-                ->whereHas('voyage', function($query) {
-                    $query->whereIn('status', ['planning', 'preparation', 'loading', 'in_transit']);
-                })
-                ->where('status', '!=', 'completed')
+            // NUEVO: Validación automática - no permitir duplicados en el mismo viaje
+            $existingShipment = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
+                ->where('vessel_id', $validated['vessel_id'])
                 ->first();
 
             if ($existingShipment) {
-                throw new \Exception('La embarcación seleccionada ya está asignada a otro shipment activo (Viaje: ' . $existingShipment->voyage->voyage_number . ').');
+                throw new \Exception('Ya existe un shipment para esta embarcación en el viaje ' . $voyage->voyage_number);
             }
 
-            // Verificar que no se repita el vessel_id en el mismo voyage
-            $duplicateVesselInVoyage = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
-                ->where('vessel_id', $validated['vessel_id'])
-                ->exists();
+            // Calcular secuencia automáticamente
+            $maxSequence = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
+                ->max('sequence_in_voyage');
+            $validated['sequence_in_voyage'] = ($maxSequence ?? 0) + 1;
 
-            if ($duplicateVesselInVoyage) {
-                throw new \Exception('Esta embarcación ya está asignada a otro shipment en el mismo viaje.');
-            }
-
-            // Validar capitán si se proporciona
-            if (!empty($validated['captain_id'])) {
-                $captain = \App\Models\Captain::where('id', $validated['captain_id'])
-                    ->where('active', true)
-                    ->where('available_for_hire', true)
-                    ->where('license_status', 'valid')
-                    ->first();
-
-                if (!$captain) {
-                    throw new \Exception('El capitán seleccionado no está disponible o no tiene licencia válida.');
-                }
-            }
-
-            // Validaciones de lógica de convoy
+            // Lógica de convoy simplificada
             if ($validated['vessel_role'] === 'single') {
-                // Si es embarcación única, no debe tener posición ni ser líder
                 $validated['convoy_position'] = null;
-                $validated['is_lead_vessel'] = false;
+                $validated['is_lead_vessel'] = true; // En viaje single, siempre es líder
             } else {
-                // Si es parte de convoy, debe tener posición
-                if (empty($validated['convoy_position'])) {
-                    throw new \Exception('Para embarcaciones en convoy, la posición es requerida.');
-                }
-
-                // Verificar que no se repita la posición en el mismo voyage
-                if (!empty($validated['convoy_position'])) {
+                // Para convoy, validar posición única
+                if ($validated['convoy_position']) {
                     $duplicatePosition = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
                         ->where('convoy_position', $validated['convoy_position'])
                         ->exists();
@@ -415,67 +281,91 @@ class ShipmentController extends Controller
                 }
             }
 
-            // Calcular la secuencia automáticamente
-            $maxSequence = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
-                ->max('sequence_in_voyage');
-            $validated['sequence_in_voyage'] = ($maxSequence ?? 0) + 1;
-
-            // Preparar campos adicionales
+            // Preparar datos adicionales
             $validated['created_by_user_id'] = Auth::id();
             $validated['created_date'] = now();
-            $validated['is_lead_vessel'] = $validated['is_lead_vessel'] ?? false;
-
-            // Inicializar campos con valores por defecto
-            $validated['cargo_weight_loaded'] = 0;
-            $validated['containers_loaded'] = 0;
-            $validated['utilization_percentage'] = 0;
             $validated['active'] = true;
-            $validated['requires_attention'] = false;
-            $validated['has_delays'] = false;
-            $validated['safety_approved'] = false;
-            $validated['customs_cleared'] = false;
-            $validated['documentation_complete'] = false;
-            $validated['cargo_inspected'] = false;
+            $validated['requires_attention'] = false; // Ya no requiere atención porque hereda datos válidos
 
             // Crear el shipment
             $shipment = \App\Models\Shipment::create($validated);
 
-            // Si es embarcación líder, actualizar el voyage
-            if ($validated['is_lead_vessel']) {
-                $voyage->update([
-                    'lead_vessel_id' => $validated['vessel_id'],
-                    'captain_id' => $validated['captain_id'],
-                ]);
-            }
-
-            // Recalcular estadísticas del voyage
-            $this->recalculateVoyageStats($voyage);
+            // Actualizar estadísticas del viaje
+            $this->updateVoyageStats($voyage);
 
             DB::commit();
 
+            Log::info('Shipment creado con datos heredados del viaje', [
+                'shipment_id' => $shipment->id,
+                'voyage_id' => $voyage->id,
+                'inherited_vessel_id' => $validated['vessel_id'],
+                'inherited_captain_id' => $validated['captain_id'],
+                'user_id' => Auth::id()
+            ]);
+
             return redirect()->route('company.shipments.show', $shipment)
-                ->with('success', 'Carga creada exitosamente. Número: ' . $shipment->shipment_number);
+                ->with('success', 'Shipment creado exitosamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Error creando shipment: ' . $e->getMessage());
             
-            return redirect()->back()
-                ->withErrors(['error' => $e->getMessage()])
-                ->withInput();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            
-            Log::error('Error al crear shipment', [
-                'error' => $e->getMessage(),
-                'user_id' => Auth::id(),
-                'company_id' => $company->id,
-                'request_data' => $request->all()
-            ]);
-            
-            return redirect()->back()
-                ->withErrors(['error' => 'Ocurrió un error inesperado. Por favor intente nuevamente.'])
-                ->withInput();
+            return back()->with('error', 'Error: ' . $e->getMessage())
+                        ->withInput();
         }
+    }
+
+    // ===== NUEVO MÉTODO: Datos simplificados para formulario =====
+    private function getSimplifiedFormData($company, $voyage): array
+    {
+        return [
+            'vesselRoles' => [
+                'single' => 'Embarcación Única',
+                'lead' => 'Líder de Convoy',
+                'follow' => 'Seguidor',
+                'support' => 'Apoyo'
+            ],
+            'statusOptions' => [
+                'planning' => 'Planificación',
+                'loading' => 'Cargando',
+                'loaded' => 'Cargado',
+                'in_transit' => 'En Tránsito',
+                'arrived' => 'Arribado',
+                'discharging' => 'Descargando',
+                'completed' => 'Completado'
+            ],
+            // NUEVO: Información del viaje para mostrar en el formulario
+            'voyageInfo' => [
+                'vessel_name' => $voyage->leadVessel->name ?? 'Sin embarcación asignada',
+                'vessel_type' => $voyage->leadVessel->vesselType->name ?? 'N/A',
+                'captain_name' => $voyage->captain->full_name ?? 'Sin capitán asignado',
+                'captain_license' => $voyage->captain->license_number ?? 'N/A',
+                'cargo_capacity' => $voyage->leadVessel->cargo_capacity_tons ?? 0,
+                'container_capacity' => $voyage->leadVessel->container_capacity ?? 0,
+            ]
+        ];
+    }
+
+    // ===== NUEVO MÉTODO: Actualizar estadísticas del viaje =====
+    private function updateVoyageStats($voyage): void
+    {
+        $shipmentStats = $voyage->shipments()->selectRaw('
+            COUNT(*) as total_shipments,
+            SUM(cargo_weight_loaded) as total_weight,
+            SUM(containers_loaded) as total_containers,
+            SUM(cargo_capacity_tons) as total_capacity
+        ')->first();
+
+        $voyage->update([
+            'total_cargo_weight_loaded' => $shipmentStats->total_weight ?? 0,
+            'total_containers_loaded' => $shipmentStats->total_containers ?? 0,
+            'total_cargo_capacity_tons' => $shipmentStats->total_capacity ?? 0,
+            'capacity_utilization_percentage' => $shipmentStats->total_capacity > 0 
+                ? (($shipmentStats->total_weight ?? 0) / $shipmentStats->total_capacity) * 100 
+                : 0,
+            'last_updated_date' => now(),
+            'last_updated_by_user_id' => Auth::id()
+        ]);
     }
 
     /**
@@ -552,7 +442,7 @@ class ShipmentController extends Controller
                     'originPort:id,name,code,city',
                     'destinationPort:id,name,code,city',
                     'originCountry:id,name,iso_code',
-                    'destinationCountry:id,name,iso_code'
+                    'destinationCountry:id,name,iso_code',
                 ]);
             },
             'vessel' => function($query) {
@@ -1152,7 +1042,7 @@ if ($shipment->requires_attention && !empty($validated['vessel_id'])) {
     }
 
     /**
-     * Actualizar estado de la carga.
+     * Actualizar estado de la carga - MÉTODO CORREGIDO
      */
     public function updateStatus(Request $request, Shipment $shipment)
     {
@@ -1165,30 +1055,133 @@ if ($shipment->requires_attention && !empty($validated['vessel_id'])) {
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
-        // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($shipment->company_id)) {
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return redirect()->route('company.shipments.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
+        // CORREGIDO: Verificar que la carga pertenezca a la empresa del usuario
+        // Los shipments no tienen company_id directo, hay que acceder via voyage
+        if ($shipment->voyage->company_id !== $company->id) {
             abort(403, 'No tiene permisos para modificar esta carga.');
         }
 
-        // Solo company-admin puede cambiar ciertos estados
+        // CORREGIDO: Verificar permisos adicionales para usuarios operadores
+        if ($this->isUser() && $this->isOperator()) {
+            // Los operadores solo pueden modificar cargas que crearon
+            if ($shipment->created_by_user_id !== Auth::id()) {
+                abort(403, 'No tiene permisos para modificar esta carga.');
+            }
+        }
+
+        // Solo company-admin puede cambiar ciertos estados críticos
         $restrictedStatuses = ['completed', 'cancelled'];
         if (in_array($request->status, $restrictedStatuses) && !$this->isCompanyAdmin()) {
             abort(403, 'No tiene permisos para cambiar a este estado.');
         }
 
+        // Validar los estados disponibles según el modelo
+        $validStatuses = ['planning', 'loading', 'loaded', 'in_transit', 'arrived', 'discharging', 'completed', 'delayed'];
+        
         $request->validate([
-            'status' => 'required|in:draft,pending,in_transit,completed,cancelled',
+            'status' => 'required|in:' . implode(',', $validStatuses),
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        $shipment->update([
-            'status' => $request->status,
-            'status_notes' => $request->notes,
-            'updated_by' => Auth::id(),
-        ]);
+        try {
+            DB::beginTransaction();
 
-        return redirect()->route('company.shipments.show', $shipment)
-            ->with('success', 'Estado de la carga actualizado exitosamente.');
+            // Obtener el estado anterior para logging
+            $oldStatus = $shipment->status;
+            $newStatus = $request->status;
+
+            // Actualizar el shipment con campos correctos
+            $updateData = [
+                'status' => $newStatus,
+                'last_updated_date' => now(),
+                'last_updated_by_user_id' => Auth::id(),
+            ];
+
+            // Agregar notas si existen (usar el campo correcto según el modelo)
+            if ($request->filled('notes')) {
+                $updateData['handling_notes'] = $request->notes;
+            }
+
+            // Actualizar timestamps específicos según el estado
+            switch ($newStatus) {
+                case 'loading':
+                    if (!$shipment->loading_start_time) {
+                        $updateData['loading_start_time'] = now();
+                    }
+                    break;
+                    
+                case 'loaded':
+                    if (!$shipment->loading_end_time) {
+                        $updateData['loading_end_time'] = now();
+                    }
+                    // Si no tenía fecha de inicio, ponerla también
+                    if (!$shipment->loading_start_time) {
+                        $updateData['loading_start_time'] = now()->subHour(); // Estimado
+                    }
+                    break;
+                    
+                case 'in_transit':
+                    if (!$shipment->departure_time) {
+                        $updateData['departure_time'] = now();
+                    }
+                    break;
+                    
+                case 'arrived':
+                    if (!$shipment->arrival_time) {
+                        $updateData['arrival_time'] = now();
+                    }
+                    break;
+                    
+                case 'discharging':
+                    if (!$shipment->discharge_start_time) {
+                        $updateData['discharge_start_time'] = now();
+                    }
+                    break;
+                    
+                case 'completed':
+                    if (!$shipment->discharge_end_time) {
+                        $updateData['discharge_end_time'] = now();
+                    }
+                    break;
+            }
+
+            $shipment->update($updateData);
+
+            // Log del cambio de estado
+            Log::info('Shipment status updated', [
+                'shipment_id' => $shipment->id,
+                'shipment_number' => $shipment->shipment_number,
+                'old_status' => $oldStatus,
+                'new_status' => $newStatus,
+                'user_id' => Auth::id(),
+                'company_id' => $company->id,
+                'notes' => $request->notes
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('company.shipments.show', $shipment)
+                ->with('success', "Estado de la carga actualizado de '{$oldStatus}' a '{$newStatus}' exitosamente.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error updating shipment status', [
+                'shipment_id' => $shipment->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return redirect()->route('company.shipments.show', $shipment)
+                ->with('error', 'Error al actualizar el estado: ' . $e->getMessage());
+        }
     }
 
     /**

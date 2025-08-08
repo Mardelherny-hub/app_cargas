@@ -99,11 +99,6 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
                     return false;
                 }
 
-                // CORREGIDO: Operadores internos no tienen empresa (company_id = null)
-                if ($operator->type === 'internal') {
-                    \Log::info('User - Internal operator access granted', ['operator_id' => $operator->id]);
-                    return true; // Operadores internos siempre tienen acceso
-                }
 
                 // Operadores externos deben tener empresa válida
                 if ($operator->type === 'external') {

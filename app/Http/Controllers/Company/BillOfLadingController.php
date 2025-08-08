@@ -246,7 +246,7 @@ class BillOfLadingController extends Controller
     }
 
     /**
-     * Mostrar formulario de creación
+     * Mostrar formulario para crear nuevo conocimiento de embarque
      */
     public function create(Request $request)
     {
@@ -262,48 +262,57 @@ class BillOfLadingController extends Controller
         $company = $this->getUserCompany();
 
         if (!$company) {
-            return redirect()->route('company.bills-of-lading.index')
+            return redirect()->route('company.dashboard')
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Datos para el formulario
-        $formData = $this->getFormData($company, $request);
+        // ===== NUEVA FUNCIONALIDAD: MANEJAR SHIPMENT_ID =====
+        // Capturar shipment_id del query parameter (viene del botón "Crear Conocimiento")
+        $preselectedShipmentId = $request->get('shipment_id');
+        $preselectedShipment = null;
 
-            // === DIAGNÓSTICO TEMPORAL ===
-    // Agregar estas líneas para debuggear:
-    
-    \Log::debug('=== DIAGNÓSTICO SHIPMENTS ===');
-    \Log::debug('Company ID: ' . $company->id);
-    \Log::debug('Company Name: ' . $company->legal_name);
-    
-    // Verificar Voyages de la empresa
-    $voyagesCount = \App\Models\Voyage::where('company_id', $company->id)->count();
-    \Log::debug('Voyages de la empresa: ' . $voyagesCount);
-    
-    if ($voyagesCount > 0) {
-        $voyages = \App\Models\Voyage::where('company_id', $company->id)->get(['id', 'voyage_number']);
-        \Log::debug('Voyages encontrados: ' . $voyages->pluck('voyage_number')->implode(', '));
-        
-        // Verificar Shipments asociados a estos voyages
-        $shipmentsCount = \App\Models\Shipment::whereIn('voyage_id', $voyages->pluck('id'))->count();
-        \Log::debug('Shipments asociados a estos voyages: ' . $shipmentsCount);
-        
-        if ($shipmentsCount > 0) {
-            $shipments = \App\Models\Shipment::whereIn('voyage_id', $voyages->pluck('id'))
-                ->get(['id', 'shipment_number', 'voyage_id']);
-            \Log::debug('Shipments encontrados: ' . $shipments->pluck('shipment_number')->implode(', '));
+        // Si viene un shipment_id, verificar que existe y pertenece a la empresa
+        if ($preselectedShipmentId) {
+            $preselectedShipment = Shipment::with(['voyage'])
+                ->whereHas('voyage', function ($q) use ($company) {
+                    $q->where('company_id', $company->id);
+                })
+                ->find($preselectedShipmentId);
+
+            // Si no se encuentra o no pertenece a la empresa, limpiar la preselección
+            if (!$preselectedShipment) {
+                $preselectedShipmentId = null;
+            }
         }
-    }
-    
-    // Verificar la consulta actual que usa getFormData
-    \Log::debug('Shipments en formData: ' . count($formData['shipments']));
-    
-    // Verificar si hay shipments sin voyage_id
-    $orphanShipments = \App\Models\Shipment::whereNull('voyage_id')->count();
-    \Log::debug('Shipments sin voyage_id: ' . $orphanShipments);
-    
-    \Log::debug('=== FIN DIAGNÓSTICO ===');
-    // === FIN DIAGNÓSTICO TEMPORAL ===
+
+        // Obtener datos para el formulario
+        $formData = $this->getFormData($company, $request);
+        
+        // ===== AGREGAR PRESELECCIÓN A FORMDATA =====
+        $formData['preselectedShipment'] = $preselectedShipmentId;
+        $formData['selectedShipmentData'] = $preselectedShipment;
+
+        // Si hay un shipment preseleccionado, pre-poblar algunos campos del formulario
+        if ($preselectedShipment) {
+            // Pre-poblar puertos basándose en el viaje del shipment
+            $voyage = $preselectedShipment->voyage;
+            if ($voyage) {
+                $formData['preselectedLoadingPort'] = $voyage->origin_port_id;
+                $formData['preselectedDischargePort'] = $voyage->destination_port_id;
+            }
+
+            // Log para debug (temporal - se puede quitar en producción)
+            \Log::info('Bill of Lading Create - Shipment preseleccionado:', [
+                'shipment_id' => $preselectedShipmentId,
+                'shipment_number' => $preselectedShipment->shipment_number,
+                'voyage_number' => $voyage->voyage_number ?? 'N/A',
+                'loading_port' => $voyage->origin_port_id ?? 'N/A',
+                'discharge_port' => $voyage->destination_port_id ?? 'N/A'
+            ]);
+        }
+
+        // ===== ELIMINAR LOGS DE DEBUG TEMPORALES EXISTENTES =====
+        // (Remover todo el bloque de logs que estaba en el código anterior)
 
         return view('company.bills-of-lading.create', compact('formData', 'company'));
     }
@@ -323,6 +332,19 @@ class BillOfLadingController extends Controller
             $data['created_by_user_id'] = Auth::id();
             $data['last_updated_by_user_id'] = Auth::id();
             $data['status'] = 'draft';
+
+            // Manejar campos que no pueden ser null
+            if (empty($data['bill_type'])) {
+                $data['bill_type'] = 'original'; // Valor por defecto
+            }
+
+            if (empty($data['measurement_unit'])) {
+                $data['measurement_unit'] = 'kg';
+            }
+
+            if (empty($data['currency_code'])) {
+                $data['currency_code'] = 'USD';
+            }
 
             // Generar número de conocimiento si no se proporcionó
             if (empty($data['bill_number'])) {
@@ -447,30 +469,52 @@ class BillOfLadingController extends Controller
 
         $company = $this->getUserCompany();
 
-        // Cargar relaciones necesarias para el formulario
+        // ✅ MEJORADO: Cargar relaciones más completas como en show()
         $billOfLading->load([
-            'shipment:id,shipment_number,voyage_id',
-            'shipper:id,legal_name',
-            'consignee:id,legal_name',
-            'notifyParty:id,legal_name',
-            'cargoOwner:id,legal_name',
-            'loadingPort:id,name,country_id',
-            'dischargePort:id,name,country_id',
-            'transshipmentPort:id,name,country_id',
-            'finalDestinationPort:id,name,country_id',
-            'loadingCustoms:id,name',
-            'dischargeCustoms:id,name',
-            'primaryCargoType:id,name',
-            'primaryPackagingType:id,name'
+            'shipment.voyage:id,voyage_number,company_id',
+            'shipment.vessel:id,name',
+            'shipper:id,legal_name,tax_id',
+            'consignee:id,legal_name,tax_id',
+            'notifyParty:id,legal_name,tax_id',
+            'cargoOwner:id,legal_name,tax_id',
+            'loadingPort:id,name,code,country_id',
+            'dischargePort:id,name,code,country_id',
+            'transshipmentPort:id,name,code,country_id',
+            'finalDestinationPort:id,name,code,country_id',
+            'loadingCustoms:id,name,code',
+            'dischargeCustoms:id,name,code',
+            'primaryCargoType:id,name,description',
+            'primaryPackagingType:id,name,description'
         ]);
 
-        // Datos para el formulario
+        // ✅ MEJORADO: Obtener formData igual que en create()
         $formData = $this->getFormData($company, request(), $billOfLading);
+
+        // ✅ AGREGAR: Datos preseleccionados para el formulario (como en create cuando viene shipment_id)
+        $defaultValues = [
+            'shipment_id' => $billOfLading->shipment_id,
+            'bill_number' => $billOfLading->bill_number,
+            'shipper_id' => $billOfLading->shipper_id,
+            'consignee_id' => $billOfLading->consignee_id,
+            'notify_party_id' => $billOfLading->notify_party_id,
+            'cargo_owner_id' => $billOfLading->cargo_owner_id,
+            'loading_port_id' => $billOfLading->loading_port_id,
+            'discharge_port_id' => $billOfLading->discharge_port_id,
+            'transshipment_port_id' => $billOfLading->transshipment_port_id,
+            'final_destination_port_id' => $billOfLading->final_destination_port_id,
+            'loading_customs_id' => $billOfLading->loading_customs_id,
+            'discharge_customs_id' => $billOfLading->discharge_customs_id,
+            'primary_cargo_type_id' => $billOfLading->primary_cargo_type_id,
+            'primary_packaging_type_id' => $billOfLading->primary_packaging_type_id,
+            'payment_terms' => $billOfLading->payment_terms ?? 'cash',
+            'measurement_unit' => $billOfLading->measurement_unit ?? 'kg',
+        ];
 
         return view('company.bills-of-lading.edit', compact(
             'billOfLading',
-            'formData',
-            'company'
+            'formData', 
+            'company',
+            'defaultValues'  // ✅ AGREGAR para prellenar formulario
         ));
     }
 
@@ -487,9 +531,20 @@ class BillOfLadingController extends Controller
         try {
             DB::beginTransaction();
 
-            // Actualizar el conocimiento
+            // ✅ MEJORADO: Preparar datos igual que en store()
             $data = $request->validated();
             $data['last_updated_by_user_id'] = Auth::id();
+            
+            // ✅ AGREGAR: Mantener campos que no deben cambiar en update
+            // No sobrescribir created_by_user_id, status si es verificado, etc.
+            if ($billOfLading->status === 'verified') {
+                unset($data['status']); // No permitir cambio de status si ya está verificado
+            }
+
+            // ✅ AGREGAR: Establecer valores por defecto para campos de consolidación (como en store)
+            $data['is_consolidated'] = $data['is_consolidated'] ?? false;
+            $data['is_master_bill'] = $data['is_master_bill'] ?? false;
+            $data['is_house_bill'] = $data['is_house_bill'] ?? false;
             
             $billOfLading->update($data);
 
@@ -725,7 +780,75 @@ class BillOfLadingController extends Controller
             'freightTerms' => [
                 'prepaid' => 'Flete Pagado',
                 'collect' => 'Flete por Cobrar',
-                'prepaid_and_collect' => 'Flete Pagado y por Cobrar',
+                'prepaid_advance' => 'Flete Pagado Anticipado',
+            ],
+
+            'paymentTerms' => [
+                'cash' => 'Efectivo',
+                'credit_card' => 'Tarjeta de Crédito',
+                'bank_transfer' => 'Transferencia Bancaria',
+                'check' => 'Cheque',
+                'letter_of_credit' => 'Carta de Crédito',
+                'payment_on_delivery' => 'Pago Contra Entrega',
+                'advance_payment' => 'Pago Anticipado',
+                'consignment' => 'Consignación',
+            ],
+
+            'incotermsList' => [
+                'EXW' => 'Ex Works',
+                'FCA' => 'Free Carrier',
+                'CPT' => 'Carriage Paid To',
+                'CIP' => 'Carriage and Insurance Paid To',
+                'DAP' => 'Delivered at Place',
+                'DPU' => 'Delivered at Place Unloaded',
+                'DDP' => 'Delivered Duty Paid',
+                'FAS' => 'Free Alongside Ship',
+                'FOB' => 'Free on Board',
+                'CFR' => 'Cost and Freight',
+                'CIF' => 'Cost, Insurance and Freight',
+            ],
+
+            'currencies' => [
+                'USD' => 'Dólar Estadounidense (USD)',
+                'EUR' => 'Euro (EUR)',
+                'ARS' => 'Peso Argentino (ARS)',
+                'PYG' => 'Guaraní Paraguayo (PYG)',
+                'BRL' => 'Real Brasileño (BRL)',
+                'UYU' => 'Peso Uruguayo (UYU)',
+            ],
+
+            'measurementUnits' => [
+                'KG' => 'Kilogramos',
+                'TON' => 'Toneladas',
+                'LB' => 'Libras',
+                'CBM' => 'Metros Cúbicos',
+                'CFT' => 'Pies Cúbicos',
+                'LTR' => 'Litros',
+                'PCS' => 'Piezas',
+                'PKG' => 'Bultos',
+            ],
+
+            'defaultValues' => [
+                'bill_date' => now()->format('Y-m-d'),
+                'loading_date' => null,
+                'arrival_date' => null,
+                'freight_terms' => 'prepaid',
+                'bill_type' => 'original',
+                'priority_level' => 'normal',
+                'currency_code' => 'USD',
+                'measurement_unit' => 'KG',
+                'requires_inspection' => false,
+                'contains_dangerous_goods' => false,
+                'requires_refrigeration' => false,
+                'is_transhipment' => false,
+                'is_partial_shipment' => false,
+                'allows_partial_delivery' => true,
+                'requires_documents_on_arrival' => false,
+                'is_consolidated' => false,
+                'is_master_bill' => false,
+                'is_house_bill' => false,
+                'requires_surrender' => false,
+                'payment_terms' => 'cash',
             ],
 
             'paymentMethods' => [
@@ -742,6 +865,8 @@ class BillOfLadingController extends Controller
                 'door_to_port' => 'Puerta a Puerto',
                 'port_to_door' => 'Puerto a Puerta',
             ],
+
+            
         ];
     }
 

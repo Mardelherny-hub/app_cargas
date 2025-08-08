@@ -23,6 +23,14 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            @if(isset($formData['selectedShipmentData']) && $formData['selectedShipmentData'])
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                    <p class="text-green-800">
+                        <strong>Shipment preseleccionado:</strong> {{ $formData['selectedShipmentData']->shipment_number }} 
+                        (Viaje: {{ $formData['selectedShipmentData']->voyage->voyage_number }})
+                    </p>
+                </div>
+            @endif
             <form action="{{ route('company.bills-of-lading.store') }}" method="POST" class="space-y-6">
                 @csrf
                 
@@ -230,7 +238,7 @@
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('shipper_id') border-red-300 @enderror">
                                     <option value="">Seleccione cargador</option>
                                     @foreach($formData['shippers'] as $shipper)
-                                        <option value="{{ $shipper->id }}" {{ old('shipper_id', $formData['preselectedShipper']) == $shipper->id ? 'selected' : '' }}>
+                                        <option value="{{ $shipper->id }}" {{ old('shipper_id') == $shipper->id ? 'selected' : '' }}>
                                             {{ $shipper->legal_name }} ({{ $shipper->tax_id }})
                                         </option>
                                     @endforeach
@@ -249,7 +257,7 @@
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('consignee_id') border-red-300 @enderror">
                                     <option value="">Seleccione consignatario</option>
                                     @foreach($formData['consignees'] as $consignee)
-                                        <option value="{{ $consignee->id }}" {{ old('consignee_id', $formData['preselectedConsignee']) == $consignee->id ? 'selected' : '' }}>
+                                        <option value="{{ $consignee->id }}" {{ old('consignee_id') == $consignee->id ? 'selected' : '' }}>
                                             {{ $consignee->legal_name }} ({{ $consignee->tax_id }})
                                         </option>
                                     @endforeach
@@ -324,7 +332,7 @@
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_port_id') border-red-300 @enderror">
                                     <option value="">Seleccione puerto</option>
                                     @foreach($formData['loadingPorts'] as $port)
-                                        <option value="{{ $port->id }}" {{ old('loading_port_id') == $port->id ? 'selected' : '' }}>
+                                        <option value="{{ $port->id }}" {{ old('loading_port_id', $formData['preselectedLoadingPort'] ?? null) == $port->id ? 'selected' : '' }}>
                                             {{ $port->name }} ({{ $port->code }}) - {{ $port->country->name }}
                                         </option>
                                     @endforeach
@@ -343,7 +351,7 @@
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('discharge_port_id') border-red-300 @enderror">
                                     <option value="">Seleccione puerto</option>
                                     @foreach($formData['dischargePorts'] as $port)
-                                        <option value="{{ $port->id }}" {{ old('discharge_port_id') == $port->id ? 'selected' : '' }}>
+                                        <option value="{{ $port->id }}" {{ old('discharge_port_id', $formData['preselectedDischargePort'] ?? null) == $port->id ? 'selected' : '' }}>
                                             {{ $port->name }} ({{ $port->code }}) - {{ $port->country->name }}
                                         </option>
                                     @endforeach
@@ -438,26 +446,26 @@
 
                         {{-- Aduanas --}}
                         <div class="mt-6">
-    <h4 class="text-sm font-medium text-gray-900 mb-4">Aduanas</h4>
-    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        {{-- Aduana de Carga --}}
-        <div>
-            <label for="loading_customs_id" class="block text-sm font-medium text-gray-700">
-                Aduana de Carga
-            </label>
-            <select id="loading_customs_id" name="loading_customs_id"
-                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_customs_id') border-red-300 @enderror">
-                <option value="">Sin especificar</option>
-                @foreach($formData['customsOffices'] as $customs)
-                    <option value="{{ $customs->id }}" {{ old('loading_customs_id') == $customs->id ? 'selected' : '' }}>
-                        {{ $customs->name }}{{ $customs->code ? ' (' . $customs->code . ')' : '' }}
-                    </option>
-                @endforeach
-            </select>
-            @error('loading_customs_id')
-                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-            @enderror
-        </div>
+                            <h4 class="text-sm font-medium text-gray-900 mb-4">Aduanas</h4>
+                            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                {{-- Aduana de Carga --}}
+                                <div>
+                                    <label for="loading_customs_id" class="block text-sm font-medium text-gray-700">
+                                        Aduana de Carga
+                                        </label>
+                                        <select id="loading_customs_id" name="loading_customs_id"
+                                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_customs_id') border-red-300 @enderror">
+                                            <option value="">Sin especificar</option>
+                                            @foreach($formData['customsOffices'] as $customs)
+                                                <option value="{{ $customs->id }}" {{ old('loading_customs_id') == $customs->id ? 'selected' : '' }}>
+                                                    {{ $customs->name }}{{ $customs->code ? ' (' . $customs->code . ')' : '' }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('loading_customs_id')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
 
                                 {{-- Aduana de Descarga --}}
                                 <div>

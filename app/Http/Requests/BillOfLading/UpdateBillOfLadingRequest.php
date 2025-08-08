@@ -91,38 +91,36 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'integer',
                 'exists:clients,id,status,active',
             ],
-
-            // === PUERTOS Y ADUANAS ===
             'loading_port_id' => [
                 'required',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',  // ✅ CORREGIDO: active,1 no status,active
             ],
             'discharge_port_id' => [
                 'required',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',  // ✅ CORREGIDO
                 'different:loading_port_id',
             ],
             'transshipment_port_id' => [
                 'nullable',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',  // ✅ CORREGIDO
             ],
             'final_destination_port_id' => [
                 'nullable',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',  // ✅ CORREGIDO
             ],
             'loading_customs_id' => [
                 'nullable',
                 'integer',
-                'exists:customs_offices,id,status,active',
+                'exists:customs_offices,id,active,1',  // ✅ CORREGIDO
             ],
             'discharge_customs_id' => [
                 'nullable',
                 'integer',
-                'exists:customs_offices,id,status,active',
+                'exists:customs_offices,id,active,1',  // ✅ CORREGIDO
             ],
 
             // === TIPOS DE CARGA ===
@@ -142,10 +140,20 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'required',
                 'string',
                 'max:50',
-                'regex:/^[A-Z0-9\-\/]+$/', // Solo letras mayúsculas, números, guiones y barras
-                Rule::unique('bills_of_lading', 'bill_number')
-                    ->ignore($billOfLading?->id)
-                    ->whereNull('deleted_at'),
+                Rule::unique('bills_of_lading', 'bill_number')->ignore($billOfLading->id),
+                // Validación personalizada para verificar unicidad por empresa
+                function ($attribute, $value, $fail) use ($company, $billOfLading) {
+                    $existingBill = \App\Models\BillOfLading::where('bill_number', $value)
+                        ->where('id', '!=', $billOfLading->id)
+                        ->whereHas('shipment.voyage', function ($query) use ($company) {
+                            $query->where('company_id', $company->id);
+                        })
+                        ->first();
+                    
+                    if ($existingBill) {
+                        $fail('Ya existe otro conocimiento de embarque con este número en su empresa.');
+                    }
+                },
             ],
             'master_bill_number' => [
                 'nullable',
@@ -287,7 +295,7 @@ class UpdateBillOfLadingRequest extends FormRequest
 
             // === TIPO Y CARACTERÍSTICAS DEL CONOCIMIENTO ===
             'bill_type' => [
-                'nullable',
+                'required',
                 Rule::in(['original', 'copy', 'duplicate', 'amendment']),
             ],
             'status' => [

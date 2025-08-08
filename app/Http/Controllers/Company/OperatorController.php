@@ -141,7 +141,7 @@ class OperatorController extends Controller
             'document_number' => 'nullable|string|max:50',
             'phone' => 'nullable|string|max:20',
             'position' => 'required|string|max:255',
-            'type' => 'required|in:internal,external',
+            'type' => 'required|in:external',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8|confirmed',
             'can_import' => 'boolean',

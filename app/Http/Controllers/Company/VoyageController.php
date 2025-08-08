@@ -700,4 +700,77 @@ public function store(Request $request)
             'shipmentStats'
         ));
     }
+
+    /**
+     * Mostrar el manifiesto del viaje.
+     */
+    public function manifest(Voyage $voyage)
+    {
+        // 1. Verificar permisos básicos
+        if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para ver manifiestos.');
+        }
+
+        // 2. Verificar que el viaje pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No tiene permisos para ver este manifiesto.');
+        }
+
+        // 3. Verificar si el usuario puede ver este viaje específico
+        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
+            abort(403, 'No tiene permisos para ver este manifiesto.');
+        }
+
+        // 4. Cargar relaciones necesarias para el manifiesto
+        $voyage->load([
+            'shipments.billsOfLading.shipper',
+            'shipments.billsOfLading.consignee', 
+            'shipments.vessel',
+            'shipments.captain',
+            'originPort.country',
+            'destinationPort.country',
+            'company'
+        ]);
+
+        return view('company.voyages.manifest', compact('voyage'));
+    }
+
+    /**
+     * Generar PDF del manifiesto del viaje.
+     */
+    public function manifestPdf(Voyage $voyage)
+    {
+        // 1. Verificar permisos básicos
+        if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para generar manifiestos.');
+        }
+
+        // 2. Verificar que el viaje pertenece a la empresa del usuario
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No tiene permisos para generar este manifiesto.');
+        }
+
+        // 3. Verificar si el usuario puede ver este viaje específico
+        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
+            abort(403, 'No tiene permisos para generar este manifiesto.');
+        }
+
+        // 4. Cargar relaciones necesarias para el manifiesto
+        $voyage->load([
+            'shipments.billsOfLading.shipper',
+            'shipments.billsOfLading.consignee',
+            'shipments.vessel',
+            'shipments.captain',
+            'originPort.country',
+            'destinationPort.country',
+            'company'
+        ]);
+
+        // 5. Generar PDF (usando la vista del manifiesto)
+        $pdf = \PDF::loadView('company.voyages.manifest-pdf', compact('voyage'));
+        
+        $filename = "manifest-{$voyage->voyage_number}-" . date('Y-m-d') . ".pdf";
+        
+        return $pdf->download($filename);
+    }
 }

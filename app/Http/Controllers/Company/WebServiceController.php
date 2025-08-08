@@ -988,6 +988,13 @@ private function getTransfersForWebservice(Company $company): array
      * 
      * @param Request $request
      * @return \Illuminate\Http\RedirectResponse
+        * @throws \Illuminate\Validation\ValidationException
+            */
+
+    /**
+     * ✅ MÉTODO processSend() CORREGIDO
+     * 
+     * Reemplazar el método existente en WebServiceController.php
      */
     public function processSend(Request $request)
     {
@@ -1003,17 +1010,58 @@ private function getTransfersForWebservice(Company $company): array
         }
 
         try {
-            // 2. Validación de entrada
-            $validated = $request->validate([
+            // 2. ✅ CORRECCIÓN: Validación mejorada con validaciones condicionales
+            $request->validate([
                 'webservice_type' => 'required|string|in:anticipada,micdta,desconsolidados,transbordos,paraguay',
-                'country' => 'required|string|in:AR,PY',
                 'environment' => 'required|string|in:testing,production',
                 'data_source' => 'required|string|in:voyage_id,shipment_id,manual',
-                'voyage_id' => 'nullable|integer|exists:voyages,id',
-                'shipment_id' => 'nullable|integer|exists:shipments,id',
-                'manual_data' => 'nullable|array',
-                'send_immediately' => 'boolean',
+                'send_immediately' => 'nullable|boolean',
             ]);
+
+            // ✅ CORRECCIÓN: Derivar country desde webservice_type si no viene explícito
+            $country = $request->input('country');
+            if (empty($country)) {
+                $country = in_array($request->input('webservice_type'), ['anticipada', 'micdta', 'desconsolidados', 'transbordos']) 
+                    ? 'AR' 
+                    : 'PY';
+            }
+
+            // ✅ CORRECCIÓN: Validaciones condicionales según data_source
+            $conditionalRules = [];
+            
+            if ($request->input('data_source') === 'voyage_id') {
+                $conditionalRules['voyage_id'] = 'required|integer|exists:voyages,id';
+            } elseif ($request->input('data_source') === 'shipment_id') {
+                $conditionalRules['shipment_id'] = 'required|integer|exists:shipments,id';
+            } elseif ($request->input('data_source') === 'manual') {
+                $conditionalRules['manual_data'] = 'required|array|min:1';
+            }
+
+            if (!empty($conditionalRules)) {
+                $request->validate($conditionalRules);
+            }
+
+            // ✅ CORRECCIÓN: Crear array validated con valores seguros
+            $validated = [
+                'webservice_type' => $request->input('webservice_type'),
+                'country' => $country, // ← SOLUCIONADO: country siempre definido
+                'environment' => $request->input('environment'),
+                'data_source' => $request->input('data_source'),
+                'send_immediately' => $request->boolean('send_immediately', false),
+            ];
+
+            // ✅ CORRECCIÓN: Agregar campos opcionales solo si existen
+            if ($request->has('voyage_id') && !empty($request->input('voyage_id'))) {
+                $validated['voyage_id'] = $request->input('voyage_id');
+            }
+            
+            if ($request->has('shipment_id') && !empty($request->input('shipment_id'))) {
+                $validated['shipment_id'] = $request->input('shipment_id');
+            }
+            
+            if ($request->has('manual_data') && !empty($request->input('manual_data'))) {
+                $validated['manual_data'] = $request->input('manual_data');
+            }
 
             // 3. Verificar roles de empresa vs tipo de webservice
             $companyRoles = $company->company_roles ?? [];
@@ -1028,8 +1076,8 @@ private function getTransfersForWebservice(Company $company): array
             // 5. Obtener datos para el envío
             $sendData = $this->prepareSendData($validated, $company);
             
-            // 6. Crear registro de transacción
-            $transaction = $this->createWebserviceTransaction([
+            // 6. ✅ CORRECCIÓN: Crear transacción con campos opcionales seguros
+            $transactionData = [
                 'company_id' => $company->id,
                 'user_id' => Auth::id(),
                 'transaction_id' => $transactionId,
@@ -1037,16 +1085,25 @@ private function getTransfersForWebservice(Company $company): array
                 'country' => $validated['country'],
                 'environment' => $validated['environment'],
                 'status' => 'pending',
-                'voyage_id' => $validated['voyage_id'] ?? null,
-                'shipment_id' => $validated['shipment_id'] ?? null,
                 'additional_metadata' => [
                     'data_source' => $validated['data_source'],
-                    'send_immediately' => $validated['send_immediately'] ?? false,
+                    'send_immediately' => $validated['send_immediately'],
                     'company_roles' => $companyRoles,
                     'request_ip' => $request->ip(),
                     'user_agent' => $request->userAgent(),
                 ],
-            ]);
+            ];
+
+            // ✅ CORRECCIÓN: Agregar voyage_id/shipment_id solo si existen
+            if (isset($validated['voyage_id'])) {
+                $transactionData['voyage_id'] = $validated['voyage_id'];
+            }
+            
+            if (isset($validated['shipment_id'])) {
+                $transactionData['shipment_id'] = $validated['shipment_id'];
+            }
+
+            $transaction = $this->createWebserviceTransaction($transactionData);
 
             // 7. Log inicio del proceso
             $this->logWebserviceOperation('info', 'Inicio de procesamiento de envío', [
@@ -1091,6 +1148,8 @@ private function getTransfersForWebservice(Company $company): array
             // Log error crítico
             Log::error('Error crítico en processSend', [
                 'company_id' => $company->id ?? null,
+                'user_id' => Auth::id(),
+                'request_data' => $request->all(),
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
@@ -1099,6 +1158,50 @@ private function getTransfersForWebservice(Company $company): array
                 ->with('error', 'Error interno del sistema. Por favor contacte al administrador.')
                 ->with('error_code', 'INTERNAL_ERROR');
         }
+    }
+
+    /**
+     * ✅ CORRECCIÓN: prepareSendData() con verificaciones de array keys
+     */
+    private function prepareSendData(array $validated, Company $company): array
+    {
+        $data = [
+            'company' => $company,
+            'webservice_type' => $validated['webservice_type'],
+            'country' => $validated['country'],
+            'environment' => $validated['environment'],
+        ];
+
+        switch ($validated['data_source']) {
+            case 'voyage_id':
+                // ✅ CORRECCIÓN: Verificar que voyage_id existe antes de usarlo
+                if (isset($validated['voyage_id'])) {
+                    $voyage = Voyage::with(['shipments', 'vessel', 'ports'])->find($validated['voyage_id']);
+                    if ($voyage) {
+                        $data['voyage'] = $voyage;
+                        $data['shipments'] = $voyage->shipments ?? collect();
+                    }
+                }
+                break;
+                
+            case 'shipment_id':
+                // ✅ CORRECCIÓN: Verificar que shipment_id existe antes de usarlo
+                if (isset($validated['shipment_id'])) {
+                    $shipment = Shipment::with(['voyage', 'containers', 'billsOfLading'])->find($validated['shipment_id']);
+                    if ($shipment) {
+                        $data['shipment'] = $shipment;
+                        $data['voyage'] = $shipment->voyage ?? null;
+                    }
+                }
+                break;
+                
+            case 'manual':
+                // ✅ CORRECCIÓN: Verificar que manual_data existe antes de usarlo
+                $data['manual_data'] = $validated['manual_data'] ?? [];
+                break;
+        }
+
+        return $data;
     }
 
     /**
@@ -1118,42 +1221,7 @@ private function getTransfersForWebservice(Company $company): array
         return empty($required) || !empty(array_intersect($companyRoles, $required));
     }
 
-    /**
-     * Preparar datos para envío basado en fuente
-     */
-    private function prepareSendData(array $validated, Company $company): array
-    {
-        $data = [
-            'company' => $company,
-            'webservice_type' => $validated['webservice_type'],
-            'country' => $validated['country'],
-            'environment' => $validated['environment'],
-        ];
-
-        switch ($validated['data_source']) {
-            case 'voyage_id':
-                if ($validated['voyage_id']) {
-                    $voyage = Voyage::with(['shipments', 'vessel', 'ports'])->find($validated['voyage_id']);
-                    $data['voyage'] = $voyage;
-                    $data['shipments'] = $voyage->shipments ?? collect();
-                }
-                break;
-                
-            case 'shipment_id':
-                if ($validated['shipment_id']) {
-                    $shipment = Shipment::with(['voyage', 'containers', 'billsOfLading'])->find($validated['shipment_id']);
-                    $data['shipment'] = $shipment;
-                    $data['voyage'] = $shipment->voyage ?? null;
-                }
-                break;
-                
-            case 'manual':
-                $data['manual_data'] = $validated['manual_data'] ?? [];
-                break;
-        }
-
-        return $data;
-    }
+   
 
     /**
      * Crear registro de transacción webservice

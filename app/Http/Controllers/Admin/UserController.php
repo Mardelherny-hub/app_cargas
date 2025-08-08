@@ -121,7 +121,7 @@ class UserController extends Controller
                 'document_number' => 'nullable|string|max:50',
                 'phone' => 'nullable|string|max:20',
                 'position' => 'required|string|max:255',
-                'operator_type' => 'required|in:external,internal',
+                'operator_type' => 'required|in:external',
                 'can_import' => 'boolean',
                 'can_export' => 'boolean',
                 'can_transfer' => 'boolean',
@@ -294,17 +294,15 @@ public function update(Request $request, User $user)
             'document_number' => 'nullable|string|max:50',
             'phone' => 'nullable|string|max:20',
             'position' => 'required|string|max:255',
-            'operator_type' => 'required|in:external,internal',
+            'operator_type' => 'required|in:external',
             'can_import' => 'boolean',
             'can_export' => 'boolean',
             'can_transfer' => 'boolean',
         ]);
 
-        if ($request->operator_type === 'external') {
-            $request->validate([
-                'operator_company_id' => 'required|exists:companies,id',
-            ]);
-        }
+        $request->validate([
+            'operator_company_id' => 'required|exists:companies,id',
+        ]);
 
         if (!$request->boolean('can_import') && !$request->boolean('can_export') && !$request->boolean('can_transfer')) {
             return back()->withInput()
@@ -434,7 +432,7 @@ private function updateOperator(Operator $operator, Request $request)
         'document_number' => $request->document_number,
         'phone' => $request->phone,
         'position' => $request->position,
-        'company_id' => $request->operator_type === 'external' ? $request->operator_company_id : null,
+        'company_id' => $request->$request->operator_company_id,
         'type' => $request->operator_type,
         'can_import' => $request->boolean('can_import', false),
         'can_export' => $request->boolean('can_export', false),

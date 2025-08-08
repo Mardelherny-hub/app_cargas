@@ -15,6 +15,7 @@ use App\Models\BillOfLading;
 use App\Models\WebserviceTransaction;
 use App\Models\Port;
 use App\Models\Client;
+use App\Models\Operator;
 
 class DashboardController extends Controller
 {
@@ -118,6 +119,66 @@ class DashboardController extends Controller
     }
 
     /**
+     * Obtener estadísticas de la empresa - SOLO CAMPOS REALES.
+     */
+    private function getCompanyStats(Company $company): array
+    {
+        // Estadísticas básicas de operadores
+        $operatorsQuery = Operator::where('company_id', $company->id);
+        $stats = [
+            'total_operators' => $operatorsQuery->count(),
+            'active_operators' => $operatorsQuery->where('active', true)->count(),
+            'operators_with_import' => $operatorsQuery->where('can_import', true)->count(),
+            'operators_with_export' => $operatorsQuery->where('can_export', true)->count(),
+            'operators_with_transfer' => $operatorsQuery->where('can_transfer', true)->count(),
+            'last_activity' => $company->updated_at,
+        ];
+
+        // Estadísticas de viajes - SOLO CAMPOS REALES
+        $voyagesQuery = Voyage::where('company_id', $company->id);
+        $stats['active_voyages'] = $voyagesQuery->whereIn('status', ['planning', 'approved', 'in_progress'])->count();
+        $stats['completed_voyages'] = $voyagesQuery->where('status', 'completed')->count();
+        $stats['total_voyages'] = $voyagesQuery->count();
+
+        // Estadísticas de cargas - SOLO CAMPOS REALES
+        $shipmentsQuery = Shipment::whereHas('voyage', function($query) use ($company) {
+            $query->where('company_id', $company->id);
+        });
+        $stats['pending_shipments'] = $shipmentsQuery->where('status', 'planning')->count();
+        $stats['total_shipments'] = $shipmentsQuery->count();
+        $stats['recent_shipments'] = $shipmentsQuery->where('created_at', '>=', now()->subDays(7))->count();
+
+        // Estadísticas de manifiestos del mes - SOLO CAMPOS REALES
+        $billsQuery = BillOfLading::whereHas('shipment.voyage', function($query) use ($company) {
+            $query->where('company_id', $company->id);
+        });
+        $stats['monthly_manifests'] = $billsQuery->whereBetween('created_at', [
+            now()->startOfMonth(),
+            now()->endOfMonth()
+        ])->count();
+
+        // Estadísticas de webservices - SOLO CAMPOS REALES
+        $webservicesQuery = WebserviceTransaction::where('company_id', $company->id);
+        $stats['weekly_webservices'] = $webservicesQuery->where('created_at', '>=', now()->subDays(7))->count();
+        $stats['total_webservices'] = $webservicesQuery->count();
+        $stats['successful_webservices'] = $webservicesQuery->where('status', 'success')->count();
+
+        // Estadísticas de propietarios de embarcaciones - SOLO CAMPOS REALES
+        $vesselOwnersQuery = VesselOwner::byCompany($company->id);
+        $stats['vessel_owners'] = [
+            'total' => $vesselOwnersQuery->count(),
+            'active' => $vesselOwnersQuery->where('status', 'active')->count(),
+            'pending_verification' => $vesselOwnersQuery->where('status', 'pending_verification')->count(),
+            'webservice_authorized' => $vesselOwnersQuery->where('webservice_authorized', true)->count(),
+            'created_this_month' => $vesselOwnersQuery->where('created_at', '>=', now()->startOfMonth())->count(),
+        ];
+
+        return $stats;
+    }
+
+    
+
+    /**
      * Obtener datos del dashboard según el rol del usuario.
      */
     private function getDashboardData(Company $company, $user): array
@@ -128,7 +189,6 @@ class DashboardController extends Controller
         $data['certificateStatus'] = $this->getCertificateStatus($company);
         $data['webserviceStatus'] = $this->getWebserviceStatus($company);
         $data['companyAlerts'] = $this->getCompanyAlerts($company);
-        $data['companyRolesInfo'] = $this->getCompanyRolesInfo($company);
 
         // Datos específicos para company-admin
         if ($this->isCompanyAdmin()) {
@@ -144,7 +204,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Obtener datos específicos del dashboard para company-admin.
+     * Obtener datos específicos del dashboard para company-admin - SOLO CAMPOS REALES.
      */
     private function getAdminDashboardData(Company $company): array
     {
@@ -155,312 +215,284 @@ class DashboardController extends Controller
                 ->take(5)
                 ->get(),
             'operatorStats' => $this->getOperatorStatsForAdmin($company),
-            'systemHealth' => $this->getSystemHealth($company),
             'recentActivity' => $this->getRecentActivity($company),
-            'pendingTasks' => $this->getPendingTasks($company),
         ];
     }
 
     /**
-     * Obtener estadísticas de operadores para admin (estructura específica para la vista).
+     * Obtener estadísticas de operadores para admin - SOLO CAMPOS REALES.
      */
     private function getOperatorStatsForAdmin(Company $company): array
     {
+        $operatorsQuery = Operator::where('company_id', $company->id);
+        
         return [
-            'total' => $company->operators()->count(),
-            'active' => $company->operators()->where('active', true)->count(),
-            'inactive' => $company->operators()->where('active', false)->count(),
-            'with_import_permission' => $company->operators()->where('can_import', true)->count(),
-            'with_export_permission' => $company->operators()->where('can_export', true)->count(),
-            'with_transfer_permission' => $company->operators()->where('can_transfer', true)->count(),
-            'recent_logins' => $company->operators()->whereHas('user', function ($q) {
+            'total' => $operatorsQuery->count(),
+            'active' => $operatorsQuery->where('active', true)->count(),
+            'inactive' => $operatorsQuery->where('active', false)->count(),
+            'with_import_permission' => $operatorsQuery->where('can_import', true)->count(),
+            'with_export_permission' => $operatorsQuery->where('can_export', true)->count(),
+            'with_transfer_permission' => $operatorsQuery->where('can_transfer', true)->count(),
+            'recent_logins' => $operatorsQuery->whereHas('user', function ($q) {
                 $q->where('last_access', '>=', now()->subDays(7));
             })->count(),
         ];
     }
 
     /**
-     * Obtener datos específicos del dashboard para user.
+     * Obtener actividad reciente de la empresa - SOLO CAMPOS REALES.
+     */
+    private function getRecentActivity(Company $company): array
+    {
+        $activities = [];
+
+        // Actividad de viajes recientes - SOLO CAMPOS REALES
+        $recentVoyages = Voyage::where('company_id', $company->id)
+            ->latest()
+            ->take(3)
+            ->get(['id', 'voyage_number', 'internal_reference', 'created_at']);
+
+        foreach ($recentVoyages as $voyage) {
+            $activities[] = [
+                'description' => "Nuevo viaje: {$voyage->voyage_number}" . ($voyage->internal_reference ? " ({$voyage->internal_reference})" : ""),
+                'time' => $voyage->created_at->diffForHumans(),
+                'type' => 'voyage'
+            ];
+        }
+
+        // Actividad de webservices recientes - SOLO CAMPOS REALES
+        $recentWebservices = WebserviceTransaction::where('company_id', $company->id)
+            ->latest()
+            ->take(2)
+            ->get(['webservice_type', 'status', 'created_at']);
+
+        foreach ($recentWebservices as $ws) {
+            $activities[] = [
+                'description' => "Webservice {$ws->webservice_type}: {$ws->status}",
+                'time' => $ws->created_at->diffForHumans(),
+                'type' => 'webservice'
+            ];
+        }
+
+        // Ordenar por tiempo
+        usort($activities, function($a, $b) {
+            return strtotime($b['time']) - strtotime($a['time']);
+        });
+
+        return array_slice($activities, 0, 5);
+    }
+
+    /**
+     * Obtener datos específicos del dashboard para user - SOLO CAMPOS REALES.
      */
     private function getUserDashboardData($user): array
     {
         return [
             'personalStats' => $this->getPersonalStats($user),
-            'availableActions' => $this->getAvailableActions($user),
             'personalAlerts' => $this->getPersonalAlerts($user),
             'recentWork' => $this->getRecentWork($user),
         ];
     }
 
     /**
-     * Obtener estadísticas personales del usuario (estructura específica para la vista).
+     * Obtener estadísticas personales del usuario - SOLO CAMPOS REALES.
      */
     private function getPersonalStats($user): array
     {
         if (!$this->isUser()) {
             return [
-                'my_shipments' => 0,
-                'pending_shipments' => 0,
-                'completed_shipments' => 0,
-                'my_trips' => 0,
-                'permissions_summary' => [
-                    'can_import' => false,
-                    'can_export' => false,
-                    'can_transfer' => false,
-                ]
+                'voyages_created' => 0,
+                'shipments_processed' => 0,
+                'manifests_sent' => 0,
             ];
         }
 
-        $operator = $this->getUserOperator();
+        $company = $this->getUserCompany();
+
+        // Estadísticas reales del trabajo del operador - SOLO CAMPOS REALES
+        $voyagesCreated = Voyage::where('company_id', $company->id)
+            ->where('created_by_user_id', $user->id)
+            ->count();
+
+        $shipmentsProcessed = Shipment::whereHas('voyage', function($query) use ($company) {
+            $query->where('company_id', $company->id);
+        })->where('created_by_user_id', $user->id)->count();
+
+        $manifestsSent = WebserviceTransaction::where('company_id', $company->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'success')
+            ->count();
 
         return [
-            'my_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-            'pending_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-            'completed_shipments' => 0, // TODO: Implementar cuando esté el módulo de cargas
-            'my_trips' => 0, // TODO: Implementar cuando esté el módulo de viajes
-            'last_activity' => $user->last_access,
-            'permissions_summary' => [
-                'can_import' => $operator ? $operator->can_import : false,
-                'can_export' => $operator ? $operator->can_export : false,
-                'can_transfer' => $operator ? $operator->can_transfer : false,
+            'voyages_created' => $voyagesCreated,
+            'shipments_processed' => $shipmentsProcessed,
+            'manifests_sent' => $manifestsSent,
+        ];
+    }
+
+    /**
+     * Obtener alertas personales del usuario - DATOS REALES.
+     */
+    private function getPersonalAlerts($user): array
+    {
+        $alerts = [];
+        
+        if (!$this->isUser()) {
+            return $alerts;
+        }
+
+        $operator = $this->getUserOperator();
+        
+        // Verificar si el operador tiene pocos permisos
+        $permissions = 0;
+        if ($operator->can_import) $permissions++;
+        if ($operator->can_export) $permissions++;
+        if ($operator->can_transfer) $permissions++;
+
+        if ($permissions <= 1) {
+            $alerts[] = [
+                'message' => 'Tiene permisos limitados. Contacte al administrador para ampliar sus capacidades.',
+                'type' => 'warning'
+            ];
+        }
+
+        // Verificar si no ha tenido actividad reciente
+        if ($user->last_access && $user->last_access->lt(now()->subDays(7))) {
+            $alerts[] = [
+                'message' => 'No ha tenido actividad reciente. Revise las tareas pendientes.',
+                'type' => 'info'
+            ];
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * Obtener trabajo reciente del usuario - SOLO CAMPOS REALES.
+     */
+    private function getRecentWork($user): array
+    {
+        $work = [];
+        
+        if (!$this->isUser()) {
+            return $work;
+        }
+
+        $company = $this->getUserCompany();
+
+        // Viajes recientes creados por el usuario - SOLO CAMPOS REALES
+        $recentVoyages = Voyage::where('company_id', $company->id)
+            ->where('created_by_user_id', $user->id)
+            ->latest()
+            ->take(3)
+            ->get(['voyage_number', 'internal_reference', 'created_at']);
+
+        foreach ($recentVoyages as $voyage) {
+            $work[] = [
+                'title' => "Viaje: {$voyage->voyage_number}",
+                'description' => $voyage->internal_reference ? "Ref: {$voyage->internal_reference}" : "Viaje registrado",
+                'time' => $voyage->created_at->diffForHumans(),
+                'type' => 'voyage'
+            ];
+        }
+
+        // Transacciones webservice recientes - SOLO CAMPOS REALES
+        $recentTransactions = WebserviceTransaction::where('company_id', $company->id)
+            ->where('user_id', $user->id)
+            ->latest()
+            ->take(2)
+            ->get(['webservice_type', 'status', 'created_at']);
+
+        foreach ($recentTransactions as $transaction) {
+            $work[] = [
+                'title' => "Webservice: {$transaction->webservice_type}",
+                'description' => "Estado: {$transaction->status}",
+                'time' => $transaction->created_at->diffForHumans(),
+                'type' => 'webservice'
+            ];
+        }
+
+        return array_slice($work, 0, 5);
+    }
+
+    /**
+     * Obtener estado de certificados - DATOS REALES.
+     */
+    private function getCertificateStatus(Company $company): array
+    {
+        // Los certificados se manejan directamente en el modelo Company
+        $hasCertificate = !empty($company->certificate_path);
+        $isValid = $hasCertificate && $company->certificate_expires_at && $company->certificate_expires_at > now();
+
+        return [
+            'afip' => [
+                'exists' => $hasCertificate,
+                'valid' => $isValid,
+                'expires_at' => $company->certificate_expires_at,
+            ],
+            'dna' => [
+                'exists' => $hasCertificate, // Mismo certificado para ambos servicios
+                'valid' => $isValid,
+                'expires_at' => $company->certificate_expires_at,
             ]
         ];
     }
 
     /**
-     * Obtener acciones disponibles para el usuario.
-     */
-    private function getAvailableActions($user): array
-    {
-        if (!$this->isUser()) {
-            return [];
-        }
-
-        $actions = [];
-        $operator = $this->getUserOperator();
-
-        if ($operator && $operator->can_import) {
-            $actions[] = [
-                'title' => 'Importar Datos',
-                'icon' => 'download',
-                'route' => route('company.import.index'),
-            ];
-        }
-
-        if ($operator && $operator->can_export) {
-            $actions[] = [
-                'title' => 'Exportar Datos',
-                'icon' => 'upload',
-                'route' => route('company.export.index'),
-            ];
-        }
-
-        if ($this->hasCompanyRole('Cargas')) {
-            $actions[] = [
-                'title' => 'Gestionar Cargas',
-                'icon' => 'box',
-                'route' => route('company.shipments.index'),
-            ];
-
-            $actions[] = [
-                'title' => 'Gestionar Viajes',
-                'icon' => 'truck',
-                'route' => route('company.voyages.index'),
-            ];
-        }
-
-        return $actions;
-    }
-
-    /**
-     * Obtener alertas personales del usuario.
-     */
-    private function getPersonalAlerts($user): array
-    {
-        if (!$this->isUser()) {
-            return [];
-        }
-
-        $alerts = [];
-        $operator = $this->getUserOperator();
-
-        // Verificar si el operador está inactivo
-        if ($operator && !$operator->active) {
-            $alerts[] = [
-                'type' => 'warning',
-                'message' => 'Su cuenta de operador está desactivada. Contacte al administrador.',
-            ];
-        }
-
-        // Verificar si no tiene permisos
-        if ($operator && !$operator->can_import && !$operator->can_export && !$operator->can_transfer) {
-            $alerts[] = [
-                'type' => 'warning',
-                'message' => 'No tiene permisos asignados. Contacte al administrador para configurar sus permisos.',
-            ];
-        }
-
-        return $alerts;
-    }
-
-    /**
-     * Obtener trabajo reciente del usuario.
-     */
-    private function getRecentWork($user): array
-    {
-        // TODO: Implementar cuando estén los módulos de cargas y viajes
-        return [];
-    }
-
-    /**
-     * Obtener información sobre los roles de empresa.
-     */
-    private function getCompanyRolesInfo(Company $company): array
-    {
-        $roles = $company->company_roles ?? [];
-
-        return [
-            'roles' => $roles,
-            'hasCargas' => in_array('Cargas', $roles),
-            'hasDesconsolidador' => in_array('Desconsolidador', $roles),
-            'hasTransbordos' => in_array('Transbordos', $roles),
-            'rolesCount' => count($roles),
-            'capabilities' => $this->getCapabilitiesByRoles($roles),
-        ];
-    }
-
-    /**
-     * Obtener capacidades según los roles de empresa.
-     */
-    private function getCapabilitiesByRoles(array $roles): array
-    {
-        $capabilities = [];
-
-        foreach ($roles as $role) {
-            switch ($role) {
-                case 'Cargas':
-                    $capabilities[] = 'Gestión de cargas y viajes';
-                    $capabilities[] = 'Webservices MIC/DTA';
-                    $capabilities[] = 'Manifiestos y conocimientos';
-                    break;
-                case 'Desconsolidador':
-                    $capabilities[] = 'Desconsolidación de cargas';
-                    $capabilities[] = 'Webservices de desconsolidados';
-                    break;
-                case 'Transbordos':
-                    $capabilities[] = 'Gestión de transbordos';
-                    $capabilities[] = 'Webservices de transbordos';
-                    break;
-            }
-        }
-
-        return array_unique($capabilities);
-    }
-
-    /**
-     * Obtener estado del certificado.
-     */
-    private function getCertificateStatus(Company $company): array
-    {
-        if (!$company->certificate_expires_at) {
-            return [
-                'status' => 'none',
-                'expires_soon' => false,
-                'is_expired' => false,
-                'days_remaining' => null,
-            ];
-        }
-
-        $expiresAt = Carbon::parse($company->certificate_expires_at);
-        $now = Carbon::now();
-        $daysRemaining = $now->diffInDays($expiresAt, false);
-
-        if ($daysRemaining < 0) {
-            return [
-                'status' => 'expired',
-                'expires_soon' => false,
-                'is_expired' => true,
-                'days_remaining' => abs($daysRemaining),
-            ];
-        } elseif ($daysRemaining <= 30) {
-            return [
-                'status' => 'expiring',
-                'expires_soon' => true,
-                'is_expired' => false,
-                'days_remaining' => $daysRemaining,
-            ];
-        }
-
-        return [
-            'status' => 'valid',
-            'expires_soon' => false,
-            'is_expired' => false,
-            'days_remaining' => $daysRemaining,
-        ];
-    }
-
-    /**
-     * Obtener estado de webservices.
+     * Obtener estado de webservices - DATOS REALES.
      */
     private function getWebserviceStatus(Company $company): array
     {
         return [
-            'active' => (bool) $company->ws_active,
-            'environment' => $company->ws_environment ?? 'testing',
-            'last_connection' => null, // TODO: Implementar cuando esté el módulo de webservices
+            'active' => $company->ws_active,
+            'anticipada' => $company->ws_anticipada,
+            'micdta' => $company->ws_micdta,
+            'desconsolidados' => $company->ws_desconsolidados,
+            'transbordos' => $company->ws_transbordos,
         ];
     }
 
     /**
-     * Obtener alertas de la empresa.
+     * Obtener alertas de la empresa - DATOS REALES.
      */
     private function getCompanyAlerts(Company $company): array
     {
         $alerts = [];
 
-        // Verificar certificado
-        $certStatus = $this->getCertificateStatus($company);
-        if ($certStatus['is_expired']) {
+        // Verificar certificados próximos a vencer
+        $certificateStatus = $this->getCertificateStatus($company);
+        
+        if ($certificateStatus['afip']['exists'] && $certificateStatus['afip']['expires_at'] < now()->addDays(30)) {
             $alerts[] = [
-                'type' => 'error',
-                'message' => 'El certificado digital ha expirado. Los webservices no funcionarán.',
-                'action' => route('company.certificates.index'),
-            ];
-        } elseif ($certStatus['expires_soon']) {
-            $alerts[] = [
-                'type' => 'warning',
-                'message' => "El certificado digital expira en {$certStatus['days_remaining']} días.",
-                'action' => route('company.certificates.index'),
+                'title' => 'Certificado AFIP próximo a vencer',
+                'message' => 'El certificado AFIP vence el ' . $certificateStatus['afip']['expires_at']->format('d/m/Y'),
+                'type' => 'warning'
             ];
         }
 
-        // Verificar operadores activos
-        if ($this->isCompanyAdmin()) {
-            $activeOperators = $company->operators()->where('active', true)->count();
-            if ($activeOperators === 0) {
-                $alerts[] = [
-                    'type' => 'warning',
-                    'message' => 'No hay operadores activos configurados.',
-                    'action' => route('company.operators.index'),
-                ];
-            }
-        }
-
-        // Verificar webservices
-        if (!$company->ws_active && !empty($company->company_roles)) {
+        if ($certificateStatus['dna']['exists'] && $certificateStatus['dna']['expires_at'] < now()->addDays(30)) {
             $alerts[] = [
-                'type' => 'info',
-                'message' => 'Los webservices están desactivados. Algunas funcionalidades no estarán disponibles.',
-                'action' => null,
+                'title' => 'Certificado DNA próximo a vencer',
+                'message' => 'El certificado DNA vence el ' . $certificateStatus['dna']['expires_at']->format('d/m/Y'),
+                'type' => 'warning'
             ];
         }
 
-         $pendingVerification = VesselOwner::byCompany($company->id)->where('status', 'pending_verification')->count();
-        if ($pendingVerification > 0) {
+        // Verificar si no hay operadores activos
+        if ($company->operators()->where('active', true)->count() === 0) {
             $alerts[] = [
-                'type' => 'warning',
-                'message' => "Tiene {$pendingVerification} propietario(s) pendiente(s) de verificación fiscal.",
-                'action' => route('company.vessel-owners.index', ['status' => 'pending_verification']),
+                'title' => 'Sin operadores activos',
+                'message' => 'La empresa no tiene operadores activos. Cree al menos uno para operar.',
+                'type' => 'error'
+            ];
+        }
+
+        // Verificar webservices inactivos
+        if (!$company->ws_active) {
+            $alerts[] = [
+                'title' => 'Webservices desactivados',
+                'message' => 'Los webservices están desactivados. Configure certificados para activarlos.',
+                'type' => 'warning'
             ];
         }
 
@@ -468,82 +500,7 @@ class DashboardController extends Controller
     }
 
     /**
-     * Obtener estado de salud del sistema.
-     */
-    private function getSystemHealth(Company $company): array
-    {
-        return [
-            'certificate_status' => $this->getCertificateStatus($company)['status'],
-            'webservice_status' => $company->ws_active ? 'active' : 'inactive',
-            'operators_status' => $company->operators()->where('active', true)->count() > 0 ? 'active' : 'inactive',
-            'company_roles_configured' => !empty($company->company_roles),
-        ];
-    }
-
-    /**
-     * Obtener actividad reciente de la empresa.
-     */
-    private function getRecentActivity(Company $company): array
-    {
-        return [
-            // TODO: Implementar cuando estén los módulos de cargas, viajes, etc.
-            'recent_shipments' => [],
-            'recent_trips' => [],
-            'recent_operators' => $company->operators()->with('user')->latest()->take(3)->get(),
-        ];
-    }
-
-    /**
-     * Obtener tareas pendientes (solo para company-admin).
-     */
-    private function getPendingTasks(Company $company): array
-    {
-        if (!$this->isCompanyAdmin()) {
-            return [];
-        }
-
-        $tasks = [];
-
-        // Verificar certificado
-        $certStatus = $this->getCertificateStatus($company);
-        if ($certStatus['expires_soon'] || $certStatus['is_expired']) {
-            $priority = $certStatus['is_expired'] ? 'high' : 'medium';
-            $tasks[] = [
-                'priority' => $priority,
-                'title' => 'Renovar certificado digital',
-                'description' => $certStatus['is_expired']
-                    ? 'El certificado digital ha expirado'
-                    : "El certificado expira en {$certStatus['days_remaining']} días",
-                'action' => route('company.certificates.index'),
-            ];
-        }
-
-        // Verificar operadores
-        $activeOperators = $company->operators()->where('active', true)->count();
-        if ($activeOperators === 0) {
-            $tasks[] = [
-                'priority' => 'medium',
-                'title' => 'Configurar operadores',
-                'description' => 'No hay operadores activos configurados',
-                'action' => route('company.operators.index'),
-            ];
-        }
-
-        // Verificar roles de empresa
-        if (empty($company->company_roles)) {
-            $tasks[] = [
-                'priority' => 'medium',
-                'title' => 'Configurar roles de empresa',
-                'description' => 'No se han asignado roles específicos a la empresa',
-                'action' => null, // TODO: Agregar ruta cuando esté disponible
-            ];
-        }
-
-        return $tasks;
-    }
-
-    /**
-     * Obtener permisos específicos para elementos de la interfaz.
+     * Obtener permisos específicos para mostrar/ocultar elementos de la interfaz.
      */
     private function getUIPermissions(): array
     {
@@ -574,68 +531,5 @@ class DashboardController extends Controller
             'canAccessImport' => $this->canPerform('import'),
             'canAccessExport' => $this->canPerform('export'),
         ];
-    }
-
-    /**
-     * Obtener estadísticas de la empresa.
-     */
-    private function getCompanyStats(Company $company): array
-    {
-        $stats = [
-            'total_operators' => $company->operators()->count(),
-            'active_operators' => $company->operators()->where('active', true)->count(),
-            'operators_with_import' => $company->operators()->where('can_import', true)->count(),
-            'operators_with_export' => $company->operators()->where('can_export', true)->count(),
-            'operators_with_transfer' => $company->operators()->where('can_transfer', true)->count(),
-            'last_activity' => $company->updated_at,
-        ];
-        $vesselOwnersQuery = VesselOwner::byCompany($company->id);
-        $stats['vessel_owners'] = [
-            'total' => $vesselOwnersQuery->count(),
-            'active' => $vesselOwnersQuery->where('status', 'active')->count(),
-            'pending_verification' => $vesselOwnersQuery->where('status', 'pending_verification')->count(),
-            'webservice_authorized' => $vesselOwnersQuery->where('webservice_authorized', true)->count(),
-            'created_this_month' => $vesselOwnersQuery->where('created_at', '>=', now()->startOfMonth())->count(),
-        ];
-
-        // Estadísticas específicas por rol de empresa
-        $companyRoles = $company->company_roles ?? [];
-
-         if (in_array('Cargas', $companyRoles)) {
-            $shipments = Shipment::whereHas('voyage', function($query) use ($company) {
-                $query->where('company_id', $company->id);
-            });
-
-            $voyages = Voyage::where('company_id', $company->id)->where('active', true);
-
-            $stats['cargas_stats'] = [
-                'recent_shipments' => $shipments->where('created_at', '>=', now()->subDays(7))->count(),
-                'pending_shipments' => $shipments->where('status', 'pending')->count(),
-                'completed_trips' => $voyages->where('status', 'completed')->count(),
-                'active_trips' => $voyages->whereIn('status', ['in_progress', 'loading'])->count(),
-            ];
-        }
-
-        if (in_array('Desconsolidador', $companyRoles)) {
-            $deconsolidations = WebserviceTransaction::where('company_id', $company->id)
-                ->where('webservice_type', 'desconsolidados');
-
-            $stats['desconsolidacion_stats'] = [
-                'pending_deconsolidations' => $deconsolidations->where('status', 'pending')->count(),
-                'completed_deconsolidations' => $deconsolidations->where('status', 'success')->count(),
-            ];
-        }
-
-        if (in_array('Transbordos', $companyRoles)) {
-            $transfers = WebserviceTransaction::where('company_id', $company->id)
-                ->where('webservice_type', 'transbordos');
-
-            $stats['transbordos_stats'] = [
-                'pending_transfers' => $transfers->where('status', 'pending')->count(),
-                'completed_transfers' => $transfers->where('status', 'success')->count(),
-            ];
-        }
-
-        return $stats;
     }
 }

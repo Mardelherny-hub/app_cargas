@@ -1,6 +1,6 @@
 <?php
 // ARCHIVO: resources/views/components/navigation.blade.php
-// PASO 3: Navegación actualizada con manifiestos integrado
+// CORRECCIÓN: Permisos completos para operadores (role 'user')
 ?>
 
 @php
@@ -71,13 +71,13 @@
                             </div>
                         </div>
 
-                    @elseif($user && $user->hasRole('company-admin'))
-                        <!-- COMPANY ADMIN Navigation -->
+                    @elseif($user && ($user->hasRole('company-admin') || $user->hasRole('user')))
+                        <!-- COMPANY ADMIN Y OPERADORES (USER) Navigation -->
                         <x-nav-link href="{{ route('company.dashboard') }}" :active="request()->routeIs('company.dashboard')">
                             {{ __('Dashboard') }}
                         </x-nav-link>
 
-                        <!-- GESTIÓN Dropdown for Company Admin -->
+                        <!-- GESTIÓN Dropdown - ACCESO COMPLETO para Admin y Operadores -->
                         <div class="relative h-full flex items-center" x-data="{ open: false }">
                             <button @click="open = !open"
                                 class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out h-full"
@@ -100,15 +100,18 @@
                                        class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.clients.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         {{ __('Clientes') }}
                                     </a>
+                                    <!-- OPERADORES: Solo company-admin puede gestionar operadores -->
+                                    @if($user->hasRole('company-admin'))
                                     <a href="{{ route('company.operators.index') }}" 
                                        class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.operators.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         {{ __('Operadores') }}
                                     </a>
+                                    @endif
                                 </div>
                             </div>
                         </div>
 
-                        <!-- 📋 MANIFIESTOS Dropdown - ARQUITECTURA COMPLETA INTEGRADA -->
+                        <!-- 📋 MANIFIESTOS Dropdown - ACCESO COMPLETO para Admin y Operadores -->
                         @if($company)
                         <div class="relative h-full flex items-center" x-data="{ open: false }">
                             <button @click="open = !open"
@@ -265,7 +268,7 @@
                         </div>
                         @endif
 
-                        <!-- 🔧 WEBSERVICES Dropdown - Solo configuración -->
+                        <!-- 🔧 WEBSERVICES Dropdown - ACCESO SEGÚN ROLES para Admin y Operadores -->
                         @if($company)
                         <div class="relative h-full flex items-center" x-data="{ open: false }">
                             <button @click="open = !open"
@@ -287,7 +290,7 @@
                                     <!-- Header -->
                                     <div class="px-4 py-2 border-b border-gray-100">
                                         <p class="text-xs font-medium text-green-600 uppercase tracking-wider">⚙️ CONFIGURACIÓN Y MONITOREO</p>
-                                        <div class="text-xs text-gray-400 mt-1">Solo certificados y monitoreo</div>
+                                        <div class="text-xs text-gray-400 mt-1">Certificados, envíos y monitoreo</div>
                                     </div>
 
                                     <!-- Dashboard Webservices -->
@@ -301,6 +304,23 @@
                                             <div class="text-xs text-gray-500">Estado y configuración</div>
                                         </div>
                                     </a>
+
+                                    <!-- IMPORTAR Y ENVIAR - Nuevo para operadores -->
+                                    <div class="border-t border-gray-100 mt-2 pt-2">
+                                        <div class="px-4 py-1">
+                                            <p class="text-xs font-medium text-blue-600 uppercase tracking-wider">📊 IMPORTAR Y ENVIAR</p>
+                                        </div>
+                                        <a href="{{ route('company.webservices.import') }}" 
+                                           class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.webservices.import') ? 'bg-blue-50 text-blue-700 font-medium' : '' }}">
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                            </svg>
+                                            <div>
+                                                <div class="font-medium">📊 Importar y Enviar</div>
+                                                <div class="text-xs text-gray-500">Cargar manifiestos y enviar a aduana</div>
+                                            </div>
+                                        </a>
+                                    </div>
 
                                     <!-- Consultas y Historial -->
                                     <div class="border-t border-gray-100 mt-2 pt-2">
@@ -319,7 +339,8 @@
                                         </a>
                                     </div>
 
-                                    <!-- Certificados -->
+                                    <!-- Certificados - Solo Company Admin puede gestionar -->
+                                    @if($user->hasRole('company-admin'))
                                     <div class="border-t border-gray-100 mt-2 pt-2">
                                         <a href="{{ route('company.certificates.index') }}" 
                                            class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.certificates.*') ? 'bg-red-50 text-red-700 font-medium' : '' }}">
@@ -332,27 +353,10 @@
                                             </div>
                                         </a>
                                     </div>
+                                    @endif
                                 </div>
                             </div>
                         </div>
-                        @endif
-
-                    @elseif($user && $user->hasRole('user'))
-                        <!-- USER Navigation -->
-                        <x-nav-link href="{{ route('company.dashboard') }}" :active="request()->routeIs('company.dashboard')">
-                            {{ __('Dashboard') }}
-                        </x-nav-link>
-
-                        <!-- Solo opciones básicas para usuarios regulares -->
-                        <x-nav-link href="{{ route('company.manifests.index') }}" :active="request()->routeIs('company.manifests.*', 'company.voyages.*', 'company.shipments.*', 'company.bills-of-lading.*')">
-                            {{ __('Manifiestos') }}
-                        </x-nav-link>
-
-                        <!-- Webservices limitados para users -->
-                        @if($company && (in_array('Cargas', $companyRoles) || in_array('Desconsolidador', $companyRoles) || in_array('Transbordos', $companyRoles)))
-                            <x-nav-link href="{{ route('company.webservices.index') }}" :active="request()->routeIs('company.webservices.*')">
-                                {{ __('Webservices') }}
-                            </x-nav-link>
                         @endif
 
                     @endif
@@ -439,13 +443,13 @@
                     {{ __('Empresas') }}
                 </x-responsive-nav-link>
 
-            @elseif($user && $user->hasRole('company-admin'))
-                <!-- Responsive Navigation for Company Admin -->
+            @elseif($user && ($user->hasRole('company-admin') || $user->hasRole('user')))
+                <!-- Responsive Navigation for Company Admin and Operadores -->
                 <x-responsive-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
                     {{ __('Dashboard') }}
                 </x-responsive-nav-link>
                 
-                <!-- Gestión Group -->
+                <!-- Gestión Group - COMPLETO para Admin y Operadores -->
                 <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     {{ __('Gestión') }}
                 </div>
@@ -455,11 +459,13 @@
                 <x-responsive-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')" class="pl-6">
                     {{ __('Clientes') }}
                 </x-responsive-nav-link>
+                @if($user->hasRole('company-admin'))
                 <x-responsive-nav-link :href="route('company.operators.index')" :active="request()->routeIs('company.operators.*')" class="pl-6">
                     {{ __('Operadores') }}
                 </x-responsive-nav-link>
+                @endif
 
-                <!-- Manifiestos Group - RESPONSIVE -->
+                <!-- Manifiestos Group - COMPLETO para Admin y Operadores -->
                 @if($company)
                 <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     📋 {{ __('Manifiestos') }}
@@ -487,7 +493,7 @@
                 </x-responsive-nav-link>
                 @endif
 
-                <!-- Webservices Group - RESPONSIVE -->
+                <!-- Webservices Group - COMPLETO para Admin y Operadores -->
                 @if($company)
                 <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     ⚙️ {{ __('Webservices') }}
@@ -495,28 +501,19 @@
                 <x-responsive-nav-link :href="route('company.webservices.index')" :active="request()->routeIs('company.webservices.index')" class="pl-6">
                     {{ __('Dashboard Webservices') }}
                 </x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('company.webservices.import')" :active="request()->routeIs('company.webservices.import')" class="pl-6">
+                    📊 {{ __('Importar y Enviar') }}
+                </x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('company.webservices.history')" :active="request()->routeIs('company.webservices.history')" class="pl-6">
                     {{ __('Historial') }}
                 </x-responsive-nav-link>
+                @if($user->hasRole('company-admin'))
                 <x-responsive-nav-link :href="route('company.certificates.index')" :active="request()->routeIs('company.certificates.*')" class="pl-6">
                     🔐 {{ __('Certificados') }}
                 </x-responsive-nav-link>
                 @endif
-
-            @elseif($user && $user->hasRole('user'))
-                <!-- Responsive Navigation for User -->
-                <x-responsive-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
-                    {{ __('Dashboard') }}
-                </x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('company.manifests.index')" :active="request()->routeIs('company.manifests.*', 'company.voyages.*', 'company.shipments.*', 'company.bills-of-lading.*')">
-                    📋 {{ __('Manifiestos') }}
-                </x-responsive-nav-link>
-                
-                @if($company && (in_array('Cargas', $companyRoles) || in_array('Desconsolidador', $companyRoles) || in_array('Transbordos', $companyRoles)))
-                    <x-responsive-nav-link :href="route('company.webservices.index')" :active="request()->routeIs('company.webservices.*')">
-                        ⚙️ {{ __('Webservices') }}
-                    </x-responsive-nav-link>
                 @endif
+
             @endif
         </div>
 

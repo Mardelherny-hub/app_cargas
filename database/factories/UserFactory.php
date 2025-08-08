@@ -60,20 +60,7 @@ class UserFactory extends Factory
         });
     }
 
-    /**
-     * Internal operator user
-     */
-    public function internalOperator(): static
-    {
-        return $this->afterCreating(function (User $user) {
-            $operator = Operator::factory()->internal()->create();
-            $user->update([
-                'userable_type' => 'App\Models\Operator',
-                'userable_id' => $operator->id,
-            ]);
-            $user->assignRole('internal-operator');
-        });
-    }
+    
 
     /**
      * External operator user

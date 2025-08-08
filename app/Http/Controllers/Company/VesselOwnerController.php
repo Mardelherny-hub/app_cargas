@@ -127,7 +127,7 @@ class VesselOwnerController extends Controller
      */
     public function show(VesselOwner $vesselOwner)
     {
-         $companyId = $this->getUserCompanyId();
+         $companyId = $this->getUserCompany()->id;
         if (is_null($companyId)) {
             abort(403, 'No autorizado: usuario sin empresa asignada.');
         }
@@ -157,7 +157,7 @@ class VesselOwnerController extends Controller
     public function edit(VesselOwner $vesselOwner)
     {
         // Verificar que pertenece a la empresa del usuario
-        $companyId = $this->getUserCompanyId();
+        $companyId = $this->getUserCompany()->id;
         if (is_null($companyId)) {
             abort(403, 'No autorizado: usuario sin empresa asignada.');
         }

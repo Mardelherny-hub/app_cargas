@@ -84,7 +84,7 @@ class LoginResponse implements LoginResponseContract
                     return route('dashboard');
                 }
 
-                // CORREGIDO: Todos los operadores deben tener empresa asociada
+                // Todos los operadores son externos y requieren empresa
                 if (!$operator->company_id) {
                     logger()->error('Operator without company association', [
                         'user_id' => $user->id,

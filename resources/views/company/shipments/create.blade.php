@@ -1,54 +1,93 @@
-{{-- resources/views/company/shipments/create.blade.php --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                {{ __('Crear Nueva Carga (Shipment)') }}
+                Crear Nueva Carga
             </h2>
-            <a href="{{ route('company.shipments.index') }}" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
-                Volver a Lista
-            </a>
+            <div class="flex space-x-2">
+                <a href="{{ route('company.voyages.show', $voyage) }}" 
+                   class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                    Volver al Viaje
+                </a>
+                <a href="{{ route('company.shipments.index') }}" 
+                   class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                    Lista de Cargas
+                </a>
+            </div>
         </div>
     </x-slot>
 
     <div class="py-12">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            {{-- Información del Viaje (Heredada) --}}
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+                <h3 class="text-lg font-medium text-blue-900 mb-4">
+                    📦 Datos del Viaje: {{ $voyage->voyage_number }}
+                </h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-sm font-medium text-blue-700">Embarcación</p>
+                        <p class="text-sm text-blue-600">{{ $formData['voyageInfo']['vessel_name'] }}</p>
+                        <p class="text-xs text-blue-500">{{ $formData['voyageInfo']['vessel_type'] }}</p>
+                    </div>
+                    
+                    <div>
+                        <p class="text-sm font-medium text-blue-700">Capitán</p>
+                        <p class="text-sm text-blue-600">{{ $formData['voyageInfo']['captain_name'] }}</p>
+                        <p class="text-xs text-blue-500">Lic: {{ $formData['voyageInfo']['captain_license'] }}</p>
+                    </div>
+                    
+                    <div>
+                        <p class="text-sm font-medium text-blue-700">Capacidad Carga</p>
+                        <p class="text-sm text-blue-600">{{ number_format($formData['voyageInfo']['cargo_capacity'], 2) }} Tons</p>
+                    </div>
+                    
+                    <div>
+                        <p class="text-sm font-medium text-blue-700">Capacidad Contenedores</p>
+                        <p class="text-sm text-blue-600">{{ $formData['voyageInfo']['container_capacity'] }} TEU</p>
+                    </div>
+                </div>
+                
+                <div class="mt-3 p-3 bg-blue-100 rounded-md">
+                    <p class="text-sm text-blue-800">
+                        ✅ La embarcación y capitán se asignaronn al iniciar el viaje.
+                         Solo necesitas configurar los datos específicos del shipment.
+                    </p>
+                </div>
+            </div>
+
+            {{-- Formulario Simplificado --}}
             <form method="POST" action="{{ route('company.shipments.store') }}" class="space-y-6">
                 @csrf
-
-                {{-- Información del Viaje --}}
+                
+                {{-- Campo oculto para voyage_id --}}
+                <input type="hidden" name="voyage_id" value="{{ $voyage->id }}">
+                
+                {{-- Información Básica del Shipment --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="px-4 py-5 sm:p-6">
                         <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                            Información del Viaje
+                            Información Básica del Shipment
                         </h3>
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <!-- Seleccionar Viaje -->
+                            {{-- Viaje (Solo lectura) --}}
                             <div class="sm:col-span-2">
-                                <label for="voyage_id" class="block text-sm font-medium text-gray-700">
-                                    Viaje <span class="text-red-500">*</span>
-                                </label>
-                                <select name="voyage_id" 
-                                        id="voyage_id" 
-                                        required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('voyage_id') border-red-300 @enderror">
-                                    <option value="">Seleccione un viaje</option>
-                                    @foreach($voyages as $voyage)
-                                        <option value="{{ $voyage['id'] }}" 
-                                                {{ (old('voyage_id', $selectedVoyageId) == $voyage['id']) ? 'selected' : '' }}
-                                                data-shipments-count="{{ $voyage['current_shipments_count'] }}">
-                                            {{ $voyage['display_name'] }} ({{ $voyage['current_shipments_count'] }} shipments)
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('voyage_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                                <p class="mt-1 text-sm text-gray-500">Solo se muestran viajes en estado de planificación, preparación o carga.</p>
+                                <label class="block text-sm font-medium text-gray-700">Viaje</label>
+                                <div class="mt-1 flex rounded-md shadow-sm">
+                                    <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                                        🚢
+                                    </span>
+                                    <input type="text" 
+                                           readonly
+                                           value="{{ $voyage->voyage_number }} ({{ $voyage->originPort->name ?? 'N/A' }} → {{ $voyage->destinationPort->name ?? 'N/A' }})"
+                                           class="flex-1 block w-full rounded-none rounded-r-md border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500">El viaje está predefinido y no puede cambiarse.</p>
                             </div>
 
-                            <!-- Número de Shipment -->
+                            {{-- Número de Shipment --}}
                             <div>
                                 <label for="shipment_number" class="block text-sm font-medium text-gray-700">
                                     Número de Carga <span class="text-red-500">*</span>
@@ -64,79 +103,20 @@
                                 @enderror
                             </div>
 
-                            <!-- Secuencia en Viaje (auto-calculada) -->
+                            {{-- Secuencia (Auto-calculada) --}}
                             <div>
-                                <label for="sequence_display" class="block text-sm font-medium text-gray-700">
-                                    Secuencia en Viaje
-                                </label>
+                                <label class="block text-sm font-medium text-gray-700">Secuencia en Viaje</label>
                                 <input type="text" 
-                                       id="sequence_display" 
                                        readonly
                                        value="Se calculará automáticamente"
                                        class="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 shadow-sm sm:text-sm">
-                                <p class="mt-1 text-sm text-gray-500">La secuencia se asigna automáticamente según el orden de creación.</p>
+                                <p class="mt-1 text-sm text-gray-500">La secuencia se asigna según el orden de creación.</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {{-- Embarcación y Capitán --}}
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                            Embarcación y Capitán
-                        </h3>
-
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <!-- Embarcación -->
-                            <div class="sm:col-span-2">
-                                <label for="vessel_id" class="block text-sm font-medium text-gray-700">
-                                    Embarcación <span class="text-red-500">*</span>
-                                </label>
-                                <select name="vessel_id" 
-                                        id="vessel_id" 
-                                        required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('vessel_id') border-red-300 @enderror">
-                                    <option value="">Seleccione una embarcación</option>
-                                    @foreach($vessels as $vessel)
-                                        <option value="{{ $vessel['id'] }}" 
-                                                {{ old('vessel_id') == $vessel['id'] ? 'selected' : '' }}
-                                                data-cargo-capacity="{{ $vessel['cargo_capacity_tons'] }}"
-                                                data-container-capacity="{{ $vessel['container_capacity'] }}">
-                                            {{ $vessel['display_name'] }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('vessel_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <!-- Capitán -->
-                            <div class="sm:col-span-2">
-                                <label for="captain_id" class="block text-sm font-medium text-gray-700">
-                                    Capitán
-                                </label>
-                                <select name="captain_id" 
-                                        id="captain_id"
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('captain_id') border-red-300 @enderror">
-                                    <option value="">Seleccione un capitán (opcional)</option>
-                                    @foreach($captains as $captain)
-                                        <option value="{{ $captain['id'] }}" {{ old('captain_id') == $captain['id'] ? 'selected' : '' }}>
-                                            {{ $captain['display_name'] }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('captain_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                                <p class="mt-1 text-sm text-gray-500">El capitán puede asignarse posteriormente si no está disponible ahora.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {{-- Configuración de Convoy --}}
+                {{-- Configuración de Convoy (Simplificada) --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="px-4 py-5 sm:p-6">
                         <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
@@ -144,7 +124,7 @@
                         </h3>
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <!-- Rol de la Embarcación -->
+                            {{-- Rol de la Embarcación --}}
                             <div>
                                 <label for="vessel_role" class="block text-sm font-medium text-gray-700">
                                     Rol en el Convoy <span class="text-red-500">*</span>
@@ -153,7 +133,7 @@
                                         id="vessel_role" 
                                         required
                                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('vessel_role') border-red-300 @enderror">
-                                    @foreach($vesselRoles as $value => $label)
+                                    @foreach($formData['vesselRoles'] as $value => $label)
                                         <option value="{{ $value }}" {{ old('vessel_role', 'single') == $value ? 'selected' : '' }}>
                                             {{ $label }}
                                         </option>
@@ -164,44 +144,28 @@
                                 @enderror
                             </div>
 
-                            <!-- Posición en Convoy -->
-                            <div>
+                            {{-- Posición en Convoy --}}
+                            <div id="convoy-position-field" style="display: none;">
                                 <label for="convoy_position" class="block text-sm font-medium text-gray-700">
                                     Posición en Convoy
                                 </label>
                                 <input type="number" 
                                        name="convoy_position" 
                                        id="convoy_position" 
+                                       min="1" 
+                                       max="10"
                                        value="{{ old('convoy_position') }}"
-                                       min="1"
-                                       max="99"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('convoy_position') border-red-300 @enderror">
                                 @error('convoy_position')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
-                                <p class="mt-1 text-sm text-gray-500">Posición en la formación del convoy (1, 2, 3...). Solo requerido para convoy.</p>
-                            </div>
-
-                            <!-- Es Embarcación Líder -->
-                            <div class="sm:col-span-2">
-                                <div class="flex items-center">
-                                    <input type="checkbox" 
-                                           name="is_lead_vessel" 
-                                           id="is_lead_vessel"
-                                           value="1"
-                                           {{ old('is_lead_vessel') ? 'checked' : '' }}
-                                           class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                                    <label for="is_lead_vessel" class="ml-2 block text-sm text-gray-900">
-                                        Es embarcación líder del convoy
-                                    </label>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-500">Marque si esta embarcación lidera las operaciones del convoy.</p>
+                                <p class="mt-1 text-sm text-gray-500">Posición en la formación del convoy (1-10).</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {{-- Capacidades de Carga --}}
+                {{-- Capacidades --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="px-4 py-5 sm:p-6">
                         <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
@@ -209,7 +173,7 @@
                         </h3>
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <!-- Capacidad de Carga -->
+                            {{-- Capacidad de Carga --}}
                             <div>
                                 <label for="cargo_capacity_tons" class="block text-sm font-medium text-gray-700">
                                     Capacidad de Carga (Toneladas) <span class="text-red-500">*</span>
@@ -217,60 +181,46 @@
                                 <input type="number" 
                                        name="cargo_capacity_tons" 
                                        id="cargo_capacity_tons" 
-                                       value="{{ old('cargo_capacity_tons') }}"
                                        step="0.01"
-                                       min="0"
+                                       min="0.01"
+                                       value="{{ old('cargo_capacity_tons', $formData['voyageInfo']['cargo_capacity']) }}"
                                        required
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('cargo_capacity_tons') border-red-300 @enderror">
                                 @error('cargo_capacity_tons')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
+                                <p class="mt-1 text-sm text-gray-500">Valor predefinido desde la embarcación del viaje.</p>
                             </div>
 
-                            <!-- Capacidad de Contenedores -->
+                            {{-- Capacidad de Contenedores --}}
                             <div>
                                 <label for="container_capacity" class="block text-sm font-medium text-gray-700">
-                                    Capacidad de Contenedores <span class="text-red-500">*</span>
+                                    Capacidad de Contenedores (TEU)
                                 </label>
                                 <input type="number" 
                                        name="container_capacity" 
                                        id="container_capacity" 
-                                       value="{{ old('container_capacity') }}"
                                        min="0"
-                                       required
+                                       value="{{ old('container_capacity', $formData['voyageInfo']['container_capacity']) }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('container_capacity') border-red-300 @enderror">
                                 @error('container_capacity')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
-                            </div>
-                        </div>
-
-                        <div class="mt-4 p-4 bg-blue-50 rounded-md">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <p class="text-sm text-blue-700">
-                                        <strong>Tip:</strong> Estas capacidades se cargarán automáticamente desde los datos de la embarcación seleccionada, pero pueden ser ajustadas para este viaje específico.
-                                    </p>
-                                </div>
+                                <p class="mt-1 text-sm text-gray-500">Valor predefinido desde la embarcación del viaje.</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {{-- Estado y Observaciones --}}
+                {{-- Estado e Instrucciones --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="px-4 py-5 sm:p-6">
                         <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                            Estado y Observaciones
+                            Estado e Instrucciones
                         </h3>
 
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            <!-- Estado Inicial -->
+                        <div class="grid grid-cols-1 gap-6">
+                            {{-- Estado --}}
                             <div>
                                 <label for="status" class="block text-sm font-medium text-gray-700">
                                     Estado Inicial <span class="text-red-500">*</span>
@@ -279,7 +229,7 @@
                                         id="status" 
                                         required
                                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('status') border-red-300 @enderror">
-                                    @foreach($statusOptions as $value => $label)
+                                    @foreach($formData['statusOptions'] as $value => $label)
                                         <option value="{{ $value }}" {{ old('status', 'planning') == $value ? 'selected' : '' }}>
                                             {{ $label }}
                                         </option>
@@ -290,36 +240,34 @@
                                 @enderror
                             </div>
 
-                            <div></div> {{-- Espacio vacío para layout --}}
-
-                            <!-- Instrucciones Especiales -->
-                            <div class="sm:col-span-2">
+                            {{-- Instrucciones Especiales --}}
+                            <div>
                                 <label for="special_instructions" class="block text-sm font-medium text-gray-700">
                                     Instrucciones Especiales
                                 </label>
                                 <textarea name="special_instructions" 
                                           id="special_instructions" 
                                           rows="3"
-                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('special_instructions') border-red-300 @enderror">{{ old('special_instructions') }}</textarea>
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('special_instructions') border-red-300 @enderror"
+                                          placeholder="Instrucciones específicas para este shipment...">{{ old('special_instructions') }}</textarea>
                                 @error('special_instructions')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
-                                <p class="mt-1 text-sm text-gray-500">Instrucciones particulares para el manejo de esta carga.</p>
                             </div>
 
-                            <!-- Notas de Manejo -->
-                            <div class="sm:col-span-2">
+                            {{-- Notas de Manejo --}}
+                            <div>
                                 <label for="handling_notes" class="block text-sm font-medium text-gray-700">
                                     Notas de Manejo
                                 </label>
                                 <textarea name="handling_notes" 
                                           id="handling_notes" 
                                           rows="3"
-                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('handling_notes') border-red-300 @enderror">{{ old('handling_notes') }}</textarea>
+                                          class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('handling_notes') border-red-300 @enderror"
+                                          placeholder="Notas operativas para el manejo de la carga...">{{ old('handling_notes') }}</textarea>
                                 @error('handling_notes')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
-                                <p class="mt-1 text-sm text-gray-500">Notas operativas para el personal de carga.</p>
                             </div>
                         </div>
                     </div>
@@ -327,67 +275,38 @@
 
                 {{-- Botones de Acción --}}
                 <div class="flex justify-end space-x-3">
-                    <a href="{{ route('company.shipments.index') }}" 
-                       class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                    <a href="{{ route('company.voyages.show', $voyage) }}" 
+                       class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">
                         Cancelar
                     </a>
                     <button type="submit" 
-                            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-                        Crear Carga
+                            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                        Crear Shipment
                     </button>
                 </div>
             </form>
         </div>
     </div>
 
-    {{-- JavaScript para funcionalidad dinámica --}}
-    @push('scripts')
+    {{-- JavaScript para manejar campos condicionales --}}
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const vesselSelect = document.getElementById('vessel_id');
-            const cargoCapacityInput = document.getElementById('cargo_capacity_tons');
-            const containerCapacityInput = document.getElementById('container_capacity');
             const vesselRoleSelect = document.getElementById('vessel_role');
-            const convoyPositionInput = document.getElementById('convoy_position');
-            const isLeadVesselCheckbox = document.getElementById('is_lead_vessel');
-
-            // Auto-completar capacidades cuando se selecciona una embarcación
-            vesselSelect.addEventListener('change', function() {
-                const selectedOption = this.options[this.selectedIndex];
-                if (selectedOption.value) {
-                    const cargoCapacity = selectedOption.dataset.cargoCapacity || '';
-                    const containerCapacity = selectedOption.dataset.containerCapacity || '';
-                    
-                    if (cargoCapacity && !cargoCapacityInput.value) {
-                        cargoCapacityInput.value = cargoCapacity;
-                    }
-                    
-                    if (containerCapacity && !containerCapacityInput.value) {
-                        containerCapacityInput.value = containerCapacity;
-                    }
-                }
-            });
-
-            // Manejar lógica de convoy
-            vesselRoleSelect.addEventListener('change', function() {
-                const isSingle = this.value === 'single';
+            const convoyPositionField = document.getElementById('convoy-position-field');
+            
+            function updateConvoyFields() {
+                const vesselRole = vesselRoleSelect.value;
                 
-                convoyPositionInput.disabled = isSingle;
-                if (isSingle) {
-                    convoyPositionInput.value = '';
-                    isLeadVesselCheckbox.checked = false;
+                if (vesselRole === 'single') {
+                    convoyPositionField.style.display = 'none';
+                    document.getElementById('convoy_position').value = '';
+                } else {
+                    convoyPositionField.style.display = 'block';
                 }
-            });
-
-            // Auto-marcar como líder si se selecciona rol lead
-            vesselRoleSelect.addEventListener('change', function() {
-                if (this.value === 'lead') {
-                    isLeadVesselCheckbox.checked = true;
-                } else if (this.value !== 'single') {
-                    isLeadVesselCheckbox.checked = false;
-                }
-            });
+            }
+            
+            vesselRoleSelect.addEventListener('change', updateConvoyFields);
+            updateConvoyFields(); // Inicializar
         });
     </script>
-    @endpush
 </x-app-layout>

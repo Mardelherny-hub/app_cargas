@@ -1,164 +1,167 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
+        <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ __('Crear Usuario') }}
             </h2>
-            <a href="{{ route('admin.users.index') }}"
-               class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                ← Volver
+            <a href="{{ route('admin.users.index') }}" 
+               class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                Volver al listado
             </a>
         </div>
     </x-slot>
 
     <div class="py-12">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6">
+                <div class="p-6 text-gray-900">
+                    <form id="userForm" method="POST" action="{{ route('admin.users.store') }}" class="space-y-6">
+                        @csrf
 
-                    @if ($errors->any())
-                        <div class="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-                            <div class="flex">
-                                <div class="ml-3">
-                                    <h3 class="text-sm font-medium text-red-800">
-                                        Hay errores en el formulario
-                                    </h3>
-                                    <div class="mt-2 text-sm text-red-700">
-                                        <ul class="list-disc space-y-1 pl-5">
-                                            @foreach ($errors->all() as $error)
-                                                <li>{{ $error }}</li>
+                        <!-- Información básica del usuario -->
+                        <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                            <div class="p-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">Información del Usuario</h3>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Nombre completo *
+                                        </label>
+                                        <input type="text" 
+                                               name="name" 
+                                               id="name" 
+                                               value="{{ old('name') }}"
+                                               required
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('name')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <div>
+                                        <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Email *
+                                        </label>
+                                        <input type="email" 
+                                               name="email" 
+                                               id="email" 
+                                               value="{{ old('email') }}"
+                                               required
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('email')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                                    <div>
+                                        <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Contraseña *
+                                        </label>
+                                        <input type="password" 
+                                               name="password" 
+                                               id="password" 
+                                               required
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('password')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <div>
+                                        <label for="password_confirmation" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Confirmar contraseña *
+                                        </label>
+                                        <input type="password" 
+                                               name="password_confirmation" 
+                                               id="password_confirmation" 
+                                               required
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                                    <div>
+                                        <label for="role" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Rol del usuario *
+                                        </label>
+                                        <select name="role" 
+                                                id="role" 
+                                                onchange="toggleRoleFields()"
+                                                required
+                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="">Selecciona un rol</option>
+                                            @foreach($roles as $role)
+                                                <option value="{{ $role->name }}" {{ old('role') === $role->name ? 'selected' : '' }}>
+                                                    @if($role->name === 'user')
+                                                        Operador
+                                                    @else
+                                                        {{ ucfirst(str_replace('-', ' ', $role->name)) }}
+                                                    @endif
+                                                </option>
                                             @endforeach
-                                        </ul>
+                                        </select>
+                                        @error('role')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <div>
+                                        <label for="timezone" class="block text-sm font-medium text-gray-700 mb-2">
+                                            Zona horaria
+                                        </label>
+                                        <select name="timezone" 
+                                                id="timezone"
+                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="America/Argentina/Buenos_Aires" {{ old('timezone') === 'America/Argentina/Buenos_Aires' ? 'selected' : '' }}>
+                                                Buenos Aires (Argentina)
+                                            </option>
+                                            <option value="America/Asuncion" {{ old('timezone') === 'America/Asuncion' ? 'selected' : '' }}>
+                                                Asunción (Paraguay)
+                                            </option>
+                                            <option value="UTC" {{ old('timezone') === 'UTC' ? 'selected' : '' }}>
+                                                UTC
+                                            </option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="mt-6">
+                                    <div class="flex items-center">
+                                        <input type="hidden" name="active" value="0">
+                                        <input type="checkbox" 
+                                               name="active" 
+                                               id="active" 
+                                               value="1"
+                                               {{ old('active', true) ? 'checked' : '' }}
+                                               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                        <label for="active" class="ml-2 block text-sm text-gray-700">
+                                            Usuario activo
+                                        </label>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    @endif
 
-                    <form method="POST" action="{{ route('admin.users.store') }}" class="space-y-6" id="userForm">
-                        @csrf
-
-                        <!-- Información básica del usuario -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Nombre completo *
-                                </label>
-                                <input type="text" 
-                                       name="name" 
-                                       id="name" 
-                                       value="{{ old('name') }}"
-                                       required
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-
-                            <div>
-                                <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Email *
-                                </label>
-                                <input type="email" 
-                                       name="email" 
-                                       id="email" 
-                                       value="{{ old('email') }}"
-                                       required
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-                        </div>
-
-                        <!-- Contraseña -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Contraseña *
-                                </label>
-                                <input type="password" 
-                                       name="password" 
-                                       id="password" 
-                                       required
-                                       minlength="8"
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <p class="mt-1 text-sm text-gray-500">Mínimo 8 caracteres</p>
-                            </div>
-
-                            <div>
-                                <label for="password_confirmation" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Confirmar contraseña *
-                                </label>
-                                <input type="password" 
-                                       name="password_confirmation" 
-                                       id="password_confirmation" 
-                                       required
-                                       minlength="8"
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            </div>
-                        </div>
-
-                        <!-- Rol del usuario -->
-                        <div>
-                            <label for="role" class="block text-sm font-medium text-gray-700 mb-2">
-                                Tipo de Usuario *
-                            </label>
-                            <select name="role" 
-                                    id="role" 
-                                    required
-                                    onchange="toggleRoleFields()"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <option value="">Selecciona un tipo de usuario</option>
-                                <option value="super-admin" {{ old('role') === 'super-admin' ? 'selected' : '' }}>
-                                    Super Administrador
-                                </option>
-                                <option value="company-admin" {{ old('role') === 'company-admin' ? 'selected' : '' }}>
-                                    Administrador de Empresa
-                                </option>
-                                <option value="user" {{ old('role') === 'user' ? 'selected' : '' }}>
-                                    Operador
-                                </option>
-                            </select>
-                            <div class="mt-2 text-sm text-gray-600">
-                                <div id="roleDescription" class="hidden">
-                                    <strong>Tipos de usuario:</strong>
-                                    <ul class="mt-1 ml-4 list-disc space-y-1">
-                                        <li><strong>Super Administrador:</strong> Acceso total al sistema, crea empresas</li>
-                                        <li><strong>Administrador de Empresa:</strong> Gestiona usuarios de su empresa</li>
-                                        <li><strong>Operador:</strong> Realiza operaciones según permisos asignados</li>
-                                    </ul>
+                        <!-- Descripción del rol seleccionado -->
+                        <div id="roleDescription" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div class="flex">
+                                <svg class="w-5 h-5 text-blue-600 mt-0.5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                                </svg>
+                                <div>
+                                    <h4 class="text-blue-900 font-medium">Información del rol</h4>
+                                    <p class="text-blue-800 text-sm mt-1" id="roleDescriptionText"></p>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Configuración adicional -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label for="timezone" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Zona horaria
-                                </label>
-                                <select name="timezone" 
-                                        id="timezone"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="America/Argentina/Buenos_Aires" {{ old('timezone') === 'America/Argentina/Buenos_Aires' ? 'selected' : '' }}>Argentina (Buenos Aires)</option>
-                                    <option value="America/Asuncion" {{ old('timezone') === 'America/Asuncion' ? 'selected' : '' }}>Paraguay (Asunción)</option>
-                                    <option value="UTC" {{ old('timezone') === 'UTC' ? 'selected' : '' }}>UTC</option>
-                                </select>
-                            </div>
-
-                            <div class="flex items-center">
-                                <input type="hidden" name="active" value="0">
-                                <input type="checkbox" 
-                                       name="active" 
-                                       id="active" 
-                                       value="1"
-                                       {{ old('active', '1') === '1' ? 'checked' : '' }}
-                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                <label for="active" class="ml-2 block text-sm text-gray-700">
-                                    Usuario activo
-                                </label>
-                            </div>
-                        </div>
-
                         <!-- Campos específicos para Company Admin -->
-                        <div id="companyFields" class="hidden space-y-6">
-                            <div class="bg-blue-50 rounded-lg p-4">
-                                <h3 class="text-lg font-medium text-blue-900 mb-4">Información de Empresa</h3>
+                        <div id="companyFields" class="hidden bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                            <div class="p-6">
+                                <h3 class="text-lg font-medium text-blue-900 mb-4">Información de la Empresa</h3>
                                 
                                 <div>
                                     <label for="company_id" class="block text-sm font-medium text-gray-700 mb-2">
@@ -175,6 +178,9 @@
                                         @endforeach
                                     </select>
                                     <p class="mt-1 text-sm text-gray-500">El usuario será el administrador de esta empresa</p>
+                                    @error('company_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
                         </div>
@@ -194,6 +200,9 @@
                                                id="first_name" 
                                                value="{{ old('first_name') }}"
                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('first_name')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
                                     </div>
 
                                     <div>
@@ -205,19 +214,25 @@
                                                id="last_name" 
                                                value="{{ old('last_name') }}"
                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('last_name')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                                     <div>
                                         <label for="document_number" class="block text-sm font-medium text-gray-700 mb-2">
-                                            Documento (DNI/Cédula) *
+                                            Número de documento
                                         </label>
                                         <input type="text" 
                                                name="document_number" 
                                                id="document_number" 
                                                value="{{ old('document_number') }}"
                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('document_number')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
                                     </div>
 
                                     <div>
@@ -229,44 +244,32 @@
                                                id="phone" 
                                                value="{{ old('phone') }}"
                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        @error('phone')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
                                     </div>
                                 </div>
 
-                                <div>
+                                <div class="mt-6">
                                     <label for="position" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Cargo
+                                        Cargo *
                                     </label>
                                     <input type="text" 
                                            name="position" 
                                            id="position" 
                                            value="{{ old('position') }}"
-                                           placeholder="Ej: Despachante, Operador de cargas, etc."
+                                           placeholder="Ej: Operador de Cargas, Especialista en Importaciones..."
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    @error('position')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
 
-                                <div>
-                                    <label for="operator_type" class="block text-sm font-medium text-gray-700 mb-2">
-                                        Tipo de Operador *
-                                    </label>
-                                    <select name="operator_type" 
-                                            id="operator_type"
-                                            onchange="toggleOperatorCompany()"
-                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                        <option value="">Seleccione el tipo</option>
-                                        <option value="external" {{ old('operator_type') === 'external' ? 'selected' : '' }}>
-                                            Externo (Empleado de empresa)
-                                        </option>
-                                        <option value="internal" {{ old('operator_type') === 'internal' ? 'selected' : '' }}>
-                                            Interno (Empleado del sistema)
-                                        </option>
-                                    </select>
-                                    <p class="mt-1 text-sm text-gray-500">
-                                        Los operadores externos trabajan para una empresa específica. Los internos tienen acceso global.
-                                    </p>
-                                </div>
+                                <!-- Input hidden para operator_type (siempre external) -->
+                                <input type="hidden" name="operator_type" value="external">
 
-                                <!-- Empresa para operador externo -->
-                                <div id="operatorCompanyField" class="hidden">
+                                <!-- Empresa del operador (siempre visible para operadores) -->
+                                <div id="operatorCompanyField" class="mt-6">
                                     <label for="operator_company_id" class="block text-sm font-medium text-gray-700 mb-2">
                                         Empresa del operador *
                                     </label>
@@ -280,10 +283,16 @@
                                             </option>
                                         @endforeach
                                     </select>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        Todos los operadoress trabajan para una empresa específica.
+                                    </p>
+                                    @error('operator_company_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
 
                                 <!-- Permisos del operador -->
-                                <div class="border-t pt-4">
+                                <div class="border-t pt-4 mt-6">
                                     <h4 class="text-md font-medium text-gray-700 mb-3">Permisos del Operador</h4>
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div class="flex items-center">
@@ -295,7 +304,7 @@
                                                    {{ old('can_import') === '1' ? 'checked' : '' }}
                                                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                             <label for="can_import" class="ml-2 block text-sm text-gray-700">
-                                                Puede importar datos
+                                                Puede importar
                                             </label>
                                         </div>
 
@@ -308,7 +317,7 @@
                                                    {{ old('can_export') === '1' ? 'checked' : '' }}
                                                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                             <label for="can_export" class="ml-2 block text-sm text-gray-700">
-                                                Puede exportar datos
+                                                Puede exportar
                                             </label>
                                         </div>
 
@@ -352,6 +361,7 @@ function toggleRoleFields() {
     const companyFields = document.getElementById('companyFields');
     const operatorFields = document.getElementById('operatorFields');
     const roleDescription = document.getElementById('roleDescription');
+    const roleDescriptionText = document.getElementById('roleDescriptionText');
 
     // Ocultar todos los campos específicos
     companyFields.classList.add('hidden');
@@ -361,39 +371,28 @@ function toggleRoleFields() {
     document.getElementById('company_id').removeAttribute('required');
     document.getElementById('first_name').removeAttribute('required');
     document.getElementById('last_name').removeAttribute('required');
-    document.getElementById('operator_type').removeAttribute('required');
+    document.getElementById('operator_company_id').removeAttribute('required');
 
     if (role) {
         roleDescription.classList.remove('hidden');
         
         if (role === 'super-admin') {
-            // Super admin no necesita campos adicionales
+            roleDescriptionText.textContent = 'Acceso completo al sistema. Puede crear empresas, gestionar usuarios y configurar el sistema.';
             
         } else if (role === 'company-admin') {
+            roleDescriptionText.textContent = 'Administrador de una empresa específica. Puede gestionar operadores y datos de su empresa.';
             companyFields.classList.remove('hidden');
             document.getElementById('company_id').setAttribute('required', 'required');
             
         } else if (role === 'user') {
+            roleDescriptionText.textContent = 'Operador que trabaja para una empresa específica. Acceso limitado según permisos asignados.';
             operatorFields.classList.remove('hidden');
             document.getElementById('first_name').setAttribute('required', 'required');
             document.getElementById('last_name').setAttribute('required', 'required');
-            document.getElementById('operator_type').setAttribute('required', 'required');
+            document.getElementById('operator_company_id').setAttribute('required', 'required');
         }
     } else {
         roleDescription.classList.add('hidden');
-    }
-}
-
-function toggleOperatorCompany() {
-    const operatorType = document.getElementById('operator_type').value;
-    const operatorCompanyField = document.getElementById('operatorCompanyField');
-    
-    if (operatorType === 'external') {
-        operatorCompanyField.classList.remove('hidden');
-        document.getElementById('operator_company_id').setAttribute('required', 'required');
-    } else {
-        operatorCompanyField.classList.add('hidden');
-        document.getElementById('operator_company_id').removeAttribute('required');
     }
 }
 
@@ -414,12 +413,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const role = document.getElementById('role').value;
     if (role) {
         toggleRoleFields();
-        
-        // Restaurar estado del tipo de operador
-        const operatorType = document.getElementById('operator_type').value;
-        if (operatorType) {
-            toggleOperatorCompany();
-        }
     }
 });
 
@@ -435,20 +428,11 @@ document.getElementById('userForm').addEventListener('submit', function(e) {
             return false;
         }
     } else if (role === 'user') {
-        const operatorType = document.getElementById('operator_type').value;
-        if (!operatorType) {
+        const operatorCompanyId = document.getElementById('operator_company_id').value;
+        if (!operatorCompanyId) {
             e.preventDefault();
-            alert('Debe seleccionar el tipo de operador');
+            alert('Debe seleccionar una empresa para el operador');
             return false;
-        }
-        
-        if (operatorType === 'external') {
-            const operatorCompanyId = document.getElementById('operator_company_id').value;
-            if (!operatorCompanyId) {
-                e.preventDefault();
-                alert('Debe seleccionar una empresa para el operador externo');
-                return false;
-            }
         }
         
         // Validar que tenga al menos un permiso

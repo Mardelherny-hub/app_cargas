@@ -19,7 +19,7 @@ use App\Traits\UserHelper;
  * - Fechas lógicas (carga ≤ descarga)
  * - Pesos coherentes (neto ≤ bruto)
  * 
- * ACTUALIZADO: Incluye todos los campos de la migración bills_of_lading
+ * CORREGIDO: Validaciones de puertos usan 'active,1' no 'status,active'
  */
 class CreateBillOfLadingRequest extends FormRequest
 {
@@ -90,33 +90,33 @@ class CreateBillOfLadingRequest extends FormRequest
             'loading_port_id' => [
                 'required',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',
             ],
             'discharge_port_id' => [
                 'required',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',
                 'different:loading_port_id',
             ],
             'transshipment_port_id' => [
                 'nullable',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',
             ],
             'final_destination_port_id' => [
                 'nullable',
                 'integer',
-                'exists:ports,id,status,active',
+                'exists:ports,id,active,1',
             ],
             'loading_customs_id' => [
                 'nullable',
                 'integer',
-                'exists:customs_offices,id,status,active',
+                'exists:customs_offices,id,active,1',
             ],
             'discharge_customs_id' => [
                 'nullable',
                 'integer',
-                'exists:customs_offices,id,status,active',
+                'exists:customs_offices,id,active,1',
             ],
 
             // === TIPOS DE CARGA ===
@@ -130,60 +130,50 @@ class CreateBillOfLadingRequest extends FormRequest
                 'integer',
                 'exists:packaging_types,id,active,1',
             ],
+            'secondary_cargo_type_id' => [
+                'nullable',
+                'integer',
+                'exists:cargo_types,id,active,1',
+                'different:primary_cargo_type_id',
+            ],
+            'secondary_packaging_type_id' => [
+                'nullable',
+                'integer',
+                'exists:packaging_types,id,active,1',
+            ],
 
-            // === IDENTIFICACIÓN DEL CONOCIMIENTO ===
-            'bill_number' => [
+            // === DATOS BÁSICOS DEL CONOCIMIENTO ===
+            'bl_number' => [
                 'required',
                 'string',
                 'max:50',
-                'regex:/^[A-Z0-9\-\/]+$/', // Solo letras mayúsculas, números, guiones y barras
-                Rule::unique('bills_of_lading', 'bill_number')->whereNull('deleted_at'),
+                Rule::unique('bills_of_lading')->where(function ($query) use ($company) {
+                    return $query->where('issuer_company_id', $company->id);
+                }),
             ],
-            'master_bill_number' => [
-                'nullable',
+            'bl_type' => [
+                'required',
                 'string',
-                'max:50',
+                'in:original,copy,duplicate,express,telex,sea_waybill',
             ],
-            'house_bill_number' => [
-                'nullable',
-                'string',
-                'max:50',
-            ],
-            'internal_reference' => [
-                'nullable',
-                'string',
-                'max:100',
-            ],
-            'bill_date' => [
+            'issued_date' => [
                 'required',
                 'date',
                 'before_or_equal:today',
-                'after:2020-01-01', // Fecha mínima razonable
             ],
-            'manifest_number' => [
-                'nullable',
+            'freight_terms' => [
+                'required',
                 'string',
-                'max:50',
-            ],
-            'manifest_line_number' => [
-                'nullable',
-                'integer',
-                'min:1',
-                'max:99999',
+                'in:prepaid,collect,prepaid_collect',
             ],
 
-            // === FECHAS OPERACIONALES ===
+            // === FECHAS OPERATIVAS ===
             'loading_date' => [
-                'nullable',
+                'required',
                 'date',
-                'after_or_equal:bill_date',
+                'before_or_equal:today',
             ],
             'discharge_date' => [
-                'nullable',
-                'date',
-                'after_or_equal:loading_date',
-            ],
-            'arrival_date' => [
                 'nullable',
                 'date',
                 'after_or_equal:loading_date',
@@ -191,231 +181,204 @@ class CreateBillOfLadingRequest extends FormRequest
             'delivery_date' => [
                 'nullable',
                 'date',
-                'after_or_equal:arrival_date',
+                'after_or_equal:loading_date',
             ],
-            'cargo_ready_date' => [
-                'nullable',
-                'date',
-                'after_or_equal:bill_date',
-            ],
-            'free_time_expires_at' => [
-                'nullable',
-                'date',
-                'after:arrival_date',
-            ],
-
-            // === TÉRMINOS COMERCIALES ===
-            'freight_terms' => [
-                'required',
-                Rule::in(['prepaid', 'collect', 'prepaid_collect', 'third_party']),
-            ],
-            'payment_terms' => [
-                'nullable',
-                Rule::in(['cash', 'credit', 'advance', 'cod', 'letter_of_credit']),
-            ],
-            'incoterms' => [
-                'nullable',
-                Rule::in(['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF']),
-            ],
-            'currency_code' => [
+            'place_of_receipt' => [
                 'nullable',
                 'string',
+                'max:255',
+            ],
+            'place_of_delivery' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            // === INFORMACIÓN COMERCIAL ===
+            'incoterm' => [
+                'required',
+                'string',
+                'in:EXW,FCA,FAS,FOB,CFR,CIF,CPT,CIP,DAP,DPU,DDP',
+            ],
+            'incoterm_location' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'currency' => [
+                'required',
+                'string',
                 'size:3',
-                'regex:/^[A-Z]{3}$/', // Exactamente 3 letras mayúsculas
+                'in:USD,EUR,ARS,PYG,BRL,UYU',
+            ],
+            'exchange_rate' => [
+                'nullable',
+                'numeric',
+                'min:0.0001',
+                'max:999999.9999',
+            ],
+            'freight_value' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
+            ],
+            'other_charges' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
+            ],
+            'total_value' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
             ],
 
             // === MEDIDAS Y PESOS ===
-            'total_packages' => [
+            'measurement_unit' => [
+                'required',
+                'string',
+                'in:kg,mt,tn,lb,m3,ft3,containers',
+            ],
+            'gross_weight' => [
+                'required',
+                'numeric',
+                'min:0.001',
+                'max:999999999.999',
+            ],
+            'net_weight' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.999',
+                'lte:gross_weight',
+            ],
+            'volume' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.999',
+            ],
+            'quantity' => [
                 'required',
                 'integer',
                 'min:1',
                 'max:999999',
             ],
-            'gross_weight_kg' => [
+
+            // === CONTENEDORES Y EMBALAJE ===
+            'number_of_packages' => [
                 'required',
-                'numeric',
-                'min:0.01',
-                'max:999999.999',
-            ],
-            'net_weight_kg' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'lte:gross_weight_kg', // El peso neto no puede ser mayor al bruto
-            ],
-            'volume_m3' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:99999.999',
-            ],
-            'measurement_unit' => [
-                'nullable',
-                Rule::in(['KG', 'TON', 'M3', 'LTR', 'PCS']),
-            ],
-            'container_count' => [
-                'nullable',
                 'integer',
-                'min:0',
-                'max:999',
+                'min:1',
+                'max:999999',
             ],
-
-            // === DESCRIPCIÓN DE CARGA ===
-            'cargo_description' => [
-                'nullable',
-                'string',
-                'max:2000',
-            ],
-            'cargo_marks' => [
-                'nullable',
-                'string',
-                'max:1000',
-            ],
-            'commodity_code' => [
-                'nullable',
-                'string',
-                'max:50',
-            ],
-
-            // === TIPO Y CARACTERÍSTICAS DEL CONOCIMIENTO ===
-            'bill_type' => [
-                'nullable',
-                Rule::in(['original', 'copy', 'duplicate', 'amendment']),
-            ],
-            'status' => [
-                'nullable',
-                Rule::in(['draft', 'confirmed', 'loaded', 'in_transit', 'discharged', 'delivered', 'returned', 'cancelled']),
-            ],
-            'priority_level' => [
-                'nullable',
-                Rule::in(['low', 'normal', 'high', 'urgent']),
-            ],
-
-            // === CARACTERÍSTICAS ESPECIALES DE CARGA ===
-            'requires_inspection' => [
-                'boolean',
-            ],
-            'contains_dangerous_goods' => [
-                'boolean',
-            ],
-            'requires_refrigeration' => [
-                'boolean',
-            ],
-            'is_transhipment' => [
-                'boolean',
-            ],
-            'is_partial_shipment' => [
-                'boolean',
-            ],
-            'allows_partial_delivery' => [
-                'boolean',
-            ],
-            'requires_documents_on_arrival' => [
-                'boolean',
-            ],
-
-            // === CONSOLIDACIÓN ===
-            'is_consolidated' => [
-                'boolean',
-            ],
-            'is_master_bill' => [
-                'boolean',
-            ],
-            'is_house_bill' => [
-                'boolean',
-            ],
-            'requires_surrender' => [
-                'boolean',
-            ],
-
-            // === MERCANCÍAS PELIGROSAS ===
-            'un_number' => [
-                'nullable',
-                'string',
-                'max:10',
-                'required_if:contains_dangerous_goods,true',
-            ],
-            'imdg_class' => [
-                'nullable',
-                'string',
-                'max:10',
-                'required_if:contains_dangerous_goods,true',
-            ],
-
-            // === INFORMACIÓN FINANCIERA ===
-            'freight_amount' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:999999999.99',
-            ],
-            'insurance_amount' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:999999999.99',
-            ],
-            'declared_value' => [
-                'nullable',
-                'numeric',
-                'min:0',
-                'max:999999999.99',
-            ],
-            'additional_charges' => [
+            'container_numbers' => [
                 'nullable',
                 'json',
             ],
-
-            // === INSTRUCCIONES Y OBSERVACIONES ===
-            'special_instructions' => [
+            'seal_numbers' => [
                 'nullable',
-                'string',
-                'max:1000',
+                'json',
             ],
-            'handling_instructions' => [
-                'nullable',
-                'string',
-                'max:1000',
-            ],
-            'customs_remarks' => [
-                'nullable',
-                'string',
-                'max:1000',
-            ],
-            'internal_notes' => [
+            'marks_and_numbers' => [
                 'nullable',
                 'string',
                 'max:2000',
             ],
-            'loading_remarks' => [
-                'nullable',
+
+            // === DESCRIPCIONES ===
+            'goods_description' => [
+                'required',
                 'string',
-                'max:1000',
+                'max:3000',
             ],
-            'discharge_remarks' => [
+            'additional_remarks' => [
                 'nullable',
                 'string',
-                'max:1000',
+                'max:2000',
             ],
-            'delivery_remarks' => [
+            'special_instructions' => [
                 'nullable',
                 'string',
-                'max:1000',
+                'max:2000',
             ],
 
-            // === CONTROL DE CALIDAD Y CONDICIÓN ===
-            'cargo_condition_loading' => [
-                'nullable',
-                Rule::in(['good', 'fair', 'poor', 'damaged']),
+            // === TÉRMINOS DE PAGO ===
+            'payment_terms' => [
+                'required',
+                'string',
+                'in:cash,credit,advance,documents_against_payment,documents_against_acceptance,letter_of_credit',
             ],
-            'cargo_condition_discharge' => [
+            'payment_due_date' => [
                 'nullable',
-                Rule::in(['good', 'fair', 'poor', 'damaged']),
+                'date',
+                'after_or_equal:today',
             ],
-            'condition_remarks' => [
+            'credit_days' => [
+                'nullable',
+                'integer',
+                'min:0',
+                'max:365',
+            ],
+
+            // === REGULACIONES Y CONTROL ===
+            'dangerous_goods' => [
+                'boolean',
+            ],
+            'dangerous_goods_class' => [
+                'nullable',
+                'string',
+                'max:10',
+                'required_if:dangerous_goods,true',
+            ],
+            'temperature_controlled' => [
+                'boolean',
+            ],
+            'temperature_range' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:temperature_controlled,true',
+            ],
+            'fumigation_required' => [
+                'boolean',
+            ],
+            'fumigation_details' => [
                 'nullable',
                 'string',
                 'max:1000',
+                'required_if:fumigation_required,true',
+            ],
+
+            // === SEGUROS ===
+            'insurance_required' => [
+                'boolean',
+            ],
+            'insurance_value' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999999999.99',
+                'required_if:insurance_required,true',
+            ],
+            'insurance_percentage' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:100',
+            ],
+            'insurance_company' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'policy_number' => [
+                'nullable',
+                'string',
+                'max:100',
             ],
 
             // === VERIFICACIÓN Y DISCREPANCIAS ===
@@ -515,39 +478,48 @@ class CreateBillOfLadingRequest extends FormRequest
             'discharge_port_id.required' => 'Debe seleccionar el puerto de descarga.',
             'discharge_port_id.different' => 'El puerto de descarga debe ser diferente al de carga.',
 
-            // Número de conocimiento
-            'bill_number.required' => 'El número de conocimiento es obligatorio.',
-            'bill_number.unique' => 'Ya existe un conocimiento con este número.',
-            'bill_number.regex' => 'El número de conocimiento solo puede contener letras mayúsculas, números, guiones y barras.',
+            // Datos básicos
+            'bl_number.required' => 'El número de conocimiento es obligatorio.',
+            'bl_number.unique' => 'Ya existe un conocimiento con este número.',
+            'bl_type.required' => 'Debe seleccionar el tipo de conocimiento.',
+            'issued_date.required' => 'La fecha de emisión es obligatoria.',
+            'freight_terms.required' => 'Debe seleccionar los términos de flete.',
 
             // Fechas
-            'bill_date.required' => 'La fecha del conocimiento es obligatoria.',
-            'bill_date.before_or_equal' => 'La fecha del conocimiento no puede ser futura.',
-            'loading_date.after_or_equal' => 'La fecha de carga no puede ser anterior a la fecha del conocimiento.',
-            'discharge_date.after_or_equal' => 'La fecha de descarga no puede ser anterior a la de carga.',
+            'loading_date.required' => 'La fecha de carga es obligatoria.',
+            'discharge_date.after_or_equal' => 'La fecha de descarga debe ser posterior a la de carga.',
+            'delivery_date.after_or_equal' => 'La fecha de entrega debe ser posterior a la de carga.',
 
-            // Pesos y medidas
-            'total_packages.required' => 'La cantidad total de bultos es obligatoria.',
-            'total_packages.min' => 'Debe haber al menos 1 bulto.',
-            'gross_weight_kg.required' => 'El peso bruto es obligatorio.',
-            'gross_weight_kg.min' => 'El peso bruto debe ser mayor a 0.',
-            'net_weight_kg.lte' => 'El peso neto no puede ser mayor al peso bruto.',
+            // Comerciales
+            'incoterm.required' => 'Debe seleccionar un Incoterm.',
+            'currency.required' => 'Debe seleccionar una moneda.',
+            'measurement_unit.required' => 'Debe seleccionar una unidad de medida.',
+
+            // Pesos
+            'gross_weight.required' => 'El peso bruto es obligatorio.',
+            'gross_weight.min' => 'El peso bruto debe ser mayor a 0.',
+            'net_weight.lte' => 'El peso neto no puede ser mayor al peso bruto.',
+            'quantity.required' => 'La cantidad es obligatoria.',
+            'number_of_packages.required' => 'El número de bultos es obligatorio.',
+
+            // Descripciones
+            'goods_description.required' => 'La descripción de las mercancías es obligatoria.',
+            'goods_description.max' => 'La descripción no puede exceder 3000 caracteres.',
+
+            // Términos de pago
+            'payment_terms.required' => 'Debe seleccionar los términos de pago.',
 
             // Mercancías peligrosas
-            'un_number.required_if' => 'Debe especificar el número UN para mercancía peligrosa.',
-            'imdg_class.required_if' => 'Debe especificar la clase IMDG para mercancía peligrosa.',
+            'dangerous_goods_class.required_if' => 'Debe especificar la clase cuando las mercancías son peligrosas.',
+            'temperature_range.required_if' => 'Debe especificar el rango de temperatura cuando se requiere control.',
+            'fumigation_details.required_if' => 'Debe especificar los detalles cuando se requiere fumigación.',
+
+            // Seguros
+            'insurance_value.required_if' => 'Debe especificar el valor del seguro cuando se requiere.',
 
             // Documentos
-            'original_release_date.required_if' => 'Debe especificar la fecha cuando marca el original como entregado.',
-            'customs_bond_number.required_if' => 'Debe especificar el número de garantía aduanera.',
-
-            // Discrepancias
-            'discrepancy_details.required_if' => 'Debe especificar los detalles cuando marca que hay discrepancias.',
-
-            // Términos comerciales
-            'freight_terms.required' => 'Debe especificar los términos de flete.',
-            'incoterms.in' => 'El Incoterm seleccionado no es válido.',
-            'currency_code.regex' => 'El código de moneda debe ser de 3 letras mayúsculas (ej: USD, BRL, ARS).',
+            'original_release_date.required_if' => 'Debe especificar la fecha cuando el original fue liberado.',
+            'customs_bond_number.required_if' => 'Debe especificar el número de garantía cuando se requiere.',
         ];
     }
 
@@ -560,7 +532,7 @@ class CreateBillOfLadingRequest extends FormRequest
             'shipment_id' => 'envío',
             'shipper_id' => 'cargador/exportador',
             'consignee_id' => 'consignatario/importador',
-            'notify_party_id' => 'parte a notificar',
+            'notify_party_id' => 'notificar a',
             'cargo_owner_id' => 'propietario de la carga',
             'loading_port_id' => 'puerto de carga',
             'discharge_port_id' => 'puerto de descarga',
@@ -570,53 +542,23 @@ class CreateBillOfLadingRequest extends FormRequest
             'discharge_customs_id' => 'aduana de descarga',
             'primary_cargo_type_id' => 'tipo de carga principal',
             'primary_packaging_type_id' => 'tipo de embalaje principal',
-            'bill_number' => 'número de conocimiento',
-            'bill_date' => 'fecha del conocimiento',
+            'bl_number' => 'número de conocimiento',
+            'bl_type' => 'tipo de conocimiento',
+            'issued_date' => 'fecha de emisión',
+            'freight_terms' => 'términos de flete',
             'loading_date' => 'fecha de carga',
             'discharge_date' => 'fecha de descarga',
-            'status' => 'estado',
-            'total_packages' => 'total de bultos',
-            'gross_weight_kg' => 'peso bruto (kg)',
-            'net_weight_kg' => 'peso neto (kg)',
-            'volume_m3' => 'volumen (m³)',
-            'freight_terms' => 'términos de flete',
-            'has_discrepancies' => 'tiene discrepancias',
-            'discrepancy_details' => 'detalles de discrepancias',
-            'special_instructions' => 'instrucciones especiales',
-            'un_number' => 'número UN',
-            'imdg_class' => 'clase IMDG',
-            'original_release_date' => 'fecha entrega del original',
-            'customs_bond_number' => 'número de garantía aduanera',
-            'cargo_condition_loading' => 'condición carga en origen',
-            'cargo_condition_discharge' => 'condición carga en destino',
+            'delivery_date' => 'fecha de entrega',
+            'incoterm' => 'Incoterm',
+            'currency' => 'moneda',
+            'measurement_unit' => 'unidad de medida',
+            'gross_weight' => 'peso bruto',
+            'net_weight' => 'peso neto',
+            'volume' => 'volumen',
+            'quantity' => 'cantidad',
+            'number_of_packages' => 'número de bultos',
+            'goods_description' => 'descripción de las mercancías',
+            'payment_terms' => 'términos de pago',
         ];
-    }
-
-    /**
-     * Configure the validator instance.
-     */
-    public function withValidator($validator): void
-    {
-        $validator->after(function ($validator) {
-            // Validación: Si es conocimiento hijo, debe tener un maestro
-            if ($this->input('is_house_bill') && !$this->input('master_bill_number')) {
-                $validator->errors()->add('master_bill_number', 'Los conocimientos hijo deben tener un número de conocimiento maestro.');
-            }
-
-            // Validación: Si es conocimiento maestro, no puede ser hijo
-            if ($this->input('is_master_bill') && $this->input('is_house_bill')) {
-                $validator->errors()->add('is_house_bill', 'Un conocimiento no puede ser maestro e hijo a la vez.');
-            }
-
-            // Validación: Si contiene mercancía peligrosa, algunos campos son obligatorios
-            if ($this->input('contains_dangerous_goods')) {
-                if (!$this->input('un_number')) {
-                    $validator->errors()->add('un_number', 'El número UN es obligatorio para mercancía peligrosa.');
-                }
-                if (!$this->input('imdg_class')) {
-                    $validator->errors()->add('imdg_class', 'La clase IMDG es obligatoria para mercancía peligrosa.');
-                }
-            }
-        });
     }
 }

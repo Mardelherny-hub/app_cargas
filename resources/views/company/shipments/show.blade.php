@@ -672,6 +672,142 @@
                             @endif
                         </div>
                     </div>
+
+                    {{-- Gestión de Conocimientos de Embarque - NUEVA SECCIÓN --}}
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <div class="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 class="text-lg leading-6 font-medium text-gray-900">Conocimientos de Embarque</h3>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        Gestione los conocimientos de embarque (B/L) de este shipment
+                                    </p>
+                                </div>
+                                
+                                {{-- Botón Crear Conocimiento - NUEVO --}}
+                                @if($userPermissions['can_edit'] && in_array($shipment->status, ['loaded', 'in_transit', 'arrived']))                                    <div class="flex space-x-3">
+                                        <a href="{{ route('company.bills-of-lading.create', ['shipment_id' => $shipment->id]) }}" 
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                            </svg>
+                                            Crear Conocimiento
+                                        </a>
+                                    </div>
+                                @else
+                                    <div class="text-sm text-gray-500">
+                                        @if(!in_array($shipment->status, ['loaded', 'in_transit', 'arrived']))
+                                            El shipment debe estar cargado para crear conocimientos
+                                        @else
+                                            No tiene permisos para crear conocimientos
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
+
+                            {{-- Lista de Conocimientos Existentes --}}
+                            @if($shipment->billsOfLading && $shipment->billsOfLading->count() > 0)
+                                <div class="overflow-hidden">
+                                    <table class="min-w-full divide-y divide-gray-200">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Número B/L
+                                                </th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Cargador → Consignatario
+                                                </th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Estado
+                                                </th>
+                                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Fecha
+                                                </th>
+                                                <th scope="col" class="relative px-6 py-3">
+                                                    <span class="sr-only">Acciones</span>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="bg-white divide-y divide-gray-200">
+                                            @foreach($shipment->billsOfLading as $bill)
+                                                <tr>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                        <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
+                                                        class="text-indigo-600 hover:text-indigo-900">
+                                                            {{ $bill->bill_number }}
+                                                        </a>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        <div class="flex items-center">
+                                                            <span class="font-medium">{{ $bill->shipper->legal_name ?? 'N/A' }}</span>
+                                                            <svg class="w-4 h-4 mx-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                                                            </svg>
+                                                            <span>{{ $bill->consignee->legal_name ?? 'N/A' }}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap">
+                                                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full 
+                                                            @switch($bill->status)
+                                                                @case('draft') bg-gray-100 text-gray-800 @break
+                                                                @case('verified') bg-blue-100 text-blue-800 @break
+                                                                @case('sent_to_customs') bg-yellow-100 text-yellow-800 @break
+                                                                @case('accepted') bg-green-100 text-green-800 @break
+                                                                @default bg-gray-100 text-gray-800
+                                                            @endswitch">
+                                                            @switch($bill->status)
+                                                                @case('draft') Borrador @break
+                                                                @case('verified') Verificado @break
+                                                                @case('sent_to_customs') Enviado @break
+                                                                @case('accepted') Aceptado @break
+                                                                @default {{ ucfirst($bill->status) }}
+                                                            @endswitch
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {{ $bill->bill_date ? $bill->bill_date->format('d/m/Y') : 'N/A' }}
+                                                    </td>
+                                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
+                                                        class="text-indigo-600 hover:text-indigo-900">
+                                                            Ver
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @else
+                                {{-- Sin Conocimientos --}}
+                                <div class="text-center py-12">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                    <h3 class="mt-2 text-sm font-medium text-gray-900">No hay conocimientos de embarque</h3>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        @if(in_array($shipment->status, ['loaded', 'in_transit', 'arrived']))
+                                            Este shipment está listo para generar conocimientos de embarque.
+                                        @else
+                                            El shipment debe estar cargado para crear conocimientos.
+                                        @endif
+                                    </p>
+                                    
+                                    @if($userPermissions['can_manage_items'] && in_array($shipment->status, ['loaded', 'in_transit', 'arrived']))
+                                        <div class="mt-6">
+                                            <a href="{{ route('company.bills-of-lading.create', ['shipment_id' => $shipment->id]) }}" 
+                                            class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                </svg>
+                                                Crear Primer Conocimiento
+                                            </a>
+                                        </div>
+                                    @endif
+                                </div>
+                            @endif
+                        </div>
+                    </div>
                 </div>
 
                 {{-- Panel Lateral --}}

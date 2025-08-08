@@ -416,12 +416,20 @@ class BillOfLading extends Model
 
     /**
      * Ítems de mercadería de este conocimiento
+     * CORREGIDO: A través del shipment (jerarquía correcta)
      */
     public function shipmentItems(): HasMany
     {
-        return $this->hasMany(ShipmentItem::class);
+        return $this->hasMany(ShipmentItem::class, 'shipment_id', 'shipment_id');
     }
 
+    /**
+     * Ítems de mercadería a través del shipment (alternativa más clara)
+     */
+    public function getShipmentItemsAttribute()
+    {
+        return $this->shipment->shipmentItems ?? collect();
+    }
     /**
      * Archivos adjuntos (relación polimórfica)
      */
