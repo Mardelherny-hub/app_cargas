@@ -9,6 +9,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Carbon\Carbon;
+use App\Models\Shipment;
+use App\Models\ShipmentItem;
+use App\Models\Client;
+use App\Models\Port;
+use App\Models\CustomOffice;
+use App\Models\CargoType;
+use App\Models\PackagingType;
+use App\Models\User;
+
+
 
 /**
  * MÓDULO 4 - PARTE 1: GESTIÓN DE DATOS PARA MANIFIESTOS
@@ -34,6 +44,7 @@ class BillOfLading extends Model
 
     /**
      * The attributes that are mass assignable.
+     * ACTUALIZADO: Agregados campos para recalculación automática
      */
     protected $fillable = [
         // Relaciones principales
@@ -78,7 +89,7 @@ class BillOfLading extends Model
         'incoterms',
         'currency_code',
         
-        // Medidas y pesos
+        // Medidas y pesos - NECESARIOS para recalculación
         'total_packages',
         'gross_weight_kg',
         'net_weight_kg',
@@ -86,28 +97,16 @@ class BillOfLading extends Model
         'measurement_unit',
         'container_count',
         
-        // Descripción de carga
+        // Descripción de carga - NECESARIO para recalculación
         'cargo_description',
         'cargo_marks',
         'commodity_code',
         
-        // Tipo y características del conocimiento
-        'bill_type',
-        
-        // Estados y control
-        'status',
-        'priority_level',
-        
-        // Características especiales de carga
-        'requires_inspection',
+        // Características especiales - NECESARIAS para recalculación
         'contains_dangerous_goods',
         'requires_refrigeration',
-        'is_transhipment',
-        'is_partial_shipment',
-        'allows_partial_delivery',
-        'requires_documents_on_arrival',
-        
-        // Consolidación
+        'is_perishable',
+        'requires_inspection',
         'is_consolidated',
         'is_master_bill',
         'is_house_bill',
@@ -117,69 +116,15 @@ class BillOfLading extends Model
         'un_number',
         'imdg_class',
         
-        // Información financiera
-        'freight_amount',
-        'insurance_amount',
-        'declared_value',
-        'additional_charges',
-        
-        // Instrucciones y observaciones
-        'special_instructions',
-        'handling_instructions',
-        'customs_remarks',
-        'internal_notes',
-        'loading_remarks',
-        'discharge_remarks',
-        'delivery_remarks',
-        
-        // Control de calidad y condición
-        'cargo_condition_loading',
-        'cargo_condition_discharge',
-        'condition_remarks',
-        
-        // Verificación y discrepancias
+        // Estado y control
+        'status',
+        'priority_level',
         'verified_at',
         'verified_by_user_id',
         'has_discrepancies',
-        'discrepancy_details',
+        'discrepancy_notes',
         
-        // Webservices integración
-        'webservice_status',
-        'webservice_reference',
-        'webservice_sent_at',
-        'webservice_response_at',
-        'webservice_error_message',
-        
-        // Específicos para Argentina y Paraguay
-        'argentina_bill_id',
-        'paraguay_bill_id',
-        'argentina_status',
-        'paraguay_status',
-        'argentina_sent_at',
-        'paraguay_sent_at',
-        'webservice_errors',
-        
-        // Entrega y recogida
-        'delivery_address',
-        'pickup_address',
-        'delivery_contact_name',
-        'delivery_contact_phone',
-        'delivery_instructions',
-        
-        // Documentos
-        'required_documents',
-        'attached_documents',
-        'original_released',
-        'original_release_date',
-        'documentation_complete',
-        'ready_for_delivery',
-        
-        // Control aduanero
-        'customs_cleared',
-        'customs_bond_required',
-        'customs_bond_number',
-        
-        // Auditoría
+        // Auditoria
         'created_by_user_id',
         'last_updated_by_user_id',
     ];
@@ -415,12 +360,91 @@ class BillOfLading extends Model
     }
 
     /**
-     * Ítems de mercadería de este conocimiento
-     * CORREGIDO: A través del shipment (jerarquía correcta)
+     * CORREGIDO: Ítems de mercadería de este conocimiento
+     * Relación directa a través de bill_of_lading_id
      */
     public function shipmentItems(): HasMany
     {
-        return $this->hasMany(ShipmentItem::class, 'shipment_id', 'shipment_id');
+        return $this->hasMany(\App\Models\ShipmentItem::class, 'bill_of_lading_id');
+    }
+
+    /**
+     * CORREGIDO: Recalcular estadísticas del bill of lading basándose en sus shipment items
+     * TEMPORAL: Usar FQCN para evitar problemas de autoload y query directa como backup
+     */
+    public function recalculateItemStats(): void
+    {
+        try {
+            // Intentar usar la relación primero
+            $items = $this->shipmentItems;
+        } catch (\Exception $e) {
+            // Si falla la relación, usar query directa como fallback
+            \Log::warning('Relation failed, using direct query: ' . $e->getMessage());
+            $items = \App\Models\ShipmentItem::where('bill_of_lading_id', $this->id)->get();
+        }
+
+        if ($items->isEmpty()) {
+            // Si no hay items, resetear a 0
+            $this->update([
+                'total_packages' => 0,
+                'gross_weight_kg' => 0.00,
+                'net_weight_kg' => 0.00,
+                'volume_m3' => 0.00,
+                'container_count' => 0,
+            ]);
+            \Log::info('BillOfLading stats reset to 0 (no items)');
+            return;
+        }
+
+        // Calcular totales
+        $totalPackages = $items->sum('package_quantity');
+        $totalGrossWeight = $items->sum('gross_weight_kg');
+        $totalNetWeight = $items->sum('net_weight_kg') ?: 0;
+        $totalVolume = $items->sum('volume_m3') ?: 0;
+        $containerCount = $this->calculateContainerCount($items);
+
+        // Detectar si hay mercancías peligrosas
+        $hasDangerousGoods = $items->where('is_dangerous_goods', true)->isNotEmpty();
+        $hasPerishableGoods = $items->where('is_perishable', true)->isNotEmpty();
+        $requiresRefrigeration = $items->where('requires_refrigeration', true)->isNotEmpty();
+        
+        // Actualizar el bill of lading
+        $updateData = [
+            'total_packages' => $totalPackages,
+            'gross_weight_kg' => $totalGrossWeight,
+            'net_weight_kg' => $totalNetWeight,
+            'volume_m3' => $totalVolume,
+            'container_count' => $containerCount,
+        ];
+
+        // Si cargo_description está pendiente, generar una basada en los items
+        if ($this->cargo_description === 'Pendiente de definir') {
+            $descriptions = $items->pluck('item_description')
+                                 ->take(3) // Solo las primeras 3 descripciones
+                                 ->implode(', ');
+            
+            $updateData['cargo_description'] = $descriptions;
+            
+            // Si hay más de 3 items, agregar "y más..."
+            if ($items->count() > 3) {
+                $updateData['cargo_description'] .= ' y más...';
+            }
+        }
+
+        // Actualizar características especiales si no están definidas
+        if (!isset($this->contains_dangerous_goods)) {
+            $updateData['contains_dangerous_goods'] = $hasDangerousGoods;
+        }
+
+        // Actualizar el modelo
+        $this->update($updateData);
+        
+        \Log::info('BillOfLading stats updated:', [
+            'bill_id' => $this->id,
+            'total_packages' => $totalPackages,
+            'gross_weight_kg' => $totalGrossWeight,
+            'items_count' => $items->count()
+        ]);
     }
 
     /**
@@ -428,7 +452,7 @@ class BillOfLading extends Model
      */
     public function getShipmentItemsAttribute()
     {
-        return $this->shipment->shipmentItems ?? collect();
+        return $this->shipmentItems;
     }
     /**
      * Archivos adjuntos (relación polimórfica)
@@ -859,4 +883,67 @@ class BillOfLading extends Model
             ? round($this->gross_weight_kg / $this->total_packages, 2)
             : 0;
     }
+
+
+
+    // ========================================
+    // MÉTODOS DE RECALCULACIÓN AUTOMÁTICA
+    // ========================================
+
+
+    /**
+     * NUEVO: Obtener resumen de items para estadísticas
+     */
+    public function getItemsSummary(): array
+    {
+        $items = $this->shipmentItems;
+        
+        return [
+            'total_items' => $items->count(),
+            'total_lines' => $items->max('line_number') ?? 0,
+            'total_packages' => $items->sum('package_quantity'),
+            'total_weight_kg' => $items->sum('gross_weight_kg'),
+            'total_net_weight_kg' => $items->sum('net_weight_kg'),
+            'total_volume_m3' => $items->sum('volume_m3'),
+            'total_value_usd' => $items->sum('declared_value'),
+            'dangerous_goods_count' => $items->where('is_dangerous_goods', true)->count(),
+            'perishable_count' => $items->where('is_perishable', true)->count(),
+            'refrigerated_count' => $items->where('requires_refrigeration', true)->count(),
+            'items_with_discrepancies' => $items->where('has_discrepancies', true)->count(),
+            'items_requiring_review' => $items->where('requires_review', true)->count(),
+            'unique_cargo_types' => $items->pluck('cargo_type_id')->unique()->count(),
+            'unique_packaging_types' => $items->pluck('packaging_type_id')->unique()->count(),
+        ];
+    }
+    /**
+     * NUEVO: Calcular cantidad de contenedores por cargo_type "Contenedores"
+     */
+    private function calculateContainerCount($items): int
+    {
+        // Buscar items con cargo_type "Contenedores"
+        $containerItems = $items->filter(function($item) {
+            $cargoTypeName = strtolower($item->cargoType->name ?? '');
+            return strpos($cargoTypeName, 'contenedor') !== false;
+        });
+
+        // Sumar las cantidades de todos los items que son contenedores
+        $containerCount = $containerItems->sum('package_quantity');
+
+        \Log::info('Container Count Calculation:', [
+            'total_items' => $items->count(),
+            'container_items_found' => $containerItems->count(),
+            'container_count' => $containerCount,
+            'container_items_detail' => $containerItems->map(function($item) {
+                return [
+                    'line' => $item->line_number,
+                    'cargo_type' => $item->cargoType->name ?? 'N/A',
+                    'quantity' => $item->package_quantity,
+                    'description' => substr($item->item_description, 0, 30),
+                ];
+            })->toArray()
+        ]);
+
+        return $containerCount;
+    }
+
 }

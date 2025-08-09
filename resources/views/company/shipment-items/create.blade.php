@@ -48,6 +48,15 @@
             <form method="POST" action="{{ route('company.shipment-items.store') }}" class="space-y-6" id="itemForm">
                 @csrf
                 
+                {{-- CORREGIDO: Campos ocultos para ambos flujos --}}
+                @if(isset($shipment))
+                    <input type="hidden" name="shipment_id" value="{{ $shipment->id }}">
+                @endif
+                
+                @if(isset($billOfLading))
+                    <input type="hidden" name="bill_of_lading_id" value="{{ $billOfLading->id }}">
+                @endif
+                
                 {{-- Campo oculto para shipment_id --}}
                 <input type="hidden" name="shipment_id" value="{{ $shipment->id }}">
 

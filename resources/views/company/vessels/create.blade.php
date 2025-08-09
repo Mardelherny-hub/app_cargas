@@ -24,6 +24,40 @@
 
     <div class="py-12">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            <!-- Mensajes de Éxito/Error -->
+            @if(session('success'))
+                <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-6">
+                    <div class="flex items  
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm">{{ session('success') }}</p>
+                        </div>
+                    </div>
+                </div>
+            @endif
+            @if($errors->any())
+                <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-6">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm">Por favor, corrige los siguientes errores:</p>
+                            <ul class="mt-2 list-disc pl-5 space-y-1">
+                                @foreach($errors->all() as $error)
+                                    <li>{{ $error }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            @endif
             
             <!-- Formulario de Creación -->
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
@@ -48,12 +82,31 @@
                                            id="name"
                                            value="{{ old('name') }}"
                                            required
-                                           maxlength="255"
+                                           maxlength="100"
                                            placeholder="Ej: MV GUARANÍ"
                                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('name') border-red-300 @enderror">
                                     @error('name')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
+                                </div>
+
+                                <!-- Número de Registro/Matrícula -->
+                                <div>
+                                    <label for="registration_number" class="block text-sm font-medium text-gray-700 mb-1">
+                                        Número de Registro/Matrícula *
+                                    </label>
+                                    <input type="text" 
+                                           name="registration_number" 
+                                           id="registration_number"
+                                           value="{{ old('registration_number') }}"
+                                           required
+                                           maxlength="50"
+                                           placeholder="Ej: MAT-2024-001"
+                                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('registration_number') border-red-300 @enderror">
+                                    @error('registration_number')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                    <p class="mt-1 text-xs text-gray-500">Número de matrícula único de la embarcación</p>
                                 </div>
 
                                 <!-- Número IMO -->
@@ -72,7 +125,7 @@
                                     @error('imo_number')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
-                                    <p class="mt-1 text-xs text-gray-500">El número IMO debe ser único en el sistema</p>
+                                    <p class="mt-1 text-xs text-gray-500">Número IMO único internacional (solo para embarcaciones marítimas)</p>
                                 </div>
 
                                 <!-- Estado -->
@@ -90,6 +143,25 @@
                                     @error('status')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
+                                </div>
+
+                                <!-- País de Bandera -->
+                                <div>
+                                    <label for="flag_country_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                        País de Bandera *
+                                    </label>
+                                    <select name="flag_country_id" id="flag_country_id" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('flag_country_id') border-red-300 @enderror">
+                                        <option value="">Seleccione un país</option>
+                                        <!-- Países más comunes para navegación fluvial -->
+                                        <option value="1" {{ old('flag_country_id') == '1' ? 'selected' : '' }}>Argentina</option>
+                                        <option value="2" {{ old('flag_country_id') == '2' ? 'selected' : '' }}>Paraguay</option>
+                                        <option value="3" {{ old('flag_country_id') == '3' ? 'selected' : '' }}>Brasil</option>
+                                        <option value="4" {{ old('flag_country_id') == '4' ? 'selected' : '' }}>Uruguay</option>
+                                    </select>
+                                    @error('flag_country_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                    <p class="mt-1 text-xs text-gray-500">País bajo cuya bandera está registrada la embarcación</p>
                                 </div>
                             </div>
                         </div>
@@ -150,66 +222,156 @@
                         <div class="bg-gray-50 p-4 rounded-lg">
                             <h3 class="text-lg font-medium text-gray-900 mb-4">Especificaciones Técnicas</h3>
                             
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                
-                                <!-- Longitud -->
+                            <!-- Dimensiones Principales (OBLIGATORIAS) -->
+                            <div class="mb-6">
+                                <h4 class="text-md font-medium text-gray-800 mb-3">Dimensiones Principales *</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    
+                                    <!-- Longitud -->
+                                    <div>
+                                        <label for="length_meters" class="block text-sm font-medium text-gray-700 mb-1">
+                                            Longitud (m) *
+                                        </label>
+                                        <input type="number" 
+                                               name="length_meters" 
+                                               id="length_meters"
+                                               value="{{ old('length_meters') }}"
+                                               required
+                                               step="0.01"
+                                               min="0"
+                                               max="999.99"
+                                               placeholder="Ej: 60.00"
+                                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('length_meters') border-red-300 @enderror">
+                                        @error('length_meters')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Manga -->
+                                    <div>
+                                        <label for="beam_meters" class="block text-sm font-medium text-gray-700 mb-1">
+                                            Manga (m) *
+                                        </label>
+                                        <input type="number" 
+                                               name="beam_meters" 
+                                               id="beam_meters"
+                                               value="{{ old('beam_meters') }}"
+                                               required
+                                               step="0.01"
+                                               min="0"
+                                               max="100"
+                                               placeholder="Ej: 10.50"
+                                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('beam_meters') border-red-300 @enderror">
+                                        @error('beam_meters')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Calado -->
+                                    <div>
+                                        <label for="draft_meters" class="block text-sm font-medium text-gray-700 mb-1">
+                                            Calado (m) *
+                                        </label>
+                                        <input type="number" 
+                                               name="draft_meters" 
+                                               id="draft_meters"
+                                               value="{{ old('draft_meters') }}"
+                                               required
+                                               step="0.01"
+                                               min="0"
+                                               max="50"
+                                               placeholder="Ej: 3.20"
+                                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('draft_meters') border-red-300 @enderror">
+                                        @error('draft_meters')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+
+                                    <!-- Puntal -->
+                                    <div>
+                                        <label for="depth_meters" class="block text-sm font-medium text-gray-700 mb-1">
+                                            Puntal (m) *
+                                        </label>
+                                        <input type="number" 
+                                               name="depth_meters" 
+                                               id="depth_meters"
+                                               value="{{ old('depth_meters') }}"
+                                               required
+                                               step="0.01"
+                                               min="0"
+                                               max="50"
+                                               placeholder="Ej: 4.80"
+                                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('depth_meters') border-red-300 @enderror">
+                                        @error('depth_meters')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                </div>
+                                <p class="mt-2 text-xs text-gray-500">
+                                    <strong>Nota:</strong> Longitud=eslora total, Manga=ancho máximo, Calado=profundidad sumergida, Puntal=altura del casco
+                                </p>
+                            </div>
+
+                            <!-- Capacidades (OPCIONALES) -->
+                            <div>
+                                <h4 class="text-md font-medium text-gray-800 mb-3">Capacidades <span class="text-gray-500 text-xs">(Opcionales)</span></h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <label for="length_meters" class="block text-sm font-medium text-gray-700 mb-1">
-                                        Longitud (metros)
-                                        <span class="text-gray-500 text-xs">(Opcional)</span>
+                                    <label for="cargo_capacity_tons" class="block text-sm font-medium text-gray-700 mb-1">
+                                        Capacidad de Carga (toneladas) *
                                     </label>
                                     <input type="number" 
-                                           name="length_meters" 
-                                           id="length_meters"
-                                           value="{{ old('length_meters') }}"
-                                           step="0.01"
-                                           min="0"
-                                           max="999.99"
-                                           placeholder="Ej: 45.5"
-                                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('length_meters') border-red-300 @enderror">
-                                    @error('length_meters')
+                                        name="cargo_capacity_tons" 
+                                        id="cargo_capacity_tons"
+                                        value="{{ old('cargo_capacity_tons') }}"
+                                        required
+                                        step="0.01"
+                                        min="0"
+                                        max="99999.99"
+                                        placeholder="Ej: 1000.00"
+                                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('cargo_capacity_tons') border-red-300 @enderror">
+                                    @error('cargo_capacity_tons')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
+                                    
+                                    <!-- Tonelaje Bruto -->
+                                    <div>
+                                        <label for="gross_tonnage" class="block text-sm font-medium text-gray-700 mb-1">
+                                            Tonelaje Bruto (TRB)
+                                        </label>
+                                        <input type="number" 
+                                               name="gross_tonnage" 
+                                               id="gross_tonnage"
+                                               value="{{ old('gross_tonnage') }}"
+                                               step="0.01"
+                                               min="0"
+                                               max="999999.99"
+                                               placeholder="Ej: 850.00"
+                                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('gross_tonnage') border-red-300 @enderror">
+                                        @error('gross_tonnage')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
 
-                                <!-- Tonelaje Bruto -->
-                                <div>
-                                    <label for="gross_tonnage" class="block text-sm font-medium text-gray-700 mb-1">
-                                        Tonelaje Bruto (TRB)
-                                        <span class="text-gray-500 text-xs">(Opcional)</span>
-                                    </label>
-                                    <input type="number" 
-                                           name="gross_tonnage" 
-                                           id="gross_tonnage"
-                                           value="{{ old('gross_tonnage') }}"
-                                           step="0.01"
-                                           min="0"
-                                           max="999999.99"
-                                           placeholder="Ej: 1500.00"
-                                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('gross_tonnage') border-red-300 @enderror">
-                                    @error('gross_tonnage')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Capacidad de Contenedores -->
-                                <div>
-                                    <label for="container_capacity" class="block text-sm font-medium text-gray-700 mb-1">
-                                        Capacidad de Contenedores
-                                        <span class="text-gray-500 text-xs">(Opcional)</span>
-                                    </label>
-                                    <input type="number" 
-                                           name="container_capacity" 
-                                           id="container_capacity"
-                                           value="{{ old('container_capacity') }}"
-                                           min="0"
-                                           max="99999"
-                                           placeholder="Ej: 120"
-                                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('container_capacity') border-red-300 @enderror">
-                                    @error('container_capacity')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                    <p class="mt-1 text-xs text-gray-500">Número máximo de contenedores TEU</p>
+                                    <!-- Capacidad de Contenedores -->
+                                    <div>
+                                        <label for="container_capacity" class="block text-sm font-medium text-gray-700 mb-1">
+                                            Capacidad de Contenedores (TEU)
+                                        </label>
+                                        <input type="number" 
+                                               name="container_capacity" 
+                                               id="container_capacity"
+                                               value="{{ old('container_capacity') }}"
+                                               min="0"
+                                               max="99999"
+                                               placeholder="Ej: 48"
+                                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('container_capacity') border-red-300 @enderror">
+                                        @error('container_capacity')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                        <p class="mt-1 text-xs text-gray-500">Número máximo de contenedores de 20 pies (TEU)</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -254,9 +416,10 @@
                         <div class="mt-2 text-sm text-blue-700">
                             <ul class="list-disc space-y-1 pl-5">
                                 <li>El nombre de la embarcación debe ser único e identificativo</li>
-                                <li>El número IMO (International Maritime Organization) es opcional pero recomendado para embarcaciones marítimas</li>
+                                <li>El número de registro/matrícula debe ser único en el sistema</li>
+                                <li>El número IMO es opcional pero recomendado para embarcaciones marítimas</li>
+                                <li>Las dimensiones principales son obligatorias para cálculos técnicos</li>
                                 <li>Solo podrá seleccionar propietarios que pertenezcan a su empresa</li>
-                                <li>Las especificaciones técnicas son opcionales pero útiles para informes y estadísticas</li>
                                 <li>Puede modificar estos datos posteriormente desde la sección de edición</li>
                             </ul>
                         </div>

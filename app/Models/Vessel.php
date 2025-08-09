@@ -71,7 +71,7 @@ class Vessel extends Model
         'max_cargo_capacity',
         'cargo_capacity_tons',        
         'container_capacity',   
-        'operational_status',
+        'status',
         'available_for_charter',
         'charter_rate',
         'current_port_id',
@@ -212,6 +212,15 @@ public function vesselOwner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'last_updated_by_user_id');
     }
+
+    // Agregar en app/Models/Vessel.php
+/**
+ * Usuario que actualizó el registro por última vez.
+ */
+public function updatedByUser(): BelongsTo
+{
+    return $this->belongsTo(User::class, 'last_updated_by_user_id');
+}
 
     // =====================================================
 // MÉTODOS AUXILIARES PARA VISTAS

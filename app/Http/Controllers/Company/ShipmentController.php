@@ -17,7 +17,7 @@ class ShipmentController extends Controller
     /**
      * Mostrar lista de cargas.
      */
-        public function index()
+    public function index()
     {
         // Verificar si el usuario puede ver cargas
         if (!$this->canPerform('view_cargas')) {
@@ -36,7 +36,7 @@ class ShipmentController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Consulta con LEFT JOIN directo para estadísticas
+        // CORREGIDO: Consulta usando la relación correcta a través de bills_of_lading
         $shipments = Shipment::whereHas('voyage', function($q) use ($company) {
                 $q->where('company_id', $company->id);
             })
@@ -52,7 +52,9 @@ class ShipmentController extends Controller
                 'vessel:id,name,vessel_type_id,registration_number',
                 'vessel.vesselType:id,name,code,category'
             ])
-            ->leftJoin('shipment_items', 'shipments.id', '=', 'shipment_items.shipment_id')
+            // CORREGIDO: JOIN correcto a través de bills_of_lading
+            ->leftJoin('bills_of_lading', 'shipments.id', '=', 'bills_of_lading.shipment_id')
+            ->leftJoin('shipment_items', 'bills_of_lading.id', '=', 'shipment_items.bill_of_lading_id')
             ->select(
                 'shipments.id',
                 'shipments.voyage_id',
@@ -89,7 +91,6 @@ class ShipmentController extends Controller
 
     /**
      * Calcular estadísticas de shipments para el dashboard.
-     * AGREGAR ESTE MÉTODO AL FINAL DE LA CLASE ShipmentController
      */
     private function calculateShipmentStats($company): array
     {
@@ -97,32 +98,26 @@ class ShipmentController extends Controller
             $q->where('company_id', $company->id);
         });
 
-        // Aplicar filtros según el rol del usuario
-        // CORREGIDO: Especificar la tabla para evitar ambiguedad
+        // Si es operador, aplicar filtro de ownership
         if ($this->isUser() && $this->isOperator()) {
-            $baseQuery->where('shipments.created_by_user_id', Auth::id());
+            $baseQuery->where('created_by_user_id', Auth::id());
         }
 
-        // Contar total
-        $total = $baseQuery->count(); 
-        
-        // Contar por estado
-        $byStatus = $baseQuery
-            ->select('status', \DB::raw('COUNT(*) as count'))
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
-
         return [
-            'total' => $total,
-            'pending' => ($byStatus['planning'] ?? 0) + ($byStatus['loading'] ?? 0) + ($byStatus['loaded'] ?? 0),
-            'in_transit' => $byStatus['in_transit'] ?? 0,
-            'delivered' => ($byStatus['arrived'] ?? 0) + ($byStatus['discharging'] ?? 0) + ($byStatus['completed'] ?? 0),
-            'delayed' => $byStatus['delayed'] ?? 0,
-            'by_status' => $byStatus,
+            'total' => $baseQuery->count(),
+            'planning' => (clone $baseQuery)->where('status', 'planning')->count(),
+            'loading' => (clone $baseQuery)->where('status', 'loading')->count(),
+            'loaded' => (clone $baseQuery)->where('status', 'loaded')->count(),
+            'in_transit' => (clone $baseQuery)->where('status', 'in_transit')->count(),
+            'arrived' => (clone $baseQuery)->where('status', 'arrived')->count(),
+            'discharging' => (clone $baseQuery)->where('status', 'discharging')->count(),
+            'completed' => (clone $baseQuery)->where('status', 'completed')->count(),
+            'delayed' => (clone $baseQuery)->where('status', 'delayed')->count(),
+            'cargo_weight_total' => (clone $baseQuery)->sum('cargo_weight_loaded'),
+            'containers_total' => (clone $baseQuery)->sum('containers_loaded'),
+            'average_utilization' => (clone $baseQuery)->avg('utilization_percentage'),
         ];
     }
-
 
    /**
      * Mostrar formulario para crear nueva carga.

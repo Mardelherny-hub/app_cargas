@@ -164,18 +164,18 @@
 
                                 <!-- Propietario -->
                                 <div>
-                                    <label for="vessel_owner_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                    <label for="owner_id" class="block text-sm font-medium text-gray-700 mb-1">
                                         Propietario *
                                     </label>
-                                    <select name="vessel_owner_id" id="vessel_owner_id" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('vessel_owner_id') border-red-300 @enderror">
+                                    <select name="owner_id" id="owner_id" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('owner_id') border-red-300 @enderror">
                                         <option value="">Seleccione un propietario</option>
                                         @foreach($vesselOwners as $id => $name)
-                                            <option value="{{ $id }}" {{ old('vessel_owner_id', $vessel->vessel_owner_id) == $id ? 'selected' : '' }}>
+                                            <option value="{{ $id }}" {{ old('owner_id', $vessel->owner_id) == $id ? 'selected' : '' }}>
                                                 {{ $name }}
                                             </option>
                                         @endforeach
                                     </select>
-                                    @error('vessel_owner_id')
+                                    @error('owner_id')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                     @if($vesselOwners->isEmpty())
