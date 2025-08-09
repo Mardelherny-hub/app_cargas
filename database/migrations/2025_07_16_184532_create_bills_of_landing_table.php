@@ -42,12 +42,12 @@ return new class extends Migration
             $table->unsignedBigInteger('primary_packaging_type_id')->comment('Tipo principal embalaje');
                     
             // Identificación del conocimiento
-            $table->string('bill_number', 50)->unique()->comment('Número conocimiento embarque');
-            $table->string('master_bill_number', 50)->nullable()->comment('Conocimiento madre (consolidados)');
-            $table->string('house_bill_number', 50)->nullable()->comment('Conocimiento hijo');
-            $table->string('internal_reference', 100)->nullable()->comment('Referencia interna empresa');
+            $table->string('bill_number', 100)->unique()->comment('Número conocimiento embarque');
+            $table->string('master_bill_number', 100)->nullable()->comment('Conocimiento madre (consolidados)');
+            $table->string('house_bill_number', 100)->nullable()->comment('Conocimiento hijo');
+            $table->string('internal_reference', 200)->nullable()->comment('Referencia interna empresa');
             $table->datetime('bill_date')->comment('Fecha del conocimiento');
-            $table->string('manifest_number', 50)->nullable()->comment('Número de manifiesto');
+            $table->string('manifest_number', 100)->nullable()->comment('Número de manifiesto');
             $table->integer('manifest_line_number')->nullable()->comment('Línea en manifiesto');
 
             // Fechas operacionales
@@ -86,7 +86,7 @@ return new class extends Migration
             // Descripción de carga
             $table->text('cargo_description')->comment('Descripción de la mercadería');
             $table->text('cargo_marks')->nullable()->comment('Marcas de la mercadería');
-            $table->string('commodity_code', 20)->nullable()->comment('Código commodity/NCM');
+            $table->string('commodity_code', 100)->nullable()->comment('Código commodity/NCM');
 
             // Tipo y características del conocimiento
             $table->enum('bill_type', [
@@ -171,8 +171,8 @@ return new class extends Migration
             $table->text('webservice_error_message')->nullable()->comment('Error webservice');
 
             // Específicos para Argentina y Paraguay
-            $table->string('argentina_bill_id', 50)->nullable()->comment('ID en webservice Argentina');
-            $table->string('paraguay_bill_id', 50)->nullable()->comment('ID en webservice Paraguay');
+            $table->string('argentina_bill_id', 100)->nullable()->comment('ID en webservice Argentina');
+            $table->string('paraguay_bill_id', 100)->nullable()->comment('ID en webservice Paraguay');
             $table->enum('argentina_status', [
                 'pending', 'sent', 'approved', 'rejected', 'error'
             ])->nullable()->comment('Estado en Argentina');

@@ -1,6 +1,4 @@
 <?php
-// ARCHIVO: resources/views/components/navigation.blade.php
-// CORRECCIÓN: Permisos completos para operadores (role 'user')
 ?>
 
 @php
@@ -22,7 +20,7 @@
             <div class="flex">
                 <!-- Logo -->
                 <div class="shrink-0 flex items-center">
-                    <a href="{{ route('dashboard') }}">
+                    <a href="{{ route('admin.dashboard') }}">
                         <x-application-mark class="block h-9 w-auto" />
                     </a>
                 </div>
@@ -32,7 +30,7 @@
                     
                     @if($user && $user->hasRole('super-admin'))
                         <!-- SUPER ADMIN Navigation -->
-                        <x-nav-link href="{{ route('dashboard') }}" :active="request()->routeIs('dashboard')">
+                        <x-nav-link href="{{ route('admin.dashboard') }}" :active="request()->routeIs('dashboard')">
                             {{ __('Dashboard') }}
                         </x-nav-link>
 
@@ -81,7 +79,7 @@
                         <div class="relative h-full flex items-center" x-data="{ open: false }">
                             <button @click="open = !open"
                                 class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out h-full"
-                                :class="{ 'border-indigo-400 text-gray-900': open || {{ request()->routeIs('company.vessel-owners.*', 'company.clients.*', 'company.operators.*') ? 'true' : 'false' }} }">
+                                {{ request()->routeIs('company.vessel-owners.*', 'company.vessels.*', 'company.clients.*', 'company.operators.*') ? 'true' : 'false' }}
                                 <span>Gestión</span>
                                 <svg class="ms-2 -me-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none"
                                     viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -92,19 +90,23 @@
                             <div x-show="open" @click.away="open = false" x-transition
                                 class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-1">
-                                    <a href="{{ route('company.vessel-owners.index') }}" 
-                                       class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessel-owners.*') ? 'bg-gray-100 text-gray-900' : '' }}">
-                                        {{ __('Propietarios') }}
+                                    <a href="{{ route('company.vessel-owners.index') }}"
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessel-owners.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        👥 {{ __('Propietarios') }}
                                     </a>
-                                    <a href="{{ route('company.clients.index') }}" 
-                                       class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.clients.*') ? 'bg-gray-100 text-gray-900' : '' }}">
-                                        {{ __('Clientes') }}
+                                    <a href="{{ route('company.vessels.index') }}"
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessels.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        🚢 {{ __('Embarcaciones') }}
+                                    </a>
+                                    <a href="{{ route('company.clients.index') }}"
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.clients.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        👤 {{ __('Clientes') }}
                                     </a>
                                     <!-- OPERADORES: Solo company-admin puede gestionar operadores -->
                                     @if($user->hasRole('company-admin'))
-                                    <a href="{{ route('company.operators.index') }}" 
-                                       class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.operators.*') ? 'bg-gray-100 text-gray-900' : '' }}">
-                                        {{ __('Operadores') }}
+                                    <a href="{{ route('company.operators.index') }}"
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.operators.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        ⚙️ {{ __('Operadores') }}
                                     </a>
                                     @endif
                                 </div>
@@ -455,6 +457,9 @@
                 </div>
                 <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')" class="pl-6">
                     {{ __('Propietarios') }}
+                </x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('company.vessels.index')" :active="request()->routeIs('company.vessels.*')" class="pl-6">
+                    🚢 {{ __('Embarcaciones') }}
                 </x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')" class="pl-6">
                     {{ __('Clientes') }}

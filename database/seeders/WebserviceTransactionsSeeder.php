@@ -35,6 +35,10 @@ class WebserviceTransactionsSeeder extends Seeder
     ];
 
     /**
+     * Cache para evitar transaction_ids duplicados
+     */
+    private array $usedTransactionIds = [];
+    /**
      * Ejecutar el seeder
      */
     public function run(): void
@@ -55,6 +59,9 @@ class WebserviceTransactionsSeeder extends Seeder
 
             // 2. Limpiar transacciones existentes de testing
             $this->cleanExistingTestTransactions($company);
+
+            // 3. Reiniciar cache de IDs usados
+            $this->usedTransactionIds = [];
 
             // 3. Crear transacciones para cada tipo de webservice
             $totalCreated = 0;
@@ -163,7 +170,7 @@ class WebserviceTransactionsSeeder extends Seeder
             }
 
             $status = $this->determineTransactionStatus($voyage, 'anticipada');
-            $transactionId = $this->generateTransactionId($company->id, 'anticipada');
+            $transactionId = $this->generateUniqueTransactionId($company->id, 'anticipada');
             
             $transaction = WebserviceTransaction::create([
                 // IDs obligatorios
@@ -256,7 +263,7 @@ class WebserviceTransactionsSeeder extends Seeder
             }
 
             $status = $this->determineTransactionStatus($voyage, 'micdta');
-            $transactionId = $this->generateTransactionId($company->id, 'micdta');
+            $transactionId = $this->generateUniqueTransactionId($company->id, 'micdta');
 
             WebserviceTransaction::create([
                 // IDs obligatorios
@@ -340,7 +347,7 @@ class WebserviceTransactionsSeeder extends Seeder
             }
 
             $status = $this->determineTransactionStatus($voyage, 'transbordo');
-            $transactionId = $this->generateTransactionId($company->id, 'transbordo');
+            $transactionId = $this->generateUniqueTransactionId($company->id, 'transbordo');
 
             WebserviceTransaction::create([
                 // IDs obligatorios
@@ -424,7 +431,7 @@ class WebserviceTransactionsSeeder extends Seeder
             }
 
             $status = $this->determineTransactionStatus($voyage, 'manifiesto');
-            $transactionId = $this->generateTransactionId($company->id, 'manifiesto');
+            $transactionId = $this->generateUniqueTransactionId($company->id, 'manifiesto');
 
             WebserviceTransaction::create([
                 // IDs obligatorios
@@ -512,7 +519,7 @@ class WebserviceTransactionsSeeder extends Seeder
                 'user_id' => $user->id,
                 
                 // Identificación de transacción
-                'transaction_id' => $this->generateTransactionId($company->id, $type),
+                'transaction_id' => $this->generateUniqueTransactionId($company->id, $type),
                 'external_reference' => "HIST-{$type}-" . rand(1000, 9999),
                 
                 // Configuración webservice
@@ -589,14 +596,42 @@ class WebserviceTransactionsSeeder extends Seeder
     /**
      * Generar transaction_id realista
      */
-    private function generateTransactionId(int $companyId, string $type): string
+    /**
+     * Generar transaction_id único (CORREGIDO)
+     */
+    private function generateUniqueTransactionId(int $companyId, string $type): string
     {
-        $prefix = strtoupper(substr($type, 0, 3));
-        $timestamp = now()->format('YmdHis');
-        $random = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
-        $companyCode = str_pad($companyId, 3, '0', STR_PAD_LEFT);
+        $maxAttempts = 50;
+        $attempts = 0;
 
-        return "{$prefix}{$companyCode}{$timestamp}{$random}";
+        do {
+            $attempts++;
+            
+            $prefix = strtoupper(substr($type, 0, 3));
+            $timestamp = now()->format('YmdHis') . str_pad(rand(0, 99), 2, '0', STR_PAD_LEFT);
+            $random = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
+            $companyCode = str_pad($companyId, 4, '0', STR_PAD_LEFT);
+
+            $transactionId = "{$prefix}{$companyCode}{$timestamp}{$random}";
+            $cacheKey = "{$companyId}-{$transactionId}";
+
+            // Verificar que no esté en cache ni en DB
+            if (!isset($this->usedTransactionIds[$cacheKey]) && 
+                !WebserviceTransaction::where('company_id', $companyId)
+                    ->where('transaction_id', $transactionId)
+                    ->exists()) {
+                
+                // Marcar como usado en cache
+                $this->usedTransactionIds[$cacheKey] = true;
+                return $transactionId;
+            }
+
+            // Pequeña pausa para asegurar timestamp diferente
+            usleep(1000); // 1ms
+
+        } while ($attempts < $maxAttempts);
+
+        throw new \Exception("No se pudo generar transaction_id único después de {$maxAttempts} intentos");
     }
 
     /**

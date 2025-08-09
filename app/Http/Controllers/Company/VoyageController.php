@@ -89,6 +89,7 @@ class VoyageController extends Controller
     public function create()
         {
             // 1. Verificar permisos
+            
             if (!$this->canPerform('access_trips')) {
                 abort(403, 'No tiene permisos para acceder a viajes.');
             }

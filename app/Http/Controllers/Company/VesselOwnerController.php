@@ -101,7 +101,8 @@ class VesselOwnerController extends Controller
         DB::beginTransaction();
 
         try {
-            $validated['company_id'] = Auth::user()->company_id;
+            $company = $this->getUserCompany();
+            $validated['company_id'] = $company->id;
             $validated['created_by_user_id'] = Auth::id();
             $validated['status'] = 'active';
 
@@ -148,7 +149,8 @@ class VesselOwnerController extends Controller
             'last_activity' => $vesselOwner->last_activity_at,
         ];
 
-        return view('company.vessel-owners.show', compact('vesselOwner', 'stats'));
+        $countries = Country::orderBy('name')->pluck('name', 'id');
+        return view('company.vessel-owners.show', compact('vesselOwner', 'stats', 'countries'));
     }
 
     /**

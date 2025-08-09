@@ -619,7 +619,6 @@ class OperatorController extends Controller
             'can_import' => $operators->where('can_import', true)->count(),
             'can_export' => $operators->where('can_export', true)->count(),
             'can_transfer' => $operators->where('can_transfer', true)->count(),
-            'internal' => $operators->where('type', 'internal')->count(),
             'external' => $operators->where('type', 'external')->count(),
         ];
     }
@@ -656,8 +655,8 @@ private function getOperatorDetailStats($operator): array
         'account_status' => ($operator->active && $operator->user?->active) ? 'Cuenta activa' : 'Cuenta inactiva',
 
         // Información del operador
-        'operator_type' => $operator->type === 'internal' ? 'Interno' : 'Externo',
-        'type_display' => $operator->type === 'internal' ? 'Operador Interno' : 'Operador Externo',
+        'operator_type' => 'Externo',
+        'type_display' => 'Operador Externo',
         'full_name' => trim($operator->first_name . ' ' . $operator->last_name),
         'first_name' => $operator->first_name,
         'last_name' => $operator->last_name,
@@ -691,7 +690,6 @@ private function getOperatorDetailStats($operator): array
 
         // Estados booleanos
         'is_active' => $operator->active,
-        'is_internal' => $operator->type === 'internal',
         'is_external' => $operator->type === 'external',
         'needs_attention' => (!$operator->active || !$operator->user?->active || !$operator->user),
         'has_user' => $operator->user ? true : false,
@@ -723,7 +721,6 @@ private function getOperatorDetailStats($operator): array
                 'inactive' => 'Inactivos',
             ],
             'type' => [
-                'internal' => 'Internos',
                 'external' => 'Externos',
             ],
             'permission' => [
@@ -783,7 +780,6 @@ private function getOperatorDetailStats($operator): array
     {
         return [
             'types' => [
-                'internal' => 'Interno',
                 'external' => 'Externo',
             ],
             'permissions' => [
@@ -802,7 +798,6 @@ private function getOperatorDetailStats($operator): array
     {
         return [
             'types' => [
-                'internal' => 'Interno',
                 'external' => 'Externo',
             ],
             'permissions' => [

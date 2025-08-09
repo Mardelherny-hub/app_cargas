@@ -28,8 +28,8 @@ return new class extends Migration
             // Referencia a cliente el dueño de la mercadería
             $table->unsignedBigInteger('client_id')->nullable()->comment('Cliente dueño de la mercadería');
 
-            // CORREGIDO: Reference to shipment (jerarquía correcta)
-            $table->unsignedBigInteger('shipment_id')->comment('Shipment al que pertenece');
+            // CORREGIDO: Reference to bill of lading (jerarquía correcta)
+            $table->unsignedBigInteger('bill_of_lading_id')->comment('Conocimiento de embarque al que pertenece');
 
             // Item identification
             $table->integer('line_number')->comment('Número de línea en el shipment');
@@ -111,7 +111,7 @@ return new class extends Migration
 
             // Performance indexes
             $table->index(['client_id'], 'idx_shipment_items_client');
-            $table->index(['shipment_id', 'line_number'], 'idx_shipment_items_shipment_line');
+            $table->index(['bill_of_lading_id', 'line_number'], 'idx_shipment_items_bill_of_lading_line');
             $table->index(['cargo_type_id', 'status'], 'idx_shipment_items_cargo_status');
             $table->index(['packaging_type_id'], 'idx_shipment_items_packaging');
             $table->index(['status', 'requires_review'], 'idx_shipment_items_status_review');
@@ -122,11 +122,10 @@ return new class extends Migration
             $table->index(['created_date'], 'idx_shipment_items_created_date');
 
             // Unique constraints
-            $table->unique(['shipment_id', 'line_number'], 'uk_shipment_items_shipment_line');
+            $table->unique(['bill_of_lading_id', 'line_number'], 'uk_shipment_items_bill_of_lading_line');
 
             // CORREGIDO: Foreign key constraints a shipments (jerarquía correcta)
-            $table->foreign('shipment_id', 'fk_shipment_items_shipment')->references('id')->on('shipments')->onDelete('cascade');
-            $table->foreign('cargo_type_id', 'fk_shipment_items_cargo_type')->references('id')->on('cargo_types')->onDelete('restrict');
+            $table->foreign('bill_of_lading_id', 'fk_shipment_items_bill_of_lading')->references('id')->on('bills_of_lading')->onDelete('cascade');            $table->foreign('cargo_type_id', 'fk_shipment_items_cargo_type')->references('id')->on('cargo_types')->onDelete('restrict');
             $table->foreign('packaging_type_id', 'fk_shipment_items_packaging_type')->references('id')->on('packaging_types')->onDelete('restrict');
             // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
             // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');

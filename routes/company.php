@@ -16,6 +16,7 @@ use App\Http\Controllers\Company\TransferController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
 use App\Http\Controllers\Company\VesselOwnerController;
+use App\Http\Controllers\Company\VesselController;
 use App\Http\Controllers\Company\BillOfLadingController;
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
@@ -166,6 +167,22 @@ Route::prefix('vessel-owners')->name('company.vessel-owners.')->group(function (
     Route::patch('/{vesselOwner}/toggle-status', [VesselOwnerController::class, 'toggleStatus'])->name('toggle-status');
     Route::get('/{vesselOwner}/vessels', [VesselOwnerController::class, 'vessels'])->name('vessels');
 });
+
+// Gestión de Embarcaciones
+Route::prefix('vessels')->name('company.vessels.')->group(function () {
+    Route::get('/', [VesselController::class, 'index'])->name('index');
+    Route::get('/create', [VesselController::class, 'create'])->name('create');
+    Route::post('/', [VesselController::class, 'store'])->name('store');
+    Route::get('/{vessel}', [VesselController::class, 'show'])->name('show');
+    Route::get('/{vessel}/edit', [VesselController::class, 'edit'])->name('edit');
+    Route::put('/{vessel}', [VesselController::class, 'update'])->name('update');
+    Route::delete('/{vessel}', [VesselController::class, 'destroy'])->name('destroy');
+    
+    // Acciones específicas
+    Route::patch('/{vessel}/toggle-status', [VesselController::class, 'toggleStatus'])->name('toggle-status');
+});
+
+
 // Gestión de Desconsolidación (solo si la empresa tiene rol "Desconsolidador")
 Route::prefix('deconsolidation')->name('company.deconsolidation.')->group(function () {
     Route::get('/', [DeconsolidationController::class, 'index'])->name('index');

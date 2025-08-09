@@ -25,7 +25,7 @@ return new class extends Migration
             $table->unsignedBigInteger('captain_id')->nullable()->comment('Capitán de esta embarcación');
             
             // Shipment identification
-            $table->string('shipment_number', 50)->comment('Número del envío');
+            $table->string('shipment_number', 100)->comment('Número del envío');
             $table->integer('sequence_in_voyage')->comment('Secuencia en el viaje');
 
             // Convoy configuration

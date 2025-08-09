@@ -65,11 +65,6 @@ class Operator extends Model
      */
     public function canImport(): bool
     {
-        // Operadores internos pueden importar siempre
-        if ($this->type === 'internal') {
-            return $this->can_import;
-        }
-
         // Operadores externos necesitan tanto permiso individual como que su empresa esté activa
         if ($this->type === 'external') {
             if (!$this->can_import) {
@@ -91,11 +86,6 @@ class Operator extends Model
      */
     public function canExport(): bool
     {
-        // Operadores internos pueden exportar siempre
-        if ($this->type === 'internal') {
-            return $this->can_export;
-        }
-
         // Operadores externos necesitan tanto permiso individual como que su empresa esté activa
         if ($this->type === 'external') {
             if (!$this->can_export) {
@@ -117,11 +107,6 @@ class Operator extends Model
      */
     public function canTransferBetweenCompanies(): bool
     {
-        // Operadores internos siempre pueden transferir (manejan múltiples empresas)
-        if ($this->type === 'internal') {
-            return $this->can_transfer;
-        }
-
         // Operadores externos solo si tienen permiso Y su empresa permite transferencias
         if ($this->type === 'external') {
             if (!$this->can_transfer) {
@@ -140,11 +125,6 @@ class Operator extends Model
      */
     public function canUseWebservice(string $webservice): bool
     {
-        // Operadores internos pueden usar cualquier webservice
-        if ($this->type === 'internal') {
-            return true;
-        }
-
         // Operadores externos dependen de los roles de su empresa
         if ($this->type === 'external') {
             $company = $this->company;
@@ -159,11 +139,6 @@ class Operator extends Model
      */
     public function getAvailableWebservices(): array
     {
-        // Operadores internos pueden usar todos
-        if ($this->type === 'internal') {
-            return ['anticipada', 'micdta', 'desconsolidados', 'transbordos'];
-        }
-
         // Operadores externos según su empresa
         if ($this->type === 'external') {
             $company = $this->company;
@@ -178,15 +153,6 @@ class Operator extends Model
      */
     public function getAvailableFeatures(): array
     {
-        // Operadores internos pueden usar todas
-        if ($this->type === 'internal') {
-            return [
-                'shipments', 'containers', 'reports', 'manifests',
-                'deconsolidations', 'titulo_madre', 'titulo_hijos',
-                'transshipments', 'barges', 'position_tracking'
-            ];
-        }
-
         // Operadores externos según su empresa
         if ($this->type === 'external') {
             $company = $this->company;
@@ -230,10 +196,6 @@ class Operator extends Model
      */
     public function getCompanyDisplayAttribute(): string
     {
-        if ($this->type === 'internal') {
-            return 'Sistema Central';
-        }
-
         $company = $this->company;
         return $company ? $company->full_name : 'Sin empresa';
     }
@@ -243,10 +205,6 @@ class Operator extends Model
      */
     public function getCompanyRolesDisplayAttribute(): string
     {
-        if ($this->type === 'internal') {
-            return 'Todos los roles';
-        }
-
         $company = $this->company;
         if (!$company) {
             return 'Sin empresa';
@@ -291,11 +249,6 @@ class Operator extends Model
     {
         if (!$this->active) {
             return false;
-        }
-
-        // Operadores internos solo necesitan estar activos
-        if ($this->type === 'internal') {
-            return true;
         }
 
         // Operadores externos necesitan empresa activa con roles
@@ -378,14 +331,6 @@ class Operator extends Model
     public function scopeOfType($query, string $type)
     {
         return $query->where('type', $type);
-    }
-
-    /**
-     * Scope para operadores internos.
-     */
-    public function scopeInternal($query)
-    {
-        return $query->where('type', 'internal');
     }
 
     /**

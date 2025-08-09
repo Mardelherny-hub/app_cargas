@@ -3,269 +3,175 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ __('Nuevo Propietario de Embarcación') }}
+                    {{ $vesselOwner->legal_name }}
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    Registrar un nuevo propietario de embarcaciones
+                    Propietario de Embarcaciones • {{ $vesselOwner->country->name ?? 'País no especificado' }}
                 </p>
             </div>
-            <a href="{{ route('company.vessel-owners.index') }}" 
-               class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium">
-                <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                </svg>
-                Volver a Lista
-            </a>
+            <div class="flex space-x-3">
+                <a href="{{ route('company.vessel-owners.edit', $vesselOwner) }}" 
+                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                    Editar
+                </a>
+                <a href="{{ route('company.vessel-owners.index') }}" 
+                   class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium">
+                    Volver a Lista
+                </a>
+            </div>
         </div>
     </x-slot>
 
     <div class="py-12">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             
-            <!-- Formulario -->
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+            <!-- Información General -->
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
                 <div class="p-6">
-                    <form method="POST" action="{{ route('company.vessel-owners.store') }}">
-                        @csrf
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Información General</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">CUIT/RUC</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ $vesselOwner->tax_id }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">Tipo Transportista</dt>
+                            <dd class="mt-1 text-sm text-gray-900">
+                                {{ $vesselOwner->transportista_type === 'O' ? 'Operador' : 'Representante' }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">Estado</dt>
+                            <dd class="mt-1">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {{ $vesselOwner->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                    {{ ucfirst($vesselOwner->status) }}
+                                </span>
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">Webservices</dt>
+                            <dd class="mt-1">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {{ $vesselOwner->webservice_authorized ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800' }}">
+                                    {{ $vesselOwner->webservice_authorized ? 'Autorizado' : 'No autorizado' }}
+                                </span>
+                            </dd>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                        <!-- Información Básica -->
-                        <div class="mb-8">
-                            <h3 class="text-lg font-medium text-gray-900 mb-4">Información Básica</h3>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <!-- CUIT/RUC -->
-                                <div>
-                                    <label for="tax_id" class="block text-sm font-medium text-gray-700">
-                                        CUIT/RUC <span class="text-red-500">*</span>
-                                    </label>
-                                    <input type="text" 
-                                           name="tax_id" 
-                                           id="tax_id" 
-                                           value="{{ old('tax_id') }}"
-                                           maxlength="15"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('tax_id') border-red-300 @enderror"
-                                           placeholder="Ej: 30707654321"
-                                           required>
-                                    @error('tax_id')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- País -->
-                                <div>
-                                    <label for="country_id" class="block text-sm font-medium text-gray-700">
-                                        País <span class="text-red-500">*</span>
-                                    </label>
-                                    <select name="country_id" 
-                                            id="country_id" 
-                                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('country_id') border-red-300 @enderror"
-                                            required>
-                                        <option value="">Seleccione un país</option>
-                                        @foreach($countries as $id => $name)
-                                            <option value="{{ $id }}" {{ old('country_id') == $id ? 'selected' : '' }}>
-                                                {{ $name }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @error('country_id')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Razón Social -->
-                                <div class="md:col-span-2">
-                                    <label for="legal_name" class="block text-sm font-medium text-gray-700">
-                                        Razón Social <span class="text-red-500">*</span>
-                                    </label>
-                                    <input type="text" 
-                                           name="legal_name" 
-                                           id="legal_name" 
-                                           value="{{ old('legal_name') }}"
-                                           maxlength="200"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('legal_name') border-red-300 @enderror"
-                                           placeholder="Ej: Naviera Río de la Plata S.A."
-                                           required>
-                                    @error('legal_name')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Nombre Comercial -->
-                                <div class="md:col-span-2">
-                                    <label for="commercial_name" class="block text-sm font-medium text-gray-700">
-                                        Nombre Comercial
-                                    </label>
-                                    <input type="text" 
-                                           name="commercial_name" 
-                                           id="commercial_name" 
-                                           value="{{ old('commercial_name') }}"
-                                           maxlength="200"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('commercial_name') border-red-300 @enderror"
-                                           placeholder="Ej: Naviera RDP">
-                                    @error('commercial_name')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Tipo Transportista -->
-                                <div>
-                                    <label for="transportista_type" class="block text-sm font-medium text-gray-700">
-                                        Tipo Transportista <span class="text-red-500">*</span>
-                                    </label>
-                                    <select name="transportista_type" 
-                                            id="transportista_type" 
-                                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('transportista_type') border-red-300 @enderror"
-                                            required>
-                                        <option value="">Seleccione tipo</option>
-                                        <option value="O" {{ old('transportista_type') == 'O' ? 'selected' : '' }}>O - Operador</option>
-                                        <option value="R" {{ old('transportista_type') == 'R' ? 'selected' : '' }}>R - Representante</option>
-                                    </select>
-                                    @error('transportista_type')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                    <p class="mt-1 text-xs text-gray-500">Requerido para webservices aduaneros</p>
-                                </div>
-
-                                <!-- Webservices -->
-                                <div class="flex items-center">
-                                    <div class="flex items-center h-5">
-                                        <input type="checkbox" 
-                                               name="webservice_authorized" 
-                                               id="webservice_authorized" 
-                                               value="1"
-                                               {{ old('webservice_authorized') ? 'checked' : '' }}
-                                               class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
-                                    </div>
-                                    <div class="ml-3">
-                                        <label for="webservice_authorized" class="text-sm font-medium text-gray-700">
-                                            Autorizado para Webservices
-                                        </label>
-                                        <p class="text-xs text-gray-500">Permitir uso en webservices aduaneros</p>
-                                    </div>
+            <!-- Estadísticas -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Datos de Contacto -->
-                        <div class="mb-8">
-                            <h3 class="text-lg font-medium text-gray-900 mb-4">Datos de Contacto</h3>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <!-- Email -->
-                                <div>
-                                    <label for="email" class="block text-sm font-medium text-gray-700">
-                                        Email
-                                    </label>
-                                    <input type="email" 
-                                           name="email" 
-                                           id="email" 
-                                           value="{{ old('email') }}"
-                                           maxlength="100"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('email') border-red-300 @enderror"
-                                           placeholder="contacto@empresa.com">
-                                    @error('email')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Teléfono -->
-                                <div>
-                                    <label for="phone" class="block text-sm font-medium text-gray-700">
-                                        Teléfono
-                                    </label>
-                                    <input type="text" 
-                                           name="phone" 
-                                           id="phone" 
-                                           value="{{ old('phone') }}"
-                                           maxlength="50"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('phone') border-red-300 @enderror"
-                                           placeholder="+54 11 4567-8900">
-                                    @error('phone')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Dirección -->
-                                <div class="md:col-span-2">
-                                    <label for="address" class="block text-sm font-medium text-gray-700">
-                                        Dirección
-                                    </label>
-                                    <textarea name="address" 
-                                              id="address" 
-                                              rows="2"
-                                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('address') border-red-300 @enderror"
-                                              placeholder="Dirección completa">{{ old('address') }}</textarea>
-                                    @error('address')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Ciudad -->
-                                <div>
-                                    <label for="city" class="block text-sm font-medium text-gray-700">
-                                        Ciudad
-                                    </label>
-                                    <input type="text" 
-                                           name="city" 
-                                           id="city" 
-                                           value="{{ old('city') }}"
-                                           maxlength="100"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('city') border-red-300 @enderror"
-                                           placeholder="Buenos Aires">
-                                    @error('city')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Código Postal -->
-                                <div>
-                                    <label for="postal_code" class="block text-sm font-medium text-gray-700">
-                                        Código Postal
-                                    </label>
-                                    <input type="text" 
-                                           name="postal_code" 
-                                           id="postal_code" 
-                                           value="{{ old('postal_code') }}"
-                                           maxlength="20"
-                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('postal_code') border-red-300 @enderror"
-                                           placeholder="C1106">
-                                    @error('postal_code')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
-                                </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">Total Embarcaciones</dt>
+                                    <dd class="text-lg font-medium text-gray-900">{{ $stats['total_vessels'] }}</dd>
+                                </dl>
                             </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Observaciones -->
-                        <div class="mb-8">
-                            <label for="notes" class="block text-sm font-medium text-gray-700">
-                                Observaciones
-                            </label>
-                            <textarea name="notes" 
-                                      id="notes" 
-                                      rows="4"
-                                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('notes') border-red-300 @enderror"
-                                      placeholder="Observaciones o notas adicionales sobre el propietario">{{ old('notes') }}</textarea>
-                            @error('notes')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">Embarcaciones Activas</dt>
+                                    <dd class="text-lg font-medium text-gray-900">{{ $stats['active_vessels'] }}</dd>
+                                </dl>
+                            </div>
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Botones -->
-                        <div class="flex items-center justify-end space-x-4">
-                            <a href="{{ route('company.vessel-owners.index') }}" 
-                               class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-6 py-2 rounded-md text-sm font-medium">
-                                Cancelar
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <div class="w-8 h-8 bg-gray-500 rounded-md flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="ml-5 w-0 flex-1">
+                                <dl>
+                                    <dt class="text-sm font-medium text-gray-500 truncate">Última Actividad</dt>
+                                    <dd class="text-lg font-medium text-gray-900">
+                                        {{ $stats['last_activity'] ? $stats['last_activity']->diffForHumans() : 'N/A' }}
+                                    </dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Embarcaciones -->
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg font-medium text-gray-900">Embarcaciones</h3>
+                        <a href="{{ route('company.vessels.create', ['owner_id' => $vesselOwner->id]) }}" 
+                           class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                            <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                            </svg>
+                            Nueva Embarcación
+                        </a>
+                    </div>
+                </div>
+                <div class="p-6">
+                    @if($vesselOwner->vessels->count() > 0)
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach($vesselOwner->vessels as $vessel)
+                                <div class="border border-gray-200 rounded-lg p-4">
+                                    <h4 class="font-medium text-gray-900">{{ $vessel->name }}</h4>
+                                    <p class="text-sm text-gray-500">{{ $vessel->vesselType->name ?? 'Tipo no especificado' }}</p>
+                                    <div class="mt-2 flex items-center justify-between">
+                                        <span class="px-2 py-1 text-xs rounded-full 
+                                            {{ $vessel->status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                            {{ ucfirst($vessel->status) }}
+                                        </span>
+                                        <a href="{{ route('company.vessels.show', $vessel) }}" 
+                                           class="text-blue-600 hover:text-blue-700 text-sm">Ver detalles</a>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="text-center py-8">
+                            <svg class="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                            </svg>
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">No hay embarcaciones registradas</h3>
+                            <p class="text-gray-500 mb-4">Comience agregando la primera embarcación para este propietario.</p>
+                            <a href="{{ route('company.vessels.create', ['owner_id' => $vesselOwner->id]) }}" 
+                               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                Agregar Primera Embarcación
                             </a>
-                            <button type="submit" 
-                                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md text-sm font-medium">
-                                <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                Crear Propietario
-                            </button>
                         </div>
-                    </form>
+                    @endif
                 </div>
             </div>
         </div>
