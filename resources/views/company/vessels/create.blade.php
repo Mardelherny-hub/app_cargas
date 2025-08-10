@@ -130,17 +130,19 @@
 
                                 <!-- Estado -->
                                 <div>
-                                    <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
-                                        Estado *
+                                    <label for="operational_status" class="block text-sm font-medium text-gray-700">
+                                        Estado Operacional *
                                     </label>
-                                    <select name="status" id="status" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('status') border-red-300 @enderror">
-                                        <option value="">Seleccione un estado</option>
-                                        <option value="active" {{ old('status') === 'active' ? 'selected' : '' }}>Activa</option>
-                                        <option value="inactive" {{ old('status') === 'inactive' ? 'selected' : '' }}>Inactiva</option>
-                                        <option value="maintenance" {{ old('status') === 'maintenance' ? 'selected' : '' }}>Mantenimiento</option>
-                                        <option value="dry_dock" {{ old('status') === 'dry_dock' ? 'selected' : '' }}>Dique Seco</option>
+                                    <select name="operational_status" id="operational_status" required
+                                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="active" {{ old('operational_status', 'active') === 'active' ? 'selected' : '' }}>Activa</option>
+                                        <option value="inactive" {{ old('operational_status') === 'inactive' ? 'selected' : '' }}>Inactiva</option>
+                                        <option value="maintenance" {{ old('operational_status') === 'maintenance' ? 'selected' : '' }}>Mantenimiento</option>
+                                        <option value="dry_dock" {{ old('operational_status') === 'dry_dock' ? 'selected' : '' }}>Dique Seco</option>
+                                        <option value="under_repair" {{ old('operational_status') === 'under_repair' ? 'selected' : '' }}>En Reparación</option>
+                                        <option value="decommissioned" {{ old('operational_status') === 'decommissioned' ? 'selected' : '' }}>Descomisionada</option>
                                     </select>
-                                    @error('status')
+                                    @error('operational_status')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>

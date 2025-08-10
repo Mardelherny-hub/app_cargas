@@ -180,6 +180,7 @@ Route::prefix('vessels')->name('company.vessels.')->group(function () {
     
     // Acciones específicas
     Route::patch('/{vessel}/toggle-status', [VesselController::class, 'toggleStatus'])->name('toggle-status');
+    Route::patch('/{vessel}/toggle-operational-status', [VesselController::class, 'toggleStatus'])->name('toggle-operational-status');
 });
 
 

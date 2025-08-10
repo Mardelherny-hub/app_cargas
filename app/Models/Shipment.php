@@ -310,4 +310,41 @@ class Shipment extends Model
     {
         // Implementar lógica de cálculo de utilización
     }
+
+       /**
+     * Generar número de shipment para el seeder.
+     * Método estático compatible con ShipmentSeeder.
+     * 
+     * @param Voyage $voyage - El viaje al que pertenece el shipment
+     * @param int $sequenceInVoyage - La secuencia del shipment en el viaje (1, 2, 3...)
+     * @return string - Número de shipment generado
+     */
+    public static function generateShipmentNumber($voyage, int $sequenceInVoyage): string
+    {
+        $year = now()->year;
+        $company = $voyage->company;
+        
+        // Generar código de empresa (primeras 3 letras del nombre comercial)
+        $companyCode = strtoupper(substr($company->commercial_name ?? $company->legal_name, 0, 3));
+        
+        // Buscar el último número para este año y empresa
+        $lastShipment = self::whereHas('voyage', function($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->where('shipment_number', 'like', "{$companyCode}-{$year}-%")
+            ->orderBy('shipment_number', 'desc')
+            ->first();
+
+        if ($lastShipment) {
+            // Extraer el número secuencial del último shipment
+            $parts = explode('-', $lastShipment->shipment_number);
+            $lastNumber = isset($parts[2]) ? intval($parts[2]) : 0;
+            $nextNumber = $lastNumber + $sequenceInVoyage;
+        } else {
+            $nextNumber = $sequenceInVoyage;
+        }
+
+        return sprintf('%s-%d-%04d', $companyCode, $year, $nextNumber);
+    }
+
 }

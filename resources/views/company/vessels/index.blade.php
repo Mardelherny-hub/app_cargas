@@ -24,7 +24,49 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            
+            <!-- Aviso cuando no hay propietarios de embarcaciones disponibles -->
+@if(session('warning') && session('info') && session('next_step'))
+<div class="mb-6">
+    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.517-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            <div class="ml-3 flex-1">
+                <h3 class="text-sm font-medium text-yellow-800">
+                    {{ session('warning') }}
+                </h3>
+                <div class="mt-2 text-sm text-yellow-700">
+                    <p>{{ session('info') }}</p>
+                </div>
+                <div class="mt-4">
+                    <div class="flex">
+                        <a href="{{ session('next_step.url') }}" 
+                           class="bg-yellow-50 text-yellow-800 border border-yellow-200 hover:bg-yellow-100 rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
+                            @if(session('next_step.icon') === 'plus')
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                            @endif
+                            {{ session('next_step.text') }}
+                        </a>
+                        <a href="{{ route('company.vessel-owners.index') }}" 
+                           class="ml-3 bg-white text-yellow-800 border border-yellow-300 hover:bg-gray-50 rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            Ver Propietarios Existentes
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
             <!-- Filtros de Búsqueda -->
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
                 <div class="p-6">
@@ -69,13 +111,15 @@
 
                         <!-- Filtro por Estado -->
                         <div>
-                            <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                            <select name="status" id="status" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <label for="operational_status" class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                            <select name="operational_status" id="operational_status" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 <option value="">Todos los estados</option>
-                                <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Activa</option>
-                                <option value="inactive" {{ request('status') === 'inactive' ? 'selected' : '' }}>Inactiva</option>
-                                <option value="maintenance" {{ request('status') === 'maintenance' ? 'selected' : '' }}>Mantenimiento</option>
-                                <option value="dry_dock" {{ request('status') === 'dry_dock' ? 'selected' : '' }}>Dique Seco</option>
+                                <option value="active" {{ request('operational_status') === 'active' ? 'selected' : '' }}>Activa</option>
+                                <option value="inactive" {{ request('operational_status') === 'inactive' ? 'selected' : '' }}>Inactiva</option>
+                                <option value="maintenance" {{ request('operational_status') === 'maintenance' ? 'selected' : '' }}>Mantenimiento</option>
+                                <option value="dry_dock" {{ request('operational_status') === 'dry_dock' ? 'selected' : '' }}>Dique Seco</option>
+                                <option value="under_repair" {{ request('operational_status') === 'under_repair' ? 'selected' : '' }}>En Reparación</option>
+                                <option value="decommissioned" {{ request('operational_status') === 'decommissioned' ? 'selected' : '' }}>Descomisionada</option>
                             </select>
                         </div>
 
@@ -197,7 +241,7 @@
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                                    @switch($vessel->status)
+                                                    @switch($vessel->operational_status)
                                                         @case('active')
                                                             bg-green-100 text-green-800
                                                             @break
@@ -210,10 +254,16 @@
                                                         @case('dry_dock')
                                                             bg-red-100 text-red-800
                                                             @break
+                                                        @case('under_repair')
+                                                            bg-orange-100 text-orange-800
+                                                            @break
+                                                        @case('decommissioned')
+                                                            bg-red-200 text-red-900
+                                                            @break
                                                         @default
                                                             bg-gray-100 text-gray-800
                                                     @endswitch">
-                                                    @switch($vessel->status)
+                                                    @switch($vessel->operational_status)
                                                         @case('active')
                                                             Activa
                                                             @break
@@ -226,8 +276,14 @@
                                                         @case('dry_dock')
                                                             Dique Seco
                                                             @break
+                                                        @case('under_repair')
+                                                            En Reparación
+                                                            @break
+                                                        @case('decommissioned')
+                                                            Descomisionada
+                                                            @break
                                                         @default
-                                                            {{ ucfirst($vessel->status) }}
+                                                            {{ ucfirst($vessel->operational_status) }}
                                                     @endswitch
                                                 </span>
                                             </td>
@@ -252,15 +308,14 @@
                                                         </a>
 
                                                         <!-- Toggle Estado -->
-                                                        <form action="{{ route('company.vessels.toggle-status', $vessel) }}" 
-                                                              method="POST" class="inline" 
+                                                        <form action="{{ route('company.vessels.toggle-status', $vessel) }}"                                                               method="POST" class="inline" 
                                                               onsubmit="return confirm('¿Está seguro de cambiar el estado de esta embarcación?')">
                                                             @csrf
                                                             @method('PATCH')
                                                             <button type="submit" 
                                                                     class="text-gray-600 hover:text-gray-900" 
-                                                                    title="{{ $vessel->status === 'active' ? 'Desactivar' : 'Activar' }}">
-                                                                @if($vessel->status === 'active')
+                                                                    title="{{ $vessel->operational_status === 'active' ? 'Desactivar' : 'Activar' }}">
+                                                                @if($vessel->operational_status === 'active')
                                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                                                     </svg>

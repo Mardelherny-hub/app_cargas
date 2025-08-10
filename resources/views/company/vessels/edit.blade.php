@@ -48,21 +48,25 @@
                         </div>
                         <div>
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
-                                @switch($vessel->status)
-                                    @case('active') bg-green-100 text-green-800 @break
-                                    @case('inactive') bg-gray-100 text-gray-800 @break
-                                    @case('maintenance') bg-yellow-100 text-yellow-800 @break
-                                    @case('dry_dock') bg-red-100 text-red-800 @break
-                                    @default bg-gray-100 text-gray-800
-                                @endswitch">
-                                @switch($vessel->status)
-                                    @case('active') Activa @break
-                                    @case('inactive') Inactiva @break
-                                    @case('maintenance') Mantenimiento @break
-                                    @case('dry_dock') Dique Seco @break
-                                    @default {{ ucfirst($vessel->status) }}
-                                @endswitch
-                            </span>
+                            @switch($vessel->operational_status)
+                                @case('active') bg-green-100 text-green-800 @break
+                                @case('inactive') bg-gray-100 text-gray-800 @break
+                                @case('maintenance') bg-yellow-100 text-yellow-800 @break
+                                @case('dry_dock') bg-red-100 text-red-800 @break
+                                @case('under_repair') bg-orange-100 text-orange-800 @break
+                                @case('decommissioned') bg-red-200 text-red-900 @break
+                                @default bg-gray-100 text-gray-800
+                            @endswitch">
+                            @switch($vessel->operational_status)
+                                @case('active') Activa @break
+                                @case('inactive') Inactiva @break
+                                @case('maintenance') Mantenimiento @break
+                                @case('dry_dock') Dique Seco @break
+                                @case('under_repair') En Reparación @break
+                                @case('decommissioned') Descomisionada @break
+                                @default {{ ucfirst($vessel->operational_status) }}
+                            @endswitch
+                        </span>
                         </div>
                     </div>
                 </div>
@@ -121,17 +125,17 @@
 
                                 <!-- Estado -->
                                 <div>
-                                    <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
+                                    <label for="operational_status" class="block text-sm font-medium text-gray-700 mb-1">
                                         Estado *
                                     </label>
-                                    <select name="status" id="status" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('status') border-red-300 @enderror">
+                                    <select name="operational_status" id="operational_status" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('operational_status') border-red-300 @enderror">
                                         <option value="">Seleccione un estado</option>
-                                        <option value="active" {{ old('status', $vessel->status) === 'active' ? 'selected' : '' }}>Activa</option>
-                                        <option value="inactive" {{ old('status', $vessel->status) === 'inactive' ? 'selected' : '' }}>Inactiva</option>
-                                        <option value="maintenance" {{ old('status', $vessel->status) === 'maintenance' ? 'selected' : '' }}>Mantenimiento</option>
-                                        <option value="dry_dock" {{ old('status', $vessel->status) === 'dry_dock' ? 'selected' : '' }}>Dique Seco</option>
+                                        <option value="active" {{ old('operational_status', $vessel->operational_status) === 'active' ? 'selected' : '' }}>Activa</option>
+                                        <option value="inactive" {{ old('operational_status', $vessel->operational_status) === 'inactive' ? 'selected' : '' }}>Inactiva</option>
+                                        <option value="maintenance" {{ old('operational_status', $vessel->operational_status) === 'maintenance' ? 'selected' : '' }}>Mantenimiento</option>
+                                        <option value="dry_dock" {{ old('operational_status', $vessel->operational_status) === 'dry_dock' ? 'selected' : '' }}>Dique Seco</option>
                                     </select>
-                                    @error('status')
+                                    @error('operational_status')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
@@ -204,7 +208,7 @@
                                                 <strong>{{ $vessel->vesselOwner->legal_name }}</strong><br>
                                                 CUIT/RUC: {{ $vessel->vesselOwner->tax_id }}<br>
                                                 Tipo: {{ $vessel->vesselOwner->transportista_type === 'O' ? 'Operador' : 'Representante' }}
-                                                @if($vessel->vesselOwner->status !== 'active')
+                                                @if($vessel->vesselOwner->operational_status !== 'active')
                                                     <br><span class="text-red-600">⚠️ Estado: {{ ucfirst($vessel->vesselOwner->status) }}</span>
                                                 @endif
                                             </div>

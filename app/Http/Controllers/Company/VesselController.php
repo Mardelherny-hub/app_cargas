@@ -58,8 +58,8 @@ class VesselController extends Controller
             $query->where('owner_id', $request->owner_id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        if ($request->filled('operational_status')) {
+            $query->where('operational_status', $request->operational_status);
         }
 
         // Ordenamiento
@@ -87,36 +87,43 @@ class VesselController extends Controller
         ));
     }
 
-    /**
-     * Show the form for creating a new vessel.
-     */
-    public function create()
-    {
-        if (!$this->canPerform('dashboard_access')) {
-            abort(403, 'No tiene permisos para crear embarcaciones.');
-        }
-
-        $company = $this->getUserCompany();
-        if (!$company) {
-            return redirect()->route('company.vessels.index')
-                ->with('error', 'No se encontró la empresa asociada.');
-        }
-
-        // Solo propietarios de la empresa del usuario
-        $vesselOwners = VesselOwner::byCompany($company->id)
-            ->active()
-            ->orderBy('legal_name')
-            ->pluck('legal_name', 'id');
-
-        if ($vesselOwners->isEmpty()) {
-            return redirect()->route('company.vessels.index')
-                ->with('error', 'Debe crear al menos un propietario de embarcaciones antes de registrar una embarcación.');
-        }
-
-        $vesselTypes = VesselType::active()->orderBy('name')->pluck('name', 'id');
-
-        return view('company.vessels.create', compact('vesselOwners', 'vesselTypes'));
+    
+/**
+ * Show the form for creating a new vessel.
+ */
+public function create()
+{
+    if (!$this->canPerform('dashboard_access')) {
+        abort(403, 'No tiene permisos para crear embarcaciones.');
     }
+
+    $company = $this->getUserCompany();
+    if (!$company) {
+        return redirect()->route('company.vessels.index')
+            ->with('error', 'No se encontró la empresa asociada.');
+    }
+
+    // DISEÑO CORRECTO: Solo propietarios de la empresa del usuario
+    $vesselOwners = VesselOwner::byCompany($company->id)
+        ->active()
+        ->orderBy('legal_name')
+        ->pluck('legal_name', 'id');
+
+    if ($vesselOwners->isEmpty()) {
+        return redirect()->route('company.vessels.index')
+            ->with('warning', 'Su empresa aún no tiene propietarios de embarcaciones registrados.')
+            ->with('info', 'Para crear una embarcación, primero debe registrar al menos un propietario.')
+            ->with('next_step', [
+                'text' => 'Crear Propietario de Embarcación',
+                'url' => route('company.vessel-owners.create'),
+                'icon' => 'plus'
+            ]);
+    }
+
+    $vesselTypes = VesselType::active()->orderBy('name')->pluck('name', 'id');
+
+    return view('company.vessels.create', compact('vesselOwners', 'vesselTypes'));
+}
 
 /**
  * Store a newly created vessel.
@@ -149,8 +156,8 @@ public function store(Request $request)
         // OPCIONALES
         'gross_tonnage' => 'nullable|numeric|min:0|max:999999.99',
         'container_capacity' => 'nullable|integer|min:0|max:99999',
-        'status' => 'required|in:active,inactive,maintenance,dry_dock,under_repair,decommissioned'
-    ]);
+        'operational_status' => 'required|in:active,inactive,maintenance,dry_dock,under_repair,decommissioned',
+        ]);
 
     // Verificar que el propietario pertenece a la empresa del usuario
     $owner = VesselOwner::find($validated['vessel_owner_id']);
@@ -184,7 +191,7 @@ public function store(Request $request)
             // OPCIONALES
             'gross_tonnage' => $validated['gross_tonnage'],
             'container_capacity' => $validated['container_capacity'],
-            'operational_status' => $validated['status'],
+            'operational_status' => $validated['operational_status'],
             
             // AUDITORÍA
             'created_by_user_id' => Auth::id(),
@@ -228,7 +235,7 @@ public function store(Request $request)
         $stats = [
             'age_years' => $vessel->created_at ? Carbon::now()->diffInYears($vessel->created_at) : 0,
             'last_updated' => $vessel->updated_at,
-            'status' => $vessel->status,
+            'operational_status' => $vessel->operational_status,
             'has_imo' => !empty($vessel->imo_number),
         ];
 
@@ -268,30 +275,38 @@ public function store(Request $request)
             abort(403, 'No tiene permisos para editar esta embarcación.');
         }
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'imo_number' => [
-                'nullable',
-                'string',
-                'max:20',
-                Rule::unique('vessels', 'imo_number')->ignore($vessel->id)
-            ],
-            'vessel_type_id' => 'required|exists:vessel_types,id',
-            'owner_id' => [
-                'required',
-                'exists:vessel_owners,id',
-                function ($attribute, $value, $fail) use ($company) {
-                    $owner = VesselOwner::find($value);
-                    if (!$owner || $owner->company_id !== $company->id) {
-                        $fail('El propietario seleccionado no pertenece a su empresa.');
+        
+        try {
+            // Verificar si la embarcación tiene registros relacionados
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'imo_number' => [
+                    'nullable',
+                    'string',
+                    'max:20',
+                    Rule::unique('vessels', 'imo_number')->ignore($vessel->id)
+                ],
+                'vessel_type_id' => 'required|exists:vessel_types,id',
+                'owner_id' => [
+                    'required',
+                    'exists:vessel_owners,id',
+                    function ($attribute, $value, $fail) use ($company) {
+                        $owner = VesselOwner::find($value);
+                        if (!$owner || $owner->company_id !== $company->id) {
+                            $fail('El propietario seleccionado no pertenece a su empresa.');
+                        }
                     }
-                }
-            ],
-            'length_meters' => 'nullable|numeric|min:0|max:999.99',
-            'gross_tonnage' => 'nullable|numeric|min:0|max:999999.99',
-            'container_capacity' => 'nullable|integer|min:0|max:99999',
-            'status' => 'required|in:active,inactive,maintenance,dry_dock'
-        ]);
+                ],
+                'length_meters' => 'nullable|numeric|min:0|max:999.99',
+                'gross_tonnage' => 'nullable|numeric|min:0|max:999999.99',
+                'container_capacity' => 'nullable|integer|min:0|max:99999',
+                'operational_status' => 'required|in:active,inactive,maintenance,dry_dock,under_repair,decommissioned'
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withInput()
+                ->withErrors($e->validator)
+                ->with('error', 'Error de validación: ' . $e->getMessage());
+        }
 
         DB::beginTransaction();
 
@@ -346,7 +361,7 @@ public function store(Request $request)
     }
 
     /**
-     * Toggle the status of the vessel.
+     * Toggle the operational_status of the vessel.
      */
     public function toggleStatus(Vessel $vessel)
     {
@@ -356,10 +371,10 @@ public function store(Request $request)
             abort(403, 'No tiene permisos para cambiar el estado de esta embarcación.');
         }
 
-        $newStatus = $vessel->status === 'active' ? 'inactive' : 'active';
+        $newStatus = $vessel->operational_status === 'active' ? 'inactive' : 'active';
         
         $vessel->update([
-            'status' => $newStatus,
+            'operational_status' => $newStatus,
             'last_updated_by_user_id' => Auth::id(),
         ]);
 

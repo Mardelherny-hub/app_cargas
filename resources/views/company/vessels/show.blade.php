@@ -50,7 +50,7 @@
                         <div class="text-center">
                             <div class="flex flex-col items-center">
                                 <span class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium
-                                    @switch($vessel->status)
+                                    @switch($vessel->operational_status)
                                         @case('active')
                                             bg-green-100 text-green-800
                                             @break
@@ -66,7 +66,7 @@
                                         @default
                                             bg-gray-100 text-gray-800
                                     @endswitch">
-                                    @switch($vessel->status)
+                                    @switch($vessel->operational_status)
                                         @case('active')
                                             <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                                                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
@@ -92,7 +92,7 @@
                                             Dique Seco
                                             @break
                                         @default
-                                            {{ ucfirst($vessel->status) }}
+                                            {{ ucfirst($vessel->operational_status) }}
                                     @endswitch
                                 </span>
                                 <div class="mt-2 text-xs text-gray-500">Estado Actual</div>
@@ -162,19 +162,19 @@
                                 <dt class="text-sm font-medium text-gray-500">Estado</dt>
                                 <dd class="mt-1">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                        @switch($vessel->status)
+                                        @switch($vessel->operational_status)
                                             @case('active') bg-green-100 text-green-800 @break
                                             @case('inactive') bg-gray-100 text-gray-800 @break
                                             @case('maintenance') bg-yellow-100 text-yellow-800 @break
                                             @case('dry_dock') bg-red-100 text-red-800 @break
                                             @default bg-gray-100 text-gray-800
                                         @endswitch">
-                                        @switch($vessel->status)
+                                        @switch($vessel->operational_status)
                                             @case('active') Activa @break
                                             @case('inactive') Inactiva @break
                                             @case('maintenance') Mantenimiento @break
                                             @case('dry_dock') Dique Seco @break
-                                            @default {{ ucfirst($vessel->status) }}
+                                            @default {{ ucfirst($vessel->operational_status) }}
                                         @endswitch
                                     </span>
                                 </dd>
@@ -237,19 +237,23 @@
                                     <dt class="text-sm font-medium text-gray-500">Estado del Propietario</dt>
                                     <dd class="mt-1">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                            @switch($vessel->vesselOwner->status)
+                                            @switch($vessel->operational_status)
                                                 @case('active') bg-green-100 text-green-800 @break
                                                 @case('inactive') bg-gray-100 text-gray-800 @break
-                                                @case('suspended') bg-red-100 text-red-800 @break
-                                                @case('pending_verification') bg-yellow-100 text-yellow-800 @break
+                                                @case('maintenance') bg-yellow-100 text-yellow-800 @break
+                                                @case('dry_dock') bg-red-100 text-red-800 @break
+                                                @case('under_repair') bg-orange-100 text-orange-800 @break
+                                                @case('decommissioned') bg-red-200 text-red-900 @break
                                                 @default bg-gray-100 text-gray-800
                                             @endswitch">
-                                            @switch($vessel->vesselOwner->status)
-                                                @case('active') Activo @break
-                                                @case('inactive') Inactivo @break
-                                                @case('suspended') Suspendido @break
-                                                @case('pending_verification') Pendiente Verificación @break
-                                                @default {{ ucfirst($vessel->vesselOwner->status) }}
+                                            @switch($vessel->operational_status)
+                                                @case('active') Activa @break
+                                                @case('inactive') Inactiva @break
+                                                @case('maintenance') Mantenimiento @break
+                                                @case('dry_dock') Dique Seco @break
+                                                @case('under_repair') En Reparación @break
+                                                @case('decommissioned') Descomisionada @break
+                                                @default {{ ucfirst($vessel->operational_status) }}
                                             @endswitch
                                         </span>
                                     </dd>
@@ -392,7 +396,7 @@
                                 @method('PATCH')
                                 <button type="submit" 
                                         class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                                    @if($vessel->status === 'active')
+                                    @if($vessel->operational_status === 'active')
                                         <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                         </svg>
