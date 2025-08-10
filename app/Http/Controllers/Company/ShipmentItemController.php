@@ -36,6 +36,10 @@ class ShipmentItemController extends Controller
      * Mostrar formulario para crear nuevo item.
      * CORREGIDO: Soporte para shipment_id (backward compatibility) y bill_of_lading_id
      */
+    /**
+     * Mostrar formulario para crear nuevo item.
+     * MODIFICADO: Preparar datos para componente Livewire
+     */
     public function create(Request $request)
     {
         // Verificar permisos para crear items
@@ -50,6 +54,9 @@ class ShipmentItemController extends Controller
         $company = $this->getUserCompany();
         $billOfLading = null;
         $shipment = null;
+        
+        // NUEVO: Flag para indicar si necesita crear BL
+        $needsToCreateBL = false;
 
         // NUEVO: Manejar tanto shipment_id como bill_of_lading_id
         $shipmentId = $request->get('shipment_id') ?: $request->get('shipment');
@@ -59,6 +66,7 @@ class ShipmentItemController extends Controller
             // Flujo normal: crear item para un bill of lading existente
             $billOfLading = \App\Models\BillOfLading::with(['shipment.voyage'])->findOrFail($billOfLadingId);
             $shipment = $billOfLading->shipment;
+            $needsToCreateBL = false;
         } elseif ($shipmentId) {
             // Flujo backward compatible: crear item para un shipment
             $shipment = \App\Models\Shipment::with(['voyage'])->findOrFail($shipmentId);
@@ -67,8 +75,8 @@ class ShipmentItemController extends Controller
             $billOfLading = \App\Models\BillOfLading::where('shipment_id', $shipment->id)->first();
             
             if (!$billOfLading) {
-                // Crear un bill of lading por defecto para poder agregar items
-                $billOfLading = $this->createDefaultBillOfLading($shipment);
+                // MODIFICADO: No crear automáticamente, solo marcar que se necesita
+                $needsToCreateBL = true;
             }
         } else {
             return redirect()->route('company.shipments.index')
@@ -86,10 +94,14 @@ class ShipmentItemController extends Controller
                 ->with('error', 'No puede agregar items a este shipment en su estado actual.');
         }
 
-        // Obtener datos para el formulario
+        // Obtener datos para el formulario de ITEMS
         $cargoTypes = \App\Models\CargoType::where('active', true)->orderBy('name')->get();
         $packagingTypes = \App\Models\PackagingType::where('active', true)->orderBy('name')->get();
+        
+        // NUEVO: Obtener datos adicionales para el formulario de BL
         $clients = \App\Models\Client::where('status', 'active')->orderBy('legal_name')->get();
+        $ports = \App\Models\Port::where('active', true)->orderBy('name')->get();
+        $countries = \App\Models\Country::where('active', true)->orderBy('name')->get();
 
         // CORREGIDO: Calcular el siguiente número de línea
         $nextLineNumber = 1;
@@ -99,12 +111,33 @@ class ShipmentItemController extends Controller
             $nextLineNumber = ($lastLineNumber ?? 0) + 1;
         }
 
+        // NUEVO: Preparar datos por defecto para el BL (si se necesita crear)
+        $defaultBLData = null;
+        if ($needsToCreateBL && $shipment) {
+            $defaultBLData = [
+                'bill_number' => 'BL-' . $shipment->shipment_number . '-' . date('ymd'),
+                'loading_port_id' => $shipment->voyage->origin_port_id,
+                'discharge_port_id' => $shipment->voyage->destination_port_id,
+                'bill_date' => now()->format('Y-m-d'),
+                'loading_date' => now()->format('Y-m-d'),
+                'freight_terms' => 'prepaid',
+                'payment_terms' => 'cash',
+                'currency_code' => 'USD',
+                'primary_cargo_type_id' => $cargoTypes->first()?->id,
+                'primary_packaging_type_id' => $packagingTypes->first()?->id,
+            ];
+        }
+
         return view('company.shipment-items.create', compact(
             'shipment',
             'billOfLading', 
+            'needsToCreateBL',         // NUEVO
+            'defaultBLData',           // NUEVO
             'cargoTypes', 
             'packagingTypes', 
-            'clients',
+            'clients',                 // AMPLIADO para BL
+            'ports',                   // NUEVO para BL
+            'countries',               // NUEVO para BL  
             'nextLineNumber'
         ));
     }
@@ -389,8 +422,6 @@ class ShipmentItemController extends Controller
         }
     }
 
-
-    // MÉTODOS PRIVADOS CORREGIDOS
 
     /**
      * CORREGIDO: Verificar si el usuario puede gestionar items del bill of lading.
@@ -876,4 +907,57 @@ class ShipmentItemController extends Controller
             default => 'draft'
         };
     }
+
+    /**
+ * NUEVO: Crear un bill of lading con datos específicos (usado por Livewire)
+ * Método público para ser llamado desde el componente
+ */
+public function createBillOfLadingWithData(\App\Models\Shipment $shipment, array $blData): \App\Models\BillOfLading
+{
+    \Log::info('Creating BillOfLading with specific data for shipment: ' . $shipment->id);
+
+    try {
+        // Validar datos mínimos requeridos
+        $requiredFields = ['shipper_id', 'consignee_id', 'loading_port_id', 'discharge_port_id', 
+                          'primary_cargo_type_id', 'primary_packaging_type_id'];
+        
+        foreach ($requiredFields as $field) {
+            if (empty($blData[$field])) {
+                throw new \Exception("Campo requerido faltante: {$field}");
+            }
+        }
+
+        $billOfLading = \App\Models\BillOfLading::create([
+            'shipment_id' => $shipment->id,
+            'bill_number' => $blData['bill_number'] ?? 'BL-' . $shipment->shipment_number . '-' . date('ymd'),
+            'shipper_id' => $blData['shipper_id'],
+            'consignee_id' => $blData['consignee_id'],
+            'notify_party_id' => $blData['notify_party_id'] ?? null, // ← AQUÍ está el fix!
+            'loading_port_id' => $blData['loading_port_id'],
+            'discharge_port_id' => $blData['discharge_port_id'],
+            'primary_cargo_type_id' => $blData['primary_cargo_type_id'],
+            'primary_packaging_type_id' => $blData['primary_packaging_type_id'],
+            'bill_date' => $blData['bill_date'] ?? now(),
+            'loading_date' => $blData['loading_date'] ?? now(),
+            'freight_terms' => $blData['freight_terms'] ?? 'prepaid',
+            'payment_terms' => $blData['payment_terms'] ?? 'cash',
+            'currency_code' => $blData['currency_code'] ?? 'USD',
+            'status' => 'draft',
+            'total_packages' => 0,
+            'gross_weight_kg' => 0.00,
+            'net_weight_kg' => 0.00,
+            'volume_m3' => 0.00,
+            'measurement_unit' => 'KG',
+            'container_count' => 0,
+            'cargo_description' => $blData['cargo_description'] ?? 'Pendiente de definir',
+            'created_by_user_id' => Auth::id(),
+        ]);
+
+        return $billOfLading;
+
+    } catch (\Exception $e) {
+        \Log::error('Error creating BillOfLading with data: ' . $e->getMessage());
+        throw $e;
+    }
+}
 }
