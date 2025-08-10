@@ -7,6 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Relations\HasMany; 
+use App\Models\User;
+use App\Models\Operator;
+use App\Models\Voyage;
+use App\Models\Captain;
+use App\Models\VesselOwner;
+use App\Models\Vessel;
+use App\Models\Client;
+use App\Models\ClientCompanyRelation;
+use App\Models\Manifest;
 
 class Company extends Model
 {
@@ -271,6 +281,49 @@ class Company extends Model
     public function operators()
     {
         return $this->hasMany(Operator::class);
+    }
+
+    // =====================================================
+    // RELACIONES CON VIAJES Y CARGAS (MÓDULO 3)
+    // =====================================================
+
+    /**
+     * Viajes organizados por esta empresa.
+     */
+    public function voyages(): HasMany
+    {
+        return $this->hasMany(Voyage::class, 'company_id');
+    }
+
+    /**
+     * Capitanes asociados a esta empresa.
+     */
+    public function captains(): HasMany
+    {
+        return $this->hasMany(Captain::class, 'primary_company_id');
+    }
+
+    /**
+     * Propietarios de embarcaciones de esta empresa.
+     */
+    public function vesselOwners(): HasMany
+    {
+        return $this->hasMany(VesselOwner::class, 'company_id');
+    }
+
+    /**
+     * Embarcaciones a través de propietarios.
+     */
+    public function vessels()
+    {
+        return $this->hasManyThrough(
+            Vessel::class,
+            VesselOwner::class,
+            'company_id',     // Foreign key en vessel_owners table
+            'owner_id',       // Foreign key en vessels table
+            'id',             // Local key en companies table
+            'id'              // Local key en vessel_owners table
+        );
     }
 
     // ========================================

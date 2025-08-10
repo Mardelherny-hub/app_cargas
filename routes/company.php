@@ -18,6 +18,7 @@ use App\Http\Controllers\Company\ClientController;
 use App\Http\Controllers\Company\VesselOwnerController;
 use App\Http\Controllers\Company\VesselController;
 use App\Http\Controllers\Company\BillOfLadingController;
+use App\Http\Controllers\Company\CaptainController;
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
 use App\Http\Controllers\Company\Manifests\ManifestController;
@@ -400,6 +401,52 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     Route::put('/{id}', [ManifestController::class, 'update'])->name('update');
     Route::delete('/{id}', [ManifestController::class, 'destroy'])->name('destroy');
 });
+
+
+// Gestión de Capitanes
+Route::prefix('captains')->name('company.captains.')->group(function () {
+    // 1. RUTAS ESPECÍFICAS PRIMERO (sin parámetros)
+    Route::get('/', [CaptainController::class, 'index'])->name('index');
+    Route::get('/search', [CaptainController::class, 'search'])->name('search');
+    Route::post('/search', [CaptainController::class, 'searchResults'])->name('search-results');
+    
+    // 2. RUTAS SOLO PARA COMPANY-ADMIN (sin parámetros)
+    Route::middleware(['role:company-admin'])->group(function () {
+        Route::get('/create', [CaptainController::class, 'create'])->name('create');
+        Route::post('/', [CaptainController::class, 'store'])->name('store');
+        Route::post('/import', [CaptainController::class, 'import'])->name('import');
+        Route::get('/export', [CaptainController::class, 'export'])->name('export');
+    });
+
+    // 3. RUTAS CON PARÁMETROS {captain} - Acceso general
+    Route::get('/{captain}', [CaptainController::class, 'show'])->name('show');
+    Route::get('/{captain}/statistics', [CaptainController::class, 'statistics'])->name('statistics');
+    Route::get('/{captain}/voyages', [CaptainController::class, 'voyages'])->name('voyages');
+    Route::get('/{captain}/vessels', [CaptainController::class, 'vessels'])->name('vessels');
+
+    // 4. RUTAS CON PARÁMETROS {captain} - SOLO COMPANY-ADMIN
+    Route::middleware(['role:company-admin'])->group(function () {
+        Route::get('/{captain}/edit', [CaptainController::class, 'edit'])->name('edit');
+        Route::put('/{captain}', [CaptainController::class, 'update'])->name('update');
+        Route::delete('/{captain}', [CaptainController::class, 'destroy'])->name('destroy');
+        Route::patch('/{captain}/toggle-status', [CaptainController::class, 'toggleStatus'])->name('toggle-status');
+        Route::patch('/{captain}/assign-company', [CaptainController::class, 'assignToCompany'])->name('assign-company');
+        Route::patch('/{captain}/update-performance', [CaptainController::class, 'updatePerformance'])->name('update-performance');
+    });
+
+    // 5. RUTAS DE REPORTES Y DOCUMENTOS
+    Route::get('/{captain}/pdf', [CaptainController::class, 'generatePdf'])->name('pdf');
+    Route::get('/{captain}/certificates', [CaptainController::class, 'certificates'])->name('certificates');
+    Route::get('/{captain}/performance-report', [CaptainController::class, 'performanceReport'])->name('performance-report');
+
+    // 6. RUTAS DE CERTIFICADOS Y DOCUMENTOS - SOLO COMPANY-ADMIN
+    Route::middleware(['role:company-admin'])->group(function () {
+        Route::post('/{captain}/certificates', [CaptainController::class, 'uploadCertificate'])->name('upload-certificate');
+        Route::delete('/{captain}/certificates/{certificate}', [CaptainController::class, 'deleteCertificate'])->name('delete-certificate');
+        Route::patch('/{captain}/certificates/{certificate}/verify', [CaptainController::class, 'verifyCertificate'])->name('verify-certificate');
+    });
+});
+
 // Configuración (solo company-admin)
 Route::prefix('settings')->name('company.settings.')->group(function () {
     Route::get('/', [SettingsController::class, 'index'])->name('index');

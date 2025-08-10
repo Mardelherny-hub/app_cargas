@@ -527,7 +527,7 @@ class BillOfLadingController extends Controller
         if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
             abort(403, 'No tiene permisos para editar este conocimiento.');
         }
-
+        //dd($request->all());
         try {
             DB::beginTransaction();
 

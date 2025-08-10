@@ -94,6 +94,10 @@
                                     class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessel-owners.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         👥 {{ __('Propietarios') }}
                                     </a>
+                                    <a href="{{ route('company.captains.index') }}"
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.captains.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        ⚓ {{ __('Capitanes') }}
+                                    </a>
                                     <a href="{{ route('company.vessels.index') }}"
                                     class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessels.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         🚢 {{ __('Embarcaciones') }}
