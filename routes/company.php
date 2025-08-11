@@ -311,17 +311,33 @@ Route::prefix('reports')->name('company.reports.')->group(function () {
     Route::post('/export/{report}', [ReportController::class, 'export'])->name('export');
 });
 
-// Certificados (solo company-admin)
-Route::prefix('certificates')->name('company.certificates.')->group(function () {
+// ========================================
+// CERTIFICADOS DIGITALES (solo company-admin)
+// ========================================
+Route::prefix('certificates')->name('company.certificates.')->middleware(['role:company-admin'])->group(function () {
+    // Vista principal de certificados
     Route::get('/', [CertificateController::class, 'index'])->name('index');
+    
+    // Subida de certificados
     Route::get('/upload', [CertificateController::class, 'upload'])->name('upload');
     Route::post('/upload', [CertificateController::class, 'processUpload'])->name('process-upload');
-    Route::get('/{certificate}', [CertificateController::class, 'show'])->name('show');
-    Route::delete('/{certificate}', [CertificateController::class, 'destroy'])->name('destroy');
+    
+    // Ver detalles del certificado actual de la empresa (SIN parámetro)
+    Route::get('/details', [CertificateController::class, 'show'])->name('show');
+    
+    // Eliminar certificado actual de la empresa (SIN parámetro) 
+    Route::delete('/delete', [CertificateController::class, 'destroy'])->name('destroy');
+    
+    // Renovación de certificados (SIN parámetro)
+    Route::get('/renew', [CertificateController::class, 'renew'])->name('renew');
+    Route::post('/renew', [CertificateController::class, 'processRenew'])->name('process-renew');
 
-    // Renovación de certificados
-    Route::get('/{certificate}/renew', [CertificateController::class, 'renew'])->name('renew');
-    Route::post('/{certificate}/renew', [CertificateController::class, 'processRenew'])->name('process-renew');
+    // NUEVA RUTA PARA GENERAR CERTIFICADO DE TESTING
+    Route::post('/generate-test', [CertificateController::class, 'generateTestCertificate'])->name('generate-test');
+
+    // NUEVA RUTA PARA TESTING COMPLETO
+    Route::post('/test', [CertificateController::class, 'testCertificate'])->name('test');
+
 });
 
 // Gestión de Clientes (base compartida) - ORDEN CORREGIDO

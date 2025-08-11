@@ -940,4 +940,23 @@ class Company extends Model
                     ->exists();
     }
 
+    /**
+ * Obtener información de debug del certificado.
+ */
+public function getCertificateDebugInfo(): array
+{
+    return [
+        'has_certificate_path' => !empty($this->certificate_path),
+        'certificate_path' => $this->certificate_path,
+        'certificate_path_exists' => $this->certificate_path ? Storage::exists($this->certificate_path) : false,
+        'has_password' => !empty($this->certificate_password),
+        'password_length' => $this->certificate_password ? strlen($this->certificate_password) : 0,
+        'has_alias' => !empty($this->certificate_alias),
+        'certificate_alias' => $this->certificate_alias,
+        'has_expires_at' => !empty($this->certificate_expires_at),
+        'certificate_expires_at' => $this->certificate_expires_at ? $this->certificate_expires_at->toISOString() : null,
+        'is_test_certificate' => $this->certificate_alias && str_contains($this->certificate_alias, 'TEST_CERT'),
+    ];
+}
+
 }

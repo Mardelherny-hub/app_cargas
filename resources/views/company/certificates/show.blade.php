@@ -311,49 +311,157 @@
     @push('scripts')
     <script>
         function testCertificate() {
-            if (!confirm('¿Desea probar la conectividad del certificado con los webservices aduaneros?')) {
-                return;
-            }
-
-            // Mostrar mensaje de carga
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = '⏳ Probando...';
-            button.disabled = true;
-
-            // Simular test (aquí iría la llamada AJAX real)
-            setTimeout(() => {
-                alert('✅ Certificado válido. Conectividad exitosa con webservices.');
-                button.innerHTML = originalText;
-                button.disabled = false;
-            }, 2000);
-
-            // TODO: Implementar test real via AJAX
-            /*
-            fetch('/company/certificates/test', {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('✅ ' + data.message);
-                } else {
-                    alert('❌ ' + data.error);
-                }
-            })
-            .catch(error => {
-                alert('❌ Error de conexión: ' + error.message);
-            })
-            .finally(() => {
-                button.innerHTML = originalText;
-                button.disabled = false;
-            });
-            */
+    // Mostrar indicador de carga
+    const button = document.querySelector('[onclick="testCertificate()"]');
+    const originalText = button.innerHTML;
+    button.innerHTML = '🔄 Probando...';
+    button.disabled = true;
+    
+    // Realizar petición AJAX
+    fetch('{{ route("company.certificates.test") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         }
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Restaurar botón
+        button.innerHTML = originalText;
+        button.disabled = false;
+        
+        if (data.success) {
+            showTestResults(data.results);
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        // Restaurar botón
+        button.innerHTML = originalText;
+        button.disabled = false;
+        
+        console.error('Error:', error);
+        alert('Error de conexión al probar el certificado');
+    });
+}
+
+function showTestResults(results) {
+    // Crear ventana modal con resultados
+    let html = `
+        <div id="testResultsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full m-4 max-h-screen overflow-y-auto">
+                <div class="p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Resultados de la Prueba del Certificado</h3>
+                        <button onclick="closeTestResults()" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <!-- Estado General -->
+                    <div class="mb-6 p-4 rounded-lg ${getStatusColor(results.overall_status)}">
+                        <h4 class="font-medium">Estado General: ${getStatusText(results.overall_status)}</h4>
+                    </div>
+                    
+                    <!-- Resultados Detallados -->
+                    <div class="space-y-4">
+    `;
+    
+    // Agregar cada categoría de resultados
+    Object.keys(results).forEach(category => {
+        if (category === 'overall_status') return;
+        
+        const result = results[category];
+        html += `
+            <div class="border rounded-lg p-4">
+                <h5 class="font-medium mb-2">${getCategoryTitle(category)}</h5>
+                <div class="text-sm ${getStatusColor(result.status)} p-2 rounded">
+                    Estado: ${getStatusText(result.status)}
+                </div>
+        `;
+        
+        if (result.checks) {
+            html += '<div class="mt-2 space-y-1">';
+            Object.keys(result.checks).forEach(checkKey => {
+                const check = result.checks[checkKey];
+                html += `
+                    <div class="flex items-center text-sm">
+                        <span class="w-4 h-4 mr-2">${getStatusIcon(check.status)}</span>
+                        <span>${check.message}</span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+        
+        html += '</div>';
+    });
+    
+    html += `
+                    </div>
+                    
+                    <div class="mt-6 flex justify-end">
+                        <button onclick="closeTestResults()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Insertar en el DOM
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function closeTestResults() {
+    const modal = document.getElementById('testResultsModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function getStatusColor(status) {
+    switch(status) {
+        case 'success': return 'bg-green-100 text-green-800';
+        case 'warning': return 'bg-yellow-100 text-yellow-800';
+        case 'error': return 'bg-red-100 text-red-800';
+        default: return 'bg-gray-100 text-gray-800';
+    }
+}
+
+function getStatusText(status) {
+    switch(status) {
+        case 'success': return 'Éxito';
+        case 'warning': return 'Advertencia';
+        case 'error': return 'Error';
+        case 'skipped': return 'Omitido';
+        default: return 'Desconocido';
+    }
+}
+
+function getStatusIcon(status) {
+    switch(status) {
+        case 'success': return '✅';
+        case 'warning': return '⚠️';
+        case 'error': return '❌';
+        default: return '❓';
+    }
+}
+
+function getCategoryTitle(category) {
+    switch(category) {
+        case 'basic_validation': return 'Validación Básica';
+        case 'file_validation': return 'Validación de Archivo';
+        case 'certificate_validation': return 'Validación del Certificado';
+        case 'webservice_testing': return 'Testing de Webservices';
+        default: return category;
+    }
+}
     </script>
     @endpush
 </x-app-layout>

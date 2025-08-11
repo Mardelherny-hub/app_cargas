@@ -169,6 +169,17 @@
                                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                                             📤 Subir Certificado Ahora
                                         </a>
+
+                                       
+                                            <form method="POST" action="{{ route('company.certificates.generate-test') }}" class="inline">
+                                                @csrf
+                                                <button type="submit" 
+                                                        onclick="return confirm('¿Generar un certificado de testing?\n\nEsto es solo para desarrollo y pruebas.')"
+                                                        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                                                    🧪 Generar Certificado de Testing
+                                                </button>
+                                            </form>
+                                        
                                     </div>
                                 </div>
                             </div>

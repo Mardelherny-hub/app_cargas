@@ -86,7 +86,7 @@
                 <div class="p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-6">Renovar con Nuevo Certificado</h3>
 
-                    <form method="POST" action="{{ route('company.certificates.processRenew') }}" enctype="multipart/form-data" id="renewForm">
+                    <form method="POST" action="{{ route('company.certificates.process-renew') }}" enctype="multipart/form-data" id="renewForm">
                         @csrf
 
                         <!-- Zona de Subida de Nuevo Certificado -->
