@@ -462,6 +462,9 @@
                 <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')" class="pl-6">
                     {{ __('Propietarios') }}
                 </x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('company.captains.index')" :active="request()->routeIs('company.captains.*')" class="pl-6">
+                    👨‍✈️ {{ __('Capitanes') }}
+                </x-responsive-nav-link>}
                 <x-responsive-nav-link :href="route('company.vessels.index')" :active="request()->routeIs('company.vessels.*')" class="pl-6">
                     🚢 {{ __('Embarcaciones') }}
                 </x-responsive-nav-link>

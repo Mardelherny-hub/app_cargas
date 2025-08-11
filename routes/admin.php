@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\VesselOwnerController;
 use App\Http\Controllers\Admin\VesselTypeController;
+use App\Http\Controllers\Admin\CertificateController;
 
 /*
 |--------------------------------------------------------------------------
@@ -63,11 +64,27 @@ Route::prefix('companies')->name('admin.companies.')->group(function () {
     Route::put('/{company}', [CompanyController::class, 'update'])->name('update');
     Route::delete('/{company}', [CompanyController::class, 'destroy'])->name('destroy');
 
-    // Gestión de certificados
-    Route::get('/{company}/certificates', [CompanyController::class, 'certificates'])->name('certificates');
-    Route::post('/{company}/certificates', [CompanyController::class, 'uploadCertificate'])->name('upload-certificate');
-    Route::delete('/{company}/certificates', [CompanyController::class, 'deleteCertificate'])->name('delete-certificate');
-
+    // ========================================
+    // CERTIFICADOS DIGITALES (solo company-admin)
+    // ========================================
+    Route::prefix('certificates')->name('company.certificates.')->middleware(['role:company-admin'])->group(function () {
+        // Vista principal de certificados
+        Route::get('/', [CertificateController::class, 'index'])->name('index');
+        
+        // Subida de certificados
+        Route::get('/upload', [CertificateController::class, 'upload'])->name('upload');
+        Route::post('/upload', [CertificateController::class, 'processUpload'])->name('processUpload');
+        
+        // Ver detalles del certificado actual de la empresa (SIN parámetro)
+        Route::get('/details', [CertificateController::class, 'show'])->name('show');
+        
+        // Eliminar certificado actual de la empresa (SIN parámetro) 
+        Route::delete('/delete', [CertificateController::class, 'destroy'])->name('destroy');
+        
+        // Renovación de certificados (SIN parámetro)
+        Route::get('/renew', [CertificateController::class, 'renew'])->name('renew');
+        Route::post('/renew', [CertificateController::class, 'processRenew'])->name('processRenew');
+    });
     // Configuración de webservices
     Route::get('/{company}/webservices', [CompanyController::class, 'webservices'])->name('webservices');
     Route::put('/{company}/webservices', [CompanyController::class, 'updateWebservices'])->name('update-webservices');

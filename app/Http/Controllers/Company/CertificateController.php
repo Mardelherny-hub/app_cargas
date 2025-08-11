@@ -20,7 +20,8 @@ class CertificateController extends Controller
     public function index()
     {
         // 1. Verificar permisos básicos (solo company-admin)
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -66,7 +67,8 @@ class CertificateController extends Controller
     public function upload()
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -96,7 +98,8 @@ class CertificateController extends Controller
     public function processUpload(Request $request)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -165,7 +168,8 @@ class CertificateController extends Controller
     public function show($certificateId = null)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -208,7 +212,8 @@ class CertificateController extends Controller
     public function destroy($certificateId = null)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -253,7 +258,8 @@ class CertificateController extends Controller
     public function renew($certificateId = null)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -291,7 +297,8 @@ class CertificateController extends Controller
     public function processRenew(Request $request, $certificateId = null)
     {
         // 1. Verificar permisos básicos
-        if (!$this->canPerform('certificate_management')) {
+        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
@@ -328,7 +335,7 @@ class CertificateController extends Controller
             'certificate.required' => 'Debe seleccionar el archivo del nuevo certificado.',
             'certificate.mimes' => 'El certificado debe ser un archivo .p12 o .pfx.',
             'certificate.max' => 'El archivo no puede ser mayor a 2MB.',
-            'password.required' => 'La contraseña del nuevo certificado es obligatoria.',
+            'password.required' => 'La contraseña del certificado es obligatoria.',
             'expires_at.required' => 'La fecha de vencimiento es obligatoria.',
             'expires_at.after' => 'La fecha de vencimiento debe ser posterior a hoy.',
         ]);
@@ -342,7 +349,7 @@ class CertificateController extends Controller
             // Guardar nuevo certificado
             $path = $request->file('certificate')->store('certificates');
 
-            // Actualizar datos de la empresa
+            // Actualizar empresa con nuevo certificado
             $company->update([
                 'certificate_path' => $path,
                 'certificate_password' => $request->password,
@@ -351,7 +358,7 @@ class CertificateController extends Controller
             ]);
 
             return redirect()->route('company.certificates.index')
-                ->with('success', 'Certificado renovado correctamente. Los webservices continúan operativos.');
+                ->with('success', 'Certificado renovado correctamente.');
 
         } catch (\Exception $e) {
             return back()
@@ -365,65 +372,62 @@ class CertificateController extends Controller
     // ========================================
 
     /**
-     * Obtener estado detallado del certificado.
+     * Obtener estado del certificado.
      */
     private function getCertificateStatus(Company $company): array
     {
-        $status = [
+        return [
             'has_certificate' => !empty($company->certificate_path),
-            'file_name' => $company->certificate_path ? basename($company->certificate_path) : null,
-            'alias' => $company->certificate_alias,
+            'is_expired' => $company->certificate_expires_at && $company->certificate_expires_at->isPast(),
+            'is_expiring_soon' => $company->certificate_expires_at && $company->certificate_expires_at->isBefore(now()->addDays(30)),
+            'status' => $this->getCertificateStatusText($company),
+            'days_to_expiry' => $company->certificate_expires_at ? now()->diffInDays($company->certificate_expires_at, false) : null,
             'expires_at' => $company->certificate_expires_at,
-            'is_expired' => false,
-            'expires_soon' => false,
-            'status' => 'none',
-            'days_remaining' => null,
-            'uploaded_at' => $company->updated_at,
+            'alias' => $company->certificate_alias,
         ];
-
-        if ($company->certificate_expires_at) {
-            $expiresAt = Carbon::parse($company->certificate_expires_at);
-            $now = Carbon::now();
-
-            $status['is_expired'] = $expiresAt->isPast();
-            $status['expires_soon'] = !$status['is_expired'] && $expiresAt->diffInDays($now) <= 30;
-            $status['days_remaining'] = $status['is_expired'] ?
-                -$now->diffInDays($expiresAt) :
-                $expiresAt->diffInDays($now);
-
-            if ($status['is_expired']) {
-                $status['status'] = 'expired';
-            } elseif ($status['expires_soon']) {
-                $status['status'] = 'expiring';
-            } else {
-                $status['status'] = 'valid';
-            }
-        }
-
-        return $status;
     }
 
     /**
-     * Obtener estado de webservices relacionado con certificados.
+     * Obtener texto de estado del certificado.
+     */
+    private function getCertificateStatusText(Company $company): string
+    {
+        if (empty($company->certificate_path)) {
+            return 'Sin certificado';
+        }
+
+        if (!$company->certificate_expires_at) {
+            return 'Configurado (sin fecha de vencimiento)';
+        }
+
+        if ($company->certificate_expires_at->isPast()) {
+            return 'Vencido';
+        }
+
+        if ($company->certificate_expires_at->isBefore(now()->addDays(30))) {
+            return 'Por vencer';
+        }
+
+        return 'Activo';
+    }
+
+    /**
+     * Obtener estado de webservices.
      */
     private function getWebserviceStatus(Company $company): array
     {
         $certStatus = $this->getCertificateStatus($company);
 
         return [
-            'active' => $company->ws_active ?? false,
+            'enabled' => $company->ws_active && $certStatus['has_certificate'] && !$certStatus['is_expired'],
             'environment' => $company->ws_environment ?? 'testing',
-            'can_use_production' => $company->ws_active &&
-                                   $company->ws_environment === 'production' &&
-                                   $certStatus['status'] === 'valid',
-            'requires_certificate' => true,
-            'certificate_valid' => $certStatus['status'] === 'valid',
+            'last_test' => null, // TODO: Implementar logs de conexión
             'disabled_reason' => $this->getWebserviceDisabledReason($company, $certStatus),
         ];
     }
 
     /**
-     * Obtener razón por la cual los webservices están deshabilitados.
+     * Obtener razón por la cual webservices están deshabilitados.
      */
     private function getWebserviceDisabledReason(Company $company, array $certStatus): ?string
     {
@@ -447,7 +451,7 @@ class CertificateController extends Controller
      */
     private function getRolesRequiringCertificate(Company $company): array
     {
-        $roles = $company->getRoles();
+        $roles = $company->company_roles ?? [];
         $rolesRequiringCert = [];
 
         foreach ($roles as $role) {
