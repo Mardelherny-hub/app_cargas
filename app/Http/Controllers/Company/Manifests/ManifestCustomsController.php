@@ -185,205 +185,6 @@ class ManifestCustomsController extends Controller
             ->with('batch_results', $results);
     }
 
-    /**
-     * Ver estado de una transacción específica
-     */
-    public function status($transactionId)
-    {
-        $transaction = WebserviceTransaction::with(['voyage.shipments.billsOfLading'])
-            ->where('company_id', auth()->user()->company_id)
-            ->findOrFail($transactionId);
-
-        return view('company.manifests.customs-status', compact('transaction'));
-    }
-
-    /**
-     * Reintentar envío de transacción fallida
-     */
-    public function retry($transactionId)
-    {
-        $transaction = WebserviceTransaction::where('company_id', auth()->user()->company_id)
-            ->where('status', 'error')
-            ->findOrFail($transactionId);
-
-        try {
-            $voyage = $transaction->voyage;
-            $service = $this->getWebserviceByType($transaction->webservice_type, $voyage);
-
-            // Marcar como reintento
-            $transaction->update([
-                'status' => 'pending',
-                'retry_count' => ($transaction->retry_count ?? 0) + 1,
-                'error_message' => null,
-            ]);
-
-            $response = $service->send($voyage, [
-                'transaction_id' => $transaction->transaction_id,
-                'environment' => $transaction->environment,
-                'is_retry' => true,
-            ]);
-
-            $this->updateTransactionWithResponse($transaction, $response);
-
-            return redirect()->route('company.manifests.customs.status', $transaction->id)
-                ->with('success', 'Reintento de envío exitoso.');
-
-        } catch (\Exception $e) {
-            $transaction->update([
-                'status' => 'error',
-                'error_message' => $e->getMessage(),
-                'response_at' => now(),
-            ]);
-
-            return back()->with('error', 'Error en reintento: ' . $e->getMessage());
-        }
-    }
-
-    // =========================================================================
-    // MÉTODOS HELPER PRIVADOS
-    // =========================================================================
-
-    /**
-     * Obtener voyage con validaciones de seguridad
-     */
-    private function getVoyageForCustoms($voyageId): Voyage
-    {
-        return Voyage::with([
-            'shipments.billsOfLading.shipper',
-            'shipments.billsOfLading.consignee',
-            'shipments.billsOfLading.notifyParty',
-            'shipments.billsOfLading.shipmentItems',
-            'shipments.vessel',
-            'origin_port.country',
-            'destination_port.country',
-            'company'
-        ])
-        ->where('company_id', auth()->user()->company_id)
-        ->whereIn('status', ['completed', 'in_progress'])
-        ->findOrFail($voyageId);
-    }
-
-    /**
-     * Crear transacción de webservice
-     */
-    private function createWebserviceTransaction(Voyage $voyage, array $data): WebserviceTransaction
-    {
-        return WebserviceTransaction::create([
-            'company_id' => auth()->user()->company_id,
-            'user_id' => Auth::id(),
-            'voyage_id' => $voyage->id,
-            'webservice_type' => $data['webservice_type'],
-            'environment' => $data['environment'],
-            'country' => $voyage->destination_port->country->iso_code ?? 'AR',
-            'transaction_id' => $this->generateTransactionId($voyage),
-            'status' => 'pending',
-            'priority' => $data['priority'] ?? 'normal',
-            'bl_number' => $voyage->shipments->first()->billsOfLading->first()->bl_number ?? null,
-            'voyage_number' => $voyage->voyage_number,
-            'vessel_name' => $voyage->shipments->first()->vessel->name ?? 'N/A',
-            'pol_code' => $voyage->origin_port->code ?? 'UNKNOWN',
-            'pod_code' => $voyage->destination_port->code ?? 'UNKNOWN',
-            'container_count' => $voyage->shipments->sum('containers_loaded'),
-            'bill_of_lading_count' => $voyage->shipments->sum(function($s) { 
-                return $s->billsOfLading->count(); 
-            }),
-            'total_weight_kg' => $voyage->shipments->sum('cargo_weight_loaded'),
-            'currency_code' => 'USD',
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
-        ]);
-    }
-
-    /**
-     * Obtener servicio de webservice según tipo
-     */
-    private function getWebserviceByType(string $type, Voyage $voyage)
-    {
-        $country = $voyage->destination_port->country->iso_code ?? 'AR';
-
-        return match($type) {
-            'anticipada' => app(ArgentinaAnticipatedService::class),
-            'micdta' => app(ArgentinaMicDtaService::class),
-            'paraguay_customs' => app(ParaguayCustomsService::class),
-            default => throw new \Exception("Tipo de webservice no soportado: {$type}")
-        };
-    }
-
-    /**
-     * Actualizar transacción con respuesta del webservice
-     */
-    private function updateTransactionWithResponse(WebserviceTransaction $transaction, $response): void
-    {
-        $updateData = [
-            'response_at' => now(),
-            'response_time_ms' => $response['response_time_ms'] ?? null,
-        ];
-
-        if ($response['success'] ?? false) {
-            $updateData['status'] = 'success';
-            $updateData['confirmation_number'] = $response['confirmation_number'] ?? null;
-            $updateData['success_data'] = $response['data'] ?? null;
-            $updateData['tracking_numbers'] = $response['tracking_numbers'] ?? null;
-        } else {
-            $updateData['status'] = 'error';
-            $updateData['error_code'] = $response['error_code'] ?? 'UNKNOWN';
-            $updateData['error_message'] = $response['error_message'] ?? 'Error desconocido';
-            $updateData['error_details'] = $response['error_details'] ?? null;
-        }
-
-        $transaction->update($updateData);
-    }
-
-    /**
-     * Generar ID único de transacción
-     */
-    private function generateTransactionId(Voyage $voyage): string
-    {
-        $prefix = 'MNF';
-        $companyCode = str_pad(auth()->user()->company_id, 3, '0', STR_PAD_LEFT);
-        $timestamp = now()->format('ymdHis');
-        $random = str_pad(mt_rand(0, 999), 3, '0', STR_PAD_LEFT);
-
-        return "{$prefix}{$companyCode}{$timestamp}{$random}";
-    }
-
-    /**
-     * Obtener estadísticas de envíos a aduana
-     */
-    private function getCustomsStats(): array
-    {
-        $companyId = auth()->user()->company_id;
-        
-        // Ensure company_id is an integer, default to 0 if null
-        $companyId = (int) $companyId;
-
-        return [
-            'total_voyages' => Voyage::where('company_id', $companyId)
-                ->whereHas('shipments')
-                ->whereIn('status', ['completed', 'in_progress'])
-                ->count(),
-            
-            'not_sent' => Voyage::where('company_id', $companyId)
-                ->whereHas('shipments')
-                ->whereIn('status', ['completed', 'in_progress'])
-                ->doesntHave('webserviceTransactions')
-                ->count(),
-                
-            'sent_success' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('status', 'success')
-                ->count(),
-                
-            'sent_failed' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('status', 'error')
-                ->count(),
-                
-            'pending' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('status', 'pending')
-                ->count(),
-                
-            'success_rate' => $this->calculateSuccessRate($companyId),
-        ];
-    }
 
     /**
      * Calcular tasa de éxito de envíos
@@ -398,5 +199,197 @@ class ManifestCustomsController extends Controller
             ->count();
 
         return round(($successful / $total) * 100, 1);
+    }
+
+
+// ==========================================
+// MÉTODOS FALTANTES PARA ManifestCustomsController
+// Agregar estos métodos al final de la clase
+// ==========================================
+
+    /**
+     * Mostrar estado de transacción específica
+     */
+    public function status($transactionId)
+    {
+        $transaction = WebserviceTransaction::with(['user', 'logs'])
+            ->where('company_id', auth()->user()->company_id)
+            ->findOrFail($transactionId);
+
+        // Obtener logs relacionados
+        $logs = $transaction->logs()->orderBy('created_at', 'desc')->get();
+
+        return view('company.manifests.customs-status', compact('transaction', 'logs'));
+    }
+
+    /**
+     * Reintentar envío fallido
+     */
+    public function retry($transactionId)
+    {
+        $transaction = WebserviceTransaction::where('company_id', auth()->user()->company_id)
+            ->where('status', 'error')
+            ->findOrFail($transactionId);
+
+        try {
+            // Resetear estado de la transacción
+            $transaction->update([
+                'status' => 'pending',
+                'error_message' => null,
+                'retry_count' => ($transaction->retry_count ?? 0) + 1,
+                'updated_at' => now()
+            ]);
+
+            // Obtener servicio y reenviar
+            $service = $this->getWebserviceByType($transaction->webservice_type);
+            
+            $response = $service->retry($transaction);
+
+            // Actualizar con nueva respuesta
+            $this->updateTransactionWithResponse($transaction, $response);
+
+            return back()->with('success', 'Reintento de envío iniciado correctamente.');
+
+        } catch (\Exception $e) {
+            Log::error('Error en reintento de transacción', [
+                'transaction_id' => $transactionId,
+                'error' => $e->getMessage()
+            ]);
+
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage()
+            ]);
+
+            return back()->with('error', 'Error en reintento: ' . $e->getMessage());
+        }
+    }
+
+    // ========================================
+    // MÉTODOS HELPER PRIVADOS
+    // ========================================
+
+    /**
+     * Obtener voyage validado para envío a aduana
+     */
+    private function getVoyageForCustoms($voyageId)
+    {
+        $voyage = Voyage::with([
+            'shipments.billsOfLading',
+            'origin_port.country',
+            'destination_port.country',
+            'company'
+        ])
+        ->where('company_id', auth()->user()->company_id)
+        ->findOrFail($voyageId);
+
+        // Validar que el voyage tiene datos necesarios
+        if (!$voyage->shipments()->count()) {
+            throw new \Exception('El viaje no tiene shipments para enviar.');
+        }
+
+        return $voyage;
+    }
+
+    /**
+     * Crear transacción de webservice
+     */
+    private function createWebserviceTransaction(Voyage $voyage, array $data)
+    {
+        return WebserviceTransaction::create([
+            'company_id' => $voyage->company_id,
+            'user_id' => Auth::id(),
+            'voyage_id' => $voyage->id,
+            'webservice_type' => $data['webservice_type'],
+            'environment' => $data['environment'],
+            'transaction_id' => $this->generateTransactionId($voyage->company_id, $data['webservice_type']),
+            'status' => 'pending',
+            'voyage_number' => $voyage->voyage_number,
+            'vessel_name' => $voyage->vessel->name ?? 'N/A',
+            'origin_port' => $voyage->origin_port->code ?? '',
+            'destination_port' => $voyage->destination_port->code ?? '',
+            'priority' => $data['priority'] ?? 'normal',
+            'request_data' => json_encode([
+                'voyage' => $voyage->toArray(),
+                'shipments_count' => $voyage->shipments()->count(),
+                'bills_count' => $voyage->shipments()->withCount('billsOfLading')->get()->sum('bills_of_lading_count')
+            ]),
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+        ]);
+    }
+
+    /**
+     * Obtener servicio de webservice por tipo
+     */
+    private function getWebserviceByType(string $webserviceType, Voyage $voyage = null)
+    {
+        return match($webserviceType) {
+            'anticipada' => new ArgentinaAnticipatedService(),
+            'micdta' => new ArgentinaMicDtaService(),
+            'paraguay_customs' => new ParaguayCustomsService(),
+            default => throw new \Exception("Tipo de webservice no soportado: {$webserviceType}")
+        };
+    }
+
+    /**
+     * Actualizar transacción con respuesta del webservice
+     */
+    private function updateTransactionWithResponse(WebserviceTransaction $transaction, array $response)
+    {
+        $updateData = [
+            'status' => $response['success'] ? 'success' : 'error',
+            'response_at' => now(),
+            'response_data' => json_encode($response),
+        ];
+
+        if (!$response['success']) {
+            $updateData['error_message'] = $response['error'] ?? 'Error desconocido';
+        } else {
+            $updateData['external_reference'] = $response['reference'] ?? null;
+            $updateData['customs_confirmation'] = $response['confirmation'] ?? null;
+        }
+
+        $transaction->update($updateData);
+
+        // Log de la operación
+        Log::info('Transacción actualizada', [
+            'transaction_id' => $transaction->id,
+            'status' => $updateData['status'],
+            'webservice_type' => $transaction->webservice_type
+        ]);
+    }
+
+    /**
+     * Generar ID único de transacción
+     */
+    private function generateTransactionId(int $companyId, string $webserviceType): string
+    {
+        $prefix = strtoupper(substr($webserviceType, 0, 3));
+        $timestamp = now()->format('YmdHis');
+        $random = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
+        $companyCode = str_pad($companyId, 3, '0', STR_PAD_LEFT);
+
+        return "{$prefix}{$companyCode}{$timestamp}{$random}";
+    }
+
+    /**
+     * Obtener estadísticas de envíos a aduana
+     */
+    private function getCustomsStats()
+    {
+        $companyId = auth()->user()->company_id;
+
+        return [
+            'total_sent' => WebserviceTransaction::where('company_id', $companyId)->count(),
+            'successful' => WebserviceTransaction::where('company_id', $companyId)
+                ->where('status', 'success')->count(),
+            'pending' => WebserviceTransaction::where('company_id', $companyId)
+                ->where('status', 'pending')->count(),
+            'failed' => WebserviceTransaction::where('company_id', $companyId)
+                ->where('status', 'error')->count(),
+            'last_24h' => WebserviceTransaction::where('company_id', $companyId)
+                ->where('created_at', '>=', now()->subDay())->count(),
+        ];
     }
 }
