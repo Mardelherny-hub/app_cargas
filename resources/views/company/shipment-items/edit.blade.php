@@ -99,26 +99,23 @@
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
-
-                            {{-- Cliente Dueño --}}
-                            <div>
-                                <label for="client_id" class="block text-sm font-medium text-gray-700">
-                                    Cliente Dueño de la Mercadería
-                                </label>
-                                <select name="client_id" 
-                                        id="client_id" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('client_id') border-red-300 @enderror">
-                                    <option value="">Seleccione cliente (opcional)</option>
-                                    @foreach($clients as $client)
-                                        <option value="{{ $client->id }}" {{ old('client_id', $shipmentItem->client_id) == $client->id ? 'selected' : '' }}>
-                                            {{ $client->legal_name }} ({{ $client->tax_id }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('client_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+{{-- Cliente Dueño --}}
+<div>
+    <label for="client_id" class="block text-sm font-medium text-gray-700">
+        Cliente Dueño de la Mercadería <span class="text-red-500">*</span>
+    </label>
+    <div class="mt-1">
+        @livewire('search-client', [
+            'selectedClientId' => old('client_id', $shipmentItem->client_id),
+            'fieldName' => 'client_id',
+            'required' => true,
+            'placeholder' => 'Buscar cliente por nombre o CUIT...'
+        ])
+    </div>
+    @error('client_id')
+        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+    @enderror
+</div>
                         </div>
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 mt-6">

@@ -368,6 +368,65 @@ class BillOfLading extends Model
         return $this->hasMany(\App\Models\ShipmentItem::class, 'bill_of_lading_id');
     }
 
+    public function specificContacts()
+    {
+        return $this->hasMany(BillOfLadingContact::class);
+    }
+
+    public function shipperContact()
+    {
+        return $this->hasOne(BillOfLadingContact::class)->where('role', 'shipper');
+    }
+
+    public function consigneeContact()
+    {
+        return $this->hasOne(BillOfLadingContact::class)->where('role', 'consignee');
+    }
+
+
+    /**
+     * Obtener dirección del cargador (con fallback inteligente)
+     */
+    public function getShipperAddress(): string
+    {
+        $specificContact = $this->shipperContact;
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->full_address;
+        }
+        
+        // Fallback: usar dirección del cliente shipper
+        return $this->shipper?->contactData?->first()?->full_address ?? '';
+    }
+
+    /**
+     * Obtener dirección del consignatario
+     */
+    public function getConsigneeAddress(): string
+    {
+        $specificContact = $this->consigneeContact;
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->full_address;
+        }
+        
+        return $this->consignee?->contactData?->first()?->full_address ?? '';
+    }
+
+    /**
+     * Obtener dirección de notificación
+     */
+    public function getNotifyPartyAddress(): string
+    {
+        $specificContact = $this->hasOne(BillOfLadingContact::class)->where('role', 'notify_party')->first();
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->full_address;
+        }
+        
+        return $this->notifyParty?->contactData?->first()?->full_address ?? '';
+    }
+
     /**
      * CORREGIDO: Recalcular estadísticas del bill of lading basándose en sus shipment items
      * TEMPORAL: Usar FQCN para evitar problemas de autoload y query directa como backup

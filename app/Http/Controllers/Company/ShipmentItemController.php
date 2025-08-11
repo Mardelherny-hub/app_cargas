@@ -537,7 +537,7 @@ class ShipmentItemController extends Controller
                         ->orderBy('legal_name')
                         ->get();
 
-        $shipmentItem->load(['shipment.voyage', 'shipment.vessel', 'client', 'cargoType', 'packagingType']);
+        $shipmentItem->load(['billOfLading.shipment.voyage', 'billOfLading.shipment.vessel', 'client', 'cargoType', 'packagingType']);
 
         return view('company.shipment-items.edit', compact(
             'shipmentItem',
@@ -601,7 +601,7 @@ class ShipmentItemController extends Controller
             'brand' => 'nullable|string|max:100',
             'model' => 'nullable|string|max:100',
             'manufacturer' => 'nullable|string|max:200',
-            'country_of_origin' => 'nullable|string|size:3',
+            'country_of_origin' => 'nullable|string|size:2',
             'package_type_description' => 'nullable|string|max:100',
             'units_per_package' => 'nullable|integer|min:1',
             'unit_of_measure' => 'required|string|max:10',
@@ -620,7 +620,7 @@ class ShipmentItemController extends Controller
         ]);
 
         // Verificar que el line_number no esté duplicado (excepto el item actual)
-        $existingItem = ShipmentItem::where('shipment_id', $shipmentItem->shipment_id)
+        $existingItem = ShipmentItem::where('bill_of_lading_id', $shipmentItem->bill_of_lading_id)
                                    ->where('line_number', $validated['line_number'])
                                    ->where('id', '!=', $shipmentItem->id)
                                    ->first();

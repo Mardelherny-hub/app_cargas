@@ -119,7 +119,7 @@ class ShipmentController extends Controller
         ];
     }
 
-     /**
+   /**
      * Mostrar formulario para crear nueva carga.
      */
    // ===== MÉTODO CREATE - MODIFICADO =====

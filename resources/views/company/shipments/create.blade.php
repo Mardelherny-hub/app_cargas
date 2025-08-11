@@ -288,34 +288,5 @@
         </div>
     </div>
 
-    {{-- JavaScript para manejar campos condicionales --}}
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const vesselRoleSelect = document.getElementById('vessel_role');
-            const convoyPositionField = document.getElementById('convoy-position-field');
-            
-            function updateConvoyFields() {
-                const vesselRole = vesselRoleSelect.value;
-                
-                if (vesselRole === 'single') {
-                    convoyPositionField.style.display = 'none';
-                    document.getElementById('convoy_position').value = '';
-                } else {
-                    convoyPositionField.style.display = 'block';
-                }
-            }
-            
-            vesselRoleSelect.addEventListener('change', updateConvoyFields);
-            updateConvoyFields(); // Inicializar
-        });
 
-        document.addEventListener('livewire:initialized', () => {
-            // Detectar cambios en el select de tipo de carga
-            document.addEventListener('change', function(e) {
-                if (e.target.id === 'cargo_type_id') {
-                    @this.set('cargo_type_id', e.target.value);
-                }
-            });
-        });
-    </script>
 </x-app-layout>

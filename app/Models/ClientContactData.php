@@ -208,6 +208,11 @@ class ClientContactData extends Model
         return $this->belongsTo(User::class, 'updated_by_user_id');
     }
 
+    public function billOfLadingContacts()
+    {
+        return $this->hasMany(BillOfLadingContact::class);
+    }
+
     // ===============================================
     // ACCESSORS (GETTERS)
     // ===============================================

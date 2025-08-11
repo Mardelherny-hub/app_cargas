@@ -26,6 +26,12 @@ class ShipmentItemCreateForm extends Component
     public $countries;
     public $nextLineNumber;
     public $continueAdding = true;
+    // Cliente dueño de la mercadería
+    public $searchClient = '';
+    public $selectedClientId = '';
+    public $selectedClientName = '';
+    
+    
 
     // Estado del componente
     public $step = 1; // 1 = Configurar BL (si es necesario), 2 = Agregar Item
@@ -71,6 +77,25 @@ class ShipmentItemCreateForm extends Component
 
     #[Validate('required|in:USD,ARS,EUR')]
     public $bl_currency_code = 'USD';
+
+    // Direcciones específicas para el Bill of Lading
+    public $bl_shipper_use_specific = false;
+    public $bl_shipper_address_1 = '';
+    public $bl_shipper_address_2 = '';
+    public $bl_shipper_city = '';
+    public $bl_shipper_state = '';
+
+    public $bl_consignee_use_specific = false;
+    public $bl_consignee_address_1 = '';
+    public $bl_consignee_address_2 = '';
+    public $bl_consignee_city = '';
+    public $bl_consignee_state = '';
+
+    public $bl_notify_use_specific = false;
+    public $bl_notify_address_1 = '';
+    public $bl_notify_address_2 = '';
+    public $bl_notify_city = '';
+    public $bl_notify_state = '';
 
     // Datos del Shipment Item (sección 2)
     #[Validate('required|string|max:100')]
@@ -233,6 +258,8 @@ class ShipmentItemCreateForm extends Component
             // Usar el método del controlador para crear el BL
             $controller = new ShipmentItemController();
             $this->billOfLading = $controller->createBillOfLadingWithData($this->shipment, $blData);
+            // Crear contactos específicos si se definieron
+            $this->createSpecificContacts($this->billOfLading);
 
             DB::commit();
 
@@ -262,139 +289,175 @@ class ShipmentItemCreateForm extends Component
 
             session()->flash('error', 'Error al crear el conocimiento de embarque: ' . $e->getMessage());
         }
+    
     }
 
     public function createShipmentItem()
     {
-        // Validar campos del item
-        $this->validate([
-            'item_reference' => 'required|string|max:100',
-            'item_description' => 'required|string|max:2000',
-            'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
-            'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
-            'package_quantity' => 'required|integer|min:1',
-            'gross_weight_kg' => 'required|numeric|min:0.01',
-            'net_weight_kg' => 'nullable|numeric|min:0',
-            'volume_m3' => 'nullable|numeric|min:0',
-            'declared_value' => 'nullable|numeric|min:0',
-            'country_of_origin' => 'required|string|size:2',
+    // Validar campos del item
+    $this->validate([
+        'selectedClientId' => 'required|exists:clients,id',
+        'item_reference' => 'required|string|max:100',
+        'item_description' => 'required|string|max:2000',
+        'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
+        'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
+        'package_quantity' => 'required|integer|min:1',
+        'gross_weight_kg' => 'required|numeric|min:0.01',
+        'net_weight_kg' => 'nullable|numeric|min:0',
+        'volume_m3' => 'nullable|numeric|min:0',
+        'declared_value' => 'nullable|numeric|min:0',
+        'country_of_origin' => 'required|string|size:2',
+    ]);
+
+    if (!$this->billOfLading) {
+        session()->flash('error', 'No se ha configurado el conocimiento de embarque.');
+        return;
+    }
+
+    try {
+        DB::beginTransaction();
+
+        // Crear el shipment item
+        $shipmentItem = ShipmentItem::create([
+            'client_id' => $this->selectedClientId,
+            'bill_of_lading_id' => $this->billOfLading->id,
+            'line_number' => $this->nextLineNumber,
+            'item_reference' => $this->item_reference,
+            'item_description' => $this->item_description,
+            'cargo_type_id' => $this->cargo_type_id,
+            'packaging_type_id' => $this->packaging_type_id,
+            'package_quantity' => $this->package_quantity,
+            'gross_weight_kg' => $this->gross_weight_kg,
+            'net_weight_kg' => $this->net_weight_kg,
+            'volume_m3' => $this->volume_m3,
+            'declared_value' => $this->declared_value,
+            'currency_code' => $this->bl_currency_code,
+            'country_of_origin' => $this->country_of_origin,
+            'hs_code' => $this->hs_code,
+            'cargo_marks' => $this->cargo_marks,
+            'status' => 'draft',
+            'created_date' => now(),
+            'created_by_user_id' => Auth::id(),
+            'last_updated_date' => now(),
+            'last_updated_by_user_id' => Auth::id(),
         ]);
 
-        if (!$this->billOfLading) {
-            session()->flash('error', 'No se ha configurado el conocimiento de embarque.');
-            return;
-        }
-
-        try {
-            DB::beginTransaction();
-
-            // Crear el shipment item
-            $shipmentItem = ShipmentItem::create([
-                'bill_of_lading_id' => $this->billOfLading->id,
-                'line_number' => $this->nextLineNumber,
-                'item_reference' => $this->item_reference,
-                'item_description' => $this->item_description,
-                'cargo_type_id' => $this->cargo_type_id,
-                'packaging_type_id' => $this->packaging_type_id,
-                'package_quantity' => $this->package_quantity,
-                'gross_weight_kg' => $this->gross_weight_kg,
-                'net_weight_kg' => $this->net_weight_kg,
-                'volume_m3' => $this->volume_m3,
-                'declared_value' => $this->declared_value,
-                'currency_code' => $this->bl_currency_code,
-                'country_of_origin' => $this->country_of_origin,
-                'hs_code' => $this->hs_code,
-                'cargo_marks' => $this->cargo_marks,
-                'status' => 'draft',
+        // SI es carga contenedorizada, crear el contenedor automáticamente
+        if ($this->showContainerFields && !empty($this->container_number)) {
+            $container = \App\Models\Container::create([
+                // Campos obligatorios
+                'container_number' => $this->container_number,
+                'container_type_id' => $this->container_type_id,
+                'tare_weight_kg' => $this->tare_weight ?: 2200,
+                'max_gross_weight_kg' => 30000, // Valor por defecto
+                'current_gross_weight_kg' => $this->gross_weight_kg,
+                'cargo_weight_kg' => $this->net_weight_kg,
+                'condition' => 'L', // Loaded
+                'operational_status' => 'loaded',
+                
+                // Precintos
+                'shipper_seal' => $this->seal_number,
+                
+                // Estado
+                'active' => true,
+                'blocked' => false,
+                'out_of_service' => false,
+                'requires_repair' => false,
+                
+                // Auditoría
                 'created_date' => now(),
                 'created_by_user_id' => Auth::id(),
                 'last_updated_date' => now(),
                 'last_updated_by_user_id' => Auth::id(),
             ]);
 
-            // SI es carga contenedorizada, crear el contenedor automáticamente
-            if ($this->showContainerFields && !empty($this->container_number)) {
-                $container = \App\Models\Container::create([
-                    // Campos obligatorios
-                    'container_number' => $this->container_number,
-                    'container_type_id' => $this->container_type_id,
-                    'tare_weight_kg' => $this->tare_weight ?: 2200,
-                    'max_gross_weight_kg' => 30000, // Valor por defecto
-                    'current_gross_weight_kg' => $this->gross_weight_kg,
-                    'cargo_weight_kg' => $this->net_weight_kg,
-                    'condition' => 'L', // Loaded
-                    'operational_status' => 'loaded',
-                    
-                    // Precintos
-                    'shipper_seal' => $this->seal_number,
-                    
-                    // Estado
-                    'active' => true,
-                    'blocked' => false,
-                    'out_of_service' => false,
-                    'requires_repair' => false,
-                    
-                    // Auditoría
-                    'created_date' => now(),
-                    'created_by_user_id' => Auth::id(),
-                    'last_updated_date' => now(),
-                    'last_updated_by_user_id' => Auth::id(),
-                ]);
+            // Asociar el item con el contenedor en la tabla pivote
+            $container->shipmentItems()->attach($shipmentItem->id, [
+                'package_quantity' => $this->package_quantity,
+                'gross_weight_kg' => $this->gross_weight_kg,
+                'net_weight_kg' => $this->net_weight_kg,
+                'volume_m3' => $this->volume_m3,
+                'quantity_percentage' => 100.00,
+                'weight_percentage' => 100.00,
+                'volume_percentage' => 100.00,
+                'loaded_at' => now(),
+                'status' => 'loaded',
+                'created_date' => now(),
+                'created_by_user_id' => Auth::id(),
+            ]);
 
-                // Asociar el item con el contenedor en la tabla pivote
-                $container->shipmentItems()->attach($shipmentItem->id, [
-                    'package_quantity' => $this->package_quantity,
-                    'gross_weight_kg' => $this->gross_weight_kg,
-                    'net_weight_kg' => $this->net_weight_kg,
-                    'volume_m3' => $this->volume_m3,
-                    'quantity_percentage' => 100.00,
-                    'weight_percentage' => 100.00,
-                    'volume_percentage' => 100.00,
-                    'loaded_at' => now(),
-                    'status' => 'loaded',
-                    'created_date' => now(),
-                    'created_by_user_id' => Auth::id(),
-                ]);
-
-                Log::info('Container created automatically with item', [
-                    'container_id' => $container->id,
-                    'item_id' => $shipmentItem->id,
-                    'container_number' => $this->container_number
-                ]);
-            }
-            // Recalcular estadísticas del shipment
-            $this->shipment->recalculateItemStats();
-
-            DB::commit();
-
-            Log::info('ShipmentItem created via Livewire', [
+            Log::info('Container created automatically with item', [
+                'container_id' => $container->id,
                 'item_id' => $shipmentItem->id,
-                'bill_of_lading_id' => $this->billOfLading->id,
-                'line_number' => $this->nextLineNumber
+                'container_number' => $this->container_number
             ]);
-
-             // Determinar mensaje según si se creó contenedor o no
-            $message = ($this->showContainerFields && !empty($this->container_number)) 
-                ? "Item y contenedor {$this->container_number} creados exitosamente." 
-                : 'Item agregado exitosamente.';
-
-            // Redirigir para agregar otro item inmediatamente
-            return redirect()->route('company.shipment-items.create', ['shipment' => $this->shipment->id])
-                ->with('success', $message . ' Agregar otro item:');
-
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            Log::error('Error creating ShipmentItem in Livewire: ' . $e->getMessage(), [
-                'shipment_id' => $this->shipment->id,
-                'bill_of_lading_id' => $this->billOfLading?->id,
-                'error_file' => $e->getFile(),
-                'error_line' => $e->getLine()
-            ]);
-
-            session()->flash('error', 'Error al crear el item: ' . $e->getMessage());
         }
+        // Recalcular estadísticas del shipment
+        $this->shipment->recalculateItemStats();
+
+        DB::commit();
+
+        Log::info('ShipmentItem created via Livewire', [
+            'item_id' => $shipmentItem->id,
+            'bill_of_lading_id' => $this->billOfLading->id,
+            'line_number' => $this->nextLineNumber
+        ]);
+
+            // Determinar mensaje según si se creó contenedor o no
+        $message = ($this->showContainerFields && !empty($this->container_number)) 
+            ? "Item y contenedor {$this->container_number} creados exitosamente." 
+            : 'Item agregado exitosamente.';
+
+        // Redirigir para agregar otro item inmediatamente
+        return redirect()->route('company.shipment-items.create', ['shipment' => $this->shipment->id])
+            ->with('success', $message . ' Agregar otro item:');
+
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        
+        Log::error('Error creating ShipmentItem in Livewire: ' . $e->getMessage(), [
+            'shipment_id' => $this->shipment->id,
+            'bill_of_lading_id' => $this->billOfLading?->id,
+            'error_file' => $e->getFile(),
+            'error_line' => $e->getLine()
+        ]);
+
+        session()->flash('error', 'Error al crear el item: ' . $e->getMessage());
+    }
+    }
+
+    public function getFilteredClientsProperty()
+    {
+        if (strlen($this->searchClient) < 2) {
+            return collect();
+        }
+        
+        return \App\Models\Client::where('status', 'active')
+            ->where(function($query) {
+                $query->where('legal_name', 'like', '%' . $this->searchClient . '%')
+                    ->orWhere('commercial_name', 'like', '%' . $this->searchClient . '%')
+                    ->orWhere('tax_id', 'like', '%' . $this->searchClient . '%');
+            })
+            ->limit(20)
+            ->get();
+    }
+
+    public function selectClient($clientId)
+    {
+        $client = \App\Models\Client::find($clientId);
+        if ($client) {
+            $this->selectedClientId = $client->id;
+            $this->selectedClientName = $client->legal_name;
+            $this->searchClient = '';
+        }
+    }
+
+    public function clearSelectedClient()
+    {
+        $this->selectedClientId = '';
+        $this->selectedClientName = '';
+        $this->searchClient = '';
     }
 
     public function render()
@@ -416,5 +479,71 @@ class ShipmentItemCreateForm extends Component
         
         $packagingType = $this->packagingTypes->find($packagingTypeId);
         return $packagingType ? $packagingType->code : 'CTNS';
+    }
+
+    protected function createSpecificContacts(BillOfLading $billOfLading): void
+    {
+        // Crear contacto específico del shipper
+        if ($this->bl_shipper_use_specific && $this->bl_shipper_id) {
+            \App\Models\BillOfLadingContact::create([
+                'bill_of_lading_id' => $billOfLading->id,
+                'client_contact_data_id' => $this->getClientContactId($this->bl_shipper_id),
+                'role' => 'shipper',
+                'specific_address_line_1' => $this->bl_shipper_address_1,
+                'specific_address_line_2' => $this->bl_shipper_address_2,
+                'specific_city' => $this->bl_shipper_city,
+                'specific_state_province' => $this->bl_shipper_state,
+                'use_specific_data' => true,
+                'created_by_user_id' => Auth::id(),
+            ]);
+        }
+
+        // Crear contacto específico del consignee
+        if ($this->bl_consignee_use_specific && $this->bl_consignee_id) {
+            \App\Models\BillOfLadingContact::create([
+                'bill_of_lading_id' => $billOfLading->id,
+                'client_contact_data_id' => $this->getClientContactId($this->bl_consignee_id),
+                'role' => 'consignee',
+                'specific_address_line_1' => $this->bl_consignee_address_1,
+                'specific_address_line_2' => $this->bl_consignee_address_2,
+                'specific_city' => $this->bl_consignee_city,
+                'specific_state_province' => $this->bl_consignee_state,
+                'use_specific_data' => true,
+                'created_by_user_id' => Auth::id(),
+            ]);
+        }
+
+        // Crear contacto específico del notify party
+        if ($this->bl_notify_use_specific && $this->bl_notify_party_id) {
+            \App\Models\BillOfLadingContact::create([
+                'bill_of_lading_id' => $billOfLading->id,
+                'client_contact_data_id' => $this->getClientContactId($this->bl_notify_party_id),
+                'role' => 'notify_party',
+                'specific_address_line_1' => $this->bl_notify_address_1,
+                'specific_address_line_2' => $this->bl_notify_address_2,
+                'specific_city' => $this->bl_notify_city,
+                'specific_state_province' => $this->bl_notify_state,
+                'use_specific_data' => true,
+                'created_by_user_id' => Auth::id(),
+            ]);
+        }
+    }
+
+    protected function getClientContactId($clientId): int
+    {
+        // Obtener el primer contacto del cliente (o crear uno básico)
+        $contact = \App\Models\ClientContactData::where('client_id', $clientId)->first();
+        
+        if (!$contact) {
+            // Crear contacto básico si no existe
+            $contact = \App\Models\ClientContactData::create([
+                'client_id' => $clientId,
+                'active' => true,
+                'is_primary' => true,
+                'created_by_user_id' => Auth::id(),
+            ]);
+        }
+        
+        return $contact->id;
     }
 }
