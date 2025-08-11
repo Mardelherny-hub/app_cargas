@@ -376,7 +376,7 @@
                             <label for="cargo_type_id" class="block text-sm font-medium text-gray-700">
                                 Tipo de Carga <span class="text-red-500">*</span>
                             </label>
-                            <select wire:model="cargo_type_id" id="cargo_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <select wire:model.live="cargo_type_id" id="cargo_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Seleccionar tipo</option>
                                 @foreach($cargoTypes as $type)
                                     <option value="{{ $type->id }}">{{ $type->name }}</option>
@@ -400,9 +400,93 @@
                             @error('packaging_type_id')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
-                        </div>
+                        </div>                        
                     </div>
                 </div>
+                {{-- Sección Contenedor (Condicional) --}}
+                @if($showContainerFields)
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                    <div class="flex items-center mb-4">
+                        <div class="flex-shrink-0">
+                            <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h4 class="text-lg font-medium text-blue-900">Datos del Contenedor</h4>
+                            <p class="text-sm text-blue-700">Configure el contenedor físico para esta carga</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {{-- Número de Contenedor --}}
+                        <div>
+                            <label for="container_number" class="block text-sm font-medium text-gray-700">
+                                Número de Contenedor <span class="text-red-500">*</span>
+                            </label>
+                            <input wire:model="container_number" 
+                                type="text" 
+                                id="container_number" 
+                                maxlength="15"
+                                placeholder="MSKU1234567"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            @error('container_number')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        {{-- Tipo de Contenedor --}}
+                        <div>
+                            <label for="container_type_id" class="block text-sm font-medium text-gray-700">
+                                Tipo de Contenedor <span class="text-red-500">*</span>
+                            </label>
+                            <select wire:model="container_type_id" 
+                                    id="container_type_id" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Seleccionar tipo</option>
+                                @foreach($containerTypes as $type)
+                                    <option value="{{ $type->id }}">{{ $type->code }} - {{ $type->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('container_type_id')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        {{-- Precinto --}}
+                        <div>
+                            <label for="seal_number" class="block text-sm font-medium text-gray-700">
+                                Número de Precinto
+                            </label>
+                            <input wire:model="seal_number" 
+                                type="text" 
+                                id="seal_number" 
+                                placeholder="SL123456"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+
+                        {{-- Tara --}}
+                        <div>
+                            <label for="tare_weight" class="block text-sm font-medium text-gray-700">
+                                Tara del Contenedor (kg)
+                            </label>
+                            <input wire:model="tare_weight" 
+                                type="number" 
+                                id="tare_weight" 
+                                step="0.01"
+                                min="0"
+                                placeholder="2200.00"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-blue-100 rounded-md">
+                        <p class="text-sm text-blue-800">
+                            ℹ️ <strong>Automático:</strong> Al guardar este item, se creará automáticamente el contenedor físico.
+                        </p>
+                    </div>
+                </div>
+                @endif
 
                 {{-- Cantidades y Medidas --}}
                 <div>
@@ -502,24 +586,35 @@
                     @enderror
                 </div>
 
-                {{-- Botones de acción --}}
-                <div class="flex justify-between">
-                    <a href="{{ route('company.shipments.show', $shipment) }}" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                        </svg>
-                        Cancelar
-                    </a>
-                    
-                    <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                        <svg wire:loading wire:target="createShipmentItem" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span wire:loading.remove wire:target="createShipmentItem">Agregar Item</span>
-                        <span wire:loading wire:target="createShipmentItem">Agregando...</span>
-                    </button>
-                </div>
+                {{-- Botones de acción MEJORADOS --}}
+            <<div class="flex justify-between">
+    <a href="{{ route('company.shipments.show', $shipment) }}" 
+       class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+        </svg>
+        Cancelar
+    </a>
+    
+    <div class="flex space-x-3">
+        {{-- Botón: Agregar Item (submit normal) --}}
+        <button type="submit" 
+                wire:click="$set('continueAdding', true)"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
+            <span wire:loading.remove wire:target="createShipmentItem">Agregar Item</span>
+            <span wire:loading wire:target="createShipmentItem">Agregando...</span>
+        </button>
+
+        {{-- Botón: Terminar (NO submit, link directo) --}}
+        <a href="{{ route('company.shipments.show', $shipment) }}"
+           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+            <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Terminar
+        </a>
+    </div>
+</div>
             </form>
         </div>
     @endif

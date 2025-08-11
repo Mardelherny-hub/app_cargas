@@ -308,5 +308,14 @@
             vesselRoleSelect.addEventListener('change', updateConvoyFields);
             updateConvoyFields(); // Inicializar
         });
+
+        document.addEventListener('livewire:initialized', () => {
+            // Detectar cambios en el select de tipo de carga
+            document.addEventListener('change', function(e) {
+                if (e.target.id === 'cargo_type_id') {
+                    @this.set('cargo_type_id', e.target.value);
+                }
+            });
+        });
     </script>
 </x-app-layout>

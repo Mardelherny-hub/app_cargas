@@ -145,6 +145,30 @@ class Shipment extends Model
     //
 
     /**
+     * Cliente dueño de la mercadería
+     */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class, 'client_id');
+    }
+
+    /**
+     * Tipo de carga
+     */
+    public function cargoType(): BelongsTo
+    {
+        return $this->belongsTo(CargoType::class, 'cargo_type_id');
+    }
+
+    /**
+     * Tipo de embalaje
+     */
+    public function packagingType(): BelongsTo
+    {
+        return $this->belongsTo(PackagingType::class, 'packaging_type_id');
+    }
+
+    /**
      * Viaje al que pertenece este envío
      */
     public function voyage(): BelongsTo

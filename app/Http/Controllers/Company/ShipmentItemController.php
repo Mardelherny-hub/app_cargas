@@ -487,13 +487,12 @@ class ShipmentItemController extends Controller
         }
 
         $shipmentItem->load([
-            'shipment.voyage.company',
-            'shipment.vessel',
-            'client',
-            'cargoType',
+            'billOfLading.shipment.voyage', 
+            'billOfLading.shipment.vessel', 
+            'client', 
+            'cargoType', 
             'packagingType'
         ]);
-
         return view('company.shipment-items.show', compact('shipmentItem'));
     }
 

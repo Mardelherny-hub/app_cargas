@@ -172,10 +172,16 @@ class ShipmentController extends Controller
         $nextShipmentNumber = $this->generateNextShipmentNumber($voyage);
 
         return view('company.shipments.create', compact(
-            'voyage',
-            'company', 
-            'formData',
-            'nextShipmentNumber'
+            'shipment',
+            'billOfLading', 
+            'needsToCreateBL',
+            'defaultBLData',
+            'cargoTypes', 
+            'packagingTypes', 
+            'clients',
+            'ports',
+            'countries',
+            'containerTypes', 
         ));
     }
 

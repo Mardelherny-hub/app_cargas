@@ -37,8 +37,9 @@ class ManifestCustomsController extends Controller
         ])
         ->where('company_id', auth()->user()->company_id)
         ->whereHas('shipments') // Solo viajes con cargas
-        ->whereIn('status', ['completed', 'in_progress']); // Solo viajes listos
+        ->whereIn('status', ['approved']); // Solo viajes listos
 
+        dd($query);
         // Filtrar por país de destino si se especifica
         if ($request->filled('country')) {
             $query->whereHas('destination_port.country', function($q) use ($request) {
@@ -46,6 +47,7 @@ class ManifestCustomsController extends Controller
             });
         }
 
+        
         // Filtrar por estado de envío
         if ($request->filled('webservice_status')) {
             switch ($request->webservice_status) {

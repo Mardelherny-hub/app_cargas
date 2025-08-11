@@ -25,6 +25,7 @@ class ShipmentItemCreateForm extends Component
     public $ports;
     public $countries;
     public $nextLineNumber;
+    public $continueAdding = true;
 
     // Estado del componente
     public $step = 1; // 1 = Configurar BL (si es necesario), 2 = Agregar Item
@@ -108,6 +109,22 @@ class ShipmentItemCreateForm extends Component
     #[Validate('nullable|string|max:500')]
     public $cargo_marks = '';
 
+    // Campos adicionales para contenedores
+    #[Validate('nullable|string|max:15')]
+    public $container_number = '';
+
+    #[Validate('nullable|exists:container_types,id')]
+    public $container_type_id = null;
+
+    #[Validate('nullable|string|max:50')]
+    public $seal_number = '';
+
+    #[Validate('nullable|numeric|min:0')]
+    public $tare_weight = 0;
+
+    public $showContainerFields = false;
+    public $containerTypes;
+
     public function mount()
     {
         // Determinar si necesitamos mostrar la sección de BL
@@ -132,6 +149,11 @@ class ShipmentItemCreateForm extends Component
             $this->step = 2;
         }
 
+        // contenedore
+        $this->containerTypes = \App\Models\ContainerType::where('active', true)
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
         Log::info('ShipmentItemCreateForm mounted', [
             'needs_bl' => $this->needsToCreateBL,
             'show_bl_section' => $this->showBLSection,
@@ -139,6 +161,34 @@ class ShipmentItemCreateForm extends Component
             'shipment_id' => $this->shipment->id,
             'bill_of_lading_id' => $this->billOfLading?->id
         ]);
+    }
+
+    public function getIsContainerCargoProperty()
+    {
+        if (!$this->cargoTypes || !$this->cargo_type_id) {
+            return false;
+        }
+        
+        // Buscar por ID específico (más confiable)
+        if ($this->cargo_type_id == 2) {
+            return true;
+        }
+        
+        // Buscar por nombre como fallback
+        $cargoType = $this->cargoTypes->find($this->cargo_type_id);
+        return $cargoType && str_contains(strtolower($cargoType->name), 'contenedor');
+    }
+
+    public function updatedCargoTypeId()
+    {
+        $this->showContainerFields = $this->isContainerCargo;
+        
+        if (!$this->showContainerFields) {
+            $this->container_number = '';
+            $this->container_type_id = null;
+            $this->seal_number = '';
+            $this->tare_weight = 0;
+        }
     }
 
     public function createBillOfLading()
@@ -262,6 +312,56 @@ class ShipmentItemCreateForm extends Component
                 'last_updated_by_user_id' => Auth::id(),
             ]);
 
+            // SI es carga contenedorizada, crear el contenedor automáticamente
+            if ($this->showContainerFields && !empty($this->container_number)) {
+                $container = \App\Models\Container::create([
+                    // Campos obligatorios
+                    'container_number' => $this->container_number,
+                    'container_type_id' => $this->container_type_id,
+                    'tare_weight_kg' => $this->tare_weight ?: 2200,
+                    'max_gross_weight_kg' => 30000, // Valor por defecto
+                    'current_gross_weight_kg' => $this->gross_weight_kg,
+                    'cargo_weight_kg' => $this->net_weight_kg,
+                    'condition' => 'L', // Loaded
+                    'operational_status' => 'loaded',
+                    
+                    // Precintos
+                    'shipper_seal' => $this->seal_number,
+                    
+                    // Estado
+                    'active' => true,
+                    'blocked' => false,
+                    'out_of_service' => false,
+                    'requires_repair' => false,
+                    
+                    // Auditoría
+                    'created_date' => now(),
+                    'created_by_user_id' => Auth::id(),
+                    'last_updated_date' => now(),
+                    'last_updated_by_user_id' => Auth::id(),
+                ]);
+
+                // Asociar el item con el contenedor en la tabla pivote
+                $container->shipmentItems()->attach($shipmentItem->id, [
+                    'package_quantity' => $this->package_quantity,
+                    'gross_weight_kg' => $this->gross_weight_kg,
+                    'net_weight_kg' => $this->net_weight_kg,
+                    'volume_m3' => $this->volume_m3,
+                    'quantity_percentage' => 100.00,
+                    'weight_percentage' => 100.00,
+                    'volume_percentage' => 100.00,
+                    'loaded_at' => now(),
+                    'status' => 'loaded',
+                    'created_date' => now(),
+                    'created_by_user_id' => Auth::id(),
+                ]);
+
+                Log::info('Container created automatically with item', [
+                    'container_id' => $container->id,
+                    'item_id' => $shipmentItem->id,
+                    'container_number' => $this->container_number
+                ]);
+            }
             // Recalcular estadísticas del shipment
             $this->shipment->recalculateItemStats();
 
@@ -273,9 +373,15 @@ class ShipmentItemCreateForm extends Component
                 'line_number' => $this->nextLineNumber
             ]);
 
-            // Redirigir al shipment
-            return redirect()->route('company.shipments.show', $this->shipment)
-                ->with('success', 'Item agregado exitosamente al shipment.');
+             // Determinar mensaje según si se creó contenedor o no
+            $message = ($this->showContainerFields && !empty($this->container_number)) 
+                ? "Item y contenedor {$this->container_number} creados exitosamente." 
+                : 'Item agregado exitosamente.';
+
+            // Redirigir para agregar otro item inmediatamente
+            return redirect()->route('company.shipment-items.create', ['shipment' => $this->shipment->id])
+                ->with('success', $message . ' Agregar otro item:');
+
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -294,5 +400,21 @@ class ShipmentItemCreateForm extends Component
     public function render()
     {
         return view('livewire.shipment-item-create-form');
+    }
+
+    private function getContainerTypeCode($containerTypeId)
+    {
+        if (!$containerTypeId) return '40HC';
+        
+        $containerType = $this->containerTypes->find($containerTypeId);
+        return $containerType ? $containerType->code : '40HC';
+    }
+
+    private function getPackagingTypeName($packagingTypeId)
+    {
+        if (!$packagingTypeId) return 'CTNS';
+        
+        $packagingType = $this->packagingTypes->find($packagingTypeId);
+        return $packagingType ? $packagingType->code : 'CTNS';
     }
 }
