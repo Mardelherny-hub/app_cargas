@@ -516,10 +516,10 @@ class ShipmentItemController extends Controller
         }
 
         // Verificar si el usuario puede gestionar items de este shipment
-        if (!$this->canManageShipmentItems($shipmentItem->shipment)) {
-            return redirect()->route('company.shipment-items.show', $shipmentItem)
-                ->with('error', 'No puede editar items de este shipment en su estado actual.');
-        }
+        //if (!$this->canManageShipmentItems($shipmentItem->shipment)) {
+        //    return redirect()->route('company.shipment-items.show', $shipmentItem)
+        //        ->with('error', 'No puede editar items de este shipment en su estado actual.');
+        //}
 
         // Verificar si es operador y solo puede editar sus propios items
         if ($this->isUser() && $this->isOperator()) {

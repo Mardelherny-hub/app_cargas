@@ -110,12 +110,14 @@
                 {{-- Partes Involucradas --}}
                 <div>
                     <h4 class="text-lg font-medium text-gray-900 mb-4">Partes Involucradas</h4>
+                    
+                    {{-- Grid con los 3 selectores básicos --}}
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label for="bl_shipper_id" class="block text-sm font-medium text-gray-700">
                                 Cargador/Exportador <span class="text-red-500">*</span>
                             </label>
-                            <select wire:model="bl_shipper_id" id="bl_shipper_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <select wire:model.live="bl_shipper_id" id="bl_shipper_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Seleccionar cargador</option>
                                 @foreach($clients as $client)
                                     <option value="{{ $client->id }}">{{ $client->legal_name }} - {{ $client->tax_id }}</option>
@@ -125,43 +127,12 @@
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
-                        {{-- Dirección específica del cargador --}}
-                        @if($bl_shipper_id)
-                        <div class="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Dirección del Cargador para este Conocimiento
-                                </label>
-                                <label class="inline-flex items-center">
-                                    <input wire:model="bl_shipper_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
-                                    <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
-                                </label>
-                            </div>
-                            
-                            @if($bl_shipper_use_specific ?? false)
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                    <input wire:model="bl_shipper_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                                <div>
-                                    <input wire:model="bl_shipper_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                                <div>
-                                    <input wire:model="bl_shipper_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                                <div>
-                                    <input wire:model="bl_shipper_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                            </div>
-                            @endif
-                        </div>
-                        @endif
 
                         <div>
                             <label for="bl_consignee_id" class="block text-sm font-medium text-gray-700">
                                 Consignatario/Importador <span class="text-red-500">*</span>
                             </label>
-                            <select wire:model="bl_consignee_id" id="bl_consignee_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <select wire:model.live="bl_consignee_id" id="bl_consignee_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Seleccionar consignatario</option>
                                 @foreach($clients as $client)
                                     <option value="{{ $client->id }}">{{ $client->legal_name }} - {{ $client->tax_id }}</option>
@@ -172,43 +143,11 @@
                             @enderror
                         </div>
 
-                        {{-- Dirección específica del consignatario --}}
-                        @if($bl_consignee_id)
-                        <div class="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Dirección del Consignatario para este Conocimiento
-                                </label>
-                                <label class="inline-flex items-center">
-                                    <input wire:model="bl_consignee_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
-                                    <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
-                                </label>
-                            </div>
-                            
-                            @if($bl_consignee_use_specific ?? false)
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                    <input wire:model="bl_consignee_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                                <div>
-                                    <input wire:model="bl_consignee_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                                <div>
-                                    <input wire:model="bl_consignee_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                                <div>
-                                    <input wire:model="bl_consignee_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
-                                </div>
-                            </div>
-                            @endif
-                        </div>
-                        @endif
-
                         <div>
                             <label for="bl_notify_party_id" class="block text-sm font-medium text-gray-700">
                                 Notificar a
                             </label>
-                            <select wire:model="bl_notify_party_id" id="bl_notify_party_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <select wire:model.live="bl_notify_party_id" id="bl_notify_party_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Sin notificación</option>
                                 @foreach($clients as $client)
                                     <option value="{{ $client->id }}">{{ $client->legal_name }} - {{ $client->tax_id }}</option>
@@ -218,40 +157,201 @@
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
-
-                        {{-- Dirección específica de notificación --}}
-                @if($bl_notify_party_id)
-                <div class="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="block text-sm font-medium text-gray-700">
-                            Dirección de Notificación para este Conocimiento
-                        </label>
-                        <label class="inline-flex items-center">
-                            <input wire:model="bl_notify_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
-                            <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
-                        </label>
                     </div>
-                    
-                    @if($bl_notify_use_specific ?? false)
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                            <input wire:model="bl_notify_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+             
+                    {{-- Dirección específica del cargador --}}
+                    @if($bl_shipper_id)
+                    <div class="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Dirección del Cargador para este Conocimiento
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input wire:model="bl_shipper_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+                            </label>
                         </div>
-                        <div>
-                            <input wire:model="bl_notify_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+                        
+                        @if($bl_shipper_use_specific ?? false)
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <input wire:model="bl_shipper_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_shipper_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_shipper_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_shipper_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
                         </div>
-                        <div>
-                            <input wire:model="bl_notify_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+                        @endif
+                    </div>
+                    @endif
+
+                    {{-- Dirección específica del consignatario --}}
+                    @if($bl_consignee_id)
+                    <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Dirección del Consignatario para este Conocimiento
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input wire:model="bl_consignee_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+                            </label>
                         </div>
-                        <div>
-                            <input wire:model="bl_notify_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+                        
+                        @if($bl_consignee_use_specific ?? false)
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <input wire:model="bl_consignee_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_consignee_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_consignee_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_consignee_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
                         </div>
+                        @endif
+                    </div>
+                    @endif
+
+                    {{-- Dirección específica de notificación --}}
+                    @if($bl_notify_party_id)
+                    <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Dirección de Notificación para este Conocimiento
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input wire:model="bl_notify_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+                            </label>
+                        </div>
+                        
+                        @if($bl_notify_use_specific ?? false)
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <input wire:model="bl_notify_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_notify_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_notify_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                            <div>
+                                <input wire:model="bl_notify_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+                            </div>
+                        </div>
+                        @endif
                     </div>
                     @endif
                 </div>
-                @endif
-                    </div>
-                </div>
+                {{-- AGREGAR ESTO INMEDIATAMENTE DESPUÉS DE LOS 3 SELECTORES DE CLIENTES --}}
+
+
+
+{{-- FORZAR MOSTRAR SECCIONES SIEMPRE (TEMPORAL) --}}
+@if($bl_shipper_id)
+<div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+    <div class="flex items-center justify-between mb-2">
+        <label class="block text-sm font-medium text-gray-700">
+            ✅ Dirección del Cargador para este Conocimiento
+        </label>
+        <label class="inline-flex items-center">
+            <input wire:model.live="bl_shipper_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+            <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+        </label>
+    </div>
+    
+    @if($bl_shipper_use_specific)
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div>
+            <input wire:model="bl_shipper_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_shipper_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_shipper_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_shipper_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+    </div>
+    @endif
+</div>
+@endif
+
+@if($bl_consignee_id)
+<div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+    <div class="flex items-center justify-between mb-2">
+        <label class="block text-sm font-medium text-gray-700">
+            ✅ Dirección del Consignatario para este Conocimiento
+        </label>
+        <label class="inline-flex items-center">
+            <input wire:model.live="bl_consignee_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+            <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+        </label>
+    </div>
+    
+    @if($bl_consignee_use_specific)
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div>
+            <input wire:model="bl_consignee_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_consignee_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_consignee_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_consignee_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+    </div>
+    @endif
+</div>
+@endif
+
+@if($bl_notify_party_id)
+<div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+    <div class="flex items-center justify-between mb-2">
+        <label class="block text-sm font-medium text-gray-700">
+            ✅ Dirección de Notificación para este Conocimiento
+        </label>
+        <label class="inline-flex items-center">
+            <input wire:model.live="bl_notify_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+            <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+        </label>
+    </div>
+    
+    @if($bl_notify_use_specific)
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div>
+            <input wire:model="bl_notify_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_notify_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_notify_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+        <div>
+            <input wire:model="bl_notify_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md">
+        </div>
+    </div>
+    @endif
+</div>
+@endif
 
                 {{-- Puertos y Ubicaciones --}}
                 <div>
@@ -743,34 +843,34 @@
                 </div>
 
                 {{-- Botones de acción MEJORADOS --}}
-            <<div class="flex justify-between">
-    <a href="{{ route('company.shipments.show', $shipment) }}" 
-       class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-        </svg>
-        Cancelar
-    </a>
-    
-    <div class="flex space-x-3">
-        {{-- Botón: Agregar Item (submit normal) --}}
-        <button type="submit" 
-                wire:click="$set('continueAdding', true)"
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
-            <span wire:loading.remove wire:target="createShipmentItem">Agregar Item</span>
-            <span wire:loading wire:target="createShipmentItem">Agregando...</span>
-        </button>
+                <div class="flex justify-between">
+                    <a href="{{ route('company.shipments.show', $shipment) }}" 
+                       class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                        </svg>
+                        Cancelar
+                    </a>
+                    
+                    <div class="flex space-x-3">
+                        {{-- Botón: Agregar Item (submit normal) --}}
+                        <button type="submit" 
+                                wire:click="$set('continueAdding', true)"
+                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
+                            <span wire:loading.remove wire:target="createShipmentItem">Agregar Item</span>
+                            <span wire:loading wire:target="createShipmentItem">Agregando...</span>
+                        </button>
 
-        {{-- Botón: Terminar (NO submit, link directo) --}}
-        <a href="{{ route('company.shipments.show', $shipment) }}"
-           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
-            <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-            </svg>
-            Terminar
-        </a>
-    </div>
-</div>
+                        {{-- Botón: Terminar (NO submit, link directo) --}}
+                        <a href="{{ route('company.shipments.show', $shipment) }}"
+                           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                            <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Terminar
+                        </a>
+                    </div>
+                </div>
             </form>
         </div>
     @endif
