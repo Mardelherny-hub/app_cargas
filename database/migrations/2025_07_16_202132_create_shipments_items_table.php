@@ -24,10 +24,7 @@ return new class extends Migration
         Schema::create('shipment_items', function (Blueprint $table) {
             // Primary key
             $table->id();
-
-            // Referencia a cliente el dueño de la mercadería
-            $table->unsignedBigInteger('client_id')->nullable()->comment('Cliente dueño de la mercadería');
-
+           
             // CORREGIDO: Reference to bill of lading (jerarquía correcta)
             $table->unsignedBigInteger('bill_of_lading_id')->comment('Conocimiento de embarque al que pertenece');
 
@@ -110,7 +107,6 @@ return new class extends Migration
             $table->timestamps();
 
             // Performance indexes
-            $table->index(['client_id'], 'idx_shipment_items_client');
             $table->index(['bill_of_lading_id', 'line_number'], 'idx_shipment_items_bill_of_lading_line');
             $table->index(['cargo_type_id', 'status'], 'idx_shipment_items_cargo_status');
             $table->index(['packaging_type_id'], 'idx_shipment_items_packaging');

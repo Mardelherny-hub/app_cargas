@@ -73,7 +73,6 @@ class ShipmentItem extends Model
      */
     protected $fillable = [
         // Foreign keys
-        'client_id',
         'bill_of_lading_id', // CORREGIDO: Cambiar de shipment_id a bill_of_lading_id
         'cargo_type_id',
         'packaging_type_id',
@@ -218,14 +217,6 @@ class ShipmentItem extends Model
     public function packagingType(): BelongsTo
     {
         return $this->belongsTo(PackagingType::class);
-    }
-
-    /**
-     * Cliente dueño de la mercadería (opcional)
-     */
-    public function client(): BelongsTo
-    {
-        return $this->belongsTo(Client::class);
     }
 
     /**

@@ -172,7 +172,6 @@ class ShipmentItemController extends Controller
                 // Permitir tanto shipment_id como bill_of_lading_id
                 'shipment_id' => 'nullable|exists:shipments,id',
                 'bill_of_lading_id' => 'nullable|exists:bills_of_lading,id',
-                'client_id' => 'nullable|exists:clients,id',
                 'cargo_type_id' => 'required|exists:cargo_types,id',
                 'packaging_type_id' => 'required|exists:packaging_types,id',
                 'line_number' => 'required|integer|min:1',
@@ -581,7 +580,6 @@ class ShipmentItemController extends Controller
 
         // Validar datos (mismas reglas que store)
         $validated = $request->validate([
-            'client_id' => 'nullable|exists:clients,id',
             'cargo_type_id' => 'required|exists:cargo_types,id',
             'packaging_type_id' => 'required|exists:packaging_types,id',
             'line_number' => 'required|integer|min:1',
