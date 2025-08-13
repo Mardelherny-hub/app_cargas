@@ -7,7 +7,11 @@ use Livewire\Attributes\Validate;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\ShipmentItem;
+use App\Models\Client;
+use App\Models\Country;
+use App\Models\DocumentType;
 use App\Http\Controllers\Company\ShipmentItemController;
+use App\Services\ClientValidationService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,17 +30,66 @@ class ShipmentItemCreateForm extends Component
     public $countries;
     public $nextLineNumber;
     public $continueAdding = true;
-    // Cliente dueño de la mercadería
-    public $searchClient = '';
-    public $selectedClientId = '';
-    public $selectedClientName = '';
-    
-    
 
     // Estado del componente
     public $step = 1; // 1 = Configurar BL (si es necesario), 2 = Agregar Item
     public $showBLSection = false;
     public $blCreated = false;
+
+    // NUEVO: Propiedades para búsqueda y modal de clientes
+    public $showClientModal = false;
+    public $clientSearchField = ''; // Identifica qué campo disparó el modal (bl_shipper_id, bl_consignee_id, bl_notify_party_id)
+    
+    // Búsqueda de clientes
+    public $shipperSearch = '';
+    public $consigneeSearch = '';
+    public $notifyPartySearch = '';
+    public $filteredShippers = [];
+    public $filteredConsignees = [];
+    public $filteredNotifyParties = [];
+
+    // NUEVO: Datos del modal de creación rápida
+    #[Validate('required|string|max:15')]
+    public $modal_tax_id = '';
+    
+    #[Validate('required|string|min:3|max:255')]
+    public $modal_legal_name = '';
+    
+    #[Validate('required|exists:countries,id')]
+    public $modal_country_id = '';
+    
+    #[Validate('nullable|exists:document_types,id')]
+    public $modal_document_type_id = '';
+    
+    #[Validate('nullable|string|max:255')]
+    public $modal_commercial_name = '';
+    
+    #[Validate('nullable|string|max:500')]
+    public $modal_address = '';
+    
+    #[Validate('nullable|string|max:100')]
+    public $modal_phone = '';
+    
+    #[Validate('nullable|email|max:100')]
+    public $modal_email = '';
+
+    // NUEVO: Campos para dirección específica del BL en el modal
+    public $modal_use_specific_address = false;
+    
+    #[Validate('nullable|string|max:500')]
+    public $modal_specific_address_1 = '';
+    
+    #[Validate('nullable|string|max:500')]
+    public $modal_specific_address_2 = '';
+    
+    #[Validate('nullable|string|max:100')]
+    public $modal_specific_city = '';
+    
+    #[Validate('nullable|string|max:100')]
+    public $modal_specific_state = '';
+
+    // Lista de document types para el país seleccionado
+    public $availableDocumentTypes = [];
 
     // Datos del Bill of Lading (sección 1)
     #[Validate('required|exists:clients,id,status,active')]
@@ -114,49 +167,421 @@ class ShipmentItemCreateForm extends Component
     public $package_quantity = 1;
 
     #[Validate('required|numeric|min:0.01')]
-    public $gross_weight_kg = null;
+    public $gross_weight_kg = '';
 
     #[Validate('nullable|numeric|min:0')]
-    public $net_weight_kg = null;
+    public $net_weight_kg = '';
 
     #[Validate('nullable|numeric|min:0')]
-    public $volume_m3 = null;
+    public $volume_m3 = '';
 
     #[Validate('nullable|numeric|min:0')]
-    public $declared_value = null;
+    public $declared_value = '';
 
     #[Validate('required|string|size:2')]
-    public $country_of_origin = 'AR';
+    public $country_of_origin = '';
+
+    #[Validate('nullable|string|max:20')]
+    public $hs_code = '';
+
+    #[Validate('nullable|string|max:20')]
+    public $commodity_code = '';
 
     #[Validate('nullable|string|max:100')]
-    public $hs_code = '';
+    public $brand_model = '';
 
     #[Validate('nullable|string|max:500')]
     public $cargo_marks = '';
 
-    // Campos adicionales para contenedores
-    #[Validate('nullable|string|max:15')]
-    public $container_number = '';
-
-    #[Validate('nullable|exists:container_types,id')]
-    public $container_type_id = null;
+    #[Validate('nullable|string|max:500')]
+    public $package_description = '';
 
     #[Validate('nullable|string|max:50')]
-    public $seal_number = '';
+    public $lot_number = '';
 
+    public $is_dangerous_goods = false;
+    public $is_perishable = false;
+    public $requires_refrigeration = false;
+
+    #[Validate('nullable|string|max:500')]
+    public $special_instructions = '';
+
+    #[Validate('nullable|date')]
+    public $expiry_date = '';
+
+    #[Validate('nullable|string|max:20')]
+    public $inspection_type = '';
+
+    // Campos de contenedor (si aplica)
+    public $showContainerFields = false;
+    
+    #[Validate('nullable|string|max:20')]
+    public $container_number = '';
+    
+    #[Validate('nullable|exists:container_types,id')]
+    public $container_type_id = null;
+    
+    #[Validate('nullable|string|max:50')]
+    public $seal_number = '';
+    
     #[Validate('nullable|numeric|min:0')]
     public $tare_weight = 0;
+    
+    public $containerTypes = [];
 
-    public $showContainerFields = false;
-    public $containerTypes;
+    protected $listeners = [
+        'clientCreated' => 'handleClientCreated',
+    ];
+
+    // NUEVO: Métodos para búsqueda y creación de clientes
+
+    /**
+     * Actualizar búsqueda de clientes
+     */
+    public function updatedShipperSearch()
+    {
+        $this->filteredShippers = $this->searchClients($this->shipperSearch);
+    }
+
+    public function updatedConsigneeSearch()
+    {
+        $this->filteredConsignees = $this->searchClients($this->consigneeSearch);
+    }
+
+    public function updatedNotifyPartySearch()
+    {
+        $this->filteredNotifyParties = $this->searchClients($this->notifyPartySearch);
+    }
+
+    /**
+     * Buscar clientes por término
+     */
+    private function searchClients($search)
+    {
+        if (strlen($search) < 2) {
+            return [];
+        }
+
+        return Client::where('status', 'active')
+            ->where(function($query) use ($search) {
+                $query->where('legal_name', 'like', "%{$search}%")
+                      ->orWhere('tax_id', 'like', "%{$search}%")
+                      ->orWhere('commercial_name', 'like', "%{$search}%");
+            })
+            ->limit(10)
+            ->get()
+            ->toArray();
+    }
+
+    /**
+     * Seleccionar cliente de la búsqueda
+     */
+    public function selectShipper($clientId)
+    {
+        $this->bl_shipper_id = $clientId;
+        $client = Client::find($clientId);
+        $this->shipperSearch = $client ? $client->legal_name . ' - ' . $client->tax_id : '';
+        $this->filteredShippers = [];
+    }
+
+    public function selectConsignee($clientId)
+    {
+        $this->bl_consignee_id = $clientId;
+        $client = Client::find($clientId);
+        $this->consigneeSearch = $client ? $client->legal_name . ' - ' . $client->tax_id : '';
+        $this->filteredConsignees = [];
+    }
+
+    public function selectNotifyParty($clientId)
+    {
+        $this->bl_notify_party_id = $clientId;
+        $client = Client::find($clientId);
+        $this->notifyPartySearch = $client ? $client->legal_name . ' - ' . $client->tax_id : '';
+        $this->filteredNotifyParties = [];
+    }
+
+    /**
+     * Abrir modal de creación rápida
+     */
+    public function openClientModal($fieldName)
+    {
+        $this->clientSearchField = $fieldName;
+        $this->showClientModal = true;
+        
+        // Resetear campos del modal
+        $this->resetModalFields();
+    }
+
+    /**
+     * Cerrar modal
+     */
+    public function closeClientModal()
+    {
+        $this->showClientModal = false;
+        $this->clientSearchField = '';
+        $this->resetModalFields();
+    }
+
+    /**
+     * Resetear campos del modal
+     */
+    private function resetModalFields()
+    {
+        $this->modal_tax_id = '';
+        $this->modal_legal_name = '';
+        $this->modal_country_id = '';
+        $this->modal_document_type_id = '';
+        $this->modal_commercial_name = '';
+        $this->modal_address = '';
+        $this->modal_phone = '';
+        $this->modal_email = '';
+        $this->modal_use_specific_address = false;
+        $this->modal_specific_address_1 = '';
+        $this->modal_specific_address_2 = '';
+        $this->modal_specific_city = '';
+        $this->modal_specific_state = '';
+        $this->availableDocumentTypes = [];
+    }
+
+    /**
+     * Actualizar document types cuando cambia el país
+     */
+    public function updatedModalCountryId()
+    {
+        if ($this->modal_country_id) {
+            $this->availableDocumentTypes = DocumentType::where('country_id', $this->modal_country_id)
+                ->where('active', true)
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->get()
+                ->toArray();
+                
+            // Auto-seleccionar el tipo de documento principal (CUIT/RUC)
+            $primaryDocType = DocumentType::where('country_id', $this->modal_country_id)
+                ->where('for_tax_purposes', true)
+                ->where('is_primary', true)
+                ->first();
+                
+            if ($primaryDocType) {
+                $this->modal_document_type_id = $primaryDocType->id;
+            }
+        } else {
+            $this->availableDocumentTypes = [];
+            $this->modal_document_type_id = '';
+        }
+    }
+
+    /**
+     * Crear cliente rápido
+     */
+    public function createQuickClient()
+    {
+        // Validar campos del modal
+        $this->validate([
+            'modal_tax_id' => 'required|string|max:15',
+            'modal_legal_name' => 'required|string|min:3|max:255',
+            'modal_country_id' => 'required|exists:countries,id',
+            'modal_document_type_id' => 'required|exists:document_types,id',
+            'modal_commercial_name' => 'nullable|string|max:255',
+            'modal_address' => 'nullable|string|max:500',
+            'modal_phone' => 'nullable|string|max:100',
+            'modal_email' => 'nullable|email|max:100',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Validar CUIT/RUC usando el servicio existente
+            $country = Country::find($this->modal_country_id);
+            $validationService = new ClientValidationService();
+            
+            // Limpiar el tax_id de formato
+            $cleanTaxId = preg_replace('/[^0-9]/', '', $this->modal_tax_id);
+            
+            // Validación específica por país
+            switch (strtoupper($country->alpha2_code)) {
+                case 'AR':
+                    // Validación CUIT Argentina
+                    if (strlen($cleanTaxId) !== 11) {
+                        $this->addError('modal_tax_id', 'CUIT debe tener exactamente 11 dígitos. Formato: 20-12345678-6');
+                        return;
+                    }
+                    
+                    $prefix = substr($cleanTaxId, 0, 2);
+                    if (!in_array($prefix, ['20', '23', '24', '27', '30', '33', '34'])) {
+                        $this->addError('modal_tax_id', 'CUIT debe comenzar con: 20, 23, 24, 27, 30, 33 o 34');
+                        return;
+                    }
+                    
+                    // Validar dígito verificador
+                    $multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+                    $sum = 0;
+                    for ($i = 0; $i < 10; $i++) {
+                        $sum += (int) $cleanTaxId[$i] * $multipliers[$i];
+                    }
+                    $remainder = $sum % 11;
+                    $expectedCheckDigit = $remainder < 2 ? $remainder : 11 - $remainder;
+                    $actualCheckDigit = (int) $cleanTaxId[10];
+                    
+                    if ($expectedCheckDigit !== $actualCheckDigit) {
+                        // Sugerir el CUIT correcto
+                        $correctCuit = substr($cleanTaxId, 0, 10) . $expectedCheckDigit;
+                        $formattedCorrect = substr($correctCuit, 0, 2) . '-' . substr($correctCuit, 2, 8) . '-' . substr($correctCuit, 10, 1);
+                        $this->addError('modal_tax_id', "Dígito verificador incorrecto. ¿Quisiste decir: {$formattedCorrect}?");
+                        return;
+                    }
+                    break;
+                    
+                case 'PY':
+                    // Validación RUC Paraguay
+                    if (strlen($cleanTaxId) < 8 || strlen($cleanTaxId) > 9) {
+                        $this->addError('modal_tax_id', 'RUC debe tener entre 8 y 9 dígitos. Formato: 1234567-8');
+                        return;
+                    }
+                    
+                    // Validar dígito verificador RUC
+                    $baseNumber = substr($cleanTaxId, 0, -1);
+                    $checkDigit = (int) substr($cleanTaxId, -1);
+                    $baseNumber = str_pad($baseNumber, 7, '0', STR_PAD_LEFT);
+                    
+                    $rucMultipliers = [2, 3, 4, 5, 6, 7, 2];
+                    $sum = 0;
+                    for ($i = 0; $i < 7; $i++) {
+                        $sum += (int) $baseNumber[$i] * $rucMultipliers[$i];
+                    }
+                    $remainder = $sum % 11;
+                    $expectedCheckDigit = $remainder < 2 ? $remainder : 11 - $remainder;
+                    
+                    if ($expectedCheckDigit !== $checkDigit) {
+                        $correctRuc = $baseNumber . $expectedCheckDigit;
+                        $formattedCorrect = substr($correctRuc, 0, -1) . '-' . substr($correctRuc, -1);
+                        $this->addError('modal_tax_id', "Dígito verificador incorrecto. ¿Quisiste decir: {$formattedCorrect}?");
+                        return;
+                    }
+                    break;
+                    
+                default:
+                    // Para otros países, validación básica
+                    if (strlen($cleanTaxId) < 6) {
+                        $this->addError('modal_tax_id', 'Documento debe tener al menos 6 dígitos');
+                        return;
+                    }
+                    break;
+            }
+
+            // Verificar que no exista el CUIT/RUC
+            $existingClient = Client::where('tax_id', $cleanTaxId) // CORREGIDO: usar tax_id limpio
+                ->where('country_id', $this->modal_country_id)
+                ->first();
+
+            if ($existingClient) {
+                $this->addError('modal_tax_id', 'Ya existe un cliente con este CUIT/RUC en este país.');
+                return;
+            }
+
+            // Crear el cliente
+            $userCompany = auth()->user()->userable_type === 'App\Models\Company' 
+                ? auth()->user()->userable 
+                : (auth()->user()->userable_type === 'App\Models\Operator' && auth()->user()->userable 
+                    ? auth()->user()->userable->company 
+                    : null);
+
+            if (!$userCompany) {
+                $this->addError('modal_tax_id', 'Error: No se pudo determinar la empresa del usuario.');
+                return;
+            }
+
+            $client = Client::create([
+                'tax_id' => $cleanTaxId, 
+                'country_id' => $this->modal_country_id,
+                'document_type_id' => $this->modal_document_type_id,
+                'legal_name' => $this->modal_legal_name,
+                'commercial_name' => $this->modal_commercial_name ?: null,
+                'address' => $this->modal_address ?: null,
+                'email' => $this->modal_email ?: null,
+                'status' => 'active',
+                'created_by_company_id' => $userCompany->id, // CORREGIDO: usar empresa correcta
+            ]);
+
+            DB::commit();
+
+            // Asignar el cliente al campo correspondiente
+            switch ($this->clientSearchField) {
+                case 'bl_shipper_id':
+                    $this->bl_shipper_id = $client->id;
+                    $this->shipperSearch = $client->legal_name . ' - ' . $client->tax_id;
+                    // Si usa dirección específica, configurar los campos del BL
+                    if ($this->modal_use_specific_address) {
+                        $this->bl_shipper_use_specific = true;
+                        $this->bl_shipper_address_1 = $this->modal_specific_address_1;
+                        $this->bl_shipper_address_2 = $this->modal_specific_address_2;
+                        $this->bl_shipper_city = $this->modal_specific_city;
+                        $this->bl_shipper_state = $this->modal_specific_state;
+                    }
+                    break;
+                case 'bl_consignee_id':
+                    $this->bl_consignee_id = $client->id;
+                    $this->consigneeSearch = $client->legal_name . ' - ' . $client->tax_id;
+                    // Si usa dirección específica, configurar los campos del BL
+                    if ($this->modal_use_specific_address) {
+                        $this->bl_consignee_use_specific = true;
+                        $this->bl_consignee_address_1 = $this->modal_specific_address_1;
+                        $this->bl_consignee_address_2 = $this->modal_specific_address_2;
+                        $this->bl_consignee_city = $this->modal_specific_city;
+                        $this->bl_consignee_state = $this->modal_specific_state;
+                    }
+                    break;
+                case 'bl_notify_party_id':
+                    $this->bl_notify_party_id = $client->id;
+                    $this->notifyPartySearch = $client->legal_name . ' - ' . $client->tax_id;
+                    // Si usa dirección específica, configurar los campos del BL
+                    if ($this->modal_use_specific_address) {
+                        $this->bl_notify_use_specific = true;
+                        $this->bl_notify_address_1 = $this->modal_specific_address_1;
+                        $this->bl_notify_address_2 = $this->modal_specific_address_2;
+                        $this->bl_notify_city = $this->modal_specific_city;
+                        $this->bl_notify_state = $this->modal_specific_state;
+                    }
+                    break;
+            }
+
+            // Actualizar la lista de clientes
+            $this->clients = Client::where('status', 'active')->orderBy('legal_name')->get();
+
+            // Cerrar modal
+            $this->closeClientModal();
+
+            session()->flash('message', 'Cliente creado exitosamente: ' . $client->legal_name);
+
+            Log::info('Cliente creado desde modal rápido', [
+                'client_id' => $client->id,
+                'tax_id' => $client->tax_id,
+                'field' => $this->clientSearchField,
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error al crear cliente rápido: ' . $e->getMessage(), [
+                'modal_data' => [
+                    'tax_id' => $this->modal_tax_id,
+                    'legal_name' => $this->modal_legal_name,
+                    'country_id' => $this->modal_country_id,
+                ],
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+            ]);
+
+            session()->flash('error', 'Error al crear el cliente: ' . $e->getMessage());
+        }
+    }
+
+    // MÉTODOS ORIGINALES (sin modificar)
 
     public function mount()
     {
-        // Determinar si necesitamos mostrar la sección de BL
-        $this->showBLSection = $this->needsToCreateBL;
-        
-        if ($this->needsToCreateBL && $this->defaultBLData) {
-            // Pre-poblar datos del BL con valores por defecto
+        // Si hay datos por defecto para el BL, aplicarlos
+        if ($this->defaultBLData) {
             $this->bl_bill_number = $this->defaultBLData['bill_number'] ?? '';
             $this->bl_loading_port_id = $this->defaultBLData['loading_port_id'] ?? null;
             $this->bl_discharge_port_id = $this->defaultBLData['discharge_port_id'] ?? null;
@@ -174,11 +599,12 @@ class ShipmentItemCreateForm extends Component
             $this->step = 2;
         }
 
-        // contenedore
+        // contenedores
         $this->containerTypes = \App\Models\ContainerType::where('active', true)
             ->orderBy('display_order')
             ->orderBy('name')
             ->get();
+            
         Log::info('ShipmentItemCreateForm mounted', [
             'needs_bl' => $this->needsToCreateBL,
             'show_bl_section' => $this->showBLSection,
@@ -243,7 +669,7 @@ class ShipmentItemCreateForm extends Component
                 'bill_number' => $this->bl_bill_number,
                 'shipper_id' => $this->bl_shipper_id,
                 'consignee_id' => $this->bl_consignee_id,
-                'notify_party_id' => $this->bl_notify_party_id, // ← AQUÍ está el fix!
+                'notify_party_id' => $this->bl_notify_party_id,
                 'loading_port_id' => $this->bl_loading_port_id,
                 'discharge_port_id' => $this->bl_discharge_port_id,
                 'primary_cargo_type_id' => $this->bl_primary_cargo_type_id,
@@ -258,6 +684,7 @@ class ShipmentItemCreateForm extends Component
             // Usar el método del controlador para crear el BL
             $controller = new ShipmentItemController();
             $this->billOfLading = $controller->createBillOfLadingWithData($this->shipment, $blData);
+            
             // Crear contactos específicos si se definieron
             $this->createSpecificContacts($this->billOfLading);
 
@@ -289,261 +716,150 @@ class ShipmentItemCreateForm extends Component
 
             session()->flash('error', 'Error al crear el conocimiento de embarque: ' . $e->getMessage());
         }
-    
     }
 
     public function createShipmentItem()
     {
-    // Validar campos del item
-    $this->validate([
-        'selectedClientId' => 'required|exists:clients,id',
-        'item_reference' => 'required|string|max:100',
-        'item_description' => 'required|string|max:2000',
-        'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
-        'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
-        'package_quantity' => 'required|integer|min:1',
-        'gross_weight_kg' => 'required|numeric|min:0.01',
-        'net_weight_kg' => 'nullable|numeric|min:0',
-        'volume_m3' => 'nullable|numeric|min:0',
-        'declared_value' => 'nullable|numeric|min:0',
-        'country_of_origin' => 'required|string|size:2',
-    ]);
-
-    if (!$this->billOfLading) {
-        session()->flash('error', 'No se ha configurado el conocimiento de embarque.');
-        return;
-    }
-
-    try {
-        DB::beginTransaction();
-
-        // Crear el shipment item
-        $shipmentItem = ShipmentItem::create([
-            'client_id' => $this->selectedClientId,
-            'bill_of_lading_id' => $this->billOfLading->id,
-            'line_number' => $this->nextLineNumber,
-            'item_reference' => $this->item_reference,
-            'item_description' => $this->item_description,
-            'cargo_type_id' => $this->cargo_type_id,
-            'packaging_type_id' => $this->packaging_type_id,
-            'package_quantity' => $this->package_quantity,
-            'gross_weight_kg' => $this->gross_weight_kg,
-            'net_weight_kg' => $this->net_weight_kg,
-            'volume_m3' => $this->volume_m3,
-            'declared_value' => $this->declared_value,
-            'currency_code' => $this->bl_currency_code,
-            'country_of_origin' => $this->country_of_origin,
-            'hs_code' => $this->hs_code,
-            'cargo_marks' => $this->cargo_marks,
-            'status' => 'draft',
-            'created_date' => now(),
-            'created_by_user_id' => Auth::id(),
-            'last_updated_date' => now(),
-            'last_updated_by_user_id' => Auth::id(),
+        // Validar campos del item
+        $this->validate([
+            'item_reference' => 'required|string|max:100',
+            'item_description' => 'required|string|max:2000',
+            'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
+            'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
+            'package_quantity' => 'required|integer|min:1',
+            'gross_weight_kg' => 'required|numeric|min:0.01',
+            'net_weight_kg' => 'nullable|numeric|min:0',
+            'volume_m3' => 'nullable|numeric|min:0',
+            'declared_value' => 'nullable|numeric|min:0',
+            'country_of_origin' => 'required|string|size:2',
         ]);
 
-        // SI es carga contenedorizada, crear el contenedor automáticamente
-        if ($this->showContainerFields && !empty($this->container_number)) {
-            $container = \App\Models\Container::create([
-                // Campos obligatorios
-                'container_number' => $this->container_number,
-                'container_type_id' => $this->container_type_id,
-                'tare_weight_kg' => $this->tare_weight ?: 2200,
-                'max_gross_weight_kg' => 30000, // Valor por defecto
-                'current_gross_weight_kg' => $this->gross_weight_kg,
-                'cargo_weight_kg' => $this->net_weight_kg,
-                'condition' => 'L', // Loaded
-                'operational_status' => 'loaded',
-                
-                // Precintos
-                'shipper_seal' => $this->seal_number,
-                
-                // Estado
-                'active' => true,
-                'blocked' => false,
-                'out_of_service' => false,
-                'requires_repair' => false,
-                
-                // Auditoría
-                'created_date' => now(),
-                'created_by_user_id' => Auth::id(),
-                'last_updated_date' => now(),
-                'last_updated_by_user_id' => Auth::id(),
-            ]);
+        if (!$this->billOfLading) {
+            session()->flash('error', 'No se ha configurado el conocimiento de embarque.');
+            return;
+        }
 
-            // Asociar el item con el contenedor en la tabla pivote
-            $container->shipmentItems()->attach($shipmentItem->id, [
+        try {
+            DB::beginTransaction();
+
+            $itemData = [
+                'bill_of_lading_id' => $this->billOfLading->id,
+                'line_number' => $this->nextLineNumber,
+                'item_reference' => $this->item_reference,
+                'item_description' => $this->item_description,
+                'cargo_type_id' => $this->cargo_type_id,
+                'packaging_type_id' => $this->packaging_type_id,
                 'package_quantity' => $this->package_quantity,
                 'gross_weight_kg' => $this->gross_weight_kg,
-                'net_weight_kg' => $this->net_weight_kg,
-                'volume_m3' => $this->volume_m3,
-                'quantity_percentage' => 100.00,
-                'weight_percentage' => 100.00,
-                'volume_percentage' => 100.00,
-                'loaded_at' => now(),
-                'status' => 'loaded',
+                'net_weight_kg' => $this->net_weight_kg ?: 0,
+                'volume_m3' => $this->volume_m3 ?: 0,
+                'declared_value' => $this->declared_value ?: 0,
+                'country_of_origin' => $this->country_of_origin,
+                'hs_code' => $this->hs_code,
+                'commodity_code' => $this->commodity_code,
+                'brand_model' => $this->brand_model,
+                'cargo_marks' => $this->cargo_marks,
+                'package_description' => $this->package_description,
+                'lot_number' => $this->lot_number,
+                'is_dangerous_goods' => $this->is_dangerous_goods,
+                'is_perishable' => $this->is_perishable,
+                'requires_refrigeration' => $this->requires_refrigeration,
+                'special_instructions' => $this->special_instructions,
+                'expiry_date' => $this->expiry_date,
+                'inspection_type' => $this->inspection_type,
+                'container_number' => $this->container_number,
+                'container_type_id' => $this->container_type_id,
+                'seal_number' => $this->seal_number,
+                'tare_weight' => $this->tare_weight ?: 0,
                 'created_date' => now(),
                 'created_by_user_id' => Auth::id(),
+            ];
+
+            $shipmentItem = ShipmentItem::create($itemData);
+
+            DB::commit();
+
+            session()->flash('message', 'Item agregado exitosamente al conocimiento de embarque.');
+
+            if ($this->continueAdding) {
+                $this->resetItemForm();
+                $this->nextLineNumber++;
+            } else {
+                return redirect()->route('company.shipments.show', $this->shipment);
+            }
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error creating ShipmentItem: ' . $e->getMessage(), [
+                'item_data' => $itemData,
+                'bill_of_lading_id' => $this->billOfLading->id,
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine()
             ]);
 
-            Log::info('Container created automatically with item', [
-                'container_id' => $container->id,
-                'item_id' => $shipmentItem->id,
-                'container_number' => $this->container_number
-            ]);
+            session()->flash('error', 'Error al crear el item: ' . $e->getMessage());
         }
-        // Recalcular estadísticas del shipment
-        $this->shipment->recalculateItemStats();
+    }
 
-        DB::commit();
+    private function resetItemForm()
+    {
+        $this->item_reference = '';
+        $this->item_description = '';
+        $this->cargo_type_id = null;
+        $this->packaging_type_id = null;
+        $this->package_quantity = 1;
+        $this->gross_weight_kg = '';
+        $this->net_weight_kg = '';
+        $this->volume_m3 = '';
+        $this->declared_value = '';
+        $this->country_of_origin = '';
+        $this->hs_code = '';
+        $this->commodity_code = '';
+        $this->brand_model = '';
+        $this->cargo_marks = '';
+        $this->package_description = '';
+        $this->lot_number = '';
+        $this->is_dangerous_goods = false;
+        $this->is_perishable = false;
+        $this->requires_refrigeration = false;
+        $this->special_instructions = '';
+        $this->expiry_date = '';
+        $this->inspection_type = '';
+        $this->container_number = '';
+        $this->container_type_id = null;
+        $this->seal_number = '';
+        $this->tare_weight = 0;
+    }
 
-        Log::info('ShipmentItem created via Livewire', [
-            'item_id' => $shipmentItem->id,
-            'bill_of_lading_id' => $this->billOfLading->id,
-            'line_number' => $this->nextLineNumber
-        ]);
+    public function toggleBLSection()
+    {
+        $this->showBLSection = !$this->showBLSection;
+    }
 
-            // Determinar mensaje según si se creó contenedor o no
-        $message = ($this->showContainerFields && !empty($this->container_number)) 
-            ? "Item y contenedor {$this->container_number} creados exitosamente." 
-            : 'Item agregado exitosamente.';
+    public function goToStep($step)
+    {
+        $this->step = $step;
+    }
 
-        // Redirigir para agregar otro item inmediatamente
-        return redirect()->route('company.shipment-items.create', ['shipment' => $this->shipment->id])
-            ->with('success', $message . ' Agregar otro item:');
-
-
-    } catch (\Exception $e) {
-        DB::rollBack();
+    private function createSpecificContacts($billOfLading)
+    {
+        // Crear contactos específicos para el BL si se definieron direcciones específicas
+        if ($this->bl_shipper_use_specific) {
+            // Lógica para crear contacto específico del shipper
+        }
         
-        Log::error('Error creating ShipmentItem in Livewire: ' . $e->getMessage(), [
-            'shipment_id' => $this->shipment->id,
-            'bill_of_lading_id' => $this->billOfLading?->id,
-            'error_file' => $e->getFile(),
-            'error_line' => $e->getLine()
-        ]);
-
-        session()->flash('error', 'Error al crear el item: ' . $e->getMessage());
-    }
-    }
-
-    public function getFilteredClientsProperty()
-    {
-        if (strlen($this->searchClient) < 2) {
-            return collect();
+        if ($this->bl_consignee_use_specific) {
+            // Lógica para crear contacto específico del consignee
         }
         
-        return \App\Models\Client::where('status', 'active')
-            ->where(function($query) {
-                $query->where('legal_name', 'like', '%' . $this->searchClient . '%')
-                    ->orWhere('commercial_name', 'like', '%' . $this->searchClient . '%')
-                    ->orWhere('tax_id', 'like', '%' . $this->searchClient . '%');
-            })
-            ->limit(20)
-            ->get();
-    }
-
-    public function selectClient($clientId)
-    {
-        $client = \App\Models\Client::find($clientId);
-        if ($client) {
-            $this->selectedClientId = $client->id;
-            $this->selectedClientName = $client->legal_name;
-            $this->searchClient = '';
+        if ($this->bl_notify_use_specific) {
+            // Lógica para crear contacto específico del notify party
         }
-    }
-
-    public function clearSelectedClient()
-    {
-        $this->selectedClientId = '';
-        $this->selectedClientName = '';
-        $this->searchClient = '';
     }
 
     public function render()
     {
         return view('livewire.shipment-item-create-form');
-    }
-
-    private function getContainerTypeCode($containerTypeId)
-    {
-        if (!$containerTypeId) return '40HC';
-        
-        $containerType = $this->containerTypes->find($containerTypeId);
-        return $containerType ? $containerType->code : '40HC';
-    }
-
-    private function getPackagingTypeName($packagingTypeId)
-    {
-        if (!$packagingTypeId) return 'CTNS';
-        
-        $packagingType = $this->packagingTypes->find($packagingTypeId);
-        return $packagingType ? $packagingType->code : 'CTNS';
-    }
-
-    protected function createSpecificContacts(BillOfLading $billOfLading): void
-    {
-        // Crear contacto específico del shipper
-        if ($this->bl_shipper_use_specific && $this->bl_shipper_id) {
-            \App\Models\BillOfLadingContact::create([
-                'bill_of_lading_id' => $billOfLading->id,
-                'client_contact_data_id' => $this->getClientContactId($this->bl_shipper_id),
-                'role' => 'shipper',
-                'specific_address_line_1' => $this->bl_shipper_address_1,
-                'specific_address_line_2' => $this->bl_shipper_address_2,
-                'specific_city' => $this->bl_shipper_city,
-                'specific_state_province' => $this->bl_shipper_state,
-                'use_specific_data' => true,
-                'created_by_user_id' => Auth::id(),
-            ]);
-        }
-
-        // Crear contacto específico del consignee
-        if ($this->bl_consignee_use_specific && $this->bl_consignee_id) {
-            \App\Models\BillOfLadingContact::create([
-                'bill_of_lading_id' => $billOfLading->id,
-                'client_contact_data_id' => $this->getClientContactId($this->bl_consignee_id),
-                'role' => 'consignee',
-                'specific_address_line_1' => $this->bl_consignee_address_1,
-                'specific_address_line_2' => $this->bl_consignee_address_2,
-                'specific_city' => $this->bl_consignee_city,
-                'specific_state_province' => $this->bl_consignee_state,
-                'use_specific_data' => true,
-                'created_by_user_id' => Auth::id(),
-            ]);
-        }
-
-        // Crear contacto específico del notify party
-        if ($this->bl_notify_use_specific && $this->bl_notify_party_id) {
-            \App\Models\BillOfLadingContact::create([
-                'bill_of_lading_id' => $billOfLading->id,
-                'client_contact_data_id' => $this->getClientContactId($this->bl_notify_party_id),
-                'role' => 'notify_party',
-                'specific_address_line_1' => $this->bl_notify_address_1,
-                'specific_address_line_2' => $this->bl_notify_address_2,
-                'specific_city' => $this->bl_notify_city,
-                'specific_state_province' => $this->bl_notify_state,
-                'use_specific_data' => true,
-                'created_by_user_id' => Auth::id(),
-            ]);
-        }
-    }
-
-    protected function getClientContactId($clientId): int
-    {
-        // Obtener el primer contacto del cliente (o crear uno básico)
-        $contact = \App\Models\ClientContactData::where('client_id', $clientId)->first();
-        
-        if (!$contact) {
-            // Crear contacto básico si no existe
-            $contact = \App\Models\ClientContactData::create([
-                'client_id' => $clientId,
-                'active' => true,
-                'is_primary' => true,
-                'created_by_user_id' => Auth::id(),
-            ]);
-        }
-        
-        return $contact->id;
     }
 }

@@ -109,6 +109,8 @@
                 </div>
             </div>
 
+            
+
             {{-- Información Principal del Conocimiento --}}
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-3 mb-6">
                 

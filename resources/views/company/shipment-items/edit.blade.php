@@ -99,23 +99,7 @@
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
-{{-- Cliente Dueño --}}
-<div>
-    <label for="client_id" class="block text-sm font-medium text-gray-700">
-        Cliente Dueño de la Mercadería <span class="text-red-500">*</span>
-    </label>
-    <div class="mt-1">
-        @livewire('search-client', [
-            'selectedClientId' => old('client_id', $shipmentItem->client_id),
-            'fieldName' => 'client_id',
-            'required' => true,
-            'placeholder' => 'Buscar cliente por nombre o CUIT...'
-        ])
-    </div>
-    @error('client_id')
-        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-    @enderror
-</div>
+
                         </div>
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 mt-6">

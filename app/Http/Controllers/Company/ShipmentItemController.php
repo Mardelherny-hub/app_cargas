@@ -488,7 +488,6 @@ class ShipmentItemController extends Controller
         $shipmentItem->load([
             'billOfLading.shipment.voyage', 
             'billOfLading.shipment.vessel', 
-            'client', 
             'cargoType', 
             'packagingType'
         ]);
@@ -536,13 +535,11 @@ class ShipmentItemController extends Controller
                         ->orderBy('legal_name')
                         ->get();
 
-        $shipmentItem->load(['billOfLading.shipment.voyage', 'billOfLading.shipment.vessel', 'client', 'cargoType', 'packagingType']);
-
+        $shipmentItem->load(['billOfLading.shipment.voyage', 'billOfLading.shipment.vessel', 'cargoType', 'packagingType']);
         return view('company.shipment-items.edit', compact(
             'shipmentItem',
             'cargoTypes',
             'packagingTypes',
-            'clients'
         ));
     }
 
