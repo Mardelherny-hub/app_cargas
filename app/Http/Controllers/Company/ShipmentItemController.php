@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ShipmentItem;
 use App\Models\Shipment;
 use App\Models\Client;
+use App\Models\Country;
 use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Traits\UserHelper;
@@ -40,6 +41,7 @@ class ShipmentItemController extends Controller
      * Mostrar formulario para crear nuevo item.
      * MODIFICADO: Preparar datos para componente Livewire
      */
+
     public function create(Request $request)
     {
         // Verificar permisos para crear items
@@ -83,65 +85,65 @@ class ShipmentItemController extends Controller
                 ->with('error', 'Debe especificar un shipment o conocimiento de embarque para crear el item.');
         }
 
-        // Verificar acceso al shipment
-        if (!$this->canAccessCompany($shipment->voyage->company_id)) {
-            abort(403, 'No tiene permisos para agregar items a este shipment.');
-        }
-
-        // Verificar si el usuario puede gestionar items de este shipment
-        if (!$this->canManageShipmentItems($shipment)) {
+        // Validar que el shipment esté en estado editable
+        if (!in_array($shipment->status, ['planning', 'loading'])) {
             return redirect()->route('company.shipments.show', $shipment)
-                ->with('error', 'No puede agregar items a este shipment en su estado actual.');
+                ->with('error', 'No se pueden agregar items a este shipment en su estado actual.');
         }
 
-        // Obtener datos para el formulario de ITEMS
-        $cargoTypes = \App\Models\CargoType::where('active', true)->orderBy('name')->get();
-        $packagingTypes = \App\Models\PackagingType::where('active', true)->orderBy('name')->get();
-        
-        // NUEVO: Obtener datos adicionales para el formulario de BL
-        $clients = \App\Models\Client::where('status', 'active')->orderBy('legal_name')->get();
-        $ports = \App\Models\Port::where('active', true)->orderBy('name')->get();
-        $countries = \App\Models\Country::where('active', true)->orderBy('name')->get();
-
-        // CORREGIDO: Calcular el siguiente número de línea
+        // Calcular el próximo número de línea
         $nextLineNumber = 1;
         if ($billOfLading) {
-            $lastLineNumber = \App\Models\ShipmentItem::where('bill_of_lading_id', $billOfLading->id)
-                                ->max('line_number');
-            $nextLineNumber = ($lastLineNumber ?? 0) + 1;
+            $maxLineNumber = \App\Models\ShipmentItem::where('bill_of_lading_id', $billOfLading->id)->max('line_number');
+            $nextLineNumber = $maxLineNumber ? $maxLineNumber + 1 : 1;
         }
 
-        // NUEVO: Preparar datos por defecto para el BL (si se necesita crear)
+        // Preparar datos por defecto para BL si es necesario
         $defaultBLData = null;
-        if ($needsToCreateBL && $shipment) {
+        if ($needsToCreateBL) {
             $defaultBLData = [
-                'bill_number' => 'BL-' . $shipment->shipment_number . '-' . date('ymd'),
-                'loading_port_id' => $shipment->voyage->origin_port_id,
-                'discharge_port_id' => $shipment->voyage->destination_port_id,
-                'bill_date' => now()->format('Y-m-d'),
-                'loading_date' => now()->format('Y-m-d'),
+                'bill_number' => 'BL-' . date('Y') . '-' . str_pad($shipment->id, 6, '0', STR_PAD_LEFT),
+                'loading_port_id' => $shipment->voyage->departure_port_id ?? null,
+                'discharge_port_id' => $shipment->voyage->arrival_port_id ?? null,
+                'bill_date' => today()->format('Y-m-d'),
+                'loading_date' => $shipment->voyage->departure_date ?? today()->format('Y-m-d'),
                 'freight_terms' => 'prepaid',
                 'payment_terms' => 'cash',
                 'currency_code' => 'USD',
-                'primary_cargo_type_id' => $cargoTypes->first()?->id,
-                'primary_packaging_type_id' => $packagingTypes->first()?->id,
+                'primary_cargo_type_id' => CargoType::where('active', true)->first()?->id,
+                'primary_packaging_type_id' => PackagingType::where('active', true)->first()?->id,
             ];
         }
+
+        // Cargar catálogos necesarios
+        $cargoTypes = CargoType::where('active', true)->orderBy('name')->get();
+        $packagingTypes = PackagingType::where('active', true)->orderBy('name')->get();
+        $clients = Client::where('status', 'active')->orderBy('legal_name')->get();
+        $ports = \App\Models\Port::where('active', true)->orderBy('name')->get();
+        $countries = \App\Models\Country::orderBy('name')->get();
+        
+        // NUEVO: Cargar tipos de contenedores para la nueva funcionalidad
+        $containerTypes = \App\Models\ContainerType::where('active', true)
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
 
         return view('company.shipment-items.create', compact(
             'shipment',
             'billOfLading', 
-            'needsToCreateBL',         // NUEVO
-            'defaultBLData',           // NUEVO
-            'cargoTypes', 
-            'packagingTypes', 
-            'clients',                 // AMPLIADO para BL
-            'ports',                   // NUEVO para BL
-            'countries',               // NUEVO para BL  
+            'needsToCreateBL',
+            'defaultBLData',
+            'cargoTypes',
+            'packagingTypes',
+            'clients',
+            'ports',
+            'countries',
+            'containerTypes', // NUEVO
             'nextLineNumber'
         ));
     }
-/**
+
+    /**
      * Almacenar nuevo item.
      * CORREGIDO: Soporte para shipment_id y bill_of_lading_id con debug completo
      */
@@ -493,8 +495,7 @@ class ShipmentItemController extends Controller
         ]);
         return view('company.shipment-items.show', compact('shipmentItem'));
     }
-
-    /**
+/**
      * Mostrar formulario para editar item.
      */
     public function edit(ShipmentItem $shipmentItem)
@@ -513,12 +514,6 @@ class ShipmentItemController extends Controller
             abort(403, 'No tiene permisos para editar este item.');
         }
 
-        // Verificar si el usuario puede gestionar items de este shipment
-        //if (!$this->canManageShipmentItems($shipmentItem->shipment)) {
-        //    return redirect()->route('company.shipment-items.show', $shipmentItem)
-        //        ->with('error', 'No puede editar items de este shipment en su estado actual.');
-        //}
-
         // Verificar si es operador y solo puede editar sus propios items
         if ($this->isUser() && $this->isOperator()) {
             if ($shipmentItem->shipment->created_by_user_id !== Auth::id()) {
@@ -534,17 +529,64 @@ class ShipmentItemController extends Controller
         $clients = Client::where('status', 'active')
                         ->orderBy('legal_name')
                         ->get();
+        
+        // NUEVO: Cargar tipos de contenedor para la edición
+        $containerTypes = \App\Models\ContainerType::where('active', true)
+                            ->orderBy('display_order')
+                            ->orderBy('name')
+                            ->get();
 
-        $shipmentItem->load(['billOfLading.shipment.voyage', 'billOfLading.shipment.vessel', 'cargoType', 'packagingType']);
+        // NUEVO: Cargar contenedores existentes del item
+        $existingContainers = $shipmentItem->containers()->with('containerType')->get();
+        
+        // NUEVO: Cargar tipos de contenedor para la edición
+$containerTypes = \App\Models\ContainerType::where('active', true)
+                    ->orderBy('display_order')
+                    ->orderBy('name')
+                    ->get();
+
+// NUEVO: Cargar contenedores existentes del item
+$existingContainers = $shipmentItem->containers()->with('containerType')->get();
+
+// Preparar datos de contenedores para el formulario
+$containerData = [];
+foreach ($existingContainers as $container) {
+    $pivot = $container->pivot;
+    $containerData[] = [
+        'id' => $container->id,
+        'container_number' => $container->container_number,
+        'container_type_id' => $container->container_type_id,
+        'seal_number' => $container->shipper_seal,
+        'tare_weight' => $container->tare_weight_kg,
+        'package_quantity' => $pivot->package_quantity,
+        'gross_weight_kg' => $pivot->gross_weight_kg,
+        'net_weight_kg' => $pivot->net_weight_kg,
+        'volume_m3' => $pivot->volume_m3,
+        'loading_sequence' => $pivot->loading_sequence,
+        'notes' => $pivot->notes,
+    ];
+}
+
+return view('company.shipment-items.edit', compact(
+    'shipmentItem',
+    'cargoTypes',
+    'packagingTypes',
+    'clients',
+    'containerTypes',    // AGREGAR ESTA LÍNEA
+    'containerData'      // AGREGAR ESTA LÍNEA
+));
+
         return view('company.shipment-items.edit', compact(
             'shipmentItem',
             'cargoTypes',
             'packagingTypes',
+            'containerTypes',
+            'containerData'
         ));
     }
 
     /**
-     * Actualizar item.
+     * Actualizar item con múltiples contenedores.
      */
     public function update(Request $request, ShipmentItem $shipmentItem)
     {
@@ -575,82 +617,223 @@ class ShipmentItemController extends Controller
             }
         }
 
-        // Validar datos (mismas reglas que store)
-        $validated = $request->validate([
-            'cargo_type_id' => 'required|exists:cargo_types,id',
-            'packaging_type_id' => 'required|exists:packaging_types,id',
+        // Reglas de validación básicas
+        $rules = [
             'line_number' => 'required|integer|min:1',
             'item_reference' => 'nullable|string|max:100',
-            'lot_number' => 'nullable|string|max:50',
-            'serial_number' => 'nullable|string|max:100',
+            'item_description' => 'required|string|max:1000',
+            'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
+            'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
             'package_quantity' => 'required|integer|min:1',
             'gross_weight_kg' => 'required|numeric|min:0.01',
             'net_weight_kg' => 'nullable|numeric|min:0',
             'volume_m3' => 'nullable|numeric|min:0',
             'declared_value' => 'nullable|numeric|min:0',
-            'currency_code' => 'required|string|size:3',
-            'item_description' => 'required|string|max:1000',
+            'currency_code' => 'required|in:USD,ARS,PYG,EUR',
+            'unit_of_measure' => 'required|in:PCS,KG,LT,M3,BOX',
+            'country_of_origin' => 'nullable|string|size:2',
             'cargo_marks' => 'nullable|string|max:500',
             'commodity_code' => 'nullable|string|max:20',
             'commodity_description' => 'nullable|string|max:255',
             'brand' => 'nullable|string|max:100',
             'model' => 'nullable|string|max:100',
             'manufacturer' => 'nullable|string|max:200',
-            'country_of_origin' => 'nullable|string|size:2',
-            'package_type_description' => 'nullable|string|max:100',
-            'units_per_package' => 'nullable|integer|min:1',
-            'unit_of_measure' => 'required|string|max:10',
+            'lot_number' => 'nullable|string|max:50',
+            'serial_number' => 'nullable|string|max:100',
+            
+            // Campos booleanos
             'is_dangerous_goods' => 'boolean',
-            'un_number' => 'nullable|string|max:10',
-            'imdg_class' => 'nullable|string|max:10',
             'is_perishable' => 'boolean',
             'is_fragile' => 'boolean',
             'requires_refrigeration' => 'boolean',
+            'requires_permit' => 'boolean',
+            'requires_inspection' => 'boolean',
+            
+            // Campos condicionales
+            'un_number' => 'nullable|string|max:10',
+            'imdg_class' => 'nullable|string|max:10',
             'temperature_min' => 'nullable|numeric',
             'temperature_max' => 'nullable|numeric',
-            'requires_permit' => 'boolean',
             'permit_number' => 'nullable|string|max:50',
-            'requires_inspection' => 'boolean',
-            'inspection_type' => 'nullable|string|max:100',
-        ]);
+            'inspection_type' => 'nullable|in:customs,quality,sanitary,security,environmental',
+            
+            // NUEVO: Validación de contenedores
+            'containers' => 'sometimes|array',
+            'containers.*.id' => 'nullable|integer',
+            'containers.*.container_number' => 'required_with:containers|string|max:20',
+            'containers.*.container_type_id' => 'required_with:containers|exists:container_types,id',
+            'containers.*.seal_number' => 'nullable|string|max:50',
+            'containers.*.tare_weight' => 'nullable|numeric|min:0',
+            'containers.*.package_quantity' => 'required_with:containers|integer|min:1',
+            'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0.01',
+            'containers.*.net_weight_kg' => 'nullable|numeric|min:0',
+            'containers.*.volume_m3' => 'nullable|numeric|min:0',
+            'containers.*.loading_sequence' => 'nullable|string|max:10',
+            'containers.*.notes' => 'nullable|string|max:500',
+        ];
 
-        // Verificar que el line_number no esté duplicado (excepto el item actual)
-        $existingItem = ShipmentItem::where('bill_of_lading_id', $shipmentItem->bill_of_lading_id)
-                                   ->where('line_number', $validated['line_number'])
-                                   ->where('id', '!=', $shipmentItem->id)
-                                   ->first();
+        $validated = $request->validate($rules);
 
-        if ($existingItem) {
-            return back()->withErrors(['line_number' => 'El número de línea ya existe en este shipment.'])
-                        ->withInput();
+        // NUEVO: Validar que es carga contenedorizada si hay contenedores
+        $isContainerCargo = $this->isContainerizedCargo($validated['cargo_type_id']);
+        if (!empty($validated['containers']) && !$isContainerCargo) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['containers' => 'Solo se pueden asignar contenedores a carga contenedorizada.']);
+        }
+
+        // NUEVO: Validar totales de contenedores
+        if ($isContainerCargo && !empty($validated['containers'])) {
+            $totalPackageQuantity = collect($validated['containers'])->sum('package_quantity');
+            $totalGrossWeight = collect($validated['containers'])->sum('gross_weight_kg');
+
+            if ($totalPackageQuantity != $validated['package_quantity']) {
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['containers' => "La suma de bultos en contenedores ({$totalPackageQuantity}) debe coincidir con el total del ítem ({$validated['package_quantity']})."]);
+            }
+
+            if (abs($totalGrossWeight - $validated['gross_weight_kg']) > 0.01) {
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors(['containers' => "La suma de peso bruto en contenedores ({$totalGrossWeight}) debe coincidir con el total del ítem ({$validated['gross_weight_kg']})."]);
+            }
         }
 
         try {
             DB::beginTransaction();
 
-            // Actualizar el item
-            $shipmentItem->update([
-                ...$validated,
+            // Actualizar campos del item
+            $itemData = [
+                'line_number' => $validated['line_number'],
+                'item_reference' => $validated['item_reference'],
+                'item_description' => $validated['item_description'],
+                'cargo_type_id' => $validated['cargo_type_id'],
+                'packaging_type_id' => $validated['packaging_type_id'],
+                'package_quantity' => $validated['package_quantity'],
+                'gross_weight_kg' => $validated['gross_weight_kg'],
+                'net_weight_kg' => $validated['net_weight_kg'] ?? 0,
+                'volume_m3' => $validated['volume_m3'] ?? 0,
+                'declared_value' => $validated['declared_value'] ?? 0,
+                'currency_code' => $validated['currency_code'],
+                'unit_of_measure' => $validated['unit_of_measure'],
+                'country_of_origin' => $validated['country_of_origin'],
+                'cargo_marks' => $validated['cargo_marks'],
+                'commodity_code' => $validated['commodity_code'],
+                'commodity_description' => $validated['commodity_description'],
+                'brand' => $validated['brand'],
+                'model' => $validated['model'],
+                'manufacturer' => $validated['manufacturer'],
+                'lot_number' => $validated['lot_number'],
+                'serial_number' => $validated['serial_number'],
+                'is_dangerous_goods' => $validated['is_dangerous_goods'] ?? false,
+                'is_perishable' => $validated['is_perishable'] ?? false,
+                'is_fragile' => $validated['is_fragile'] ?? false,
+                'requires_refrigeration' => $validated['requires_refrigeration'] ?? false,
+                'requires_permit' => $validated['requires_permit'] ?? false,
+                'requires_inspection' => $validated['requires_inspection'] ?? false,
+                'un_number' => $validated['un_number'],
+                'imdg_class' => $validated['imdg_class'],
+                'temperature_min' => $validated['temperature_min'],
+                'temperature_max' => $validated['temperature_max'],
+                'permit_number' => $validated['permit_number'],
+                'inspection_type' => $validated['inspection_type'],
                 'last_updated_date' => now(),
                 'last_updated_by_user_id' => Auth::id(),
-            ]);
+            ];
 
-            // Recalcular estadísticas del shipment
-            $shipmentItem->shipment->recalculateItemStats();
+            $shipmentItem->update($itemData);
+
+            // NUEVO: Manejar contenedores solo si es carga contenedorizada
+            if ($isContainerCargo) {
+                $this->updateItemContainers($shipmentItem, $validated['containers'] ?? []);
+            } else {
+                // Si ya no es carga contenedorizada, eliminar vínculos existentes
+                $this->removeAllContainers($shipmentItem);
+            }
 
             DB::commit();
+
+            Log::info('ShipmentItem actualizado', [
+                'item_id' => $shipmentItem->id,
+                'containers_count' => count($validated['containers'] ?? []),
+                'user_id' => Auth::id()
+            ]);
 
             return redirect()->route('company.shipment-items.show', $shipmentItem)
                 ->with('success', 'Item actualizado exitosamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error actualizando shipment item: ' . $e->getMessage());
             
-            return back()->with('error', 'Error al actualizar el item. Intente nuevamente.')
-                        ->withInput();
+            Log::error('Error actualizando ShipmentItem: ' . $e->getMessage(), [
+                'item_id' => $shipmentItem->id,
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'user_id' => Auth::id()
+            ]);
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error al actualizar el item: ' . $e->getMessage());
         }
     }
+
+   
+
+    private function isContainerizedCargo($cargoTypeId)
+{
+    $cargoType = \App\Models\CargoType::find($cargoTypeId);
+    if (!$cargoType) return false;
+    
+    $name = strtolower($cargoType->name);
+    return str_contains($name, 'container') || str_contains($name, 'contenedor');
+}
+
+private function updateItemContainers(ShipmentItem $shipmentItem, array $containersData)
+{
+    // Eliminar contenedores existentes
+    $shipmentItem->containers()->detach();
+    
+    // Crear nuevos contenedores
+    foreach ($containersData as $containerData) {
+        $container = \App\Models\Container::create([
+            'container_number' => $containerData['container_number'],
+            'container_type_id' => $containerData['container_type_id'],
+            'tare_weight_kg' => $containerData['tare_weight'] ?? 2200,
+            'max_gross_weight_kg' => 30000,
+            'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+            'condition' => 'L',
+            'operational_status' => 'loaded',
+            'active' => true,
+            'created_date' => now(),
+            'created_by_user_id' => Auth::id(),
+        ]);
+
+        // Vincular con el item
+        $shipmentItem->containers()->attach($container->id, [
+            'package_quantity' => $containerData['package_quantity'],
+            'gross_weight_kg' => $containerData['gross_weight_kg'],
+            'net_weight_kg' => $containerData['net_weight_kg'] ?? 0,
+            'volume_m3' => $containerData['volume_m3'] ?? 0,
+            'created_date' => now(),
+            'created_by_user_id' => Auth::id(),
+        ]);
+    }
+}
+
+private function removeAllContainers(ShipmentItem $shipmentItem)
+{
+    $containerIds = $shipmentItem->containers()->pluck('containers.id')->toArray();
+    $shipmentItem->containers()->detach();
+    
+    // Eliminar contenedores huérfanos
+    \App\Models\Container::whereIn('id', $containerIds)
+        ->whereDoesntHave('shipmentItems')
+        ->delete();
+}
+
+
 
     /**
      * Eliminar item.

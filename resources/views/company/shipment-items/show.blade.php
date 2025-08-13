@@ -31,270 +31,248 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
-            {{-- REEMPLAZAR toda la sección "Estado y Alertas" en shipment-items/show.blade.php --}}
+            {{-- Estado y Alertas --}}
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center space-x-6">
+                            {{-- Estado del Bill of Lading (no del item) --}}
+                            <div class="flex items-center space-x-3">
+                                <span class="text-sm font-medium text-gray-600">Estado del Bill of Lading:</span>
+                                @livewire('status-changer', [
+                                    'model' => $shipmentItem->billOfLading,
+                                    'showReason' => true,
+                                    'size' => 'normal'
+                                ])
+                            </div>
 
-{{-- Estado y Alertas --}}
-<div class="bg-white overflow-hidden shadow rounded-lg">
-    <div class="px-4 py-5 sm:p-6">
-        <div class="flex justify-between items-center">
-            <div class="flex items-center space-x-6">
-                {{-- Estado del Bill of Lading (no del item) --}}
-                <div class="flex items-center space-x-3">
-                    <span class="text-sm font-medium text-gray-600">Estado del Bill of Lading:</span>
-                    @livewire('status-changer', [
-                        'model' => $shipmentItem->billOfLading,
-                        'showReason' => true,
-                        'size' => 'normal'
-                    ])
-                </div>
+                            {{-- Información del item en el BL --}}
+                            <div class="text-sm text-gray-500">
+                                <span class="font-medium">Item {{ $shipmentItem->line_number }}</span> 
+                                de {{ $shipmentItem->billOfLading->shipmentItems->count() }} 
+                                en {{ $shipmentItem->billOfLading->bill_number }}
+                            </div>
 
-                {{-- Información del item en el BL --}}
-                <div class="text-sm text-gray-500">
-                    <span class="font-medium">Item {{ $shipmentItem->line_number }}</span> 
-                    de {{ $shipmentItem->billOfLading->shipmentItems->count() }} 
-                    en {{ $shipmentItem->billOfLading->bill_number }}
-                </div>
+                            {{-- Alertas especiales y características del ITEM --}}
+                            <div class="flex flex-wrap gap-2">
+                                @if($shipmentItem->is_dangerous_goods)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Mercadería Peligrosa
+                                    </span>
+                                @endif
+                                
+                                @if($shipmentItem->is_perishable)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Perecedero
+                                    </span>
+                                @endif
+                                
+                                @if($shipmentItem->requires_refrigeration)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/>
+                                        </svg>
+                                        Refrigerado
+                                    </span>
+                                @endif
+                                
+                                @if($shipmentItem->is_fragile)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.498-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.03 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Frágil
+                                    </span>
+                                @endif
+                                
+                                @if($shipmentItem->requires_inspection)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        Req. Inspección
+                                    </span>
+                                @endif
+                                
+                                @if($shipmentItem->has_discrepancies)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Con Discrepancias
+                                    </span>
+                                @endif
+                                
+                                @if($shipmentItem->requires_review)
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Requiere Revisión
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
 
-                {{-- Alertas especiales y características del ITEM --}}
-                <div class="flex flex-wrap gap-2">
-                    @if($shipmentItem->is_dangerous_goods)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                            </svg>
-                            Mercadería Peligrosa
-                        </span>
-                    @endif
-                    
-                    @if($shipmentItem->is_perishable)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
-                            </svg>
-                            Perecedero
-                        </span>
-                    @endif
-                    
-                    @if($shipmentItem->requires_refrigeration)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/>
-                            </svg>
-                            Refrigerado
-                        </span>
-                    @endif
-                    
-                    @if($shipmentItem->is_fragile)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.498-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.03 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/>
-                            </svg>
-                            Frágil
-                        </span>
-                    @endif
-                    
-                    @if($shipmentItem->requires_inspection)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Req. Inspección
-                        </span>
-                    @endif
-                    
-                    @if($shipmentItem->has_discrepancies)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                            </svg>
-                            Con Discrepancias
-                        </span>
-                    @endif
-                    
-                    @if($shipmentItem->requires_review)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                            </svg>
-                            Requiere Revisión
-                        </span>
-                    @endif
-                </div>
-            </div>
-
-            {{-- Botones de acción --}}
-            <div class="flex space-x-3">
-                {{-- Solo mostrar botón editar si el shipment lo permite --}}
-                @if(in_array($shipmentItem->billOfLading->shipment->status ?? 'completed', ['planning', 'loading']))
-                    <a href="{{ route('company.shipment-items.edit', $shipmentItem) }}" 
-                       class="inline-flex items-center px-4 py-2 border border-yellow-300 rounded-md shadow-sm text-sm font-medium text-yellow-700 bg-white hover:bg-yellow-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition-colors duration-150">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                        </svg>
-                        Editar Item
-                    </a>
-                @endif
-                
-                <a href="{{ route('company.bills-of-lading.show', $shipmentItem->billOfLading) }}" 
-                   class="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    Ver Bill of Lading
-                </a>
-                
-                <a href="{{ route('company.shipments.show', $shipmentItem->billOfLading->shipment) }}" 
-                   class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                    </svg>
-                    Volver al Shipment
-                </a>
-            </div>
-        </div>
-
-        {{-- Información adicional de seguimiento --}}
-        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {{-- Información de Bill of Lading --}}
-            <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    <h4 class="text-sm font-medium text-gray-900">Bill of Lading</h4>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">{{ $shipmentItem->billOfLading->bill_number ?? 'N/A' }}</p>
-                <p class="text-xs text-gray-500">
-                    Total items: {{ $shipmentItem->billOfLading->shipmentItems->count() }}
-                </p>
-            </div>
-
-            {{-- Información de Shipment --}}
-            <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                    </svg>
-                    <h4 class="text-sm font-medium text-gray-900">Shipment</h4>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">{{ $shipmentItem->billOfLading->shipment->shipment_number ?? 'N/A' }}</p>
-                <p class="text-xs text-gray-500">
-                    Estado: 
-                    <span class="font-medium">{{ ucfirst($shipmentItem->billOfLading->shipment->status ?? 'N/A') }}</span>
-                </p>
-            </div>
-
-            {{-- Información de auditoría --}}
-            <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <h4 class="text-sm font-medium text-gray-900">Última Actualización</h4>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">
-                    {{ $shipmentItem->updated_at ? $shipmentItem->updated_at->diffForHumans() : 'N/A' }}
-                </p>
-                <p class="text-xs text-gray-500">
-                    Línea: {{ $shipmentItem->line_number }} de {{ $shipmentItem->billOfLading->shipmentItems->count() ?? 1 }}
-                </p>
-            </div>
-        </div>
-
-        {{-- Información de discrepancias si existen --}}
-        @if($shipmentItem->has_discrepancies && $shipmentItem->discrepancy_notes)
-            <div class="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-                <div class="flex">
-                    <div class="flex-shrink-0">
-                        <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                        </svg>
+                        {{-- Botones de acción --}}
+                        <div class="flex space-x-3">
+                            {{-- Solo mostrar botón editar si el shipment lo permite --}}
+                            @if(in_array($shipmentItem->billOfLading->shipment->status ?? 'completed', ['planning', 'loading']))
+                                <a href="{{ route('company.shipment-items.edit', $shipmentItem) }}" 
+                                   class="inline-flex items-center px-4 py-2 border border-yellow-300 rounded-md shadow-sm text-sm font-medium text-yellow-700 bg-white hover:bg-yellow-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition-colors duration-150">
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                    </svg>
+                                    Editar Item
+                                </a>
+                            @endif
+                            
+                            <a href="{{ route('company.bills-of-lading.show', $shipmentItem->billOfLading) }}" 
+                               class="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                Ver Bill of Lading
+                            </a>
+                            
+                            <a href="{{ route('company.shipments.show', $shipmentItem->billOfLading->shipment) }}" 
+                               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                </svg>
+                                Volver al Shipment
+                            </a>
+                        </div>
                     </div>
-                    <div class="ml-3">
-                        <h3 class="text-sm font-medium text-red-800">Discrepancias en este Item</h3>
-                        <p class="mt-1 text-sm text-red-700">{{ $shipmentItem->discrepancy_notes }}</p>
+
+                    {{-- Información adicional de seguimiento --}}
+                    <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {{-- Información de Bill of Lading --}}
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                <h4 class="text-sm font-medium text-gray-900">Bill of Lading</h4>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-600">{{ $shipmentItem->billOfLading->bill_number ?? 'N/A' }}</p>
+                            <p class="text-xs text-gray-500">
+                                Total items: {{ $shipmentItem->billOfLading->shipmentItems->count() }}
+                            </p>
+                        </div>
+
+                        {{-- Información de Shipment --}}
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4-8-4m16 0v10l-8 4-8-4V7"/>
+                                </svg>
+                                <h4 class="text-sm font-medium text-gray-900">Shipment</h4>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-600">{{ $shipmentItem->billOfLading->shipment->shipment_number ?? 'N/A' }}</p>
+                            <p class="text-xs text-gray-500">
+                                Estado: 
+                                <span class="font-medium">{{ ucfirst($shipmentItem->billOfLading->shipment->status ?? 'N/A') }}</span>
+                            </p>
+                        </div>
+
+                        {{-- Información de auditoría --}}
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <svg class="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <h4 class="text-sm font-medium text-gray-900">Última Actualización</h4>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-600">
+                                {{ $shipmentItem->updated_at ? $shipmentItem->updated_at->diffForHumans() : 'N/A' }}
+                            </p>
+                            <p class="text-xs text-gray-500">
+                                Línea: {{ $shipmentItem->line_number }} de {{ $shipmentItem->billOfLading->shipmentItems->count() ?? 1 }}
+                            </p>
+                        </div>
                     </div>
+
+                    {{-- Información de discrepancias si existen --}}
+                    @if($shipmentItem->has_discrepancies && $shipmentItem->discrepancy_notes)
+                        <div class="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <h3 class="text-sm font-medium text-red-800">Discrepancias en este Item</h3>
+                                    <p class="mt-1 text-sm text-red-700">{{ $shipmentItem->discrepancy_notes }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
-        @endif
-    </div>
-</div>}" 
-                   class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                    </svg>
-                    Volver al Shipment
-                </a>
-            </div>
-        </div>
 
-        {{-- Información adicional de seguimiento --}}
-        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {{-- Información de Bill of Lading --}}
-            <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    <h4 class="text-sm font-medium text-gray-900">Bill of Lading</h4>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">{{ $shipmentItem->billOfLading->bill_number ?? 'N/A' }}</p>
-                <p class="text-xs text-gray-500">
-                    Estado: 
-                    <span class="font-medium">{{ $shipmentItem->billOfLading->status_label ?? 'N/A' }}</span>
-                </p>
-            </div>
-
-            {{-- Información de Shipment --}}
-            <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                    </svg>
-                    <h4 class="text-sm font-medium text-gray-900">Shipment</h4>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">{{ $shipmentItem->billOfLading->shipment->shipment_number ?? 'N/A' }}</p>
-                <p class="text-xs text-gray-500">
-                    Estado: 
-                    <span class="font-medium">{{ ucfirst($shipmentItem->billOfLading->shipment->status ?? 'N/A') }}</span>
-                </p>
-            </div>
-
-            {{-- Información de auditoría --}}
-            <div class="bg-gray-50 rounded-lg p-4">
-                <div class="flex items-center">
-                    <svg class="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <h4 class="text-sm font-medium text-gray-900">Última Actualización</h4>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">
-                    {{ $shipmentItem->updated_at ? $shipmentItem->updated_at->diffForHumans() : 'N/A' }}
-                </p>
-                <p class="text-xs text-gray-500">
-                    Línea: {{ $shipmentItem->line_number }} de {{ $shipmentItem->billOfLading->shipmentItems->count() ?? 1 }}
-                </p>
-            </div>
-        </div>
-
-        {{-- Información de discrepancias si existen --}}
-        @if($shipmentItem->has_discrepancies && $shipmentItem->discrepancy_notes)
-            <div class="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-                <div class="flex">
-                    <div class="flex-shrink-0">
-                        <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                        </svg>
-                    </div>
-                    <div class="ml-3">
-                        <h3 class="text-sm font-medium text-red-800">Discrepancias Detectadas</h3>
-                        <p class="mt-1 text-sm text-red-700">{{ $shipmentItem->discrepancy_notes }}</p>
+            {{-- AGREGAR NUEVA SECCIÓN PARA CONTENEDORES --}}
+            @if($shipmentItem->containers && $shipmentItem->containers->count() > 0)
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4-8-4m16 0v10l-8 4-8-4V7"/>
+                            </svg>
+                            Contenedores Asignados ({{ $shipmentItem->containers->count() }})
+                        </h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach($shipmentItem->containers as $container)
+                                <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                    <div class="flex justify-between items-start mb-3">
+                                        <h4 class="text-md font-semibold text-gray-900">{{ $container->container_number }}</h4>
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                            {{ $container->containerType->name ?? 'N/A' }}
+                                        </span>
+                                    </div>
+                                    
+                                    <dl class="space-y-2 text-sm">
+                                        <div class="flex justify-between">
+                                            <dt class="text-gray-500">Bultos:</dt>
+                                            <dd class="font-medium">{{ number_format($container->pivot->package_quantity) }}</dd>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <dt class="text-gray-500">Peso Bruto:</dt>
+                                            <dd class="font-medium">{{ number_format($container->pivot->gross_weight_kg, 2) }} kg</dd>
+                                        </div>
+                                        @if($container->pivot->net_weight_kg)
+                                            <div class="flex justify-between">
+                                                <dt class="text-gray-500">Peso Neto:</dt>
+                                                <dd class="font-medium">{{ number_format($container->pivot->net_weight_kg, 2) }} kg</dd>
+                                            </div>
+                                        @endif
+                                        @if($container->pivot->volume_m3)
+                                            <div class="flex justify-between">
+                                                <dt class="text-gray-500">Volumen:</dt>
+                                                <dd class="font-medium">{{ number_format($container->pivot->volume_m3, 3) }} m³</dd>
+                                            </div>
+                                        @endif
+                                        @if($container->shipper_seal)
+                                            <div class="flex justify-between">
+                                                <dt class="text-gray-500">Precinto:</dt>
+                                                <dd class="font-medium font-mono">{{ $container->shipper_seal }}</dd>
+                                            </div>
+                                        @endif
+                                    </dl>
+                                </div>
+                            @endforeach
+                        </div>
                     </div>
                 </div>
-            </div>
-        @endif
-    </div>
-</div>
+            @endif
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {{-- Columna Principal --}}

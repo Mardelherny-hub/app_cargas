@@ -29,10 +29,9 @@
                 'clients' => $clients,
                 'ports' => $ports,
                 'countries' => $countries,
+                'containerTypes' => $containerTypes,
                 'nextLineNumber' => $nextLineNumber
             ])
         </div>
     </div>
-
-
 </x-app-layout>

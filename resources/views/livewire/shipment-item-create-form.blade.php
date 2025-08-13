@@ -614,57 +614,253 @@
                     </div>
 
                     {{-- Campos de Contenedor (si es necesario) --}}
-                    @if($showContainerFields)
-                        <div>
-                            <h4 class="text-lg font-medium text-gray-900 mb-4">Información del Contenedor</h4>
+                    {{-- SECCIÓN DE CONTENEDORES MODIFICADA --}}
+@if($showContainerFields)
+    <div>
+        <div class="flex justify-between items-center mb-4">
+            <h4 class="text-lg font-medium text-gray-900">Información de Contenedores</h4>
+            <button type="button" wire:click="addContainer" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+                Agregar Contenedor
+            </button>
+        </div>
+
+        {{-- Lista de contenedores --}}
+        @if(!empty($containers))
+            <div class="space-y-4">
+                @foreach($containers as $index => $container)
+                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50" wire:key="container-{{ $container['id'] }}">
+                        <div class="flex justify-between items-center mb-3">
+                            <h5 class="text-md font-medium text-gray-900">Contenedor {{ $index + 1 }}</h5>
+                            @if(count($containers) > 1)
+                                <button type="button" wire:click="removeContainer({{ $index }})" class="text-red-600 hover:text-red-800">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            @endif
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {{-- Número de Contenedor --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Número de Contenedor <span class="text-red-500">*</span>
+                                </label>
+                                <input 
+                                    wire:model="containers.{{ $index }}.container_number" 
+                                    type="text" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="MSCU1234567"
+                                >
+                                @error("container_{$index}")
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Tipo de Contenedor --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Tipo de Contenedor <span class="text-red-500">*</span>
+                                </label>
+                                <select 
+                                    wire:model="containers.{{ $index }}.container_type_id" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">Seleccionar tipo</option>
+                                    @foreach($containerTypes as $containerType)
+                                        <option value="{{ $containerType->id }}">{{ $containerType->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            {{-- Número de Precinto --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Número de Precinto
+                                </label>
+                                <input 
+                                    wire:model="containers.{{ $index }}.seal_number" 
+                                    type="text" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="SL123456"
+                                >
+                            </div>
+
+                            {{-- Peso de Tara --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Peso de Tara (kg)
+                                </label>
+                                <input 
+                                    wire:model="containers.{{ $index }}.tare_weight" 
+                                    type="number" 
+                                    step="0.01" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="2300"
+                                >
+                            </div>
+                        </div>
+
+                        {{-- Distribución de la carga en este contenedor --}}
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <h6 class="text-sm font-medium text-gray-700 mb-3">Distribución de Carga en este Contenedor</h6>
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {{-- Cantidad de Bultos --}}
                                 <div>
-                                    <label for="container_number" class="block text-sm font-medium text-gray-700">
-                                        Número de Contenedor
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Cantidad de Bultos <span class="text-red-500">*</span>
                                     </label>
-                                    <input wire:model="container_number" type="text" id="container_number" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="MSCU1234567">
-                                    @error('container_number')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
+                                    <input 
+                                        wire:model="containers.{{ $index }}.package_quantity" 
+                                        type="number" 
+                                        min="1" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="20"
+                                    >
                                 </div>
 
+                                {{-- Peso Bruto --}}
                                 <div>
-                                    <label for="container_type_id" class="block text-sm font-medium text-gray-700">
-                                        Tipo de Contenedor
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Peso Bruto (kg) <span class="text-red-500">*</span>
                                     </label>
-                                    <select wire:model="container_type_id" id="container_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        <option value="">Seleccionar tipo</option>
-                                        @foreach($containerTypes as $containerType)
-                                            <option value="{{ $containerType->id }}">{{ $containerType->name }}</option>
-                                        @endforeach
-                                    </select>
-                                    @error('container_type_id')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
+                                    <input 
+                                        wire:model="containers.{{ $index }}.gross_weight_kg" 
+                                        type="number" 
+                                        step="0.01" 
+                                        min="0.01" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="1000.00"
+                                    >
                                 </div>
 
+                                {{-- Peso Neto --}}
                                 <div>
-                                    <label for="seal_number" class="block text-sm font-medium text-gray-700">
-                                        Número de Precinto
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Peso Neto (kg)
                                     </label>
-                                    <input wire:model="seal_number" type="text" id="seal_number" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="SL123456">
-                                    @error('seal_number')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
+                                    <input 
+                                        wire:model="containers.{{ $index }}.net_weight_kg" 
+                                        type="number" 
+                                        step="0.01" 
+                                        min="0" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="990.00"
+                                    >
                                 </div>
 
+                                {{-- Volumen --}}
                                 <div>
-                                    <label for="tare_weight" class="block text-sm font-medium text-gray-700">
-                                        Peso de Tara (kg)
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Volumen (m³)
                                     </label>
-                                    <input wire:model="tare_weight" type="number" step="0.01" id="tare_weight" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="2300">
-                                    @error('tare_weight')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                    @enderror
+                                    <input 
+                                        wire:model="containers.{{ $index }}.volume_m3" 
+                                        type="number" 
+                                        step="0.001" 
+                                        min="0" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="1.250"
+                                    >
+                                </div>
+                            </div>
+
+                            {{-- Campos adicionales --}}
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                {{-- Secuencia de Carga --}}
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Secuencia de Carga
+                                    </label>
+                                    <input 
+                                        wire:model="containers.{{ $index }}.loading_sequence" 
+                                        type="text" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="A1, B2, etc."
+                                    >
+                                    <p class="mt-1 text-xs text-gray-500">Orden o posición en el contenedor</p>
+                                </div>
+
+                                {{-- Notas --}}
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Notas
+                                    </label>
+                                    <input 
+                                        wire:model="containers.{{ $index }}.notes" 
+                                        type="text" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="Notas adicionales..."
+                                    >
                                 </div>
                             </div>
                         </div>
-                    @endif
+                    </div>
+                @endforeach
+            </div>
+
+            {{-- Validación de Totales --}}
+            <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <h6 class="text-sm font-medium text-blue-900 mb-2">Validación de Totales</h6>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="text-blue-700">Bultos Contenedores:</span>
+                        <span class="font-medium">
+                            {{ collect($containers)->sum('package_quantity') }} / {{ $package_quantity }}
+                        </span>
+                        @if(collect($containers)->sum('package_quantity') != $package_quantity)
+                            <span class="text-red-600 ml-1">⚠️</span>
+                        @else
+                            <span class="text-green-600 ml-1">✓</span>
+                        @endif
+                    </div>
+                    <div>
+                        <span class="text-blue-700">Peso Bruto:</span>
+                        <span class="font-medium">
+                            {{ number_format(collect($containers)->sum('gross_weight_kg'), 2) }} / {{ number_format($gross_weight_kg ?: 0, 2) }} kg
+                        </span>
+                        @if(abs(collect($containers)->sum('gross_weight_kg') - ($gross_weight_kg ?: 0)) > 0.01)
+                            <span class="text-red-600 ml-1">⚠️</span>
+                        @else
+                            <span class="text-green-600 ml-1">✓</span>
+                        @endif
+                    </div>
+                    <div>
+                        <span class="text-blue-700">Peso Neto:</span>
+                        <span class="font-medium">
+                            {{ number_format(collect($containers)->sum('net_weight_kg'), 2) }} / {{ number_format($net_weight_kg ?: 0, 2) }} kg
+                        </span>
+                    </div>
+                    <div>
+                        <span class="text-blue-700">Volumen:</span>
+                        <span class="font-medium">
+                            {{ number_format(collect($containers)->sum('volume_m3'), 3) }} / {{ number_format($volume_m3 ?: 0, 3) }} m³
+                        </span>
+                    </div>
+                </div>
+                
+                @error('containers_total')
+                    <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </div>
+
+        @else
+            {{-- Botón para agregar primer contenedor --}}
+            <div class="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
+                <p class="text-gray-500 mb-3">No se han agregado contenedores</p>
+                <button type="button" wire:click="addContainer" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                    <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                    </svg>
+                    Agregar Primer Contenedor
+                </button>
+            </div>
+        @endif
+    </div>
+@endif
 
                     {{-- Cantidades y Medidas --}}
                     <div>

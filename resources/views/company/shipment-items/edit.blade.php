@@ -201,6 +201,189 @@
                     </div>
                 </div>
 
+                {{-- SECCIÓN: Contenedores --}}
+<div class="bg-white overflow-hidden shadow rounded-lg" id="containers-section" style="display: none;">
+    <div class="px-4 py-5 sm:p-6">
+        <h3 class="text-lg font-medium leading-6 text-gray-900">
+            Información de Contenedores
+        </h3>
+        
+        <div id="containers-list">
+    {{-- Contenedores existentes desde PHP --}}
+    @if($containerData && count($containerData) > 0)
+        @foreach($containerData as $index => $container)
+            <div class="container-item mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50" data-index="{{ $index }}">
+                <div class="flex justify-between items-center mb-4">
+                    <h4 class="text-md font-medium text-gray-900">Contenedor {{ $index + 1 }}</h4>
+                    @if(count($containerData) > 1)
+                        <button type="button" onclick="removeContainer({{ $index }})" class="text-red-600 hover:text-red-800">
+                            Eliminar
+                        </button>
+                    @endif
+                </div>
+
+                {{-- ID del contenedor (hidden para contenedores existentes) --}}
+                <input type="hidden" name="containers[{{ $index }}][id]" value="{{ $container['id'] ?? '' }}">
+
+                {{-- Información básica del contenedor --}}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {{-- Número de Contenedor --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Número de Contenedor <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" 
+                               name="containers[{{ $index }}][container_number]" 
+                               value="{{ old('containers.'.$index.'.container_number', $container['container_number']) }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="MSCU1234567"
+                               required>
+                    </div>
+
+                    {{-- Tipo de Contenedor --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Tipo de Contenedor <span class="text-red-500">*</span>
+                        </label>
+                        <select name="containers[{{ $index }}][container_type_id]" 
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                required>
+                            <option value="">Seleccionar tipo</option>
+                            @foreach($containerTypes as $containerType)
+                                <option value="{{ $containerType->id }}" 
+                                    {{ old('containers.'.$index.'.container_type_id', $container['container_type_id']) == $containerType->id ? 'selected' : '' }}>
+                                    {{ $containerType->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    {{-- Número de Precinto --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Número de Precinto
+                        </label>
+                        <input type="text" 
+                               name="containers[{{ $index }}][seal_number]" 
+                               value="{{ old('containers.'.$index.'.seal_number', $container['seal_number']) }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="SL123456">
+                    </div>
+
+                    {{-- Peso de Tara --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Peso de Tara (kg)
+                        </label>
+                        <input type="number" 
+                               name="containers[{{ $index }}][tare_weight]" 
+                               value="{{ old('containers.'.$index.'.tare_weight', $container['tare_weight']) }}"
+                               step="0.01"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="2300">
+                    </div>
+                </div>
+
+                {{-- Distribución de la carga en este contenedor --}}
+                <div class="pt-4 border-t border-gray-200">
+                    <h5 class="text-sm font-medium text-gray-700 mb-3">Distribución de Carga en este Contenedor</h5>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {{-- Cantidad de Bultos --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Cantidad de Bultos <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" 
+                                   name="containers[{{ $index }}][package_quantity]" 
+                                   value="{{ old('containers.'.$index.'.package_quantity', $container['package_quantity']) }}"
+                                   min="1"
+                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
+                                   placeholder="20"
+                                   required>
+                        </div>
+
+                        {{-- Peso Bruto --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Peso Bruto (kg) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" 
+                                   name="containers[{{ $index }}][gross_weight_kg]" 
+                                   value="{{ old('containers.'.$index.'.gross_weight_kg', $container['gross_weight_kg']) }}"
+                                   step="0.01"
+                                   min="0.01"
+                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
+                                   placeholder="1000.00"
+                                   required>
+                        </div>
+
+                        {{-- Peso Neto --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Peso Neto (kg)
+                            </label>
+                            <input type="number" 
+                                   name="containers[{{ $index }}][net_weight_kg]" 
+                                   value="{{ old('containers.'.$index.'.net_weight_kg', $container['net_weight_kg']) }}"
+                                   step="0.01"
+                                   min="0"
+                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-net-weight"
+                                   placeholder="990.00">
+                        </div>
+
+                        {{-- Volumen --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Volumen (m³)
+                            </label>
+                            <input type="number" 
+                                   name="containers[{{ $index }}][volume_m3]" 
+                                   value="{{ old('containers.'.$index.'.volume_m3', $container['volume_m3']) }}"
+                                   step="0.001"
+                                   min="0"
+                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-volume"
+                                   placeholder="1.250">
+                        </div>
+                    </div>
+
+                    {{-- Campos adicionales --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        {{-- Secuencia de Carga --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Secuencia de Carga
+                            </label>
+                            <input type="text" 
+                                   name="containers[{{ $index }}][loading_sequence]" 
+                                   value="{{ old('containers.'.$index.'.loading_sequence', $container['loading_sequence']) }}"
+                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="A1, B2, etc.">
+                        </div>
+
+                        {{-- Notas --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Notas
+                            </label>
+                            <input type="text" 
+                                   name="containers[{{ $index }}][notes]" 
+                                   value="{{ old('containers.'.$index.'.notes', $container['notes']) }}"
+                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Notas adicionales...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endforeach
+    @endif
+</div>
+        
+        <button type="button" onclick="addContainer()" class="btn btn-primary">
+            Agregar Contenedor
+        </button>
+    </div>
+</div>
+
                 {{-- SECCIÓN: Cantidades y Medidas --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="px-4 py-5 sm:p-6">
@@ -873,4 +1056,380 @@
             });
         });
     </script>
+
+   <script>
+// Cargar datos existentes desde PHP
+let containerIndex = {{ count($containerData ?? []) }};
+let existingContainers = @json($containerData ?? []);
+
+// Función para poblar contenedores existentes
+function populateExistingContainers() {
+    console.log('Poblando contenedores existentes:', existingContainers);
+    
+    existingContainers.forEach(function(containerData, index) {
+        console.log(`Poblando contenedor ${index}:`, containerData);
+        
+        // Poblar campos básicos del contenedor existente
+        const containerNumberField = document.querySelector(`input[name="containers[${index}][container_number]"]`);
+        if (containerNumberField) {
+            containerNumberField.value = containerData.container_number || '';
+            console.log(`Set container_number[${index}]:`, containerData.container_number);
+        }
+        
+        const containerTypeField = document.querySelector(`select[name="containers[${index}][container_type_id]"]`);
+        if (containerTypeField) {
+            containerTypeField.value = containerData.container_type_id || '';
+            console.log(`Set container_type_id[${index}]:`, containerData.container_type_id);
+        }
+        
+        const sealNumberField = document.querySelector(`input[name="containers[${index}][seal_number]"]`);
+        if (sealNumberField) {
+            sealNumberField.value = containerData.seal_number || '';
+        }
+        
+        const tareWeightField = document.querySelector(`input[name="containers[${index}][tare_weight]"]`);
+        if (tareWeightField) {
+            tareWeightField.value = containerData.tare_weight || '';
+        }
+        
+        // Poblar campos de distribución de carga
+        const packageQtyField = document.querySelector(`input[name="containers[${index}][package_quantity]"]`);
+        if (packageQtyField) {
+            packageQtyField.value = containerData.package_quantity || '';
+        }
+        
+        const grossWeightField = document.querySelector(`input[name="containers[${index}][gross_weight_kg]"]`);
+        if (grossWeightField) {
+            grossWeightField.value = containerData.gross_weight_kg || '';
+        }
+        
+        const netWeightField = document.querySelector(`input[name="containers[${index}][net_weight_kg]"]`);
+        if (netWeightField) {
+            netWeightField.value = containerData.net_weight_kg || '';
+        }
+        
+        const volumeField = document.querySelector(`input[name="containers[${index}][volume_m3]"]`);
+        if (volumeField) {
+            volumeField.value = containerData.volume_m3 || '';
+        }
+        
+        const sequenceField = document.querySelector(`input[name="containers[${index}][loading_sequence]"]`);
+        if (sequenceField) {
+            sequenceField.value = containerData.loading_sequence || '';
+        }
+        
+        const notesField = document.querySelector(`input[name="containers[${index}][notes]"]`);
+        if (notesField) {
+            notesField.value = containerData.notes || '';
+        }
+        
+        // IMPORTANTE: Campo hidden para el ID (para actualizaciones)
+        const idField = document.querySelector(`input[name="containers[${index}][id]"]`);
+        if (idField) {
+            idField.value = containerData.id || '';
+            console.log(`Set container ID[${index}]:`, containerData.id);
+        }
+    });
+}
+
+// Función para agregar contenedor NUEVO
+function addContainer() {
+    const containersList = document.getElementById('containers-list');
+    
+    const containerHtml = `
+        <div class="container-item mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50" data-index="${containerIndex}">
+            <div class="flex justify-between items-center mb-4">
+                <h4 class="text-md font-medium text-gray-900">Contenedor ${containerIndex + 1}</h4>
+                <button type="button" onclick="removeContainer(${containerIndex})" class="text-red-600 hover:text-red-800">
+                    Eliminar
+                </button>
+            </div>
+
+            <input type="hidden" name="containers[${containerIndex}][id]" value="">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Número de Contenedor *
+                    </label>
+                    <input type="text" 
+                           name="containers[${containerIndex}][container_number]" 
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="MSCU1234567"
+                           required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Tipo de Contenedor *
+                    </label>
+                    <select name="containers[${containerIndex}][container_type_id]" 
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            required>
+                        <option value="">Seleccionar tipo</option>
+                        @foreach($containerTypes as $containerType)
+                            <option value="{{ $containerType->id }}">{{ $containerType->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Peso de Tara (kg)
+                    </label>
+                    <input type="number" 
+                           name="containers[${containerIndex}][tare_weight]" 
+                           step="0.01"
+                           value="2200"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="2200">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Número de Precinto
+                    </label>
+                    <input type="text" 
+                           name="containers[${containerIndex}][seal_number]" 
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="SL123456">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Cantidad de Bultos *
+                    </label>
+                    <input type="number" 
+                           name="containers[${containerIndex}][package_quantity]" 
+                           min="1"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
+                           required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Peso Bruto (kg) *
+                    </label>
+                    <input type="number" 
+                           name="containers[${containerIndex}][gross_weight_kg]" 
+                           step="0.01"
+                           min="0.01"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
+                           required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Peso Neto (kg)
+                    </label>
+                    <input type="number" 
+                           name="containers[${containerIndex}][net_weight_kg]" 
+                           step="0.01"
+                           min="0"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-net-weight">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Volumen (m³)
+                    </label>
+                    <input type="number" 
+                           name="containers[${containerIndex}][volume_m3]" 
+                           step="0.001"
+                           min="0"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-volume">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Secuencia de Carga
+                    </label>
+                    <input type="text" 
+                           name="containers[${containerIndex}][loading_sequence]" 
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="A1, B2, etc.">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Notas
+                    </label>
+                    <input type="text" 
+                           name="containers[${containerIndex}][notes]" 
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="Notas adicionales...">
+                </div>
+            </div>
+        </div>
+    `;
+
+    containersList.insertAdjacentHTML('beforeend', containerHtml);
+    containerIndex++;
+    
+    // Configurar event listeners para el nuevo contenedor
+    setupContainerEventListeners();
+}
+
+// Función para eliminar contenedor
+function removeContainer(index) {
+    const containers = document.querySelectorAll('.container-item');
+    if (containers.length > 1) {
+        const containerToRemove = document.querySelector(`[data-index="${index}"]`);
+        if (containerToRemove) {
+            containerToRemove.remove();
+            updateTotals();
+            renumberContainers();
+        }
+    } else {
+        alert('Debe mantener al menos un contenedor.');
+    }
+}
+
+// Función para renumerar contenedores
+function renumberContainers() {
+    const containers = document.querySelectorAll('.container-item');
+    containers.forEach((container, index) => {
+        const title = container.querySelector('h4');
+        if (title) {
+            title.textContent = `Contenedor ${index + 1}`;
+        }
+    });
+}
+
+// Función para actualizar totales
+function updateTotals() {
+    let totalPackageQty = 0;
+    let totalGrossWeight = 0;
+    let totalNetWeight = 0;
+    let totalVolume = 0;
+
+    // Sumar todos los contenedores
+    document.querySelectorAll('.container-package-qty').forEach(input => {
+        totalPackageQty += parseInt(input.value) || 0;
+    });
+
+    document.querySelectorAll('.container-gross-weight').forEach(input => {
+        totalGrossWeight += parseFloat(input.value) || 0;
+    });
+
+    document.querySelectorAll('.container-net-weight').forEach(input => {
+        totalNetWeight += parseFloat(input.value) || 0;
+    });
+
+    document.querySelectorAll('.container-volume').forEach(input => {
+        totalVolume += parseFloat(input.value) || 0;
+    });
+
+    // Obtener totales del ítem
+    const itemPackageQty = parseInt(document.getElementById('package_quantity').value) || 0;
+    const itemGrossWeight = parseFloat(document.getElementById('gross_weight_kg').value) || 0;
+
+    // Actualizar display
+    const packageTotalEl = document.getElementById('containers-package-total');
+    const weightTotalEl = document.getElementById('containers-weight-total');
+    const netWeightTotalEl = document.getElementById('containers-net-weight-total');
+    const volumeTotalEl = document.getElementById('containers-volume-total');
+    
+    if (packageTotalEl) packageTotalEl.textContent = totalPackageQty;
+    if (weightTotalEl) weightTotalEl.textContent = totalGrossWeight.toFixed(2);
+    if (netWeightTotalEl) netWeightTotalEl.textContent = totalNetWeight.toFixed(2);
+    if (volumeTotalEl) volumeTotalEl.textContent = totalVolume.toFixed(3);
+
+    // Validación visual
+    const packageIcon = document.getElementById('package-validation-icon');
+    const weightIcon = document.getElementById('weight-validation-icon');
+
+    if (packageIcon) {
+        if (totalPackageQty === itemPackageQty) {
+            packageIcon.textContent = '✓';
+            packageIcon.className = 'text-green-600 ml-1';
+        } else {
+            packageIcon.textContent = '⚠️';
+            packageIcon.className = 'text-red-600 ml-1';
+        }
+    }
+
+    if (weightIcon) {
+        if (Math.abs(totalGrossWeight - itemGrossWeight) <= 0.01) {
+            weightIcon.textContent = '✓';
+            weightIcon.className = 'text-green-600 ml-1';
+        } else {
+            weightIcon.textContent = '⚠️';
+            weightIcon.className = 'text-red-600 ml-1';
+        }
+    }
+}
+
+// Configurar event listeners para contenedores
+function setupContainerEventListeners() {
+    document.querySelectorAll('.container-package-qty, .container-gross-weight, .container-net-weight, .container-volume').forEach(input => {
+        input.removeEventListener('input', updateTotals); // Evitar duplicados
+        input.addEventListener('input', updateTotals);
+    });
+}
+
+// Detectar cambio en tipo de carga
+function toggleContainersSection() {
+    const cargoTypeSelect = document.getElementById('cargo_type_id');
+    const containersSection = document.getElementById('containers-section');
+    
+    if (!cargoTypeSelect || !containersSection) return;
+    
+    const selectedText = cargoTypeSelect.options[cargoTypeSelect.selectedIndex]?.text.toLowerCase() || '';
+    
+    if (selectedText.includes('container') || selectedText.includes('contenedor')) {
+        containersSection.style.display = 'block';
+        
+        // Si no hay contenedores Y no hay datos existentes, agregar uno automáticamente
+        const containerItems = document.querySelectorAll('.container-item');
+        if (containerItems.length === 0 && existingContainers.length === 0) {
+            addContainer();
+        }
+    } else {
+        containersSection.style.display = 'none';
+    }
+}
+
+// Event listeners principales
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('=== INICIALIZANDO CONTENEDORES ===');
+    console.log('Contenedores existentes:', existingContainers);
+    console.log('Container index inicial:', containerIndex);
+    
+    // 1. Primero verificar el tipo de carga
+    toggleContainersSection();
+    
+    // 2. Si hay contenedores existentes, poblarlos
+    if (existingContainers && existingContainers.length > 0) {
+        setTimeout(function() {
+            populateExistingContainers();
+            setupContainerEventListeners();
+            updateTotals();
+        }, 100);
+    }
+    
+    // 3. Event listener para cambio de tipo de carga
+    document.getElementById('cargo_type_id').addEventListener('change', toggleContainersSection);
+    
+    // 4. Event listeners para campos del ítem principal
+    const packageQuantityField = document.getElementById('package_quantity');
+    const grossWeightField = document.getElementById('gross_weight_kg');
+    
+    if (packageQuantityField) {
+        packageQuantityField.addEventListener('input', function() {
+            const itemTotalEl = document.getElementById('item-package-total');
+            if (itemTotalEl) itemTotalEl.textContent = this.value;
+            updateTotals();
+        });
+    }
+
+    if (grossWeightField) {
+        grossWeightField.addEventListener('input', function() {
+            const itemTotalEl = document.getElementById('item-weight-total');
+            if (itemTotalEl) itemTotalEl.textContent = parseFloat(this.value).toFixed(2);
+            updateTotals();
+        });
+    }
+});
+</script>
 </x-app-layout>

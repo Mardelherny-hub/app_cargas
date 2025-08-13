@@ -507,13 +507,6 @@ class BillOfLading extends Model
     }
 
     /**
-     * Ítems de mercadería a través del shipment (alternativa más clara)
-     */
-    public function getShipmentItemsAttribute()
-    {
-        return $this->shipmentItems;
-    }
-    /**
      * Archivos adjuntos (relación polimórfica)
      */
     //public function attachments(): MorphMany

@@ -212,32 +212,16 @@ class ShipmentItemCreateForm extends Component
     #[Validate('nullable|string|max:20')]
     public $inspection_type = '';
 
-    // Campos de contenedor (si aplica)
+    // MODIFICADO: Campos de contenedor - Ahora para múltiples contenedores
     public $showContainerFields = false;
-    
-    #[Validate('nullable|string|max:20')]
-    public $container_number = '';
-    
-    #[Validate('nullable|exists:container_types,id')]
-    public $container_type_id = null;
-    
-    #[Validate('nullable|string|max:50')]
-    public $seal_number = '';
-    
-    #[Validate('nullable|numeric|min:0')]
-    public $tare_weight = 0;
-    
+    public $containers = []; // Array para múltiples contenedores
     public $containerTypes = [];
 
     protected $listeners = [
         'clientCreated' => 'handleClientCreated',
     ];
 
-    // NUEVO: Métodos para búsqueda y creación de clientes
-
-    /**
-     * Actualizar búsqueda de clientes
-     */
+    // NUEVO: Métodos para búsqueda y creación de clientes (sin modificar del original)
     public function updatedShipperSearch()
     {
         $this->filteredShippers = $this->searchClients($this->shipperSearch);
@@ -253,9 +237,6 @@ class ShipmentItemCreateForm extends Component
         $this->filteredNotifyParties = $this->searchClients($this->notifyPartySearch);
     }
 
-    /**
-     * Buscar clientes por término
-     */
     private function searchClients($search)
     {
         if (strlen($search) < 2) {
@@ -273,9 +254,6 @@ class ShipmentItemCreateForm extends Component
             ->toArray();
     }
 
-    /**
-     * Seleccionar cliente de la búsqueda
-     */
     public function selectShipper($clientId)
     {
         $this->bl_shipper_id = $clientId;
@@ -300,21 +278,13 @@ class ShipmentItemCreateForm extends Component
         $this->filteredNotifyParties = [];
     }
 
-    /**
-     * Abrir modal de creación rápida
-     */
     public function openClientModal($fieldName)
     {
         $this->clientSearchField = $fieldName;
         $this->showClientModal = true;
-        
-        // Resetear campos del modal
         $this->resetModalFields();
     }
 
-    /**
-     * Cerrar modal
-     */
     public function closeClientModal()
     {
         $this->showClientModal = false;
@@ -322,9 +292,6 @@ class ShipmentItemCreateForm extends Component
         $this->resetModalFields();
     }
 
-    /**
-     * Resetear campos del modal
-     */
     private function resetModalFields()
     {
         $this->modal_tax_id = '';
@@ -343,9 +310,6 @@ class ShipmentItemCreateForm extends Component
         $this->availableDocumentTypes = [];
     }
 
-    /**
-     * Actualizar document types cuando cambia el país
-     */
     public function updatedModalCountryId()
     {
         if ($this->modal_country_id) {
@@ -356,7 +320,6 @@ class ShipmentItemCreateForm extends Component
                 ->get()
                 ->toArray();
                 
-            // Auto-seleccionar el tipo de documento principal (CUIT/RUC)
             $primaryDocType = DocumentType::where('country_id', $this->modal_country_id)
                 ->where('for_tax_purposes', true)
                 ->where('is_primary', true)
@@ -371,12 +334,9 @@ class ShipmentItemCreateForm extends Component
         }
     }
 
-    /**
-     * Crear cliente rápido
-     */
     public function createQuickClient()
     {
-        // Validar campos del modal
+        // Validar campos del modal (conservando lógica original)
         $this->validate([
             'modal_tax_id' => 'required|string|max:15',
             'modal_legal_name' => 'required|string|min:3|max:255',
@@ -391,17 +351,14 @@ class ShipmentItemCreateForm extends Component
         try {
             DB::beginTransaction();
 
-            // Validar CUIT/RUC usando el servicio existente
+            // Validar CUIT/RUC usando el servicio existente (conservando lógica original)
             $country = Country::find($this->modal_country_id);
             $validationService = new ClientValidationService();
             
-            // Limpiar el tax_id de formato
             $cleanTaxId = preg_replace('/[^0-9]/', '', $this->modal_tax_id);
             
-            // Validación específica por país
             switch (strtoupper($country->alpha2_code)) {
                 case 'AR':
-                    // Validación CUIT Argentina
                     if (strlen($cleanTaxId) !== 11) {
                         $this->addError('modal_tax_id', 'CUIT debe tener exactamente 11 dígitos. Formato: 20-12345678-6');
                         return;
@@ -413,7 +370,6 @@ class ShipmentItemCreateForm extends Component
                         return;
                     }
                     
-                    // Validar dígito verificador
                     $multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
                     $sum = 0;
                     for ($i = 0; $i < 10; $i++) {
@@ -424,7 +380,6 @@ class ShipmentItemCreateForm extends Component
                     $actualCheckDigit = (int) $cleanTaxId[10];
                     
                     if ($expectedCheckDigit !== $actualCheckDigit) {
-                        // Sugerir el CUIT correcto
                         $correctCuit = substr($cleanTaxId, 0, 10) . $expectedCheckDigit;
                         $formattedCorrect = substr($correctCuit, 0, 2) . '-' . substr($correctCuit, 2, 8) . '-' . substr($correctCuit, 10, 1);
                         $this->addError('modal_tax_id', "Dígito verificador incorrecto. ¿Quisiste decir: {$formattedCorrect}?");
@@ -433,13 +388,11 @@ class ShipmentItemCreateForm extends Component
                     break;
                     
                 case 'PY':
-                    // Validación RUC Paraguay
                     if (strlen($cleanTaxId) < 8 || strlen($cleanTaxId) > 9) {
                         $this->addError('modal_tax_id', 'RUC debe tener entre 8 y 9 dígitos. Formato: 1234567-8');
                         return;
                     }
                     
-                    // Validar dígito verificador RUC
                     $baseNumber = substr($cleanTaxId, 0, -1);
                     $checkDigit = (int) substr($cleanTaxId, -1);
                     $baseNumber = str_pad($baseNumber, 7, '0', STR_PAD_LEFT);
@@ -461,7 +414,6 @@ class ShipmentItemCreateForm extends Component
                     break;
                     
                 default:
-                    // Para otros países, validación básica
                     if (strlen($cleanTaxId) < 6) {
                         $this->addError('modal_tax_id', 'Documento debe tener al menos 6 dígitos');
                         return;
@@ -469,8 +421,7 @@ class ShipmentItemCreateForm extends Component
                     break;
             }
 
-            // Verificar que no exista el CUIT/RUC
-            $existingClient = Client::where('tax_id', $cleanTaxId) // CORREGIDO: usar tax_id limpio
+            $existingClient = Client::where('tax_id', $cleanTaxId)
                 ->where('country_id', $this->modal_country_id)
                 ->first();
 
@@ -479,7 +430,6 @@ class ShipmentItemCreateForm extends Component
                 return;
             }
 
-            // Crear el cliente
             $userCompany = auth()->user()->userable_type === 'App\Models\Company' 
                 ? auth()->user()->userable 
                 : (auth()->user()->userable_type === 'App\Models\Operator' && auth()->user()->userable 
@@ -500,17 +450,16 @@ class ShipmentItemCreateForm extends Component
                 'address' => $this->modal_address ?: null,
                 'email' => $this->modal_email ?: null,
                 'status' => 'active',
-                'created_by_company_id' => $userCompany->id, // CORREGIDO: usar empresa correcta
+                'created_by_company_id' => $userCompany->id,
             ]);
 
             DB::commit();
 
-            // Asignar el cliente al campo correspondiente
+            // Asignar el cliente al campo correspondiente (conservando lógica original)
             switch ($this->clientSearchField) {
                 case 'bl_shipper_id':
                     $this->bl_shipper_id = $client->id;
                     $this->shipperSearch = $client->legal_name . ' - ' . $client->tax_id;
-                    // Si usa dirección específica, configurar los campos del BL
                     if ($this->modal_use_specific_address) {
                         $this->bl_shipper_use_specific = true;
                         $this->bl_shipper_address_1 = $this->modal_specific_address_1;
@@ -522,7 +471,6 @@ class ShipmentItemCreateForm extends Component
                 case 'bl_consignee_id':
                     $this->bl_consignee_id = $client->id;
                     $this->consigneeSearch = $client->legal_name . ' - ' . $client->tax_id;
-                    // Si usa dirección específica, configurar los campos del BL
                     if ($this->modal_use_specific_address) {
                         $this->bl_consignee_use_specific = true;
                         $this->bl_consignee_address_1 = $this->modal_specific_address_1;
@@ -534,7 +482,6 @@ class ShipmentItemCreateForm extends Component
                 case 'bl_notify_party_id':
                     $this->bl_notify_party_id = $client->id;
                     $this->notifyPartySearch = $client->legal_name . ' - ' . $client->tax_id;
-                    // Si usa dirección específica, configurar los campos del BL
                     if ($this->modal_use_specific_address) {
                         $this->bl_notify_use_specific = true;
                         $this->bl_notify_address_1 = $this->modal_specific_address_1;
@@ -545,10 +492,7 @@ class ShipmentItemCreateForm extends Component
                     break;
             }
 
-            // Actualizar la lista de clientes
             $this->clients = Client::where('status', 'active')->orderBy('legal_name')->get();
-
-            // Cerrar modal
             $this->closeClientModal();
 
             session()->flash('message', 'Cliente creado exitosamente: ' . $client->legal_name);
@@ -576,11 +520,9 @@ class ShipmentItemCreateForm extends Component
         }
     }
 
-    // MÉTODOS ORIGINALES (sin modificar)
-
+    // MÉTODOS ORIGINALES para BL (sin modificar)
     public function mount()
     {
-        // Si hay datos por defecto para el BL, aplicarlos
         if ($this->defaultBLData) {
             $this->bl_bill_number = $this->defaultBLData['bill_number'] ?? '';
             $this->bl_loading_port_id = $this->defaultBLData['loading_port_id'] ?? null;
@@ -594,12 +536,10 @@ class ShipmentItemCreateForm extends Component
             $this->bl_primary_packaging_type_id = $this->defaultBLData['primary_packaging_type_id'] ?? null;
         }
 
-        // Si ya existe BL, pasar directamente al step 2
         if (!$this->needsToCreateBL) {
             $this->step = 2;
         }
 
-        // contenedores
         $this->containerTypes = \App\Models\ContainerType::where('active', true)
             ->orderBy('display_order')
             ->orderBy('name')
@@ -614,37 +554,143 @@ class ShipmentItemCreateForm extends Component
         ]);
     }
 
+    // MODIFICADO: Propiedad computada para detectar si es carga contenedorizada
     public function getIsContainerCargoProperty()
     {
         if (!$this->cargoTypes || !$this->cargo_type_id) {
             return false;
         }
         
-        // Buscar por ID específico (más confiable)
         if ($this->cargo_type_id == 2) {
             return true;
         }
         
-        // Buscar por nombre como fallback
         $cargoType = $this->cargoTypes->find($this->cargo_type_id);
         return $cargoType && str_contains(strtolower($cargoType->name), 'contenedor');
     }
 
+    // MODIFICADO: Actualizar cuando cambia el tipo de carga
     public function updatedCargoTypeId()
     {
         $this->showContainerFields = $this->isContainerCargo;
         
         if (!$this->showContainerFields) {
-            $this->container_number = '';
-            $this->container_type_id = null;
-            $this->seal_number = '';
-            $this->tare_weight = 0;
+            $this->containers = [];
+        } elseif (empty($this->containers)) {
+            // Si se activa por primera vez, agregar un contenedor vacío
+            $this->addContainer();
         }
     }
 
+    // NUEVO: Métodos para manejo de múltiples contenedores
+    public function addContainer()
+    {
+        $this->containers[] = [
+            'id' => uniqid(), // ID temporal para el frontend
+            'container_number' => '',
+            'container_type_id' => null,
+            'seal_number' => '',
+            'tare_weight' => 0,
+            'package_quantity' => 0,
+            'gross_weight_kg' => 0,
+            'net_weight_kg' => 0,
+            'volume_m3' => 0,
+            'loading_sequence' => '',
+            'notes' => ''
+        ];
+    }
+
+    public function removeContainer($index)
+    {
+        if (count($this->containers) > 1) {
+            unset($this->containers[$index]);
+            $this->containers = array_values($this->containers); // Re-indexar array
+        }
+    }
+
+    public function updateContainer($index, $field, $value)
+    {
+        if (isset($this->containers[$index])) {
+            $this->containers[$index][$field] = $value;
+        }
+    }
+
+    // NUEVO: Validar contenedores
+    private function validateContainers()
+    {
+        if (!$this->showContainerFields || empty($this->containers)) {
+            return true;
+        }
+
+        $errors = [];
+        $totalPackageQuantity = 0;
+        $totalGrossWeight = 0;
+        $totalNetWeight = 0;
+        $totalVolume = 0;
+
+        foreach ($this->containers as $index => $container) {
+            $containerErrors = [];
+            
+            // Validar campos obligatorios
+            if (empty($container['container_number'])) {
+                $containerErrors[] = "Número de contenedor es obligatorio";
+            }
+            
+            if (empty($container['container_type_id'])) {
+                $containerErrors[] = "Tipo de contenedor es obligatorio";
+            }
+            
+            if ($container['package_quantity'] <= 0) {
+                $containerErrors[] = "Cantidad de bultos debe ser mayor a 0";
+            }
+            
+            if ($container['gross_weight_kg'] <= 0) {
+                $containerErrors[] = "Peso bruto debe ser mayor a 0";
+            }
+            
+            if ($container['net_weight_kg'] < 0) {
+                $containerErrors[] = "Peso neto no puede ser negativo";
+            }
+            
+            if ($container['gross_weight_kg'] < $container['net_weight_kg']) {
+                $containerErrors[] = "Peso bruto no puede ser menor al peso neto";
+            }
+
+            // Acumular totales
+            $totalPackageQuantity += $container['package_quantity'];
+            $totalGrossWeight += $container['gross_weight_kg'];
+            $totalNetWeight += $container['net_weight_kg'];
+            $totalVolume += $container['volume_m3'];
+
+            if (!empty($containerErrors)) {
+                $errors["container_{$index}"] = $containerErrors;
+            }
+        }
+
+        // Validar que los totales coincidan con el item
+        if ($totalPackageQuantity != $this->package_quantity) {
+            $errors['containers_total'] = "La suma de bultos en contenedores ({$totalPackageQuantity}) debe coincidir con el total del ítem ({$this->package_quantity})";
+        }
+
+        if (abs($totalGrossWeight - $this->gross_weight_kg) > 0.01) {
+            $errors['containers_total'] = "La suma de peso bruto en contenedores ({$totalGrossWeight}) debe coincidir con el total del ítem ({$this->gross_weight_kg})";
+        }
+
+        if (!empty($errors)) {
+            foreach ($errors as $field => $messages) {
+                $errorMessage = is_array($messages) ? implode(', ', $messages) : $messages;
+                $this->addError($field, $errorMessage);
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    // MÉTODOS ORIGINALES (sin modificar)
     public function createBillOfLading()
     {
-        // Validar solo los campos del BL
+        // Conservar lógica original completa
         $this->validate([
             'bl_shipper_id' => 'required|exists:clients,id,status,active',
             'bl_consignee_id' => 'required|exists:clients,id,status,active|different:bl_shipper_id',
@@ -664,7 +710,6 @@ class ShipmentItemCreateForm extends Component
         try {
             DB::beginTransaction();
 
-            // Preparar datos del BL
             $blData = [
                 'bill_number' => $this->bl_bill_number,
                 'shipper_id' => $this->bl_shipper_id,
@@ -681,16 +726,13 @@ class ShipmentItemCreateForm extends Component
                 'currency_code' => $this->bl_currency_code,
             ];
 
-            // Usar el método del controlador para crear el BL
             $controller = new ShipmentItemController();
             $this->billOfLading = $controller->createBillOfLadingWithData($this->shipment, $blData);
             
-            // Crear contactos específicos si se definieron
             $this->createSpecificContacts($this->billOfLading);
 
             DB::commit();
 
-            // Marcar como creado y avanzar al siguiente step
             $this->blCreated = true;
             $this->step = 2;
             $this->showBLSection = false;
@@ -718,6 +760,7 @@ class ShipmentItemCreateForm extends Component
         }
     }
 
+    // MODIFICADO: Crear Shipment Item con múltiples contenedores
     public function createShipmentItem()
     {
         // Validar campos del item
@@ -733,6 +776,11 @@ class ShipmentItemCreateForm extends Component
             'declared_value' => 'nullable|numeric|min:0',
             'country_of_origin' => 'required|string|size:2',
         ]);
+
+        // Validar contenedores si es carga contenedorizada
+        if ($this->showContainerFields && !$this->validateContainers()) {
+            return;
+        }
 
         if (!$this->billOfLading) {
             session()->flash('error', 'No se ha configurado el conocimiento de embarque.');
@@ -767,19 +815,78 @@ class ShipmentItemCreateForm extends Component
                 'special_instructions' => $this->special_instructions,
                 'expiry_date' => $this->expiry_date,
                 'inspection_type' => $this->inspection_type,
-                'container_number' => $this->container_number,
-                'container_type_id' => $this->container_type_id,
-                'seal_number' => $this->seal_number,
-                'tare_weight' => $this->tare_weight ?: 0,
                 'created_date' => now(),
                 'created_by_user_id' => Auth::id(),
             ];
 
             $shipmentItem = ShipmentItem::create($itemData);
 
+            // NUEVO: Crear múltiples contenedores si es carga contenedorizada
+            if ($this->showContainerFields && !empty($this->containers)) {
+                $containersCreated = [];
+                
+                foreach ($this->containers as $containerData) {
+                    // Crear el contenedor
+                    $container = \App\Models\Container::create([
+                        'container_number' => $containerData['container_number'],
+                        'container_type_id' => $containerData['container_type_id'],
+                        'tare_weight_kg' => $containerData['tare_weight'] ?: 2200,
+                        'max_gross_weight_kg' => 30000,
+                        'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                        'cargo_weight_kg' => $containerData['net_weight_kg'],
+                        'condition' => 'L', // Loaded
+                        'operational_status' => 'loaded',
+                        'shipper_seal' => $containerData['seal_number'],
+                        'active' => true,
+                        'blocked' => false,
+                        'out_of_service' => false,
+                        'requires_repair' => false,
+                        'created_date' => now(),
+                        'created_by_user_id' => Auth::id(),
+                        'last_updated_date' => now(),
+                        'last_updated_by_user_id' => Auth::id(),
+                    ]);
+
+                    // Asociar el item con el contenedor en la tabla pivote
+                    $container->shipmentItems()->attach($shipmentItem->id, [
+                        'package_quantity' => $containerData['package_quantity'],
+                        'gross_weight_kg' => $containerData['gross_weight_kg'],
+                        'net_weight_kg' => $containerData['net_weight_kg'],
+                        'volume_m3' => $containerData['volume_m3'],
+                        'quantity_percentage' => ($containerData['package_quantity'] / $this->package_quantity) * 100,
+                        'weight_percentage' => ($containerData['gross_weight_kg'] / $this->gross_weight_kg) * 100,
+                        'volume_percentage' => $this->volume_m3 > 0 ? ($containerData['volume_m3'] / $this->volume_m3) * 100 : 0,
+                        'loading_sequence' => $containerData['loading_sequence'] ?: null,
+                        'loaded_at' => now(),
+                        'status' => 'loaded',
+                        'notes' => $containerData['notes'] ?: null,
+                        'created_date' => now(),
+                        'created_by_user_id' => Auth::id(),
+                    ]);
+
+                    $containersCreated[] = $containerData['container_number'];
+
+                    Log::info('Container created and linked to item', [
+                        'container_id' => $container->id,
+                        'container_number' => $container->container_number,
+                        'item_id' => $shipmentItem->id,
+                        'package_quantity' => $containerData['package_quantity'],
+                        'gross_weight_kg' => $containerData['gross_weight_kg']
+                    ]);
+                }
+            }
+
             DB::commit();
 
-            session()->flash('message', 'Item agregado exitosamente al conocimiento de embarque.');
+            // Mensaje dinámico según si se crearon contenedores
+            if (!empty($containersCreated)) {
+                $containersList = implode(', ', $containersCreated);
+                $message = "Item y contenedor(es) {$containersList} creados exitosamente.";
+            } else {
+                $message = 'Item agregado exitosamente.';
+            }
+
+            session()->flash('message', $message);
 
             if ($this->continueAdding) {
                 $this->resetItemForm();
@@ -793,6 +900,7 @@ class ShipmentItemCreateForm extends Component
             
             Log::error('Error creating ShipmentItem: ' . $e->getMessage(), [
                 'item_data' => $itemData,
+                'containers_count' => count($this->containers),
                 'bill_of_lading_id' => $this->billOfLading->id,
                 'error_file' => $e->getFile(),
                 'error_line' => $e->getLine()
@@ -802,6 +910,7 @@ class ShipmentItemCreateForm extends Component
         }
     }
 
+    // MODIFICADO: Reset del formulario incluyendo contenedores
     private function resetItemForm()
     {
         $this->item_reference = '';
@@ -826,12 +935,13 @@ class ShipmentItemCreateForm extends Component
         $this->special_instructions = '';
         $this->expiry_date = '';
         $this->inspection_type = '';
-        $this->container_number = '';
-        $this->container_type_id = null;
-        $this->seal_number = '';
-        $this->tare_weight = 0;
+        
+        // Reset contenedores
+        $this->containers = [];
+        $this->showContainerFields = false;
     }
 
+    // MÉTODOS ORIGINALES (sin modificar)
     public function toggleBLSection()
     {
         $this->showBLSection = !$this->showBLSection;
@@ -844,7 +954,7 @@ class ShipmentItemCreateForm extends Component
 
     private function createSpecificContacts($billOfLading)
     {
-        // Crear contactos específicos para el BL si se definieron direcciones específicas
+        // Lógica para crear contactos específicos para el BL si se definieron direcciones específicas
         if ($this->bl_shipper_use_specific) {
             // Lógica para crear contacto específico del shipper
         }

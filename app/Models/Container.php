@@ -134,4 +134,12 @@ class Container extends Model
             ])
             ->withTimestamps();
     }
+
+    /**
+ * Tipo de contenedor
+ */
+public function containerType(): BelongsTo
+{
+    return $this->belongsTo(ContainerType::class, 'container_type_id');
+}
 }

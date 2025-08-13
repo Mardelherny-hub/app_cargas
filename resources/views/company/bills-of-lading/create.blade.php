@@ -215,98 +215,30 @@
                     </div>
                 </div>
 
-                {{-- Clientes --}}
-                <div class="bg-white overflow-hidden shadow rounded-lg">
-                    <div class="px-4 py-5 sm:p-6">
-                        <div class="mb-6">
-                            <h3 class="text-lg font-medium leading-6 text-gray-900 flex items-center">
-                                <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                                </svg>
-                                Partes Involucradas
-                            </h3>
-                            <p class="mt-1 text-sm text-gray-600">Cargador, consignatario y otras partes</p>
-                        </div>
+               {{-- Partes Involucradas - Componente Livewire con campos hidden para el formulario --}}
+<div x-data="{
+    shipper_id: '{{ old('shipper_id', $billOfLading->shipper_id ?? '') }}',
+    consignee_id: '{{ old('consignee_id', $billOfLading->consignee_id ?? '') }}',
+    notify_party_id: '{{ old('notify_party_id', $billOfLading->notify_party_id ?? '') }}',
+    cargo_owner_id: '{{ old('cargo_owner_id', $billOfLading->cargo_owner_id ?? '') }}'
+}"
+@update-form-field.window="
+    if ($event.detail[0] === 'shipper_id') shipper_id = $event.detail[1];
+    if ($event.detail[0] === 'consignee_id') consignee_id = $event.detail[1];
+    if ($event.detail[0] === 'notify_party_id') notify_party_id = $event.detail[1];
+    if ($event.detail[0] === 'cargo_owner_id') cargo_owner_id = $event.detail[1];
+">
+    {{-- Componente Livewire --}}
+    @livewire('bill-parties-selector', [
+        'billOfLading' => $billOfLading ?? null
+    ])
 
-                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                            {{-- Cargador --}}
-                            <div>
-                                <label for="shipper_id" class="block text-sm font-medium text-gray-700">
-                                    Cargador/Exportador <span class="text-red-500">*</span>
-                                </label>
-                                <select id="shipper_id" name="shipper_id" required
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('shipper_id') border-red-300 @enderror">
-                                    <option value="">Seleccione cargador</option>
-                                    @foreach($formData['shippers'] as $shipper)
-                                        <option value="{{ $shipper->id }}" {{ old('shipper_id') == $shipper->id ? 'selected' : '' }}>
-                                            {{ $shipper->legal_name }} ({{ $shipper->tax_id }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('shipper_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- Consignatario --}}
-                            <div>
-                                <label for="consignee_id" class="block text-sm font-medium text-gray-700">
-                                    Consignatario/Importador <span class="text-red-500">*</span>
-                                </label>
-                                <select id="consignee_id" name="consignee_id" required
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('consignee_id') border-red-300 @enderror">
-                                    <option value="">Seleccione consignatario</option>
-                                    @foreach($formData['consignees'] as $consignee)
-                                        <option value="{{ $consignee->id }}" {{ old('consignee_id') == $consignee->id ? 'selected' : '' }}>
-                                            {{ $consignee->legal_name }} ({{ $consignee->tax_id }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('consignee_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- Parte a Notificar --}}
-                            <div>
-                                <label for="notify_party_id" class="block text-sm font-medium text-gray-700">
-                                    Parte a Notificar
-                                </label>
-                                <select id="notify_party_id" name="notify_party_id"
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('notify_party_id') border-red-300 @enderror">
-                                    <option value="">Sin especificar</option>
-                                    @foreach($formData['notifyParties'] as $party)
-                                        <option value="{{ $party->id }}" {{ old('notify_party_id') == $party->id ? 'selected' : '' }}>
-                                            {{ $party->legal_name }} ({{ $party->tax_id }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('notify_party_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- Propietario de Carga --}}
-                            <div>
-                                <label for="cargo_owner_id" class="block text-sm font-medium text-gray-700">
-                                    Propietario de la Carga
-                                </label>
-                                <select id="cargo_owner_id" name="cargo_owner_id"
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('cargo_owner_id') border-red-300 @enderror">
-                                    <option value="">Sin especificar</option>
-                                    @foreach($formData['cargoOwners'] as $owner)
-                                        <option value="{{ $owner->id }}" {{ old('cargo_owner_id') == $owner->id ? 'selected' : '' }}>
-                                            {{ $owner->legal_name }} ({{ $owner->tax_id }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('cargo_owner_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                    </div>
-                </div>
+    {{-- Campos hidden para el formulario principal --}}
+    <input type="hidden" name="shipper_id" x-model="shipper_id">
+    <input type="hidden" name="consignee_id" x-model="consignee_id">  
+    <input type="hidden" name="notify_party_id" x-model="notify_party_id">
+    <input type="hidden" name="cargo_owner_id" x-model="cargo_owner_id">
+</div>
 
                 {{-- Puertos y Rutas --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
