@@ -46,6 +46,17 @@
                                 ])
                             </div>
 
+                            {{-- NUEVO: Estado del Item Individual --}}
+                            <div class="flex items-center space-x-3">
+                                <span class="text-sm font-medium text-gray-600">Estado del Item:</span>
+                                @livewire('status-changer', [
+                                    'model' => $shipmentItem,
+                                    'showReason' => true,
+                                    'size' => 'normal'
+                                ], key('item-status-'.$shipmentItem->id))
+                            </div>
+
+
                             {{-- Información del item en el BL --}}
                             <div class="text-sm text-gray-500">
                                 <span class="font-medium">Item {{ $shipmentItem->line_number }}</span> 

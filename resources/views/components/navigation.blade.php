@@ -154,6 +154,17 @@
                                         </div>
                                     </a>
 
+                                    <a href="{{ route('company.dashboard-estados.index') }}" 
+                                    class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-md mx-2 transition-colors duration-200 {{ request()->routeIs('company.dashboard-estados.*') ? 'bg-blue-50 text-blue-700 font-medium' : '' }}">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                        </svg>
+                                        <div>
+                                            <div class="font-medium">📊 Dashboard de Estados</div>
+                                            <div class="text-xs text-gray-500">Gestión masiva de estados</div>
+                                        </div>
+                                    </a>
+
                                     <!-- 1. 📝 CREAR/GESTIONAR -->
                                     <div class="border-t border-gray-100 mt-2 pt-2">
                                         <div class="px-4 py-1">
@@ -243,6 +254,16 @@
                                             <div>
                                                 <div class="font-medium">🏛️ Enviar a AFIP/DNA</div>
                                                 <div class="text-xs text-gray-500">Desde manifiestos creados</div>
+                                            </div>
+                                        </a>
+
+                                        <!-- 🧪 TESTING DE ENVÍOS A ADUANA -->
+                                        <a href="{{ route('company.manifests.testing.index') }}" 
+                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.manifests.testing.*') ? 'bg-blue-50 text-blue-700' : '' }}">
+                                            <span class="mr-3 text-orange-500">🧪</span>
+                                            <div>
+                                                <p class="font-medium">Testing de Envíos</p>
+                                                <p class="text-xs text-gray-400">Pruebas de conexión y validación</p>
                                             </div>
                                         </a>
                                     </div>
@@ -484,6 +505,9 @@
                 </div>
                 <x-responsive-nav-link :href="route('company.manifests.index')" :active="request()->routeIs('company.manifests.index')" class="pl-6">
                     🏠 {{ __('Dashboard Manifiestos') }}
+                </x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('company.dashboard-estados.index')" :active="request()->routeIs('company.dashboard-estados.*')" class="pl-6">
+                    📊 {{ __('Dashboard de Estados') }}
                 </x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('company.voyages.index')" :active="request()->routeIs('company.voyages.*')" class="pl-6">
                     🚢 {{ __('Viajes') }}

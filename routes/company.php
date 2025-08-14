@@ -19,6 +19,9 @@ use App\Http\Controllers\Company\VesselOwnerController;
 use App\Http\Controllers\Company\VesselController;
 use App\Http\Controllers\Company\BillOfLadingController;
 use App\Http\Controllers\Company\CaptainController;
+use App\Http\Controllers\Company\DashboardEstadosController;
+use App\Http\Controllers\Company\Manifests\TestingCustomsController;
+
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
 use App\Http\Controllers\Company\Manifests\ManifestController;
@@ -405,10 +408,20 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     // === ENVÍO A ADUANA - ANTES DE RUTAS CON PARÁMETROS ===
     Route::prefix('customs')->name('customs.')->group(function () {
         Route::get('/', [ManifestCustomsController::class, 'index'])->name('index');
-            Route::post('/send-batch', [ManifestCustomsController::class, 'sendBatch'])->name('sendBatch'); 
+            Route::get('/debug', [ManifestCustomsController::class, 'debug'])->name('debug');
+        Route::post('/send-batch', [ManifestCustomsController::class, 'sendBatch'])->name('sendBatch'); 
         Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
         Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
         Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
+    });
+
+    // === 🧪 TESTING DE ENVÍOS A ADUANA - NUEVA SECCIÓN ===
+    Route::prefix('testing')->name('testing.')->group(function () {
+        Route::get('/', [TestingCustomsController::class, 'index'])->name('index');
+        Route::post('/{voyageId}/test', [TestingCustomsController::class, 'test'])->name('test');
+        Route::post('/test-batch', [TestingCustomsController::class, 'testBatch'])->name('testBatch');
+        Route::get('/results/{testId}', [TestingCustomsController::class, 'showResults'])->name('results');
+        Route::post('/export-results', [TestingCustomsController::class, 'exportResults'])->name('exportResults');
     });
 
     // === RUTAS CON PARÁMETROS AL FINAL (para evitar conflictos) ===
@@ -416,8 +429,8 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     Route::get('/{id}/edit', [ManifestController::class, 'edit'])->name('edit');
     Route::put('/{id}', [ManifestController::class, 'update'])->name('update');
     Route::delete('/{id}', [ManifestController::class, 'destroy'])->name('destroy');
-});
 
+});
 
 // Gestión de Capitanes
 Route::prefix('captains')->name('company.captains.')->group(function () {
@@ -462,6 +475,27 @@ Route::prefix('captains')->name('company.captains.')->group(function () {
         Route::patch('/{captain}/certificates/{certificate}/verify', [CaptainController::class, 'verifyCertificate'])->name('verify-certificate');
     });
 });
+
+
+
+// ========================================
+// DASHBOARD DE ESTADOS 
+// ========================================
+Route::prefix('dashboard-estados')->name('company.dashboard-estados.')->group(function () {
+    // Vista principal del dashboard
+    Route::get('/', [DashboardEstadosController::class, 'index'])->name('index');
+    
+    // API endpoints para datos dinámicos
+    Route::get('/api/metrics', [DashboardEstadosController::class, 'getMetrics'])->name('api.metrics');
+    Route::get('/api/recent-changes', [DashboardEstadosController::class, 'getRecentChanges'])->name('api.recent-changes');
+    Route::get('/api/status-distribution', [DashboardEstadosController::class, 'getStatusDistribution'])->name('api.status-distribution');
+    
+    // Acciones rápidas para cambios de estado
+    Route::post('/bulk-update', [DashboardEstadosController::class, 'bulkUpdateStatus'])->name('bulk-update');
+    Route::get('/export', [DashboardEstadosController::class, 'exportStatusReport'])->name('export');
+});
+
+
 
 // Configuración (solo company-admin)
 Route::prefix('settings')->name('company.settings.')->group(function () {

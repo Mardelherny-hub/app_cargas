@@ -159,6 +159,57 @@
                 </div>
             </div>
 
+            <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-indigo-500 rounded-md flex items-center justify-center">
+                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">
+                                    Estados del Sistema
+                                </dt>
+                                <dd class="text-lg font-medium text-gray-900">
+                                    @php
+                                        // Obtener conteo rápido de elementos con estados pendientes/en proceso
+                                        $pendingCount = 0;
+                                        if($company) {
+                                            $pendingVoyages = \App\Models\Voyage::where('company_id', $company->id)
+                                                ->whereIn('status', ['planning', 'confirmed'])->count();
+                                            $pendingShipments = \App\Models\Shipment::whereHas('voyage', function($q) use ($company) {
+                                                    $q->where('company_id', $company->id);
+                                                })
+                                                ->whereIn('status', ['planning', 'loading'])->count();
+                                            $pendingCount = $pendingVoyages + $pendingShipments;
+                                        }
+                                    @endphp
+                                    {{ $pendingCount }} Pendientes
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-5 py-3">
+                    <div class="text-sm">
+                        <a href="{{ route('company.dashboard-estados.index') }}" 
+                        class="font-medium text-indigo-700 hover:text-indigo-900 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Gestionar Estados
+                        </a>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        Vista consolidada • Cambios masivos • Filtros
+                    </div>
+                </div>
+            </div>
+
             <!-- Panel principal según rol -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 @if($isCompanyAdmin)

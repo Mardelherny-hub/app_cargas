@@ -27,58 +27,71 @@ class ManifestCustomsController extends Controller
      * Vista principal para seleccionar manifiestos y enviar a aduana
      */
     public function index(Request $request)
-    {
-        // Obtener viajes listos para envío a aduana
-        $query = Voyage::with([
-            'shipments.billsOfLading', 
-            'origin_port.country', 
-            'destination_port.country',
-            'webserviceTransactions'
+{
+    $query = Voyage::with([
+        'shipments.billsOfLading',
+        'origin_port.country',
+        'destination_port.country',
+        'webserviceTransactions'
+    ])
+    ->where('company_id', auth()->user()->company_id)
+    ->whereHas('shipments') // Solo viajes con cargas
+    ->where(function ($q) {
+        // 1) Estados habituales del viaje (ampliado)
+        $q->whereIn('status', [
+            'approved',
+            'in_transit',
+            'completed',
+            'at_destination', // si existe en tus datos
+            'planning',       // alias de pending en algunos seeds
+            'pending',        // por si tus dos viajes están así
+            'closed',         // algunos seeds lo usan tras completar
         ])
-        ->where('company_id', auth()->user()->company_id)
-        ->whereHas('shipments') // Solo viajes con cargas
-        ->whereIn('status', ['approved']); // Solo viajes listos
+        // 2) O bien que tenga al menos un B/L listo
+        ->orWhereHas('shipments.billsOfLading', function ($qq) {
+            $qq->whereIn('status', ['confirmed', 'shipped']);
+        });
+    });
 
-        dd($query);
-        // Filtrar por país de destino si se especifica
-        if ($request->filled('country')) {
-            $query->whereHas('destination_port.country', function($q) use ($request) {
-                $q->where('iso_code', $request->country);
-            });
-        }
-
-        
-        // Filtrar por estado de envío
-        if ($request->filled('webservice_status')) {
-            switch ($request->webservice_status) {
-                case 'not_sent':
-                    $query->doesntHave('webserviceTransactions');
-                    break;
-                case 'sent':
-                    $query->whereHas('webserviceTransactions', function($q) {
-                        $q->where('status', 'success');
-                    });
-                    break;
-                case 'failed':
-                    $query->whereHas('webserviceTransactions', function($q) {
-                        $q->where('status', 'error');
-                    });
-                    break;
-                case 'pending':
-                    $query->whereHas('webserviceTransactions', function($q) {
-                        $q->where('status', 'pending');
-                    });
-                    break;
-            }
-        }
-
-        $voyages = $query->latest()->paginate(15);
-
-        // Obtener estadísticas de envío
-        $stats = $this->getCustomsStats();
-
-        return view('company.manifests.customs', compact('voyages', 'stats'));
+    // Filtro por país destino (se mantiene igual)
+    if ($request->filled('country')) {
+        $query->whereHas('destination_port.country', function($q) use ($request) {
+            $q->where('alpha2_code', $request->country);
+        });
     }
+
+    // Filtros extra (se mantienen igual)
+    if ($request->filled('voyage_number')) {
+        $query->where('voyage_number', 'like', '%' . $request->voyage_number . '%');
+    }
+    if ($request->filled('vessel_id')) {
+        $query->where('lead_vessel_id', $request->vessel_id);
+    }
+    if ($request->filled('webservice_status')) {
+        switch ($request->webservice_status) {
+            case 'not_sent':
+                $query->doesntHave('webserviceTransactions');
+                break;
+            case 'sent':
+                $query->whereHas('webserviceTransactions', fn($q) => $q->where('status', 'success'));
+                break;
+            case 'failed':
+                $query->whereHas('webserviceTransactions', fn($q) => $q->where('status', 'error'));
+                break;
+            case 'pending':
+                $query->whereHas('webserviceTransactions', fn($q) => $q->where('status', 'pending'));
+                break;
+        }
+    }
+
+    $voyages = $query->latest()->paginate(15);
+
+    $stats = $this->getCustomsStats();
+    $filters = $this->getFilterData();
+
+    return view('company.manifests.customs', compact('voyages', 'stats', 'filters'));
+}
+
 
     /**
      * Enviar manifiesto individual a la aduana (según país de destino)
@@ -380,18 +393,99 @@ class ManifestCustomsController extends Controller
      */
     private function getCustomsStats()
     {
-        $companyId = auth()->user()->company_id;
-
+        $company = auth()->user()->company;
+        
+        // Estadísticas de transacciones
+        $transactions = \App\Models\WebserviceTransaction::where('company_id', $company->id);
+        
+        // Estadísticas de viajes listos
+        $readyVoyages = Voyage::where('company_id', $company->id)
+            ->whereHas('shipments')
+            ->whereIn('status', ['approved', 'completed', 'in_transit', 'at_destination']);
+        
         return [
-            'total_sent' => WebserviceTransaction::where('company_id', $companyId)->count(),
-            'successful' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('status', 'success')->count(),
-            'pending' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('status', 'pending')->count(),
-            'failed' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('status', 'error')->count(),
-            'last_24h' => WebserviceTransaction::where('company_id', $companyId)
-                ->where('created_at', '>=', now()->subDay())->count(),
+            'ready_voyages' => $readyVoyages->count(),
+            'total_sent' => $transactions->whereIn('status', ['success', 'pending'])->count(),
+            'successful_sent' => $transactions->where('status', 'success')->count(),
+            'failed_sent' => $transactions->where('status', 'error')->count(),
+            'pending_sent' => $transactions->where('status', 'pending')->count(),
+            'this_month_sent' => $transactions->whereMonth('created_at', now()->month)->count(),
+            'argentina_sent' => $transactions->whereIn('webservice_type', ['anticipada', 'micdta'])->count(),
+            'paraguay_sent' => $transactions->where('webservice_type', 'paraguay_customs')->count(),
         ];
     }
+
+    /**
+     * Obtener datos para filtros de la vista
+     */
+    private function getFilterData()
+    {
+        $company = auth()->user()->company;
+        
+        return [
+            'vessels' => \App\Models\Vessel::where('company_id', $company->id)
+                ->where('active', true)
+                ->orderBy('name')
+                ->get(['id', 'name']),
+                
+            'countries' => \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'alpha2_code']),
+                
+            'status_options' => [
+                'not_sent' => 'No Enviados',
+                'sent' => 'Enviados Exitosamente', 
+                'failed' => 'Envíos Fallidos',
+                'pending' => 'Envíos Pendientes'
+            ]
+        ];
+    }
+
+// Agregar temporalmente al final de ManifestCustomsController.php
+
+/**
+ * Método temporal para diagnosticar el problema
+ */
+/**
+ * Método temporal para diagnosticar el problema
+ */
+public function debug(Request $request)
+{
+    $currentUser = auth()->user();
+    
+    // PROBAR TODAS LAS FORMAS POSIBLES DE OBTENER COMPANY_ID
+    $method1 = $currentUser->company_id ?? 'NULL';
+    $method2 = $currentUser->userable_id ?? 'NULL';
+    $method3 = $currentUser->getUserCompany()?->id ?? 'NULL';
+    
+    // Ver qué método funciona
+    Log::info('MÉTODOS PARA OBTENER COMPANY_ID', [
+        'method1_company_id' => $method1,
+        'method2_userable_id' => $method2, 
+        'method3_getUserCompany' => $method3
+    ]);
+    
+    // Usar el que funcione (probablemente method2 o method3)
+    $companyId = $method3 !== 'NULL' ? $method3 : ($method2 !== 'NULL' ? $method2 : $method1);
+    
+    // Buscar viajes con ese company_id
+    $voyages = Voyage::where('company_id', $companyId)
+        ->whereHas('shipments')
+        ->whereIn('status', ['approved', 'completed', 'in_transit', 'at_destination'])
+        ->get();
+
+    return response()->json([
+        'company_methods' => [
+            'method1_company_id' => $method1,
+            'method2_userable_id' => $method2,
+            'method3_getUserCompany' => $method3,
+            'using_company_id' => $companyId
+        ],
+        'voyages_found' => $voyages->count(),
+        'voyages' => $voyages->map(fn($v) => [
+            'voyage_number' => $v->voyage_number,
+            'status' => $v->status
+        ])
+    ]);
+}
 }
