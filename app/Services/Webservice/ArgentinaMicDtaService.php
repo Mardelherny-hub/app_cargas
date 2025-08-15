@@ -46,6 +46,7 @@ class ArgentinaMicDtaService
 {
     private Company $company;
     private User $user;
+    private ?int $currentTransactionId = null;
     private SoapClientService $soapClient;
     private CertificateManagerService $certificateManager;
     private XmlSerializerService $xmlSerializer;
@@ -89,91 +90,83 @@ class ArgentinaMicDtaService
      * Enviar MIC/DTA completo para un shipment
      */
     public function sendMicDta(Shipment $shipment): array
-    {
-        $result = [
-            'success' => false,
-            'transaction_id' => null,
-            'response_data' => null,
-            'errors' => [],
-            'warnings' => [],
-        ];
+{
+    $result = [
+        'success' => false,
+        'transaction_id' => null,
+        'response_data' => null,
+        'errors' => [],
+        'warnings' => [],
+    ];
 
-        DB::beginTransaction();
+    DB::beginTransaction();
 
-        try {
-            $this->logOperation('info', 'Iniciando envío MIC/DTA completo', [
-                'shipment_id' => $shipment->id,
-                'shipment_number' => $shipment->shipment_number,
-                'voyage_number' => $shipment->voyage?->voyage_number,
-                'vessel_name' => $shipment->vessel?->name,
-            ]);
+    try {
+        // Log inicial SIN transaction_id
+        $this->logInitialization('info', 'Iniciando envío MIC/DTA completo', [
+            'shipment_id' => $shipment->id,
+            'shipment_number' => $shipment->shipment_number,
+            'voyage_number' => $shipment->voyage?->voyage_number,
+            'vessel_name' => $shipment->vessel?->name,
+        ]);
 
-            // 1. Validaciones integrales pre-envío
-            $validation = $this->validateForMicDta($shipment);
-            if (!$validation['is_valid']) {
-                $result['errors'] = $validation['errors'];
-                return $result;
-            }
-
-            // 2. Crear transacción en base de datos
-            $transaction = $this->createTransaction($shipment);
-            $result['transaction_id'] = $transaction->id;
-
-            // 3. Generar XML usando datos reales del sistema
-            $xmlContent = $this->generateXml($shipment, $transaction->transaction_id);
-            if (!$xmlContent) {
-                throw new Exception('No se pudo generar XML MIC/DTA');
-            }
-
-            // 4. Validar estructura XML generada
-            if ($this->config['validate_xml_structure']) {
-                $xmlValidation = $this->xmlSerializer->validateXmlStructure($xmlContent);
-                if (!$xmlValidation['is_valid']) {
-                    throw new Exception('XML generado no válido: ' . implode(', ', $xmlValidation['errors']));
-                }
-            }
-
-            // 5. Preparar cliente SOAP
-            $soapClient = $this->prepareSoapClient();
-
-            // 6. Enviar al webservice Argentina
-            $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent);
-
-            // 7. Procesar respuesta
-            if ($soapResult['success']) {
-                $this->processSuccessResponse($transaction, $soapResult);
-                $result['success'] = true;
-                $result['response_data'] = $soapResult['response_data'];
-            } else {
-                $this->processErrorResponse($transaction, $soapResult);
-                $result['errors'][] = $soapResult['error_message'];
-            }
-
-            DB::commit();
-
-            $this->logOperation('info', 'Envío MIC/DTA completado', [
-                'transaction_id' => $transaction->id,
-                'success' => $result['success'],
-                'response_time_ms' => $soapResult['response_time_ms'] ?? null,
-            ]);
-
-            return $result;
-
-        } catch (Exception $e) {
-            DB::rollback();
-
-            $this->logOperation('error', 'Error en envío MIC/DTA', [
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'shipment_id' => $shipment->id,
-                'transaction_id' => $result['transaction_id'],
-            ]);
-
-            $result['errors'][] = $e->getMessage();
+        // 1. Validaciones integrales pre-envío
+        $validation = $this->validateForMicDta($shipment);
+        if (!$validation['is_valid']) {
+            $result['errors'] = $validation['errors'];
             return $result;
         }
+
+        // 2. Crear transacción en base de datos ✅ ANTES de logs con transaction_id
+        $transaction = $this->createTransaction($shipment);
+        $result['transaction_id'] = $transaction->id;
+        
+        // ✅ AHORA SÍ GUARDAR EL TRANSACTION_ID PARA LOGS POSTERIORES
+        $this->currentTransactionId = $transaction->id;
+
+        // 3. Generar XML usando el XmlSerializerService
+        $xmlContent = $this->generateXml($shipment, $transaction->transaction_id);
+        if (!$xmlContent) {
+            throw new Exception('Error generando XML MIC/DTA');
+        }
+
+        // 4. Preparar cliente SOAP
+        $soapClient = $this->prepareSoapClient();
+
+        // 5. Enviar request SOAP
+        $soapResponse = $this->sendSoapRequest($transaction, $soapClient, $xmlContent);
+
+        // 6. Procesar respuesta
+        $result = $this->processResponse($transaction, $soapResponse);
+
+        DB::commit();
+        return $result;
+
+    } catch (Exception $e) {
+        DB::rollBack();
+        
+        // Log de error SIN transaction_id si no se creó aún
+        $this->logOperation('error', 'Error en envío MIC/DTA', [
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'shipment_id' => $shipment->id,
+            'transaction_id' => $this->currentTransactionId ?? 'not_created',
+        ], 'error_handling');
+
+        // Actualizar transacción si existe
+        if (isset($transaction)) {
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'response_at' => now(),
+            ]);
+        }
+
+        $result['errors'][] = $e->getMessage();
+        return $result;
     }
+}
 
     /**
      * Validaciones integrales para MIC/DTA usando datos reales
@@ -314,11 +307,14 @@ class ArgentinaMicDtaService
             ],
         ]);
 
+        // ✅ GUARDAR TRANSACTION ID PARA LOGS
+        $this->currentTransactionId = $transaction->id;
+        
         $this->logOperation('info', 'Transacción MIC/DTA creada', [
             'transaction_id' => $transaction->id,
             'internal_transaction_id' => $transactionId,
             'webservice_url' => $webserviceUrl,
-        ]);
+        ], 'transaction_management'); // ✅ CATEGORY AGREGADA
 
         return $transaction;
     }
@@ -628,34 +624,36 @@ class ArgentinaMicDtaService
         }
     }
 
-    /**
-     * Logging centralizado para el servicio
+   /**
+     * Método de logging con category - AGREGADO
      */
-    private function logOperation(string $level, string $message, array $context = []): void
+    protected function logOperation(string $level, string $message, array $context = [], string $category = 'micdta_operation'): void
     {
-        $logData = array_merge([
-            'service' => 'ArgentinaMicDtaService',
-            'company_id' => $this->company->id,
-            'company_name' => $this->company->legal_name,
-            'user_id' => $this->user->id,
-            'timestamp' => now()->toISOString(),
-        ], $context);
-
-        // Log en archivo Laravel
-        Log::{$level}($message, $logData);
-
-        // Log en tabla webservice_logs
         try {
-            WebserviceLog::create([
-                'transaction_id' => $context['transaction_id'] ?? null,
-                'level' => $level,
-                'message' => $message,
-                'context' => $logData,
-            ]);
-        } catch (Exception $e) {
+            $context['service'] = 'ArgentinaMicDtaService';
+            $context['company_id'] = $this->company->id;
+            $context['company_name'] = $this->company->legal_name ?? $this->company->name;
+            $context['user_id'] = $this->user->id;
+            $context['timestamp'] = now()->toISOString();
+
+            Log::$level($message, $context);
+
+            // Log a webservice_logs si hay transaction_id
+            if ($this->currentTransactionId) {
+                \App\Models\WebserviceLog::create([
+                    'transaction_id' => $this->currentTransactionId,
+                    'level' => $level,
+                    'category' => $category, // ✅ CAMPO REQUERIDO
+                    'message' => $message,
+                    'context' => $context,
+                    'created_at' => now(),
+                ]);
+            }
+
+        } catch (\Exception $e) {
             Log::error('Error logging to webservice_logs table', [
                 'original_message' => $message,
-                'error' => $e->getMessage(),
+                'error' => $e->getMessage()
             ]);
         }
     }
@@ -683,4 +681,20 @@ class ArgentinaMicDtaService
             'new_environment' => $environment,
         ]);
     }
+
+    /**
+ * Log para inicialización (sin transaction_id) - MÉTODO NUEVO
+ */
+protected function logInitialization(string $level, string $message, array $context = []): void
+{
+    $context['service'] = 'ArgentinaMicDtaService';
+    $context['company_id'] = $this->company->id;
+    $context['company_name'] = $this->company->legal_name ?? $this->company->name;
+    $context['user_id'] = $this->user->id;
+    $context['timestamp'] = now()->toISOString();
+    
+    // Solo log a Laravel hasta que se cree la transacción
+    Log::$level($message, $context);
+}
+
 }

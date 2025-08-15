@@ -51,7 +51,8 @@ return new class extends Migration
                 'manifiesto',       // Manifiestos Paraguay
                 'consulta',         // Consultas de estado
                 'rectificacion',    // Rectificaciones
-                'anulacion'         // Anulaciones
+                'anulacion',         // Anulaciones
+                'paraguay_customs' 
             ])->comment('Tipo de webservice');
 
             $table->enum('country', ['AR', 'PY'])->comment('País del webservice (Argentina/Paraguay)');

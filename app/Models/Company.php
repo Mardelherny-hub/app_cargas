@@ -959,4 +959,39 @@ public function getCertificateDebugInfo(): array
     ];
 }
 
+/**
+ * Verificar si la empresa tiene certificado configurado
+ */
+public function hasCertificate(): bool
+{
+    return $this->has_certificate && 
+           !empty($this->certificate_path) && 
+           ($this->certificate_expires_at === null || $this->certificate_expires_at > now());
+}
+
+/**
+ * Obtener ruta del certificado
+ */
+public function getCertificatePath(): ?string
+{
+    return $this->certificate_path;
+}
+
+/**
+ * Obtener contraseña del certificado
+ */
+public function getCertificatePassword(): ?string
+{
+    return $this->certificate_password;
+}
+
+/**
+ * Verificar si el certificado está válido (no vencido)
+ */
+public function isCertificateValid(): bool
+{
+    return $this->hasCertificate() && 
+           ($this->certificate_expires_at === null || $this->certificate_expires_at > now());
+}
+
 }

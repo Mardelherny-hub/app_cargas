@@ -101,63 +101,70 @@ class XmlSerializerService
      * Crear XML para MIC/DTA Argentina
      */
     public function createMicDtaXml(Shipment $shipment, string $transactionId): ?string
-    {
-        try {
-            $this->logOperation('info', 'Iniciando creación XML MIC/DTA', [
-                'shipment_id' => $shipment->id,
-                'transaction_id' => $transactionId,
-                'shipment_number' => $shipment->shipment_number,
-            ]);
+{
+    try {
+        $this->logOperation('info', 'Iniciando creación XML MIC/DTA', [
+            'shipment_id' => $shipment->id,
+            'transaction_id' => $transactionId,
+            'shipment_number' => $shipment->shipment_number,
+        ], 'xml_generation'); // ✅ CATEGORY AGREGADA
 
-            // Validar precondiciones
-            $validation = $this->validateShipmentForMicDta($shipment);
-            if (!$validation['is_valid']) {
-                $this->logOperation('error', 'Shipment no válido para MIC/DTA', [
-                    'errors' => $validation['errors'],
-                ]);
-                return null;
-            }
-
-            // Inicializar DOM
-            $this->initializeDom();
-
-            // Crear estructura SOAP
-            $envelope = $this->createSoapEnvelope();
-            $body = $this->createElement('soap:Body');
-            $envelope->appendChild($body);
-
-            // Crear elemento RegistrarMicDta
-            $registrarMicDta = $this->createElement('RegistrarMicDta');
-            $registrarMicDta->setAttribute('xmlns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
-            $body->appendChild($registrarMicDta);
-
-            // Agregar autenticación de empresa
-            $autenticacion = $this->createAutenticacionEmpresa($registrarMicDta);
-            
-            // Agregar parámetros del MIC/DTA
-            $parametros = $this->createMicDtaParam($registrarMicDta, $shipment, $transactionId);
-
-            // Generar XML string
-            $xmlString = $this->dom->saveXML();
-            
-            $this->logOperation('info', 'XML MIC/DTA creado exitosamente', [
-                'xml_length' => strlen($xmlString),
-                'transaction_id' => $transactionId,
-            ]);
-
-            return $xmlString;
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error creando XML MIC/DTA', [
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'shipment_id' => $shipment->id,
-                'transaction_id' => $transactionId,
-            ]);
+        // Validar precondiciones
+        $validation = $this->validateShipmentForMicDta($shipment);
+        if (!$validation['is_valid']) {
+            $this->logOperation('error', 'Shipment no válido para MIC/DTA', [
+                'errors' => $validation['errors'],
+            ], 'xml_validation'); // ✅ CATEGORY AGREGADA
             return null;
         }
+
+        // Inicializar DOM
+        $this->initializeDom();
+
+        // Crear estructura SOAP
+        $envelope = $this->createSoapEnvelope();
+        $body = $this->createElement('soap:Body');
+        $envelope->appendChild($body);
+
+        // ✅ NAMESPACE CORREGIDO - URI ABSOLUTA VÁLIDA
+        $registrarMicDta = $this->createElement('RegistrarMicDta');
+        $registrarMicDta->setAttribute('xmlns', 'http://schemas.afip.gob.ar/wgesregsintia2/v1');
+        $body->appendChild($registrarMicDta);
+
+        // Agregar autenticación de empresa
+        $autenticacion = $this->createAutenticacionEmpresa($registrarMicDta);
+        
+        // Agregar parámetros del MIC/DTA
+        $parametros = $this->createMicDtaParam($registrarMicDta, $shipment, $transactionId);
+
+        // Generar XML string
+        $xmlString = $this->dom->saveXML();
+
+        // ✅ VALIDAR XML ANTES DE RETORNAR
+        $validation = $this->validateXmlStructure($xmlString);
+        if (!$validation['is_valid']) {
+            $this->logOperation('error', 'Error en validación XML', [
+                'errors' => $validation['errors'],
+            ], 'xml_validation'); // ✅ CATEGORY AGREGADA
+            throw new Exception('XML generado no válido: ' . implode(', ', $validation['errors']));
+        }
+        
+        $this->logOperation('info', 'XML MIC/DTA creado exitosamente', [
+            'xml_length' => strlen($xmlString),
+            'transaction_id' => $transactionId,
+        ], 'xml_generation'); // ✅ CATEGORY AGREGADA
+
+        return $xmlString;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error creando XML MIC/DTA', [
+            'error' => $e->getMessage(),
+            'shipment_id' => $shipment->id ?? 'N/A',
+            'transaction_id' => $transactionId,
+        ], 'xml_error'); // ✅ CATEGORY AGREGADA
+        return null;
     }
+}
 
     /**
      * Validar shipment para MIC/DTA
@@ -647,56 +654,59 @@ class XmlSerializerService
      * Validar estructura XML contra schema
      */
     public function validateXmlStructure(string $xml, string $schemaPath = null): array
-    {
-        $validation = [
-            'is_valid' => false,
-            'errors' => [],
-            'warnings' => [],
-        ];
+{
+    $validation = [
+        'is_valid' => false,
+        'errors' => [],
+        'warnings' => [],
+    ];
 
-        try {
-            $dom = new DOMDocument();
-            $dom->preserveWhiteSpace = false;
-            
-            if (!$dom->loadXML($xml)) {
-                $validation['errors'][] = 'XML malformado o inválido';
-                return $validation;
+    try {
+        $dom = new DOMDocument();
+        $dom->preserveWhiteSpace = false;
+        
+        // ✅ CAPTURAR ERRORES DE PARSING XML
+        libxml_use_internal_errors(true);
+        
+        if (!$dom->loadXML($xml)) {
+            $xmlErrors = libxml_get_errors();
+            foreach ($xmlErrors as $error) {
+                $validation['errors'][] = trim($error->message);
             }
-
-            // Validar estructura básica SOAP
-            $envelope = $dom->getElementsByTagName('Envelope');
-            if ($envelope->length === 0) {
-                $validation['errors'][] = 'Estructura SOAP inválida: falta Envelope';
-            }
-
-            $body = $dom->getElementsByTagName('Body');
-            if ($body->length === 0) {
-                $validation['errors'][] = 'Estructura SOAP inválida: falta Body';
-            }
-
-            // TODO: Validar contra schema XSD si se proporciona
-            if ($schemaPath && file_exists($schemaPath)) {
-                if (!$dom->schemaValidate($schemaPath)) {
-                    $validation['errors'][] = 'XML no válido según schema XSD';
-                }
-            }
-
-            $validation['is_valid'] = empty($validation['errors']);
-
-            $this->logOperation('info', 'Validación XML completada', $validation);
-
-            return $validation;
-
-        } catch (Exception $e) {
-            $validation['errors'][] = 'Error validando XML: ' . $e->getMessage();
-            
-            $this->logOperation('error', 'Error en validación XML', [
-                'error' => $e->getMessage(),
-            ]);
-
+            libxml_clear_errors();
             return $validation;
         }
+
+        // Validar estructura básica SOAP
+        $envelope = $dom->getElementsByTagName('Envelope');
+        if ($envelope->length === 0) {
+            $validation['errors'][] = 'Estructura SOAP inválida: falta Envelope';
+        }
+
+        $body = $dom->getElementsByTagName('Body');
+        if ($body->length === 0) {
+            $validation['errors'][] = 'Estructura SOAP inválida: falta Body';
+        }
+
+        // Validar namespace específico Argentina
+        $registrarMicDta = $dom->getElementsByTagName('RegistrarMicDta');
+        if ($registrarMicDta->length > 0) {
+            $xmlns = $registrarMicDta->item(0)->getAttribute('xmlns');
+            if (!filter_var($xmlns, FILTER_VALIDATE_URL)) {
+                $validation['errors'][] = "Namespace no es URI absoluta válida: {$xmlns}";
+            }
+        }
+
+        $validation['is_valid'] = empty($validation['errors']);
+
+        return $validation;
+
+    } catch (Exception $e) {
+        $validation['errors'][] = 'Error validando XML: ' . $e->getMessage();
+        return $validation;
     }
+}
+
 
     /**
      * Obtener estadísticas del XML generado
@@ -735,36 +745,7 @@ class XmlSerializerService
         }
     }
 
-    /**
-     * Logging centralizado para el servicio
-     */
-    private function logOperation(string $level, string $message, array $context = []): void
-    {
-        $logData = array_merge([
-            'service' => 'XmlSerializerService',
-            'company_id' => $this->company->id,
-            'company_name' => $this->company->legal_name,
-            'timestamp' => now()->toISOString(),
-        ], $context);
-
-        // Log en archivo Laravel
-        Log::{$level}($message, $logData);
-
-        // Log en tabla webservice_logs
-        try {
-            WebserviceLog::create([
-                'transaction_id' => null,
-                'level' => $level,
-                'message' => $message,
-                'context' => $logData,
-            ]);
-        } catch (Exception $e) {
-            Log::error('Error logging to webservice_logs table', [
-                'original_message' => $message,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
+   
 
     /**
      * Obtener configuración actual del servicio
@@ -1952,6 +1933,43 @@ public function createTransshipmentXml(array $transshipmentData, string $transac
         ]);
 
         return null;
+    }
+}
+
+/**
+ * Método de logging con category requerida - AGREGADO
+ */
+protected function logOperation(string $level, string $message, array $context = [], string $category = 'xml_operation'): void
+{
+    try {
+        // Agregar información del servicio al contexto
+        $context['service'] = 'XmlSerializerService';
+        $context['company_id'] = $this->company->id;
+        $context['company_name'] = $this->company->legal_name ?? $this->company->name;
+        $context['timestamp'] = now()->toISOString();
+
+        // Log a Laravel por defecto
+        Log::$level($message, $context);
+
+        // Si hay transaction_id en contexto, intentar log a webservice_logs
+        $transactionId = $context['transaction_id'] ?? null;
+        if ($transactionId && is_numeric($transactionId)) {
+            \App\Models\WebserviceLog::create([
+                'transaction_id' => (int) $transactionId,
+                'level' => $level,
+                'category' => $category, // ✅ CAMPO REQUERIDO
+                'message' => $message,
+                'context' => $context,
+                'created_at' => now(),
+            ]);
+        }
+
+    } catch (\Exception $e) {
+        // Fallback a log normal de Laravel si falla webservice_logs
+        Log::error('Error logging to webservice_logs table', [
+            'original_message' => $message,
+            'error' => $e->getMessage()
+        ]);
     }
 }
 }

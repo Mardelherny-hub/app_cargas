@@ -239,7 +239,7 @@ class SoapClientService
         ];
 
         // Agregar certificado si existe
-        if ($this->company->hasCertificate()) {
+        if ($this->company->has_certificate && $this->company->certificate_path) {
             $certPath = $this->company->getCertificatePath();
             $certPassword = $this->company->getCertificatePassword();
 

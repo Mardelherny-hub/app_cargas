@@ -60,13 +60,14 @@ class WebserviceController extends Controller
         $quickActions = $this->getQuickActions($company);
 
         // 4. NUEVO: Estado de manifiestos pendientes
+       
         $pendingManifests = \App\Models\Voyage::where('company_id', $company->id)
             ->whereHas('shipments')
             ->whereIn('status', ['completed', 'in_progress'])
-            ->with(['origin_port', 'destination_port'])
+            ->with(['originPort', 'destinationPort'])  // ✅ CORRECTO
             ->limit(3)
             ->get()
-            ->map(function($voyage) {
+            ->map(function($voyage) use ($certificateStatus) {  // ✅ CON USE
                 $hasPendingWS = !$voyage->webserviceTransactions()
                     ->where('status', 'success')
                     ->exists();
@@ -74,10 +75,10 @@ class WebserviceController extends Controller
                 return [
                     'id' => $voyage->id,
                     'voyage_number' => $voyage->voyage_number,
-                    'route' => ($voyage->origin_port->name ?? 'N/A') . ' → ' . ($voyage->destination_port->name ?? 'N/A'),
+                    'route' => ($voyage->originPort->name ?? 'N/A') . ' → ' . ($voyage->destinationPort->name ?? 'N/A'),  // ✅ CORRECTO
                     'shipments_count' => $voyage->shipments()->count(),
                     'has_pending_webservice' => $hasPendingWS,
-                    'can_send' => $hasPendingWS && $certificateStatus['has_certificate'] && !$certificateStatus['is_expired']
+                    'can_send' => $hasPendingWS && $certificateStatus['has_certificate'] && !$certificateStatus['is_expired']  // ✅ CORRECTO
                 ];
             });
 

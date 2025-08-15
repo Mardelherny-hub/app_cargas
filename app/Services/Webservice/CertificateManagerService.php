@@ -676,15 +676,18 @@ class CertificateManagerService
         Log::{$level}($message, $logData);
 
         // Log en tabla webservice_logs si es necesario
+        // Log en tabla webservice_logs
         try {
-            WebserviceLog::create([
-                'transaction_id' => null, // No hay transacción específica
-                'level' => $level,
-                'message' => $message,
-                'context' => $logData,
-            ]);
+            // Solo loggear si tenemos un transaction_id válido
+            if (isset($context['transaction_id']) && $context['transaction_id'] !== null) {
+                WebserviceLog::create([
+                    'transaction_id' => $context['transaction_id'],
+                    'level' => $level,
+                    'message' => $message,
+                    'context' => $logData,
+                ]);
+            }
         } catch (Exception $e) {
-            // Evitar loops infinitos si hay problemas con la BD
             Log::error('Error logging to webservice_logs table', [
                 'original_message' => $message,
                 'error' => $e->getMessage(),

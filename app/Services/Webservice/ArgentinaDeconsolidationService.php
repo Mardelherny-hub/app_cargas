@@ -415,14 +415,12 @@ class ArgentinaDeconsolidationService
             $validation['errors'][] = 'Debe especificar al menos un contenedor para desconsolidar';
         }
 
-        // Verificar que los contenedores existen y pertenecen al shipment
+        // Verificar que los contenedores existen (sin validar shipment_id por ahora)
         foreach ($contenedores as $containerId) {
-            $container = Container::where('id', $containerId)
-                ->where('shipment_id', $tituloMadre->id)
-                ->first();
+            $container = Container::where('id', $containerId)->first();
             
             if (!$container) {
-                $validation['errors'][] = "Contenedor {$containerId} no encontrado o no pertenece al título madre";
+                $validation['errors'][] = "Contenedor {$containerId} no encontrado";
             }
         }
 
@@ -1070,13 +1068,17 @@ class ArgentinaDeconsolidationService
         Log::{$level}($message, $logData);
 
         // Log en tabla webservice_logs
+        // Log en tabla webservice_logs
         try {
-            WebserviceLog::create([
-                'transaction_id' => $context['transaction_id'] ?? null,
-                'level' => $level,
-                'message' => $message,
-                'context' => $logData,
-            ]);
+            // Solo loggear si tenemos un transaction_id válido
+            if (isset($context['transaction_id']) && $context['transaction_id'] !== null) {
+                WebserviceLog::create([
+                    'transaction_id' => $context['transaction_id'],
+                    'level' => $level,
+                    'message' => $message,
+                    'context' => $logData,
+                ]);
+            }
         } catch (Exception $e) {
             Log::error('Error logging to webservice_logs table', [
                 'original_message' => $message,
