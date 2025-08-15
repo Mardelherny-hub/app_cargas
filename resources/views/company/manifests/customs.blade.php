@@ -305,6 +305,7 @@
                                 <option value="micdta">🇦🇷 Argentina MIC/DTA</option>
                                 <option value="anticipada">🇦🇷 Argentina Anticipada</option>
                                 <option value="desconsolidado">🇦🇷 Argentina Desconsolidados</option>
+                                <option value="transbordo">🚢 Argentina Transbordos</option>
                                 <option value="paraguay_customs">🇵🇾 Paraguay DNA</option>
                             </select>
                         </div>

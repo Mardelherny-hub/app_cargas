@@ -220,16 +220,35 @@ class ShipmentController extends Controller
 
             // Validación básica
             $validated = $request->validate([
+                // Relaciones requeridas
                 'voyage_id' => 'required|exists:voyages,id',
-                'shipment_number' => 'required|string|max:50|unique:shipments,shipment_number',
-                'vessel_role' => 'required|in:single,lead,follow,support',
+                'vessel_id' => 'required|exists:vessels,id',
+                'captain_id' => 'nullable|exists:captains,id',
+                
+                // Información básica
+                'shipment_number' => 'required|string|max:100',
+                'vessel_role' => 'required|in:single,lead,towed,pushed,escort',
                 'convoy_position' => 'nullable|integer|min:1|max:10',
                 'is_lead_vessel' => 'boolean',
-                'cargo_capacity_tons' => 'required|numeric|min:0.01',
-                'container_capacity' => 'nullable|integer|min:0',
-                'status' => 'required|in:planning,loading,loaded,in_transit,arrived,discharging,completed',
+                
+                // Capacidades
+                'cargo_capacity_tons' => 'required|numeric|min:0',
+                'container_capacity' => 'required|integer|min:0',
+                'cargo_weight_loaded' => 'nullable|numeric|min:0',
+                'containers_loaded' => 'nullable|integer|min:0',
+                
+                // Estado y operación
+                'status' => 'required|in:planning,loading,loaded,in_transit,arrived,discharging,completed,delayed',
                 'special_instructions' => 'nullable|string|max:1000',
                 'handling_notes' => 'nullable|string|max:1000',
+                
+                // Fechas operacionales (opcionales)
+                'loading_starts_at' => 'nullable|date',
+                'loading_completed_at' => 'nullable|date|after_or_equal:loading_starts_at',
+                'departure_at' => 'nullable|date|after_or_equal:loading_completed_at',
+                'arrival_at' => 'nullable|date|after_or_equal:departure_at',
+                'discharge_starts_at' => 'nullable|date|after_or_equal:arrival_at',
+                'discharge_completed_at' => 'nullable|date|after_or_equal:discharge_starts_at',
             ]);
 
             // NUEVO: Cargar voyage con sus datos
@@ -242,17 +261,17 @@ class ShipmentController extends Controller
             }
 
             // NUEVO: Auto-heredar vessel_id y captain_id del viaje
-            $validated['vessel_id'] = $voyage->lead_vessel_id;
-            $validated['captain_id'] = $voyage->captain_id;
+            //$validated['vessel_id'] = $voyage->lead_vessel_id;
+            //$validated['captain_id'] = $voyage->captain_id;
 
             // NUEVO: Validación automática - no permitir duplicados en el mismo viaje
-            $existingShipment = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
-                ->where('vessel_id', $validated['vessel_id'])
-                ->first();
+            //$existingShipment = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
+            //    ->where('vessel_id', $validated['vessel_id'])
+            //    ->first();
 
-            if ($existingShipment) {
-                throw new \Exception('Ya existe un shipment para esta embarcación en el viaje ' . $voyage->voyage_number);
-            }
+            //if ($existingShipment) {
+            //    throw new \Exception('Ya existe un shipment para esta embarcación en el viaje ' . $voyage->voyage_number);
+            //}
 
             // Calcular secuencia automáticamente
             $maxSequence = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
@@ -313,12 +332,44 @@ class ShipmentController extends Controller
     // ===== NUEVO MÉTODO: Datos simplificados para formulario =====
     private function getSimplifiedFormData($company, $voyage): array
     {
+        // Agregar embarcaciones disponibles
+        $vessels = \App\Models\Vessel::where('company_id', $company->id)
+            ->where('active', true)
+            ->where('available_for_charter', true)
+            ->where('operational_status', 'active')
+            ->with(['vesselType'])
+            ->orderBy('name')
+            ->get()
+            ->map(function ($vessel) {
+                $vesselTypeName = $vessel->vesselType->name ?? 'N/A';
+                return [
+                    'id' => $vessel->id,
+                    'display_name' => "{$vessel->name} ({$vesselTypeName})"
+                ];
+            });
+
+        // Agregar capitanes disponibles  
+        $captains = \App\Models\Captain::where('active', true)
+            ->where('available_for_hire', true)
+            ->where('license_status', 'valid')
+            ->orderBy('full_name')
+            ->get()
+            ->map(function ($captain) {
+                return [
+                    'id' => $captain->id,
+                    'display_name' => "{$captain->full_name} - Lic: {$captain->license_number}"
+                ];
+            });
+
         return [
+            'vessels' => $vessels,  // AGREGADO
+            'captains' => $captains, // AGREGADO
             'vesselRoles' => [
                 'single' => 'Embarcación Única',
                 'lead' => 'Líder de Convoy',
-                'follow' => 'Seguidor',
-                'support' => 'Apoyo'
+                'towed' => 'Remolcada',      // ✅ CORRECTO
+                'pushed' => 'Empujada',      // ✅ CORRECTO
+                'escort' => 'Escolta'        // ✅ CORRECTO
             ],
             'statusOptions' => [
                 'planning' => 'Planificación',

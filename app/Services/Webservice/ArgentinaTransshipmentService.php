@@ -117,6 +117,13 @@ class ArgentinaTransshipmentService
         $this->user = $user;
         $this->config = array_merge(self::TRANSSHIPMENT_CONFIG, $config);
 
+        // DEBUG TEMPORAL
+        \Log::info('ArgentinaTransshipmentService DEBUG', [
+            'soap_action_from_config' => $this->config['soap_action'] ?? 'NULL',
+            'config_keys' => array_keys($this->config),
+            'TRANSSHIPMENT_CONFIG_soap_action' => self::TRANSSHIPMENT_CONFIG['soap_action']
+        ]);
+
         // Inicializar servicios integrados
         $this->soapClient = new SoapClientService($company);
         $this->certificateManager = new CertificateManagerService($company);

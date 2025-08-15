@@ -103,10 +103,23 @@ class ShipmentItemController extends Controller
         if ($needsToCreateBL) {
             $defaultBLData = [
                 'bill_number' => 'BL-' . date('Y') . '-' . str_pad($shipment->id, 6, '0', STR_PAD_LEFT),
-                'loading_port_id' => $shipment->voyage->departure_port_id ?? null,
-                'discharge_port_id' => $shipment->voyage->arrival_port_id ?? null,
+                
+                // ✅ CORREGIDO: Heredar puertos del viaje
+                'loading_port_id' => $shipment->voyage->origin_port_id ?? null,
+                'discharge_port_id' => $shipment->voyage->destination_port_id ?? null,
+                'transshipment_port_id' => $shipment->voyage->transshipment_port_id ?? null,
+                
+                // ✅ CORREGIDO: Heredar fechas del viaje  
                 'bill_date' => today()->format('Y-m-d'),
                 'loading_date' => $shipment->voyage->departure_date ?? today()->format('Y-m-d'),
+                'discharge_date' => $shipment->voyage->estimated_arrival_date ?? null,
+                'arrival_date' => $shipment->voyage->estimated_arrival_date ?? null,
+                
+                // ✅ AGREGADO: Heredar datos de países para aduanas
+                'loading_customs_id' => null, // Se puede mapear si existe relación
+                'discharge_customs_id' => null, // Se puede mapear si existe relación
+                
+                // Valores por defecto (mantener igual)
                 'freight_terms' => 'prepaid',
                 'payment_terms' => 'cash',
                 'currency_code' => 'USD',
@@ -563,7 +576,6 @@ foreach ($existingContainers as $container) {
         'net_weight_kg' => $pivot->net_weight_kg,
         'volume_m3' => $pivot->volume_m3,
         'loading_sequence' => $pivot->loading_sequence,
-        'notes' => $pivot->notes,
     ];
 }
 

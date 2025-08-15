@@ -165,6 +165,45 @@
                     </div>
                 </div>
 
+                {{-- Embarcación y Capitán --}}
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                            Embarcación y Capitán
+                        </h3>
+
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            {{-- Embarcación --}}
+                            <div>
+                                <label for="vessel_id" class="block text-sm font-medium text-gray-700">
+                                    Embarcación <span class="text-red-500">*</span>
+                                </label>
+                                <select name="vessel_id" id="vessel_id" required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <option value="">Seleccione una embarcación</option>
+                                    @foreach($formData['vessels'] as $vessel)
+                                        <option value="{{ $vessel['id'] }}">{{ $vessel['display_name'] }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500">Seleccione la embarcación específica para este shipment.</p>
+                            </div>
+
+                            {{-- Capitán --}}
+                            <div>
+                                <label for="captain_id" class="block text-sm font-medium text-gray-700">
+                                    Capitán
+                                </label>
+                                <select name="captain_id" id="captain_id"
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <option value="">Seleccione un capitán</option>
+                                    @foreach($formData['captains'] as $captain)
+                                        <option value="{{ $captain['id'] }}">{{ $captain['display_name'] }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 {{-- Capacidades --}}
                 <div class="bg-white overflow-hidden shadow rounded-lg">
                     <div class="px-4 py-5 sm:p-6">

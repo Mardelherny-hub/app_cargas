@@ -36,26 +36,31 @@ class SoapClientService
             'testing' => [
                 'micdta' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
                 'anticipada' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                'desconsolidado' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                'transbordo' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
                 'auth' => 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
             ],
             'production' => [
                 'micdta' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
                 'anticipada' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                'desconsolidado' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                'transbordo' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
                 'auth' => 'https://wsaa.afip.gov.ar/ws/services/LoginCms',
             ],
         ],
         'PY' => [
             'testing' => [
                 'gdsf' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
+                'paraguay_customs' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
                 'auth' => 'https://securetest.aduana.gov.py/wsdl/wsaaserver/Server',
             ],
             'production' => [
                 'gdsf' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf',
+                'paraguay_customs' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf',
                 'auth' => 'https://secure.aduana.gov.py/wsdl/wsaaserver/Server',
             ],
         ],
     ];
-
     /**
      * SOAPActions conocidas por webservice
      */

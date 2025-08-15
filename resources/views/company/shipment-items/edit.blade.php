@@ -1118,10 +1118,6 @@ function populateExistingContainers() {
             sequenceField.value = containerData.loading_sequence || '';
         }
         
-        const notesField = document.querySelector(`input[name="containers[${index}][notes]"]`);
-        if (notesField) {
-            notesField.value = containerData.notes || '';
-        }
         
         // IMPORTANTE: Campo hidden para el ID (para actualizaciones)
         const idField = document.querySelector(`input[name="containers[${index}][id]"]`);
@@ -1250,15 +1246,6 @@ function addContainer() {
                            placeholder="A1, B2, etc.">
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">
-                        Notas
-                    </label>
-                    <input type="text" 
-                           name="containers[${containerIndex}][notes]" 
-                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="Notas adicionales...">
-                </div>
             </div>
         </div>
     `;

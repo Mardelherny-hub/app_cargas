@@ -572,6 +572,8 @@ class ManifestCustomsController extends Controller
                 return new ArgentinaMicDtaService($company, $user);
             case 'desconsolidado':
                 return new ArgentinaDeconsolidationService($company, $user);
+            case 'transbordo':
+                return new ArgentinaTransshipmentService($company, $user);
             case 'paraguay_customs':
                 return new ParaguayCustomsService($company); // Solo company
             default:
@@ -662,6 +664,11 @@ class ManifestCustomsController extends Controller
                     // Usar registerDeconsolidation() con los 3 parámetros requeridos
                     return $service->registerDeconsolidation($tituloMadre, $contenedores, $titulosHijos);
                     
+                case 'transbordo':
+                    // Preparar datos de barcazas para transbordo
+                    $bargeData = $this->prepareBargeDateForTransshipment($voyage);
+                    return $service->registerTransshipment($bargeData, $voyage);
+                    
                 case 'paraguay_customs':
                     // ParaguayCustomsService usa sendImportManifest(Voyage, userId)
                     return $service->sendImportManifest($voyage, auth()->id());
@@ -695,8 +702,8 @@ class ManifestCustomsController extends Controller
             $updateData['external_reference'] = $response['external_reference'] ?? null;
         } else {
             $updateData['status'] = 'error';
-            $updateData['error_message'] = $response['error_message'] ?? 'Error desconocido';
-            $updateData['error_code'] = $response['error_code'] ?? 'UNKNOWN_ERROR';
+            $updateData['error_message'] = $response['error_message'] ?? 'Error de conectividad con webservice';
+            $updateData['error_code'] = $response['error_code'] ?? 'CONNECTIVITY_ERROR';
             $updateData['is_blocking_error'] = $response['is_blocking'] ?? false;
             $updateData['requires_manual_review'] = $response['requires_review'] ?? false;
         }
@@ -756,7 +763,8 @@ class ManifestCustomsController extends Controller
                 return redirect()->route('company.manifests.customs.status', $transaction->id)
                     ->with('success', 'Manifiesto enviado a aduana correctamente.');
             } else {
-                return back()->with('error', 'Error en respuesta del webservice: ' . ($response['error_message'] ?? 'Error desconocido'));
+                $errorMessage = $response['error_message'] ?? 'Error de conectividad con el webservice aduanero';
+                return back()->with('error', 'Error en envío: ' . $errorMessage);
             }
 
         } catch (\Exception $e) {
@@ -777,5 +785,77 @@ class ManifestCustomsController extends Controller
 
             return back()->with('error', 'Error al enviar a aduana: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * Preparar datos reales de barcazas para transbordos desde ShipmentItems
+     */
+    private function prepareBargeDateForTransshipment(Voyage $voyage): array
+    {
+        $bargeData = [];
+        
+        // Obtener TODOS los ShipmentItems del voyage (contenedores reales)
+        $allItems = collect();
+        foreach ($voyage->shipments as $shipment) {
+            $items = $shipment->shipmentItems;
+            $allItems = $allItems->concat($items);
+        }
+        
+        // Filtrar solo items que tienen contenedores
+        $containerItems = $allItems->filter(function ($item) {
+            return !empty($item->container_number);
+        });
+        
+        if ($containerItems->isNotEmpty()) {
+            // Dividir contenedores en barcazas (máximo 20 por barcaza)
+            $containerChunks = $containerItems->chunk(20);
+            
+            foreach ($containerChunks as $index => $chunk) {
+                $bargeData[] = [
+                    'barge_id' => ($voyage->vessel->name ?? 'VESSEL') . '-B' . ($index + 1),
+                    'vessel_name' => ($voyage->vessel->name ?? 'Unknown Vessel') . ' Barge ' . ($index + 1),
+                    'containers_count' => $chunk->count(),
+                    'containers' => $chunk->map(function ($item) {
+                        return [
+                            'container_number' => $item->container_number,
+                            'type' => $item->container_type ?: '20GP',
+                            'status' => 'full',
+                            'weight' => $item->gross_weight ?: 0,
+                            'item_reference' => $item->item_reference,
+                            'description' => $item->item_description
+                        ];
+                    })->toArray(),
+                    'route' => ($voyage->origin_port->code ?? 'ARBUE') . '-' . ($voyage->destination_port->code ?? 'PYASU'),
+                    'vessel_imo' => $voyage->vessel->imo_number ?? null,
+                    'voyage_number' => $voyage->voyage_number
+                ];
+            }
+        } else {
+            // Si no hay contenedores, usar todos los ShipmentItems como carga general
+            $itemChunks = $allItems->chunk(25); // 25 items por barcaza
+            
+            foreach ($itemChunks as $index => $chunk) {
+                $bargeData[] = [
+                    'barge_id' => ($voyage->vessel->name ?? 'VESSEL') . '-B' . ($index + 1),
+                    'vessel_name' => ($voyage->vessel->name ?? 'Unknown Vessel') . ' Barge ' . ($index + 1),
+                    'containers_count' => $chunk->count(),
+                    'containers' => $chunk->map(function ($item) {
+                        return [
+                            'container_number' => $item->container_number ?: 'ITEM-' . $item->id,
+                            'type' => $item->container_type ?: 'BULK',
+                            'status' => 'full',
+                            'weight' => $item->gross_weight ?: 0,
+                            'item_reference' => $item->item_reference,
+                            'description' => $item->item_description
+                        ];
+                    })->toArray(),
+                    'route' => ($voyage->origin_port->code ?? 'ARBUE') . '-' . ($voyage->destination_port->code ?? 'PYASU'),
+                    'vessel_imo' => $voyage->vessel->imo_number ?? null,
+                    'voyage_number' => $voyage->voyage_number
+                ];
+            }
+        }
+        
+        return $bargeData;
     }
 }

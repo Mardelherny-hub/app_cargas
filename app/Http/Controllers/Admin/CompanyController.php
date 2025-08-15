@@ -343,14 +343,44 @@ class CompanyController extends Controller
     }
 
     /**
-     * Actualizar empresa con soporte para roles.
-     */
-    public function update(Request $request, Company $company)
+    * Actualizar empresa con soporte para roles.
+    */
+        public function update(Request $request, Company $company)
     {
         $request->validate([
             'legal_name' => 'required|string|max:255',
             'commercial_name' => 'nullable|string|max:255',
-            'tax_id' => 'required|string|size:11|unique:companies,tax_id,' . $company->id,
+            'tax_id' => [
+                'required',
+                'string',
+                'unique:companies,tax_id,' . $company->id,
+                function ($attribute, $value, $fail) {
+                    $country = request('country');
+                    $cleanTaxId = preg_replace('/[^0-9]/', '', $value);
+                    
+                    if ($country === 'AR') {
+                        // Argentina: exactamente 11 dígitos
+                        if (strlen($cleanTaxId) !== 11) {
+                            $fail('El CUIT debe tener exactamente 11 dígitos.');
+                            return;
+                        }
+                        
+                        // Validar prefijo
+                        $prefix = substr($cleanTaxId, 0, 2);
+                        $validPrefixes = ['20', '23', '24', '27', '30', '33', '34'];
+                        if (!in_array($prefix, $validPrefixes)) {
+                            $fail('Prefijo de CUIT inválido. Válidos: ' . implode(', ', $validPrefixes));
+                            return;
+                        }
+                    } elseif ($country === 'PY') {
+                        // Paraguay: entre 6 y 9 dígitos
+                        if (strlen($cleanTaxId) < 6 || strlen($cleanTaxId) > 9) {
+                            $fail('El RUC debe tener entre 6 y 9 dígitos.');
+                            return;
+                        }
+                    }
+                }
+            ],
             'country' => 'required|in:AR,PY',
             'email' => 'required|email|max:255',
             'phone' => 'nullable|string|max:20',
@@ -362,10 +392,14 @@ class CompanyController extends Controller
             'ws_environment' => 'required|in:testing,production',
             'ws_active' => 'boolean',
             'active' => 'boolean',
+            // Campos opcionales de certificado
+            'certificate_alias' => 'nullable|string|max:255',
+            'certificate_expires_at' => 'nullable|date|after:today',
+            'created_date' => 'nullable|date',
         ]);
 
         try {
-            // NUEVO: Actualizar roles_config si cambiaron los roles
+            // Actualizar roles_config si cambiaron los roles
             $oldRoles = $company->getRoles();
             $newRoles = $request->company_roles;
 
@@ -374,7 +408,8 @@ class CompanyController extends Controller
                 $rolesConfig = $this->generateRolesConfig($newRoles);
             }
 
-            $company->update([
+            // Preparar datos para actualización
+            $updateData = [
                 'legal_name' => $request->legal_name,
                 'commercial_name' => $request->commercial_name,
                 'tax_id' => $request->tax_id,
@@ -389,10 +424,26 @@ class CompanyController extends Controller
                 'ws_environment' => $request->ws_environment,
                 'ws_active' => $request->boolean('ws_active'),
                 'active' => $request->boolean('active'),
-            ]);
+            ];
 
+            // Actualizar información del certificado si se proporciona
+            if ($request->filled('certificate_alias')) {
+                $updateData['certificate_alias'] = $request->certificate_alias;
+            }
+
+            if ($request->filled('certificate_expires_at')) {
+                $updateData['certificate_expires_at'] = $request->certificate_expires_at;
+            }
+
+            if ($request->filled('created_date')) {
+                $updateData['created_date'] = $request->created_date;
+            }
+
+            $company->update($updateData);
+
+            $rolesDisplay = implode(', ', $newRoles);
             return redirect()->route('admin.companies.index')
-                ->with('success', 'Empresa actualizada correctamente.');
+                ->with('success', "Empresa actualizada correctamente. Roles activos: {$rolesDisplay}");
 
         } catch (\Exception $e) {
             return back()->withInput()

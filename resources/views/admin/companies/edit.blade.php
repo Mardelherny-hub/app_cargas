@@ -197,6 +197,73 @@
                     </div>
                 </div>
 
+                <!-- Roles de empresa (NUEVA SECCIÓN) -->
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Roles de Empresa</h3>
+                        <p class="text-sm text-gray-600 mb-6">
+                            Los roles determinan las funcionalidades disponibles y los webservices que puede usar la empresa.
+                        </p>
+                        
+                        <div class="space-y-4">
+                            @foreach($availableRoles as $role)
+                                <div class="flex items-start">
+                                    <input type="checkbox" 
+                                        name="company_roles[]" 
+                                        id="role_{{ $role }}" 
+                                        value="{{ $role }}"
+                                        {{ in_array($role, old('company_roles', $company->getRoles())) ? 'checked' : '' }}
+                                        onchange="updateRoleInfo()"
+                                        class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mt-1">
+                                    <div class="ml-3">
+                                        <label for="role_{{ $role }}" class="text-sm font-medium text-gray-700">
+                                            {{ $role }}
+                                        </label>
+                                        <p class="text-sm text-gray-500">
+                                            @if($role === 'Cargas')
+                                                Gestión de cargas, contenedores y manifiestos. Acceso a webservices de información anticipada y MIC/DTA.
+                                            @elseif($role === 'Desconsolidador')
+                                                Operaciones de desconsolidación. Gestión de títulos madre e hijos.
+                                            @elseif($role === 'Transbordos')
+                                                Operaciones de transbordo entre barcazas. Tracking de posición y gestión de flotas.
+                                            @endif
+                                        </p>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <!-- Vista previa de configuración -->
+                        <div id="rolePreview" class="mt-6 hidden">
+                            <div class="bg-blue-50 rounded-lg p-4">
+                                <h4 class="text-sm font-medium text-blue-800 mb-3">Configuración automática según roles:</h4>
+                                <div id="rolePreviewContent" class="text-sm">
+                                    <!-- Se llena dinámicamente con JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Advertencia si no hay roles seleccionados -->
+                        <div id="roleWarning" class="hidden mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-amber-700">
+                                        Debe seleccionar al menos un rol para la empresa.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        @error('company_roles')
+                            <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
                 <!-- Configuración de WebServices -->
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="p-6">
@@ -490,6 +557,162 @@
                 }
                 @endif
             });
+        });
+    </script>
+
+    <script>
+        // Config// Configuraciones de webservices según roles
+        const roleWebservices = {
+            'Cargas': ['anticipada', 'micdta'],
+            'Desconsolidador': ['desconsolidados'],
+            'Transbordos': ['transbordos']
+        };
+
+        const roleFeatures = {
+            'Cargas': ['contenedores', 'manifiestos'],
+            'Desconsolidador': ['titulos_madre', 'titulos_hijos'],
+            'Transbordos': ['barcazas', 'tracking_posicion']
+        };
+
+        // FUNCIÓN: Actualizar información de roles
+        function updateRoleInfo() {
+            const selectedRoles = Array.from(document.querySelectorAll('input[name="company_roles[]"]:checked')).map(cb => cb.value);
+            const previewDiv = document.getElementById('rolePreview');
+            const previewContent = document.getElementById('rolePreviewContent');
+            const warningDiv = document.getElementById('roleWarning');
+
+            if (selectedRoles.length === 0) {
+                if (warningDiv) warningDiv.classList.remove('hidden');
+                if (previewDiv) previewDiv.classList.add('hidden');
+                return;
+            } else {
+                if (warningDiv) warningDiv.classList.add('hidden');
+            }
+
+            if (selectedRoles.length > 0 && previewDiv && previewContent) {
+                const availableWebservices = selectedRoles.flatMap(role => roleWebservices[role] || []);
+                const availableFeatures = selectedRoles.flatMap(role => roleFeatures[role] || []);
+                const uniqueWebservices = [...new Set(availableWebservices)];
+                const uniqueFeatures = [...new Set(availableFeatures)];
+
+                previewContent.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h5 class="font-medium text-blue-700 mb-2">Webservices habilitados:</h5>
+                            <ul class="space-y-1">
+                                ${uniqueWebservices.map(ws => `<li class="text-green-600">• ${ws}</li>`).join('')}
+                            </ul>
+                        </div>
+                        <div>
+                            <h5 class="font-medium text-blue-700 mb-2">Funcionalidades disponibles:</h5>
+                            <ul class="space-y-1">
+                                ${uniqueFeatures.map(feature => `<li class="text-blue-600">• ${feature.replace('_', ' ')}</li>`).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                previewDiv.classList.remove('hidden');
+            } else if (previewDiv) {
+                previewDiv.classList.add('hidden');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Validación de CUIT (mantener funcionalidad existente)
+            const cuitField = document.getElementById('tax_id');
+            if (cuitField) {
+                cuitField.addEventListener('input', function() {
+                    this.value = this.value.replace(/\D/g, ''); // Solo números
+                    if (this.value.length > 11) {
+                        this.value = this.value.substring(0, 11);
+                    }
+                });
+            }
+
+            // Validación de JSON en ws_config (mantener funcionalidad existente)
+            const wsConfigField = document.getElementById('ws_config');
+            if (wsConfigField) {
+                wsConfigField.addEventListener('blur', function() {
+                    if (this.value.trim()) {
+                        try {
+                            JSON.parse(this.value);
+                            this.classList.remove('border-red-300');
+                            this.classList.add('border-green-300');
+                        } catch (e) {
+                            this.classList.remove('border-green-300');
+                            this.classList.add('border-red-300');
+                            alert('El formato JSON no es válido');
+                        }
+                    }
+                });
+            }
+
+            // Actualizar campos automáticamente según el país (mantener funcionalidad existente)
+            const countryField = document.getElementById('country');
+            if (countryField) {
+                countryField.addEventListener('change', function() {
+                    const wsEnvironmentField = document.getElementById('ws_environment');
+
+                    // Sugerir configuración según el país
+                    if (this.value === 'AR') {
+                        // Configuración para Argentina
+                        console.log('País Argentina seleccionado');
+                    } else if (this.value === 'PY') {
+                        // Configuración para Paraguay
+                        console.log('País Paraguay seleccionado');
+                    }
+                });
+            }
+
+            // Advertencia al cambiar estado (mantener funcionalidad existente)
+            const activeField = document.getElementById('active');
+            if (activeField) {
+                activeField.addEventListener('change', function() {
+                    if (this.value === '0') {
+                        if (!confirm('¿Estás seguro de desactivar esta empresa? Esto afectará a todos sus operadores y usuarios asociados.')) {
+                            this.value = '1';
+                        }
+                    }
+                });
+            }
+
+            // Advertencia al activar WebServices sin certificado (mantener funcionalidad existente)
+            const wsActiveField = document.getElementById('ws_active');
+            if (wsActiveField) {
+                wsActiveField.addEventListener('change', function() {
+                    @if(!$company->certificate_path)
+                    if (this.value === '1') {
+                        alert('Esta empresa no tiene certificado digital configurado. Los webservices no funcionarán correctamente sin un certificado válido.');
+                    }
+                    @endif
+                });
+            }
+
+            // NUEVA FUNCIONALIDAD: Configurar eventos para checkboxes de roles
+            document.querySelectorAll('input[name="company_roles[]"]').forEach(checkbox => {
+                checkbox.addEventListener('change', updateRoleInfo);
+            });
+
+            // Inicializar la vista previa con los roles actuales
+            updateRoleInfo();
+
+            // NUEVA VALIDACIÓN: Validar roles en el formulario
+            const form = document.querySelector('form');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    const selectedRoles = document.querySelectorAll('input[name="company_roles[]"]:checked');
+                    
+                    if (selectedRoles.length === 0) {
+                        e.preventDefault();
+                        alert('Debe seleccionar al menos un rol para la empresa');
+                        const roleWarning = document.getElementById('roleWarning');
+                        if (roleWarning) {
+                            roleWarning.scrollIntoView({ behavior: 'smooth' });
+                        }
+                        return false;
+                    }
+                });
+            }
         });
     </script>
     @endpush

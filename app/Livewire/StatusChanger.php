@@ -133,18 +133,24 @@ private function getShipmentItemTransitions()
     private function getVoyageTransitions()
 {
     $transitions = [
-        'planning' => ['confirmed'],
-        'confirmed' => ['in_transit'],
-        'in_transit' => ['completed'],
+        'planning' => ['approved'],     // ✅ CORRECTO
+        'approved' => ['in_transit'],
+        'in_transit' => ['at_destination'],
+        'at_destination' => ['completed'],
         'completed' => []
     ];
 
     $labels = [
         'planning' => 'Planificación',
-        'confirmed' => 'Confirmado',
+        'approved' => 'Aprobado',         // ✅ AGREGAR
         'in_transit' => 'En Tránsito', 
-        'completed' => 'Completado'
+        'at_destination' => 'En Destino', // ✅ AGREGAR
+        'completed' => 'Completado',
+        'cancelled' => 'Cancelado',       // ✅ AGREGAR
+        'delayed' => 'Demorado'           // ✅ AGREGAR
     ];
+
+
 
     $availableStatuses = $transitions[$this->currentStatus] ?? [];
     $result = [];
@@ -422,8 +428,10 @@ private function canUserChangeToStatus($status)
         
         // Voyages
         'planning' => 'Planificación',
-        'confirmed' => 'Confirmado',
+        'approved' => 'Aprobado',
+        'confirmed' => 'Confirmado',       
         'in_transit' => 'En Tránsito',
+        'at_destination' => 'En Destino',
         
         // Shipments
         'loading' => 'Cargando',

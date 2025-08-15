@@ -859,7 +859,6 @@ class ShipmentItemCreateForm extends Component
                         'loading_sequence' => $containerData['loading_sequence'] ?: null,
                         'loaded_at' => now(),
                         'status' => 'loaded',
-                        'notes' => $containerData['notes'] ?: null,
                         'created_date' => now(),
                         'created_by_user_id' => Auth::id(),
                     ]);

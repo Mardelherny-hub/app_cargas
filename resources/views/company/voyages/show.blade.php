@@ -46,28 +46,7 @@
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             Información General
                         </h3>
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                            @switch($voyage->status)
-                                @case('planning')
-                                    bg-yellow-100 text-yellow-800
-                                    @break
-                                @case('approved')
-                                    bg-blue-100 text-blue-800
-                                    @break
-                                @case('in_progress')
-                                    bg-green-100 text-green-800
-                                    @break
-                                @case('completed')
-                                    bg-gray-100 text-gray-800
-                                    @break
-                                @case('cancelled')
-                                    bg-red-100 text-red-800
-                                    @break
-                                @default
-                                    bg-gray-100 text-gray-800
-                            @endswitch">
-                            {{ ucfirst(str_replace('_', ' ', $voyage->status)) }}
-                        </span>
+                        @livewire('status-changer', ['model' => $voyage])
                     </div>
 
                     <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -229,22 +208,81 @@
                                 <a href="{{ route('company.shipments.create', ['voyage_id' => $voyage->id]) }}"
                                 class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                                     </svg>
-                                    Gestionar Shipments
+                                    Nueva Carga
                                 </a>
                                 
-                                <!-- Botón Agregar Contenedores -->
+                                <!-- Botón Agregar Contenedores 
                                 <a href="{{ route('company.voyages.containers', $voyage) }}" 
                                 class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                                     </svg>
                                     Gestionar Contenedores
-                                </a>
+                                </a>-->
                             </div>
                         @endif
                     </div>
+                </div>
+                <!-- Lista de Shipments existentes -->
+                @if($voyage->shipments->count() > 0)
+                    <div class="mt-6">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Shipment
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Embarcación
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Estado
+                                        </th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Acciones
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    @foreach($voyage->shipments as $shipment)
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            {{ $shipment->shipment_number }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {{ $shipment->vessel->name ?? 'N/A' }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                                {{ ucfirst($shipment->status) }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative z-10">
+                                            <div class="flex items-center space-x-2">
+                                                <a href="{{ route('company.shipments.show', $shipment) }}"
+                                                class="text-indigo-600 hover:text-indigo-900">Ver</a>
+                                                @livewire('status-changer', [
+                                                    'model' => $shipment,
+                                                    'modelType' => 'shipment'
+                                                ], key($shipment->id))
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                @else
+                    <div class="mt-4 text-center py-8">
+                        <p class="text-gray-500 text-sm">No hay shipments creados para este viaje.</p>
+                        <p class="text-gray-400 text-xs mt-1">Usa el botón "Gestionar Shipments" para crear el primero.</p>
+                    </div>
+                @endif
+            </div>
 
             <!-- Información Adicional -->
             @if($voyage->special_instructions || $voyage->operational_notes)
