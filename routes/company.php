@@ -406,15 +406,19 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::get('/{voyageId}/edi', [ManifestExportController::class, 'exportEdi'])->name('edi');
     });
 
-    // === ENVÍO A ADUANA - ANTES DE RUTAS CON PARÁMETROS ===
+    // === ENVÍO A ADUANA - Actualizar para incluir MANE ===
     Route::prefix('customs')->name('customs.')->group(function () {
-        Route::get('/', [ManifestCustomsController::class, 'index'])->name('index');
-            Route::get('/debug', [ManifestCustomsController::class, 'debug'])->name('debug');
-        Route::post('/send-batch', [ManifestCustomsController::class, 'sendBatch'])->name('sendBatch'); 
-        Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
-        Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
-        Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
-    });
+    // Rutas existentes
+    Route::get('/', [ManifestCustomsController::class, 'index'])->name('index');
+    Route::get('/debug', [ManifestCustomsController::class, 'debug'])->name('debug');
+    Route::post('/send-batch', [ManifestCustomsController::class, 'sendBatch'])->name('sendBatch');
+    Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
+    Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
+    Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
+    
+    // NUEVO: Ruta específica para vista MANE
+    Route::get('/mane', [ManifestCustomsController::class, 'maneIndex'])->name('mane');
+});
 
     // === 🧪 TESTING DE ENVÍOS A ADUANA - NUEVA SECCIÓN ===
     Route::prefix('testing')->name('testing.')->group(function () {

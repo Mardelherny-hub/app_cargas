@@ -306,6 +306,7 @@
                                 <option value="anticipada">🇦🇷 Argentina Anticipada</option>
                                 <option value="desconsolidado">🇦🇷 Argentina Desconsolidados</option>
                                 <option value="transbordo">🚢 Argentina Transbordos</option>
+                                <option value="mane">MANE/Malvina</option>
                                 <option value="paraguay_customs">🇵🇾 Paraguay DNA</option>
                             </select>
                         </div>

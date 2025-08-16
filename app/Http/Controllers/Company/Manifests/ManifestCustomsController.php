@@ -11,6 +11,7 @@ use App\Services\Webservice\ArgentinaAnticipatedService;
 use App\Services\Webservice\ParaguayCustomsService;
 use App\Services\Webservice\ArgentinaDeconsolidationService;
 use App\Services\Webservice\ArgentinaTransshipmentService;
+use App\Services\Webservice\ArgentinaManeService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 
@@ -113,6 +114,122 @@ class ManifestCustomsController extends Controller
         return view('company.manifests.customs', compact('voyages', 'stats', 'filters'));
     }
 
+    /**
+     * Vista específica para envío MANE
+     */
+    public function maneIndex(Request $request)
+    {
+        // Verificar permisos
+        $currentUser = auth()->user();
+        $company = $currentUser->getUserCompany();
+        
+        if (!$company) {
+            return redirect()->route('company.webservices.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+        
+        // Verificar que la empresa tenga rol "Cargas"
+        if (!$company->hasRole('Cargas')) {
+            return redirect()->route('company.manifests.customs.index')
+                ->with('error', 'Su empresa no tiene permisos para usar MANE.');
+        }
+        
+        // Verificar ID María
+        if (empty($company->id_maria)) {
+            return redirect()->route('company.manifests.customs.index')
+                ->with('error', 'Su empresa debe tener un ID María configurado para usar MANE.');
+        }
+        
+        // Obtener viajes disponibles para MANE
+        $query = Voyage::with([
+            'shipments.billsOfLading',
+            'originPort.country',
+            'destinationPort.country',
+            'webserviceTransactions' => function($q) {
+                $q->where('webservice_type', 'mane')->latest();
+            },
+            'leadVessel'
+        ])
+        ->where('company_id', $company->id)
+        ->whereHas('shipments')
+        ->whereIn('status', ['completed', 'approved', 'in_transit']);
+        
+        // Filtros
+        if ($request->filled('voyage_number')) {
+            $query->where('voyage_number', 'like', '%' . $request->voyage_number . '%');
+        }
+        
+        if ($request->filled('status_filter')) {
+            switch($request->status_filter) {
+                case 'not_sent':
+                    $query->whereDoesntHave('webserviceTransactions', function($q) {
+                        $q->where('webservice_type', 'mane')
+                        ->where('status', 'success');
+                    });
+                    break;
+                case 'sent':
+                    $query->whereHas('webserviceTransactions', function($q) {
+                        $q->where('webservice_type', 'mane')
+                        ->where('status', 'success');
+                    });
+                    break;
+                case 'error':
+                    $query->whereHas('webserviceTransactions', function($q) {
+                        $q->where('webservice_type', 'mane')
+                        ->where('status', 'error');
+                    });
+                    break;
+            }
+        }
+        
+        $voyages = $query->orderBy('departure_date', 'desc')->paginate(10);
+        
+        // Calcular estadísticas
+        $stats = [
+            'available_voyages' => $query->count(),
+            'sent_today' => WebserviceTransaction::where('company_id', $company->id)
+                ->where('webservice_type', 'mane')
+                ->where('status', 'success')
+                ->whereDate('sent_at', today())
+                ->count(),
+            'pending' => Voyage::where('company_id', $company->id)
+                ->whereHas('shipments')
+                ->whereDoesntHave('webserviceTransactions', function($q) {
+                    $q->where('webservice_type', 'mane')
+                    ->where('status', 'success');
+                })
+                ->count(),
+            'success_rate' => $this->calculateManeSuccessRate($company->id),
+        ];
+        
+        $environment = config('app.env') === 'production' ? 'production' : 'testing';
+        
+        return view('company.manifests.customs-mane', compact(
+            'company',
+            'voyages',
+            'stats',
+            'environment'
+        ));
+    }
+
+    /**
+     * Calcular tasa de éxito específica para MANE
+     */
+    private function calculateManeSuccessRate(int $companyId): float
+    {
+        $total = WebserviceTransaction::where('company_id', $companyId)
+            ->where('webservice_type', 'mane')
+            ->count();
+            
+        if ($total === 0) return 0.0;
+        
+        $successful = WebserviceTransaction::where('company_id', $companyId)
+            ->where('webservice_type', 'mane')
+            ->where('status', 'success')
+            ->count();
+        
+        return round(($successful / $total) * 100, 1);
+    }
     /**
      * Envío masivo de manifiestos seleccionados
      */
@@ -470,8 +587,8 @@ class ManifestCustomsController extends Controller
     }
 
     /**
-     * Obtener URL del webservice según tipo y ambiente - MÉTODO NUEVO
-     */
+    * Obtener URL del webservice según tipo y ambiente - VERSIÓN ACTUALIZADA CON MANE
+    */
     private function getWebserviceUrl(string $webserviceType, string $environment): string
     {
         $urls = [
@@ -495,26 +612,60 @@ class ManifestCustomsController extends Controller
                 'testing' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
                 'production' => 'https://wsadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
             ],
+            'mane' => [  // NUEVO: URLs para MANE (por ahora archivo local)
+                'testing' => 'file://local/mane_export',
+                'production' => 'file://local/mane_export',
+            ],
         ];
 
         return $urls[$webserviceType][$environment] ?? $urls['micdta']['testing'];
     }
 
     /**
-     * Determinar país basado en el tipo de webservice - MÉTODO NUEVO
-     */
-    private function getCountryFromWebserviceType(string $webserviceType): string
-    {
-        $countryMapping = [
-            'anticipada' => 'AR',
-            'micdta' => 'AR',
-            'desconsolidado' => 'AR',
-            'transbordo' => 'AR',
-            'paraguay_customs' => 'PY',
-            'manifiesto' => 'PY',
-        ];
+ * Determinar país basado en el tipo de webservice - VERSIÓN ACTUALIZADA CON MANE
+ */
+private function getCountryFromWebserviceType(string $webserviceType): string
+{
+    $countryMapping = [
+        'anticipada' => 'AR',
+        'micdta' => 'AR',
+        'desconsolidado' => 'AR',
+        'transbordo' => 'AR',
+        'mane' => 'AR',  // NUEVO: MANE es de Argentina
+        'paraguay_customs' => 'PY',
+        'manifiesto' => 'PY',
+    ];
 
-        return $countryMapping[$webserviceType] ?? 'AR';
+    return $countryMapping[$webserviceType] ?? 'AR';
+}
+
+    /**
+     * Obtener tipos de webservice disponibles según roles de empresa - VERSIÓN ACTUALIZADA
+     */
+    private function getAvailableWebserviceTypes(Company $company): array
+    {
+        $roles = $company->getRoles() ?? [];
+        $types = [];
+
+        if (in_array('Cargas', $roles)) {
+            $types['anticipada'] = 'Información Anticipada';
+            $types['micdta'] = 'MIC/DTA';
+            $types['mane'] = 'MANE/Malvina';  // NUEVO: Agregar MANE para rol Cargas
+        }
+
+        if (in_array('Desconsolidador', $roles)) {
+            $types['desconsolidados'] = 'Desconsolidados';
+        }
+
+        if (in_array('Transbordos', $roles)) {
+            $types['transbordos'] = 'Transbordos';
+        }
+
+        if ($company->country === 'PY' || in_array($company->country, ['AR', 'PY'])) {
+            $types['paraguay'] = 'DNA Paraguay';
+        }
+
+        return $types;
     }
 
     /**
@@ -576,25 +727,24 @@ class ManifestCustomsController extends Controller
                 return new ArgentinaTransshipmentService($company, $user);
             case 'paraguay_customs':
                 return new ParaguayCustomsService($company); // Solo company
+             case 'mane':  // NUEVO: Agregar MANE
+                return new ArgentinaManeService($company, $user);
             default:
                 throw new \Exception("Tipo de webservice no soportado: {$webserviceType}");
         }
     }
 
     /**
-     * Enviar a webservice usando el método correcto según el tipo - MÉTODO NUEVO
+     * Enviar a webservice usando el método correcto según el tipo - VERSIÓN ACTUALIZADA CON MANE
      */
     private function sendToWebservice($service, string $webserviceType, Voyage $voyage, array $options): array
     {
         try {
             switch ($webserviceType) {
                 case 'anticipada':
-                    // ArgentinaAnticipatedService usa registerVoyage(Voyage)
                     return $service->registerVoyage($voyage);
                     
                 case 'micdta':
-                    // ArgentinaMicDtaService usa sendMicDta(Shipment)
-                    // Necesitamos obtener el primer shipment del voyage
                     $firstShipment = $voyage->shipments()->first();
                     if (!$firstShipment) {
                         throw new \Exception('El viaje no tiene shipments para enviar MIC/DTA');
@@ -602,86 +752,41 @@ class ManifestCustomsController extends Controller
                     return $service->sendMicDta($firstShipment);
 
                 case 'desconsolidado':
-                    Log::info('DEBUG - Entrando al case desconsolidado');
-    
-                    // Obtener el primer shipment del voyage como título madre
                     $tituloMadre = $voyage->shipments()->first();
-
-                    Log::info('DEBUG - tituloMadre obtenido', [
-                        'titulo_madre_id' => $tituloMadre ? $tituloMadre->id : 'NULL'
-                    ]);
-                    
                     if (!$tituloMadre) {
-                        throw new \Exception('No se encontró shipment en el viaje para desconsolidar');
+                        throw new \Exception('El viaje no tiene título madre para desconsolidar');
                     }
                     
-                    Log::info('DEBUG - Verificando estructura de tituloMadre', [
-                        'titulo_madre_class' => get_class($tituloMadre),
-                        'titulo_madre_methods' => get_class_methods($tituloMadre)
-                    ]);
-
-                    Log::info('DEBUG - Intentando obtener contenedores');
-                    try {
-                        // Obtener contenedores a través de shipmentItems
-                        $contenedores = $tituloMadre->shipmentItems()
-                            ->with('containers')
-                            ->get()
-                            ->pluck('containers')
-                            ->flatten()
-                            ->pluck('id')
-                            ->unique()
-                            ->toArray();
-                            Log::info('DEBUG - contenedores obtenidos a través de shipmentItems', [
-                                'contenedores_count' => count($contenedores),
-                                'contenedores' => $contenedores
-                            ]);
-                    } catch (\Exception $e) {
-                        Log::error('DEBUG - Error obteniendo contenedores', [
-                            'error' => $e->getMessage()
-                        ]);
-                        $contenedores = []; // Usar array vacío como fallback
+                    $titulosHijos = $tituloMadre->billsOfLading ?? collect();
+                    if ($titulosHijos->isEmpty()) {
+                        throw new \Exception('El título madre no tiene títulos hijos para desconsolidar');
                     }
+                    
+                    return $service->registerDeconsolidation($tituloMadre, $titulosHijos);
 
-                    Log::info('DEBUG - contenedores obtenidos', [
-                        'contenedores_count' => count($contenedores),
-                        'contenedores' => $contenedores
-                    ]);
-                    
-                    // Datos mínimos para títulos hijos (ejemplo para testing)
-                    $titulosHijos = [
-                        [
-                            'numero' => $tituloMadre->shipment_number . '-01',
-                            'descripcion' => 'Desconsolidación parte 1',
-                            'peso' => 500,
-                        ],
-                        [
-                            'numero' => $tituloMadre->shipment_number . '-02',
-                            'descripcion' => 'Desconsolidación parte 2', 
-                            'peso' => 300,
-                        ]
-                    ];
-                    
-                    // Usar registerDeconsolidation() con los 3 parámetros requeridos
-                    return $service->registerDeconsolidation($tituloMadre, $contenedores, $titulosHijos);
-                    
                 case 'transbordo':
-                    // Preparar datos de barcazas para transbordo
-                    $bargeData = $this->prepareBargeDateForTransshipment($voyage);
-                    return $service->registerTransshipment($bargeData, $voyage);
-                    
+                    return $service->registerTransshipment($voyage);
+
                 case 'paraguay_customs':
-                    // ParaguayCustomsService usa sendImportManifest(Voyage, userId)
-                    return $service->sendImportManifest($voyage, auth()->id());
+                    return $service->sendManifest($voyage);
                     
+                case 'mane':  // NUEVO: Agregar caso MANE
+                    return $service->sendMane($voyage);
+
                 default:
-                    throw new \Exception("Tipo de webservice no soportado: {$webserviceType}");
+                    throw new \Exception("Método de envío no implementado para: {$webserviceType}");
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
+            Log::error('Error en sendToWebservice', [
+                'webservice_type' => $webserviceType,
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+            
             return [
                 'success' => false,
-                'error_code' => 'WEBSERVICE_ERROR',
+                'error_code' => 'SEND_ERROR',
                 'error_message' => $e->getMessage(),
-                'can_retry' => true
             ];
         }
     }
