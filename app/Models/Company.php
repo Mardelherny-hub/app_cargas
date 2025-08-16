@@ -34,6 +34,7 @@ class Company extends Model
         'postal_code',
         'company_roles',        // NUEVO: Roles de empresa
         'roles_config',         // NUEVO: Configuración por roles
+        'id_maria',             //NUEVO: para generar archivos MANE/Malvina 
         'certificate_path',
         'certificate_password',
         'certificate_alias',

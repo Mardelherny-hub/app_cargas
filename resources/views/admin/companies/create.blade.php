@@ -8,7 +8,7 @@
                class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                 ← Volver
             </a>
-        </div>
+        </div> 
     </x-slot>
 
     <div class="py-12">
@@ -167,6 +167,23 @@
                                            value="{{ old('postal_code') }}"
                                            placeholder="1001"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                </div>
+                                <!-- ID María para MANE/Malvina -->
+                                <div>
+                                    <label for="id_maria" class="block text-sm font-medium text-gray-700 mb-2">
+                                        ID María (MANE/Malvina)
+                                    </label>
+                                    <input type="text" 
+                                        name="id_maria" 
+                                        id="id_maria" 
+                                        value="{{ old('id_maria') }}"
+                                        maxlength="10"
+                                        placeholder="Ej: MAR001"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <p class="mt-1 text-xs text-gray-500">ID utilizado para archivos del sistema Malvina de Aduana (máximo 10 caracteres)</p>
+                                    @error('id_maria')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
                         </div>

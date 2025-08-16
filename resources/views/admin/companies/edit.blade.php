@@ -193,6 +193,23 @@
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
+                            <!-- ID María para MANE/Malvina -->
+                            <div>
+                                <label for="id_maria" class="block text-sm font-medium text-gray-700">
+                                    ID María (MANE/Malvina)
+                                </label>
+                                <input type="text"
+                                       name="id_maria"
+                                       id="id_maria"
+                                       maxlength="10"
+                                       value="{{ old('id_maria', $company->id_maria) }}"
+                                       placeholder="Ej: MAR001"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('id_maria') border-red-300 @enderror">
+                                <p class="mt-1 text-xs text-gray-500">ID utilizado para archivos del sistema Malvina de Aduana (máximo 10 caracteres)</p>
+                                @error('id_maria')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -558,7 +575,7 @@
                 @endif
             });
         });
-    </script>
+    </script> 
 
     <script>
         // Config// Configuraciones de webservices según roles

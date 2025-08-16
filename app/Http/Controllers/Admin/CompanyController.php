@@ -217,6 +217,7 @@ class CompanyController extends Controller
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
+            'id_maria' => 'nullable|string|max:10|regex:/^[A-Z0-9]+$/',
             'company_roles' => 'required|array|min:1',
             'company_roles.*' => 'in:Cargas,Desconsolidador,Transbordos',
             'ws_environment' => 'required|in:testing,production',
@@ -396,6 +397,10 @@ class CompanyController extends Controller
             'certificate_alias' => 'nullable|string|max:255',
             'certificate_expires_at' => 'nullable|date|after:today',
             'created_date' => 'nullable|date',
+            ], [
+            // Mensajes personalizados existentes...
+            'id_maria.max' => 'El ID María no puede tener más de 10 caracteres.',
+            'id_maria.regex' => 'El ID María solo puede contener letras mayúsculas y números.',
         ]);
 
         try {

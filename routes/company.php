@@ -21,6 +21,7 @@ use App\Http\Controllers\Company\BillOfLadingController;
 use App\Http\Controllers\Company\CaptainController;
 use App\Http\Controllers\Company\DashboardEstadosController;
 use App\Http\Controllers\Company\Manifests\TestingCustomsController;
+use App\Http\Controllers\Company\ManeFileController;
 
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
@@ -461,6 +462,14 @@ Route::prefix('captains')->name('company.captains.')->group(function () {
         Route::patch('/{captain}/toggle-status', [CaptainController::class, 'toggleStatus'])->name('toggle-status');
         Route::patch('/{captain}/assign-company', [CaptainController::class, 'assignToCompany'])->name('assign-company');
         Route::patch('/{captain}/update-performance', [CaptainController::class, 'updatePerformance'])->name('update-performance');
+    });
+
+    // Generación de archivos MANE/Malvina (solo empresas con rol "Cargas")
+    Route::prefix('mane')->name('company.mane.')->group(function () {
+        Route::get('/', [ManeFileController::class, 'index'])->name('index');
+        Route::post('/voyage/{voyage}', [ManeFileController::class, 'generateForVoyage'])->name('generate-voyage');
+        Route::post('/consolidated', [ManeFileController::class, 'generateConsolidated'])->name('generate-consolidated');
+        Route::get('/download/{filename}', [ManeFileController::class, 'download'])->name('download');
     });
 
     // 5. RUTAS DE REPORTES Y DOCUMENTOS
