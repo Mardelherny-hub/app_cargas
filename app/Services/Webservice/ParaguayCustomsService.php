@@ -300,36 +300,157 @@ class ParaguayCustomsService
         }
     }
 
-    /**
-     * Enviar request SOAP a Paraguay
+   /**
+     * Enviar request SOAP a Paraguay con bypass inteligente
      */
     private function sendSoapRequest(string $webserviceType, string $operation, string $xml, string $transactionId): array
     {
-        try {
-            $this->logOperation('info', 'Enviando request SOAP Paraguay', [
-                'webservice_type' => $webserviceType,
+        // ✅ OBTENER CONFIGURACIÓN DE PARAGUAY DESDE COMPANY
+        $paraguayData = $this->company->getParaguayWebserviceData();
+        $shouldBypass = $this->company->shouldBypassTesting('paraguay');
+        
+        $this->logOperation('info', 'Iniciando request SOAP Paraguay', [
+            'webservice_type' => $webserviceType,
+            'operation' => $operation,
+            'transaction_id' => $transactionId,
+            'xml_length' => strlen($xml),
+            'ruc_configured' => !empty($paraguayData['ruc']),
+            'should_bypass' => $shouldBypass,
+            'environment' => $this->config['environment'],
+        ]);
+
+        // ✅ BYPASS INTELIGENTE: Verificar si debe simular respuesta
+        if ($shouldBypass || $this->config['environment'] === 'testing') {
+            
+            // Verificar si la configuración es de testing/desarrollo
+            $isTestingConfig = $this->isTestingConfiguration($paraguayData);
+            
+            if ($isTestingConfig || $shouldBypass) {
+                return $this->generateBypassResponse($operation, $transactionId, $paraguayData);
+            }
+        }
+
+        // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
+        $configErrors = $this->company->validateWebserviceConfig('paraguay');
+        if (!empty($configErrors)) {
+            $this->logOperation('error', 'Configuración Paraguay incompleta', [
                 'operation' => $operation,
                 'transaction_id' => $transactionId,
-                'xml_length' => strlen($xml),
-            ]);
-              $this->logOperation('info', 'Enviando request SOAP Paraguay', [
-                'webservice_type' => $webserviceType,
-                'operation' => $operation,
-                'transaction_id' => $transactionId,
-                'xml_length' => strlen($xml),
+                'errors' => $configErrors,
             ]);
 
-            // Crear cliente SOAP específico para Paraguay
-            try {
-                $client = $this->soapClient->createClient($webserviceType, $this->config['environment']);
-            } catch (Exception $e) {
-                return [
-                    'success' => false,
-                    'error_code' => 'CLIENT_CREATION_ERROR',
-                    'error_message' => $e->getMessage(),
-                    'can_retry' => false,
-                ];
+            return [
+                'success' => false,
+                'error_code' => 'CONFIG_INCOMPLETE',
+                'error_message' => 'Configuración de Paraguay incompleta: ' . implode(', ', $configErrors),
+                'can_retry' => false,
+            ];
+        }
+
+        // ✅ CONEXIÓN REAL A PARAGUAY
+        return $this->sendRealSoapRequest($webserviceType, $operation, $xml, $transactionId, $paraguayData);
+    }
+
+    /**
+     * Verificar si la configuración es de testing/desarrollo
+     */
+    private function isTestingConfiguration(array $paraguayData): bool
+    {
+        // Verificar patrones típicos de datos de testing
+        $testingPatterns = [
+            'ruc' => ['80123456-7', '12345678-9', '00000000-0'],
+            'company_name' => ['TEST', 'TESTING', 'DESARROLLO', 'DEMO'],
+        ];
+
+        // Verificar RUC de testing
+        if (in_array($paraguayData['ruc'], $testingPatterns['ruc'])) {
+            return true;
+        }
+
+        // Verificar nombre de empresa de testing
+        $companyName = strtoupper($paraguayData['company_name'] ?? '');
+        foreach ($testingPatterns['company_name'] as $pattern) {
+            if (strpos($companyName, $pattern) !== false) {
+                return true;
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Generar respuesta simulada (bypass)
+     */
+    private function generateBypassResponse(string $operation, string $transactionId, array $paraguayData): array
+    {
+        $this->logOperation('info', 'BYPASS: Simulando respuesta Paraguay', [
+            'operation' => $operation,
+            'transaction_id' => $transactionId,
+            'reason' => 'Configuración de testing o bypass activado',
+            'ruc_used' => $paraguayData['ruc'] ?? 'no-configurado',
+        ]);
+
+        // Generar referencias realistas
+        $paraguayReference = $this->generateRealisticParaguayReference();
+        $manifestReference = 'SIM_' . substr($transactionId, -8);
+
+        switch ($operation) {
+            case 'enviarManifiesto':
+                return [
+                    'success' => true,
+                    'status' => 'BYPASS_SUCCESS',
+                    'data' => [
+                        'manifest_reference' => $manifestReference,
+                        'paraguay_reference' => $paraguayReference,
+                        'processed_at' => now(),
+                        'status_message' => 'Manifiesto procesado exitosamente (SIMULADO)',
+                        'bypass_mode' => true,
+                    ],
+                ];
+
+            case 'consultarEstado':
+                return [
+                    'success' => true,
+                    'status' => 'PRESENTADO',
+                    'status_description' => 'Manifiesto presentado y en proceso (SIMULADO)',
+                    'last_update' => now(),
+                    'bypass_mode' => true,
+                ];
+
+            default:
+                return [
+                    'success' => true,
+                    'status' => 'BYPASS_SUCCESS',
+                    'message' => "Operación {$operation} simulada exitosamente",
+                    'bypass_mode' => true,
+                ];
+        }
+    }
+
+    /**
+     * Enviar request SOAP real a Paraguay
+     */
+    private function sendRealSoapRequest(string $webserviceType, string $operation, string $xml, string $transactionId, array $paraguayData): array
+    {
+        try {
+            $this->logOperation('info', 'Enviando request SOAP REAL Paraguay', [
+                'webservice_type' => $webserviceType,
+                'operation' => $operation,
+                'transaction_id' => $transactionId,
+                'ruc' => $paraguayData['ruc'],
+                'company_name' => $paraguayData['company_name'],
+            ]);
+
+            // Obtener URL específica desde configuración
+            $webserviceUrl = $this->company->getWebserviceUrl('paraguay', 'tere', $this->config['environment']);
+            
+            if (!$webserviceUrl) {
+                throw new Exception("URL del webservice Paraguay no configurada para ambiente {$this->config['environment']}");
+            }
+
+            // Crear cliente SOAP con URL de configuración
+            $client = $this->soapClient->createClient($webserviceType, $this->config['environment']);
+            
             // Configurar headers específicos Paraguay
             $headers = $this->buildParaguayHeaders($operation);
             
@@ -343,6 +464,7 @@ class ParaguayCustomsService
                 'transaction_id' => $transactionId,
                 'response_time' => round($responseTime, 3),
                 'response_size' => strlen(serialize($soapResponse)),
+                'webservice_url' => $webserviceUrl,
             ]);
 
             // Parsear respuesta Paraguay
@@ -359,9 +481,9 @@ class ParaguayCustomsService
 
             return [
                 'success' => false,
-                'error_code' => 'SOAP_FAULT',
+                'error_type' => 'soap_fault',
+                'error_code' => $e->faultcode,
                 'error_message' => $e->faultstring,
-                'fault_code' => $e->faultcode,
                 'can_retry' => $this->isSoapFaultRetryable($e->faultcode),
             ];
 
@@ -379,6 +501,19 @@ class ParaguayCustomsService
                 'can_retry' => true,
             ];
         }
+    }
+
+    /**
+     * Generar referencia Paraguay realista para testing
+     */
+    private function generateRealisticParaguayReference(): string
+    {
+        $year = date('Y');
+        $office = '704'; // Código típico aduana Paraguay
+        $sequence = str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+        $checkDigit = substr(md5($year . $office . $sequence), -1);
+        
+        return $year . $office . 'TERE' . $sequence . strtoupper($checkDigit);
     }
 
     /**
@@ -909,5 +1044,13 @@ $this->logOperation('debug', 'Datos reales del viaje para validación', [
         ];
 
         return $urls[$this->config['environment']] ?? $urls['testing'];
+    }
+
+    /**
+     * Método wrapper para el controller
+     */
+    public function sendManifest(Voyage $voyage): array
+    {
+        return $this->sendImportManifest($voyage, auth()->id());
     }
 }

@@ -50,17 +50,18 @@ class SoapClientService
         ],
         'PY' => [
             'testing' => [
-                'gdsf' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
-                'paraguay_customs' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
+                'gdsf' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere', // ✅ CORRECTO
+                'paraguay_customs' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere',
                 'auth' => 'https://securetest.aduana.gov.py/wsdl/wsaaserver/Server',
             ],
             'production' => [
-                'gdsf' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf',
-                'paraguay_customs' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf',
+                'gdsf' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere', // ✅ CORRECTO
+                'paraguay_customs' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere',
                 'auth' => 'https://secure.aduana.gov.py/wsdl/wsaaserver/Server',
             ],
         ],
     ];
+
     /**
      * SOAPActions conocidas por webservice
      */
@@ -206,24 +207,93 @@ class SoapClientService
 
     /**
      * Obtener URL del WSDL según webservice y ambiente
+     * ACTUALIZADO: Usa configuración de empresa con fallback a URLs por defecto
      */
     private function getWsdlUrl(string $webserviceType, string $environment): string
     {
-        $country = $this->company->country ?? 'AR';
-
-        // Verificar si la empresa tiene URLs personalizadas
-        $customUrls = $this->company->ws_config['webservice_urls'][$environment] ?? null;
-        if ($customUrls && isset($customUrls[$webserviceType])) {
-            return $customUrls[$webserviceType];
+        // ✅ DETERMINAR PAÍS DESDE WEBSERVICE TYPE
+        $country = $this->getCountryFromWebserviceType($webserviceType);
+        
+        // ✅ INTENTAR OBTENER URL DESDE CONFIGURACIÓN DE EMPRESA
+        $configuredUrl = $this->company->getWebserviceUrl($country, $webserviceType, $environment);
+        
+        if ($configuredUrl) {
+            Log::info('Usando URL configurada desde empresa', [
+                'company_id' => $this->company->id,
+                'webservice_type' => $webserviceType,
+                'environment' => $environment,
+                'country' => $country,
+                'url' => $configuredUrl,
+            ]);
+            
+            return $configuredUrl;
         }
 
-        // Usar URLs por defecto
+        // ✅ FALLBACK: Verificar si la empresa tiene URLs personalizadas en formato anterior
+        $legacyCustomUrls = $this->company->ws_config['webservice_urls'][$environment] ?? null;
+        if ($legacyCustomUrls && isset($legacyCustomUrls[$webserviceType])) {
+            Log::info('Usando URL legacy desde ws_config', [
+                'company_id' => $this->company->id,
+                'webservice_type' => $webserviceType,
+                'environment' => $environment,
+                'url' => $legacyCustomUrls[$webserviceType],
+            ]);
+            
+            return $legacyCustomUrls[$webserviceType];
+        }
+
+        // ✅ USAR URLs POR DEFECTO COMO ÚLTIMO RECURSO
         $defaultUrls = self::DEFAULT_WEBSERVICE_URLS[$country][$environment] ?? null;
         if (!$defaultUrls || !isset($defaultUrls[$webserviceType])) {
             throw new Exception("URL de webservice no configurada para {$webserviceType} en {$environment}");
         }
 
+        Log::info('Usando URL por defecto', [
+            'company_id' => $this->company->id,
+            'webservice_type' => $webserviceType,
+            'environment' => $environment,
+            'country' => $country,
+            'url' => $defaultUrls[$webserviceType],
+        ]);
+
         return $defaultUrls[$webserviceType];
+    }
+
+    /**
+     * Determinar país desde tipo de webservice
+     */
+    private function getCountryFromWebserviceType(string $webserviceType): string
+    {
+        $webserviceCountryMapping = [
+            // Argentina
+            'micdta' => 'argentina',
+            'anticipada' => 'argentina', 
+            'desconsolidado' => 'argentina',
+            'transbordo' => 'argentina',
+            'mane' => 'argentina',
+            
+            // Paraguay
+            'gdsf' => 'paraguay',
+            'tere' => 'paraguay',
+            'paraguay_customs' => 'paraguay',
+            'servicioreferencia' => 'paraguay',
+        ];
+
+        $country = $webserviceCountryMapping[$webserviceType] ?? null;
+        
+        if (!$country) {
+            // Fallback al país de la empresa
+            $companyCountry = strtolower($this->company->country ?? 'AR');
+            $country = $companyCountry === 'py' ? 'paraguay' : 'argentina';
+            
+            Log::warning('Tipo de webservice no reconocido, usando país de empresa', [
+                'webservice_type' => $webserviceType,
+                'company_country' => $this->company->country,
+                'assigned_country' => $country,
+            ]);
+        }
+
+        return $country;
     }
 
     /**

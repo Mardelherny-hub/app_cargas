@@ -995,4 +995,207 @@ public function isCertificateValid(): bool
            ($this->certificate_expires_at === null || $this->certificate_expires_at > now());
 }
 
+// =====================================================
+    // MÉTODOS PARA CONFIGURACIÓN DE WEBSERVICES POR PAÍS
+    // =====================================================
+
+    /**
+     * Obtener configuración de webservices para un país específico
+     */
+    public function getWebserviceConfig(string $country): array
+    {
+        $wsConfig = $this->ws_config ?? [];
+        $countryKey = strtolower($country);
+        
+        return $wsConfig[$countryKey] ?? [];
+    }
+
+    /**
+     * Obtener configuración de Argentina para webservices
+     */
+    public function getArgentinaConfig(): array
+    {
+        $config = $this->getWebserviceConfig('argentina');
+        
+        // Valores por defecto si no existe configuración
+        return array_merge([
+            'cuit' => $this->tax_id,
+            'company_name' => $this->legal_name,
+            'domicilio_fiscal' => $this->address,
+            'actividad_principal' => null,
+            'monotributo' => false,
+            'webservice_urls' => [
+                'testing' => [
+                    'micdta' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                    'anticipada' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                    'desconsolidado' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                    'transbordo' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                ],
+                'production' => [
+                    'micdta' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                    'anticipada' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                    'desconsolidado' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                    'transbordo' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                ]
+            ],
+            'bypass_testing' => true
+        ], $config);
+    }
+
+    /**
+     * Obtener configuración de Paraguay para webservices
+     */
+    public function getParaguayConfig(): array
+    {
+        $config = $this->getWebserviceConfig('paraguay');
+        
+        // Valores por defecto si no existe configuración
+        return array_merge([
+            'ruc' => null,
+            'company_name' => $this->legal_name,
+            'domicilio_fiscal' => $this->address,
+            'actividad_principal' => null,
+            'courier_authorized' => false,
+            'webservice_urls' => [
+                'testing' => [
+                    'tere' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere',
+                    'servicioreferencia' => 'https://securetest.aduana.gov.py/wsdl/tere2/servicioreferencia',
+                ],
+                'production' => [
+                    'tere' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere',
+                    'servicioreferencia' => 'https://secure.aduana.gov.py/wsdl/tere2/servicioreferencia',
+                ]
+            ],
+            'bypass_testing' => true
+        ], $config);
+    }
+
+    /**
+     * Actualizar configuración de webservices para un país
+     */
+    public function updateWebserviceConfig(string $country, array $config): bool
+    {
+        $wsConfig = $this->ws_config ?? [];
+        $countryKey = strtolower($country);
+        
+        $wsConfig[$countryKey] = $config;
+        
+        return $this->update(['ws_config' => $wsConfig]);
+    }
+
+    /**
+     * Obtener URL de webservice específico
+     */
+    public function getWebserviceUrl(string $country, string $webserviceType, string $environment = null): ?string
+    {
+        $environment = $environment ?? $this->ws_environment ?? 'testing';
+        $config = $this->getWebserviceConfig($country);
+        
+        return $config['webservice_urls'][$environment][$webserviceType] ?? null;
+    }
+
+    /**
+     * Verificar si debe usar bypass para testing
+     */
+    public function shouldBypassTesting(string $country): bool
+    {
+        $config = $this->getWebserviceConfig($country);
+        return $config['bypass_testing'] ?? true;
+    }
+
+    /**
+     * Verificar si la empresa tiene configuración completa para un país
+     */
+    public function hasCompleteWebserviceConfig(string $country): bool
+    {
+        $config = $this->getWebserviceConfig($country);
+        
+        if (empty($config)) {
+            return false;
+        }
+
+        switch (strtolower($country)) {
+            case 'argentina':
+                return !empty($config['cuit']) && 
+                       !empty($config['company_name']);
+                       
+            case 'paraguay':
+                return !empty($config['ruc']) && 
+                       !empty($config['company_name']);
+                       
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Obtener datos de la empresa para webservices de Argentina
+     */
+    public function getArgentinaWebserviceData(): array
+    {
+        $config = $this->getArgentinaConfig();
+        
+        return [
+            'cuit' => $config['cuit'],
+            'company_name' => $config['company_name'],
+            'domicilio_fiscal' => $config['domicilio_fiscal'],
+            'actividad_principal' => $config['actividad_principal'],
+            'monotributo' => $config['monotributo'],
+            'should_bypass' => $this->shouldBypassTesting('argentina'),
+        ];
+    }
+
+    /**
+     * Obtener datos de la empresa para webservices de Paraguay
+     */
+    public function getParaguayWebserviceData(): array
+    {
+        $config = $this->getParaguayConfig();
+        
+        return [
+            'ruc' => $config['ruc'],
+            'company_name' => $config['company_name'],
+            'domicilio_fiscal' => $config['domicilio_fiscal'],
+            'actividad_principal' => $config['actividad_principal'],
+            'courier_authorized' => $config['courier_authorized'],
+            'should_bypass' => $this->shouldBypassTesting('paraguay'),
+        ];
+    }
+
+    /**
+     * Validar configuración de webservices para un país
+     */
+    public function validateWebserviceConfig(string $country): array
+    {
+        $errors = [];
+        $config = $this->getWebserviceConfig($country);
+        
+        if (empty($config)) {
+            $errors[] = "No hay configuración para {$country}";
+            return $errors;
+        }
+
+        switch (strtolower($country)) {
+            case 'argentina':
+                if (empty($config['cuit'])) {
+                    $errors[] = 'CUIT de Argentina es requerido';
+                }
+                if (empty($config['company_name'])) {
+                    $errors[] = 'Razón social para Argentina es requerida';
+                }
+                break;
+                
+            case 'paraguay':
+                if (empty($config['ruc'])) {
+                    $errors[] = 'RUC de Paraguay es requerido';
+                }
+                if (empty($config['company_name'])) {
+                    $errors[] = 'Razón social para Paraguay es requerida';
+                }
+                break;
+        }
+
+        return $errors;
+    }
+
 }
