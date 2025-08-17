@@ -1307,4 +1307,225 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
         
         return in_array($this->status, $allowedStatuses);
     }
+
+    // ==========================================
+    // NUEVOS MÉTODOS PARA ESTADOS INDEPENDIENTES POR PAÍS
+    // Agregar al final de la clase Voyage, antes del último }
+    // ==========================================
+
+    /**
+     * ✅ CORRECCIÓN ERROR CONCEPTUAL: Verificar si puede enviar a un país específico
+     * 
+     * ANTES: Un viaje se bloqueaba globalmente al enviar a cualquier aduana
+     * AHORA: Cada país tiene estado independiente (argentina_status, paraguay_status)
+     */
+    public function canSendToCountry(string $country): array
+    {
+        $country = strtolower($country);
+        
+        switch ($country) {
+            case 'argentina':
+            case 'ar':
+                return [
+                    'allowed' => in_array($this->argentina_status, ['pending', 'error', null]),
+                    'current_status' => $this->argentina_status,
+                    'sent_at' => $this->argentina_sent_at,
+                    'reason' => $this->argentina_status === 'sent' 
+                        ? 'Ya enviado a Argentina el ' . $this->argentina_sent_at?->format('d/m/Y H:i')
+                        : ($this->argentina_status === 'approved' 
+                            ? 'Ya aprobado por Argentina' 
+                            : null)
+                ];
+                
+            case 'paraguay':
+            case 'py':
+                return [
+                    'allowed' => in_array($this->paraguay_status, ['pending', 'error', null]),
+                    'current_status' => $this->paraguay_status,
+                    'sent_at' => $this->paraguay_sent_at,
+                    'reason' => $this->paraguay_status === 'sent' 
+                        ? 'Ya enviado a Paraguay el ' . $this->paraguay_sent_at?->format('d/m/Y H:i')
+                        : ($this->paraguay_status === 'approved' 
+                            ? 'Ya aprobado por Paraguay' 
+                            : null)
+                ];
+                
+            default:
+                return [
+                    'allowed' => false,
+                    'current_status' => null,
+                    'sent_at' => null,
+                    'reason' => "País '$country' no soportado"
+                ];
+        }
+    }
+
+    /**
+     * ✅ Actualizar estado de envío para un país específico
+     */
+    public function updateCountryStatus(string $country, string $status, array $additionalData = []): bool
+    {
+        $country = strtolower($country);
+        $updateData = [];
+        
+        switch ($country) {
+            case 'argentina':
+            case 'ar':
+                $updateData['argentina_status'] = $status;
+                if ($status === 'sent') {
+                    $updateData['argentina_sent_at'] = now();
+                }
+                if (isset($additionalData['voyage_id'])) {
+                    $updateData['argentina_voyage_id'] = $additionalData['voyage_id'];
+                }
+                break;
+                
+            case 'paraguay':
+            case 'py':
+                $updateData['paraguay_status'] = $status;
+                if ($status === 'sent') {
+                    $updateData['paraguay_sent_at'] = now();
+                }
+                if (isset($additionalData['voyage_id'])) {
+                    $updateData['paraguay_voyage_id'] = $additionalData['voyage_id'];
+                }
+                break;
+                
+            default:
+                return false;
+        }
+        
+        return $this->update($updateData);
+    }
+
+    /**
+     * ✅ MÉTODO CORREGIDO: Obtener estado real desde webservice_transactions
+     */
+    public function getWebserviceStatusSummary(): array
+    {
+        // ✅ ARGENTINA: Buscar última transacción exitosa
+        $argTransaction = $this->webserviceTransactions()
+            ->whereIn('webservice_type', ['anticipada', 'micdta'])
+            ->where('country', 'AR')
+            ->orderBy('created_at', 'desc')
+            ->first();
+        
+        $argStatus = 'pending';
+        $argSentAt = null;
+        $argCanSend = true;
+        
+        if ($argTransaction) {
+            if ($argTransaction->status === 'success') {
+                $argStatus = 'approved';
+                $argSentAt = $argTransaction->response_at;
+                $argCanSend = false; // Ya aprobado
+            } elseif ($argTransaction->status === 'sent') {
+                $argStatus = 'sent';
+                $argSentAt = $argTransaction->sent_at;
+                $argCanSend = false; // Ya enviado
+            } elseif ($argTransaction->status === 'error') {
+                $argStatus = 'error';
+                $argCanSend = true; // Puede reintentar
+            }
+        }
+
+        // ✅ PARAGUAY: Buscar última transacción exitosa
+        $pyTransaction = $this->webserviceTransactions()
+            ->whereIn('webservice_type', ['paraguay_customs', 'manifiesto'])
+            ->where('country', 'PY')
+            ->orderBy('created_at', 'desc')
+            ->first();
+        
+        $pyStatus = 'pending';
+        $pySentAt = null;
+        $pyCanSend = true;
+        
+        if ($pyTransaction) {
+            if ($pyTransaction->status === 'success') {
+                $pyStatus = 'approved';
+                $pySentAt = $pyTransaction->response_at;
+                $pyCanSend = false; // Ya aprobado
+            } elseif ($pyTransaction->status === 'sent') {
+                $pyStatus = 'sent';
+                $pySentAt = $pyTransaction->sent_at;
+                $pyCanSend = false; // Ya enviado
+            } elseif ($pyTransaction->status === 'error') {
+                $pyStatus = 'error';
+                $pyCanSend = true; // Puede reintentar
+            }
+        }
+
+        return [
+            'argentina' => [
+                'status' => $argStatus,
+                'sent_at' => $argSentAt,
+                'can_send' => $argCanSend,
+                'display_status' => $this->getDisplayStatus($argStatus),
+                'transaction_id' => $argTransaction?->id
+            ],
+            'paraguay' => [
+                'status' => $pyStatus,
+                'sent_at' => $pySentAt,
+                'can_send' => $pyCanSend,
+                'display_status' => $this->getDisplayStatus($pyStatus),
+                'transaction_id' => $pyTransaction?->id
+            ]
+        ];
+    }
+
+    /**
+     * ✅ Helper para mostrar estado legible
+     */
+    private function getDisplayStatus(?string $status): string
+    {
+        $statusMap = [
+            'pending' => 'Pendiente',
+            'sent' => 'Enviado',
+            'approved' => 'Aprobado',
+            'rejected' => 'Rechazado',
+            'error' => 'Error'
+        ];
+        
+        return $statusMap[$status] ?? 'Pendiente';
+    }
+
+    /**
+     * ✅ Verificar si el viaje puede ser enviado a múltiples países
+     */
+    public function getAvailableDestinationCountries(): array
+    {
+        $countries = [];
+        
+        // Determinar países basado en puertos de origen y destino
+        if ($this->originPort && $this->destinationPort) {
+            $originCountry = $this->originPort->country->code ?? '';
+            $destCountry = $this->destinationPort->country->code ?? '';
+            
+            // Argentina
+            if (in_array('AR', [$originCountry, $destCountry])) {
+                $argStatus = $this->canSendToCountry('argentina');
+                $countries['argentina'] = [
+                    'code' => 'AR',
+                    'name' => 'Argentina',
+                    'can_send' => $argStatus['allowed'],
+                    'status' => $argStatus['current_status'] ?? 'pending',
+                    'reason' => $argStatus['reason']
+                ];
+            }
+            
+            // Paraguay
+            if (in_array('PY', [$originCountry, $destCountry])) {
+                $pyStatus = $this->canSendToCountry('paraguay');
+                $countries['paraguay'] = [
+                    'code' => 'PY',
+                    'name' => 'Paraguay',
+                    'can_send' => $pyStatus['allowed'],
+                    'status' => $pyStatus['current_status'] ?? 'pending',
+                    'reason' => $pyStatus['reason']
+                ];
+            }
+        }
+        
+        return $countries;
+    }
 }

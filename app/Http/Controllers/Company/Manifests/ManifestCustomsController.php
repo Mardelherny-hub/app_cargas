@@ -739,6 +739,14 @@ private function getCountryFromWebserviceType(string $webserviceType): string
      */
     private function sendToWebservice($service, string $webserviceType, Voyage $voyage, array $options): array
     {
+        // ✅ LOG DE DEBUG TEMPORAL  
+        Log::info('🔥 ENVIANDO A WEBSERVICE', [
+            'service_class' => get_class($service),
+            'webservice_type' => $webserviceType,
+            'voyage_number' => $voyage->voyage_number,
+            'options' => $options
+        ]);
+        
         try {
             switch ($webserviceType) {
                 case 'anticipada':
@@ -817,10 +825,18 @@ private function getCountryFromWebserviceType(string $webserviceType): string
     }
 
     /**
-     * Enviar manifiesto individual a la aduana (según país de destino) - VERSIÓN CORREGIDA
+     * ✅ MÉTODO CORREGIDO: Enviar manifiesto con verificación de estados independientes por país
      */
     public function send(Request $request, $voyageId)
     {
+        // ✅ LOG DE DEBUG TEMPORAL
+        Log::info('🔥 CONTROLLER SEND INICIADO', [
+            'voyage_id' => $voyageId,
+            'webservice_type' => $request->webservice_type,
+            'user_id' => auth()->id(),
+            'request_data' => $request->all()
+        ]);
+
         $voyage = $this->getVoyageForCustoms($voyageId);
 
         $request->validate([
@@ -829,31 +845,51 @@ private function getCountryFromWebserviceType(string $webserviceType): string
             'priority' => 'nullable|in:normal,high,urgent',
         ]);
 
-        Log::info('DEBUG - Datos del formulario recibidos', [
-            'webservice_type' => $request->webservice_type,
-            'all_request_data' => $request->all()
-        ]);
-
-        Log::info('DEBUG - Validación pasó, obteniendo voyage', [
-            'voyage_id' => $voyageId
+        // ✅ AGREGAR ESTE LOG DESPUÉS DE LA VALIDACIÓN
+        Log::info('🔥 VALIDACIÓN PASADA, CREANDO TRANSACCIÓN', [
+            'voyage_id' => $voyage->id,
+            'voyage_number' => $voyage->voyage_number,
         ]);
 
         try {
+            // ✅ NUEVA VERIFICACIÓN: Determinar país del webservice
+            $country = $this->getCountryFromWebserviceType($request->webservice_type);
+            
+            // ✅ VERIFICAR SI PUEDE ENVIAR A ESTE PAÍS ESPECÍFICO
+            $canSend = $voyage->canSendToCountry($country);
+            if (!$canSend['allowed']) {
+                return back()->with('error', 'No se puede enviar: ' . $canSend['reason']);
+            }
+
             // Crear transacción de webservice
             $transaction = $this->createWebserviceTransaction($voyage, $request->all());
 
-            Log::info('DEBUG - Transacción creada', [
+            // ✅ AGREGAR ESTE LOG DESPUÉS DE CREAR TRANSACCIÓN
+            Log::info('🔥 TRANSACCIÓN CREADA, OBTENIENDO SERVICIO', [
                 'transaction_id' => $transaction->id,
-                'webservice_type' => $request->webservice_type
+            ]);
+
+            Log::info('Transacción creada para envío', [
+                'transaction_id' => $transaction->id,
+                'webservice_type' => $request->webservice_type,
+                'country' => $country,
+                'voyage_id' => $voyage->id
+            ]);
+
+            // ✅ ACTUALIZAR ESTADO DEL PAÍS A 'ENVIANDO'
+            $voyage->updateCountryStatus($country, 'sent', [
+                'voyage_id' => $transaction->transaction_id
             ]);
 
             // Seleccionar servicio según país y tipo
             $service = $this->getWebserviceByType($request->webservice_type, $voyage);
 
-            Log::info('DEBUG - Servicio obtenido, enviando', [
-                'service_class' => get_class($service)
-            ]);
 
+            // ✅ AGREGAR ESTE LOG DESPUÉS DE OBTENER SERVICIO
+            Log::info('🔥 SERVICIO OBTENIDO, LLAMANDO sendToWebservice', [
+                'service_class' => get_class($service),
+            ]);
+            
             // Enviar a aduana usando el método correcto según el tipo
             $response = $this->sendToWebservice($service, $request->webservice_type, $voyage, [
                 'transaction_id' => $transaction->transaction_id,
@@ -864,31 +900,36 @@ private function getCountryFromWebserviceType(string $webserviceType): string
             // Actualizar transacción con respuesta
             $this->updateTransactionWithResponse($transaction, $response);
 
+            // ✅ ACTUALIZAR ESTADO FINAL DEL PAÍS SEGÚN RESPUESTA
             if ($response['success'] ?? false) {
+                $voyage->updateCountryStatus($country, 'approved', [
+                    'voyage_id' => $response['external_reference'] ?? $transaction->transaction_id
+                ]);
+                
                 return redirect()->route('company.manifests.customs.status', $transaction->id)
-                    ->with('success', 'Manifiesto enviado a aduana correctamente.');
+                    ->with('success', 'Manifiesto enviado a ' . strtoupper($country) . ' correctamente.');
             } else {
+                // Si falló, regresar estado a error para permitir reintento
+                $voyage->updateCountryStatus($country, 'error');
+                
                 $errorMessage = $response['error_message'] ?? 'Error de conectividad con el webservice aduanero';
-                return back()->with('error', 'Error en envío: ' . $errorMessage);
+                return back()->with('error', 'Error en envío a ' . strtoupper($country) . ': ' . $errorMessage);
             }
 
         } catch (\Exception $e) {
-            Log::error('Error al enviar manifiesto a aduana', [
+            Log::error('Error en envío de manifiesto', [
                 'voyage_id' => $voyageId,
-                'user_id' => Auth::id(),
+                'webservice_type' => $request->webservice_type,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
-            // Marcar transacción como fallida si existe
-            if (isset($transaction)) {
-                $transaction->update([
-                    'status' => 'error',
-                    'error_message' => $e->getMessage(),
-                    'response_at' => now(),
-                ]);
+            // ✅ SI HAY EXCEPCIÓN, REVERTIR ESTADO DEL PAÍS
+            if (isset($country)) {
+                $voyage->updateCountryStatus($country, 'error');
             }
 
-            return back()->with('error', 'Error al enviar a aduana: ' . $e->getMessage());
+            return back()->with('error', 'Error crítico en envío: ' . $e->getMessage());
         }
     }
     

@@ -119,149 +119,162 @@
                     </div>
                 </div>
 
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left">
-                                    <input type="checkbox" id="select-all" 
-                                           class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                           onchange="toggleSelectAll()">
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Viaje
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Ruta & Destino
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Cargas
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Estado Aduana
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Acciones
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @forelse($voyages as $voyage)
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <input type="checkbox" name="voyage_ids[]" value="{{ $voyage->id }}" 
-                                           class="voyage-checkbox rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                           onchange="updateBulkSendButton()">
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">
-                                        {{ $voyage->voyage_number }}
-                                    </div>
-                                    <div class="text-sm text-gray-500">
-                                        📅 {{ $voyage->created_at->format('d/m/Y H:i') }}
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">
-                                        🏁 {{ $voyage->origin_port->name ?? 'Puerto Origen' }}
-                                    </div>
-                                    <div class="text-sm text-gray-500">
-                                        🎯 {{ $voyage->destination_port->name ?? 'Puerto Destino' }}
-                                        @if($voyage->destination_port && $voyage->destination_port->country)
-                                            <span class="ml-1 px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                                                {{ $voyage->destination_port->country->iso_code }}
-                                            </span>
-                                        @endif
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">
-                                        📦 {{ $voyage->shipments->sum('containers_loaded') }} containers
-                                    </div>
-                                    <div class="text-sm text-gray-500">
-                                        📄 {{ $voyage->shipments->sum(function($s) { return $s->billsOfLading->count(); }) }} BL
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    @php
-                                        $lastTransaction = $voyage->webserviceTransactions->last();
-                                    @endphp
-                                    
-                                    @if(!$lastTransaction)
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                            ⏳ No enviado
-                                        </span>
-                                    @elseif($lastTransaction->status === 'success')
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            ✅ Enviado
-                                        </span>
-                                        @if($lastTransaction->confirmation_number)
-                                            <div class="text-xs text-gray-500 mt-1">
-                                                #{{ $lastTransaction->confirmation_number }}
-                                            </div>
-                                        @endif
-                                    @elseif($lastTransaction->status === 'pending')
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            🔄 Procesando...
-                                        </span>
-                                    @elseif($lastTransaction->status === 'error')
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                            ❌ Error
-                                        </span>
-                                        <div class="text-xs text-red-600 mt-1">
-                                            {{ Str::limit($lastTransaction->error_message, 300) }}
-                                        </div>
-                                    @endif
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                    @if(!$lastTransaction || $lastTransaction->status === 'error')
-                                        <button type="button" 
-                                                class="text-indigo-600 hover:text-indigo-900"
-                                                onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $voyage->destination_port->country->iso_code ?? 'AR' }}')">
-                                            🚀 Enviar
-                                        </button>
-                                    @endif
-                                    
-                                    @if($lastTransaction)
-                                        <a href="{{ route('company.manifests.customs.status', $lastTransaction->id) }}" 
-                                           class="text-gray-600 hover:text-gray-900">
-                                            📊 Estado
-                                        </a>
-                                    @endif
-                                    
-                                    @if($lastTransaction && $lastTransaction->status === 'error')
-                                        <button type="button" 
-                                                class="text-green-600 hover:text-green-900"
-                                                onclick="retryTransaction({{ $lastTransaction->id }})">
-                                            🔄 Reintentar
-                                        </button>
-                                    @endif
-                                </td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="6" class="px-6 py-12 text-center">
-                                    <div class="text-gray-500">
-                                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        <h3 class="mt-2 text-sm font-medium text-gray-900">No hay manifiestos listos</h3>
-                                        <p class="mt-1 text-sm text-gray-500">
-                                            Los manifiestos aparecerán aquí cuando tengan cargas completadas.
-                                        </p>
-                                        <div class="mt-6">
-                                            <a href="{{ route('company.manifests.index') }}" 
-                                               class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                                📋 Ver Manifiestos
-                                            </a>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+                <!-- REEMPLAZAR la tabla existente en customs.blade.php por esta versión corregida -->
+
+<div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input type="checkbox" id="select-all" class="rounded border-gray-300 text-indigo-600">
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Viaje
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ruta
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cargas
+                </th>
+                <!-- ✅ NUEVAS COLUMNAS: Estados independientes por país -->
+                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    🇦🇷 Argentina
+                </th>
+                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    🇵🇾 Paraguay
+                </th>
+                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Acciones
+                </th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            @forelse($voyages as $voyage)
+                @php
+                    // ✅ USAR LOS NUEVOS MÉTODOS DEL MODELO VOYAGE
+                    $webserviceStatuses = $voyage->getWebserviceStatusSummary();
+                    $argStatus = $webserviceStatuses['argentina'];
+                    $pyStatus = $webserviceStatuses['paraguay'];
+                @endphp
+                <tr class="hover:bg-gray-50">
+                    <!-- Checkbox -->
+                    <td class="px-3 py-4 whitespace-nowrap">
+                        <input type="checkbox" name="voyage_ids[]" value="{{ $voyage->id }}" 
+                               class="voyage-checkbox rounded border-gray-300 text-indigo-600">
+                    </td>
+
+                    <!-- Información del Viaje -->
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">{{ $voyage->voyage_number }}</div>
+                        <div class="text-sm text-gray-500">{{ $voyage->status }}</div>
+                    </td>
+
+                    <!-- Ruta -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div>{{ $voyage->originPort->name ?? 'N/A' }}</div>
+                        <div class="text-gray-400">↓</div>
+                        <div>{{ $voyage->destinationPort->name ?? 'N/A' }}</div>
+                    </td>
+
+                    <!-- Cargas -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div>{{ $voyage->shipments->count() }} shipments</div>
+                        <div class="text-gray-500">{{ $voyage->shipments->sum(fn($s) => $s->billsOfLading->count()) }} B/L</div>
+                    </td>
+
+                    <!-- ✅ ESTADO ARGENTINA -->
+                    <td class="px-6 py-4 whitespace-nowrap text-center">
+                        <div class="flex flex-col items-center space-y-1">
+                            @if($argStatus['status'] === 'pending')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    ⏳ Pendiente
+                                </span>
+                            @elseif($argStatus['status'] === 'sent')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    📤 Enviado
+                                </span>
+                            @elseif($argStatus['status'] === 'approved')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    ✅ Aprobado
+                                </span>
+                            @elseif($argStatus['status'] === 'error')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    ❌ Error
+                                </span>
+                            @endif
+                            
+                            @if($argStatus['sent_at'])
+                                <div class="text-xs text-gray-500">
+                                    {{ $argStatus['sent_at']->format('d/m H:i') }}
+                                </div>
+                            @endif
+                        </div>
+                    </td>
+
+                    <!-- ✅ ESTADO PARAGUAY -->
+                    <td class="px-6 py-4 whitespace-nowrap text-center">
+                        <div class="flex flex-col items-center space-y-1">
+                            @if($pyStatus['status'] === 'pending')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    ⏳ Pendiente
+                                </span>
+                            @elseif($pyStatus['status'] === 'sent')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    📤 Enviado
+                                </span>
+                            @elseif($pyStatus['status'] === 'approved')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    ✅ Aprobado
+                                </span>
+                            @elseif($pyStatus['status'] === 'error')
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    ❌ Error
+                                </span>
+                            @endif
+                            
+                            @if($pyStatus['sent_at'])
+                                <div class="text-xs text-gray-500">
+                                    {{ $pyStatus['sent_at']->format('d/m H:i') }}
+                                </div>
+                            @endif
+                        </div>
+                    </td>
+
+                    <!-- ✅ ACCIONES CORREGIDAS - usar showSendModal() en lugar de openSendModal() -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div class="flex flex-col space-y-1">
+                            @if($argStatus['can_send'])
+                                <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'AR')" 
+                                        class="text-blue-600 hover:text-blue-900 text-xs">
+                                    🇦🇷 Enviar Argentina
+                                </button>
+                            @endif
+                            
+                            @if($pyStatus['can_send'])
+                                <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'PY')" 
+                                        class="text-green-600 hover:text-green-900 text-xs">
+                                    🇵🇾 Enviar Paraguay
+                                </button>
+                            @endif
+                            
+                            <a href="{{ route('company.manifests.show', $voyage->id) }}" 
+                            class="text-gray-600 hover:text-gray-900 text-xs">
+                                📋 Ver detalle
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="7" class="px-6 py-4 text-center text-gray-500">
+                        No se encontraron viajes listos para envío a aduana.
+                    </td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+</div>
                 
                 @if($voyages->hasPages())
                 <div class="px-6 py-4 border-t border-gray-200">
@@ -371,30 +384,49 @@
         // Variables globales
         let selectedVoyageId = null;
         
-        // Mostrar modal de envío individual
-        function showSendModal(voyageId, voyageNumber, countryCode) {
-            selectedVoyageId = voyageId;
-            
-            // Actualizar información del viaje
-            document.getElementById('modal-voyage-info').innerHTML = `
-                <strong>${voyageNumber}</strong><br>
-                <span class="text-gray-500">País destino: ${countryCode}</span>
-            `;
-            
-            // Actualizar action del formulario
-            document.getElementById('send-form').action = `/company/manifests/customs/${voyageId}/send`;
-            
-            // Pre-seleccionar webservice según país
-            const webserviceSelect = document.getElementById('webservice_type');
-            if (countryCode === 'AR') {
-                webserviceSelect.value = 'micdta';
-            } else if (countryCode === 'PY') {
-                webserviceSelect.value = 'paraguay_customs';
-            }
-            
-            // Mostrar modal
-            document.getElementById('send-modal').classList.remove('hidden');
-        }
+        // ✅ FUNCIÓN CORREGIDA: Filtrar opciones según país
+function showSendModal(voyageId, voyageNumber, countryCode) {
+    selectedVoyageId = voyageId;
+    
+    // Actualizar información del viaje
+    document.getElementById('modal-voyage-info').innerHTML = `
+        <strong>${voyageNumber}</strong><br>
+        <span class="text-gray-500">País destino: ${countryCode}</span>
+    `;
+    
+    // Actualizar action del formulario
+    document.getElementById('send-form').action = `/company/manifests/customs/${voyageId}/send`;
+    
+    // ✅ FILTRAR OPCIONES SEGÚN PAÍS
+    const webserviceSelect = document.getElementById('webservice_type');
+    
+    // Limpiar todas las opciones
+    webserviceSelect.innerHTML = '<option value="">Seleccionar...</option>';
+    
+    if (countryCode === 'AR') {
+        // Solo opciones de Argentina
+        webserviceSelect.innerHTML += `
+            <option value="anticipada">🇦🇷 Argentina Anticipada</option>
+            <option value="micdta">🇦🇷 Argentina MIC/DTA</option>
+            <option value="desconsolidado">🇦🇷 Argentina Desconsolidados</option>
+            <option value="transbordo">🚢 Argentina Transbordos</option>
+            <option value="mane">🇦🇷 MANE/Malvina</option>
+        `;
+        // Pre-seleccionar MIC/DTA
+        webserviceSelect.value = 'micdta';
+        
+    } else if (countryCode === 'PY') {
+        // Solo opciones de Paraguay
+        webserviceSelect.innerHTML += `
+            <option value="paraguay_customs">🇵🇾 Paraguay DNA</option>
+        `;
+        // Pre-seleccionar Paraguay
+        webserviceSelect.value = 'paraguay_customs';
+    }
+    
+    // Mostrar modal
+    document.getElementById('send-modal').classList.remove('hidden');
+}
         
         // Cerrar modal de envío
         function closeSendModal() {
