@@ -112,6 +112,12 @@
                                     class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.operators.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         ⚙️ {{ __('Operadores') }}
                                     </a>
+                                    @if($user->hasRole('company-admin'))
+                                    <a href="{{ route('company.settings.index') }}"
+                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.settings.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        ⚙️ {{ __('Configuración') }}
+                                    </a>
+                                    @endif
                                     @endif
                                 </div>
                             </div>

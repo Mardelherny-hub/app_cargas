@@ -251,6 +251,14 @@ class XmlSerializerService
     }
 
     /**
+     * Inicializar documento DOM - ALIAS PARA CONSISTENCIA
+     */
+    private function initializeDomDocument(): void
+    {
+        $this->initializeDom();
+    }
+
+    /**
      * Crear autenticación de empresa
      */
     private function createAutenticacionEmpresa(DOMElement $parent): DOMElement
@@ -1972,4 +1980,5 @@ protected function logOperation(string $level, string $message, array $context =
         ]);
     }
 }
+
 }

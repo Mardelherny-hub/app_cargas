@@ -209,7 +209,7 @@
                                             ❌ Error
                                         </span>
                                         <div class="text-xs text-red-600 mt-1">
-                                            {{ Str::limit($lastTransaction->error_message, 30) }}
+                                            {{ Str::limit($lastTransaction->error_message, 300) }}
                                         </div>
                                     @endif
                                 </td>
@@ -306,7 +306,7 @@
                                 <option value="anticipada">🇦🇷 Argentina Anticipada</option>
                                 <option value="desconsolidado">🇦🇷 Argentina Desconsolidados</option>
                                 <option value="transbordo">🚢 Argentina Transbordos</option>
-                                <option value="mane">MANE/Malvina</option>
+                                <option value="mane">🇦🇷 MANE/Malvina</option>
                                 <option value="paraguay_customs">🇵🇾 Paraguay DNA</option>
                             </select>
                         </div>

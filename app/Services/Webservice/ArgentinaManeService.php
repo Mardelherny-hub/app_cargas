@@ -8,7 +8,7 @@ use App\Models\User;
 use App\Models\WebserviceTransaction;
 use App\Models\WebserviceResponse;
 use App\Models\WebserviceLog;
-use App\Services\FileGeneration\ManeFileGeneratorService;
+use App\Services\Webservice\ManeFileGeneratorService;
 use App\Services\Webservice\SoapClientService;
 use App\Services\Webservice\CertificateManagerService;
 use App\Services\Webservice\XmlSerializerService;
@@ -469,12 +469,12 @@ class ArgentinaManeService
         // Log en base de datos si hay transacción activa
         if ($this->currentTransactionId) {
             WebserviceLog::create([
-                'webservice_transaction_id' => $this->currentTransactionId,
+                'transaction_id' => $this->currentTransactionId,  // ✅ CORREGIDO: era 'webservice_transaction_id'
                 'level' => $level,
                 'category' => $category,
                 'message' => $message,
                 'context' => $context,
-                'logged_at' => now(),
+                'created_at' => now(),  // ✅ CORREGIDO: era 'logged_at'
             ]);
         }
     }

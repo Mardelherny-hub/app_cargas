@@ -52,6 +52,7 @@ class SettingsController extends Controller
                 'address' => $company->address,
                 'city' => $company->city,
                 'postal_code' => $company->postal_code,
+                'id_maria' => $company->id_maria,
             ],
             'webservices' => [
                 'ws_environment' => $company->ws_environment,
@@ -101,6 +102,7 @@ class SettingsController extends Controller
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
+            'id_maria' => 'nullable|string|max:10|regex:/^[A-Z0-9]*$/',
         ]);
 
         try {
@@ -112,6 +114,7 @@ class SettingsController extends Controller
                 'address' => $request->address,
                 'city' => $request->city,
                 'postal_code' => $request->postal_code,
+                'id_maria' => $request->id_maria,
             ]);
 
             Log::info('Configuración general actualizada', [

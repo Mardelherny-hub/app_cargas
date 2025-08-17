@@ -468,13 +468,7 @@ Route::prefix('captains')->name('company.captains.')->group(function () {
         Route::patch('/{captain}/update-performance', [CaptainController::class, 'updatePerformance'])->name('update-performance');
     });
 
-    // Generación de archivos MANE/Malvina (solo empresas con rol "Cargas")
-    Route::prefix('mane')->name('company.mane.')->group(function () {
-        Route::get('/', [ManeFileController::class, 'index'])->name('index');
-        Route::post('/voyage/{voyage}', [ManeFileController::class, 'generateForVoyage'])->name('generate-voyage');
-        Route::post('/consolidated', [ManeFileController::class, 'generateConsolidated'])->name('generate-consolidated');
-        Route::get('/download/{filename}', [ManeFileController::class, 'download'])->name('download');
-    });
+    
 
     // 5. RUTAS DE REPORTES Y DOCUMENTOS
     Route::get('/{captain}/pdf', [CaptainController::class, 'generatePdf'])->name('pdf');
@@ -488,6 +482,14 @@ Route::prefix('captains')->name('company.captains.')->group(function () {
         Route::patch('/{captain}/certificates/{certificate}/verify', [CaptainController::class, 'verifyCertificate'])->name('verify-certificate');
     });
 });
+
+// Generación de archivos MANE/Malvina (solo empresas con rol "Cargas")
+    Route::prefix('mane')->name('company.mane.')->group(function () {
+        Route::get('/', [ManeFileController::class, 'index'])->name('index');
+        Route::post('/voyage/{voyage}', [ManeFileController::class, 'generateForVoyage'])->name('generate-voyage');
+        Route::post('/consolidated', [ManeFileController::class, 'generateConsolidated'])->name('generate-consolidated');
+        Route::get('/download/{filename}', [ManeFileController::class, 'download'])->name('download');
+    });
 
 
 

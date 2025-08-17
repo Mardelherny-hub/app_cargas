@@ -312,10 +312,24 @@ class ParaguayCustomsService
                 'transaction_id' => $transactionId,
                 'xml_length' => strlen($xml),
             ]);
+              $this->logOperation('info', 'Enviando request SOAP Paraguay', [
+                'webservice_type' => $webserviceType,
+                'operation' => $operation,
+                'transaction_id' => $transactionId,
+                'xml_length' => strlen($xml),
+            ]);
 
             // Crear cliente SOAP específico para Paraguay
-            $client = $this->soapClient->createClient($webserviceType, $this->config['environment']);
-
+            try {
+                $client = $this->soapClient->createClient($webserviceType, $this->config['environment']);
+            } catch (Exception $e) {
+                return [
+                    'success' => false,
+                    'error_code' => 'CLIENT_CREATION_ERROR',
+                    'error_message' => $e->getMessage(),
+                    'can_retry' => false,
+                ];
+            }
             // Configurar headers específicos Paraguay
             $headers = $this->buildParaguayHeaders($operation);
             
@@ -570,12 +584,25 @@ class ParaguayCustomsService
     /**
      * Validar viaje para manifiesto Paraguay
      */
+   /**
+     * Validar viaje para manifiesto Paraguay - VERSIÓN FINAL CORREGIDA
+     * 
+     * BASADO EN ESTRUCTURA REAL DEL SISTEMA:
+     * - Voyage -> Shipments -> BillsOfLading -> ShipmentItems
+     * - ShipmentItems -> Containers (tabla pivote container_shipment_item)
+     * - Paraguay acepta tanto carga contenedorizada como a granel
+     */
     private function validateVoyageForManifest(Voyage $voyage): array
     {
         $errors = [];
         $warnings = [];
 
-        // Validar datos básicos del viaje
+        $this->logOperation('debug', 'INICIANDO validateVoyageForManifest', [
+            'voyage_id' => $voyage->id,
+            'voyage_number' => $voyage->voyage_number
+        ]);
+
+        // 1. Validar datos básicos del viaje
         if (!$voyage->vessel) {
             $errors[] = 'El viaje debe tener una embarcación asignada';
         }
@@ -584,47 +611,121 @@ class ParaguayCustomsService
             $errors[] = 'El viaje debe tener un número de viaje';
         }
 
-        if (!$voyage->departure_port || !$voyage->arrival_port) {
-            $errors[] = 'El viaje debe tener puertos de salida y llegada definidos';
-        }
+        $this->logOperation('debug', 'Validaciones básicas completadas', [
+            'errors_count' => count($errors)
+        ]);
 
-        // Validar que llegue a Paraguay
-        if ($voyage->arrival_port !== 'PYTVT') {
-            $warnings[] = 'El puerto de llegada no es Paraguay Terminal Villeta (PYTVT)';
-        }
+        // 2. Validar que llegue a Paraguay (opcional - warning solamente)
+        // ✅ REEMPLAZAR CON ESTO:
+if (!$voyage->origin_port_id || !$voyage->destination_port_id) {
+    $errors[] = 'El viaje debe tener puertos de salida y llegada definidos';
+}
 
-        // Validar shipments
+// Agregar log para debug de datos reales
+$this->logOperation('debug', 'Datos reales del viaje para validación', [
+    'voyage_id' => $voyage->id,
+    'voyage_number' => $voyage->voyage_number,
+    'origin_port_id' => $voyage->origin_port_id,
+    'destination_port_id' => $voyage->destination_port_id,
+    'has_origin' => !empty($voyage->origin_port_id),
+    'has_destination' => !empty($voyage->destination_port_id)
+]);
+
+        // 3. Validar shipments
         $shipments = $voyage->shipments;
         if ($shipments->isEmpty()) {
             $errors[] = 'El viaje debe tener al menos un envío/carga';
         }
 
-        // Validar contenedores
+        $this->logOperation('debug', 'Validación shipments', [
+            'shipments_count' => $shipments->count(),
+            'shipments_ids' => $shipments->pluck('id')->toArray()
+        ]);
+
+        // 4. Validar carga por shipment (VERSIÓN CORREGIDA)
         foreach ($shipments as $shipment) {
-            if ($shipment->containers->isEmpty()) {
-                $warnings[] = "El envío {$shipment->bl_number} no tiene contenedores asignados";
+            $this->logOperation('debug', 'Validando shipment', [
+                'shipment_id' => $shipment->id,
+                'shipment_number' => $shipment->shipment_number ?? 'N/A'
+            ]);
+
+            // 4.1 Verificar que tenga conocimientos de embarque (Bills of Lading)
+            $billsCount = $shipment->billsOfLading()->count();
+            if ($billsCount === 0) {
+                $warnings[] = "El shipment {$shipment->shipment_number} no tiene conocimientos de embarque";
             }
 
-            foreach ($shipment->containers as $container) {
-                if (!$container->container_number) {
-                    $errors[] = "Contenedor sin número en envío {$shipment->bl_number}";
+            // 4.2 Verificar carga a través de shipmentItems (estructura correcta)
+            try {
+                $shipmentItemsCount = $shipment->shipmentItems()->count();
+                
+                if ($shipmentItemsCount === 0) {
+                    $warnings[] = "El shipment {$shipment->shipment_number} no tiene ítems de carga definidos";
+                } else {
+                    $this->logOperation('debug', 'Shipment tiene carga', [
+                        'shipment_id' => $shipment->id,
+                        'shipment_items_count' => $shipmentItemsCount
+                    ]);
+
+                    // 4.3 Verificar contenedores (si los hay) - ESTRUCTURA CORRECTA
+                    $containersCount = $shipment->shipmentItems()
+                        ->whereHas('containers')
+                        ->count();
+
+                    if ($containersCount > 0) {
+                        $this->logOperation('debug', 'Shipment tiene contenedores', [
+                            'shipment_id' => $shipment->id,
+                            'items_with_containers' => $containersCount
+                        ]);
+
+                        // Validar contenedores específicos
+                        $shipmentItems = $shipment->shipmentItems()->with('containers')->get();
+                        foreach ($shipmentItems as $item) {
+                            foreach ($item->containers as $container) {
+                                if (!$container->container_number) {
+                                    $errors[] = "Contenedor sin número en shipment {$shipment->shipment_number}";
+                                }
+                            }
+                        }
+                    } else {
+                        $this->logOperation('debug', 'Shipment sin contenedores (posible carga a granel)', [
+                            'shipment_id' => $shipment->id,
+                            'note' => 'Paraguay acepta carga a granel'
+                        ]);
+                    }
                 }
 
-                if (!$container->container_type) {
-                    $warnings[] = "Contenedor {$container->container_number} sin tipo definido";
-                }
+            } catch (\Exception $e) {
+                $this->logOperation('warning', 'Error validando carga del shipment', [
+                    'shipment_id' => $shipment->id,
+                    'error' => $e->getMessage()
+                ]);
+                $warnings[] = "No se pudo validar completamente la carga del shipment {$shipment->shipment_number}";
             }
         }
 
-        // Validar datos de la empresa
+        $this->logOperation('debug', 'Validación de carga completada');
+
+        // 5. Validar datos de la empresa
         if (!$this->company->tax_id) {
             $errors[] = 'La empresa debe tener RUC/CUIT configurado';
         }
 
-        // Validar certificados para Paraguay
-        if (!$this->certificateManager->hasValidCertificate('PY')) {
+        // 6. Validar certificados para Paraguay
+        $certValidation = $this->certificateManager->validateCompanyCertificate();
+        if (!$certValidation['is_valid']) {
             $errors[] = 'La empresa debe tener certificado digital válido para Paraguay';
+            // Agregar errores específicos del certificado
+            $errors = array_merge($errors, $certValidation['errors']);
         }
+
+        $this->logOperation('debug', 'FINALIZANDO validateVoyageForManifest', [
+            'is_valid' => empty($errors),
+            'errors_count' => count($errors),
+            'warnings_count' => count($warnings),
+            'errors' => $errors,        
+            'warnings' => $warnings
+        ]);
 
         return [
             'is_valid' => empty($errors),
@@ -685,13 +786,26 @@ class ParaguayCustomsService
     /**
      * Helper methods (reusables del patrón Argentina)
      */
-    private function createTransaction(array $data): WebserviceTransaction
-    {
-        return WebserviceTransaction::create(array_merge($data, [
-            'company_id' => $this->company->id,
-            'created_at' => now(),
-        ]));
-    }
+   private function createTransaction(array $data): WebserviceTransaction
+{
+    // Valores por defecto para Paraguay
+    $defaults = [
+        'company_id' => $this->company->id,
+        'webservice_url' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
+        'soap_action' => 'urn:gdsf:enviarManifiesto',
+        'environment' => 'testing',
+        'retry_count' => 0,
+        'max_retries' => 3,
+        'currency_code' => 'USD',
+        'container_count' => 0,
+        'total_weight_kg' => 0,
+        'ip_address' => request()?->ip() ?? '127.0.0.1',
+        'user_agent' => request()?->userAgent() ?? 'ParaguayCustomsService',
+        'created_at' => now(),
+    ];
+
+    return WebserviceTransaction::create(array_merge($defaults, $data));
+}
 
     private function updateTransactionStatus(WebserviceTransaction $transaction, string $status, string $errorCode = null, string $errorMessage = null): void
     {
@@ -742,18 +856,58 @@ class ParaguayCustomsService
         ];
     }
 
-    private function logOperation(string $level, string $message, array $context = []): void
+    private function logOperation(string $level, string $message, array $context = [], string $category = 'general'): void
     {
-        WebserviceLog::create([
-            'transaction_id' => $context['transaction_id'] ?? null,
-            'level' => $level,
-            'message' => $message,
-            'context' => array_merge($context, [
-                'service' => 'ParaguayCustomsService',
-                'company_id' => $this->company->id,
-            ]),
-        ]);
+        $logData = array_merge([
+            'service' => 'ParaguayCustomsService',
+            'company_id' => $this->company->id,
+            'company_name' => $this->company->legal_name,
+            'timestamp' => now()->toISOString(),
+        ], $context);
 
-        Log::$level($message, $context);
+        // Log en archivo Laravel
+        Log::{$level}($message, $logData);
+
+        // Log en tabla webservice_logs solo si hay transaction_id válido
+        try {
+            if (isset($context['transaction_id']) && $context['transaction_id'] !== null) {
+                WebserviceLog::create([
+                    'transaction_id' => $this->getCurrentTransactionId($context['transaction_id']),
+                    'level' => $level,
+                    'category' => $category,  // ✅ AGREGADO campo obligatorio
+                    'message' => $message,
+                    'context' => $logData,
+                    'created_at' => now(),
+                ]);
+            }
+        } catch (Exception $e) {
+            Log::error('Error logging to webservice_logs table', [
+                'original_message' => $message,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Obtener ID numérico de transacción desde string
+     */
+    private function getCurrentTransactionId(string $stringTransactionId): ?int
+    {
+        $transaction = WebserviceTransaction::where('transaction_id', $stringTransactionId)->first();
+        return $transaction?->id;
+    }
+
+    /**
+     * Obtener URL del webservice Paraguay
+     */
+    private function getWebserviceUrl(): string
+    {
+        // URLs configuradas para Paraguay
+        $urls = [
+            'testing' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
+            'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf'
+        ];
+
+        return $urls[$this->config['environment']] ?? $urls['testing'];
     }
 }

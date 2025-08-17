@@ -768,7 +768,7 @@ private function getCountryFromWebserviceType(string $webserviceType): string
                     return $service->registerTransshipment($voyage);
 
                 case 'paraguay_customs':
-                    return $service->sendManifest($voyage);
+                return $service->sendImportManifest($voyage, auth()->id());
                     
                 case 'mane':  // NUEVO: Agregar caso MANE
                     return $service->sendMane($voyage);

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\FileGeneration;
+namespace App\Services\Webservice;
 
 use App\Models\Company;
 use App\Models\Voyage;
