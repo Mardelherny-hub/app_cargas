@@ -70,23 +70,37 @@ class ArgentinaAnticipatedService
     ];
 
     public function __construct(Company $company, User $user, array $config = [])
-    {
+{
+    try {
+        Log::info('CONSTRUCTOR ArgentinaAnticipatedService - INICIO', [
+            'company_id' => $company->id,
+            'user_id' => $user->id,
+        ]);
+
         $this->company = $company;
         $this->user = $user;
         $this->config = array_merge(self::ANTICIPATED_CONFIG, $config);
 
-        // Inicializar servicios integrados
+        Log::info('CONSTRUCTOR - Creando SoapClientService');
         $this->soapClient = new SoapClientService($company);
+        
+        Log::info('CONSTRUCTOR - Creando CertificateManagerService');
         $this->certificateManager = new CertificateManagerService($company);
+        
+        Log::info('CONSTRUCTOR - Creando XmlSerializerService');
         $this->xmlSerializer = new XmlSerializerService($company);
 
-        $this->logOperation('info', 'ArgentinaAnticipatedService inicializado', [
-            'company_id' => $company->id,
-            'company_name' => $company->legal_name,
-            'user_id' => $user->id,
-            'environment' => $this->config['environment'],
+        Log::info('CONSTRUCTOR - ÉXITO');
+        
+    } catch (Exception $e) {
+        Log::error('ERROR EN CONSTRUCTOR ArgentinaAnticipatedService', [
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
         ]);
+        throw $e;
     }
+}
 
     /**
      * Registrar viaje con información anticipada completa
@@ -130,6 +144,90 @@ class ArgentinaAnticipatedService
             if (!$xmlContent) {
                 throw new Exception('No se pudo generar XML para información anticipada');
             }
+
+             // ✅ BYPASS INTELIGENTE ARGENTINA - DESPUÉS DE XML, ANTES DE SOAP
+            $argentinaData = $this->company->getArgentinaWebserviceData();
+            $shouldBypass = $this->company->shouldBypassTesting('argentina');
+            $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
+
+            $this->logOperation('info', 'Verificando bypass Argentina Anticipada', [
+                'transaction_id' => $transaction->id ?? 'pending',
+                'should_bypass' => $shouldBypass,
+                'is_testing_config' => $isTestingConfig,
+                'environment' => $this->config['environment'],
+                'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
+            ]);
+
+            if ($shouldBypass || $this->config['environment'] === 'testing') {
+                if ($isTestingConfig || $shouldBypass) {
+                    
+                    $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Anticipada', [
+                        'transaction_id' => $transaction->id ?? 'pending',
+                        'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+                        'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
+                    ]);
+
+                    // Generar respuesta simulada
+                    $bypassResponse = $this->generateBypassResponse('RegistrarViaje', $transaction->transaction_id ?? uniqid(), $argentinaData);
+                    
+                    // Actualizar transacción como exitosa con datos de bypass
+                    $transaction->update([
+                        'status' => 'success',
+                        'response_at' => now(),
+                        'confirmation_number' => $bypassResponse['response_data']['voyage_reference'],
+                        'success_data' => $bypassResponse,
+                        'request_xml' => $xmlContent ?? null, // Guardar XML generado si existe
+                    ]);
+
+                    // Crear registro de respuesta estructurada
+                    WebserviceResponse::create([
+                        'transaction_id' => $transaction->id,
+                        'response_type' => 'success',
+                        'voyage_number' => $bypassResponse['response_data']['voyage_reference'],
+                        'response_data' => $bypassResponse,
+                        'processed_at' => now(),
+                    ]);
+
+                    // Preparar resultado final
+                    $result = [
+                        'success' => true,
+                        'transaction_id' => $transaction->id,
+                        'voyage_reference' => $bypassResponse['response_data']['voyage_reference'],
+                        'response_data' => $bypassResponse['response_data'],
+                        'bypass_mode' => true,
+                        'errors' => [],
+                        'warnings' => ['Respuesta simulada - Ambiente de testing o bypass activado'],
+                    ];
+
+                    DB::commit();
+                    return $result;
+                }
+            }
+
+            // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
+            $configErrors = $this->company->validateWebserviceConfig('argentina');
+            if (!empty($configErrors)) {
+                $this->logOperation('error', 'Configuración Argentina incompleta', [
+                    'transaction_id' => $transaction->id ?? 'pending',
+                    'errors' => $configErrors,
+                ]);
+
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Configuración incompleta: ' . implode(', ', $configErrors),
+                    'response_at' => now(),
+                ]);
+
+                $result['errors'] = $configErrors;
+                DB::commit(); // Commit para guardar el estado de error
+                return $result;
+            }
+
+            // ✅ CONEXIÓN REAL A ARGENTINA - Solo si bypass no activado y configuración OK
+            $this->logOperation('info', 'Procediendo con conexión real a AFIP Anticipada', [
+                'transaction_id' => $transaction->id ?? 'pending',
+                'environment' => $this->config['environment'],
+            ]);
 
             // 4. Validar estructura XML generada
             if ($this->config['validate_xml_structure']) {
@@ -177,6 +275,15 @@ class ArgentinaAnticipatedService
                 'voyage_id' => $voyage->id,
                 'transaction_id' => $result['transaction_id'],
             ]);
+
+             // Actualizar transacción si existe
+            if (isset($transaction)) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'response_at' => now(),
+                ]);
+            }
 
             $result['errors'][] = $e->getMessage();
             return $result;
@@ -893,4 +1000,83 @@ class ArgentinaAnticipatedService
     {
         return $this->config['methods'];
     }
+
+    /**
+ * Generar respuesta simulada (bypass) para Argentina Información Anticipada
+ */
+private function generateBypassResponse(string $operation, string $transactionId, array $argentinaData): array
+{
+    $this->logOperation('info', 'BYPASS: Simulando respuesta Argentina Información Anticipada', [
+        'operation' => $operation,
+        'transaction_id' => $transactionId,
+        'reason' => 'Configuración de testing o bypass activado',
+        'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
+    ]);
+
+    // Generar referencias realistas Argentina
+    $argentinaReference = $this->generateRealisticArgentinaReference();
+    $voyageReference = 'ANT' . date('Y') . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+
+    switch ($operation) {
+        case 'RegistrarViaje':
+        case 'enviarAnticipada':
+            return [
+                'success' => true,
+                'response_data' => [
+                    'voyage_reference' => $voyageReference,
+                    'anticipada_id' => $argentinaReference,
+                    'success' => true,
+                ],
+                'status' => 'BYPASS_SUCCESS',
+                'bypass_mode' => true,
+                'processed_at' => now(),
+                'status_message' => 'Información Anticipada registrada exitosamente en AFIP (SIMULADO)',
+            ];
+
+        case 'RectificarViaje':
+        case 'rectificarAnticipada':
+            return [
+                'success' => true,
+                'response_data' => [
+                    'voyage_reference' => $voyageReference,
+                    'rectification_id' => $argentinaReference,
+                    'success' => true,
+                ],
+                'status' => 'RECTIFICADO',
+                'status_description' => 'Información Anticipada rectificada exitosamente en AFIP (SIMULADO)',
+                'bypass_mode' => true,
+            ];
+
+        case 'consultarEstado':
+            return [
+                'success' => true,
+                'status' => 'PROCESADO',
+                'status_description' => 'Información Anticipada procesada por AFIP (SIMULADO)',
+                'voyage_reference' => $voyageReference,
+                'last_update' => now(),
+                'bypass_mode' => true,
+            ];
+
+        default:
+            return [
+                'success' => true,
+                'status' => 'BYPASS_SUCCESS',
+                'message' => "Operación Argentina Anticipada {$operation} simulada exitosamente",
+                'bypass_mode' => true,
+            ];
+    }
+}
+
+/**
+ * Generar referencia Argentina AFIP realista para Información Anticipada
+ */
+private function generateRealisticArgentinaReference(): string
+{
+    $year = date('Y');
+    $office = '001'; // Código típico aduana Buenos Aires para Anticipada
+    $sequence = str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+    $checkDigit = substr(md5($year . $office . $sequence), -1);
+    
+    return 'ANT' . $year . $office . 'INF' . $sequence . strtoupper($checkDigit);
+}
 }

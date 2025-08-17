@@ -86,10 +86,10 @@ class ArgentinaMicDtaService
         ]);
     }
 
-    /**
-     * Enviar MIC/DTA completo para un shipment
-     */
-    public function sendMicDta(Shipment $shipment): array
+   /**
+ * Enviar MIC/DTA completo para un shipment
+ */
+public function sendMicDta(Shipment $shipment): array
 {
     $result = [
         'success' => false,
@@ -120,7 +120,7 @@ class ArgentinaMicDtaService
         // 2. Crear transacción en base de datos ✅ ANTES de logs con transaction_id
         $transaction = $this->createTransaction($shipment);
         $result['transaction_id'] = $transaction->id;
-        
+
         // ✅ AHORA SÍ GUARDAR EL TRANSACTION_ID PARA LOGS POSTERIORES
         $this->currentTransactionId = $transaction->id;
 
@@ -129,6 +129,89 @@ class ArgentinaMicDtaService
         if (!$xmlContent) {
             throw new Exception('Error generando XML MIC/DTA');
         }
+
+        // ✅ BYPASS INTELIGENTE ARGENTINA - DESPUÉS DE XML, ANTES DE SOAP
+        $argentinaData = $this->company->getArgentinaWebserviceData();
+        $shouldBypass = $this->company->shouldBypassTesting('argentina');
+        $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
+
+        $this->logOperation('info', 'Verificando bypass Argentina', [
+            'transaction_id' => $transaction->id,
+            'should_bypass' => $shouldBypass,
+            'is_testing_config' => $isTestingConfig,
+            'environment' => $this->config['environment'],
+            'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
+        ]);
+
+        if ($shouldBypass || $this->config['environment'] === 'testing') {
+            if ($isTestingConfig || $shouldBypass) {
+                
+                $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina MIC/DTA', [
+                    'transaction_id' => $transaction->id,
+                    'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+                    'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
+                ]);
+
+                // Generar respuesta simulada
+                $bypassResponse = $this->generateBypassResponse('RegistrarMicDta', $transaction->transaction_id, $argentinaData);
+                
+                // Actualizar transacción como exitosa con datos de bypass
+                $transaction->update([
+                    'status' => 'success',
+                    'response_at' => now(),
+                    'confirmation_number' => $bypassResponse['response_data']['micdta_id'],
+                    'success_data' => $bypassResponse,
+                    'request_xml' => $xmlContent, // Guardar XML generado
+                ]);
+
+                // Crear registro de respuesta estructurada
+                WebserviceResponse::create([
+                    'transaction_id' => $transaction->id,
+                    'response_type' => 'success',
+                    'voyage_number' => $bypassResponse['response_data']['voyage_number'],
+                    'response_data' => $bypassResponse,
+                    'processed_at' => now(),
+                ]);
+
+                // Preparar resultado final
+                $result = [
+                    'success' => true,
+                    'transaction_id' => $transaction->id,
+                    'response_data' => $bypassResponse['response_data'],
+                    'bypass_mode' => true,
+                    'errors' => [],
+                    'warnings' => ['Respuesta simulada - Ambiente de testing o bypass activado'],
+                ];
+
+                DB::commit();
+                return $result;
+            }
+        }
+
+        // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
+        $configErrors = $this->company->validateWebserviceConfig('argentina');
+        if (!empty($configErrors)) {
+            $this->logOperation('error', 'Configuración Argentina incompleta', [
+                'transaction_id' => $transaction->id,
+                'errors' => $configErrors,
+            ]);
+
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => 'Configuración incompleta: ' . implode(', ', $configErrors),
+                'response_at' => now(),
+            ]);
+
+            $result['errors'] = $configErrors;
+            DB::commit(); // Commit para guardar el estado de error
+            return $result;
+        }
+
+        // ✅ CONEXIÓN REAL A ARGENTINA - Solo si bypass no activado y configuración OK
+        $this->logOperation('info', 'Procediendo con conexión real a AFIP', [
+            'transaction_id' => $transaction->id,
+            'environment' => $this->config['environment'],
+        ]);
 
         // 4. Preparar cliente SOAP
         $soapClient = $this->prepareSoapClient();
@@ -144,7 +227,7 @@ class ArgentinaMicDtaService
 
     } catch (Exception $e) {
         DB::rollBack();
-        
+
         // Log de error SIN transaction_id si no se creó aún
         $this->logOperation('error', 'Error en envío MIC/DTA', [
             'error' => $e->getMessage(),
@@ -367,11 +450,57 @@ class ArgentinaMicDtaService
     }
 
     /**
-     * Enviar request SOAP usando SoapClientService
+     * Enviar request SOAP usando SoapClientService con bypass inteligente
      */
     private function sendSoapRequest(WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
     {
         try {
+            // ✅ OBTENER CONFIGURACIÓN DE ARGENTINA DESDE COMPANY
+            $argentinaData = $this->company->getArgentinaWebserviceData();
+            $shouldBypass = $this->company->shouldBypassTesting('argentina');
+
+            $this->logOperation('info', 'Iniciando request SOAP Argentina', [
+                'transaction_id' => $transaction->id,
+                'cuit_configured' => !empty($argentinaData['cuit']),
+                'should_bypass' => $shouldBypass,
+                'environment' => $this->config['environment'],
+            ]);
+
+            // ✅ BYPASS INTELIGENTE: Verificar si debe simular respuesta
+            if ($shouldBypass || $this->config['environment'] === 'testing') {
+                
+                // Verificar si la configuración es de testing/desarrollo
+                $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
+                
+                if ($isTestingConfig || $shouldBypass) {
+                    // Actualizar transacción como bypass
+                    $transaction->update(['status' => 'bypass', 'sent_at' => now()]);
+                    
+                    // Generar respuesta simulada
+                    return $this->generateBypassResponse('RegistrarMicDta', $transaction->internal_transaction_id, $argentinaData);
+                }
+            }
+
+            // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
+            $configErrors = $this->company->validateWebserviceConfig('argentina');
+            if (!empty($configErrors)) {
+                $this->logOperation('error', 'Configuración Argentina incompleta', [
+                    'transaction_id' => $transaction->id,
+                    'errors' => $configErrors,
+                ]);
+
+                $transaction->update(['status' => 'error']);
+                
+                return [
+                    'success' => false,
+                    'error_code' => 'CONFIG_INCOMPLETE',
+                    'error_message' => 'Configuración de Argentina incompleta: ' . implode(', ', $configErrors),
+                    'can_retry' => false,
+                ];
+            }
+
+            // ✅ CONEXIÓN REAL A ARGENTINA (solo si bypass no activado y configuración OK)
+            
             // Actualizar estado a 'sending'
             $transaction->update(['status' => 'sending', 'sent_at' => now()]);
 
@@ -695,6 +824,84 @@ protected function logInitialization(string $level, string $message, array $cont
     
     // Solo log a Laravel hasta que se cree la transacción
     Log::$level($message, $context);
+}
+
+/**
+ * Generar respuesta simulada (bypass) para Argentina MIC/DTA
+ */
+private function generateBypassResponse(string $operation, string $transactionId, array $argentinaData): array
+{
+    $this->logOperation('info', 'BYPASS: Simulando respuesta Argentina MIC/DTA', [
+        'operation' => $operation,
+        'transaction_id' => $transactionId,
+        'reason' => 'Configuración de testing o bypass activado',
+        'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
+    ]);
+
+    // Generar referencias realistas Argentina
+    $argentinaReference = $this->generateRealisticArgentinaReference();
+    $micNumber = 'MIC' . date('Y') . str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+    $voyageNumber = 'VYG' . date('y') . str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+
+    switch ($operation) {
+        case 'RegistrarMicDta':
+        case 'enviarMicDta':
+            return [
+                'success' => true,
+                'response_data' => [
+                    'micdta_id' => $argentinaReference,
+                    'voyage_number' => $voyageNumber,
+                    'success' => true,
+                ],
+                'status' => 'BYPASS_SUCCESS',
+                'bypass_mode' => true,
+                'processed_at' => now(),
+                'status_message' => 'MIC/DTA registrado exitosamente en AFIP (SIMULADO)',
+            ];
+
+        case 'consultarEstado':
+        case 'ConsultarEstadoMicDta':
+            return [
+                'success' => true,
+                'status' => 'PRESENTADO',
+                'status_description' => 'MIC/DTA presentado y en proceso por AFIP (SIMULADO)',
+                'micdta_id' => $argentinaReference,
+                'last_update' => now(),
+                'bypass_mode' => true,
+            ];
+
+        case 'anularMicDta':
+        case 'AnularMicDta':
+            return [
+                'success' => true,
+                'status' => 'ANULADO',
+                'status_description' => 'MIC/DTA anulado exitosamente en AFIP (SIMULADO)',
+                'micdta_id' => $argentinaReference,
+                'cancelled_at' => now(),
+                'bypass_mode' => true,
+            ];
+
+        default:
+            return [
+                'success' => true,
+                'status' => 'BYPASS_SUCCESS',
+                'message' => "Operación Argentina {$operation} simulada exitosamente",
+                'bypass_mode' => true,
+            ];
+    }
+}
+
+/**
+ * Generar referencia Argentina AFIP realista para testing
+ */
+private function generateRealisticArgentinaReference(): string
+{
+    $year = date('Y');
+    $office = '010'; // Código típico aduana Buenos Aires
+    $sequence = str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+    $checkDigit = substr(md5($year . $office . $sequence), -1);
+    
+    return 'ARG' . $year . $office . 'MIC' . $sequence . strtoupper($checkDigit);
 }
 
 }

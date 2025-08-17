@@ -1163,6 +1163,58 @@ public function isCertificateValid(): bool
     }
 
     /**
+     * Verificar si la configuración es de testing/desarrollo para cualquier país
+     */
+    public function isTestingConfiguration(string $country, array $data): bool
+    {
+        $testingPatterns = [];
+        
+        switch (strtolower($country)) {
+            case 'argentina':
+                $testingPatterns = [
+                    'tax_id' => ['20123456789', '30000000003', '99999999999', '20000000001'],
+                    'company_name' => ['TEST', 'TESTING', 'DESARROLLO', 'DEMO', 'PRUEBA'],
+                ];
+                
+                // Verificar CUIT de testing
+                if (in_array($data['cuit'] ?? '', $testingPatterns['tax_id'])) {
+                    return true;
+                }
+                
+                // Verificar nombre de empresa de testing
+                $companyName = strtoupper($data['company_name'] ?? '');
+                foreach ($testingPatterns['company_name'] as $pattern) {
+                    if (strpos($companyName, $pattern) !== false) {
+                        return true;
+                    }
+                }
+                break;
+                
+            case 'paraguay':
+                $testingPatterns = [
+                    'tax_id' => ['80123456-7', '12345678-9', '00000000-0'],
+                    'company_name' => ['TEST', 'TESTING', 'DESARROLLO', 'DEMO', 'PRUEBA'],
+                ];
+                
+                // Verificar RUC de testing
+                if (in_array($data['ruc'] ?? '', $testingPatterns['tax_id'])) {
+                    return true;
+                }
+                
+                // Verificar nombre de empresa de testing
+                $companyName = strtoupper($data['company_name'] ?? '');
+                foreach ($testingPatterns['company_name'] as $pattern) {
+                    if (strpos($companyName, $pattern) !== false) {
+                        return true;
+                    }
+                }
+                break;
+        }
+        
+        return false;
+    }
+
+    /**
      * Validar configuración de webservices para un país
      */
     public function validateWebserviceConfig(string $country): array
