@@ -71,23 +71,37 @@ class ArgentinaAnticipatedService
     ];
 
     public function __construct(Company $company, User $user, array $config = [])
-    {
+{
+    try {
+        $this->logInitialization('info', 'CONSTRUCTOR ArgentinaAnticipatedService - INICIO', [   
+            'company_id' => $company->id,
+            'user_id' => $user->id,
+        ]);
+
         $this->company = $company;
         $this->user = $user;
         $this->config = array_merge(self::ANTICIPATED_CONFIG, $config);
 
-        // Inicializar servicios integrados
+        $this->logInitialization('info','CONSTRUCTOR - Creando SoapClientService');
         $this->soapClient = new SoapClientService($company);
+        
+        $this->logInitialization('info','CONSTRUCTOR - Creando CertificateManagerService');
         $this->certificateManager = new CertificateManagerService($company);
+        
+        $this->logInitialization('info','CONSTRUCTOR - Creando XmlSerializerService');
         $this->xmlSerializer = new XmlSerializerService($company);
 
-        $this->logInitialization('info', 'ArgentinaAnticipatedService inicializado', [
-            'company_id' => $company->id,
-            'company_name' => $company->legal_name,
-            'user_id' => $user->id,
-            'environment' => $this->config['environment'],
+        $this->logInitialization('info','CONSTRUCTOR - ÉXITO');
+        
+    } catch (Exception $e) {
+        $this->logInitialization('error','ERROR EN CONSTRUCTOR ArgentinaAnticipatedService', [
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
         ]);
+        throw $e;
     }
+}
 
     /**
      * Registrar viaje con información anticipada completa
@@ -117,6 +131,7 @@ class ArgentinaAnticipatedService
             // 1. Validaciones integrales pre-envío
             $validation = $this->validateForAnticipated($voyage);
             if (!$validation['is_valid']) {
+                //$result['transaction_id'] = $transaction->id;
                 $result['errors'] = $validation['errors'];
                 $result['warnings'] = $validation['warnings'];
                 return $result;
@@ -134,21 +149,18 @@ class ArgentinaAnticipatedService
                 throw new Exception('No se pudo generar XML para información anticipada');
             }
 
-            // 4. Validar estructura XML generada
-            if ($this->config['validate_xml_structure']) {
-                $xmlValidation = $this->xmlSerializer->validateXmlStructure($xmlContent);
-                if (!$xmlValidation['is_valid']) {
-                    throw new Exception('XML generado no válido: ' . implode(', ', $xmlValidation['errors']));
-                }
-            }
+            Log::info('🔥 LLEGANDO AL BYPASS', [
+                'transaction_id' => $transaction->id,
+                'environment' => $this->config['environment'],
+            ]);
 
-            // ✅ BYPASS INTELIGENTE ARGENTINA - DESPUÉS DE XML, ANTES DE SOAP
+             // ✅ BYPASS INTELIGENTE ARGENTINA - DESPUÉS DE XML, ANTES DE SOAP
             $argentinaData = $this->company->getArgentinaWebserviceData();
             $shouldBypass = $this->company->shouldBypassTesting('argentina');
             $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
 
             $this->logOperation('info', 'Verificando bypass Argentina Anticipada', [
-                'transaction_id' => $transaction->id,
+                'transaction_id' => $transaction->id ?? 'pending',
                 'should_bypass' => $shouldBypass,
                 'is_testing_config' => $isTestingConfig,
                 'environment' => $this->config['environment'],
@@ -159,29 +171,30 @@ class ArgentinaAnticipatedService
                 if ($isTestingConfig || $shouldBypass) {
                     
                     $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Anticipada', [
-                        'transaction_id' => $transaction->id,
+                        'transaction_id' => $transaction->id ?? 'pending',
                         'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
                         'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
                     ]);
 
                     // Generar respuesta simulada
-                    $bypassResponse = $this->generateBypassResponse('RegistrarViaje', $transaction->transaction_id, $argentinaData);
+                    $bypassResponse = $this->generateBypassResponse('RegistrarViaje', $transaction->transaction_id ?? uniqid(), $argentinaData);
                     
                     // Actualizar transacción como exitosa con datos de bypass
                     $transaction->update([
                         'status' => 'success',
-                        'completed_at' => now(),
-                        'external_reference' => $bypassResponse['response_data']['voyage_reference'],
-                        'request_xml' => $xmlContent, // Guardar XML generado
+                        'response_at' => now(),
+                        'confirmation_number' => $bypassResponse['response_data']['voyage_reference'],
+                        'success_data' => $bypassResponse,
+                        'request_xml' => $xmlContent ?? null, // Guardar XML generado si existe
                     ]);
 
                     // Crear registro de respuesta estructurada
                     WebserviceResponse::create([
-                        'webservice_transaction_id' => $transaction->id,
-                        'response_code' => '200',
-                        'response_message' => 'Información Anticipada registrada exitosamente (SIMULADO)',
+                        'transaction_id' => $transaction->id,
+                        'response_type' => 'success',
+                        'voyage_number' => $bypassResponse['response_data']['voyage_reference'],
                         'response_data' => $bypassResponse,
-                        'is_success' => true,
+                        'processed_at' => now(),
                     ]);
 
                     // Preparar resultado final
@@ -204,14 +217,14 @@ class ArgentinaAnticipatedService
             $configErrors = $this->company->validateWebserviceConfig('argentina');
             if (!empty($configErrors)) {
                 $this->logOperation('error', 'Configuración Argentina incompleta', [
-                    'transaction_id' => $transaction->id,
+                    'transaction_id' => $transaction->id ?? 'pending',
                     'errors' => $configErrors,
                 ]);
 
                 $transaction->update([
                     'status' => 'error',
                     'error_message' => 'Configuración incompleta: ' . implode(', ', $configErrors),
-                    'completed_at' => now(),
+                    'response_at' => now(),
                 ]);
 
                 $result['errors'] = $configErrors;
@@ -221,9 +234,17 @@ class ArgentinaAnticipatedService
 
             // ✅ CONEXIÓN REAL A ARGENTINA - Solo si bypass no activado y configuración OK
             $this->logOperation('info', 'Procediendo con conexión real a AFIP Anticipada', [
-                'transaction_id' => $transaction->id,
+                'transaction_id' => $transaction->id ?? 'pending',
                 'environment' => $this->config['environment'],
             ]);
+
+            // 4. Validar estructura XML generada
+            if ($this->config['validate_xml_structure']) {
+                $xmlValidation = $this->xmlSerializer->validateXmlStructure($xmlContent);
+                if (!$xmlValidation['is_valid']) {
+                    throw new Exception('XML generado no válido: ' . implode(', ', $xmlValidation['errors']));
+                }
+            }
 
             // 5. Preparar cliente SOAP
             $soapClient = $this->prepareSoapClient();
@@ -263,6 +284,15 @@ class ArgentinaAnticipatedService
                 'voyage_id' => $voyage->id,
                 'transaction_id' => $result['transaction_id'],
             ]);
+
+             // Actualizar transacción si existe
+            if (isset($transaction)) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'response_at' => now(),
+                ]);
+            }
 
             $result['errors'][] = $e->getMessage();
             return $result;
@@ -388,7 +418,7 @@ class ArgentinaAnticipatedService
             $validation['errors'][] = 'Número de viaje requerido';
         }
 
-        if (!$voyage->originPort || !$voyage->destinationPort) {
+        if (!$voyage->departure_port || !$voyage->arrival_port) {
             $validation['errors'][] = 'Puertos de origen y destino requeridos';
         }
 
@@ -397,7 +427,7 @@ class ArgentinaAnticipatedService
         }
 
         // 3. Validar embarcación
-        if (!$voyage->lead_vessel_id || !$voyage->leadVessel) {
+        if (!$voyage->vessel_id || !$voyage->vessel) {
             $validation['errors'][] = 'Embarcación requerida para información anticipada';
         } else {
             if (!$voyage->vessel->name || !$voyage->vessel->imo_number) {
@@ -443,9 +473,9 @@ class ArgentinaAnticipatedService
         }
 
         // 10. Validar consistencia de datos
-        if ($voyage->leadVessel && $voyage->shipments()->count() > 0) {
+        if ($voyage->vessel && $voyage->shipments()->count() > 0) {
             $totalContainers = $voyage->shipments()->sum('containers_loaded');
-            $vesselCapacity = $voyage->leadVessel->container_capacity ?? 50;
+            $vesselCapacity = $voyage->vessel->container_capacity ?? 50;
             
             if ($totalContainers > $vesselCapacity) {
                 $validation['warnings'][] = "Total de contenedores ({$totalContainers}) excede capacidad de embarcación ({$vesselCapacity})";
@@ -553,8 +583,8 @@ class ArgentinaAnticipatedService
                 'vessel_name' => $voyage->vessel?->name,
                 'vessel_imo' => $voyage->vessel?->imo_number,
                 'captain_name' => $voyage->captain?->full_name,
-                'departure_port' => $voyage->originPort?->code,
-                'arrival_port' => $voyage->destinationPort?->code,
+                'departure_port' => $voyage->departure_port,
+                'arrival_port' => $voyage->arrival_port,
                 'departure_date' => $voyage->departure_date?->toISOString(),
                 'arrival_date' => $voyage->arrival_date?->toISOString(),
                 'is_convoy' => $voyage->is_convoy ? true : false,
@@ -564,12 +594,12 @@ class ArgentinaAnticipatedService
             ],
         ]);
 
-        $this->logOperation('info', 'Transacción información anticipada creada', [
+       $this->logOperation('info', 'Transacción información anticipada creada', [
             'transaction_id' => $transaction->id,
             'internal_transaction_id' => $transactionId,
             'webservice_url' => $webserviceUrl,
             'voyage_data' => $transaction->additional_metadata,
-        ]);
+        ], 'transaction_management'); // ✅ CATEGORY AGREGADA
 
         return $transaction;
     }
@@ -935,7 +965,7 @@ class ArgentinaAnticipatedService
                 \App\Models\WebserviceLog::create([
                     'transaction_id' => $this->currentTransactionId,
                     'level' => $level,
-                    'category' => $category, // ✅ CAMPO AGREGADO
+                    'category' => $category, // ✅ CAMPO REQUERIDO
                     'message' => $message,
                     'context' => $context,
                     'created_at' => now(),
@@ -943,26 +973,11 @@ class ArgentinaAnticipatedService
             }
 
         } catch (\Exception $e) {
-            Log::error('Error logging to webservice_logs table', [
+            $this->logInitialization('error','Error logging to webservice_logs table', [
                 'original_message' => $message,
                 'error' => $e->getMessage()
             ]);
         }
-    }
-
-    /**
-     * Log para inicialización (sin transaction_id) - MÉTODO NUEVO
-     */
-    protected function logInitialization(string $level, string $message, array $context = []): void
-    {
-        $context['service'] = 'ArgentinaAnticipatedService';
-        $context['company_id'] = $this->company->id;
-        $context['company_name'] = $this->company->legal_name ?? $this->company->name;
-        $context['user_id'] = $this->user->id;
-        $context['timestamp'] = now()->toISOString();
-        
-        // Solo log a Laravel hasta que se cree la transacción
-        Log::$level($message, $context);
     }
 
     /**
@@ -995,6 +1010,21 @@ class ArgentinaAnticipatedService
     public function getAvailableMethods(): array
     {
         return $this->config['methods'];
+    }
+
+    /**
+     * Log para inicialización (sin transaction_id) - MÉTODO NUEVO
+     */
+    protected function logInitialization(string $level, string $message, array $context = []): void
+    {
+        $context['service'] = 'ArgentinaAnticipatedService';
+        $context['company_id'] = $this->company->id;
+        $context['company_name'] = $this->company->legal_name ?? $this->company->name;
+        $context['user_id'] = $this->user->id;
+        $context['timestamp'] = now()->toISOString();
+        
+        // Solo log a Laravel hasta que se cree la transacción
+        Log::$level($message, $context);
     }
 
     /**
@@ -1063,16 +1093,16 @@ class ArgentinaAnticipatedService
         }
     }
 
-    /**
-     * Generar referencia Argentina AFIP realista para Información Anticipada
-     */
-    private function generateRealisticArgentinaReference(): string
-    {
-        $year = date('Y');
-        $office = '001'; // Código típico aduana Buenos Aires para Anticipada
-        $sequence = str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
-        $checkDigit = substr(md5($year . $office . $sequence), -1);
-        
-        return 'ANT' . $year . $office . 'INF' . $sequence . strtoupper($checkDigit);
-    }
+/**
+ * Generar referencia Argentina AFIP realista para Información Anticipada
+ */
+private function generateRealisticArgentinaReference(): string
+{
+    $year = date('Y');
+    $office = '001'; // Código típico aduana Buenos Aires para Anticipada
+    $sequence = str_pad(mt_rand(1, 999999), 6, '0', STR_PAD_LEFT);
+    $checkDigit = substr(md5($year . $office . $sequence), -1);
+    
+    return 'ANT' . $year . $office . 'INF' . $sequence . strtoupper($checkDigit);
+}
 }

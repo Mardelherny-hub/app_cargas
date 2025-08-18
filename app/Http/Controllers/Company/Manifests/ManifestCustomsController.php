@@ -12,6 +12,7 @@ use App\Services\Webservice\ParaguayCustomsService;
 use App\Services\Webservice\ArgentinaDeconsolidationService;
 use App\Services\Webservice\ArgentinaTransshipmentService;
 use App\Services\Webservice\ArgentinaManeService;
+use App\Models\VoyageWebserviceStatus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 
@@ -750,7 +751,12 @@ private function getCountryFromWebserviceType(string $webserviceType): string
         try {
             switch ($webserviceType) {
                 case 'anticipada':
-                    return $service->registerVoyage($voyage);
+                    Log::info('🔥 CASO ANTICIPADA - Llamando registerVoyage');
+                    $response = $service->registerVoyage($voyage);
+                    Log::info('🔥 RESPUESTA RECIBIDA de registerVoyage', [
+                        'success' => $response['success'] ?? 'no_definido',
+                    ]);
+                    return $response;
                     
                 case 'micdta':
                     $firstShipment = $voyage->shipments()->first();
@@ -825,7 +831,8 @@ private function getCountryFromWebserviceType(string $webserviceType): string
     }
 
     /**
-     * ✅ MÉTODO CORREGIDO: Enviar manifiesto con verificación de estados independientes por país
+     * ✅ MÉTODO ACTUALIZADO: Enviar manifiesto con soporte para múltiples webservices
+     * Ahora soporta estados independientes por webservice específico
      */
     public function send(Request $request, $voyageId)
     {
@@ -845,50 +852,43 @@ private function getCountryFromWebserviceType(string $webserviceType): string
             'priority' => 'nullable|in:normal,high,urgent',
         ]);
 
-        // ✅ AGREGAR ESTE LOG DESPUÉS DE LA VALIDACIÓN
-        Log::info('🔥 VALIDACIÓN PASADA, CREANDO TRANSACCIÓN', [
-            'voyage_id' => $voyage->id,
-            'voyage_number' => $voyage->voyage_number,
-        ]);
-
         try {
-            // ✅ NUEVA VERIFICACIÓN: Determinar país del webservice
+            // ✅ NUEVO: Determinar país del webservice específico
             $country = $this->getCountryFromWebserviceType($request->webservice_type);
             
-            // ✅ VERIFICAR SI PUEDE ENVIAR A ESTE PAÍS ESPECÍFICO
-            $canSend = $voyage->canSendToCountry($country);
+            // ✅ NUEVO: Verificar si puede enviar este webservice específico
+            $canSend = $this->canSendSpecificWebservice($voyage, $request->webservice_type, $country);
             if (!$canSend['allowed']) {
                 return back()->with('error', 'No se puede enviar: ' . $canSend['reason']);
             }
 
+            Log::info('🔥 VALIDACIÓN PASADA, puede enviar webservice específico', [
+                'webservice_type' => $request->webservice_type,
+                'country' => $country,
+                'can_send' => $canSend,
+            ]);
+
             // Crear transacción de webservice
             $transaction = $this->createWebserviceTransaction($voyage, $request->all());
 
-            // ✅ AGREGAR ESTE LOG DESPUÉS DE CREAR TRANSACCIÓN
-            Log::info('🔥 TRANSACCIÓN CREADA, OBTENIENDO SERVICIO', [
-                'transaction_id' => $transaction->id,
-            ]);
-
-            Log::info('Transacción creada para envío', [
+            Log::info('Transacción creada para envío específico', [
                 'transaction_id' => $transaction->id,
                 'webservice_type' => $request->webservice_type,
                 'country' => $country,
                 'voyage_id' => $voyage->id
             ]);
 
-            // ✅ ACTUALIZAR ESTADO DEL PAÍS A 'ENVIANDO'
-            $voyage->updateCountryStatus($country, 'sent', [
-                'voyage_id' => $transaction->transaction_id
-            ]);
+            // ✅ NUEVO: Actualizar estado específico del webservice a 'sending'
+            $this->updateSpecificWebserviceStatus(
+                $voyage, 
+                $request->webservice_type, 
+                $country, 
+                'sending',
+                ['transaction_id' => $transaction->transaction_id]
+            );
 
             // Seleccionar servicio según país y tipo
             $service = $this->getWebserviceByType($request->webservice_type, $voyage);
-
-
-            // ✅ AGREGAR ESTE LOG DESPUÉS DE OBTENER SERVICIO
-            Log::info('🔥 SERVICIO OBTENIDO, LLAMANDO sendToWebservice', [
-                'service_class' => get_class($service),
-            ]);
             
             // Enviar a aduana usando el método correcto según el tipo
             $response = $this->sendToWebservice($service, $request->webservice_type, $voyage, [
@@ -900,33 +900,55 @@ private function getCountryFromWebserviceType(string $webserviceType): string
             // Actualizar transacción con respuesta
             $this->updateTransactionWithResponse($transaction, $response);
 
-            // ✅ ACTUALIZAR ESTADO FINAL DEL PAÍS SEGÚN RESPUESTA
+            // ✅ NUEVO: Actualizar estado específico según respuesta
             if ($response['success'] ?? false) {
-                $voyage->updateCountryStatus($country, 'approved', [
-                    'voyage_id' => $response['external_reference'] ?? $transaction->transaction_id
-                ]);
+                $this->updateSpecificWebserviceStatus(
+                    $voyage, 
+                    $request->webservice_type, 
+                    $country, 
+                    'approved', 
+                    [
+                        'confirmation_number' => $response['confirmation_number'] ?? null,
+                        'external_voyage_number' => $response['external_reference'] ?? $transaction->transaction_id
+                    ]
+                );
                 
                 return redirect()->route('company.manifests.customs.status', $transaction->id)
-                    ->with('success', 'Manifiesto enviado a ' . strtoupper($country) . ' correctamente.');
+                    ->with('success', "Webservice {$request->webservice_type} enviado a " . strtoupper($country) . ' correctamente.');
             } else {
-                // Si falló, regresar estado a error para permitir reintento
-                $voyage->updateCountryStatus($country, 'error');
+                // Si falló, actualizar estado específico a error
+                $this->updateSpecificWebserviceStatus(
+                    $voyage, 
+                    $request->webservice_type, 
+                    $country, 
+                    'error',
+                    [
+                        'error_code' => $response['error_code'] ?? 'UNKNOWN_ERROR',
+                        'error_message' => $response['error_message'] ?? 'Error de conectividad'
+                    ]
+                );
                 
                 $errorMessage = $response['error_message'] ?? 'Error de conectividad con el webservice aduanero';
-                return back()->with('error', 'Error en envío a ' . strtoupper($country) . ': ' . $errorMessage);
+                return back()->with('error', "Error en envío {$request->webservice_type} a " . strtoupper($country) . ': ' . $errorMessage);
             }
 
         } catch (\Exception $e) {
-            Log::error('Error en envío de manifiesto', [
+            Log::error('Error en envío de manifiesto específico', [
                 'voyage_id' => $voyageId,
                 'webservice_type' => $request->webservice_type,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // ✅ SI HAY EXCEPCIÓN, REVERTIR ESTADO DEL PAÍS
-            if (isset($country)) {
-                $voyage->updateCountryStatus($country, 'error');
+            // ✅ SI HAY EXCEPCIÓN, actualizar estado específico a error
+            if (isset($country) && isset($request->webservice_type)) {
+                $this->updateSpecificWebserviceStatus(
+                    $voyage, 
+                    $request->webservice_type, 
+                    $country, 
+                    'error',
+                    ['error_message' => $e->getMessage()]
+                );
             }
 
             return back()->with('error', 'Error crítico en envío: ' . $e->getMessage());
@@ -1003,5 +1025,189 @@ private function getCountryFromWebserviceType(string $webserviceType): string
         }
         
         return $bargeData;
+    }
+
+    // ========================================
+    // ✅ NUEVOS MÉTODOS: SOPORTE MÚLTIPLES WEBSERVICES
+    // Complementan el sistema existente sin reemplazarlo
+    // ========================================
+
+    /**
+     * ✅ NUEVO: Verificar si puede enviar webservice específico
+     * Usa el nuevo sistema de estados independientes
+     */
+    private function canSendSpecificWebservice(Voyage $voyage, string $webserviceType, string $country): array
+    {
+        // Verificar usando el nuevo sistema de estados independientes
+        $webserviceStatus = $voyage->webserviceStatuses()
+            ->where('country', $country)
+            ->where('webservice_type', $webserviceType)
+            ->first();
+
+        if ($webserviceStatus) {
+            return [
+                'allowed' => $webserviceStatus->canSend(),
+                'status' => $webserviceStatus->status,
+                'reason' => $webserviceStatus->canSend() ? null : 
+                    "Webservice {$webserviceType} ya está en estado: {$webserviceStatus->status}"
+            ];
+        }
+
+        // Si no existe estado, verificar usando método existente (fallback)
+        return $voyage->canSendToCountry($country);
+    }
+
+    /**
+     * ✅ NUEVO: Actualizar estado de webservice específico
+     * Complementa updateCountryStatus() existente con granularidad por webservice
+     */
+    private function updateSpecificWebserviceStatus(
+        Voyage $voyage, 
+        string $webserviceType, 
+        string $country, 
+        string $status, 
+        array $additionalData = []
+    ): void {
+        // Crear o actualizar estado específico del webservice
+        $webserviceStatus = VoyageWebserviceStatus::firstOrCreate([
+            'voyage_id' => $voyage->id,
+            'country' => $country,
+            'webservice_type' => $webserviceType,
+        ], [
+            'company_id' => $voyage->company_id,
+            'user_id' => auth()->id(),
+            'status' => 'pending',
+            'can_send' => true,
+            'is_required' => true,
+            'retry_count' => 0,
+            'max_retries' => 3,
+        ]);
+
+        // Preparar datos de actualización
+        $updateData = [
+            'status' => $status,
+            'user_id' => auth()->id(),
+        ];
+
+        // Agregar datos específicos según el estado
+        switch ($status) {
+            case 'sending':
+                $updateData['last_sent_at'] = now();
+                $updateData['first_sent_at'] = $updateData['first_sent_at'] ?? now();
+                if (isset($additionalData['transaction_id'])) {
+                    $updateData['last_transaction_id'] = $additionalData['transaction_id'];
+                }
+                break;
+
+            case 'approved':
+                $updateData['approved_at'] = now();
+                $updateData['can_send'] = false;
+                if (isset($additionalData['confirmation_number'])) {
+                    $updateData['confirmation_number'] = $additionalData['confirmation_number'];
+                }
+                if (isset($additionalData['external_voyage_number'])) {
+                    $updateData['external_voyage_number'] = $additionalData['external_voyage_number'];
+                }
+                break;
+
+            case 'error':
+                $updateData['can_send'] = true; // Permitir reintento
+                if (isset($additionalData['error_code'])) {
+                    $updateData['last_error_code'] = $additionalData['error_code'];
+                }
+                if (isset($additionalData['error_message'])) {
+                    $updateData['last_error_message'] = $additionalData['error_message'];
+                }
+                break;
+        }
+
+        $webserviceStatus->update($updateData);
+
+        // También actualizar el sistema anterior para compatibilidad
+        $voyage->updateCountryStatus($country, $status, $additionalData);
+    }
+
+    /**
+     * ✅ NUEVO: Obtener resumen de webservices disponibles para un voyage
+     * Para mostrar en vistas qué webservices pueden enviarse
+     */
+    private function getAvailableWebservicesForVoyage(Voyage $voyage): array
+    {
+        $company = $voyage->company;
+        $roles = $company->getRoles() ?? [];
+        $availableWebservices = [];
+
+        // Argentina - Cargas
+        if (in_array('cargas', $roles)) {
+            $anticipadaStatus = $voyage->getAnticipadaStatus();
+            $micDtaStatus = $voyage->getMicDtaStatus();
+            
+            $availableWebservices['argentina'] = [
+                'anticipada' => [
+                    'name' => 'Información Anticipada',
+                    'can_send' => $anticipadaStatus ? $anticipadaStatus->canSend() : true,
+                    'status' => $anticipadaStatus ? $anticipadaStatus->status : 'pending',
+                    'last_sent_at' => $anticipadaStatus?->last_sent_at,
+                    'required' => true,
+                ],
+                'micdta' => [
+                    'name' => 'MIC/DTA',
+                    'can_send' => $micDtaStatus ? $micDtaStatus->canSend() : true,
+                    'status' => $micDtaStatus ? $micDtaStatus->status : 'pending',
+                    'last_sent_at' => $micDtaStatus?->last_sent_at,
+                    'required' => true,
+                    'depends_on' => $anticipadaStatus && $anticipadaStatus->isSuccessful() ? null : 'anticipada',
+                ],
+            ];
+        }
+
+        // Argentina - Desconsolidador
+        if (in_array('desconsolidador', $roles)) {
+            $desconsolidadoStatus = $voyage->getDesconsolidadoStatus();
+            
+            $availableWebservices['argentina']['desconsolidado'] = [
+                'name' => 'Desconsolidados',
+                'can_send' => $desconsolidadoStatus ? $desconsolidadoStatus->canSend() : true,
+                'status' => $desconsolidadoStatus ? $desconsolidadoStatus->status : 'pending',
+                'last_sent_at' => $desconsolidadoStatus?->last_sent_at,
+                'required' => false,
+            ];
+        }
+
+        // Transbordos (Argentina y Paraguay)
+        if (in_array('transbordos', $roles)) {
+            $transbordoArStatus = $voyage->getTransbordoStatus('AR');
+            $transbordoPyStatus = $voyage->getTransbordoStatus('PY');
+            
+            $availableWebservices['argentina']['transbordo'] = [
+                'name' => 'Transbordos',
+                'can_send' => $transbordoArStatus ? $transbordoArStatus->canSend() : true,
+                'status' => $transbordoArStatus ? $transbordoArStatus->status : 'pending',
+                'last_sent_at' => $transbordoArStatus?->last_sent_at,
+                'required' => false,
+            ];
+            
+            $availableWebservices['paraguay']['transbordo'] = [
+                'name' => 'Transbordos',
+                'can_send' => $transbordoPyStatus ? $transbordoPyStatus->canSend() : true,
+                'status' => $transbordoPyStatus ? $transbordoPyStatus->status : 'pending',
+                'last_sent_at' => $transbordoPyStatus?->last_sent_at,
+                'required' => false,
+            ];
+        }
+
+        return $availableWebservices;
+    }
+
+    /**
+     * ✅ NUEVO: Inicializar estados de webservice para voyage
+     * Se llama automáticamente cuando se carga un voyage en la vista
+     */
+    private function ensureWebserviceStatusesExist(Voyage $voyage): void
+    {
+        // Solo crear estados si no existen
+        if ($voyage->webserviceStatuses()->count() === 0) {
+            $voyage->createInitialWebserviceStatuses();
+        }
     }
 }

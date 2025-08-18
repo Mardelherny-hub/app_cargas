@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Models\Vessel;
+use App\Models\VoyageWebserviceStatus;
 
 
 
@@ -441,6 +442,15 @@ public function destinationCountry(): BelongsTo
 public function vessel(): BelongsTo
 {
     return $this->leadVessel();
+}
+
+/**
+ * ✅ NUEVO: Estados de webservice independientes por tipo
+ * Permite múltiples webservices por voyage (anticipada + micdta + desconsolidado + transbordo)
+ */
+public function webserviceStatuses(): HasMany
+{
+    return $this->hasMany(VoyageWebserviceStatus::class);
 }
 
 /**
@@ -1321,6 +1331,12 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
      */
     public function canSendToCountry(string $country): array
     {
+         // AGREGAR ESTE LOG AL INICIO
+        Log::info('🔥 canSendToCountry EJECUTÁNDOSE', [
+            'country_input' => $country,
+            'voyage_id' => $this->id,
+            'argentina_status' => $this->argentina_status,
+        ]);
         $country = strtolower($country);
         
         switch ($country) {
@@ -1336,6 +1352,7 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
                             ? 'Ya aprobado por Argentina' 
                             : null)
                 ];
+            break;  
                 
             case 'paraguay':
             case 'py':
@@ -1527,5 +1544,171 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
         }
         
         return $countries;
+    }
+
+    // ========================================
+    // ✅ NUEVOS MÉTODOS: ESTADOS POR WEBSERVICE ESPECÍFICO
+    // Complementan el sistema existente sin reemplazarlo
+    // ========================================
+
+    /**
+     * ✅ NUEVO: Obtener estado de Información Anticipada
+     */
+    public function getAnticipadaStatus(): ?VoyageWebserviceStatus
+    {
+        return $this->webserviceStatuses()
+            ->where('country', 'AR')
+            ->where('webservice_type', 'anticipada')
+            ->first();
+    }
+
+    /**
+     * ✅ NUEVO: Obtener estado de MIC/DTA
+     */
+    public function getMicDtaStatus(): ?VoyageWebserviceStatus
+    {
+        return $this->webserviceStatuses()
+            ->where('country', 'AR')
+            ->where('webservice_type', 'micdta')
+            ->first();
+    }
+
+    /**
+     * ✅ NUEVO: Obtener estado de Desconsolidados
+     */
+    public function getDesconsolidadoStatus(): ?VoyageWebserviceStatus
+    {
+        return $this->webserviceStatuses()
+            ->where('country', 'AR')
+            ->where('webservice_type', 'desconsolidado')
+            ->first();
+    }
+
+    /**
+     * ✅ NUEVO: Obtener estado de Transbordos
+     */
+    public function getTransbordoStatus(string $country = 'AR'): ?VoyageWebserviceStatus
+    {
+        return $this->webserviceStatuses()
+            ->where('country', $country)
+            ->where('webservice_type', 'transbordo')
+            ->first();
+    }
+
+    /**
+     * ✅ NUEVO: Verificar si puede enviar un webservice específico
+     */
+    public function canSendWebservice(string $webserviceType, string $country = 'AR'): bool
+    {
+        $status = $this->webserviceStatuses()
+            ->where('country', $country)
+            ->where('webservice_type', $webserviceType)
+            ->first();
+
+        return $status ? $status->canSend() : true; // Si no existe estado, se puede enviar
+    }
+
+    /**
+     * ✅ NUEVO: Crear estados iniciales basados en roles de empresa
+     */
+    public function createInitialWebserviceStatuses(): void
+    {
+        $company = $this->company;
+        if (!$company) {
+            return;
+        }
+
+        $roles = $company->getRoles() ?? [];
+        
+        // Mapear roles a webservices requeridos
+        $requiredWebservices = [];
+        
+        if (in_array('cargas', $roles)) {
+            $requiredWebservices[] = ['country' => 'AR', 'type' => 'anticipada'];
+            $requiredWebservices[] = ['country' => 'AR', 'type' => 'micdta'];
+            $requiredWebservices[] = ['country' => 'AR', 'type' => 'mane'];
+        }
+        
+        if (in_array('desconsolidador', $roles)) {
+            $requiredWebservices[] = ['country' => 'AR', 'type' => 'desconsolidado'];
+        }
+        
+        if (in_array('transbordos', $roles)) {
+            $requiredWebservices[] = ['country' => 'AR', 'type' => 'transbordo'];
+            $requiredWebservices[] = ['country' => 'PY', 'type' => 'transbordo'];
+        }
+
+        // Crear estados si no existen
+        foreach ($requiredWebservices as $webservice) {
+            VoyageWebserviceStatus::firstOrCreate([
+                'voyage_id' => $this->id,
+                'country' => $webservice['country'],
+                'webservice_type' => $webservice['type'],
+            ], [
+                'company_id' => $this->company_id,
+                'status' => 'pending',
+                'can_send' => true,
+                'is_required' => true,
+                'retry_count' => 0,
+                'max_retries' => 3,
+            ]);
+        }
+    }
+
+    /**
+     * ✅ NUEVO: Obtener resumen completo de estados múltiples
+     * Complementa getWebserviceStatusSummary() existente con información detallada
+     */
+    public function getMultipleWebserviceStatusSummary(): array
+    {
+        $summary = [
+            'argentina' => [
+                'anticipada' => null,
+                'micdta' => null,
+                'desconsolidado' => null,
+                'transbordo' => null,
+                'mane' => null,
+            ],
+            'paraguay' => [
+                'manifiesto' => null,
+                'transbordo' => null,
+            ],
+            'stats' => [
+                'total_webservices' => 0,
+                'approved_count' => 0,
+                'pending_count' => 0,
+                'error_count' => 0,
+            ]
+        ];
+
+        foreach ($this->webserviceStatuses as $status) {
+            $statusData = [
+                'status' => $status->status,
+                'can_send' => $status->canSend(),
+                'last_sent_at' => $status->last_sent_at,
+                'confirmation_number' => $status->confirmation_number,
+                'error_message' => $status->last_error_message,
+            ];
+
+            // Agregar al resumen por país
+            if ($status->country === 'AR') {
+                $summary['argentina'][$status->webservice_type] = $statusData;
+            } else {
+                $summary['paraguay'][$status->webservice_type] = $statusData;
+            }
+
+            // Estadísticas generales
+            $summary['stats']['total_webservices']++;
+            
+            if ($status->isSuccessful()) {
+                $summary['stats']['approved_count']++;
+            } elseif ($status->status === 'pending') {
+                $summary['stats']['pending_count']++;
+            } elseif ($status->hasErrors()) {
+                $summary['stats']['error_count']++;
+            }
+        }
+
+        return $summary;
     }
 }
