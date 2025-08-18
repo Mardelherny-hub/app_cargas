@@ -254,64 +254,64 @@
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-    @php
-        $webserviceStatuses = $voyage->webserviceStatuses;
-        $lastTransaction = $voyage->webserviceTransactions->last();
-        $hasNewSystem = $webserviceStatuses->isNotEmpty();
-        
-        $companyRoles = auth()->user()->company->getRoles() ?? [];
-        $availableWebservices = [];
-        
-        if (in_array('Cargas', $companyRoles)) {
-            $availableWebservices[] = ['type' => 'anticipada', 'country' => 'AR', 'name' => 'Anticipada'];
-            $availableWebservices[] = ['type' => 'micdta', 'country' => 'AR', 'name' => 'MIC/DTA'];
-            $availableWebservices[] = ['type' => 'mane', 'country' => 'AR', 'name' => 'MANE'];
-        }
-        if (in_array('Desconsolidador', $companyRoles)) {
-            $availableWebservices[] = ['type' => 'desconsolidado', 'country' => 'AR', 'name' => 'Desconsolidado'];
-        }
-        if (in_array('Transbordos', $companyRoles)) {
-            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'AR', 'name' => 'Transbordo AR'];
-            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'PY', 'name' => 'Transbordo PY'];
-        }
-    @endphp
-    
-    <div class="flex flex-wrap gap-1">
-        @foreach($availableWebservices as $ws)
-            @php
-                $wsStatus = $webserviceStatuses->where('webservice_type', $ws['type'])
-                                              ->where('country', $ws['country'])
-                                              ->first();
-                $canSend = !$wsStatus || in_array($wsStatus->status, ['pending', 'error', 'expired']);
-                $isError = $wsStatus && $wsStatus->status === 'error';
-                $isSent = $wsStatus && in_array($wsStatus->status, ['sent', 'approved']);
-            @endphp
-            
-            @if($canSend)
-                {{-- REUTILIZAR MODAL EXISTENTE con webservice específico --}}
-                <button type="button"
-                        class="inline-flex items-center px-2 py-1 text-xs {{ $isError ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded"
-                        onclick="showSendModalSpecific({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $ws['country'] }}', '{{ $ws['type'] }}')">
-                    {{ $isError ? '🔄' : '🚀' }} {{ $ws['name'] }}
-                </button>
-            @elseif($isSent)
-                <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
-                    ✅ {{ $ws['name'] }}
-                </span>
-            @endif
-        @endforeach
-    </div>
-    
-    {{-- Enlaces de estado --}}
-    @if($hasNewSystem)
-        <div class="mt-1">
-            <a href="{{ route('company.manifests.customs.status', $voyage->id) }}" 
-               class="text-gray-600 hover:text-gray-900 text-xs">
-                📊 Ver Estados
-            </a>
-        </div>
-    @endif
-</td>
+                                    @php
+                                        $webserviceStatuses = $voyage->webserviceStatuses;
+                                        $lastTransaction = $voyage->webserviceTransactions->last();
+                                        $hasNewSystem = $webserviceStatuses->isNotEmpty();
+                                        
+                                        $companyRoles = auth()->user()->company->getRoles() ?? [];
+                                        $availableWebservices = [];
+                                        
+                                        if (in_array('Cargas', $companyRoles)) {
+                                            $availableWebservices[] = ['type' => 'anticipada', 'country' => 'AR', 'name' => 'Anticipada'];
+                                            $availableWebservices[] = ['type' => 'micdta', 'country' => 'AR', 'name' => 'MIC/DTA'];
+                                            $availableWebservices[] = ['type' => 'mane', 'country' => 'AR', 'name' => 'MANE'];
+                                        }
+                                        if (in_array('Desconsolidador', $companyRoles)) {
+                                            $availableWebservices[] = ['type' => 'desconsolidado', 'country' => 'AR', 'name' => 'Desconsolidado'];
+                                        }
+                                        if (in_array('Transbordos', $companyRoles)) {
+                                            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'AR', 'name' => 'Transbordo AR'];
+                                            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'PY', 'name' => 'Transbordo PY'];
+                                        }
+                                    @endphp
+                                    
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach($availableWebservices as $ws)
+                                            @php
+                                                $wsStatus = $webserviceStatuses->where('webservice_type', $ws['type'])
+                                                                            ->where('country', $ws['country'])
+                                                                            ->first();
+                                                $canSend = !$wsStatus || in_array($wsStatus->status, ['pending', 'error', 'expired']);
+                                                $isError = $wsStatus && $wsStatus->status === 'error';
+                                                $isSent = $wsStatus && in_array($wsStatus->status, ['sent', 'approved']);
+                                            @endphp
+                                            
+                                            @if($canSend)
+                                                {{-- REUTILIZAR MODAL EXISTENTE con webservice específico --}}
+                                                <button type="button"
+                                                        class="inline-flex items-center px-2 py-1 text-xs {{ $isError ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded"
+                                                        onclick="showSendModalSpecific({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $ws['country'] }}', '{{ $ws['type'] }}')">
+                                                    {{ $isError ? '🔄' : '🚀' }} {{ $ws['name'] }}
+                                                </button>
+                                            @elseif($isSent)
+                                                <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
+                                                    ✅ {{ $ws['name'] }}
+                                                </span>
+                                            @endif
+                                        @endforeach
+                                    </div>
+                                    
+                                    {{-- Enlaces de estado --}}
+                                    @if($hasNewSystem)
+                                        <div class="mt-1">
+                                            <a href="{{ route('company.manifests.customs.voyage-statuses', $voyage->id) }}" 
+                                            class="text-gray-600 hover:text-gray-900 text-xs">
+                                                📊 Ver Estados
+                                            </a>
+                                        </div>
+                                    @endif
+                                </td>
                             </tr>
                             @empty
                             <tr>

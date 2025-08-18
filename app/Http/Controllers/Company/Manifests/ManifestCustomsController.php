@@ -625,24 +625,6 @@ class ManifestCustomsController extends Controller
     }
 
     /**
- * Determinar país basado en el tipo de webservice - VERSIÓN ACTUALIZADA CON MANE
- */
-private function getCountryFromWebserviceType(string $webserviceType): string
-{
-    $countryMapping = [
-        'anticipada' => 'AR',
-        'micdta' => 'AR',
-        'desconsolidado' => 'AR',
-        'transbordo' => 'AR',
-        'mane' => 'AR',  // NUEVO: MANE es de Argentina
-        'paraguay_customs' => 'PY',
-        'manifiesto' => 'PY',
-    ];
-
-    return $countryMapping[$webserviceType] ?? 'AR';
-}
-
-    /**
      * Obtener tipos de webservice disponibles según roles de empresa - VERSIÓN ACTUALIZADA
      */
     private function getAvailableWebserviceTypes(Company $company): array
@@ -860,7 +842,7 @@ private function getCountryFromWebserviceType(string $webserviceType): string
                     }
                     
                 return $service->registerTransshipment($bargeData, $voyage);
-                
+
                 case 'paraguay_customs':
                 return $service->sendImportManifest($voyage, auth()->id());
                     
@@ -1293,5 +1275,126 @@ private function getCountryFromWebserviceType(string $webserviceType): string
         if ($voyage->webserviceStatuses()->count() === 0) {
             $voyage->createInitialWebserviceStatuses();
         }
+    }
+
+
+    /**
+     * ✅ NUEVO: Mostrar estados de todos los webservices de un voyage
+     * Reemplaza la funcionalidad del enlace "Ver Estados" en customs.blade.php
+     */
+    # AGREGAR al final de: app/Http/Controllers/Company/Manifests/ManifestCustomsController.php
+# ANTES del último }
+
+/**
+ * ✅ NUEVO: Mostrar estados de todos los webservices de un voyage
+ * Reemplaza la funcionalidad del enlace "Ver Estados" en customs.blade.php
+ */
+public function voyageStatuses($voyageId)
+{
+    // Verificar permisos básicos - versión simplificada
+    $currentUser = auth()->user();
+    $company = $currentUser->getUserCompany();
+    
+    if (!$company) {
+        abort(403, 'No se encontró la empresa asociada.');
+    }
+    
+    // Obtener el voyage con todas sus relaciones
+    $voyage = Voyage::with([
+        'webserviceStatuses',
+        'webserviceTransactions' => function($query) {
+            $query->orderBy('created_at', 'desc');
+        },
+        'originPort.country',
+        'destinationPort.country',
+        'company'
+    ])
+    ->where('company_id', $company->id)
+    ->findOrFail($voyageId);
+
+    // Obtener todos los estados de webservice del voyage
+    $webserviceStatuses = $voyage->webserviceStatuses()
+        ->orderBy('country')
+        ->orderBy('webservice_type')
+        ->get();
+
+    // Obtener todas las transacciones del voyage agrupadas por tipo
+    $transactionsByType = $voyage->webserviceTransactions()
+        ->orderBy('created_at', 'desc')
+        ->get()
+        ->groupBy('webservice_type');
+
+    // Preparar datos para la vista
+    $statusesData = [];
+    
+    foreach ($webserviceStatuses as $status) {
+        $key = $status->country . '_' . $status->webservice_type;
+        
+        $statusesData[$key] = [
+            'status_record' => $status,
+            'transactions' => $transactionsByType->get($status->webservice_type, collect()),
+            'country_name' => $status->country === 'AR' ? 'Argentina' : 'Paraguay',
+            'webservice_name' => $this->getWebserviceTypeName($status->webservice_type),
+            'can_send' => $status->canSend(),
+            'last_transaction' => $transactionsByType->get($status->webservice_type)?->first()
+        ];
+    }
+
+    // También incluir transacciones que no tienen estado en la nueva tabla (sistema legacy)
+    foreach ($transactionsByType as $type => $transactions) {
+        $country = $this->getCountryFromWebserviceType($type);
+        $key = $country . '_' . $type;
+        
+        if (!isset($statusesData[$key])) {
+            $statusesData[$key] = [
+                'status_record' => null,
+                'transactions' => $transactions,
+                'country_name' => $country === 'AR' ? 'Argentina' : 'Paraguay',
+                'webservice_name' => $this->getWebserviceTypeName($type),
+                'can_send' => true,
+                'last_transaction' => $transactions->first()
+            ];
+        }
+    }
+
+    return view('company.manifests.voyage-statuses', compact('voyage', 'statusesData'));
+}
+
+    /**
+     * Obtener nombre del tipo de webservice
+     */
+    private function getWebserviceTypeName(string $type): string
+    {
+        $names = [
+            'anticipada' => 'Información Anticipada',
+            'micdta' => 'MIC/DTA',
+            'desconsolidado' => 'Desconsolidados',
+            'transbordo' => 'Transbordos',
+            'manifiesto' => 'Manifiestos',
+            'mane' => 'MANE/Malvina',
+            'paraguay_customs' => 'DNA Paraguay',
+            'consulta' => 'Consultas',
+            'rectificacion' => 'Rectificaciones',
+            'anulacion' => 'Anulaciones',
+        ];
+
+        return $names[$type] ?? ucfirst($type);
+    }
+
+    /**
+     * Obtener país desde tipo de webservice
+     */
+    private function getCountryFromWebserviceType(string $type): string
+    {
+        $argentineTypes = ['anticipada', 'micdta', 'desconsolidado', 'transbordo', 'mane'];
+        $paraguayTypes = ['paraguay_customs', 'manifiesto'];
+        
+        if (in_array($type, $argentineTypes)) {
+            return 'AR';
+        } elseif (in_array($type, $paraguayTypes)) {
+            return 'PY';
+        }
+        
+        return 'AR'; // Default
     }
 }

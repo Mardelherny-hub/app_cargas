@@ -415,6 +415,7 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
     Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
     Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
+        Route::get('/voyage/{voyageId}/statuses', [ManifestCustomsController::class, 'voyageStatuses'])->name('voyage-statuses');
     
     // NUEVO: Ruta específica para vista MANE
     Route::get('/mane', [ManifestCustomsController::class, 'maneIndex'])->name('mane');
