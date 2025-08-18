@@ -123,7 +123,59 @@ class ArgentinaDeconsolidationService
                 'titulos_hijos_count' => count($titulosHijos),
             ]);
 
-            // 1. Validaciones integrales pre-envío
+            // ✅ BYPASS INTELIGENTE ARGENTINA - ANTES DE VALIDACIONES
+            $argentinaData = $this->company->getArgentinaWebserviceData();
+            $shouldBypass = $this->company->shouldBypassTesting('argentina');
+            $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
+
+            $this->logOperation('info', 'Verificando bypass Argentina Desconsolidación', [
+                'should_bypass' => $shouldBypass,
+                'is_testing_config' => $isTestingConfig,
+                'environment' => $this->config['environment'],
+                'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
+            ]);
+
+            if ($shouldBypass || $this->config['environment'] === 'testing') {
+                if ($isTestingConfig || $shouldBypass) {
+                    
+                    $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Desconsolidación', [
+                        'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+                        'cuit_used' => $argentinaData['cuit'] ?? 'testing-mode',
+                    ]);
+
+                    // Crear transacción mínima para el bypass
+                    $transaction = $this->createBypassTransaction($tituloMadre, $contenedores, $titulosHijos);
+                    $result['transaction_id'] = $transaction->id;
+
+                    // Generar respuesta simulada exitosa
+                    $bypassResponse = $this->generateBypassResponse($tituloMadre, $transaction);
+
+                    // Actualizar transacción como exitosa
+                    $transaction->update([
+                        'status' => 'success',
+                        'voyage_reference' => $bypassResponse['deconsolidation_reference'],
+                        'response_data' => $bypassResponse['response_data'],
+                        'completed_at' => now(),
+                    ]);
+
+                    $result['success'] = true;
+                    $result['deconsolidation_reference'] = $bypassResponse['deconsolidation_reference'];
+                    $result['response_data'] = $bypassResponse['response_data'];
+                    $result['warnings'][] = 'Respuesta simulada - Bypass activado para testing';
+
+                    DB::commit();
+
+                    $this->logOperation('info', 'Bypass completado exitosamente', [
+                        'transaction_id' => $transaction->id,
+                        'deconsolidation_reference' => $bypassResponse['deconsolidation_reference'],
+                        'bypass_reason' => $shouldBypass ? 'Empresarial' : 'Testing config',
+                    ]);
+
+                    return $result;
+                }
+            }
+
+            // 1. Validaciones integrales pre-envío (solo si no hay bypass)
             $validation = $this->validateForDeconsolidation($tituloMadre, $contenedores, $titulosHijos);
             if (!$validation['is_valid']) {
                 $result['errors'] = $validation['errors'];
@@ -149,13 +201,11 @@ class ArgentinaDeconsolidationService
                 }
             }
 
-            // 5. Preparar cliente SOAP
+            // 5. Preparar cliente SOAP y enviar
             $soapClient = $this->prepareSoapClient();
-
-            // 6. Enviar al webservice Argentina
             $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent);
 
-            // 7. Procesar respuesta
+            // 6. Procesar respuesta
             if ($soapResult['success']) {
                 $this->processSuccessResponse($transaction, $soapResult);
                 $result['success'] = true;
@@ -171,8 +221,7 @@ class ArgentinaDeconsolidationService
             $this->logOperation('info', 'Registro de desconsolidación completado', [
                 'transaction_id' => $transaction->id,
                 'success' => $result['success'],
-                'deconsolidation_reference' => $result['deconsolidation_reference'],
-                'response_time_ms' => $soapResult['response_time_ms'] ?? null,
+                'deconsolidation_reference' => $result['deconsolidation_reference'] ?? null,
             ]);
 
             return $result;
@@ -191,6 +240,89 @@ class ArgentinaDeconsolidationService
             $result['errors'][] = $e->getMessage();
             return $result;
         }
+    }
+
+    /**
+     * Crear transacción para bypass (más simple)
+     */
+    private function createBypassTransaction(Shipment $tituloMadre, array $contenedores, array $titulosHijos): WebserviceTransaction
+    {
+        // Generar ID único de transacción simplificado
+        $companyCode = substr(preg_replace('/[^0-9]/', '', $this->company->tax_id), -4);
+        $dateCode = now()->format('Ymd-Hi');
+        $randomSuffix = rand(10, 99);
+        $transactionId = "DESCON-{$companyCode}-{$dateCode}-{$randomSuffix}";
+
+        return WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'shipment_id' => $tituloMadre->id,
+            'voyage_id' => $tituloMadre->voyage_id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'desconsolidado',
+            'country' => 'AR',
+            'status' => 'pending',
+            'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+            'environment' => $this->config['environment'],
+            'certificate_used' => $this->company->certificate_alias,
+            
+            'total_weight_kg' => array_sum(array_column($titulosHijos, 'peso')),
+            'container_count' => count($contenedores),
+            'currency_code' => 'USD',
+            'ip_address' => request()?->ip(),
+            'user_agent' => request()?->userAgent(),
+            
+            'additional_metadata' => [
+                'titulo_madre_number' => $tituloMadre->shipment_number,
+                'contenedores_count' => count($contenedores),
+                'titulos_hijos_count' => count($titulosHijos),
+                'is_rectification' => false,
+                'method_used' => 'RegistrarTitulosDesconsolidador',
+                'bypass_mode' => true,
+            ],
+        ]);
+    }
+
+    /**
+     * Generar respuesta de bypass realista para Argentina Desconsolidación
+     */
+    private function generateBypassResponse(Shipment $tituloMadre, WebserviceTransaction $transaction): array
+    {
+        $argentinaReference = $this->generateRealisticArgentinaReference();
+        
+        return [
+            'deconsolidation_reference' => $argentinaReference,
+            'response_data' => [
+                'codigo_respuesta' => '00',
+                'descripcion_respuesta' => 'Operación exitosa',
+                'numero_referencia' => $argentinaReference,
+                'fecha_procesamiento' => now()->format('Y-m-d H:i:s'),
+                'numero_expediente' => 'EXP-' . $argentinaReference,
+                'estado_tramite' => 'REGISTRADO',
+                'observaciones' => 'Títulos desconsolidador registrados correctamente',
+                'bypass_info' => [
+                    'simulated' => true,
+                    'mode' => 'bypass_argentina_deconsolidation',
+                    'transaction_id' => $transaction->transaction_id,
+                    'generated_at' => now()->toISOString(),
+                ],
+                'shipment_data' => [
+                    'titulo_madre_number' => $tituloMadre->shipment_number,
+                    'titulo_madre_id' => $tituloMadre->id,
+                    'voyage_number' => $tituloMadre->voyage?->voyage_number,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Generar referencia realista Argentina
+     */
+    private function generateRealisticArgentinaReference(): string
+    {
+        $year = now()->format('Y');
+        $sequence = rand(100000, 999999);
+        return "DESCON{$year}{$sequence}";
     }
 
     /**
@@ -1052,42 +1184,6 @@ class ArgentinaDeconsolidationService
     }
 
     /**
-     * Logging centralizado para el servicio
-     */
-    private function logOperation(string $level, string $message, array $context = []): void
-    {
-        $logData = array_merge([
-            'service' => 'ArgentinaDeconsolidationService',
-            'company_id' => $this->company->id,
-            'company_name' => $this->company->legal_name,
-            'user_id' => $this->user->id,
-            'timestamp' => now()->toISOString(),
-        ], $context);
-
-        // Log en archivo Laravel
-        Log::{$level}($message, $logData);
-
-        // Log en tabla webservice_logs
-        // Log en tabla webservice_logs
-        try {
-            // Solo loggear si tenemos un transaction_id válido
-            if (isset($context['transaction_id']) && $context['transaction_id'] !== null) {
-                WebserviceLog::create([
-                    'transaction_id' => $context['transaction_id'],
-                    'level' => $level,
-                    'message' => $message,
-                    'context' => $logData,
-                ]);
-            }
-        } catch (Exception $e) {
-            Log::error('Error logging to webservice_logs table', [
-                'original_message' => $message,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
      * Obtener configuración actual del servicio
      */
     public function getConfig(): array
@@ -1117,5 +1213,40 @@ class ArgentinaDeconsolidationService
     public function getAvailableMethods(): array
     {
         return $this->config['methods'];
+    }
+
+    /**
+     * Logging centralizado para el servicio
+     */
+    private function logOperation(string $level, string $message, array $context = [], string $category = 'general'): void
+    {
+        try {
+            $context['service'] = 'ArgentinaDeconsolidationService';
+            $context['company_id'] = $this->company->id;
+            $context['company_name'] = $this->company->legal_name ?? $this->company->name;
+            $context['user_id'] = $this->user->id;
+            $context['timestamp'] = now()->toISOString();
+
+            Log::$level($message, $context);
+
+            // Log a webservice_logs si hay transaction_id
+            $transactionId = $context['transaction_id'] ?? null;
+            if ($transactionId && is_numeric($transactionId)) {
+                \App\Models\WebserviceLog::create([
+                    'transaction_id' => (int) $transactionId,
+                    'level' => $level,
+                    'category' => $category,
+                    'message' => $message,
+                    'context' => $context,
+                    'created_at' => now(),
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error logging to webservice_logs table', [
+                'original_message' => $message,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

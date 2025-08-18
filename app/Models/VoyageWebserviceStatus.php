@@ -96,7 +96,7 @@ class VoyageWebserviceStatus extends Model
         'PY' => 'Paraguay',
     ];
 
-    public const WEBSERVICE_TYPES = [
+   public const WEBSERVICE_TYPES = [
         'anticipada' => 'Información Anticipada',
         'micdta' => 'MIC/DTA',
         'desconsolidado' => 'Desconsolidados',
@@ -106,6 +106,7 @@ class VoyageWebserviceStatus extends Model
         'consulta' => 'Consultas',
         'rectificacion' => 'Rectificaciones',
         'anulacion' => 'Anulaciones',
+        'paraguay_customs' => 'Paraguay Customs', // ← AGREGAR
     ];
 
     public const STATUSES = [

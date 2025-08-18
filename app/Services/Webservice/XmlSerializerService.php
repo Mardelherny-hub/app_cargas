@@ -921,16 +921,52 @@ class XmlSerializerService
             $validation['errors'][] = 'Número de viaje requerido';
         }
 
-        if (!$voyage->vessel_id || !$voyage->vessel) {
+        // 3. CORREGIDO: Validar embarcación usando lead_vessel_id
+        if (!$voyage->lead_vessel_id) {
             $validation['errors'][] = 'Embarcación requerida';
+        } else {
+            // Cargar la relación si no está cargada
+            if (!$voyage->relationLoaded('leadVessel')) {
+                $voyage->load('leadVessel');
+            }
+            
+            if (!$voyage->leadVessel) {
+                $validation['errors'][] = 'Embarcación principal no encontrada';
+            }
         }
 
-        if (!$voyage->captain_id || !$voyage->captain) {
+        // 4. CORREGIDO: Validar capitán
+        if (!$voyage->captain_id) {
             $validation['errors'][] = 'Capitán requerido';
+        } else {
+            // Cargar la relación si no está cargada
+            if (!$voyage->relationLoaded('captain')) {
+                $voyage->load('captain');
+            }
+            
+            if (!$voyage->captain) {
+                $validation['errors'][] = 'Capitán no encontrado';
+            }
         }
 
-        if (!$voyage->departure_port || !$voyage->arrival_port) {
+        // 5. CORREGIDO: Validar puertos usando las relaciones
+        if (!$voyage->origin_port_id || !$voyage->destination_port_id) {
             $validation['errors'][] = 'Puertos de origen y destino requeridos';
+        } else {
+            // Cargar relaciones si no están cargadas
+            if (!$voyage->relationLoaded('originPort')) {
+                $voyage->load('originPort');
+            }
+            if (!$voyage->relationLoaded('destinationPort')) {
+                $voyage->load('destinationPort');
+            }
+            
+            if (!$voyage->originPort) {
+                $validation['errors'][] = 'Puerto de origen no encontrado';
+            }
+            if (!$voyage->destinationPort) {
+                $validation['errors'][] = 'Puerto de destino no encontrado';
+            }
         }
 
         if (!$voyage->departure_date) {
@@ -962,8 +998,8 @@ class XmlSerializerService
         // Datos del viaje
         $this->addVoyageData($parametros, $voyage);
 
-        // Datos de la embarcación
-        $this->addVesselData($parametros, $voyage->vessel);
+        // CORREGIDO: Datos de la embarcación usando leadVessel
+        $this->addVesselData($parametros, $voyage->leadVessel);
 
         // Datos del capitán
         $this->addCaptainData($parametros, $voyage->captain);
@@ -997,8 +1033,8 @@ class XmlSerializerService
         // Datos del viaje (actualizados)
         $this->addVoyageData($parametros, $voyage);
 
-        // Datos de la embarcación
-        $this->addVesselData($parametros, $voyage->vessel);
+        // CORREGIDO: Datos de la embarcación usando leadVessel
+        $this->addVesselData($parametros, $voyage->leadVessel);
 
         // Datos del capitán
         $this->addCaptainData($parametros, $voyage->captain);
@@ -1022,21 +1058,21 @@ class XmlSerializerService
         $nroViaje = $this->createElement('NroViaje', $voyage->voyage_number);
         $datosViaje->appendChild($nroViaje);
 
-        // Puerto de origen
-        $puertoOrigen = $this->createElement('PuertoOrigen', $voyage->departure_port);
+        // CORREGIDO: Puerto de origen usando relación
+        $puertoOrigen = $this->createElement('PuertoOrigen', $voyage->originPort?->code ?? 'ORIGEN');
         $datosViaje->appendChild($puertoOrigen);
 
-        // Puerto de destino
-        $puertoDestino = $this->createElement('PuertoDestino', $voyage->arrival_port);
+        // CORREGIDO: Puerto de destino usando relación
+        $puertoDestino = $this->createElement('PuertoDestino', $voyage->destinationPort?->code ?? 'DESTINO');
         $datosViaje->appendChild($puertoDestino);
 
         // Fecha de salida
         $fechaSalida = $this->createElement('FechaSalida', $voyage->departure_date->format('Y-m-d\TH:i:s'));
         $datosViaje->appendChild($fechaSalida);
 
-        // Fecha de llegada (si está disponible)
-        if ($voyage->arrival_date) {
-            $fechaLlegada = $this->createElement('FechaLlegada', $voyage->arrival_date->format('Y-m-d\TH:i:s'));
+        // CORREGIDO: Fecha de llegada usando estimated_arrival_date
+        if ($voyage->estimated_arrival_date) {
+            $fechaLlegada = $this->createElement('FechaLlegada', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
             $datosViaje->appendChild($fechaLlegada);
         }
 
@@ -1154,8 +1190,8 @@ class XmlSerializerService
             $this->addCargoData($envio, $shipment);
 
             // Contenedores (si los tiene)
-            $containers = $shipment->containers;
-            if ($containers->count() > 0) {
+            $containers = $shipment->containers ?? collect();
+            if (!empty($containers) && $containers->count() > 0) {
                 $this->addContainersData($envio, $containers);
             }
         }

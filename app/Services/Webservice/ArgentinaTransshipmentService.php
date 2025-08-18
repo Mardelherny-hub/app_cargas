@@ -140,11 +140,17 @@ class ArgentinaTransshipmentService
     /**
      * Registrar transbordo con división de cargas en barcazas
      * 
-     * @param array $bargeData Datos de las barcazas: [['barge_id' => 'BARCAZA-01', 'containers' => [...], 'route' => [...]]]
+     * @param array $bargeData Datos de las barcazas (puede ser vacío para bypass)
      * @param Voyage $voyage Viaje asociado al transbordo
      */
-    public function registerTransshipment(array $bargeData, Voyage $voyage): array
+    public function registerTransshipment($bargeData, Voyage $voyage): array
     {
+        // Permitir que bargeData sea Voyage (compatibilidad con controlador)
+        if ($bargeData instanceof Voyage) {
+            $voyage = $bargeData;
+            $bargeData = []; // Inicializar como array vacío
+        }
+        
         $result = [
             'success' => false,
             'transaction_id' => null,
@@ -165,7 +171,59 @@ class ArgentinaTransshipmentService
                 'total_containers' => array_sum(array_column($bargeData, 'containers_count')),
             ]);
 
-            // 1. Validaciones integrales pre-envío
+            // ✅ BYPASS INTELIGENTE ARGENTINA - ANTES DE VALIDACIONES
+            $argentinaData = $this->company->getArgentinaWebserviceData();
+            $shouldBypass = $this->company->shouldBypassTesting('argentina');
+            $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
+
+            $this->logOperation('info', 'Verificando bypass Argentina Transbordo', [
+                'should_bypass' => $shouldBypass,
+                'is_testing_config' => $isTestingConfig,
+                'environment' => $this->config['environment'],
+                'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
+            ]);
+
+            if ($shouldBypass || $this->config['environment'] === 'testing') {
+                if ($isTestingConfig || $shouldBypass) {
+                    
+                    $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Transbordo', [
+                        'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+                        'cuit_used' => $argentinaData['cuit'] ?? 'testing-mode',
+                    ]);
+
+                    // Crear transacción mínima para el bypass
+                    $transaction = $this->createBypassTransaction($voyage, $bargeData);
+                    $result['transaction_id'] = $transaction->id;
+
+                    // Generar respuesta simulada exitosa
+                    $bypassResponse = $this->generateBypassResponse($voyage, $transaction);
+
+                    // Actualizar transacción como exitosa
+                    $transaction->update([
+                        'status' => 'success',
+                        'voyage_reference' => $bypassResponse['transshipment_reference'],
+                        'response_data' => $bypassResponse['response_data'],
+                        'completed_at' => now(),
+                    ]);
+
+                    $result['success'] = true;
+                    $result['transshipment_reference'] = $bypassResponse['transshipment_reference'];
+                    $result['response_data'] = $bypassResponse['response_data'];
+                    $result['warnings'][] = 'Respuesta simulada - Bypass activado para testing';
+
+                    DB::commit();
+
+                    $this->logOperation('info', 'Bypass completado exitosamente', [
+                        'transaction_id' => $transaction->id,
+                        'transshipment_reference' => $bypassResponse['transshipment_reference'],
+                        'bypass_reason' => $shouldBypass ? 'Empresarial' : 'Testing config',
+                    ]);
+
+                    return $result;
+                }
+            }
+
+            // 1. Validaciones integrales pre-envío (solo si no hay bypass)
             $validation = $this->validateForTransshipment($bargeData, $voyage);
             if (!$validation['is_valid']) {
                 $result['errors'] = $validation['errors'];
@@ -191,18 +249,15 @@ class ArgentinaTransshipmentService
                 }
             }
 
-            // 5. Preparar cliente SOAP
+            // 5. Preparar cliente SOAP y enviar
             $soapClient = $this->prepareSoapClient();
-
-            // 6. Enviar al webservice Argentina
             $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent);
 
-            // 7. Procesar respuesta
+            // 6. Procesar respuesta
             if ($soapResult['success']) {
                 $this->processSuccessResponse($transaction, $soapResult);
                 $result['success'] = true;
                 $result['transshipment_reference'] = $soapResult['transshipment_reference'] ?? null;
-                $result['barge_references'] = $soapResult['barge_references'] ?? [];
                 $result['response_data'] = $soapResult['response_data'];
             } else {
                 $this->processErrorResponse($transaction, $soapResult);
@@ -214,8 +269,7 @@ class ArgentinaTransshipmentService
             $this->logOperation('info', 'Registro de transbordo completado', [
                 'transaction_id' => $transaction->id,
                 'success' => $result['success'],
-                'transshipment_reference' => $result['transshipment_reference'],
-                'response_time_ms' => $soapResult['response_time_ms'] ?? null,
+                'transshipment_reference' => $result['transshipment_reference'] ?? null,
             ]);
 
             return $result;
@@ -233,6 +287,121 @@ class ArgentinaTransshipmentService
 
             $result['errors'][] = $e->getMessage();
             return $result;
+        }
+    }
+
+    /**
+     * Crear transacción para bypass (más simple)
+     */
+    private function createBypassTransaction(Voyage $voyage, array $bargeData): WebserviceTransaction
+    {
+        // Generar ID único de transacción simplificado
+        $companyCode = substr(preg_replace('/[^0-9]/', '', $this->company->tax_id), -4);
+        $dateCode = now()->format('Ymd-Hi');
+        $randomSuffix = rand(10, 99);
+        $transactionId = "TRANS-{$companyCode}-{$dateCode}-{$randomSuffix}";
+
+        return WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $voyage->id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'transbordo',
+            'country' => 'AR',
+            'status' => 'pending',
+            'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+            'environment' => $this->config['environment'],
+            'certificate_used' => $this->company->certificate_alias,
+            
+            'total_weight_kg' => 0,
+            'container_count' => count($bargeData),
+            'currency_code' => 'USD',
+            'ip_address' => request()?->ip(),
+            'user_agent' => request()?->userAgent(),
+            
+            'additional_metadata' => [
+                'voyage_number' => $voyage->voyage_number,
+                'barges_count' => count($bargeData),
+                'is_rectification' => false,
+                'method_used' => 'RegistrarTransbordo',
+                'bypass_mode' => true,
+            ],
+        ]);
+    }
+
+    /**
+     * Generar respuesta de bypass realista para Argentina Transbordo
+     */
+    private function generateBypassResponse(Voyage $voyage, WebserviceTransaction $transaction): array
+    {
+        $argentinaReference = $this->generateRealisticArgentinaReference();
+        
+        return [
+            'transshipment_reference' => $argentinaReference,
+            'response_data' => [
+                'codigo_respuesta' => '00',
+                'descripcion_respuesta' => 'Operación exitosa',
+                'numero_referencia' => $argentinaReference,
+                'fecha_procesamiento' => now()->format('Y-m-d H:i:s'),
+                'numero_expediente' => 'EXP-' . $argentinaReference,
+                'estado_tramite' => 'REGISTRADO',
+                'observaciones' => 'Transbordo registrado correctamente',
+                'bypass_info' => [
+                    'simulated' => true,
+                    'mode' => 'bypass_argentina_transshipment',
+                    'transaction_id' => $transaction->transaction_id,
+                    'generated_at' => now()->toISOString(),
+                ],
+                'voyage_data' => [
+                    'voyage_number' => $voyage->voyage_number,
+                    'voyage_id' => $voyage->id,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Generar referencia realista Argentina
+     */
+    private function generateRealisticArgentinaReference(): string
+    {
+        $year = now()->format('Y');
+        $sequence = rand(100000, 999999);
+        return "TRANS{$year}{$sequence}";
+    }
+
+    /**
+     * Logging centralizado para el servicio
+     */
+    private function logOperation(string $level, string $message, array $context = [], string $category = 'general'): void
+    {
+        try {
+            $context['service'] = 'ArgentinaTransshipmentService';
+            $context['company_id'] = $this->company->id;
+            $context['company_name'] = $this->company->legal_name ?? $this->company->name;
+            $context['user_id'] = $this->user->id;
+            $context['timestamp'] = now()->toISOString();
+
+            Log::$level($message, $context);
+
+            // Log a webservice_logs si hay transaction_id
+            $transactionId = $context['transaction_id'] ?? null;
+            if ($transactionId && is_numeric($transactionId)) {
+                \App\Models\WebserviceLog::create([
+                    'transaction_id' => (int) $transactionId,
+                    'level' => $level,
+                    'category' => $category,
+                    'message' => $message,
+                    'context' => $context,
+                    'created_at' => now(),
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error logging to webservice_logs table', [
+                'original_message' => $message,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
@@ -1080,38 +1249,6 @@ class ArgentinaTransshipmentService
     }
 
     /**
-     * Logging centralizado para el servicio
-     */
-    private function logOperation(string $level, string $message, array $context = []): void
-    {
-        $logData = array_merge([
-            'service' => 'ArgentinaTransshipmentService',
-            'company_id' => $this->company->id,
-            'company_name' => $this->company->legal_name,
-            'user_id' => $this->user->id,
-            'timestamp' => now()->toISOString(),
-        ], $context);
-
-        // Log en archivo Laravel
-        Log::{$level}($message, $logData);
-
-        // Log en tabla webservice_logs
-        try {
-            WebserviceLog::create([
-                'transaction_id' => $context['transaction_id'] ?? null,
-                'level' => $level,
-                'message' => $message,
-                'context' => $logData,
-            ]);
-        } catch (Exception $e) {
-            Log::error('Error logging to webservice_logs table', [
-                'original_message' => $message,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
      * Obtener configuración actual del servicio
      */
     public function getConfig(): array
@@ -1646,4 +1783,5 @@ class ArgentinaTransshipmentService
             return $result;
         }
     }
+    
 }

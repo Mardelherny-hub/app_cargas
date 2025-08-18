@@ -246,8 +246,8 @@
                                                     {{ $status->webservice_type }}: #{{ $status->confirmation_number }}
                                                 </div>
                                             @elseif($status->status === 'error' && $status->last_error_message)
-                                                <div class="text-xs text-red-600 mt-1">
-                                                    {{ $status->webservice_type }}: {{ Str::limit($status->last_error_message, 25) }}
+                                                <div class="text-xs text-red-600 mt-1 break-words whitespace-normal max-w-xs">
+                                                    {{ $status->webservice_type }}: {{ Str::limit($status->last_error_message, 200) }}
                                                 </div>
                                             @endif
                                         @endforeach
