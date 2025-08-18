@@ -47,7 +47,8 @@ class ManifestCustomsController extends Controller
             'shipments.billsOfLading',
             'originPort.country',
             'destinationPort.country',
-            'webserviceTransactions'
+            'webserviceTransactions',
+            'webserviceStatuses',
         ])
         ->where('company_id', $companyId)
         ->whereHas('shipments') // Solo viajes con cargas

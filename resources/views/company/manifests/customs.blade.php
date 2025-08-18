@@ -183,60 +183,135 @@
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    @php
+                                @php
+                                        // Obtener todos los estados de webservice del voyage
+                                        $webserviceStatuses = $voyage->webserviceStatuses;
+                                        $hasAnyStatus = $webserviceStatuses->isNotEmpty();
+                                        // Mantener compatibilidad con sistema viejo
                                         $lastTransaction = $voyage->webserviceTransactions->last();
                                     @endphp
                                     
-                                    @if(!$lastTransaction)
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                            ⏳ No enviado
+                                    @if(!$hasAnyStatus)
+                                        {{-- No hay estados configurados --}}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                            ⚙️ Sin configurar
                                         </span>
-                                    @elseif($lastTransaction->status === 'success')
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            ✅ Enviado
-                                        </span>
-                                        @if($lastTransaction->confirmation_number)
-                                            <div class="text-xs text-gray-500 mt-1">
-                                                #{{ $lastTransaction->confirmation_number }}
-                                            </div>
-                                        @endif
-                                    @elseif($lastTransaction->status === 'pending')
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            🔄 Procesando...
-                                        </span>
-                                    @elseif($lastTransaction->status === 'error')
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                            ❌ Error
-                                        </span>
-                                        <div class="text-xs text-red-600 mt-1">
-                                            {{ Str::limit($lastTransaction->error_message, 30) }}
+                                    @else
+                                        {{-- Mostrar badges por cada webservice --}}
+                                        <div class="flex flex-wrap gap-1">
+                                            @foreach($webserviceStatuses as $status)
+                                                @php
+                                                    $badgeColor = match($status->status) {
+                                                        'approved' => 'bg-green-100 text-green-800',
+                                                        'sent' => 'bg-blue-100 text-blue-800', 
+                                                        'pending' => 'bg-yellow-100 text-yellow-800',
+                                                        'sending', 'validating' => 'bg-orange-100 text-orange-800',
+                                                        'error', 'rejected' => 'bg-red-100 text-red-800',
+                                                        'expired' => 'bg-gray-100 text-gray-600',
+                                                        default => 'bg-gray-100 text-gray-600'
+                                                    };
+                                                    
+                                                    $badgeIcon = match($status->status) {
+                                                        'approved' => '✅',
+                                                        'sent' => '📤',
+                                                        'pending' => '⏳',
+                                                        'sending', 'validating' => '🔄', 
+                                                        'error', 'rejected' => '❌',
+                                                        'expired' => '⏰',
+                                                        default => '⚪'
+                                                    };
+                                                    
+                                                    $shortName = match($status->webservice_type) {
+                                                        'anticipada' => 'ANT',
+                                                        'micdta' => 'MIC',
+                                                        'desconsolidado' => 'DES', 
+                                                        'transbordo' => 'TRB',
+                                                        'mane' => 'MANE',
+                                                        'manifiesto' => 'MAN',
+                                                        default => strtoupper(substr($status->webservice_type, 0, 3))
+                                                    };
+                                                @endphp
+                                                
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {{ $badgeColor }}"
+                                                    title="{{ $status->getWebserviceTypeDescription() }} ({{ $status->getCountryDescription() }}) - {{ $status->getStatusDescription() }}">
+                                                    {{ $badgeIcon }} {{ $shortName }}
+                                                </span>
+                                            @endforeach
                                         </div>
+                                        
+                                        {{-- Mostrar confirmaciones o errores debajo --}}
+                                        @foreach($webserviceStatuses as $status)
+                                            @if($status->status === 'approved' && $status->confirmation_number)
+                                                <div class="text-xs text-green-600 mt-1">
+                                                    {{ $status->webservice_type }}: #{{ $status->confirmation_number }}
+                                                </div>
+                                            @elseif($status->status === 'error' && $status->last_error_message)
+                                                <div class="text-xs text-red-600 mt-1">
+                                                    {{ $status->webservice_type }}: {{ Str::limit($status->last_error_message, 25) }}
+                                                </div>
+                                            @endif
+                                        @endforeach
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                    @if(!$lastTransaction || $lastTransaction->status === 'error')
-                                        <button type="button" 
-                                                class="text-indigo-600 hover:text-indigo-900"
-                                                onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $voyage->destination_port->country->iso_code ?? 'AR' }}')">
-                                            🚀 Enviar
-                                        </button>
-                                    @endif
-                                    
-                                    @if($lastTransaction)
-                                        <a href="{{ route('company.manifests.customs.status', $lastTransaction->id) }}" 
-                                           class="text-gray-600 hover:text-gray-900">
-                                            📊 Estado
-                                        </a>
-                                    @endif
-                                    
-                                    @if($lastTransaction && $lastTransaction->status === 'error')
-                                        <button type="button" 
-                                                class="text-green-600 hover:text-green-900"
-                                                onclick="retryTransaction({{ $lastTransaction->id }})">
-                                            🔄 Reintentar
-                                        </button>
-                                    @endif
-                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+    @php
+        $webserviceStatuses = $voyage->webserviceStatuses;
+        $lastTransaction = $voyage->webserviceTransactions->last();
+        $hasNewSystem = $webserviceStatuses->isNotEmpty();
+        
+        $companyRoles = auth()->user()->company->getRoles() ?? [];
+        $availableWebservices = [];
+        
+        if (in_array('Cargas', $companyRoles)) {
+            $availableWebservices[] = ['type' => 'anticipada', 'country' => 'AR', 'name' => 'Anticipada'];
+            $availableWebservices[] = ['type' => 'micdta', 'country' => 'AR', 'name' => 'MIC/DTA'];
+            $availableWebservices[] = ['type' => 'mane', 'country' => 'AR', 'name' => 'MANE'];
+        }
+        if (in_array('Desconsolidador', $companyRoles)) {
+            $availableWebservices[] = ['type' => 'desconsolidado', 'country' => 'AR', 'name' => 'Desconsolidado'];
+        }
+        if (in_array('Transbordos', $companyRoles)) {
+            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'AR', 'name' => 'Transbordo AR'];
+            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'PY', 'name' => 'Transbordo PY'];
+        }
+    @endphp
+    
+    <div class="flex flex-wrap gap-1">
+        @foreach($availableWebservices as $ws)
+            @php
+                $wsStatus = $webserviceStatuses->where('webservice_type', $ws['type'])
+                                              ->where('country', $ws['country'])
+                                              ->first();
+                $canSend = !$wsStatus || in_array($wsStatus->status, ['pending', 'error', 'expired']);
+                $isError = $wsStatus && $wsStatus->status === 'error';
+                $isSent = $wsStatus && in_array($wsStatus->status, ['sent', 'approved']);
+            @endphp
+            
+            @if($canSend)
+                {{-- REUTILIZAR MODAL EXISTENTE con webservice específico --}}
+                <button type="button"
+                        class="inline-flex items-center px-2 py-1 text-xs {{ $isError ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded"
+                        onclick="showSendModalSpecific({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $ws['country'] }}', '{{ $ws['type'] }}')">
+                    {{ $isError ? '🔄' : '🚀' }} {{ $ws['name'] }}
+                </button>
+            @elseif($isSent)
+                <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
+                    ✅ {{ $ws['name'] }}
+                </span>
+            @endif
+        @endforeach
+    </div>
+    
+    {{-- Enlaces de estado --}}
+    @if($hasNewSystem)
+        <div class="mt-1">
+            <a href="{{ route('company.manifests.customs.status', $voyage->id) }}" 
+               class="text-gray-600 hover:text-gray-900 text-xs">
+                📊 Ver Estados
+            </a>
+        </div>
+    @endif
+</td>
                             </tr>
                             @empty
                             <tr>
@@ -306,6 +381,7 @@
                                 <option value="anticipada">🇦🇷 Argentina Anticipada</option>
                                 <option value="desconsolidado">🇦🇷 Argentina Desconsolidados</option>
                                 <option value="transbordo">🚢 Argentina Transbordos</option>
+                                <option value="mane">🏝️ Argentina MANE/Malvina</option>
                                 <option value="paraguay_customs">🇵🇾 Paraguay DNA</option>
                             </select>
                         </div>
@@ -497,6 +573,27 @@
         document.addEventListener('DOMContentLoaded', function() {
             updateBulkSendButton();
         });
+
+        // Nueva función para modal específico
+        function showSendModalSpecific(voyageId, voyageNumber, countryCode, webserviceType) {
+            selectedVoyageId = voyageId;
+            
+            // Actualizar información del viaje
+            document.getElementById('modal-voyage-info').innerHTML = `
+                <strong>${voyageNumber}</strong><br>
+                <span class="text-gray-500">Webservice: ${webserviceType.toUpperCase()} (${countryCode})</span>
+            `;
+            
+            // Actualizar action del formulario
+            document.getElementById('send-form').action = `/company/manifests/customs/${voyageId}/send`;
+            
+            // Pre-seleccionar webservice específico
+            const webserviceSelect = document.getElementById('webservice_type');
+            webserviceSelect.value = webserviceType;
+            
+            // Mostrar modal
+            document.getElementById('send-modal').classList.remove('hidden');
+        }
     </script>
     @endpush
 </x-app-layout>
