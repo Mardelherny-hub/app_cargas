@@ -292,9 +292,19 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/parana-data', [WebserviceController::class, 'getParanaData'])->name('parana-data');
 
     // Importación de manifiestos
-    Route::get('/import', [WebserviceController::class, 'showImport'])->name('import');
-    Route::post('/import', [WebserviceController::class, 'importManifest'])->name('process-import');
+    //Route::get('/import', [WebserviceController::class, 'showImport'])->name('import');
+    //Route::post('/import', [WebserviceController::class, 'importManifest'])->name('process-import');
 
+    // Importación de manifiestos - REDIRECCIÓN a controlador apropiado
+    Route::get('/import', function() {
+        return redirect()->route('company.manifests.import.index')
+            ->with('info', 'Use este formulario para importar manifiestos en los formatos soportados.');
+    })->name('import');
+
+    Route::post('/import', function(Request $request) {
+        return redirect()->route('company.manifests.import.store')
+            ->withInput($request->all());
+    })->name('process-import');
 });
 
 // Reportes

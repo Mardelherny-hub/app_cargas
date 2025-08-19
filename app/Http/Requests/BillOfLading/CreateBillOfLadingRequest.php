@@ -456,6 +456,26 @@ class CreateBillOfLadingRequest extends FormRequest
                 'max:50',
                 'required_if:customs_bond_required,true',
             ],
+
+            // === CONSOLIDACIÓN ===
+            'is_consolidated' => [
+                'boolean',
+            ],
+            'is_master_bill' => [
+                'boolean',
+            ],
+            'is_house_bill' => [
+                'boolean',
+            ],
+            'master_bill_number' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:is_house_bill,true',
+            ],
+            'requires_surrender' => [
+                'boolean',
+            ],
         ];
     }
 
@@ -560,5 +580,23 @@ class CreateBillOfLadingRequest extends FormRequest
             'goods_description' => 'descripción de las mercancías',
             'payment_terms' => 'términos de pago',
         ];
+    }
+
+    /**
+     * Configure the validator instance.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            // Validación: Si es conocimiento hijo, debe tener un maestro
+            if ($this->input('is_house_bill') && !$this->input('master_bill_number')) {
+                $validator->errors()->add('master_bill_number', 'Los conocimientos hijo deben tener un número de conocimiento maestro.');
+            }
+
+            // Validación: Si es conocimiento maestro, no puede ser hijo
+            if ($this->input('is_master_bill') && $this->input('is_house_bill')) {
+                $validator->errors()->add('is_house_bill', 'Un conocimiento no puede ser maestro e hijo a la vez.');
+            }
+        });
     }
 }

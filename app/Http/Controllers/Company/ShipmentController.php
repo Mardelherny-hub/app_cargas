@@ -1071,7 +1071,7 @@ if ($shipment->requires_attention && !empty($validated['vessel_id'])) {
         }
 
         // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($shipment->company_id)) {
+        if (!$this->isCompanyAdmin($shipment->company_id)) {
             abort(403, 'No tiene permisos para eliminar esta carga.');
         }
 

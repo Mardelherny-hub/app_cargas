@@ -25,48 +25,48 @@
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <!-- Aviso cuando no hay propietarios de embarcaciones disponibles -->
-@if(session('warning') && session('info') && session('next_step'))
-<div class="mb-6">
-    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-        <div class="flex">
-            <div class="flex-shrink-0">
-                <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.517-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
-                </svg>
-            </div>
-            <div class="ml-3 flex-1">
-                <h3 class="text-sm font-medium text-yellow-800">
-                    {{ session('warning') }}
-                </h3>
-                <div class="mt-2 text-sm text-yellow-700">
-                    <p>{{ session('info') }}</p>
-                </div>
-                <div class="mt-4">
+            @if(session('warning') && session('info') && session('next_step'))
+            <div class="mb-6">
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4">
                     <div class="flex">
-                        <a href="{{ session('next_step.url') }}" 
-                           class="bg-yellow-50 text-yellow-800 border border-yellow-200 hover:bg-yellow-100 rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
-                            @if(session('next_step.icon') === 'plus')
-                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                </svg>
-                            @endif
-                            {{ session('next_step.text') }}
-                        </a>
-                        <a href="{{ route('company.vessel-owners.index') }}" 
-                           class="ml-3 bg-white text-yellow-800 border border-yellow-300 hover:bg-gray-50 rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
-                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.19-1.458-1.517-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
                             </svg>
-                            Ver Propietarios Existentes
-                        </a>
+                        </div>
+                        <div class="ml-3 flex-1">
+                            <h3 class="text-sm font-medium text-yellow-800">
+                                {{ session('warning') }}
+                            </h3>
+                            <div class="mt-2 text-sm text-yellow-700">
+                                <p>{{ session('info') }}</p>
+                            </div>
+                            <div class="mt-4">
+                                <div class="flex">
+                                    <a href="{{ session('next_step.url') }}" 
+                                    class="bg-yellow-50 text-yellow-800 border border-yellow-200 hover:bg-yellow-100 rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
+                                        @if(session('next_step.icon') === 'plus')
+                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                            </svg>
+                                        @endif
+                                        {{ session('next_step.text') }}
+                                    </a>
+                                    <a href="{{ route('company.vessel-owners.index') }}" 
+                                    class="ml-3 bg-white text-yellow-800 border border-yellow-300 hover:bg-gray-50 rounded-md px-3 py-2 text-sm font-medium inline-flex items-center">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                        Ver Propietarios Existentes
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-</div>
-@endif
+            @endif
             <!-- Filtros de Búsqueda -->
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
                 <div class="p-6">

@@ -360,17 +360,7 @@
                                    placeholder="A1, B2, etc.">
                         </div>
 
-                        {{-- Notas --}}
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700">
-                                Notas
-                            </label>
-                            <input type="text" 
-                                   name="containers[{{ $index }}][notes]" 
-                                   value="{{ old('containers.'.$index.'.notes', $container['notes']) }}"
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                   placeholder="Notas adicionales...">
-                        </div>
+                       
                     </div>
                 </div>
             </div>

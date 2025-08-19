@@ -87,7 +87,8 @@ class VoyageController extends Controller
      * Mostrar formulario para crear viaje.
      */
     public function create()
-        {
+        { 
+            
             // 1. Verificar permisos
             
             if (!$this->canPerform('access_trips')) {
@@ -100,6 +101,7 @@ class VoyageController extends Controller
 
             // 2. Obtener empresa del usuario
             $company = $this->getUserCompany();
+            //dd($company);
             if (!$company) {
                 return redirect()->route('company.voyages.index')
                     ->with('error', 'No se encontró la empresa asociada.');

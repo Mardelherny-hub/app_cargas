@@ -356,70 +356,50 @@ class ShipmentItemCreateForm extends Component
             $validationService = new ClientValidationService();
             
             $cleanTaxId = preg_replace('/[^0-9]/', '', $this->modal_tax_id);
-            
+           
             switch (strtoupper($country->alpha2_code)) {
-                case 'AR':
-                    if (strlen($cleanTaxId) !== 11) {
-                        $this->addError('modal_tax_id', 'CUIT debe tener exactamente 11 dígitos. Formato: 20-12345678-6');
-                        return;
-                    }
-                    
-                    $prefix = substr($cleanTaxId, 0, 2);
-                    if (!in_array($prefix, ['20', '23', '24', '27', '30', '33', '34'])) {
-                        $this->addError('modal_tax_id', 'CUIT debe comenzar con: 20, 23, 24, 27, 30, 33 o 34');
-                        return;
-                    }
-                    
-                    $multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-                    $sum = 0;
-                    for ($i = 0; $i < 10; $i++) {
-                        $sum += (int) $cleanTaxId[$i] * $multipliers[$i];
-                    }
-                    $remainder = $sum % 11;
-                    $expectedCheckDigit = $remainder < 2 ? $remainder : 11 - $remainder;
-                    $actualCheckDigit = (int) $cleanTaxId[10];
-                    
-                    if ($expectedCheckDigit !== $actualCheckDigit) {
-                        $correctCuit = substr($cleanTaxId, 0, 10) . $expectedCheckDigit;
-                        $formattedCorrect = substr($correctCuit, 0, 2) . '-' . substr($correctCuit, 2, 8) . '-' . substr($correctCuit, 10, 1);
-                        $this->addError('modal_tax_id', "Dígito verificador incorrecto. ¿Quisiste decir: {$formattedCorrect}?");
-                        return;
-                    }
-                    break;
-                    
-                case 'PY':
-                    if (strlen($cleanTaxId) < 8 || strlen($cleanTaxId) > 9) {
-                        $this->addError('modal_tax_id', 'RUC debe tener entre 8 y 9 dígitos. Formato: 1234567-8');
-                        return;
-                    }
-                    
-                    $baseNumber = substr($cleanTaxId, 0, -1);
-                    $checkDigit = (int) substr($cleanTaxId, -1);
-                    $baseNumber = str_pad($baseNumber, 7, '0', STR_PAD_LEFT);
-                    
-                    $rucMultipliers = [2, 3, 4, 5, 6, 7, 2];
-                    $sum = 0;
-                    for ($i = 0; $i < 7; $i++) {
-                        $sum += (int) $baseNumber[$i] * $rucMultipliers[$i];
-                    }
-                    $remainder = $sum % 11;
-                    $expectedCheckDigit = $remainder < 2 ? $remainder : 11 - $remainder;
-                    
-                    if ($expectedCheckDigit !== $checkDigit) {
-                        $correctRuc = $baseNumber . $expectedCheckDigit;
-                        $formattedCorrect = substr($correctRuc, 0, -1) . '-' . substr($correctRuc, -1);
-                        $this->addError('modal_tax_id', "Dígito verificador incorrecto. ¿Quisiste decir: {$formattedCorrect}?");
-                        return;
-                    }
-                    break;
-                    
-                default:
-                    if (strlen($cleanTaxId) < 6) {
-                        $this->addError('modal_tax_id', 'Documento debe tener al menos 6 dígitos');
-                        return;
-                    }
-                    break;
-            }
+            case 'AR':
+                // Validación CUIT simplificada para cliente rápido
+                if (strlen($cleanTaxId) !== 11) {
+                    $this->addError('modal_tax_id', 'CUIT debe tener exactamente 11 dígitos');
+                    return;
+                }
+                
+                // Validación de prefijo más permisiva
+                $prefix = substr($cleanTaxId, 0, 2);
+                $validPrefixes = ['20', '23', '24', '27', '30', '33', '34', '50', '51', '55'];
+                if (!in_array($prefix, $validPrefixes)) {
+                    $this->addError('modal_tax_id', 'Prefijo CUIT no reconocido, pero se permitirá para cliente rápido');
+                    // No hacer return, solo warning
+                }
+                break;
+                
+            case 'PY':
+                // Validación RUC simplificada para cliente rápido
+                if (strlen($cleanTaxId) < 7 || strlen($cleanTaxId) > 9) {
+                    $this->addError('modal_tax_id', 'RUC debe tener entre 7 y 9 dígitos');
+                    return;
+                }
+                break;
+                
+            default:
+                // Validación mínima para otros países
+                if (strlen($cleanTaxId) < 6) {
+                    $this->addError('modal_tax_id', 'Documento debe tener al menos 6 dígitos');
+                    return;
+                }
+                break;
+        }
+
+        // Verificación de duplicados (mantener esta parte)
+        $existingClient = Client::where('tax_id', $cleanTaxId)
+            ->where('country_id', $this->modal_country_id)
+            ->first();
+
+        if ($existingClient) {
+            $this->addError('modal_tax_id', 'Ya existe un cliente con este CUIT/RUC en este país.');
+            return;
+        }
 
             $existingClient = Client::where('tax_id', $cleanTaxId)
                 ->where('country_id', $this->modal_country_id)

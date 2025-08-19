@@ -801,6 +801,9 @@ class ManifestCustomsController extends Controller
                 return $service->registerDeconsolidation($tituloMadre, $contenedores, $titulosHijos);
 
                 case 'transbordo':
+
+                    // ✅ NUEVO: Validar que existan Bills of Lading con datos de consolidación
+                    $this->validateTransbordo($voyage);
                     // Para testing/bypass, usar datos mínimos de barcazas
                     $bargeData = [];
                     
@@ -1396,5 +1399,35 @@ public function voyageStatuses($voyageId)
         }
         
         return 'AR'; // Default
+    }
+
+    /**
+     * Validar que el viaje tenga los datos necesarios para transbordo
+     */
+    private function validateTransbordo(Voyage $voyage): void
+    {
+        // Verificar que exista al menos un Bill of Lading
+        $billsCount = BillOfLading::whereHas('shipment', function($query) use ($voyage) {
+            $query->where('voyage_id', $voyage->id);
+        })->count();
+        
+        if ($billsCount === 0) {
+            throw new \Exception('El viaje no tiene Bills of Lading para enviar a transbordo. Debe crear al menos un conocimiento con items de carga.');
+        }
+        
+        // Verificar que exista al least un Master Bill
+        $masterBillExists = BillOfLading::whereHas('shipment', function($query) use ($voyage) {
+            $query->where('voyage_id', $voyage->id);
+        })->where('is_master_bill', true)->exists();
+        
+        if (!$masterBillExists) {
+            throw new \Exception('El viaje no tiene un Master Bill marcado. Verifique que al menos un conocimiento esté marcado como "is_master_bill = true".');
+        }
+        
+        Log::info('Validación de transbordo exitosa', [
+            'voyage_id' => $voyage->id,
+            'bills_count' => $billsCount,
+            'has_master_bill' => $masterBillExists
+        ]);
     }
 }

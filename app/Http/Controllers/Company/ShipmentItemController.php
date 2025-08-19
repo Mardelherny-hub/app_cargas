@@ -125,6 +125,14 @@ class ShipmentItemController extends Controller
                 'currency_code' => 'USD',
                 'primary_cargo_type_id' => CargoType::where('active', true)->first()?->id,
                 'primary_packaging_type_id' => PackagingType::where('active', true)->first()?->id,
+
+                // ✅ AGREGADO: Campos de consolidación para webservices de transbordo
+                'is_consolidated' => false,
+                // ✅ AGREGADO: Lógica de detección de contexto para master/house bill
+                'is_master_bill' => $this->shouldBeMasterBill($shipment),
+                'is_house_bill' => $this->shouldBeHouseBill($shipment),
+                'is_house_bill' => false,
+                'master_bill_number' => null,
             ];
         }
 
@@ -801,51 +809,154 @@ return view('company.shipment-items.edit', compact(
     $name = strtolower($cargoType->name);
     return str_contains($name, 'container') || str_contains($name, 'contenedor');
 }
+/**
+ * CORRECCIÓN: ShipmentItemController - updateItemContainers
+ * 
+ * PROBLEMA: El método intenta crear contenedores nuevos siempre,
+ * causando error de clave duplicada cuando se reutiliza un contenedor.
+ * 
+ * SOLUCIÓN: Implementar lógica de "upsert" para reutilizar contenedores existentes.
+ */
+
 
 private function updateItemContainers(ShipmentItem $shipmentItem, array $containersData)
 {
-    // Eliminar contenedores existentes
-    $shipmentItem->containers()->detach();
-    
-    // Crear nuevos contenedores
-    foreach ($containersData as $containerData) {
-        $container = \App\Models\Container::create([
-            'container_number' => $containerData['container_number'],
-            'container_type_id' => $containerData['container_type_id'],
-            'tare_weight_kg' => $containerData['tare_weight'] ?? 2200,
-            'max_gross_weight_kg' => 30000,
-            'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-            'condition' => 'L',
-            'operational_status' => 'loaded',
-            'active' => true,
-            'created_date' => now(),
-            'created_by_user_id' => Auth::id(),
-        ]);
+    try {
+        // 1. Eliminar relaciones existentes (NO los contenedores)
+        $shipmentItem->containers()->detach();
+        
+        // 2. Procesar cada contenedor con lógica de upsert
+        foreach ($containersData as $containerData) {
+            
+            // 3. Buscar contenedor existente por número
+            $container = \App\Models\Container::where('container_number', $containerData['container_number'])->first();
+            
+            if ($container) {
+                // 4. CONTENEDOR EXISTE: Actualizar datos si es necesario
+                $container->update([
+                    'container_type_id' => $containerData['container_type_id'],
+                    'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                    'condition' => 'L', // Loaded
+                    'operational_status' => 'loaded',
+                    'active' => true,
+                    'last_updated_date' => now(),
+                    'last_updated_by_user_id' => Auth::id(),
+                ]);
+                
+                Log::info('Contenedor reutilizado', [
+                    'container_number' => $containerData['container_number'],
+                    'container_id' => $container->id,
+                    'shipment_item_id' => $shipmentItem->id
+                ]);
+                
+            } else {
+                // 5. CONTENEDOR NO EXISTE: Crear nuevo
+                $container = \App\Models\Container::create([
+                    'container_number' => $containerData['container_number'],
+                    'container_type_id' => $containerData['container_type_id'],
+                    'tare_weight_kg' => $containerData['tare_weight'] ?? 2200,
+                    'max_gross_weight_kg' => 30000,
+                    'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                    'condition' => 'L',
+                    'operational_status' => 'loaded',
+                    'active' => true,
+                    'created_date' => now(),
+                    'created_by_user_id' => Auth::id(),
+                ]);
+                
+                Log::info('Contenedor creado', [
+                    'container_number' => $containerData['container_number'],
+                    'container_id' => $container->id,
+                    'shipment_item_id' => $shipmentItem->id
+                ]);
+            }
 
-        // Vincular con el item
-        $shipmentItem->containers()->attach($container->id, [
-            'package_quantity' => $containerData['package_quantity'],
-            'gross_weight_kg' => $containerData['gross_weight_kg'],
-            'net_weight_kg' => $containerData['net_weight_kg'] ?? 0,
-            'volume_m3' => $containerData['volume_m3'] ?? 0,
-            'created_date' => now(),
-            'created_by_user_id' => Auth::id(),
+            // 6. Vincular contenedor con el item (siempre necesario)
+            $shipmentItem->containers()->attach($container->id, [
+                'package_quantity' => $containerData['package_quantity'],
+                'gross_weight_kg' => $containerData['gross_weight_kg'],
+                'net_weight_kg' => $containerData['net_weight_kg'] ?? 0,
+                'volume_m3' => $containerData['volume_m3'] ?? 0,
+                'seal_number' => $containerData['seal_number'] ?? null,
+                'loading_sequence' => $containerData['loading_sequence'] ?? null,
+                'notes' => $containerData['notes'] ?? null,
+                'created_date' => now(),
+                'created_by_user_id' => Auth::id(),
+            ]);
+        }
+        
+    } catch (\Exception $e) {
+        Log::error('Error en updateItemContainers', [
+            'shipment_item_id' => $shipmentItem->id,
+            'containers_data' => $containersData,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
         ]);
+        throw $e;
     }
 }
 
-private function removeAllContainers(ShipmentItem $shipmentItem)
+/**
+ * MÉTODO ADICIONAL: Limpiar contenedores huérfanos (opcional, para mantenimiento)
+ */
+private function cleanOrphanContainers()
 {
-    $containerIds = $shipmentItem->containers()->pluck('containers.id')->toArray();
-    $shipmentItem->containers()->detach();
+    // Buscar contenedores que no están vinculados a ningún shipment item
+    $orphanContainers = \App\Models\Container::whereDoesntHave('shipmentItems')->get();
     
-    // Eliminar contenedores huérfanos
-    \App\Models\Container::whereIn('id', $containerIds)
-        ->whereDoesntHave('shipmentItems')
-        ->delete();
+    if ($orphanContainers->count() > 0) {
+        Log::info('Contenedores huérfanos encontrados', [
+            'count' => $orphanContainers->count(),
+            'container_numbers' => $orphanContainers->pluck('container_number')->toArray()
+        ]);
+        
+        // Opcional: eliminar automáticamente o solo log para revisión manual
+        // $orphanContainers->each->delete();
+    }
 }
 
-
+/**
+ * MÉTODO MEJORADO: removeAllContainers
+ * Actualizar también este método para ser más seguro
+ */
+private function removeAllContainers(ShipmentItem $shipmentItem)
+{
+    try {
+        // Obtener IDs de contenedores antes de detach
+        $containerIds = $shipmentItem->containers()->pluck('containers.id')->toArray();
+        
+        // Eliminar relaciones
+        $shipmentItem->containers()->detach();
+        
+        // Verificar si hay otros items usando estos contenedores
+        foreach ($containerIds as $containerId) {
+            $container = \App\Models\Container::find($containerId);
+            if ($container && !$container->shipmentItems()->exists()) {
+                // Contenedor no tiene más relaciones, marcarlo como disponible
+                $container->update([
+                    'condition' => 'V', // Vacío
+                    'operational_status' => 'available',
+                    'current_gross_weight_kg' => $container->tare_weight_kg,
+                    'last_updated_date' => now(),
+                    'last_updated_by_user_id' => Auth::id(),
+                ]);
+                
+                Log::info('Contenedor marcado como disponible', [
+                    'container_id' => $containerId,
+                    'container_number' => $container->container_number
+                ]);
+            }
+        }
+        
+    } catch (\Exception $e) {
+        Log::error('Error en removeAllContainers', [
+            'shipment_item_id' => $shipmentItem->id,
+            'error' => $e->getMessage()
+        ]);
+        throw $e;
+    }
+}
 
     /**
      * Eliminar item.
@@ -1098,55 +1209,96 @@ private function removeAllContainers(ShipmentItem $shipmentItem)
     }
 
     /**
- * NUEVO: Crear un bill of lading con datos específicos (usado por Livewire)
- * Método público para ser llamado desde el componente
- */
-public function createBillOfLadingWithData(\App\Models\Shipment $shipment, array $blData): \App\Models\BillOfLading
-{
-    \Log::info('Creating BillOfLading with specific data for shipment: ' . $shipment->id);
+     * NUEVO: Crear un bill of lading con datos específicos (usado por Livewire)
+     * Método público para ser llamado desde el componente
+     */
+    public function createBillOfLadingWithData(\App\Models\Shipment $shipment, array $blData): \App\Models\BillOfLading
+    {
+        \Log::info('Creating BillOfLading with specific data for shipment: ' . $shipment->id);
 
-    try {
-        // Validar datos mínimos requeridos
-        $requiredFields = ['shipper_id', 'consignee_id', 'loading_port_id', 'discharge_port_id', 
-                          'primary_cargo_type_id', 'primary_packaging_type_id'];
-        
-        foreach ($requiredFields as $field) {
-            if (empty($blData[$field])) {
-                throw new \Exception("Campo requerido faltante: {$field}");
+        try {
+            // Validar datos mínimos requeridos
+            $requiredFields = ['shipper_id', 'consignee_id', 'loading_port_id', 'discharge_port_id', 
+                            'primary_cargo_type_id', 'primary_packaging_type_id'];
+            
+            foreach ($requiredFields as $field) {
+                if (empty($blData[$field])) {
+                    throw new \Exception("Campo requerido faltante: {$field}");
+                }
             }
+
+            $billOfLading = \App\Models\BillOfLading::create([
+                'shipment_id' => $shipment->id,
+                'bill_number' => $blData['bill_number'] ?? 'BL-' . $shipment->shipment_number . '-' . date('ymd'),
+                'shipper_id' => $blData['shipper_id'],
+                'consignee_id' => $blData['consignee_id'],
+                'notify_party_id' => $blData['notify_party_id'] ?? null, // ← AQUÍ está el fix!
+                'loading_port_id' => $blData['loading_port_id'],
+                'discharge_port_id' => $blData['discharge_port_id'],
+                'primary_cargo_type_id' => $blData['primary_cargo_type_id'],
+                'primary_packaging_type_id' => $blData['primary_packaging_type_id'],
+                'bill_date' => $blData['bill_date'] ?? now(),
+                'loading_date' => $blData['loading_date'] ?? now(),
+                'freight_terms' => $blData['freight_terms'] ?? 'prepaid',
+                'payment_terms' => $blData['payment_terms'] ?? 'cash',
+                'currency_code' => $blData['currency_code'] ?? 'USD',
+                'status' => 'draft',
+                'total_packages' => 0,
+                'gross_weight_kg' => 0.00,
+                'net_weight_kg' => 0.00,
+                'volume_m3' => 0.00,
+                'measurement_unit' => 'KG',
+                'container_count' => 0,
+                'cargo_description' => $blData['cargo_description'] ?? 'Pendiente de definir',
+                'created_by_user_id' => Auth::id(),
+            ]);
+
+            return $billOfLading;
+
+        } catch (\Exception $e) {
+            \Log::error('Error creating BillOfLading with data: ' . $e->getMessage());
+            throw $e;
         }
-
-        $billOfLading = \App\Models\BillOfLading::create([
-            'shipment_id' => $shipment->id,
-            'bill_number' => $blData['bill_number'] ?? 'BL-' . $shipment->shipment_number . '-' . date('ymd'),
-            'shipper_id' => $blData['shipper_id'],
-            'consignee_id' => $blData['consignee_id'],
-            'notify_party_id' => $blData['notify_party_id'] ?? null, // ← AQUÍ está el fix!
-            'loading_port_id' => $blData['loading_port_id'],
-            'discharge_port_id' => $blData['discharge_port_id'],
-            'primary_cargo_type_id' => $blData['primary_cargo_type_id'],
-            'primary_packaging_type_id' => $blData['primary_packaging_type_id'],
-            'bill_date' => $blData['bill_date'] ?? now(),
-            'loading_date' => $blData['loading_date'] ?? now(),
-            'freight_terms' => $blData['freight_terms'] ?? 'prepaid',
-            'payment_terms' => $blData['payment_terms'] ?? 'cash',
-            'currency_code' => $blData['currency_code'] ?? 'USD',
-            'status' => 'draft',
-            'total_packages' => 0,
-            'gross_weight_kg' => 0.00,
-            'net_weight_kg' => 0.00,
-            'volume_m3' => 0.00,
-            'measurement_unit' => 'KG',
-            'container_count' => 0,
-            'cargo_description' => $blData['cargo_description'] ?? 'Pendiente de definir',
-            'created_by_user_id' => Auth::id(),
-        ]);
-
-        return $billOfLading;
-
-    } catch (\Exception $e) {
-        \Log::error('Error creating BillOfLading with data: ' . $e->getMessage());
-        throw $e;
     }
-}
+
+    /**
+     * Determinar si el BL debe ser master bill basado en el contexto del viaje
+     */
+    private function shouldBeMasterBill(Shipment $shipment): bool
+    {
+        $voyage = $shipment->voyage;
+        
+        // Si el viaje tiene transbordo, normalmente es master bill
+        if ($voyage->cargo_type === 'transshipment' || $voyage->has_transshipment) {
+            return true;
+        }
+        
+        // Si es convoy, el primer shipment es master bill
+        if ($voyage->is_convoy && $voyage->shipments()->count() === 0) {
+            return true;
+        }
+        
+        // Por defecto es master bill para simplicidad
+        return true;
+    }
+
+    /**
+     * Determinar si el BL debe ser house bill basado en el contexto del viaje
+     */
+    private function shouldBeHouseBill(Shipment $shipment): bool
+    {
+        $voyage = $shipment->voyage;
+        
+        // Si es convoy y ya existe un master bill, los siguientes son house bills
+        if ($voyage->is_convoy && $voyage->shipments()->count() > 0) {
+            $existingMasterBill = BillOfLading::whereHas('shipment', function($query) use ($voyage) {
+                $query->where('voyage_id', $voyage->id);
+            })->where('is_master_bill', true)->exists();
+            
+            return $existingMasterBill;
+        }
+        
+        // Por defecto no es house bill
+        return false;
+    }
 }

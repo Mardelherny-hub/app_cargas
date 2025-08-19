@@ -483,11 +483,17 @@
                                 <a href="#" class="w-full bg-red-100 hover:bg-red-200 text-red-800 font-medium py-2 px-3 rounded text-sm text-center block">
                                     Descargar PDF
                                 </a>
-                                @if($userPermissions['can_delete'] ?? false)
-                                    <button onclick="return confirm('¿Está seguro de eliminar esta carga?')"
-                                            class="w-full bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-3 rounded text-sm">
-                                        Eliminar Carga
-                                    </button>
+                                @if($shipment->status === 'planning' && auth()->user()->hasRole('company-admin'))
+                                    <form method="POST" action="{{ route('company.shipments.destroy', $shipment) }}" 
+                                        class="inline w-full" 
+                                        onsubmit="return confirm('¿Está seguro de eliminar esta carga? Esta acción no se puede deshacer.')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" 
+                                                class="w-full bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-3 rounded text-sm">
+                                            Eliminar Carga
+                                        </button>
+                                    </form>
                                 @endif
                             </div>
                         </div>

@@ -483,6 +483,21 @@ public function vessels()
     );
 }
 
+/**
+ * Bills of Lading de todos los shipments del viaje
+ * Esta es una relación hasManyThrough que conecta Voyage → Shipment → BillOfLading
+ */
+public function billsOfLading(): HasManyThrough
+{
+    return $this->hasManyThrough(
+        BillOfLading::class,    // Modelo final
+        Shipment::class,        // Modelo intermedio
+        'voyage_id',            // Foreign key en shipments table
+        'shipment_id',          // Foreign key en bills_of_lading table
+        'id',                   // Local key en voyages table
+        'id'                    // Local key en shipments table
+    );
+}
 
 //
 // === SCOPES ÚTILES ===

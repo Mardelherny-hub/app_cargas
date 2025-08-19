@@ -113,8 +113,8 @@ class ClientController extends Controller
 
             // Establecer valores por defecto
             $validatedData['status'] = 'active';
-            $validatedData['created_by_company_id'] = $this->getUserCompanyId();
-
+            $company = $this->getUserCompany();
+            $validatedData['created_by_company_id'] = $company ? $company->id : null;
             // Crear cliente
             $client = Client::create($validatedData);
 
