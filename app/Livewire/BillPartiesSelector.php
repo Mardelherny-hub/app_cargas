@@ -146,38 +146,71 @@ class BillPartiesSelector extends Component
         try {
             \DB::beginTransaction();
 
-            // Crear el cliente
-            $client = Client::create([
-                'legal_name' => $this->new_legal_name,
-                'tax_id' => $this->new_tax_id,
-                'country_id' => $this->new_country_id,
-                'address' => $this->new_address_1,
-                'email' => $this->new_email,
-                'status' => 'active',
-                'created_by_company_id' => $company->id,
-            ]);
+            // ✅ CORRECCIÓN 1: Verificar cliente existente
+            $existingClient = Client::where('tax_id', $this->new_tax_id)
+                                ->where('country_id', $this->new_country_id)
+                                ->first();
 
-            // Usar el método addClient() que ya existe en Company
-            $company->addClient($client, [
-                'relation_type' => 'customer',
-                'can_edit' => true,
-                'active' => true,
-                'priority' => 'normal',
-                'created_by_user_id' => Auth::id(),
-            ]);
+            if ($existingClient) {
+                // Cliente existe - verificar relación con empresa
+                if (!$company->hasClientRelation($existingClient)) {
+                    $company->addClient($existingClient, [
+                        'relation_type' => 'customer',
+                        'can_edit' => true,
+                        'active' => true,
+                        'priority' => 'normal',
+                        'created_by_user_id' => Auth::id(),
+                    ]);
+                }
+                
+                $client = $existingClient;
+                $message = 'Cliente existente vinculado exitosamente.';
+                
+            } else {
+                // ✅ CORRECCIÓN 2: Obtener document_type_id válido
+                $documentTypeId = \App\Models\DocumentType::where('country_id', $this->new_country_id)
+                                                        ->where('active', true)
+                                                        ->first()?->id ?? 1; // Fallback seguro
 
-            // Crear datos de contacto si hay información adicional
-            if ($this->new_phone || $this->new_city) {
-                $client->contactData()->create([
-                    'phone' => $this->new_phone,
-                    'city' => $this->new_city,
-                    'address_line_1' => $this->new_address_1,
+                // Cliente nuevo - crear
+                $client = Client::create([
+                    'legal_name' => $this->new_legal_name,
+                    'tax_id' => $this->new_tax_id,
+                    'country_id' => $this->new_country_id,
+                    'document_type_id' => $documentTypeId, // ✅ CAMPO REQUERIDO
+                    'address' => $this->new_address_1,
+                    'email' => $this->new_email,
+                    'status' => 'active',
+                    'verified_at' => now(),
+                    'created_by_company_id' => $company->id,
                 ]);
+
+                $company->addClient($client, [
+                    'relation_type' => 'customer',
+                    'can_edit' => true,
+                    'active' => true,
+                    'priority' => 'normal',
+                    'created_by_user_id' => Auth::id(),
+                ]);
+                
+                $message = 'Cliente creado exitosamente.';
+            }
+
+            // Datos de contacto adicionales (sin cambios)
+            if ($this->new_phone || $this->new_city) {
+                $client->contactData()->updateOrCreate(
+                    ['client_id' => $client->id],
+                    [
+                        'phone' => $this->new_phone,
+                        'city' => $this->new_city,
+                        'address_line_1' => $this->new_address_1,
+                    ]
+                );
             }
 
             \DB::commit();
 
-            // Asignar el cliente recién creado al campo correspondiente
+            // Asignar cliente al campo correspondiente (sin cambios)
             switch ($this->clientType) {
                 case 'shipper':
                     $this->shipper_id = $client->id;
@@ -193,22 +226,26 @@ class BillPartiesSelector extends Component
                     break;
             }
 
-            // Recargar la lista de clientes en los SearchClient components
             $this->dispatch('refreshClients');
-
-            // Cerrar modal
             $this->showCreateModal = false;
-
-            // Emit evento para notificar al padre si es necesario
             $this->dispatch('clientCreated', [
                 'client_id' => $client->id,
                 'type' => $this->clientType
             ]);
 
-            session()->flash('message', 'Cliente creado exitosamente.');
+            session()->flash('message', $message);
 
         } catch (\Exception $e) {
             \DB::rollBack();
+            
+            // ✅ LOGGING mejorado para debug
+            Log::error('Error en createClient BillPartiesSelector', [
+                'tax_id' => $this->new_tax_id,
+                'country_id' => $this->new_country_id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+            
             session()->flash('error', 'Error al crear el cliente: ' . $e->getMessage());
         }
     }

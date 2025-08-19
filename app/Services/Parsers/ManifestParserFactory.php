@@ -10,7 +10,7 @@ use App\Services\Parsers\ParanaExcelParser;
 // use App\Services\Parsers\LoginXmlParser;
 // use App\Services\Parsers\TfpTextParser;
 // use App\Services\Parsers\CmspEdiParser;
-// use App\Services\Parsers\NavsurTextParser;
+use App\Services\Parsers\NavsurTextParser;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
@@ -38,7 +38,7 @@ class ManifestParserFactory
         // LoginXmlParser::class,
         // TfpTextParser::class,
         // CmspEdiParser::class,
-        // NavsurTextParser::class,
+        NavsurTextParser::class,
     ];
 
     /**
@@ -46,7 +46,8 @@ class ManifestParserFactory
      */
     protected array $extensionMappings = [
         'dat' => [KlineDataParser::class],
-        'txt' => [KlineDataParser::class], // TfpTextParser::class, NavsurTextParser::class
+        'txt' => [KlineDataParser::class, NavsurTextParser::class],
+        //'txt' => [KlineDataParser::class, TfpTextParser::class, NavsurTextParser::class],
         'xlsx' => [ParanaExcelParser::class],
         'xls' => [ParanaExcelParser::class],
         'csv' => [], // GuaranCsvParser::class

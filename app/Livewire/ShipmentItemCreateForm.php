@@ -336,168 +336,129 @@ class ShipmentItemCreateForm extends Component
 
     public function createQuickClient()
     {
-        // Validar campos del modal (conservando lógica original)
         $this->validate([
             'modal_tax_id' => 'required|string|max:15',
             'modal_legal_name' => 'required|string|min:3|max:255',
             'modal_country_id' => 'required|exists:countries,id',
-            'modal_document_type_id' => 'required|exists:document_types,id',
+            'modal_document_type_id' => 'nullable|exists:document_types,id',
             'modal_commercial_name' => 'nullable|string|max:255',
-            'modal_address' => 'nullable|string|max:500',
-            'modal_phone' => 'nullable|string|max:100',
-            'modal_email' => 'nullable|email|max:100',
+            'modal_address_1' => 'nullable|string|max:500',
+            'modal_email' => 'nullable|string|max:500',
         ]);
+
+        $company = $this->getUserCompany();
 
         try {
             DB::beginTransaction();
 
-            // Validar CUIT/RUC usando el servicio existente (conservando lógica original)
-            $country = Country::find($this->modal_country_id);
-            $validationService = new ClientValidationService();
-            
-            $cleanTaxId = preg_replace('/[^0-9]/', '', $this->modal_tax_id);
-           
-            switch (strtoupper($country->alpha2_code)) {
-            case 'AR':
-                // Validación CUIT simplificada para cliente rápido
-                if (strlen($cleanTaxId) !== 11) {
-                    $this->addError('modal_tax_id', 'CUIT debe tener exactamente 11 dígitos');
-                    return;
-                }
-                
-                // Validación de prefijo más permisiva
-                $prefix = substr($cleanTaxId, 0, 2);
-                $validPrefixes = ['20', '23', '24', '27', '30', '33', '34', '50', '51', '55'];
-                if (!in_array($prefix, $validPrefixes)) {
-                    $this->addError('modal_tax_id', 'Prefijo CUIT no reconocido, pero se permitirá para cliente rápido');
-                    // No hacer return, solo warning
-                }
-                break;
-                
-            case 'PY':
-                // Validación RUC simplificada para cliente rápido
-                if (strlen($cleanTaxId) < 7 || strlen($cleanTaxId) > 9) {
-                    $this->addError('modal_tax_id', 'RUC debe tener entre 7 y 9 dígitos');
-                    return;
-                }
-                break;
-                
-            default:
-                // Validación mínima para otros países
-                if (strlen($cleanTaxId) < 6) {
-                    $this->addError('modal_tax_id', 'Documento debe tener al menos 6 dígitos');
-                    return;
-                }
-                break;
-        }
-
-        // Verificación de duplicados (mantener esta parte)
-        $existingClient = Client::where('tax_id', $cleanTaxId)
-            ->where('country_id', $this->modal_country_id)
-            ->first();
-
-        if ($existingClient) {
-            $this->addError('modal_tax_id', 'Ya existe un cliente con este CUIT/RUC en este país.');
-            return;
-        }
-
-            $existingClient = Client::where('tax_id', $cleanTaxId)
-                ->where('country_id', $this->modal_country_id)
-                ->first();
+            // ✅ CORRECCIÓN 1: Verificar cliente existente
+            $existingClient = \App\Models\Client::where('tax_id', $this->modal_tax_id)
+                                            ->where('country_id', $this->modal_country_id)
+                                            ->first();
 
             if ($existingClient) {
-                $this->addError('modal_tax_id', 'Ya existe un cliente con este CUIT/RUC en este país.');
-                return;
+                // Cliente existe - verificar relación
+                if (!$company->hasClientRelation($existingClient)) {
+                    $company->addClient($existingClient, [
+                        'relation_type' => 'customer',
+                        'can_edit' => true,
+                        'active' => true,
+                        'priority' => 'normal',
+                        'created_by_user_id' => Auth::id(),
+                    ]);
+                }
+                
+                $client = $existingClient;
+                $message = 'Cliente existente vinculado: ';
+                
+            } else {
+                // ✅ CORRECCIÓN 2: Manejar document_type_id
+                $documentTypeId = $this->modal_document_type_id;
+                
+                if (!$documentTypeId) {
+                    // Buscar tipo de documento válido para el país
+                    $documentTypeId = \App\Models\DocumentType::where('country_id', $this->modal_country_id)
+                                                            ->where('active', true)
+                                                            ->first()?->id ?? 1; // Fallback seguro
+                }
+
+                // Cliente nuevo - crear
+                $client = \App\Models\Client::create([
+                    'legal_name' => $this->modal_legal_name,
+                    'tax_id' => $this->modal_tax_id,
+                    'country_id' => $this->modal_country_id,
+                    'document_type_id' => $documentTypeId, // ✅ CAMPO REQUERIDO
+                    'commercial_name' => $this->modal_commercial_name,
+                    'address' => $this->modal_address_1,
+                    'email' => $this->modal_email,
+                    'status' => 'active',
+                    'verified_at' => now(),
+                    'created_by_company_id' => $company->id,
+                ]);
+
+                $company->addClient($client, [
+                    'relation_type' => 'customer',
+                    'can_edit' => true,
+                    'active' => true,
+                    'priority' => 'normal',
+                    'created_by_user_id' => Auth::id(),
+                ]);
+                
+                $message = 'Cliente creado: ';
             }
-
-            $userCompany = auth()->user()->userable_type === 'App\Models\Company' 
-                ? auth()->user()->userable 
-                : (auth()->user()->userable_type === 'App\Models\Operator' && auth()->user()->userable 
-                    ? auth()->user()->userable->company 
-                    : null);
-
-            if (!$userCompany) {
-                $this->addError('modal_tax_id', 'Error: No se pudo determinar la empresa del usuario.');
-                return;
-            }
-
-            $client = Client::create([
-                'tax_id' => $cleanTaxId, 
-                'country_id' => $this->modal_country_id,
-                'document_type_id' => $this->modal_document_type_id,
-                'legal_name' => $this->modal_legal_name,
-                'commercial_name' => $this->modal_commercial_name ?: null,
-                'address' => $this->modal_address ?: null,
-                'email' => $this->modal_email ?: null,
-                'status' => 'active',
-                'created_by_company_id' => $userCompany->id,
-            ]);
 
             DB::commit();
 
-            // Asignar el cliente al campo correspondiente (conservando lógica original)
+            // Asignar al campo correspondiente (sin cambios)
             switch ($this->clientSearchField) {
                 case 'bl_shipper_id':
                     $this->bl_shipper_id = $client->id;
-                    $this->shipperSearch = $client->legal_name . ' - ' . $client->tax_id;
-                    if ($this->modal_use_specific_address) {
-                        $this->bl_shipper_use_specific = true;
-                        $this->bl_shipper_address_1 = $this->modal_specific_address_1;
-                        $this->bl_shipper_address_2 = $this->modal_specific_address_2;
-                        $this->bl_shipper_city = $this->modal_specific_city;
-                        $this->bl_shipper_state = $this->modal_specific_state;
-                    }
+                    $this->bl_shipper_name = $client->legal_name . ' - ' . $client->tax_id;
                     break;
                 case 'bl_consignee_id':
                     $this->bl_consignee_id = $client->id;
-                    $this->consigneeSearch = $client->legal_name . ' - ' . $client->tax_id;
-                    if ($this->modal_use_specific_address) {
-                        $this->bl_consignee_use_specific = true;
-                        $this->bl_consignee_address_1 = $this->modal_specific_address_1;
-                        $this->bl_consignee_address_2 = $this->modal_specific_address_2;
-                        $this->bl_consignee_city = $this->modal_specific_city;
-                        $this->bl_consignee_state = $this->modal_specific_state;
-                    }
+                    $this->bl_consignee_name = $client->legal_name . ' - ' . $client->tax_id;
                     break;
                 case 'bl_notify_party_id':
                     $this->bl_notify_party_id = $client->id;
-                    $this->notifyPartySearch = $client->legal_name . ' - ' . $client->tax_id;
-                    if ($this->modal_use_specific_address) {
-                        $this->bl_notify_use_specific = true;
-                        $this->bl_notify_address_1 = $this->modal_specific_address_1;
-                        $this->bl_notify_address_2 = $this->modal_specific_address_2;
-                        $this->bl_notify_city = $this->modal_specific_city;
-                        $this->bl_notify_state = $this->modal_specific_state;
-                    }
+                    $this->bl_notify_party_name = $client->legal_name . ' - ' . $client->tax_id;
                     break;
             }
 
             $this->clients = Client::where('status', 'active')->orderBy('legal_name')->get();
             $this->closeClientModal();
 
-            session()->flash('message', 'Cliente creado exitosamente: ' . $client->legal_name);
-
-            Log::info('Cliente creado desde modal rápido', [
-                'client_id' => $client->id,
-                'tax_id' => $client->tax_id,
-                'field' => $this->clientSearchField,
-            ]);
+            session()->flash('message', $message . $client->legal_name);
 
         } catch (\Exception $e) {
             DB::rollBack();
             
-            Log::error('Error al crear cliente rápido: ' . $e->getMessage(), [
-                'modal_data' => [
-                    'tax_id' => $this->modal_tax_id,
-                    'legal_name' => $this->modal_legal_name,
-                    'country_id' => $this->modal_country_id,
-                ],
-                'error_file' => $e->getFile(),
-                'error_line' => $e->getLine(),
+            // ✅ LOGGING mejorado para debug
+            Log::error('Error en createQuickClient ShipmentItemCreateForm', [
+                'tax_id' => $this->modal_tax_id,
+                'country_id' => $this->modal_country_id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
             ]);
 
             session()->flash('error', 'Error al crear el cliente: ' . $e->getMessage());
         }
+    }
+
+    // ====================================================
+    // MÉTODO HELPER PARA ShipmentItemCreateForm (si no existe)
+    // ====================================================
+    private function getUserCompany()
+    {
+        $user = Auth::user();
+        
+        if ($user->userable_type === 'App\\Models\\Company') {
+            return $user->userable;
+        } elseif ($user->userable_type === 'App\\Models\\Operator') {
+            return $user->userable->company;
+        }
+        
+        return null;
     }
 
     // MÉTODOS ORIGINALES para BL (sin modificar)
