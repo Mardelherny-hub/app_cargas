@@ -394,7 +394,7 @@ class NavsurTextParser implements ManifestParserInterface
     }
 
     /**
-     * Buscar o crear voyage
+     * Buscar o crear voyage - VALORES ENUM CORREGIDOS
      */
     protected function findOrCreateVoyage(array $data): Voyage
     {
@@ -420,13 +420,23 @@ class NavsurTextParser implements ManifestParserInterface
             return $voyage;
         }
 
-        // Buscar o crear vessel
+        // Buscar o crear vessel con campos obligatorios correctos
+        $vesselName = $data['vessel_name'] ?? 'NAVSUR VESSEL';
+        $registrationNumber = $data['vessel_name'] ?? 'NAV-' . date('Ymd-His');
+        
         $vessel = Vessel::firstOrCreate(
-            ['name' => $data['vessel_name']],
+            ['registration_number' => $registrationNumber],
             [
-                'vessel_type' => 'barge',
-                'flag' => $this->mapFlag($data['flag']),
-                'company_id' => $companyId
+                'name' => $vesselName,
+                'company_id' => $companyId,
+                'vessel_type_id' => 1, // Usar vessel_type_id en lugar de vessel_type
+                'flag_country_id' => $this->mapFlagToCountryId($data['flag'] ?? 'PARAGUAYA'),
+                'length_meters' => 50.0,
+                'beam_meters' => 12.0,
+                'draft_meters' => 3.0,
+                'cargo_capacity_tons' => 1000.0,
+                'operational_status' => 'active',
+                'active' => true
             ]
         );
 
@@ -434,7 +444,7 @@ class NavsurTextParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($data['pol']);
         $destPort = $this->findOrCreatePort($data['pod']);
 
-        // Crear voyage
+        // Crear voyage con valores enum CORREGIDOS
         $voyage = Voyage::create([
             'voyage_number' => $data['voyage_number'],
             'company_id' => $companyId, 
@@ -443,19 +453,41 @@ class NavsurTextParser implements ManifestParserInterface
             'destination_port_id' => $destPort->id,
             'origin_country_id' => $originPort->country_id ?? 2, // PY
             'destination_country_id' => $destPort->country_id ?? 1, // AR
-            'departure_date' => now(),
-            'estimated_arrival_date' => now()->addDays(3),
             'status' => 'planning',
-            'voyage_type' => 'standard',
-            'cargo_type' => 'general',
-            'is_convoy' => false,
-            'vessel_count' => 1
+            
+            // CORREGIDO: usar valores válidos del enum voyage_type
+            'voyage_type' => 'single_vessel', // En lugar de 'commercial'
+            
+            // CORREGIDO: usar valores válidos del enum cargo_type  
+            'cargo_type' => 'export', // En lugar de 'containers'
+            
+            'departure_date' => now()->addDays(7),
+            'estimated_arrival_date' => now()->addDays(10),
+            'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 1000.0,
+            'total_container_capacity' => $vessel->container_capacity ?? 40,
+            'total_cargo_weight_loaded' => 0,
+            'total_containers_loaded' => 0,
+            'capacity_utilization_percentage' => 0
         ]);
 
-        Log::info('Created voyage from Navsur', ['voyage_id' => $voyage->id]);
         return $voyage;
     }
 
+    /**
+     * NUEVO MÉTODO: Mapear bandera a country_id
+     */
+    protected function mapFlagToCountryId(string $flag): int
+    {
+        $flag = strtoupper(trim(str_replace(['/*', '*/'], '', $flag)));
+        
+        if (str_contains($flag, 'PARAGUAY')) return 2; // Paraguay
+        if (str_contains($flag, 'ARGENTIN')) return 1; // Argentina  
+        if (str_contains($flag, 'BRASIL')) return 3; // Brasil
+        
+        return 2; // Default: Paraguay
+    }
+
+    
     /**
      * Buscar o crear shipment
      */
@@ -486,92 +518,168 @@ class NavsurTextParser implements ManifestParserInterface
         return $shipment;
     }
 
-    /**
-     * Crear BillOfLading
-     */
-    protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
-    {
-        // Obtener o crear clientes
-        $shipper = $this->findOrCreateClient($data['cargador_nombre'], 'shipper');
-        $consignee = $this->findOrCreateClient($data['consignatario_nombre'], 'consignee');
-        $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
+/**
+ * Crear BillOfLading
+ */
+protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
+{
+    // Obtener o crear clientes
+    $shipper = $this->findOrCreateClient($data['cargador_nombre'], 'shipper');
+    $consignee = $this->findOrCreateClient($data['consignatario_nombre'], 'consignee');
+    $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
 
-        // Obtener puertos
-        $loadingPort = $this->findOrCreatePort($data['puerto_carga']);
-        $dischargePort = $this->findOrCreatePort($data['puerto_descarga']);
-        $finalPort = !empty($data['destino_final']) 
-            ? $this->findOrCreatePort($data['destino_final'])
-            : $dischargePort;
+    // Obtener puertos
+    $loadingPort = $this->findOrCreatePort($data['puerto_carga']);
+    $dischargePort = $this->findOrCreatePort($data['puerto_descarga']);
+    $finalPort = !empty($data['destino_final']) 
+        ? $this->findOrCreatePort($data['destino_final'])
+        : $dischargePort;
 
-        // Crear BL
-        $bill = BillOfLading::create([
-            'shipment_id' => $shipment->id,
-            'bill_number' => $data['numero_bl'],
-            'master_bill_number' => $data['cod_booking'] ?? null,
-            'internal_reference' => $data['cod_programacion'] ?? null,
-            'shipper_id' => $shipper->id,
-            'consignee_id' => $consignee->id,
-            'notify_party_id' => $notify?->id,
-            'loading_port_id' => $loadingPort->id,
-            'discharge_port_id' => $dischargePort->id,
-            'final_destination_port_id' => $finalPort->id,
-            'freight_terms' => $data['condicion_flete'] ?? 'PREPAID',
-            'bill_type' => 'straight',
-            'status' => 'draft',
-            'issue_date' => now(),
-            'primary_cargo_type_id' => 1,
-            'primary_packaging_type_id' => 1
-        ]);
+    // AGREGAR: Fechas obligatorias con valores por defecto
+    $billDate = now(); // Fecha actual como fallback
+    $loadingDate = now()->addDays(1); // Un día después para loading
 
-        Log::info('Created BL from Navsur', [
-            'bill_id' => $bill->id,
-            'bill_number' => $bill->bill_number
-        ]);
-
-        return $bill;
-    }
-
-    /**
-     * Crear Container
-     */
-    protected function createContainer(BillOfLading $bill, array $data): ?Container
-    {
-        if (empty($data['cod_contenedor'])) {
-            return null;
-        }
-
-        // Verificar si ya existe
-        $existing = Container::where('container_number', $data['cod_contenedor'])->first();
-        if ($existing) {
-            Log::info('Container already exists', ['number' => $data['cod_contenedor']]);
-            return $existing;
-        }
-
-        $containerType = $this->findOrCreateContainerType(
-            $data['tipo_contenedor'] ?? '20DV',
-            $data['medida'] ?? '20'
-        );
-
-        $container = Container::create([
-            'container_number' => $data['cod_contenedor'],
-            'container_type_id' => $containerType->id,
-            'tare_weight_kg' => floatval($data['tara'] ?? 0) ?: 2200,
-            'max_gross_weight_kg' => 30000,
-            'condition' => 'L', // Loaded
-            'operational_status' => 'in_use',
-            'current_port_id' => $bill->loading_port_id,
-            'active' => true
-        ]);
-
-        // Guardar sellos en el BL si existen
-        if (!empty($data['precintos_linea'])) {
-            $bill->update([
-                'bl_seals_numbers' => $this->extractSeals($data)
+    // Intentar extraer fechas reales de los datos si están disponibles
+    if (!empty($data['fecha_conocimiento'])) {
+        try {
+            $billDate = \Carbon\Carbon::parse($data['fecha_conocimiento']);
+        } catch (\Exception $e) {
+            Log::warning('No se pudo parsear fecha_conocimiento', [
+                'fecha' => $data['fecha_conocimiento'],
+                'error' => $e->getMessage()
             ]);
         }
-
-        return $container;
     }
+
+    if (!empty($data['fecha_carga'])) {
+        try {
+            $loadingDate = \Carbon\Carbon::parse($data['fecha_carga']);
+        } catch (\Exception $e) {
+            Log::warning('No se pudo parsear fecha_carga', [
+                'fecha' => $data['fecha_carga'],
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    // Crear BL con campos obligatorios CORREGIDOS
+    $bill = BillOfLading::create([
+        'shipment_id' => $shipment->id,
+        'bill_number' => $data['numero_bl'],
+        'master_bill_number' => $data['cod_booking'] ?? null,
+        'internal_reference' => $data['cod_programacion'] ?? null,
+        
+        // AGREGADO: Campos de fecha obligatorios
+        'bill_date' => $billDate,
+        'loading_date' => $loadingDate,
+        
+        // Clientes
+        'shipper_id' => $shipper->id,
+        'consignee_id' => $consignee->id,
+        'notify_party_id' => $notify?->id,
+        
+        // Puertos
+        'loading_port_id' => $loadingPort->id,
+        'discharge_port_id' => $dischargePort->id,
+        'final_destination_port_id' => $finalPort->id,
+        
+        // Términos y estado
+        'freight_terms' => $this->mapFreightTerms($data['condicion_flete'] ?? 'PREPAID'),
+        'status' => 'draft',
+        
+        // Tipos obligatorios con valores por defecto
+        'primary_cargo_type_id' => 1, // General cargo
+        'primary_packaging_type_id' => 1, // Bags/Bultos
+        
+        // AGREGADO: Campos de peso obligatorios con valores por defecto
+        'gross_weight_kg' => floatval($data['peso_bruto'] ?? 0),
+        'net_weight_kg' => floatval($data['peso_neto'] ?? 0),
+        'total_packages' => intval($data['cantidad_bultos'] ?? 1),
+        'volume_m3' => floatval($data['cubitaje'] ?? 0),
+        
+        // CORREGIDO: campo cargo_description es obligatorio
+        'cargo_description' => $data['descripcion_mercaderia'] ?? 'Mercadería general importada desde archivo Navsur',
+        'special_instructions' => !empty($data['instrucciones']) ? [$data['instrucciones']] : null,
+        'internal_notes' => 'Importado desde archivo Navsur'
+    ]);
+
+    Log::info('BillOfLading creado desde Navsur', [
+        'bill_id' => $bill->id,
+        'bill_number' => $bill->bill_number,
+        'bill_date' => $bill->bill_date->toDateString(),
+        'loading_date' => $bill->loading_date->toDateString()
+    ]);
+
+    return $bill;
+}
+
+/**
+ * NUEVO MÉTODO: Mapear términos de flete
+ */
+protected function mapFreightTerms(string $terms): string
+{
+    $terms = strtoupper(trim(str_replace(['/*', '*/'], '', $terms)));
+    
+    if (str_contains($terms, 'PREPAID') || str_contains($terms, 'PREPAGADO')) {
+        return 'prepaid';
+    }
+    
+    if (str_contains($terms, 'COLLECT') || str_contains($terms, 'COBRAR')) {
+        return 'collect';
+    }
+    
+    if (str_contains($terms, 'THIRD') || str_contains($terms, 'TERCERO')) {
+        return 'third_party';
+    }
+    
+    return 'prepaid'; // Default
+}
+ 
+
+/**
+ * Crear Container
+ */
+protected function createContainer(BillOfLading $bill, array $data): ?Container
+{
+    if (empty($data['cod_contenedor'])) {
+        return null;
+    }
+
+    // Verificar si ya existe
+    $existing = Container::where('container_number', $data['cod_contenedor'])->first();
+    if ($existing) {
+        Log::info('Container already exists', ['number' => $data['cod_contenedor']]);
+        return $existing;
+    }
+
+    $containerType = $this->findOrCreateContainerType(
+        $data['tipo_contenedor'] ?? '20DV',
+        $data['medida'] ?? '20'
+    );
+
+    $container = Container::create([
+        'container_number' => $data['cod_contenedor'],
+        'container_type_id' => $containerType->id,
+        'tare_weight_kg' => floatval($data['tara'] ?? 0) ?: 2200,
+        'max_gross_weight_kg' => 30000,
+        'condition' => 'L', // Loaded
+        
+        // CORREGIDO: usar valor válido del enum operational_status
+        'operational_status' => 'loaded', // En lugar de 'in_use'
+        
+        'current_port_id' => $bill->loading_port_id,
+        'active' => true
+    ]);
+
+    // Guardar sellos en el BL si existen
+    if (!empty($data['precintos_linea'])) {
+        $bill->update([
+            'bl_seals_numbers' => $this->extractSeals($data)
+        ]);
+    }
+
+    return $container;
+}
 
     /**
      * Crear ShipmentItem
@@ -631,28 +739,66 @@ class NavsurTextParser implements ManifestParserInterface
             return $client;
         }
 
+        // Obtener company_id correctamente
+        $user = auth()->user();
+        $companyId = null;
+
+        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+            $companyId = (int) $user->userable_id;
+        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
+            $companyId = $user->userable->company_id;
+        }
+
+        if (!$companyId) {
+            Log::warning('No se pudo obtener company_id para crear cliente', [
+                'user_id' => $user->id,
+                'userable_type' => $user->userable_type,
+                'client_name' => $name
+            ]);
+            
+            $companyId = 1;
+        }
+
         // Determinar país basado en el nombre
         $countryId = 1; // Argentina por defecto
         if (str_contains(strtoupper($name), 'PARAGUAY')) {
             $countryId = 2; // Paraguay
         }
 
+        // CORREGIDO: Generar tax_id temporal más corto (máximo 11 caracteres)
+        // Usar solo 6 caracteres del hash para cumplir con límite de varchar(11)
+        $tempTaxId = 'P' . strtoupper(substr(md5($name), 0, 6)); // P + 6 chars = 7 total
+        
+        // Si ya existe, agregar número secuencial
+        $counter = 1;
+        $originalTaxId = $tempTaxId;
+        while (Client::where('tax_id', $tempTaxId)->exists()) {
+            $tempTaxId = $originalTaxId . $counter; // P + 6 chars + 1-2 digits
+            $counter++;
+            
+            // Protección contra loop infinito y límite de longitud
+            if (strlen($tempTaxId) > 11 || $counter > 99) {
+                $tempTaxId = 'P' . substr(md5($name . time()), 0, 10); // P + 10 chars = 11 total
+                break;
+            }
+        }
+
         // Crear cliente
         $client = Client::create([
-            'tax_id' => 'PENDING-' . strtoupper(substr(md5($name), 0, 6)),
+            'tax_id' => $tempTaxId, // CORREGIDO: máximo 11 caracteres
             'country_id' => $countryId,
             'document_type_id' => $countryId == 1 ? 1 : 2, // CUIT o RUC
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
-            'created_by_company_id' => $companyId
+            'created_by_company_id' => $companyId,
+            'verified_at' => now() // Agregar timestamp de verificación
         ]);
 
-        $this->stats['warnings'][] = "Cliente '{$name}' creado con identificación temporal";
+        $this->stats['warnings'][] = "Cliente '{$name}' creado con tax_id temporal: {$tempTaxId}";
 
         return $client;
     }
-
     /**
      * Buscar o crear puerto
      */
@@ -670,50 +816,150 @@ class NavsurTextParser implements ManifestParserInterface
             return $port;
         }
 
-        // Determinar país basado en código
+        // Determinar país y ciudad basado en código
         $countryId = 1; // Argentina por defecto
+        $cityName = 'Ciudad Desconocida'; // Valor por defecto para city (obligatorio)
+        
         if (str_starts_with($code, 'PY')) {
             $countryId = 2; // Paraguay
+            $cityName = $this->mapParaguayanPortCity($code);
         } elseif (str_starts_with($code, 'BR')) {
             $countryId = 3; // Brasil
+            $cityName = $this->mapBrazilianPortCity($code);
+        } else {
+            // Argentina o códigos genéricos
+            $cityName = $this->mapArgentinianPortCity($code);
         }
 
         $port = Port::create([
             'code' => $code,
             'name' => 'Puerto ' . $code,
+            'city' => $cityName, // CORREGIDO: Campo obligatorio agregado
             'country_id' => $countryId,
             'port_type' => 'river',
-            'active' => true
+            'active' => true,
+            'handles_containers' => true,
+            'handles_bulk_cargo' => true,
+            'handles_general_cargo' => true,
+            'has_customs_office' => true,
+            'accepts_new_vessels' => true
         ]);
 
-        $this->stats['warnings'][] = "Puerto '{$code}' creado automáticamente";
+        $this->stats['warnings'][] = "Puerto '{$code}' creado automáticamente en {$cityName}";
 
         return $port;
     }
 
     /**
-     * Buscar o crear tipo de contenedor
+     * NUEVO MÉTODO: Mapear códigos paraguayos a ciudades
      */
-    protected function findOrCreateContainerType(string $code, string $size): ContainerType
+    protected function mapParaguayanPortCity(string $code): string
     {
-        $code = strtoupper(trim(str_replace(['/*', '*/'], '', $code)));
+        $cityMap = [
+            'PYCAP' => 'Capitán Carmelo Peralta',
+            'PYASU' => 'Asunción',
+            'PYVIL' => 'Villeta',
+            'PYCON' => 'Concepción',
+            'PYPIL' => 'Pilar',
+            'PYALB' => 'Puerto Casado'
+        ];
         
-        $type = ContainerType::where('code', $code)->first();
+        return $cityMap[$code] ?? 'Asunción'; // Default Paraguay
+    }
+
+    /**
+     * NUEVO MÉTODO: Mapear códigos argentinos a ciudades
+     */
+    protected function mapArgentinianPortCity(string $code): string
+    {
+        $cityMap = [
+            'ARBUE' => 'Buenos Aires',
+            'ARROS' => 'Rosario',
+            'ARSFE' => 'Santa Fe',
+            'ARPAR' => 'Paraná',
+            'ARCOR' => 'Corrientes',
+            'ARFOR' => 'Formosa',
+            'ARBAH' => 'Bahía Blanca'
+        ];
         
-        if ($type) {
-            return $type;
+        return $cityMap[$code] ?? 'Buenos Aires'; // Default Argentina
+    }
+
+    /**
+     * NUEVO MÉTODO: Mapear códigos brasileños a ciudades
+     */
+    protected function mapBrazilianPortCity(string $code): string
+    {
+        $cityMap = [
+            'BRRIG' => 'Rio Grande',
+            'BRPOA' => 'Porto Alegre',
+            'BRSFS' => 'Santos',
+            'BRSSZ' => 'Santos'
+        ];
+        
+        return $cityMap[$code] ?? 'Porto Alegre'; // Default Brasil
+    }
+
+/**
+ * Buscar o crear tipo de contenedor - VERSIÓN SIMPLIFICADA
+ */
+protected function findOrCreateContainerType(string $code, string $size): ContainerType
+{
+    $code = strtoupper(trim(str_replace(['/*', '*/'], '', $code)));
+    
+    // Mapear códigos Navsur a códigos estándar existentes en la tabla
+    $codeMapping = [
+        '20DV' => '20GP',  // Dry Van -> General Purpose
+        '40DV' => '40GP',  // Dry Van -> General Purpose  
+        '20GP' => '20GP',  // Ya correcto
+        '40GP' => '40GP',  // Ya correcto
+        '40HC' => '40HC',  // Ya correcto
+        '20RF' => '20RF',  // Refrigerado
+        '40RF' => '40HC',  // No hay 40RF, usar 40HC
+        '20TN' => '20GP',  // Tank -> GP como fallback
+        '40TN' => '40GP',  // Tank -> GP como fallback
+        '20OT' => '20GP',  // Open Top -> GP como fallback
+        '40OT' => '40GP',  // Open Top -> GP como fallback
+        '20FR' => '20GP',  // Flat Rack -> GP como fallback
+        '40FR' => '40GP',  // Flat Rack -> GP como fallback
+    ];
+    
+    // Intentar mapear el código
+    $mappedCode = $codeMapping[$code] ?? null;
+    
+    // Si no se puede mapear, intentar detectar por tamaño
+    if (!$mappedCode) {
+        if (str_contains($code, '20')) {
+            $mappedCode = '20GP';
+        } elseif (str_contains($code, '40')) {
+            $mappedCode = str_contains($code, 'HC') ? '40HC' : '40GP';
+        } else {
+            $mappedCode = '20GP'; // Fallback por defecto
         }
-
-        $type = ContainerType::create([
-            'code' => $code,
-            'name' => "Container {$code}",
-            'size_feet' => intval($size),
-            'type_category' => $this->detectContainerCategory($code),
-            'active' => true
-        ]);
-
+    }
+    
+    // Buscar el tipo de contenedor existente
+    $type = ContainerType::where('code', $mappedCode)->where('active', true)->first();
+    
+    if ($type) {
+        // Si el código original es diferente, registrar warning
+        if ($code !== $mappedCode) {
+            $this->stats['warnings'][] = "Tipo de contenedor '{$code}' mapeado a '{$mappedCode}'";
+        }
         return $type;
     }
+    
+    // Si aún no se encuentra, usar el primer tipo activo disponible
+    $type = ContainerType::where('active', true)->first();
+    
+    if ($type) {
+        $this->stats['warnings'][] = "Tipo de contenedor '{$code}' no encontrado, usando '{$type->code}' por defecto";
+        return $type;
+    }
+    
+    // Si no hay ningún tipo en la tabla, throw exception
+    throw new \Exception("No hay tipos de contenedor disponibles en la tabla container_types. Ejecute ContainerTypesSeeder.");
+}
 
     /**
      * Detectar categoría de contenedor
