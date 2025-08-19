@@ -536,31 +536,13 @@ protected function createBillOfLading(Shipment $shipment, array $data): BillOfLa
         : $dischargePort;
 
     // AGREGAR: Fechas obligatorias con valores por defecto
-    $billDate = now(); // Fecha actual como fallback
-    $loadingDate = now()->addDays(1); // Un día después para loading
+    //$billDate = null; // Fecha actual como fallback
+    //$loadingDate = null->addDays(1); // Un día después para loading
 
-    // Intentar extraer fechas reales de los datos si están disponibles
-    if (!empty($data['fecha_conocimiento'])) {
-        try {
-            $billDate = \Carbon\Carbon::parse($data['fecha_conocimiento']);
-        } catch (\Exception $e) {
-            Log::warning('No se pudo parsear fecha_conocimiento', [
-                'fecha' => $data['fecha_conocimiento'],
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-
-    if (!empty($data['fecha_carga'])) {
-        try {
-            $loadingDate = \Carbon\Carbon::parse($data['fecha_carga']);
-        } catch (\Exception $e) {
-            Log::warning('No se pudo parsear fecha_carga', [
-                'fecha' => $data['fecha_carga'],
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
+    // ✅ NAVSUR no incluye fechas - usar fecha actual como última opción
+    Log::warning('⚠️ NAVSUR.TXT no contiene fechas específicas - usando fecha actual');
+    $billDate = now();
+    $loadingDate = now()->addDays(1);
 
     // Crear BL con campos obligatorios CORREGIDOS
     $bill = BillOfLading::create([
@@ -588,8 +570,8 @@ protected function createBillOfLading(Shipment $shipment, array $data): BillOfLa
         'status' => 'draft',
         
         // Tipos obligatorios con valores por defecto
-        'primary_cargo_type_id' => 1, // General cargo
-        'primary_packaging_type_id' => 1, // Bags/Bultos
+        'primary_cargo_type_id' => $this->validateCargoTypeId($data),
+        'primary_packaging_type_id' => $this->validatePackagingTypeId($data), // Bags/Bultos
         
         // AGREGADO: Campos de peso obligatorios con valores por defecto
         'gross_weight_kg' => floatval($data['peso_bruto'] ?? 0),
@@ -598,7 +580,7 @@ protected function createBillOfLading(Shipment $shipment, array $data): BillOfLa
         'volume_m3' => floatval($data['cubitaje'] ?? 0),
         
         // CORREGIDO: campo cargo_description es obligatorio
-        'cargo_description' => $data['descripcion_mercaderia'] ?? 'Mercadería general importada desde archivo Navsur',
+        'cargo_description' => $this->validateCargoDescription($data),
         'special_instructions' => !empty($data['instrucciones']) ? [$data['instrucciones']] : null,
         'internal_notes' => 'Importado desde archivo Navsur'
     ]);
@@ -611,6 +593,13 @@ protected function createBillOfLading(Shipment $shipment, array $data): BillOfLa
     ]);
 
     return $bill;
+}
+
+protected function validateCargoTypeId(array $data): int
+{
+    // ✅ NAVSUR no tiene cargo_type_id - usar tipo general por defecto
+    Log::warning('⚠️ NAVSUR.TXT no contiene cargo_type_id - usando tipo general');
+    return 1; // General cargo como último recurso
 }
 
 /**
@@ -660,8 +649,8 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
     $container = Container::create([
         'container_number' => $data['cod_contenedor'],
         'container_type_id' => $containerType->id,
-        'tare_weight_kg' => floatval($data['tara'] ?? 0) ?: 2200,
-        'max_gross_weight_kg' => 30000,
+        'tare_weight_kg' => $this->validateTareWeight($data),
+        'max_gross_weight_kg' => $this->validateMaxGrossWeight($data),
         'condition' => 'L', // Loaded
         
         // CORREGIDO: usar valor válido del enum operational_status
@@ -1278,4 +1267,102 @@ protected function findOrCreateContainerType(string $code, string $size): Contai
             ]
         ];
     }
+
+    /**
+ * ✅ VALIDAR descripción real del archivo
+ */
+protected function validateCargoDescription(array $data): string
+{
+    // ✅ Buscar descripción en múltiples ubicaciones posibles
+    
+    // 1. En items de contenedores
+    if (!empty($data['containers'])) {
+        foreach ($data['containers'] as $container) {
+            if (!empty($container['items'])) {
+                foreach ($container['items'] as $item) {
+                    if (!empty($item['mercaderia'])) {
+                        return trim($item['mercaderia']);
+                    }
+                }
+            }
+        }
+    }
+    
+    // 2. En el título del BL
+    if (!empty($data['titulo'])) {
+        return trim($data['titulo']);
+    }
+    
+    // 3. En buque + viaje como descripción básica
+    if (!empty($data['buque']) && !empty($data['viaje'])) {
+        return "Mercadería transportada en {$data['buque']} viaje {$data['viaje']}";
+    }
+    
+    // 4. Última opción: descripción básica
+    Log::warning('⚠️ NAVSUR.TXT sin descripción específica - usando descripción básica');
+    return 'Mercadería general según manifiesto NAVSUR';
+}
+
+protected function validatePackagingTypeId(array $data): int
+{
+    // ✅ NAVSUR tiene EMBALAJE en items - mapear a packaging_type_id
+    if (!empty($data['containers']) && !empty($data['containers'][0]['items'])) {
+        $firstItem = $data['containers'][0]['items'][0];
+        if (!empty($firstItem['embalaje'])) {
+            return $this->mapEmbalajeToPackagingType($firstItem['embalaje']);
+        }
+    }
+    
+    Log::warning('⚠️ NAVSUR.TXT no contiene embalaje específico - usando tipo general');
+    return 1; // Bags/Bultos como último recurso
+}
+
+/**
+ * ✅ Mapear embalaje NAVSUR a packaging_type_id
+ */
+protected function mapEmbalajeToPackagingType(string $embalaje): int
+{
+    $embalaje = strtoupper(trim($embalaje));
+    
+    // Mapear tipos de embalaje comunes
+    if (str_contains($embalaje, 'BAGS') || str_contains($embalaje, 'BOLSAS')) {
+        return 1; // Bags
+    }
+    if (str_contains($embalaje, 'CARTONS') || str_contains($embalaje, 'CAJAS')) {
+        return 2; // Cartons
+    }
+    if (str_contains($embalaje, 'PALLETS') || str_contains($embalaje, 'PALETAS')) {
+        return 3; // Pallets
+    }
+    if (str_contains($embalaje, 'BARRELS') || str_contains($embalaje, 'BARRILES')) {
+        return 4; // Barrels
+    }
+    if (str_contains($embalaje, 'BOXES') || str_contains($embalaje, 'CONTENEDORES')) {
+        return 5; // Boxes
+    }
+    
+    Log::warning("Tipo de embalaje no reconocido: {$embalaje} - usando Bags por defecto");
+    return 1; // Default: Bags
+}
+
+protected function validateTareWeight(array $data): float
+{
+    if (!empty($data['tara']) && $data['tara'] > 0) {
+        return floatval($data['tara']);
+    }
+    
+    Log::warning('⚠️ NAVSUR.TXT no contiene tara válida - usando peso por defecto');
+    return 2200.0; // Peso tara estándar contenedor 20'
+}
+
+protected function validateMaxGrossWeight(array $data): float
+{
+    if (!empty($data['peso_maximo']) && $data['peso_maximo'] > 0) {
+        return floatval($data['peso_maximo']);
+    }
+    
+    Log::warning('⚠️ NAVSUR.TXT no contiene peso_maximo - usando peso por defecto');
+    return 30000.0; // Peso máximo estándar contenedor
+}
+
 }
