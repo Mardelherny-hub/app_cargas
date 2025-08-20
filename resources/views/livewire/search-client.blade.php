@@ -1,5 +1,5 @@
 <div>
-    <input type="hidden" name="{{ $fieldName }}" value="{{ $selectedClientId }}">
+    {{-- <input type="hidden" name="{{ $fieldName }}" value="{{ $selectedClientId }}"> --}}
     
     @if($selectedClientId)
         {{-- Cliente seleccionado --}}

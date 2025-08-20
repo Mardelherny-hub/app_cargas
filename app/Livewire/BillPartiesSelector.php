@@ -66,10 +66,29 @@ class BillPartiesSelector extends Component
     public $new_address_1 = '';
     public $new_city = '';
 
-    public function mount($billOfLading = null)
+    public function mount($billOfLading = null, $oldValues = [])
     {
-        // Cargar datos del bill of lading si existe (para edición)
-        if ($billOfLading) {
+        \Log::info('=== LIVEWIRE MOUNT DEBUG ===', [
+            'billOfLading' => $billOfLading ? 'EXISTS' : 'NULL',
+            'oldValues' => $oldValues,
+            'final_shipper_id' => $this->shipper_id,
+            'final_consignee_id' => $this->consignee_id
+        ]);
+        // PRIORIDAD 1: Valores old() cuando hay errores de validación
+        if (!empty($oldValues)) {
+            $this->shipper_id = $oldValues['shipper_id'] ?? null;
+            $this->consignee_id = $oldValues['consignee_id'] ?? null;
+            $this->notify_party_id = $oldValues['notify_party_id'] ?? null;
+            $this->cargo_owner_id = $oldValues['cargo_owner_id'] ?? null;
+            
+            // Disparar eventos para actualizar campos hidden
+            $this->dispatch('updateFormField', 'shipper_id', $this->shipper_id);
+            $this->dispatch('updateFormField', 'consignee_id', $this->consignee_id);
+            $this->dispatch('updateFormField', 'notify_party_id', $this->notify_party_id);
+            $this->dispatch('updateFormField', 'cargo_owner_id', $this->cargo_owner_id);
+        }
+        // PRIORIDAD 2: Datos del bill of lading existente (para edición)
+        elseif ($billOfLading) {
             $this->shipper_id = $billOfLading->shipper_id;
             $this->consignee_id = $billOfLading->consignee_id;
             $this->notify_party_id = $billOfLading->notify_party_id;
@@ -349,6 +368,13 @@ class BillPartiesSelector extends Component
 
     public function render()
     {
+        \Log::info('=== LIVEWIRE COMPONENT DEBUG ===', [
+            'shipper_id' => $this->shipper_id ?? 'NULL',
+            'consignee_id' => $this->consignee_id ?? 'NULL',
+            'notify_party_id' => $this->notify_party_id ?? 'NULL',
+            'cargo_owner_id' => $this->cargo_owner_id ?? 'NULL',
+            'oldValues' => $this->oldValues ?? 'NO_OLD_VALUES'
+        ]);
         return view('livewire.bill-parties-selector');
     }
 }

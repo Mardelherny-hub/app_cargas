@@ -248,12 +248,9 @@ class BillOfLadingController extends Controller
     /**
      * Mostrar formulario para crear nuevo conocimiento de embarque
      */
-    /**
-     * Mostrar formulario de creación
-     */
     public function create(Request $request)
     {
-        // Verificar permisos
+        // Verificar permisos para crear conocimientos
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para crear conocimientos de embarque.');
         }
@@ -269,10 +266,12 @@ class BillOfLadingController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // ===== MANEJAR SHIPMENT_ID PRESELECCIONADO =====
+        // ===== NUEVA FUNCIONALIDAD: MANEJAR SHIPMENT_ID =====
+        // Capturar shipment_id del query parameter (viene del botón "Crear Conocimiento")
         $preselectedShipmentId = $request->get('shipment_id');
         $preselectedShipment = null;
 
+        // Si viene un shipment_id, verificar que existe y pertenece a la empresa
         if ($preselectedShipmentId) {
             $preselectedShipment = Shipment::with(['voyage'])
                 ->whereHas('voyage', function ($q) use ($company) {
@@ -280,33 +279,164 @@ class BillOfLadingController extends Controller
                 })
                 ->find($preselectedShipmentId);
 
+            // Si no se encuentra o no pertenece a la empresa, limpiar la preselección
             if (!$preselectedShipment) {
                 $preselectedShipmentId = null;
             }
         }
 
-        // Obtener datos para el formulario - Ahora para el componente Livewire
+        // Obtener datos para el formulario
         $formData = $this->getFormData($company, $request);
-        
-        // Agregar preselecciones al formData
-        $formData['preselectedShipmentId'] = $preselectedShipmentId;
-        $formData['preselectedShipment'] = $preselectedShipment;
 
-        // Pre-poblar puertos si hay shipment preseleccionado
-        if ($preselectedShipment && $preselectedShipment->voyage) {
-            $voyage = $preselectedShipment->voyage;
-            $formData['preselectedLoadingPortId'] = $voyage->origin_port_id;
-            $formData['preselectedDischargePortId'] = $voyage->destination_port_id;
-        }
-
-        // ===== PREPARAR VARIABLES PARA EL COMPONENTE LIVEWIRE =====
-        $componentData = [
-            'shipmentId' => $preselectedShipmentId,
-            'preselectedLoadingPortId' => $formData['preselectedLoadingPortId'] ?? null,
-            'preselectedDischargePortId' => $formData['preselectedDischargePortId'] ?? null,
+        // Preservar valores por defecto y old() para fechas
+        $formData['defaultValues'] = [
+            'bill_date' => old('bill_date', today()->format('Y-m-d')),
+            'loading_date' => old('loading_date'),
+            'discharge_date' => old('discharge_date'),
         ];
 
-        return view('company.bills-of-lading.create', compact('formData', 'company', 'componentData'));
+        // Preservar selecciones cuando hay errores de validación
+        if (old()) {
+           // Preservar selecciones cuando hay errores de validación Y pasarlas al componente Livewire
+            $formData['preservedSelections'] = [
+                'shipper_id' => old('shipper_id'),
+                'consignee_id' => old('consignee_id'),
+                'notify_party_id' => old('notify_party_id'),
+                'cargo_owner_id' => old('cargo_owner_id'),
+                'loading_port_id' => old('loading_port_id'),
+                'discharge_port_id' => old('discharge_port_id'),
+                'transshipment_port_id' => old('transshipment_port_id'),
+                'final_destination_port_id' => old('final_destination_port_id'),
+                'loading_customs_id' => old('loading_customs_id'),
+                'discharge_customs_id' => old('discharge_customs_id'),
+                'primary_cargo_type_id' => old('primary_cargo_type_id'),
+                'primary_packaging_type_id' => old('primary_packaging_type_id'),
+            ];
+
+            // Pasar valores old() al componente Livewire
+            $formData['oldValues'] = [
+                'shipper_id' => old('shipper_id'),
+                'consignee_id' => old('consignee_id'),
+                'notify_party_id' => old('notify_party_id'),
+                'cargo_owner_id' => old('cargo_owner_id'),
+            ];
+        }
+
+        if (!isset($formData['freightTerms'])) {
+            $formData['freightTerms'] = [
+                'prepaid' => 'Prepaid',
+                'collect' => 'Collect',
+                'prepaid_collect' => 'Prepaid & Collect',
+                'third_party' => 'Third Party'
+            ];
+        }
+
+        if (!isset($formData['paymentTerms'])) {
+            $formData['paymentTerms'] = [
+                'cash' => 'Cash',
+                'credit' => 'Credit',
+                'advance' => 'Advance',
+                'documents_against_payment' => 'Documents Against Payment',
+                'documents_against_acceptance' => 'Documents Against Acceptance',
+                'letter_of_credit' => 'Letter of Credit'
+            ];
+        }
+
+        if (!isset($formData['incotermsList'])) {
+            $formData['incotermsList'] = [
+                'EXW' => 'Ex Works',
+                'FCA' => 'Free Carrier', 
+                'FAS' => 'Free Alongside Ship',
+                'FOB' => 'Free On Board',
+                'CFR' => 'Cost and Freight',
+                'CIF' => 'Cost, Insurance and Freight',
+                'CPT' => 'Carriage Paid To',
+                'CIP' => 'Carriage and Insurance Paid To',
+                'DAP' => 'Delivered At Place',
+                'DPU' => 'Delivered At Place Unloaded',
+                'DDP' => 'Delivered Duty Paid'
+            ];
+        }
+
+        if (!isset($formData['currencies'])) {
+            $formData['currencies'] = [
+                'USD' => 'USD - Dólar Estadounidense',
+                'ARS' => 'ARS - Peso Argentino', 
+                'PYG' => 'PYG - Guaraní Paraguayo',
+                'EUR' => 'EUR - Euro',
+                'BRL' => 'BRL - Real Brasileño'
+            ];
+        }
+
+        if (!isset($formData['measurementUnits'])) {
+            $formData['measurementUnits'] = [
+                'KG' => 'Kilogramos',
+                'tons' => 'Toneladas',
+                'm3' => 'Metros Cúbicos',
+                'liters' => 'Litros',
+                'pieces' => 'Piezas'
+            ];
+        }
+
+        // Asegurar valores por defecto para selects
+        if (!isset($formData['defaultValues']['freight_terms'])) {
+            $formData['defaultValues']['freight_terms'] = 'prepaid';
+        }
+        if (!isset($formData['defaultValues']['payment_terms'])) {
+            $formData['defaultValues']['payment_terms'] = 'cash';
+        }
+        if (!isset($formData['defaultValues']['currency_code'])) {
+            $formData['defaultValues']['currency_code'] = 'USD';
+        }
+        if (!isset($formData['defaultValues']['measurement_unit'])) {
+            $formData['defaultValues']['measurement_unit'] = 'KG';
+        }
+        
+        // ===== AGREGAR PRESELECCIÓN A FORMDATA =====
+        $formData['preselectedShipment'] = $preselectedShipmentId;
+        $formData['selectedShipmentData'] = $preselectedShipment;
+
+        // Si hay un shipment preseleccionado, pre-poblar algunos campos del formulario
+        if ($preselectedShipment) {
+        $voyage = $preselectedShipment->voyage;
+        if ($voyage) {
+            // Solo asignar si no hay valores old() (no hay errores de validación)
+            if (!old('loading_port_id')) {
+                $formData['preselectedLoadingPort'] = $voyage->origin_port_id;
+            }
+            if (!old('discharge_port_id')) {
+                $formData['preselectedDischargePort'] = $voyage->destination_port_id;
+            }
+            if (!old('loading_date') && $voyage->departure_date) {
+                $formData['defaultValues']['loading_date'] = $voyage->departure_date->format('Y-m-d');
+            }
+            if (!old('discharge_date') && $voyage->estimated_arrival_date) {
+                $formData['defaultValues']['discharge_date'] = $voyage->estimated_arrival_date->format('Y-m-d');
+            }
+        }
+
+            // Log para debug (temporal - se puede quitar en producción)
+            \Log::info('Bill of Lading Create - Shipment preseleccionado:', [
+                'shipment_id' => $preselectedShipmentId,
+                'shipment_number' => $preselectedShipment->shipment_number,
+                'voyage_number' => $voyage->voyage_number ?? 'N/A',
+                'loading_port' => $voyage->origin_port_id ?? 'N/A',
+                'discharge_port' => $voyage->destination_port_id ?? 'N/A'
+            ]);
+        }
+
+            // DEBUG: Ver qué se envía a la vista
+            \Log::info('=== BILL OF LADING CREATE VIEW DEBUG ===', [
+                'has_old' => !empty(old()),
+                'old_shipper_id' => old('shipper_id'),
+                'old_consignee_id' => old('consignee_id'),
+                'old_measurement_unit' => old('measurement_unit'),
+                'formData_keys' => array_keys($formData),
+                'defaultValues' => $formData['defaultValues'] ?? 'NO_EXISTS',
+                'measurementUnits' => $formData['measurementUnits'] ?? 'NO_EXISTS'
+            ]);
+
+        return view('company.bills-of-lading.create', compact('formData', 'company'));
     }
 
     /**

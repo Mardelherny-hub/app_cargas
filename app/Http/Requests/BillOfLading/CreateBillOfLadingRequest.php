@@ -48,6 +48,16 @@ class CreateBillOfLadingRequest extends FormRequest
      */
     public function rules(): array
     {
+        // DEBUG: Ver qué datos llegan
+        \Log::info('=== BILL OF LADING CREATE REQUEST DEBUG ===', [
+            'all_request_data' => $this->all(),
+            'shipper_id' => $this->input('shipper_id'),
+            'consignee_id' => $this->input('consignee_id'),
+            'measurement_unit' => $this->input('measurement_unit'),
+            'loading_date' => $this->input('loading_date'),
+            'old_values' => old(),
+            'has_old' => !empty(old())
+        ]);
         $company = $this->getUserCompany();
         
         return [
@@ -65,12 +75,12 @@ class CreateBillOfLadingRequest extends FormRequest
                 },
             ],
             'shipper_id' => [
-                'required',
+                'nullable',
                 'integer',
                 'exists:clients,id,status,active',
             ],
             'consignee_id' => [
-                'required',
+                'nullable',
                 'integer',
                 'exists:clients,id,status,active',
                 'different:shipper_id',
@@ -143,20 +153,19 @@ class CreateBillOfLadingRequest extends FormRequest
             ],
 
             // === DATOS BÁSICOS DEL CONOCIMIENTO ===
-            'bl_number' => [
-                'required',
+            'bill_number' => [
+                'nullable',
                 'string',
-                'max:50',
-                Rule::unique('bills_of_lading')->where(function ($query) use ($company) {
-                    return $query->where('issuer_company_id', $company->id);
-                }),
+                'max:100',
+                Rule::unique('bills_of_lading', 'bill_number')
+                    ->whereNull('deleted_at'),
             ],
             'bl_type' => [
                 'required',
                 'string',
                 'in:original,copy,duplicate,express,telex,sea_waybill',
             ],
-            'issued_date' => [
+            'bill_date' => [
                 'required',
                 'date',
                 'before_or_equal:today',
@@ -169,9 +178,8 @@ class CreateBillOfLadingRequest extends FormRequest
 
             // === FECHAS OPERATIVAS ===
             'loading_date' => [
-                'required',
+                'nullable',
                 'date',
-                'before_or_equal:today',
             ],
             'discharge_date' => [
                 'nullable',
@@ -238,9 +246,9 @@ class CreateBillOfLadingRequest extends FormRequest
 
             // === MEDIDAS Y PESOS ===
             'measurement_unit' => [
-                'required',
+                'nullable',
                 'string',
-                'in:kg,mt,tn,lb,m3,ft3,containers',
+                 'in:KG,TON,LB,CBM,CFT,LTR,PCS,PKG',
             ],
             'gross_weight' => [
                 'required',
@@ -562,9 +570,8 @@ class CreateBillOfLadingRequest extends FormRequest
             'discharge_customs_id' => 'aduana de descarga',
             'primary_cargo_type_id' => 'tipo de carga principal',
             'primary_packaging_type_id' => 'tipo de embalaje principal',
-            'bl_number' => 'número de conocimiento',
-            'bl_type' => 'tipo de conocimiento',
-            'issued_date' => 'fecha de emisión',
+            'bill_number' => 'número de conocimiento',
+            'bill_date' => 'fecha del conocimiento',
             'freight_terms' => 'términos de flete',
             'loading_date' => 'fecha de carga',
             'discharge_date' => 'fecha de descarga',
