@@ -17,6 +17,7 @@ use App\Models\CustomOffice;
 use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 
 
@@ -428,85 +429,6 @@ class BillOfLading extends Model
     }
 
     /**
-     * CORREGIDO: Recalcular estadísticas del bill of lading basándose en sus shipment items
-     * TEMPORAL: Usar FQCN para evitar problemas de autoload y query directa como backup
-     */
-    public function recalculateItemStats(): void
-    {
-        try {
-            // Intentar usar la relación primero
-            $items = $this->shipmentItems;
-        } catch (\Exception $e) {
-            // Si falla la relación, usar query directa como fallback
-            \Log::warning('Relation failed, using direct query: ' . $e->getMessage());
-            $items = \App\Models\ShipmentItem::where('bill_of_lading_id', $this->id)->get();
-        }
-
-        if ($items->isEmpty()) {
-            // Si no hay items, resetear a 0
-            $this->update([
-                'total_packages' => 0,
-                'gross_weight_kg' => 0.00,
-                'net_weight_kg' => 0.00,
-                'volume_m3' => 0.00,
-                'container_count' => 0,
-            ]);
-            \Log::info('BillOfLading stats reset to 0 (no items)');
-            return;
-        }
-
-        // Calcular totales
-        $totalPackages = $items->sum('package_quantity');
-        $totalGrossWeight = $items->sum('gross_weight_kg');
-        $totalNetWeight = $items->sum('net_weight_kg') ?: 0;
-        $totalVolume = $items->sum('volume_m3') ?: 0;
-        $containerCount = $this->calculateContainerCount($items);
-
-        // Detectar si hay mercancías peligrosas
-        $hasDangerousGoods = $items->where('is_dangerous_goods', true)->isNotEmpty();
-        $hasPerishableGoods = $items->where('is_perishable', true)->isNotEmpty();
-        $requiresRefrigeration = $items->where('requires_refrigeration', true)->isNotEmpty();
-        
-        // Actualizar el bill of lading
-        $updateData = [
-            'total_packages' => $totalPackages,
-            'gross_weight_kg' => $totalGrossWeight,
-            'net_weight_kg' => $totalNetWeight,
-            'volume_m3' => $totalVolume,
-            'container_count' => $containerCount,
-        ];
-
-        // Si cargo_description está pendiente, generar una basada en los items
-        if ($this->cargo_description === 'Pendiente de definir') {
-            $descriptions = $items->pluck('item_description')
-                                 ->take(3) // Solo las primeras 3 descripciones
-                                 ->implode(', ');
-            
-            $updateData['cargo_description'] = $descriptions;
-            
-            // Si hay más de 3 items, agregar "y más..."
-            if ($items->count() > 3) {
-                $updateData['cargo_description'] .= ' y más...';
-            }
-        }
-
-        // Actualizar características especiales si no están definidas
-        if (!isset($this->contains_dangerous_goods)) {
-            $updateData['contains_dangerous_goods'] = $hasDangerousGoods;
-        }
-
-        // Actualizar el modelo
-        $this->update($updateData);
-        
-        \Log::info('BillOfLading stats updated:', [
-            'bill_id' => $this->id,
-            'total_packages' => $totalPackages,
-            'gross_weight_kg' => $totalGrossWeight,
-            'items_count' => $items->count()
-        ]);
-    }
-
-    /**
      * Archivos adjuntos (relación polimórfica)
      */
     //public function attachments(): MorphMany
@@ -752,29 +674,6 @@ class BillOfLading extends Model
     }
 
     /**
-     * Verificar si puede ser editado
-     */
-    public function canBeEdited(): bool
-    {
-        return in_array($this->status, ['draft', 'pending_review']) 
-               && is_null($this->webservice_sent_at)
-               && is_null($this->argentina_sent_at)
-               && is_null($this->paraguay_sent_at);
-    }
-
-    /**
-     * Verificar si puede ser eliminado
-     */
-    public function canBeDeleted(): bool
-    {
-        return $this->status === 'draft' 
-               && is_null($this->webservice_sent_at)
-               && is_null($this->argentina_sent_at)
-               && is_null($this->paraguay_sent_at)
-               && $this->shipmentItems()->count() === 0;
-    }
-
-    /**
      * Verificar si está listo para envío a webservices
      */
     public function isReadyForWebservice(): bool
@@ -859,25 +758,6 @@ class BillOfLading extends Model
         }
 
         return now()->diffInDays($this->free_time_expires_at, false);
-    }
-
-    /**
-     * Estado para humanos
-     */
-    public function getStatusLabelAttribute(): string
-    {
-        $labels = [
-            'draft' => 'Borrador',
-            'pending_review' => 'Pendiente Revisión',
-            'verified' => 'Verificado',
-            'sent_to_customs' => 'Enviado a Aduana',
-            'accepted' => 'Aceptado',
-            'rejected' => 'Rechazado',
-            'completed' => 'Completado',
-            'cancelled' => 'Cancelado',
-        ];
-
-        return $labels[$this->status] ?? 'Desconocido';
     }
 
     /**
@@ -996,6 +876,101 @@ class BillOfLading extends Model
         ]);
 
         return $containerCount;
+    }
+
+    /**
+     * Recalcular estadísticas de items del BillOfLading
+     * CORREGIDO: Acceso directo a shipmentItems
+     */
+    public function recalculateItemStats(): void
+    {
+        // ✅ CORRECTO: Acceso directo a shipmentItems del BillOfLading
+        $items = $this->shipmentItems; // Relación directa bill_of_lading_id
+        
+        if ($items->count() === 0) {
+            $this->update([
+                'total_packages' => 0,
+                'gross_weight_kg' => 0.00,
+                'net_weight_kg' => 0.00,
+                'volume_m3' => 0.000,
+                'container_count' => 0,
+            ]);
+            return;
+        }
+
+        // Calcular totales
+        $totalPackages = $items->sum('package_quantity');
+        $grossWeight = $items->sum('gross_weight_kg');
+        $netWeight = $items->sum('net_weight_kg');
+        $volume = $items->sum('volume_m3');
+        
+        // Actualizar el BillOfLading
+        $this->update([
+            'total_packages' => $totalPackages,
+            'gross_weight_kg' => round($grossWeight, 2),
+            'net_weight_kg' => round($netWeight, 2),
+            'volume_m3' => round($volume, 3),
+            'container_count' => $items->count(),
+        ]);
+        
+        Log::info('BillOfLading stats recalculated', [
+            'bill_id' => $this->id,
+            'bill_number' => $this->bill_number,
+            'items_count' => $items->count(),
+            'total_packages' => $totalPackages,
+            'gross_weight' => $grossWeight
+        ]);
+    }
+
+    /**
+     * Verificar si el BillOfLading puede ser editado
+     */
+    public function canBeEdited(): bool
+    {
+        // No puede editarse si ya fue verificado o enviado a webservices
+        if ($this->verified_at || $this->argentina_sent_at || $this->paraguay_sent_at) {
+            return false;
+        }
+        
+        // Solo estados draft y pending_review son editables
+        return in_array($this->status, ['draft', 'pending_review']);
+    }
+
+    /**
+     * Verificar si el BillOfLading puede ser eliminado
+     */
+    public function canBeDeleted(): bool
+    {
+        // No puede eliminarse si tiene items asociados
+        if ($this->shipmentItems()->count() > 0) {
+            return false;
+        }
+        
+        // No puede eliminarse si ya fue enviado a webservices
+        if ($this->argentina_sent_at || $this->paraguay_sent_at) {
+            return false;
+        }
+        
+        return $this->status === 'draft';
+    }
+
+    /**
+     * Accessor para status_label
+     */
+    public function getStatusLabelAttribute(): string
+    {
+        $statuses = [
+            'draft' => 'Borrador',
+            'pending_review' => 'Pendiente Revisión',
+            'verified' => 'Verificado',
+            'sent_to_customs' => 'Enviado a Aduana',
+            'accepted' => 'Aceptado',
+            'rejected' => 'Rechazado',
+            'completed' => 'Completado',
+            'cancelled' => 'Cancelado',
+        ];
+        
+        return $statuses[$this->status] ?? $this->status;
     }
 
 }

@@ -113,7 +113,9 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
     // Documentos y reportes
     Route::get('/{bill_of_lading}/pdf', [BillOfLadingController::class, 'generatePdf'])->name('pdf');
     Route::get('/{bill_of_lading}/print', [BillOfLadingController::class, 'print'])->name('print');
-    
+    Route::get('/{bill_of_lading}/template', [BillOfLadingController::class, 'downloadTemplate'])->name('template');
+    Route::post('/{bill_of_lading}/import-items', [BillOfLadingController::class, 'importItems'])->name('import-items');
+
     // Adjuntos
     Route::get('/{bill_of_lading}/attachments', [BillOfLadingController::class, 'attachments'])->name('attachments');
     Route::post('/{bill_of_lading}/attachments', [BillOfLadingController::class, 'uploadAttachment'])->name('upload-attachment');

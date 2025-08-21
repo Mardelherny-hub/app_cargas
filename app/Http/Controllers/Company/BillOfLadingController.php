@@ -18,6 +18,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Validator;
+use App\Models\ShipmentItem;
 
 /**
  * MÓDULO 4 - PARTE 1: GESTIÓN DE DATOS PARA MANIFIESTOS
@@ -436,9 +439,13 @@ class BillOfLadingController extends Controller
         // Verificar permisos de acciones
         $permissions = $this->getBillPermissions($billOfLading);
 
+        // Obtener el shipment relacionado al BL
+        $shipment = $billOfLading->shipment;
+
         return view('company.bills-of-lading.show', compact(
             'billOfLading',
-            'permissions'
+            'permissions',
+            'shipment',
         ));
     }
 
@@ -468,6 +475,7 @@ class BillOfLadingController extends Controller
         }
 
         $company = $this->getUserCompany();
+        
 
         // ✅ MEJORADO: Cargar relaciones más completas como en show()
         $billOfLading->load([
@@ -1475,6 +1483,697 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
 
         return in_array($toStatus, $validTransitions[$fromStatus] ?? []);
     }
+
+/**
+ * Descargar plantilla Excel para items del BL
+ * ACTUALIZADO: Template completo con todos los campos y ejemplos
+ */
+public function downloadTemplate(BillOfLading $billOfLading)
+{
+    // Verificar permisos usando métodos existentes
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'No tiene permisos para descargar plantillas.');
+    }
+
+    // Verificar que pertenece a la empresa
+    if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
+        abort(403, 'No tiene permisos para acceder a este conocimiento.');
+    }
+
+    $filename = "items_template_BL_{$billOfLading->bill_number}_" . date('Y-m-d') . ".csv";
+    
+    // Headers COMPLETOS basados en campos reales de ShipmentItem
+    $headers = [
+        'line_number',               // 0
+        'item_reference',            // 1 
+        'item_description',          // 2
+        'cargo_type_id',            // 3
+        'packaging_type_id',        // 4
+        'package_quantity',         // 5
+        'gross_weight_kg',          // 6
+        'net_weight_kg',            // 7
+        'volume_m3',                // 8
+        'declared_value',           // 9
+        'currency_code',            // 10
+        'unit_of_measure',          // 11
+        'country_of_origin',        // 12
+        'cargo_marks',              // 13
+        'commodity_code',           // 14
+        'brand',                    // 15
+        'model',                    // 16
+        'manufacturer',             // 17
+        'lot_number',               // 18
+        'is_dangerous_goods',       // 19
+        'is_perishable',            // 20
+        'requires_refrigeration',   // 21
+        'un_number',                // 22
+        'imdg_class',               // 23
+        'temperature_min',          // 24
+        'temperature_max',          // 25
+        'renar',                    // 26                      
+        'operador_logistico_seguro' // 27
+    ];
+    
+    // Obtener datos de catálogos para ejemplos
+    $cargoTypes = CargoType::where('active', true)->orderBy('id')->take(3)->get();
+    $packagingTypes = PackagingType::where('active', true)->orderBy('id')->take(3)->get();
+    
+    // Datos de ejemplo COMPLETOS con todos los campos
+    $nextLineNumber = $billOfLading->shipmentItems()->max('line_number') + 1 ?? 1;
+    $sampleData = [
+        // Fila 1: Ejemplo completo con soja
+        [
+            $nextLineNumber,                    // line_number
+            'SOJA-001',                        // item_reference
+            'Soja en grano para exportación calidad industrial', // item_description
+            $cargoTypes->first()?->id ?? '1',  // cargo_type_id
+            $packagingTypes->first()?->id ?? '1', // packaging_type_id
+            40,                                // package_quantity
+            2000.00,                          // gross_weight_kg
+            1980.00,                          // net_weight_kg
+            2.5,                              // volume_m3
+            1200.00,                          // declared_value
+            'USD',                            // currency_code
+            'KG',                             // unit_of_measure
+            'AR',                             // country_of_origin
+            'SOJA ARG 2025 | HANDLE WITH CARE | KEEP DRY', // cargo_marks
+            '120100',                         // commodity_code
+            'SOJA ARGENTINA',                 // brand
+            '',                               // model
+            'Cooperativa San José',           // manufacturer
+            'LT240801',                       // lot_number
+            0,                                // is_dangerous_goods (0/1)
+            0,                                // is_perishable (0/1)
+            0,                                // requires_refrigeration (0/1)
+            '',                               // un_number
+            '',                               // imdg_class
+            '',                               // temperature_min
+            '',                               // temperature_max
+            'N',                              // renar
+            'N'                               // operador_logistico_seguro
+        ],
+        // Fila 2: Ejemplo con mercadería general
+        [
+            $nextLineNumber + 1,               // line_number
+            'ITEM-002',                        // item_reference
+            'Descripción completa del segundo item de mercadería', // item_description
+            $cargoTypes->get(1)?->id ?? '1',   // cargo_type_id
+            $packagingTypes->get(1)?->id ?? '1', // packaging_type_id
+            25,                                // package_quantity
+            1500.50,                          // gross_weight_kg
+            1485.00,                          // net_weight_kg
+            1.8,                              // volume_m3
+            800.75,                           // declared_value
+            'USD',                            // currency_code
+            'PCS',                            // unit_of_measure
+            'AR',                             // country_of_origin
+            'FRAGILE | THIS SIDE UP',         // cargo_marks
+            '854430',                         // commodity_code
+            'MARCA EJEMPLO',                  // brand
+            'MOD-123',                        // model
+            'Fabricante Ejemplo SA',          // manufacturer
+            'L2025001',                       // lot_number
+            0,                                // is_dangerous_goods
+            1,                                // is_perishable
+            1,                                // requires_refrigeration
+            '',                               // un_number
+            '',                               // imdg_class
+            2.0,                              // temperature_min
+            8.0,                              // temperature_max
+            'N',                              // renar
+            'N'                               // operador_logistico_seguro
+        ]
+    ];
+    
+    return \Illuminate\Support\Facades\Response::streamDownload(function() use ($headers, $sampleData) {
+        $handle = fopen('php://output', 'w');
+        
+        // Escribir BOM para UTF-8 (para Excel)
+        fwrite($handle, "\xEF\xBB\xBF");
+        
+        // Headers
+        fputcsv($handle, $headers, ',', '"');
+        
+        // Datos de ejemplo
+        foreach ($sampleData as $row) {
+            fputcsv($handle, $row, ',', '"');
+        }
+        
+        fclose($handle);
+    }, $filename, [
+        'Content-Type' => 'text/csv; charset=utf-8',
+        'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        'Cache-Control' => 'no-cache, no-store, must-revalidate',
+        'Pragma' => 'no-cache',
+        'Expires' => '0'
+    ]);
+}
+
+/**
+ * Procesar importación masiva de items desde archivo
+ * ACTUALIZADO: Implementación completa con integridad de datos
+ */
+public function importItems(Request $request, BillOfLading $billOfLading)
+{
+    // Verificar permisos
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'No tiene permisos para importar items.');
+    }
+
+    if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
+        abort(403, 'No tiene permisos para modificar este conocimiento.');
+    }
+
+    // Validar estado del BL
+    if ($billOfLading->status !== 'draft') {
+        return back()
+            ->with('error', 'Solo se pueden importar items a conocimientos en estado borrador.');
+    }
+
+    // Validar archivo
+    $request->validate([
+        'import_file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        'has_headers' => 'boolean',
+        'start_row' => 'nullable|integer|min:1|max:100',
+    ], [
+        'import_file.required' => 'Debe seleccionar un archivo.',
+        'import_file.mimes' => 'El archivo debe ser Excel (.xlsx, .xls) o CSV.',
+        'import_file.max' => 'El archivo no puede ser mayor a 10MB.',
+    ]);
+
+    $file = $request->file('import_file');
+    $hasHeaders = $request->boolean('has_headers', true);
+    $startRow = $request->integer('start_row', $hasHeaders ? 2 : 1);
+
+    try {
+        DB::beginTransaction();
+
+        // ✅ VERIFICAR INTEGRIDAD ANTES DE PROCESAR
+        $this->ensureDataIntegrity($billOfLading);
+        
+        // ✅ LOCK DEL BILL OF LADING para evitar modificaciones concurrentes
+        $billOfLading = BillOfLading::lockForUpdate()->find($billOfLading->id);
+        
+        if (!$billOfLading) {
+            throw new \Exception('BillOfLading no encontrado o bloqueado.');
+        }
+
+        // Procesar archivo según extensión
+        $extension = strtolower($file->getClientOriginalExtension());
+        $results = match($extension) {
+            'csv' => $this->processItemsCsv($file, $billOfLading, $hasHeaders, $startRow),
+            'xlsx', 'xls' => $this->processItemsExcel($file, $billOfLading, $hasHeaders, $startRow),
+            default => throw new \Exception('Formato de archivo no soportado: ' . $extension)
+        };
+
+        // ✅ VERIFICAR INTEGRIDAD DESPUÉS DE IMPORTAR
+        $this->verifyImportIntegrity($billOfLading, $results);
+
+        DB::commit();
+
+        $message = "Importación completada: {$results['imported']} items importados correctamente";
+        if ($results['errors'] > 0) {
+            $message .= ", {$results['errors']} errores encontrados";
+        }
+
+        // ✅ RECALCULAR ESTADÍSTICAS DESPUÉS DEL COMMIT
+        $billOfLading->fresh()->recalculateItemStats();
+
+        return redirect()->route('company.bills-of-lading.show', $billOfLading)
+            ->with('success', $message)
+            ->with('import_details', $results);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        
+        Log::error('Error en importación de items', [
+            'bill_id' => $billOfLading->id,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ]);
+
+        return back()
+            ->withInput()
+            ->with('error', 'Error al procesar el archivo: ' . $e->getMessage());
+    }
+}
+
+// ========================================
+// MÉTODOS HELPER PARA IMPORTACIÓN DE ITEMS
+// ========================================
+
+/**
+ * Verificar integridad de datos del BillOfLading
+ */
+private function ensureDataIntegrity(BillOfLading $billOfLading): void
+{
+    // Verificar que todas las relaciones existen
+    $checks = [
+        'shipment' => $billOfLading->shipment,
+        'voyage' => $billOfLading->shipment?->voyage,
+        'company' => $billOfLading->shipment?->voyage?->company
+    ];
+    
+    foreach ($checks as $relation => $model) {
+        if (!$model) {
+            throw new \Exception("Relación {$relation} no encontrada. Integridad comprometida.");
+        }
+    }
+    
+    // Verificar permisos de empresa a través de voyage
+    $voyageCompanyId = $billOfLading->shipment->voyage->company_id;
+    $userCompanyId = $this->getUserCompany()->id;
+    
+    if ($voyageCompanyId !== $userCompanyId) {
+        throw new \Exception('No tiene permisos para modificar este BillOfLading.');
+    }
+}
+
+/**
+ * Verificar integridad post-importación
+ */
+private function verifyImportIntegrity(BillOfLading $billOfLading, array $results): void
+{
+    // Verificar que todos los items creados tienen las relaciones correctas
+    $itemsCount = ShipmentItem::where('bill_of_lading_id', $billOfLading->id)->count();
+    
+    if ($itemsCount < $results['imported']) {
+        throw new \Exception("Inconsistencia: Se reportaron {$results['imported']} items pero se encontraron {$itemsCount} en BD.");
+    }
+    
+    // Verificar que no hay items huérfanos
+    $orphanItems = ShipmentItem::where('bill_of_lading_id', $billOfLading->id)
+                              ->whereDoesntHave('billOfLading')
+                              ->count();
+                              
+    if ($orphanItems > 0) {
+        throw new \Exception("Se detectaron {$orphanItems} items huérfanos sin relación válida.");
+    }
+}
+
+/**
+ * Procesar archivo CSV de items
+ */
+private function processItemsCsv($file, BillOfLading $billOfLading, bool $hasHeaders, int $startRow): array
+{
+    $handle = fopen($file->getPathname(), 'r');
+    if (!$handle) {
+        throw new \Exception('No se puede abrir el archivo CSV.');
+    }
+
+    $imported = 0;
+    $errors = 0;
+    $errorDetails = [];
+    $rowNumber = 0;
+
+    // Obtener el próximo line_number disponible
+    $nextLineNumber = $billOfLading->shipmentItems()->max('line_number') + 1 ?? 1;
+
+    while (($row = fgetcsv($handle)) !== false) {
+        $rowNumber++;
+
+        // Saltar filas anteriores al inicio
+        if ($rowNumber < $startRow) {
+            continue;
+        }
+
+        // Saltar fila de headers si aplica
+        if ($hasHeaders && $rowNumber === 1) {
+            continue;
+        }
+
+        // Procesar fila
+        try {
+            $itemData = $this->parseItemRowFromCsv($row, $billOfLading, $nextLineNumber);
+            if ($itemData) {
+                $this->createShipmentItemFromData($itemData, $billOfLading);
+                $imported++;
+                $nextLineNumber++;
+            }
+        } catch (\Exception $e) {
+            $errors++;
+            $errorDetails[] = "Fila {$rowNumber}: " . $e->getMessage();
+            
+            Log::warning('Error procesando fila CSV', [
+                'row' => $rowNumber,
+                'bill_id' => $billOfLading->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    fclose($handle);
+
+    return [
+        'imported' => $imported,
+        'errors' => $errors,
+        'error_details' => $errorDetails,
+        'total_rows' => $rowNumber - ($hasHeaders ? 1 : 0)
+    ];
+}
+
+/**
+ * Procesar archivo Excel de items usando Maatwebsite/Excel
+ */
+private function processItemsExcel($file, BillOfLading $billOfLading, bool $hasHeaders, int $startRow): array
+{
+    $imported = 0;
+    $errors = 0;
+    $errorDetails = [];
+    
+    // Obtener el próximo line_number disponible
+    $nextLineNumber = $billOfLading->shipmentItems()->max('line_number') + 1 ?? 1;
+    
+    try {
+        $rows = Excel::toArray(null, $file)[0]; // Primera hoja
+        $totalRows = count($rows);
+        $actualStartRow = $hasHeaders ? max(1, $startRow - 1) : $startRow - 1; // Array es 0-indexed
+        
+        for ($i = $actualStartRow; $i < $totalRows; $i++) {
+            $row = $rows[$i];
+            $rowNumber = $i + 1; // Para mostrar número real de fila
+            
+            try {
+                $itemData = $this->parseItemRowFromArray($row, $billOfLading, $nextLineNumber);
+                if ($itemData) {
+                    $this->createShipmentItemFromData($itemData, $billOfLading);
+                    $imported++;
+                    $nextLineNumber++;
+                }
+            } catch (\Exception $e) {
+                $errors++;
+                $errorDetails[] = "Fila {$rowNumber}: " . $e->getMessage();
+                
+                Log::warning('Error procesando fila Excel', [
+                    'row' => $rowNumber,
+                    'bill_id' => $billOfLading->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+        
+    } catch (\Exception $e) {
+        throw new \Exception('Error leyendo archivo Excel: ' . $e->getMessage());
+    }
+
+    return [
+        'imported' => $imported,
+        'errors' => $errors,
+        'error_details' => $errorDetails,
+        'total_rows' => $totalRows - ($hasHeaders ? 1 : 0)
+    ];
+}
+
+/**
+ * Parsear fila CSV a datos de item
+ */
+private function parseItemRowFromCsv(array $row, BillOfLading $billOfLading, int $lineNumber): ?array
+{
+    // Verificar que la fila tenga datos válidos
+    $cleanRow = array_filter($row, fn($cell) => !empty(trim($cell ?? '')));
+    if (empty($cleanRow)) {
+        return null; // Fila vacía, saltar sin error
+    }
+
+    // Mapeo de columnas basado en template generado en downloadTemplate()
+    $mapping = [
+        'line_number' => 0,
+        'item_reference' => 1,
+        'item_description' => 2,
+        'cargo_type_id' => 3,
+        'packaging_type_id' => 4,
+        'package_quantity' => 5,
+        'gross_weight_kg' => 6,
+        'net_weight_kg' => 7,
+        'volume_m3' => 8,
+        'declared_value' => 9,
+        'currency_code' => 10,
+        'unit_of_measure' => 11,
+        'country_of_origin' => 12,
+        'cargo_marks' => 13,
+        'commodity_code' => 14,
+        'brand' => 15,
+        'model' => 16,
+        'manufacturer' => 17,
+        'lot_number' => 18,
+        'is_dangerous_goods' => 19,
+        'is_perishable' => 20,
+        'requires_refrigeration' => 21,
+        'un_number' => 22,
+        'imdg_class' => 23,
+        'temperature_min' => 24,
+        'temperature_max' => 25,
+        'renar' => 26,
+        'operador_logistico_seguro' => 27
+    ];
+
+    return $this->extractItemDataFromRow($row, $mapping, $billOfLading, $lineNumber);
+}
+
+/**
+ * Parsear fila de array (Excel) a datos de item
+ */
+private function parseItemRowFromArray(array $row, BillOfLading $billOfLading, int $lineNumber): ?array
+{
+    // Verificar que la fila tenga datos válidos
+    $hasData = false;
+    foreach ($row as $cell) {
+        if (!empty(trim($cell ?? ''))) {
+            $hasData = true;
+            break;
+        }
+    }
+
+    if (!$hasData) {
+        return null; // Fila vacía, saltar sin error
+    }
+
+    // Usar mismo mapeo que CSV
+    $mapping = [
+        'line_number' => 0,
+        'item_reference' => 1,
+        'item_description' => 2,
+        'cargo_type_id' => 3,
+        'packaging_type_id' => 4,
+        'package_quantity' => 5,
+        'gross_weight_kg' => 6,
+        'net_weight_kg' => 7,
+        'volume_m3' => 8,
+        'declared_value' => 9,
+        'currency_code' => 10,
+        'unit_of_measure' => 11,
+        'country_of_origin' => 12,
+        'cargo_marks' => 13,
+        'commodity_code' => 14,
+        'brand' => 15,
+        'model' => 16,
+        'manufacturer' => 17,
+        'lot_number' => 18,
+        'is_dangerous_goods' => 19,
+        'is_perishable' => 20,
+        'requires_refrigeration' => 21,
+        'un_number' => 22,
+        'imdg_class' => 23,
+        'temperature_min' => 24,
+        'temperature_max' => 25,
+        'renar' => 26,
+        'operador_logistico_seguro' => 27
+    ];
+
+    return $this->extractItemDataFromRow($row, $mapping, $billOfLading, $lineNumber);
+}
+
+/**
+ * Extraer datos del item desde fila parseada
+ */
+private function extractItemDataFromRow(array $row, array $mapping, BillOfLading $billOfLading, int $lineNumber): array
+{
+    // Función helper para obtener valor seguro
+    $getValue = function($index, $default = null) use ($row) {
+        return isset($row[$index]) ? trim($row[$index] ?? '') : $default;
+    };
+
+    // Validar campos obligatorios
+    $description = $getValue($mapping['item_description']);
+    if (empty($description)) {
+        throw new \Exception('Descripción del item es obligatoria');
+    }
+
+    // Resolver IDs de tipos
+    $cargoTypeId = $this->resolveCargoTypeId($getValue($mapping['cargo_type_id']));
+    $packagingTypeId = $this->resolvePackagingTypeId($getValue($mapping['packaging_type_id']));
+
+    // Validar pesos
+    $grossWeight = floatval($getValue($mapping['gross_weight_kg'], 0));
+    if ($grossWeight <= 0) {
+        throw new \Exception('Peso bruto debe ser mayor a 0');
+    }
+
+    $netWeight = floatval($getValue($mapping['net_weight_kg'], 0));
+    if ($netWeight <= 0) {
+        $netWeight = $grossWeight * 0.85; // Estimación automática
+    }
+
+    return [
+        'bill_of_lading_id' => $billOfLading->id,
+        'line_number' => $lineNumber,
+        'item_reference' => $getValue($mapping['item_reference'], 'ITEM-' . $lineNumber),
+        'item_description' => $description,
+        'cargo_type_id' => $cargoTypeId,
+        'packaging_type_id' => $packagingTypeId,
+        'package_quantity' => intval($getValue($mapping['package_quantity'], 1)),
+        'gross_weight_kg' => $grossWeight,
+        'net_weight_kg' => $netWeight,
+        'volume_m3' => floatval($getValue($mapping['volume_m3'], 0)) ?: null,
+        'declared_value' => floatval($getValue($mapping['declared_value'], 0)) ?: null,
+        'currency_code' => $getValue($mapping['currency_code'], 'USD'),
+        'unit_of_measure' => $getValue($mapping['unit_of_measure'], 'KG'),
+        'country_of_origin' => strtoupper($getValue($mapping['country_of_origin'], 'AR')),
+        'cargo_marks' => $getValue($mapping['cargo_marks']),
+        'commodity_code' => $getValue($mapping['commodity_code']),
+        'brand' => $getValue($mapping['brand']),
+        'model' => $getValue($mapping['model']),
+        'manufacturer' => $getValue($mapping['manufacturer']),
+        'lot_number' => $getValue($mapping['lot_number']),
+        'is_dangerous_goods' => $this->parseBooleanValue($getValue($mapping['is_dangerous_goods'], '0')),
+        'is_perishable' => $this->parseBooleanValue($getValue($mapping['is_perishable'], '0')),
+        'requires_refrigeration' => $this->parseBooleanValue($getValue($mapping['requires_refrigeration'], '0')),
+        'un_number' => $getValue($mapping['un_number']),
+        'imdg_class' => $getValue($mapping['imdg_class']),
+        'temperature_min' => floatval($getValue($mapping['temperature_min'], 0)) ?: null,
+        'temperature_max' => floatval($getValue($mapping['temperature_max'], 0)) ?: null,
+        'renar' => $getValue($mapping['renar'], 'N'),
+        'operador_logistico_seguro' => $getValue($mapping['operador_logistico_seguro'], 'N'),
+        'status' => 'draft',
+        'created_date' => now(),
+        'created_by_user_id' => Auth::id(),
+        'last_updated_date' => now(),
+        'last_updated_by_user_id' => Auth::id(),
+    ];
+}
+
+/**
+ * Resolver ID de tipo de carga
+ */
+private function resolveCargoTypeId($value): int
+{
+    if (empty($value)) {
+        return CargoType::where('active', true)->first()?->id ?? 1;
+    }
+
+    // Si es numérico, buscar por ID
+    if (is_numeric($value)) {
+        $cargoType = CargoType::where('id', $value)->where('active', true)->first();
+        if ($cargoType) {
+            return $cargoType->id;
+        }
+    }
+
+    // Buscar por nombre
+    $cargoType = CargoType::where('name', 'LIKE', '%' . $value . '%')
+        ->where('active', true)
+        ->first();
+
+    if ($cargoType) {
+        return $cargoType->id;
+    }
+
+    // Retornar el primero disponible como fallback
+    return CargoType::where('active', true)->first()?->id ?? 1;
+}
+
+/**
+ * Resolver ID de tipo de embalaje
+ */
+private function resolvePackagingTypeId($value): int
+{
+    if (empty($value)) {
+        return PackagingType::where('active', true)->first()?->id ?? 1;
+    }
+
+    // Si es numérico, buscar por ID
+    if (is_numeric($value)) {
+        $packagingType = PackagingType::where('id', $value)->where('active', true)->first();
+        if ($packagingType) {
+            return $packagingType->id;
+        }
+    }
+
+    // Buscar por nombre
+    $packagingType = PackagingType::where('name', 'LIKE', '%' . $value . '%')
+        ->where('active', true)
+        ->first();
+
+    if ($packagingType) {
+        return $packagingType->id;
+    }
+
+    // Retornar el primero disponible como fallback
+    return PackagingType::where('active', true)->first()?->id ?? 1;
+}
+
+/**
+ * Parsear valor booleano desde Excel/CSV
+ */
+private function parseBooleanValue($value): bool
+{
+    if (is_bool($value)) {
+        return $value;
+    }
+
+    $value = strtolower(trim($value ?? ''));
+    return in_array($value, ['1', 'true', 'yes', 'sí', 'si', 'y', 's']);
+}
+
+/**
+ * Crear ShipmentItem desde datos parseados con validación de integridad
+ */
+private function createShipmentItemFromData(array $data, BillOfLading $billOfLading): ShipmentItem
+{
+    // ✅ VERIFICAR que line_number no existe
+    $existingItem = ShipmentItem::where('bill_of_lading_id', $billOfLading->id)
+                                ->where('line_number', $data['line_number'])
+                                ->first();
+    
+    if ($existingItem) {
+        throw new \Exception("Ya existe un item con line_number {$data['line_number']} en este BL.");
+    }
+    
+    // Validar datos antes de crear
+    $validator = Validator::make($data, [
+        'bill_of_lading_id' => 'required|exists:bills_of_lading,id',
+        'line_number' => 'required|integer|min:1',
+        'item_description' => 'required|string|max:2000',
+        'cargo_type_id' => 'required|exists:cargo_types,id',
+        'packaging_type_id' => 'required|exists:packaging_types,id',
+        'package_quantity' => 'required|integer|min:1',
+        'gross_weight_kg' => 'required|numeric|min:0.01',
+        'country_of_origin' => 'required|string|size:2',
+    ]);
+
+    if ($validator->fails()) {
+        throw new \Exception('Datos inválidos: ' . implode(', ', $validator->errors()->all()));
+    }
+
+    // ✅ CREAR CON VERIFICACIÓN DE FOREIGN KEYS
+    try {
+        $item = ShipmentItem::create($data);
+        
+        // ✅ VERIFICAR que se creó correctamente
+        if (!$item->billOfLading) {
+            throw new \Exception('Error: Item creado pero relación BillOfLading no establecida.');
+        }
+        
+        return $item;
+        
+    } catch (\Illuminate\Database\QueryException $e) {
+        if ($e->getCode() === '23000') { // Foreign key constraint
+            throw new \Exception('Error de integridad: Datos relacionados no válidos.');
+        }
+        throw $e;
+    }
+}
 
 }
 
