@@ -119,15 +119,20 @@ class KlineDataParser implements ManifestParserInterface
 
             Log::info('KLine parse completed', $this->stats);
 
-            return new ManifestParseResult(
-                success: true,
-                voyage: $results['voyages'][0] ?? null,
-                shipments: $results['shipments'],
+            return ManifestParseResult::success(
+                voyage: $voyage,
+                shipments: [$shipment],
                 containers: [],
-                billsOfLading: $results['bills'],
-                errors: array_filter($this->stats['warnings'], fn($w) => str_contains($w, 'Error')),
-                warnings: array_filter($this->stats['warnings'], fn($w) => !str_contains($w, 'Error')),
-                statistics: $this->stats
+                billsOfLading: [$billOfLading],
+                warnings: [],
+                statistics: [
+                    'format' => 'Login XML',
+                    'bills_of_lading' => 1,
+                    'containers' => count($transformedData['containers']),
+                    'total_weight_kg' => array_sum(array_column($transformedData['containers'], 'gross_weight_kg')),
+                    'shipper' => $transformedData['header']['shipper_name'] ?? 'N/A',
+                    'consignee' => $transformedData['header']['consignee_name'] ?? 'N/A'
+                ]
             );
 
         } catch (Exception $e) {

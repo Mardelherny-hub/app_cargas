@@ -73,12 +73,21 @@ class ShipmentItemController extends Controller
             // Flujo backward compatible: crear item para un shipment
             $shipment = \App\Models\Shipment::with(['voyage'])->findOrFail($shipmentId);
             
-            // Buscar si ya existe un bill of lading para este shipment
-            $billOfLading = \App\Models\BillOfLading::where('shipment_id', $shipment->id)->first();
-            
-            if (!$billOfLading) {
-                // MODIFICADO: No crear automáticamente, solo marcar que se necesita
+            // MODIFICADO: Buscar TODOS los bills of lading para este shipment
+            $billsOfLading = \App\Models\BillOfLading::where('shipment_id', $shipment->id)->get();
+
+            if ($billsOfLading->isEmpty()) {
+                // No hay bills of lading, marcar para crear uno nuevo
                 $needsToCreateBL = true;
+            } elseif ($billsOfLading->count() == 1) {
+                // Solo hay uno, usarlo como antes (backward compatibility)
+                $billOfLading = $billsOfLading->first();
+                $needsToCreateBL = false;
+            } else {
+                // HAY MÚLTIPLES: Permitir al usuario elegir o crear nuevo
+                // Por ahora usar el último creado (más reciente)
+                $billOfLading = $billsOfLading->sortByDesc('created_at')->first();
+                $needsToCreateBL = false;
             }
         } else {
             return redirect()->route('company.shipments.index')
@@ -139,6 +148,15 @@ class ShipmentItemController extends Controller
         // Cargar catálogos necesarios
         $cargoTypes = CargoType::where('active', true)->orderBy('name')->get();
         $packagingTypes = PackagingType::where('active', true)->orderBy('name')->get();
+        // NUEVO: Inicializar billsOfLading para evitar error en compact
+        $billsOfLading = collect(); // Colección vacía por defecto
+
+        // Si viene de shipment_id, obtener todos los bills of lading del shipment
+        if ($shipmentId && $shipment) {
+            $billsOfLading = \App\Models\BillOfLading::where('shipment_id', $shipment->id)
+                            ->orderBy('created_at', 'desc')
+                            ->get();
+        }
         $clients = Client::where('status', 'active')->orderBy('legal_name')->get();
         $ports = \App\Models\Port::where('active', true)->orderBy('name')->get();
         $countries = \App\Models\Country::orderBy('name')->get();
@@ -152,6 +170,7 @@ class ShipmentItemController extends Controller
         return view('company.shipment-items.create', compact(
             'shipment',
             'billOfLading', 
+            'billsOfLading',
             'needsToCreateBL',
             'defaultBLData',
             'cargoTypes',

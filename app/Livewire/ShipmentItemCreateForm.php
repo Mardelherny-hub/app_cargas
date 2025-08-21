@@ -556,6 +556,33 @@ class ShipmentItemCreateForm extends Component
         }
     }
 
+    /**
+     * NUEVO: Validar y limpiar números de precinto
+     */
+    private function processSealNumbers($sealString)
+    {
+        if (empty($sealString)) {
+            return [];
+        }
+        
+        // Separar por comas y limpiar
+        $seals = array_map('trim', explode(',', $sealString));
+        
+        // Filtrar valores vacíos
+        $seals = array_filter($seals, function($seal) {
+            return !empty($seal);
+        });
+        
+        // Validar formato de cada precinto (alfanumérico, 6-15 caracteres)
+        foreach ($seals as $seal) {
+            if (!preg_match('/^[A-Z0-9]{6,15}$/i', $seal)) {
+                throw new \Exception("Formato de precinto inválido: {$seal}. Use solo letras y números (6-15 caracteres).");
+            }
+        }
+        
+        return array_values($seals); // Reindexar array
+    }
+
     // NUEVO: Validar contenedores
     private function validateContainers()
     {

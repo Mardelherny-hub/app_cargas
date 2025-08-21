@@ -372,6 +372,15 @@
                         <div class="px-6 py-4">
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="text-lg font-medium text-gray-900">Conocimientos de Embarque</h3>
+                                <div class="flex space-x-2">
+                                    <a href="{{ route('company.bills-of-lading.create', ['shipment_id' => $shipment->id]) }}" 
+                                    class="inline-flex items-center px-3 py-2 border border-green-300 shadow-sm text-sm leading-4 font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                        </svg>
+                                        Nuevo Conocimiento
+                                    </a>
+                                </div>
                                 <div class="text-sm text-gray-500">
                                     Gestione los conocimientos de embarque (B/L) de este shipment
                                 </div>
@@ -379,29 +388,52 @@
 
                             {{-- Lista de Conocimientos --}}
                             @if($shipment->billsOfLading && $shipment->billsOfLading->count() > 0)
-                                <div class="space-y-3">
-                                    @foreach($shipment->billsOfLading as $bill)
-                                        <div class="flex items-center justify-between p-3 border rounded-lg">
-                                            <div>
-                                                <div class="font-medium text-sm">{{ $bill->bill_number ?? 'BL-2025-0001-250811' }}</div>
-                                                <div class="text-xs text-gray-500">
-                                                    {{ $bill->shipper->legal_name ?? 'Exportadora Buenos Aires S.A.' }} → 
-                                                    {{ $bill->consignee->legal_name ?? 'Terminal Villeta S.A.' }}
-                                                </div>
-                                            </div>
-                                            <div class="text-right">
-                                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                                                    Borrador
-                                                </span>
-                                                <div class="mt-1 text-xs text-gray-500">11/08</div>
-                                            </div>
-                                        </div>
-                                    @endforeach
-                                </div>
+                            <div class="space-y-3">
+                            @foreach($shipment->billsOfLading as $bill)
+                            <div class="flex items-center justify-between p-3 border rounded-lg">
+                            <div class="flex-1">
+                            <div class="font-medium text-sm">{{ $bill->bill_number ?? 'BL-2025-0001-250811' }}</div>
+                            <div class="text-xs text-gray-500">
+                            {{ $bill->shipper->legal_name ?? 'Exportadora Buenos Aires S.A.' }} →
+                            {{ $bill->consignee->legal_name ?? 'Terminal Villeta S.A.' }}
+                            </div>
+                            </div>
+                            <div class="flex items-center space-x-4">
+                            <div class="text-right">
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
+                            Borrador
+                            </span>
+                            <div class="mt-1 text-xs text-gray-500">11/08</div>
+                            </div>
+                            <div class="flex space-x-2">
+                            {{-- Enlace Ver --}}
+                            <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
+                            class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                            title="Ver conocimiento">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                Ver
+                            </a>
+                            {{-- Enlace Editar --}}
+                            <a href="{{ route('company.bills-of-lading.edit', $bill) }}" 
+                            class="inline-flex items-center px-2 py-1 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded hover:bg-orange-100 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1"
+                            title="Editar conocimiento">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Editar
+                            </a>
+                            </div>
+                            </div>
+                            </div>
+                            @endforeach
+                            </div>
                             @else
-                                <div class="text-center py-6">
-                                    <div class="text-sm text-gray-500 mb-2">El shipment debe estar cargado para crear conocimientos</div>
-                                </div>
+                            <div class="text-center py-6">
+                            <div class="text-sm text-gray-500 mb-2">El shipment debe estar cargado para crear conocimientos</div>
+                            </div>
                             @endif
                         </div>
                     </div>

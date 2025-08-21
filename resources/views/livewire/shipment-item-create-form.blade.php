@@ -676,17 +676,20 @@
                                 </select>
                             </div>
 
-                            {{-- Número de Precinto --}}
+                           {{-- Números de Precinto --}}
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">
-                                    Número de Precinto
+                                    Números de Precinto
                                 </label>
                                 <input 
                                     wire:model="containers.{{ $index }}.seal_number" 
                                     type="text" 
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="SL123456"
+                                    placeholder="SL123456, SL123457, SL123458"
                                 >
+                                <p class="mt-1 text-xs text-gray-500">
+                                    💡 Ingrese múltiples precintos separados por comas si es necesario
+                                </p>
                             </div>
 
                             {{-- Peso de Tara --}}

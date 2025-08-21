@@ -720,18 +720,60 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
 
                     @if($is_house_bill)
-                        <div class="ml-7">
-                            <label for="master_bill_number" class="block text-sm font-medium text-gray-700">
-                                Número del Conocimiento Maestro <span class="text-red-500">*</span>
-                            </label>
-                            <input wire:model="master_bill_number" type="text" id="master_bill_number"
-                                   placeholder="Número del conocimiento maestro"
-                                   class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('master_bill_number') border-red-300 @enderror">
-                            @error('master_bill_number')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-                    @endif
+                    <div class="ml-7 space-y-4">
+                        <label class="block text-sm font-medium text-gray-700">
+                            Conocimiento Maestro <span class="text-red-500">*</span>
+                        </label>
+                        
+                        @if(count($availableMasterBills) > 0)
+                            {{-- Selector de BL maestros disponibles --}}
+                            <div>
+                                <label class="block text-xs text-gray-600 mb-1">Seleccionar del shipment actual:</label>
+                                <select wire:model.live="master_bill_number" 
+                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('master_bill_number') border-red-300 @enderror">
+                                    <option value="">-- Seleccionar conocimiento maestro --</option>
+                                    @foreach($availableMasterBills as $masterBill)
+                                        <option value="{{ $masterBill->bill_number }}">
+                                            {{ $masterBill->bill_number }} 
+                                            @if($masterBill->cargo_description)
+                                                - {{ Str::limit($masterBill->cargo_description, 50) }}
+                                            @endif
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            
+                            {{-- Opción para ingreso manual --}}
+                            <div>
+                                <label class="block text-xs text-gray-600 mb-1">O ingresar manualmente:</label>
+                                <input wire:model="master_bill_number" type="text" 
+                                    placeholder="Número del conocimiento maestro"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('master_bill_number') border-red-300 @enderror">
+                            </div>
+                        @else
+                            {{-- No hay BL maestros, mostrar aviso e input manual --}}
+                            <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-3">
+                                <div class="flex">
+                                    <svg class="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.862-.833-2.632 0L3.18 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+                                    </svg>
+                                    <div class="text-sm text-yellow-800">
+                                        <p class="font-medium">No hay conocimientos maestros en este shipment</p>
+                                        <p>Debe crear primero un conocimiento maestro o ingresar el número manualmente.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <input wire:model="master_bill_number" type="text" 
+                                placeholder="Número del conocimiento maestro"
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('master_bill_number') border-red-300 @enderror">
+                        @endif
+                        
+                        @error('master_bill_number')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                @endif
                 </div>
             </div>
         </div>

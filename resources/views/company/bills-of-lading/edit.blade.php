@@ -832,8 +832,8 @@
                             <div class="flex items-start">
                                 <div class="flex items-center h-5">
                                     <input id="is_house_bill" name="is_house_bill" type="checkbox" value="1"
-                                           {{ old('is_house_bill', $billOfLading->is_house_bill) ? 'checked' : '' }}
-                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                        {{ old('is_house_bill', $billOfLading->is_house_bill) ? 'checked' : '' }}
+                                        class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
                                 </div>
                                 <div class="ml-3 text-sm">
                                     <label for="is_house_bill" class="font-medium text-gray-700">
@@ -841,6 +841,26 @@
                                     </label>
                                     <p class="text-gray-500">House Bill of Lading</p>
                                 </div>
+                            </div>
+
+                            {{-- Campo de Conocimiento Maestro (se muestra cuando is_house_bill está marcado) --}}
+                            <div id="master_bill_field" class="hidden sm:col-span-3">
+                                <label for="master_bill_number" class="block text-sm font-medium text-gray-700">
+                                    Conocimiento Maestro <span class="text-red-500">*</span>
+                                </label>
+                                <select id="master_bill_number" name="master_bill_number"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('master_bill_number') border-red-300 @enderror">
+                                    <option value="">Seleccione conocimiento maestro</option>
+                                    @foreach($formData['masterBills'] as $masterBill)
+                                        <option value="{{ $masterBill['bill_number'] }}" 
+                                                {{ old('master_bill_number', $billOfLading->master_bill_number) == $masterBill['bill_number'] ? 'selected' : '' }}>
+                                            {{ $masterBill['display_name'] }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('master_bill_number')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
                         </div>
                     </div>
@@ -1017,5 +1037,43 @@
             dischargePortSelect.addEventListener('change', validatePorts);
         });
     </script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const houseBillCheckbox = document.getElementById('is_house_bill');
+    const masterBillField = document.getElementById('master_bill_field');
+    const masterBillCheckbox = document.getElementById('is_master_bill');
+    
+    function toggleMasterBillField() {
+        if (houseBillCheckbox.checked) {
+            masterBillField.classList.remove('hidden');
+        } else {
+            masterBillField.classList.add('hidden');
+            document.getElementById('master_bill_number').value = '';
+        }
+    }
+    
+    // Verificar estado inicial
+    toggleMasterBillField();
+    
+    // Event listeners
+    houseBillCheckbox.addEventListener('change', toggleMasterBillField);
+    
+    // Validación: Evitar que sea maestro e hijo a la vez
+    masterBillCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            houseBillCheckbox.checked = false;
+            toggleMasterBillField();
+        }
+    });
+    
+    houseBillCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            masterBillCheckbox.checked = false;
+        }
+    });
+});
+</script>
     @endpush
 </x-app-layout>

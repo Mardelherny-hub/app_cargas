@@ -87,6 +87,9 @@ class BillOfLadingCreateForm extends Component
     public $packagingTypes;
     public $countries;
 
+    // manejo de BL padre/hijo
+    public $availableMasterBills = [];
+
     // Control de UI
     public $loading = false;
     public $preventNavigation = false;
@@ -276,6 +279,9 @@ class BillOfLadingCreateForm extends Component
 
     public function mount($shipmentId = null, $preselectedLoadingPortId = null, $preselectedDischargePortId = null)
     {
+        \Log::info('=== MOUNT DEBUG ===');
+    \Log::info('shipmentId parameter: ' . ($shipmentId ?: 'NULL'));
+    \Log::info('URL parameters: ', request()->all());
         // Cargar datos del formulario primero
         $this->loadFormData();
         
@@ -283,6 +289,7 @@ class BillOfLadingCreateForm extends Component
         if ($shipmentId) {
             $this->shipment_id = $shipmentId;
             $this->setShipmentDefaults();
+            $this->loadMasterBills();
         } elseif (request()->has('shipment_id')) {
             // También revisar si viene como query parameter
             $this->shipment_id = request()->get('shipment_id');
@@ -300,6 +307,7 @@ class BillOfLadingCreateForm extends Component
         
         // Inicializar valores por defecto
         $this->initializeDefaults();
+            \Log::info('shipment_id final en mount: ' . ($this->shipment_id ?: 'NULL'));
     }
 
     public function render()
@@ -391,6 +399,7 @@ class BillOfLadingCreateForm extends Component
         $this->generateBillNumber();
         $this->resetErrorBag('shipment_id');
         $this->preventNavigation = true;
+        $this->loadMasterBills(); // Cargar BL maestros al cambiar shipment_id
     }
 
     public function updatedContainsDangerousGoods()
@@ -403,14 +412,51 @@ class BillOfLadingCreateForm extends Component
         $this->preventNavigation = true;
     }
 
-    public function updatedIsHouseBill()
+    // Nuevo método para cargar BL maestros
+    public function loadMasterBills() 
     {
-        if (!$this->is_house_bill) {
-            $this->master_bill_number = '';
+        if ($this->shipment_id) {
+            // Debug paso a paso
+            \Log::info('=== LOAD MASTER BILLS DEBUG ===');
+            \Log::info('Shipment ID buscado: ' . $this->shipment_id);
+            
+            // Consulta paso a paso
+            $query = BillOfLading::where('shipment_id', $this->shipment_id);
+            \Log::info('Paso 1 - BLs del shipment: ' . $query->count());
+            
+            $query = $query->where('is_master_bill', true);
+            \Log::info('Paso 2 - BLs maestros: ' . $query->count());
+            
+            $this->availableMasterBills = $query->select('id', 'bill_number', 'cargo_description')->get();
+            
+            \Log::info('Resultado final: ' . $this->availableMasterBills->count());
+            \Log::info('Datos encontrados: ' . json_encode($this->availableMasterBills->toArray()));
+        } else {
+            \Log::info('=== LOAD MASTER BILLS DEBUG ===');
+            \Log::info('No hay shipment_id definido');
         }
-        $this->resetErrorBag('master_bill_number');
-        $this->preventNavigation = true;
     }
+
+    // Actualizar cuando cambia is_house_bill
+    public function updatedIsHouseBill()
+{
+    \Log::info('=== UPDATED IS HOUSE BILL INICIO ===');
+    \Log::info('is_house_bill: ' . ($this->is_house_bill ? 'true' : 'false'));
+    \Log::info('shipment_id EN updatedIsHouseBill: ' . ($this->shipment_id ?: 'NULL'));
+    
+    if ($this->is_house_bill) {
+        \Log::info('Llamando a loadMasterBills desde updatedIsHouseBill');
+        $this->loadMasterBills();
+    }
+    
+    if (!$this->is_house_bill) {
+        $this->master_bill_number = '';
+    }
+    $this->resetErrorBag('master_bill_number');
+    $this->preventNavigation = true;
+    
+    \Log::info('=== UPDATED IS HOUSE BILL FINAL ===');
+}
 
     // Método para detectar cualquier cambio en el formulario
     public function updated($propertyName)

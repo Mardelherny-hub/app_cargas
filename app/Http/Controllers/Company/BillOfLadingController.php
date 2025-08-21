@@ -510,11 +510,19 @@ class BillOfLadingController extends Controller
             'measurement_unit' => $billOfLading->measurement_unit ?? 'KG',
         ];
 
+        // Cargar BL maestros disponibles del mismo shipment
+        $availableMasterBills = BillOfLading::where('shipment_id', $billOfLading->shipment_id)
+            ->where('is_master_bill', true)
+            ->where('id', '!=', $billOfLading->id) // Excluir el mismo BL
+            ->select('id', 'bill_number', 'cargo_description')
+            ->get();
+
         return view('company.bills-of-lading.edit', compact(
             'billOfLading',
             'formData', 
             'company',
-            'defaultValues'  // ✅ AGREGAR para prellenar formulario
+            'defaultValues',
+            'availableMasterBills'
         ));
     }
 
@@ -523,6 +531,7 @@ class BillOfLadingController extends Controller
      */
     public function update(UpdateBillOfLadingRequest $request, BillOfLading $billOfLading)
     {
+        //dd($request->all());
         // Verificar que el conocimiento pertenece a la empresa del usuario
         if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
             abort(403, 'No tiene permisos para editar este conocimiento.');
@@ -542,9 +551,10 @@ class BillOfLadingController extends Controller
             }
 
             // ✅ AGREGAR: Establecer valores por defecto para campos de consolidación (como en store)
-            $data['is_consolidated'] = $data['is_consolidated'] ?? false;
-            $data['is_master_bill'] = $data['is_master_bill'] ?? false;
-            $data['is_house_bill'] = $data['is_house_bill'] ?? false;
+           // ✅ CORREGIR: Manejar checkboxes HTML correctamente
+$data['is_consolidated'] = isset($data['is_consolidated']) && $data['is_consolidated'] == '1';
+$data['is_master_bill'] = isset($data['is_master_bill']) && $data['is_master_bill'] == '1';
+$data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill'] == '1';
             
             $billOfLading->update($data);
 
@@ -866,7 +876,21 @@ class BillOfLadingController extends Controller
                 'port_to_door' => 'Puerto a Puerta',
             ],
 
-            
+            'masterBills' => BillOfLading::whereHas('shipment.voyage', function ($q) use ($company) {
+                $q->where('company_id', $company->id);
+            })
+            ->where('is_master_bill', true)
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('bill_number')
+            ->get(['id', 'bill_number'])
+            ->map(function ($bill) {
+                return [
+                    'id' => $bill->id,
+                    'bill_number' => $bill->bill_number,
+                    'display_name' => $bill->bill_number
+                ];
+            }),        
+                    
         ];
     }
 

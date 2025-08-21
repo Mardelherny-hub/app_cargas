@@ -277,6 +277,93 @@
                         </dl>
                     </div>
                 </div>
+
+                {{-- Estado de Consolidación --}}
+                <div class="bg-white shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                            </svg>
+                            Estado de Consolidación
+                        </h3>
+                        
+                        <dl class="space-y-3">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Tipo de Conocimiento</dt>
+                                <dd class="text-sm text-gray-900">
+                                    @if($billOfLading->is_master_bill)
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                            </svg>
+                                            Conocimiento Maestro
+                                        </span>
+                                    @elseif($billOfLading->is_house_bill)
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                            </svg>
+                                            Conocimiento Hijo
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                            </svg>
+                                            Conocimiento Individual
+                                        </span>
+                                    @endif
+                                </dd>
+                            </div>
+
+                            @if($billOfLading->is_consolidated)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Consolidación</dt>
+                                <dd class="text-sm text-gray-900">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                        </svg>
+                                        Carga Consolidada
+                                    </span>
+                                </dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->is_house_bill && $billOfLading->master_bill_number)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Conocimiento Maestro</dt>
+                                <dd class="text-sm text-gray-900 font-mono">{{ $billOfLading->master_bill_number }}</dd>
+                            </div>
+                            @endif
+
+                            @if($billOfLading->is_master_bill)
+                                @php
+                                    $houseBills = \App\Models\BillOfLading::where('master_bill_number', $billOfLading->bill_number)
+                                        ->where('is_house_bill', true)
+                                        ->get();
+                                @endphp
+                                @if($houseBills->count() > 0)
+                                <div>
+                                    <dt class="text-sm font-medium text-gray-500">Conocimientos Hijo ({{ $houseBills->count() }})</dt>
+                                    <dd class="text-sm text-gray-900">
+                                        <div class="space-y-1 mt-1">
+                                            @foreach($houseBills as $houseBill)
+                                                <div class="flex items-center justify-between bg-gray-50 px-2 py-1 rounded">
+                                                    <span class="font-mono text-xs">{{ $houseBill->bill_number }}</span>
+                                                    <a href="{{ route('company.bills-of-lading.show', $houseBill) }}" 
+                                                    class="text-blue-600 hover:text-blue-800 text-xs font-medium">Ver</a>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </dd>
+                                </div>
+                                @endif
+                            @endif
+                        </dl>
+                    </div>
+                </div>
             </div>
 
             {{-- Partes Involucradas --}}
@@ -364,6 +451,98 @@
                         <p class="text-sm text-gray-500 italic">No especificado</p>
                         @endif
                     </div>
+                </div>
+            </div>
+
+            {{-- Sección de Items de Mercadería - UBICACIÓN PRIORITARIA --}}
+            <div class="bg-white shadow rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-medium text-gray-900 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v4a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2zM9 5a2 2 0 012 2v2a2 2 0 01-2 2M9 5a2 2 0 012 2v2a2 2 0 01-2 2m0 0h2a2 2 0 012 2v2a2 2 0 01-2 2H9a2 2 0 01-2-2v-2a2 2 0 012-2zm0 0v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2a2 2 0 012-2h2a2 2 0 012 2z"/>
+                            </svg>
+                            Items de Mercadería
+                        </h3>
+                        
+                        {{-- Botón para agregar items directamente al conocimiento --}}
+                        @if(in_array($billOfLading->status, ['draft', 'pending_review']) && isset($permissions['canEdit']) && $permissions['canEdit'])
+                            <a href="{{ route('company.shipment-items.create', ['bill_of_lading_id' => $billOfLading->id]) }}" 
+                               class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Agregar Item
+                            </a>
+                        @endif
+                    </div>
+
+                    {{-- Lista de items existentes --}}
+                    @if($billOfLading->shipmentItems && $billOfLading->shipmentItems->count() > 0)
+                        <div class="space-y-3">
+                            @foreach($billOfLading->shipmentItems as $item)
+                                <div class="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                                    <div class="flex-1">
+                                        <div class="flex items-center space-x-3">
+                                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-800 text-sm font-medium">
+                                                {{ $item->line_number }}
+                                            </span>
+                                            <div>
+                                                <div class="font-medium text-sm text-gray-900">{{ $item->item_reference }}</div>
+                                                <div class="text-sm text-gray-600 mt-1">{{ Str::limit($item->item_description, 60) }}</div>
+                                            </div>
+                                        </div>
+                                        <div class="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
+                                            <span>{{ $item->cargoType->name ?? 'N/A' }}</span>
+                                            <span>{{ number_format($item->gross_weight_kg, 2) }} kg</span>
+                                            <span>{{ $item->package_quantity }} bultos</span>
+                                            @if($item->declared_value)
+                                                <span>USD {{ number_format($item->declared_value, 2) }}</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <a href="{{ route('company.shipment-items.show', $item) }}" 
+                                           class="text-blue-600 hover:text-blue-900 text-sm font-medium">Ver</a>
+                                        @if(in_array($billOfLading->status, ['draft', 'pending_review']) && isset($permissions['canEdit']) && $permissions['canEdit'])
+                                            <a href="{{ route('company.shipment-items.edit', $item) }}" 
+                                               class="text-yellow-600 hover:text-yellow-900 text-sm font-medium">Editar</a>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        {{-- Resumen compacto --}}
+                        <div class="mt-4 pt-4 border-t border-gray-200">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">{{ $billOfLading->shipmentItems->count() }} items</span>
+                                <span class="text-gray-600">{{ number_format($billOfLading->shipmentItems->sum('package_quantity')) }} bultos</span>
+                                <span class="text-gray-600">{{ number_format($billOfLading->shipmentItems->sum('gross_weight_kg'), 2) }} kg</span>
+                                <span class="text-gray-600">USD {{ number_format($billOfLading->shipmentItems->sum('declared_value'), 2) }}</span>
+                            </div>
+                        </div>
+                    @else
+                        {{-- Estado vacío --}}
+                        <div class="text-center py-8">
+                            <svg class="mx-auto h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2 2v-5m16 0h-6.5a2 2 0 00-1.5.67l-.5.83a2 2 0 01-1.5.83H9a2 2 0 01-1.5-.83l-.5-.83a2 2 0 00-1.5-.67H2"/>
+                            </svg>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900">Sin items de mercadería</h3>
+                            <p class="mt-1 text-sm text-gray-500">Agregue items a este conocimiento</p>
+                            @if(in_array($billOfLading->status, ['draft', 'pending_review']) && isset($permissions['canEdit']) && $permissions['canEdit'])
+                                <div class="mt-4">
+                                    <a href="{{ route('company.shipment-items.create', ['bill_of_lading_id' => $billOfLading->id]) }}" 
+                                       class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                        </svg>
+                                        Agregar Primer Item
+                                    </a>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
                 </div>
             </div>
 

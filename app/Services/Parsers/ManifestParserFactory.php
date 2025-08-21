@@ -6,8 +6,8 @@ use App\Contracts\ManifestParserInterface;
 use App\Services\Parsers\KlineDataParser;
 use App\Services\Parsers\ParanaExcelParser;
 // TODO: Agregar otros parsers cuando estén implementados
-// use App\Services\Parsers\GuaranCsvParser;
-// use App\Services\Parsers\LoginXmlParser;
+use App\Services\Parsers\GuaranCsvParser;
+use App\Services\Parsers\LoginXmlParser;
 // use App\Services\Parsers\TfpTextParser;
 // use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\NavsurTextParser;
@@ -35,7 +35,7 @@ class ManifestParserFactory
         KlineDataParser::class,
         ParanaExcelParser::class,
         GuaranCsvParser::class, 
-        // LoginXmlParser::class,
+        LoginXmlParser::class,
         // TfpTextParser::class,
         // CmspEdiParser::class,
         NavsurTextParser::class,
@@ -51,7 +51,7 @@ class ManifestParserFactory
         'xlsx' => [ParanaExcelParser::class],
         'xls' => [ParanaExcelParser::class],
         'csv' => [], // GuaranCsvParser::class
-        'xml' => [], // LoginXmlParser::class
+        'xml' => [LoginXmlParser::class], // LoginXmlParser::class
         'edi' => [], // CmspEdiParser::class
     ];
 
