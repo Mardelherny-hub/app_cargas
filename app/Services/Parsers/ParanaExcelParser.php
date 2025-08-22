@@ -880,15 +880,40 @@ class ParanaExcelParser implements ManifestParserInterface
 
     protected function createShipmentItem(BillOfLading $bill, array $data): ?\App\Models\ShipmentItem
     {
-        return \App\Models\ShipmentItem::create([
-            'bill_of_lading_id' => $bill->id,
-            'description' => $data['DESCRIPTION'] ?? 'Mercadería general',
-            'quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
-            'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
-            'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
-            'cargo_type_id' => 1,
-            'packaging_type_id' => 1,
-            'status' => 'draft'
-        ]);
+        // Generar line_number único para este bill_of_lading
+        $nextLineNumber = \App\Models\ShipmentItem::where('bill_of_lading_id', $bill->id)
+            ->max('line_number') + 1;
+        
+        if ($nextLineNumber < 1) {
+            $nextLineNumber = 1;
+        }
+
+        try {
+            $shipmentItem = \App\Models\ShipmentItem::create([
+                'bill_of_lading_id' => $bill->id,
+                'line_number' => $nextLineNumber,
+                'item_description' => $data['DESCRIPTION'] ?? 'Mercadería general',
+                'package_quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
+                'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
+                'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
+                'cargo_type_id' => 1,
+                'packaging_type_id' => 1,
+            ]);
+
+            Log::info('ShipmentItem created successfully', [
+                'item_id' => $shipmentItem->id,
+                'line_number' => $shipmentItem->line_number,
+                'bill_id' => $bill->id
+            ]);
+
+            return $shipmentItem;
+        } catch (\Exception $e) {
+            Log::error('Error creating ShipmentItem', [
+                'bill_id' => $bill->id,
+                'data' => $data,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 }

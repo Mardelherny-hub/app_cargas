@@ -119,7 +119,7 @@ class ManifestImportController extends Controller
                 'detected_extension' => pathinfo($fullPath, PATHINFO_EXTENSION),
                 'file_format' => $parser->getFormatInfo()['name'] ?? 'Unknown'
             ]);
-            
+
             // Procesar archivo en transacción
             $result = DB::transaction(function () use ($parser, $fullPath, $originalName, $vessel) {
                 return $parser->parse($fullPath, ['vessel_id' => $vessel->id]);
@@ -232,6 +232,9 @@ class ManifestImportController extends Controller
     {
         $stats = $result->getStatsSummary();
 
+        // Preparar datos para el reporte
+        $reportData = $this->prepareReportData($result, $fileName, $stats);
+
         if ($result->isSuccessful()) {
             // Importación completamente exitosa
             Log::info('Manifest import completed successfully', [
@@ -239,13 +242,10 @@ class ManifestImportController extends Controller
                 'stats' => $stats
             ]);
 
-            $message = $this->buildSuccessMessage($result, $fileName);
-            
             return redirect()
-                ->route('company.manifests.index')
-                ->with('success', $message)
-                ->with('import_stats', $stats)
-                ->with('voyage_id', $result->voyage?->id);
+                ->route('company.manifests.import.report')
+                ->with('import_report_data', $reportData)
+                ->with('success', $this->buildSuccessMessage($result, $fileName));
 
         } elseif ($result->success && $result->hasWarnings()) {
             // Importación exitosa con advertencias
@@ -255,14 +255,10 @@ class ManifestImportController extends Controller
                 'warnings' => $result->warnings
             ]);
 
-            $message = $this->buildWarningMessage($result, $fileName);
-            
             return redirect()
-                ->route('company.manifests.index')
-                ->with('warning', $message)
-                ->with('import_stats', $stats)
-                ->with('import_warnings', $result->warnings)
-                ->with('voyage_id', $result->voyage?->id);
+                ->route('company.manifests.import.report')
+                ->with('import_report_data', $reportData)
+                ->with('warning', $this->buildWarningMessage($result, $fileName));
 
         } else {
             // Importación falló
@@ -272,14 +268,13 @@ class ManifestImportController extends Controller
                 'errors' => $result->errors
             ]);
 
-            return back()
-                ->withInput()
-                ->with('error', 'La importación falló: ' . implode('; ', $result->errors))
-                ->with('import_errors', $result->errors)
-                ->with('import_stats', $stats);
+            // Para errores, redirigir al reporte también pero con datos de error
+            return redirect()
+                ->route('company.manifests.import.report')
+                ->with('import_report_data', $reportData)
+                ->with('error', 'La importación falló: ' . implode('; ', $result->errors));
         }
     }
-
     /**
      * Construir mensaje de éxito detallado
      */
@@ -333,5 +328,109 @@ class ManifestImportController extends Controller
         $message .= " Revise los detalles antes de continuar.";
         
         return $message;
+    }
+
+    /**
+     * Preparar datos para el reporte de importación
+     */
+    protected function prepareReportData(ManifestParseResult $result, string $fileName, array $stats): array
+    {
+        $user = auth()->user();
+        
+        $reportData = [
+            'importResult' => [
+                'success' => $result->isSuccessful(),
+                'hasWarnings' => $result->hasWarnings(),
+            ],
+            'fileInfo' => [
+                'name' => $fileName,
+                'imported_at' => now()->format('d/m/Y H:i:s'),
+                'imported_by' => $user->name ?? 'Usuario',
+            ],
+            'stats' => $stats,
+            'voyage' => null,
+            'createdRecords' => [],
+            'warnings' => $result->warnings ?? [],
+            'errors' => $result->errors ?? [],
+        ];
+
+        // Agregar datos del viaje si existe
+        if ($result->voyage) {
+            $reportData['voyage'] = [
+                'id' => $result->voyage->id,
+                'voyage_number' => $result->voyage->voyage_number,
+                'status' => $result->voyage->status ?? 'planning',
+                'vessel_name' => $result->voyage->vessel->name ?? null,
+                'origin_port' => $result->voyage->originPort->name ?? null,
+                'destination_port' => $result->voyage->destinationPort->name ?? null,
+                'departure_date' => $result->voyage->departure_date ? $result->voyage->departure_date->format('d/m/Y') : null,
+            ];
+        }
+
+        // Agregar registros creados
+        $reportData['createdRecords'] = [
+            'billsOfLading' => $this->formatBillsOfLading($result->billsOfLading ?? []),
+            'containers' => $this->formatContainers($result->containers ?? []),
+        ];
+
+        return $reportData;
+    }
+
+    /**
+     * Formatear datos de Bills of Lading para el reporte
+     */
+    protected function formatBillsOfLading(array $billsOfLading): array
+    {
+        $formatted = [];
+        
+        foreach ($billsOfLading as $bl) {
+            $formatted[] = [
+                'id' => $bl->id,
+                'bl_number' => $bl->bl_number ?? 'N/A',
+                'shipper_name' => $bl->shipper->legal_name ?? 'N/A',
+                'consignee_name' => $bl->consignee->legal_name ?? 'N/A',
+                'items_count' => $bl->shipmentItems ? $bl->shipmentItems->count() : 0,
+            ];
+        }
+        
+        return $formatted;
+    }
+
+    /**
+     * Formatear datos de contenedores para el reporte
+     */
+    protected function formatContainers(array $containers): array
+    {
+        $formatted = [];
+        
+        foreach ($containers as $container) {
+            $formatted[] = [
+                'id' => $container->id ?? null,
+                'container_number' => $container->container_number ?? $container['number'] ?? 'N/A',
+                'container_type' => $container->container_type ?? $container['type'] ?? 'N/A',
+                'gross_weight' => $container->gross_weight_kg ?? $container['gross_weight'] ?? 0,
+            ];
+        }
+        
+        return $formatted;
+    }
+
+    /**
+     * Mostrar reporte detallado de importación
+     */
+    public function showReport(Request $request)
+    {
+        // Verificar que venimos de una importación exitosa
+        if (!$request->session()->has('import_report_data')) {
+            return redirect()->route('company.manifests.import.index')
+                ->with('error', 'No hay datos de importación para mostrar.');
+        }
+
+        $reportData = $request->session()->get('import_report_data');
+        
+        // Limpiar datos de sesión después de obtenerlos
+        $request->session()->forget('import_report_data');
+
+        return view('company.manifests.import-report', $reportData);
     }
 }
