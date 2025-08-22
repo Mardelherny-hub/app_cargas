@@ -15,6 +15,7 @@ use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class VoyageController extends Controller
 {
@@ -397,7 +398,7 @@ public function store(Request $request)
         // 5. Determinar permisos del usuario para la vista - AGREGADO
         $userPermissions = [
             'can_edit' => $this->isCompanyAdmin() || (Auth::user()->can('voyages.edit') && $this->hasCompanyRole('Cargas')),
-            'can_delete' => $this->isCompanyAdmin() && Auth::user()->can('voyages.delete') && $this->hasCompanyRole('Cargas'),
+            'can_delete' => $this->isCompanyAdmin() && $this->hasCompanyRole('Cargas'),
         ];
 
         // 6. Cargar datos necesarios del voyage - RELACIONES EXISTENTES
@@ -437,15 +438,6 @@ public function store(Request $request)
     }
 
     /**
-     * Obtener datos para formularios (create/edit)
-     * MÉTODO CORREGIDO - USANDO SOLO COLUMNAS EXISTENTES
-     */
-
-
-    /**
-     * Actualizar viaje.
-     */
-/**
      * CORRECCIÓN DEFINITIVA - Método update()
      */
     public function update(Request $request, Voyage $voyage)
@@ -464,19 +456,30 @@ public function store(Request $request)
         }
 
         // 2. Validar datos - EXACTOS según ENUM de BD
-        $request->validate([
-            'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number,' . $voyage->id,
+        // Validación dinámica según el estado del viaje
+        $rules = [
+            'voyage_number' => 'required|string|max:50',
             'internal_reference' => 'nullable|string|max:100',
-            'status' => 'required|string|in:planning,approved,in_transit,at_destination,completed,cancelled,delayed',
+            'status' => 'required|in:draft,planning,loading,in_progress,arrived,completed,cancelled',
             'vessel_id' => 'required|exists:vessels,id',
-            'captain_id' => 'nullable|exists:captains,id',
+            'captain_id' => 'required|exists:captains,id',
             'origin_country_id' => 'required|exists:countries,id',
             'origin_port_id' => 'required|exists:ports,id',
             'destination_country_id' => 'required|exists:countries,id',
-            'destination_port_id' => 'required|exists:ports,id',
-            'planned_departure_date' => 'required|date',
-            'planned_arrival_date' => 'required|date|after:planned_departure_date',
-        ]);
+            'destination_port_id' => 'required|exists:ports,id|different:origin_port_id',
+            'estimated_duration_hours' => 'nullable|numeric|min:0.5|max:720',
+        ];
+
+        // Las fechas solo son obligatorias para estados avanzados
+        if (in_array($request->status, ['loading', 'in_progress', 'arrived', 'completed'])) {
+            $rules['planned_departure_date'] = 'required|date';
+            $rules['planned_arrival_date'] = 'required|date|after:planned_departure_date';
+        } else {
+            $rules['planned_departure_date'] = 'nullable|date';
+            $rules['planned_arrival_date'] = 'nullable|date|after:planned_departure_date';
+        }
+
+        $request->validate($rules);
 
         try {
             DB::beginTransaction();
@@ -541,7 +544,7 @@ public function store(Request $request)
     }
 
     /**
-     * Eliminar viaje.
+     * Eliminar viaje - VERSIÓN CORREGIDA
      */
     public function destroy(Voyage $voyage)
     {
@@ -559,22 +562,59 @@ public function store(Request $request)
             abort(403, 'No tiene permisos para eliminar este viaje.');
         }
 
-        // 3. Verificar estado eliminable
-        if (in_array($voyage->status, ['in_progress', 'completed'])) {
+        // 3. CORREGIDO: Usar el método canBeDeleted() del modelo (más completo)
+        if (!$voyage->canBeDeleted()) {
             return redirect()->route('company.voyages.show', $voyage)
-                ->with('error', 'No se puede eliminar un viaje en progreso o completado.');
+                ->with('error', 'No se puede eliminar este viaje. Verifique que esté en estado eliminable y no tenga cargas, conocimientos de embarque o documentación asociada.');
         }
 
-        // 4. Verificar que no tenga shipments
-        if ($voyage->shipments()->count() > 0) {
-            return redirect()->route('company.voyages.show', $voyage)
-                ->with('error', 'No se puede eliminar un viaje que tiene envíos asociados.');
+        try {
+            // 4. AGREGADO: Usar transacción para seguridad
+            DB::beginTransaction();
+
+            $voyageNumber = $voyage->voyage_number;
+            
+            // 5. CORREGIDO: Verificación adicional de seguridad antes de eliminar
+            if ($voyage->shipments()->count() > 0) {
+                DB::rollBack();
+                return redirect()->route('company.voyages.show', $voyage)
+                    ->with('error', 'No se puede eliminar un viaje que tiene envíos asociados.');
+            }
+
+            if ($voyage->billsOfLading()->count() > 0) {
+                DB::rollBack();
+                return redirect()->route('company.voyages.show', $voyage)
+                    ->with('error', 'No se puede eliminar un viaje que tiene conocimientos de embarque asociados.');
+            }
+
+            // 6. Eliminar el viaje
+            $voyage->delete();
+
+            DB::commit();
+
+            // 7. AGREGADO: Log para auditoría
+            Log::info('Viaje eliminado', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyageNumber,
+                'company_id' => $voyage->company_id,
+                'user_id' => Auth::id()
+            ]);
+
+            return redirect()->route('company.voyages.index')
+                ->with('success', "Viaje {$voyageNumber} eliminado exitosamente.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error al eliminar viaje', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'user_id' => Auth::id()
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'Error al eliminar el viaje: ' . $e->getMessage());
         }
-
-        $voyage->delete();
-
-        return redirect()->route('company.voyages.index')
-            ->with('success', 'Viaje eliminado exitosamente.');
     }
 
     /**

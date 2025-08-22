@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Company\Manifests;
 
 use App\Http\Controllers\Controller;
 use App\Services\Parsers\ManifestParserFactory;
+use App\Models\Vessel;
 use App\ValueObjects\ManifestParseResult;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -47,9 +48,18 @@ class ManifestImportController extends Controller
         $supportedFormats = $this->parserFactory->getSupportedFormats();
         $formatStats = $this->parserFactory->getFormatStatistics();
 
+        // Obtener embarcaciones disponibles de la empresa
+        $company = auth()->user()->company;
+        $vessels = Vessel::where('company_id', $company->id)
+            ->where('active', true)
+            ->where('operational_status', 'active')
+            ->orderBy('name')
+            ->get();
+
         return view('company.manifests.import', [
             'supportedFormats' => $supportedFormats,
-            'formatStats' => $formatStats
+            'formatStats' => $formatStats,
+            'vessels' => $vessels
         ]);
     }
 
@@ -60,11 +70,24 @@ class ManifestImportController extends Controller
     {
         $request->validate([
             'manifest_file' => 'required|file|max:10240', // 10MB max
+            'vessel_id' => 'required|exists:vessels,id'
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
             'manifest_file.file' => 'El archivo seleccionado no es válido.',
             'manifest_file.max' => 'El archivo no puede ser mayor a 10MB.'
         ]);
+
+        // Verificar que el vessel pertenece a la empresa del usuario
+        $company = auth()->user()->company;
+        $vessel = Vessel::where('id', $request->vessel_id)
+            ->where('company_id', $company->id)
+            ->where('active', true)
+            ->where('operational_status', 'active')
+            ->first();
+
+        if (!$vessel) {
+            return back()->with('error', 'La embarcación seleccionada no es válida o no pertenece a su empresa.');
+        }
 
         $uploadedFile = $request->file('manifest_file');
         $originalName = $uploadedFile->getClientOriginalName();
@@ -96,10 +119,10 @@ class ManifestImportController extends Controller
                 'detected_extension' => pathinfo($fullPath, PATHINFO_EXTENSION),
                 'file_format' => $parser->getFormatInfo()['name'] ?? 'Unknown'
             ]);
-
+            
             // Procesar archivo en transacción
-            $result = DB::transaction(function () use ($parser, $fullPath, $originalName) {
-                return $parser->parse($fullPath);
+            $result = DB::transaction(function () use ($parser, $fullPath, $originalName, $vessel) {
+                return $parser->parse($fullPath, ['vessel_id' => $vessel->id]);
             });
 
             // Limpiar archivo temporal

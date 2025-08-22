@@ -593,6 +593,30 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
     }
 
     /**
+     * Verificar si un BL tiene items asociados (AJAX)
+     */
+    public function checkItems(BillOfLading $billOfLading)
+    {
+        // Verificar permisos básicos
+        if (!$this->canPerform('view_cargas') || !$this->hasCompanyRole('Cargas')) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        }
+        
+        // Verificar que pertenece a la empresa
+        if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        }
+        
+        $itemsCount = $billOfLading->shipmentItems()->count();
+        
+        return response()->json([
+            'hasItems' => $itemsCount > 0,
+            'itemsCount' => $itemsCount,
+            'canBeDeleted' => $billOfLading->canBeDeleted()
+        ]);
+    }
+
+    /**
      * Eliminar conocimiento de embarque
      */
     public function destroy(BillOfLading $billOfLading)
@@ -612,9 +636,21 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
         }
 
         // Verificar que puede ser eliminado
+        // Verificar que puede ser eliminado
         if (!$billOfLading->canBeDeleted()) {
+            $itemsCount = $billOfLading->shipmentItems()->count();
+            $errorMessage = 'Este conocimiento no puede ser eliminado.';
+            
+            if ($itemsCount > 0) {
+                $errorMessage .= " Tiene {$itemsCount} item(s) asociados. Elimine primero todos los items.";
+            } elseif ($billOfLading->status !== 'draft') {
+                $errorMessage .= " Solo se pueden eliminar conocimientos en estado borrador.";
+            } elseif ($billOfLading->webservice_sent_at || $billOfLading->argentina_sent_at || $billOfLading->paraguay_sent_at) {
+                $errorMessage .= " Ya fue enviado a webservices.";
+            }
+            
             return redirect()->route('company.bills-of-lading.show', $billOfLading)
-                ->with('error', 'Este conocimiento no puede ser eliminado. Tiene ítems asociados o ya fue enviado a webservices.');
+                ->with('error', $errorMessage);
         }
 
         try {

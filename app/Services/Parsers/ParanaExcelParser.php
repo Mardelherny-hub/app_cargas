@@ -144,7 +144,7 @@ class ParanaExcelParser implements ManifestParserInterface
         }
     }
 
-    public function parse(string $filePath): ManifestParseResult
+    public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         Log::info('Starting PARANA Excel parsing', ['file' => $filePath]);
 
@@ -163,7 +163,7 @@ class ParanaExcelParser implements ManifestParserInterface
             $voyageData = array_merge($voyageData, $vesselData);
                         
             // Crear voyage
-            $voyage = $this->createVoyage($voyageData);
+            $voyage = $this->createVoyage($voyageData, $options);
             
             // Crear shipment principal
             $vessel = $this->findOrCreateVessel($voyageData['barge_name'] ?? 'PAR13001', $voyage->company_id);
@@ -204,6 +204,13 @@ class ParanaExcelParser implements ManifestParserInterface
                 if (!empty($rowData['CONTAINER_NUMBER'])) {
                     $container = $this->createContainer($bill, $rowData);
                     $containers[] = $container;
+                }
+
+                // AGREGAR: Crear ShipmentItem para cada fila
+                $shipmentItem = $this->createShipmentItem($bill, $rowData);
+                if ($shipmentItem) {
+                    // No necesitamos array, solo logging
+                    Log::info('ShipmentItem created', ['item_id' => $shipmentItem->id]);
                 }
             }
 
@@ -261,7 +268,7 @@ class ParanaExcelParser implements ManifestParserInterface
         return $data;
     }
 
-    protected function createVoyage(array $data): Voyage
+    protected function createVoyage(array $data, array $options = []): Voyage
     {
         // DEBUG: Verificar estado del usuario y company
         $user = auth()->user();
@@ -292,7 +299,17 @@ class ParanaExcelParser implements ManifestParserInterface
         $destPort = $this->findOrCreatePort($data['pod'], 'Terminal Villeta');
         
         // CORREGIDO: Buscar o crear vessel con campos obligatorios
-        $vessel = $this->findOrCreateVessel($data['barge_name'] ?? 'PAR13001', $companyId);
+        // USAR vessel seleccionado en lugar de crear fake
+        $vesselId = $options['vessel_id'] ?? null;
+        if ($vesselId) {
+            $vessel = Vessel::find($vesselId);
+            if (!$vessel) {
+                throw new \Exception("Vessel con ID {$vesselId} no encontrado");
+            }
+        } else {
+            // Fallback: buscar o crear vessel (para compatibilidad)
+            $vessel = $this->findOrCreateVessel($data['barge_name'] ?? 'PAR13001', $companyId);
+        }
 
         $voyageNumber = 'PARANA-' . now()->format('YmdHis') . '-' . uniqid();
 
@@ -861,4 +878,17 @@ class ParanaExcelParser implements ManifestParserInterface
         ];
     }
 
+    protected function createShipmentItem(BillOfLading $bill, array $data): ?\App\Models\ShipmentItem
+    {
+        return \App\Models\ShipmentItem::create([
+            'bill_of_lading_id' => $bill->id,
+            'description' => $data['DESCRIPTION'] ?? 'Mercadería general',
+            'quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
+            'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
+            'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
+            'cargo_type_id' => 1,
+            'packaging_type_id' => 1,
+            'status' => 'draft'
+        ]);
+    }
 }

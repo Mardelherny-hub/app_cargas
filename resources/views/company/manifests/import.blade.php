@@ -71,6 +71,30 @@
                             Tamaño máximo: 10MB. Formatos: .dat, .xlsx, .csv, .xml, .txt, .edi
                         </p>
                     </div>
+                    <!-- Selección de embarcación -->
+                    <div>
+                        <label for="vessel_id" class="block text-sm font-medium text-gray-700 mb-2">
+                            🚢 Embarcación *
+                        </label>
+                        <select name="vessel_id" id="vessel_id" required 
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Seleccione una embarcación...</option>
+                            @foreach($vessels as $vessel)
+                                <option value="{{ $vessel->id }}" {{ old('vessel_id') == $vessel->id ? 'selected' : '' }}>
+                                    {{ $vessel->name }} ({{ $vessel->registration_number }})
+                                    @if($vessel->cargo_capacity_tons)
+                                        - {{ number_format($vessel->cargo_capacity_tons) }}t
+                                    @endif
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('vessel_id')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                        <p class="mt-1 text-xs text-gray-500">
+                            Solo se muestran embarcaciones activas de su empresa
+                        </p>
+                    </div>
 
                     <!-- Botón de importación -->
                     <div class="flex items-center justify-between">

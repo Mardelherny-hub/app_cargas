@@ -400,10 +400,14 @@
                             </div>
                             <div class="flex items-center space-x-4">
                             <div class="text-right">
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
-                            Borrador
-                            </span>
-                            <div class="mt-1 text-xs text-gray-500">11/08</div>
+                            <div class="text-xs text-gray-500">
+                                @livewire('status-changer', [
+                                    'model' => $bill,
+                                    'showReason' => false,
+                                    'size' => 'small',
+                                    'showAsDropdown' => true
+                                ], key('bl-status-'.$bill->id))
+                            </div>
                             </div>
                             <div class="flex space-x-2">
                             {{-- Enlace Ver --}}
@@ -437,7 +441,71 @@
                             @endif
                         </div>
                     </div>
+                    {{-- PRÓXIMAS ACCIONES DEL SHIPMENT - Agregar después de la lista de BLs --}}
+                    @if($shipment->billsOfLading && $shipment->billsOfLading->count() > 0)
+                    <div class="mt-6 bg-white shadow rounded-lg">
+                        <div class="px-6 py-4">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">🚢 Próximas Acciones del Envío</h3>
+                            
+                            <div class="flex flex-wrap gap-3 mb-4">
+                                @php
+                                    $draftBLs = $shipment->billsOfLading->where('status', 'draft')->count();
+                                    $verifiedBLs = $shipment->billsOfLading->where('status', 'verified')->count();
+                                    $totalBLs = $shipment->billsOfLading->count();
+                                    $allVerified = $draftBLs === 0 && $verifiedBLs > 0;
+                                @endphp
+                                
+                                @if($draftBLs > 0)
+                                    <span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm">
+                                        {{ $draftBLs }} BL(s) pendientes
+                                    </span>
+                                @endif
+                                
+                                @if($verifiedBLs > 0)
+                                    <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
+                                        {{ $verifiedBLs }} BL(s) verificados
+                                    </span>
+                                @endif
+                            </div>
+
+                            <div class="flex flex-wrap gap-3">
+                                {{-- IR AL SISTEMA DE ADUANAS --}}
+                                @if($allVerified)
+                                    <a href="{{ route('company.manifests.customs.index') }}" 
+                                    class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 text-sm font-medium">
+                                        🏛️ Enviar a Aduanas
+                                    </a>
+                                @else
+                                    <span class="bg-gray-400 text-white px-6 py-2 rounded-lg cursor-not-allowed text-sm font-medium" 
+                                        title="Debe verificar todos los BLs primero">
+                                        🏛️ Enviar a Aduanas
+                                    </span>
+                                @endif
+
+                                {{-- Otras acciones --}}
+                                <a href="{{ route('company.bills-of-lading.index', ['shipment_id' => $shipment->id]) }}" 
+                                class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm">
+                                    📋 Ver BLs
+                                </a>
+                            </div>
+
+                            {{-- Resumen --}}
+                            <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+                                <p class="text-sm text-gray-700">
+                                    <strong>{{ $totalBLs }} conocimiento(s)</strong> | 
+                                    Items: {{ $shipment->billsOfLading->sum(function($bl) { return $bl->shipmentItems->count(); }) }}
+                                    @if($allVerified)
+                                        <br><span class="text-green-600 font-medium">✅ Listo para aduanas</span>
+                                    @else
+                                        <br><span class="text-yellow-600 font-medium">⏳ Verificar BLs pendientes</span>
+                                    @endif
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
                 </div>
+                
 
                 {{-- Sidebar Derecha (1/4) --}}
                 <div class="space-y-6">

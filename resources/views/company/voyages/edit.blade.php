@@ -361,35 +361,53 @@
                             <!-- Fecha de Salida Prevista -->
                             <div>
                                 <label for="planned_departure_date" class="block text-sm font-medium text-gray-700">
-                                    Salida Prevista <span class="text-red-500">*</span>
+                                    Salida Prevista 
+                                    @if($voyage->status !== 'draft' && $voyage->status !== 'planned')<span class="text-red-500">*</span>@endif
                                 </label>
                                 <input type="datetime-local" 
-                                       name="planned_departure_date" 
-                                       id="planned_departure_date" 
-                                       value="{{ old('planned_departure_date', $voyage->departure_date ? $voyage->departure_date->format('Y-m-d\TH:i') : '') }}"
+                                    name="planned_departure_date" 
+                                    id="planned_departure_date" 
+                                    value="{{ old('planned_departure_date', $voyage->departure_date ? $voyage->departure_date->format('Y-m-d\TH:i') : '') }}"
+                                    @if($voyage->status !== 'draft' && $voyage->status !== 'planned') required @endif
                                        required
                                        @if(!$userPermissions['can_edit'] || $voyage->status === 'completed') readonly @endif
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('planned_departure_date') border-red-300 @enderror @if(!$userPermissions['can_edit'] || $voyage->status === 'completed') bg-gray-100 @endif">
                                 @error('planned_departure_date')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
+                                @if(in_array($voyage->status, ['draft', 'planned', 'cancelled']) && $userPermissions['can_edit'])
+                                    <button type="button" 
+                                            onclick="document.getElementById('planned_departure_date').value = ''"
+                                            class="mt-1 text-xs text-blue-600 hover:text-blue-800 underline">
+                                        Limpiar fecha (para poder borrar viaje)
+                                    </button>
+                                @endif
                             </div>
 
                             <!-- Fecha de Llegada Prevista -->
                             <div>
                                 <label for="planned_arrival_date" class="block text-sm font-medium text-gray-700">
-                                    Llegada Prevista <span class="text-red-500">*</span>
+                                    Llegada Prevista 
+                                    @if($voyage->status !== 'draft' && $voyage->status !== 'planned')<span class="text-red-500">*</span>@endif
                                 </label>
                                 <input type="datetime-local" 
-                                       name="planned_arrival_date" 
-                                       id="planned_arrival_date" 
-                                       value="{{ old('planned_arrival_date', $voyage->estimated_arrival_date ? $voyage->estimated_arrival_date->format('Y-m-d\TH:i') : '') }}"
+                                    name="planned_arrival_date" 
+                                    id="planned_arrival_date" 
+                                    value="{{ old('planned_arrival_date', $voyage->estimated_arrival_date ? $voyage->estimated_arrival_date->format('Y-m-d\TH:i') : '') }}"
+                                    @if($voyage->status !== 'draft' && $voyage->status !== 'planned') required @endif
                                        required
                                        @if(!$userPermissions['can_edit'] || $voyage->status === 'completed') readonly @endif
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('planned_arrival_date') border-red-300 @enderror @if(!$userPermissions['can_edit'] || $voyage->status === 'completed') bg-gray-100 @endif">
                                 @error('planned_arrival_date')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
+                                @if(in_array($voyage->status, ['draft', 'planned', 'cancelled']) && $userPermissions['can_edit'])
+                                    <button type="button" 
+                                            onclick="document.getElementById('planned_arrival_date').value = ''"
+                                            class="mt-1 text-xs text-blue-600 hover:text-blue-800 underline">
+                                        Limpiar fecha (para poder borrar viaje)
+                                    </button>
+                                @endif
                             </div>
 
                             <!-- Duración Estimada -->

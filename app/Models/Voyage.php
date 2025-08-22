@@ -18,7 +18,13 @@ use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Models\Vessel;
 use App\Models\VoyageWebserviceStatus;
-
+use App\Models\Port;
+use App\Models\Country;
+use App\Models\Captain;
+use App\Models\Container;
+use App\Models\BillOfLading;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 
 /**
@@ -1267,28 +1273,20 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
             return false;
         }
 
-        // No se puede eliminar si está en estados avanzados
-        $nonDeletableStatuses = [
-            'loading',      // Ya se está cargando
-            'in_transit',   // En tránsito
-            'discharging',  // Descargando
-            'completed',    // Completado
-            'departed'      // Ya partió
-        ];
-
-        if (in_array($this->status, $nonDeletableStatuses)) {
+        // Solo se pueden eliminar viajes en estados iniciales
+        $deletableStatuses = ['draft', 'planned', 'confirmed', 'cancelled'];
+        
+        if (!in_array($this->status, $deletableStatuses)) {
             return false;
         }
 
-        // No se puede eliminar si ya partió (tiene fecha de salida real)
+        // CORREGIDO: Solo verificar actual_departure_date (fecha real de salida)
+        // NO departure_date (que es fecha prevista/planificada)
         if ($this->actual_departure_date) {
             return false;
         }
 
-        // Solo se pueden eliminar viajes en estados iniciales
-        $deletableStatuses = ['draft', 'planned', 'confirmed', 'cancelled'];
-        
-        return in_array($this->status, $deletableStatuses);
+        return true;
     }
 
     /**

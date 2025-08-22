@@ -101,6 +101,7 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
     Route::get('/create', [BillOfLadingController::class, 'create'])->name('create');
     Route::post('/', [BillOfLadingController::class, 'store'])->name('store');
     Route::get('/{bill_of_lading}', [BillOfLadingController::class, 'show'])->name('show');
+    Route::get('/{bill_of_lading}/check-items', [BillOfLadingController::class, 'checkItems'])->name('check-items');
     Route::get('/{bill_of_lading}/edit', [BillOfLadingController::class, 'edit'])->name('edit');
     Route::put('/{bill_of_lading}', [BillOfLadingController::class, 'update'])->name('update');
     Route::delete('/{bill_of_lading}', [BillOfLadingController::class, 'destroy'])->name('destroy');
