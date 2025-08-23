@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Parsers\ManifestParserFactory;
 use App\Models\Vessel;
 use App\ValueObjects\ManifestParseResult;
+use App\Models\ManifestImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -120,10 +121,8 @@ class ManifestImportController extends Controller
                 'file_format' => $parser->getFormatInfo()['name'] ?? 'Unknown'
             ]);
 
-            // Procesar archivo en transacción
-            $result = DB::transaction(function () use ($parser, $fullPath, $originalName, $vessel) {
-                return $parser->parse($fullPath, ['vessel_id' => $vessel->id]);
-            });
+            // Procesar archivo SIN transacción externa (los parsers manejan sus propias transacciones)
+            $result = $parser->parse($fullPath, ['vessel_id' => $vessel->id]);
 
             // Limpiar archivo temporal
             Storage::delete($path);
@@ -222,7 +221,44 @@ class ManifestImportController extends Controller
      */
     public function history(Request $request)
     {
-        return view('company.manifests.import-history');
+        $company = auth()->user()->company;
+        
+        if (!$company) {
+            return redirect()->route('company.manifests.import.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
+        // Obtener importaciones de la empresa con relaciones
+        $imports = ManifestImport::forCompany($company->id)
+            ->with(['user', 'voyage', 'voyage.originPort', 'voyage.destinationPort'])
+            ->latest()
+            ->paginate(20);
+
+        return view('company.manifests.import-history', [
+            'imports' => $imports,
+            'company' => $company
+        ]);
+    }
+
+    /**
+     * Mostrar detalles de una importación específica
+     */
+    public function showImport(Request $request, ManifestImport $import)
+    {
+        // Verificar que pertenece a la empresa del usuario
+        $company = auth()->user()->company;
+        
+        if ($import->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para ver esta importación.');
+        }
+
+        // Cargar relaciones necesarias
+        $import->load(['user', 'voyage', 'revertedByUser']);
+
+        return view('company.manifests.import-details', [
+            'import' => $import,
+            'company' => $company
+        ]);
     }
 
     /**

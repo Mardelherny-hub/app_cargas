@@ -1,580 +1,461 @@
 <x-app-layout>
-    @php
-        $user = Auth::user();
-        $company = null;
-        $companyRoles = [];
-        
-        if ($user) {
-            // Obtener información de la empresa
-            if ($user->userable_type === 'App\\Models\\Company') {
-                $company = $user->userable;
-                $companyRoles = $company->company_roles ?? [];
-            } elseif ($user->userable_type === 'App\\Models\\Operator' && $user->userable) {
-                $company = $user->userable->company;
-                $companyRoles = $company->company_roles ?? [];
-            }
-        }
-    @endphp
+@php
+$user = Auth::user();
+$company = null;
+$companyRoles = [];
+if ($user) {
+    if ($user->userable_type === 'App\\Models\\Company') {
+        $company = $user->userable;
+        $companyRoles = $company->company_roles ?? [];
+    } elseif ($user->userable_type === 'App\\Models\\Operator' && $user->userable) {
+        $company = $user->userable->company;
+        $companyRoles = $company->company_roles ?? [];
+    }
+}
 
-    <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <div>
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    Conocimientos de Embarque
-                </h2>
-                <p class="text-sm text-gray-600 mt-1">
-                    @if(in_array('Cargas', $companyRoles))
-                        Gestión completa de conocimientos para manifiestos aduaneros
-                    @elseif(in_array('Desconsolidador', $companyRoles))
-                        Visualización de conocimientos y gestión de títulos hijo
-                    @elseif(in_array('Transbordos', $companyRoles))
-                        Visualización de conocimientos para transbordos
-                    @else
-                        Visualización de sus conocimientos de embarque
-                    @endif
-                </p>
-            </div>
-            
-            {{-- Botón crear solo para rol "Cargas" --}}
-            @if(in_array('Cargas', $companyRoles))
-            <div>
-                <a href="{{ route('company.bills-of-lading.create') }}" 
-                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                    </svg>
-                    Nuevo Conocimiento
-                </a>
-            </div>
-            @endif
+// Agrupar conocimientos por viaje
+$voyageGroups = $billsOfLading->groupBy(function($bill) {
+    return $bill->shipment->voyage->id;
+});
+@endphp
+
+<x-slot name="header">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                {{ __('Conocimientos de Embarque') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-600">
+                {{ $billsOfLading->total() }} conocimientos en {{ $voyageGroups->count() }} viajes
+            </p>
         </div>
-    </x-slot>
-
-    <div class="py-12">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            
-            {{-- Estadísticas rápidas --}}
-            @if(count($companyRoles) > 0)
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
-                <div class="bg-blue-600 text-white rounded-lg p-4 text-center">
-                    <div class="text-2xl font-bold">{{ $stats['total'] ?? 0 }}</div>
-                    <div class="text-sm">Total</div>
-                </div>
-                <div class="bg-yellow-500 text-white rounded-lg p-4 text-center">
-                    <div class="text-2xl font-bold">{{ $stats['draft'] ?? 0 }}</div>
-                    <div class="text-sm">Borradores</div>
-                </div>
-                <div class="bg-green-600 text-white rounded-lg p-4 text-center">
-                    <div class="text-2xl font-bold">{{ $stats['verified'] ?? 0 }}</div>
-                    <div class="text-sm">Verificados</div>
-                </div>
-                <div class="bg-blue-500 text-white rounded-lg p-4 text-center">
-                    <div class="text-2xl font-bold">{{ $stats['consolidated'] ?? 0 }}</div>
-                    <div class="text-sm">Consolidados</div>
-                </div>
-                <div class="bg-red-600 text-white rounded-lg p-4 text-center">
-                    <div class="text-2xl font-bold">{{ $stats['dangerous_goods'] ?? 0 }}</div>
-                    <div class="text-sm">Mercadería Peligrosa</div>
-                </div>
-                <div class="bg-gray-600 text-white rounded-lg p-4 text-center">
-                    <div class="text-2xl font-bold">{{ $stats['sent_to_argentina'] ?? 0 }}</div>
-                    <div class="text-sm">Enviados AR</div>
-                </div>
-            </div>
+        <div class="mt-4 sm:mt-0 flex space-x-2">
+            @if(in_array('Cargas', $companyRoles))
+                <a href="{{ route('company.bills-of-lading.create') }}" 
+                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    + Nuevo Conocimiento
+                </a>
             @endif
-
-            {{-- Filtros --}}
-            <div class="bg-white overflow-hidden shadow-sm rounded-lg mb-6">
-                <div class="p-6 bg-gray-50 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.207A1 1 0 013 6.5V4z"/>
-                        </svg>
-                        Filtros de Búsqueda
-                    </h3>
-                </div>
-                <div class="p-6">
-                    <form method="GET" action="{{ route('company.bills-of-lading.index') }}">
-                        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                            {{-- Búsqueda por texto --}}
-                            <div class="lg:col-span-2">
-                                <label for="search" class="block text-sm font-medium text-gray-700">Búsqueda General</label>
-                                <input type="text" 
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                       id="search" 
-                                       name="search" 
-                                       value="{{ request('search') }}"
-                                       placeholder="Número BL, cargador, consignatario...">
-                            </div>
-
-                            {{-- Estado --}}
-                            <div>
-                                <label for="status" class="block text-sm font-medium text-gray-700">Estado</label>
-                                <select class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" id="status" name="status">
-                                    <option value="">Todos los estados</option>
-                                    @foreach($filterData['statuses'] as $value => $label)
-                                        <option value="{{ $value }}" {{ request('status') === $value ? 'selected' : '' }}>
-                                            {{ $label }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            {{-- Puerto de Carga --}}
-                            <div>
-                                <label for="loading_port_id" class="block text-sm font-medium text-gray-700">Puerto Carga</label>
-                                <select class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" id="loading_port_id" name="loading_port_id">
-                                    <option value="">Todos</option>
-                                    @foreach($filterData['loadingPorts'] as $port)
-                                        <option value="{{ $port->id }}" {{ request('loading_port_id') == $port->id ? 'selected' : '' }}>
-                                            {{ $port->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            {{-- Puerto de Descarga --}}
-                            <div>
-                                <label for="discharge_port_id" class="block text-sm font-medium text-gray-700">Puerto Descarga</label>
-                                <select class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" id="discharge_port_id" name="discharge_port_id">
-                                    <option value="">Todos</option>
-                                    @foreach($filterData['dischargePorts'] as $port)
-                                        <option value="{{ $port->id }}" {{ request('discharge_port_id') == $port->id ? 'selected' : '' }}>
-                                            {{ $port->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mt-4">
-                            {{-- Cargador --}}
-                            <div>
-                                <label for="shipper_id" class="block text-sm font-medium text-gray-700">Cargador/Exportador</label>
-                                <select class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" id="shipper_id" name="shipper_id">
-                                    <option value="">Todos</option>
-                                    @foreach($filterData['shippers'] as $shipper)
-                                        <option value="{{ $shipper->id }}" {{ request('shipper_id') == $shipper->id ? 'selected' : '' }}>
-                                            {{ $shipper->legal_name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            {{-- Consignatario --}}
-                            <div>
-                                <label for="consignee_id" class="block text-sm font-medium text-gray-700">Consignatario</label>
-                                <select class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" id="consignee_id" name="consignee_id">
-                                    <option value="">Todos</option>
-                                    @foreach($filterData['consignees'] as $consignee)
-                                        <option value="{{ $consignee->id }}" {{ request('consignee_id') == $consignee->id ? 'selected' : '' }}>
-                                            {{ $consignee->legal_name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            {{-- Tipo de Conocimiento --}}
-                            <div>
-                                <label for="bill_type" class="block text-sm font-medium text-gray-700">Tipo</label>
-                                <select class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" id="bill_type" name="bill_type">
-                                    <option value="">Todos los tipos</option>
-                                    <option value="original" {{ request('bill_type') === 'original' ? 'selected' : '' }}>Original</option>
-                                    <option value="copy" {{ request('bill_type') === 'copy' ? 'selected' : '' }}>Copia</option>
-                                    <option value="duplicate" {{ request('bill_type') === 'duplicate' ? 'selected' : '' }}>Duplicado</option>
-                                    <option value="amendment" {{ request('bill_type') === 'amendment' ? 'selected' : '' }}>Enmienda</option>
-                                </select>
-                            </div>
-
-                            {{-- Fecha desde --}}
-                            <div>
-                                <label for="date_from" class="block text-sm font-medium text-gray-700">Fecha Desde</label>
-                                <input type="date" 
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                       id="date_from" 
-                                       name="date_from" 
-                                       value="{{ request('date_from') }}">
-                            </div>
-
-                            {{-- Fecha hasta --}}
-                            <div>
-                                <label for="date_to" class="block text-sm font-medium text-gray-700">Fecha Hasta</label>
-                                <input type="date" 
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                       id="date_to" 
-                                       name="date_to" 
-                                       value="{{ request('date_to') }}">
-                            </div>
-                        </div>
-
-                        {{-- Webservices Status (solo para rol Cargas) --}}
-                        @if(in_array('Cargas', $companyRoles))
-                        <div class="mt-4">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Estado Webservices</label>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <select class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" name="argentina_status">
-                                        <option value="">Argentina - Todos</option>
-                                        <option value="pending" {{ request('argentina_status') === 'pending' ? 'selected' : '' }}>Pendiente</option>
-                                        <option value="sent" {{ request('argentina_status') === 'sent' ? 'selected' : '' }}>Enviado</option>
-                                        <option value="confirmed" {{ request('argentina_status') === 'confirmed' ? 'selected' : '' }}>Confirmado</option>
-                                        <option value="error" {{ request('argentina_status') === 'error' ? 'selected' : '' }}>Error</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <select class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" name="paraguay_status">
-                                        <option value="">Paraguay - Todos</option>
-                                        <option value="pending" {{ request('paraguay_status') === 'pending' ? 'selected' : '' }}>Pendiente</option>
-                                        <option value="sent" {{ request('paraguay_status') === 'sent' ? 'selected' : '' }}>Enviado</option>
-                                        <option value="confirmed" {{ request('paraguay_status') === 'confirmed' ? 'selected' : '' }}>Confirmado</option>
-                                        <option value="error" {{ request('paraguay_status') === 'error' ? 'selected' : '' }}>Error</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                        @endif
-
-                        <div class="flex items-center justify-end mt-6 space-x-2">
-                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                                </svg>
-                                Filtrar
-                            </button>
-                            <a href="{{ route('company.bills-of-lading.index') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-md text-sm font-medium">
-                                <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                </svg>
-                                Limpiar
-                            </a>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            {{-- Tabla de resultados --}}
-            <div class="bg-white overflow-hidden shadow-sm rounded-lg">
-                <div class="flex items-center justify-between p-6 bg-gray-50 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900">
-                        Resultados ({{ $billsOfLading->total() }} registros)
-                        @if($user->hasRole('user') && $user->userable_type === 'App\\Models\\Operator' && !in_array('Cargas', $companyRoles))
-                            <span class="text-sm text-gray-500 font-normal">- Solo sus conocimientos</span>
-                        @endif
-                    </h3>
-                    @if(in_array('Cargas', $companyRoles))
-                    <div class="flex space-x-2">
-                        <button type="button" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm">
-                            <svg class="w-4 h-4 mr-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            Excel
-                        </button>
-                        <button type="button" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">
-                            <svg class="w-4 h-4 mr-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            PDF
-                        </button>
-                    </div>
-                    @endif
-                </div>
-                
-                {{-- REEMPLAZAR la tabla completa en bills-of-lading/index.blade.php --}}
-
-                <div class="overflow-x-auto">
-                    @if($billsOfLading->count() > 0)
-                        <table class="w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'bill_number', 'direction' => request('direction') === 'asc' ? 'desc' : 'asc']) }}" 
-                                        class="flex items-center space-x-1 hover:text-gray-700">
-                                            <span>Conocimiento</span>
-                                            @if(request('sort') === 'bill_number')
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    @if(request('direction') === 'asc')
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                                                    @else
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                                    @endif
-                                                </svg>
-                                            @endif
-                                        </a>
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Estado
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Shipment
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Shipper / Consignee
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Carga
-                                    </th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <a href="{{ request()->fullUrlWithQuery(['sort' => 'bill_date', 'direction' => request('direction') === 'asc' ? 'desc' : 'asc']) }}" 
-                                        class="flex items-center space-x-1 hover:text-gray-700">
-                                            <span>Fechas</span>
-                                            @if(request('sort') === 'bill_date')
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    @if(request('direction') === 'asc')
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                                                    @else
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                                    @endif
-                                                </svg>
-                                            @endif
-                                        </a>
-                                    </th>
-                                    <th class="relative px-6 py-3">
-                                        <span class="sr-only">Acciones</span>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($billsOfLading as $bill)
-                                    <tr class="hover:bg-gray-50 transition-colors duration-150">
-                                        {{-- Columna Conocimiento --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    <a href="{{ route('company.bills-of-lading.show', $bill) }}" class="hover:text-indigo-600">
-                                                        {{ $bill->bill_number }}
-                                                    </a>
-                                                </div>
-                                                <div class="text-sm text-gray-500">
-                                                    {{ $bill->bill_type_label ?? 'Original' }}
-                                                    @if($bill->priority_level !== 'normal')
-                                                        <span class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium
-                                                            {{ $bill->priority_level === 'high' ? 'bg-orange-100 text-orange-800' : '' }}
-                                                            {{ $bill->priority_level === 'urgent' ? 'bg-red-100 text-red-800' : '' }}">
-                                                            {{ ucfirst($bill->priority_level) }}
-                                                        </span>
-                                                    @endif
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        {{-- Columna Estado CON COMPONENTE --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            @livewire('status-changer', [
-                                                'model' => $bill,
-                                                'showReason' => false,
-                                                'size' => 'mini',
-                                                'showAsDropdown' => true
-                                            ], key('bill-status-'.$bill->id))
-                                        </td>
-
-                                        {{-- Columna Shipment --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    <a href="{{ route('company.shipments.show', $bill->shipment) }}" class="hover:text-indigo-600">
-                                                        {{ $bill->shipment->shipment_number ?? 'N/A' }}
-                                                    </a>
-                                                </div>
-                                                <div class="text-sm text-gray-500">
-                                                    <a href="{{ route('company.voyages.show', $bill->shipment->voyage) }}" class="hover:text-indigo-600">
-                                                        {{ $bill->shipment->voyage->voyage_number ?? 'N/A' }}
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        {{-- Columna Shipper / Consignee --}}
-                                        <td class="px-6 py-4">
-                                            <div class="text-sm">
-                                                <div class="text-gray-900 font-medium" title="{{ $bill->shipper->legal_name ?? 'N/A' }}">
-                                                    {{ Str::limit($bill->shipper->legal_name ?? 'N/A', 25) }}
-                                                </div>
-                                                <div class="text-gray-500 flex items-center" title="{{ $bill->consignee->legal_name ?? 'N/A' }}">
-                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                                                    </svg>
-                                                    {{ Str::limit($bill->consignee->legal_name ?? 'N/A', 25) }}
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        {{-- Columna Carga --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm">
-                                                <div class="text-gray-900 flex items-center">
-                                                    <svg class="w-3 h-3 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                                                    </svg>
-                                                    {{ number_format($bill->total_packages ?? 0) }} bultos
-                                                </div>
-                                                <div class="text-gray-500 flex items-center">
-                                                    <svg class="w-3 h-3 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16l3-1m-3 1l-3-1"/>
-                                                    </svg>
-                                                    {{ number_format($bill->gross_weight_kg ?? 0, 0) }} kg
-                                                </div>
-                                                @if($bill->contains_dangerous_goods)
-                                                    <span class="inline-flex items-center mt-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                        ⚠️ Peligroso
-                                                    </span>
-                                                @endif
-                                            </div>
-                                        </td>
-
-                                        {{-- Columna Fechas --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm">
-                                                <div class="text-gray-900">
-                                                    {{ $bill->bill_date ? $bill->bill_date->format('d/m/Y') : 'N/A' }}
-                                                </div>
-                                                <div class="text-gray-500">
-                                                    Carga: {{ $bill->loading_date ? $bill->loading_date->format('d/m/Y') : 'N/A' }}
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        {{-- Columna Acciones --}}
-                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <div class="flex items-center justify-end space-x-2">
-                                                {{-- Ver siempre disponible --}}
-                                                <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
-                                                class="text-indigo-600 hover:text-indigo-900 p-1 rounded transition-colors duration-150" 
-                                                title="Ver detalles">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                                    </svg>
-                                                </a>
-
-                                                {{-- Editar solo para rol "Cargas" y estados editables --}}
-                                                @if(in_array('Cargas', $companyRoles) && in_array($bill->status, ['draft', 'pending_review']))
-                                                    <a href="{{ route('company.bills-of-lading.edit', $bill) }}" 
-                                                    class="text-gray-600 hover:text-gray-900 p-1 rounded transition-colors duration-150" 
-                                                    title="Editar">
-                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                                                        </svg>
-                                                    </a>
-                                                @endif
-
-                                                {{-- Duplicar --}}
-                                                @if(in_array('Cargas', $companyRoles))
-                                                    <button onclick="duplicateBill({{ $bill->id }})" 
-                                                            class="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors duration-150" 
-                                                            title="Duplicar">
-                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                                        </svg>
-                                                    </button>
-                                                @endif
-
-                                                {{-- Eliminar solo para admin de empresa y estado draft --}}
-                                                @if($bill->status === 'draft')
-                                                    <button onclick="confirmDelete({{ $bill->id }}, '{{ $bill->bill_number }}')" 
-                                                            class="text-red-600 hover:text-red-900 p-1 rounded transition-colors duration-150" 
-                                                            title="Eliminar">
-                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                                        </svg>
-                                                    </button>
-                                                @endif
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-
-                        {{-- Paginación --}}
-                        <div class="flex items-center justify-between p-6 bg-gray-50 border-t border-gray-200">
-                            <div class="text-sm text-gray-700">
-                                Mostrando {{ $billsOfLading->firstItem() }} a {{ $billsOfLading->lastItem() }} 
-                                de {{ $billsOfLading->total() }} resultados
-                            </div>
-                            {{ $billsOfLading->links() }}
-                        </div>
-                    @else
-                        <div class="text-center py-12">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">No se encontraron conocimientos de embarque</h3>
-                            <p class="mt-1 text-sm text-gray-500">
-                                @if(request()->hasAny(['search', 'status', 'shipment_id', 'shipper_id', 'consignee_id']))
-                                    Intenta modificar los filtros de búsqueda.
-                                @else
-                                    Aún no hay conocimientos de embarque registrados.
-                                @endif
-                            </p>
-                            @if(in_array('Cargas', $companyRoles))
-                                <div class="mt-6">
-                                    <a href="{{ route('company.bills-of-lading.create') }}" 
-                                    class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                        </svg>
-                                        Crear Primer Conocimiento
-                                    </a>
-                                </div>
-                            @endif
-                        </div>
-                    @endif
-                </div>
-            </div>
+            <button onclick="toggleCompactView()" 
+                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <span id="viewToggleText">Vista Compacta</span>
+            </button>
         </div>
     </div>
+</x-slot>
 
-
-    @push('scripts')
-    <script>
-    @if(in_array('Cargas', $companyRoles))
-        function confirmDelete(billId, billNumber) {
-            // Verificar si el BL tiene items antes de mostrar el modal
-            fetch(`/company/bills-of-lading/${billId}/check-items`, {
-                method: 'GET',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Accept': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.hasItems) {
-                    // Si tiene items, mostrar mensaje informativo
-                    alert(`No se puede eliminar el conocimiento ${billNumber} porque tiene ${data.itemsCount} item(s) asociados. Elimine primero todos los items.`);
-                    return;
-                }
-                
-                // Si no tiene items, proceder con el modal de confirmación
-                document.getElementById('deleteItemName').textContent = billNumber;
-                document.getElementById('deleteForm').action = `/company/bills-of-lading/${billId}`;
-                
-                // CORRECCIÓN: Usar Alpine.$data para acceder al componente
-                const modalElement = document.querySelector('[x-data*="open"]');
-                if (modalElement) {
-                    Alpine.$data(modalElement).open = true;
-                }
-            })
-            .catch(error => {
-                console.error('Error verificando items:', error);
-                alert('Error al verificar si se puede eliminar el conocimiento.');
-            });
-        }
-    @endif
-
-    // Auto-submit form cuando cambian ciertos filtros
-    document.addEventListener('DOMContentLoaded', function() {
-        const autoSubmitFields = ['status', 'loading_port_id', 'discharge_port_id', 'shipper_id', 'consignee_id'];
+<div class="py-6">
+    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         
-        autoSubmitFields.forEach(function(fieldName) {
-            const field = document.getElementById(fieldName);
-            if (field) {
-                field.addEventListener('change', function() {
-                    this.form.submit();
-                });
-            }
-        });
-    });
-    </script>
-    @endpush
+        {{-- ESTADÍSTICAS RÁPIDAS --}}
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500">
+                <div class="text-2xl font-bold text-blue-600">{{ $stats['total'] ?? 0 }}</div>
+                <div class="text-sm text-gray-600">Total</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-yellow-500">
+                <div class="text-2xl font-bold text-yellow-600">{{ $stats['draft'] ?? 0 }}</div>
+                <div class="text-sm text-gray-600">Borradores</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-green-500">
+                <div class="text-2xl font-bold text-green-600">{{ $stats['verified'] ?? 0 }}</div>
+                <div class="text-sm text-gray-600">Verificados</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-purple-500">
+                <div class="text-2xl font-bold text-purple-600">{{ $stats['consolidated'] ?? 0 }}</div>
+                <div class="text-sm text-gray-600">Consolidados</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-red-500">
+                <div class="text-2xl font-bold text-red-600">{{ $stats['dangerous_goods'] ?? 0 }}</div>
+                <div class="text-sm text-gray-600">Peligrosos</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-gray-500">
+                <div class="text-2xl font-bold text-gray-600">{{ $voyageGroups->count() }}</div>
+                <div class="text-sm text-gray-600">Viajes</div>
+            </div>
+        </div>
+
+        {{-- FILTROS RÁPIDOS --}}
+        <div class="bg-white rounded-lg shadow-sm mb-6 p-4">
+            <form method="GET" class="flex flex-wrap items-center gap-4">
+                <div class="flex items-center space-x-2">
+                    <input type="text" 
+                           name="search" 
+                           value="{{ request('search') }}"
+                           placeholder="🔍 Buscar por número, cargador..."
+                           class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                
+                <select name="status" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Todos los estados</option>
+                    <option value="draft" {{ request('status') === 'draft' ? 'selected' : '' }}>Borrador</option>
+                    <option value="verified" {{ request('status') === 'verified' ? 'selected' : '' }}>Verificado</option>
+                    <option value="sent_to_customs" {{ request('status') === 'sent_to_customs' ? 'selected' : '' }}>Enviado</option>
+                </select>
+
+                <button type="submit" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    Filtrar
+                </button>
+                
+                @if(request()->hasAny(['search', 'status', 'shipper_id', 'consignee_id']))
+                    <a href="{{ route('company.bills-of-lading.index') }}" 
+                       class="text-gray-600 hover:text-gray-900 text-sm">
+                        Limpiar filtros
+                    </a>
+                @endif
+            </form>
+        </div>
+
+        {{-- VISTA AGRUPADA POR VIAJES --}}
+        <div class="space-y-6" id="voyageGroups">
+            @forelse($voyageGroups as $voyageId => $voyageBills)
+                @php
+                    $voyage = $voyageBills->first()->shipment->voyage;
+                    $totalBills = $voyageBills->count();
+                    $totalWeight = $voyageBills->sum('gross_weight_kg');
+                    $totalPackages = $voyageBills->sum('total_packages');
+                    $statusCounts = $voyageBills->countBy('status');
+                    $hasDangerous = $voyageBills->contains('contains_dangerous_goods', true);
+                @endphp
+
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 voyage-group">
+                    {{-- HEADER DEL VIAJE --}}
+                    <div class="voyage-header bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-t-lg border-b cursor-pointer"
+                         onclick="toggleVoyage('{{ $voyageId }}')">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-4">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xl font-bold text-gray-900">
+                                            <a href="{{ route('company.voyages.show', $voyage) }}" 
+                                               class="hover:text-blue-600">
+                                                🚢 {{ $voyage->voyage_number }}
+                                            </a>
+                                        </h3>
+                                        <p class="text-sm text-gray-600">
+                                            {{ $totalBills }} conocimiento{{ $totalBills !== 1 ? 's' : '' }} • 
+                                            {{ number_format($totalWeight) }} kg •
+                                            {{ number_format($totalPackages) }} bultos
+                                            @if($hasDangerous)
+                                                <span class="ml-2 text-red-600 font-medium">⚠️ Mercancía Peligrosa</span>
+                                            @endif
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center space-x-4">
+                                {{-- Estados del viaje --}}
+                                <div class="flex space-x-2">
+                                    @if($statusCounts->get('draft', 0) > 0)
+                                        <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
+                                            {{ $statusCounts->get('draft') }} Draft
+                                        </span>
+                                    @endif
+                                    @if($statusCounts->get('verified', 0) > 0)
+                                        <span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                                            {{ $statusCounts->get('verified') }} Verificado
+                                        </span>
+                                    @endif
+                                    @if($statusCounts->get('sent_to_customs', 0) > 0)
+                                        <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+                                            {{ $statusCounts->get('sent_to_customs') }} Enviado
+                                        </span>
+                                    @endif
+                                </div>
+
+                                {{-- Botón expandir/contraer --}}
+                                <button class="voyage-toggle p-2 hover:bg-white hover:bg-opacity-50 rounded-full transition-colors duration-200">
+                                    <svg class="w-5 h-5 text-gray-600 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- CONTENIDO DEL VIAJE (conocimientos) --}}
+                    <div class="voyage-content" id="voyage-{{ $voyageId }}" style="display: block;">
+                        <div class="divide-y divide-gray-100">
+                            @foreach($voyageBills as $bill)
+                                @php
+                                    $statusColors = [
+                                        'draft' => 'bg-yellow-50 border-yellow-200',
+                                        'pending_review' => 'bg-blue-50 border-blue-200',
+                                        'verified' => 'bg-green-50 border-green-200',
+                                        'sent_to_customs' => 'bg-purple-50 border-purple-200',
+                                        'accepted' => 'bg-green-50 border-green-200',
+                                        'rejected' => 'bg-red-50 border-red-200',
+                                        'completed' => 'bg-gray-50 border-gray-200',
+                                        'cancelled' => 'bg-red-50 border-red-200',
+                                    ];
+                                    $statusLabels = [
+                                        'draft' => 'Borrador',
+                                        'pending_review' => 'Pendiente Revisión',
+                                        'verified' => 'Verificado',
+                                        'sent_to_customs' => 'Enviado a Aduana',
+                                        'accepted' => 'Aceptado',
+                                        'rejected' => 'Rechazado',
+                                        'completed' => 'Completado',
+                                        'cancelled' => 'Cancelado',
+                                    ];
+                                    $cardClass = $statusColors[$bill->status] ?? 'bg-gray-50 border-gray-200';
+                                @endphp
+
+                                <div class="bill-row p-6 hover:bg-gray-50 {{ $cardClass }} border-l-4">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4">
+                                            {{-- Información del Conocimiento --}}
+                                            <div>
+                                                <div class="flex items-center space-x-2">
+                                                    <h4 class="text-lg font-semibold text-gray-900">
+                                                        <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
+                                                           class="hover:text-blue-600">
+                                                            📄 {{ $bill->bill_number }}
+                                                        </a>
+                                                    </h4>
+                                                    @if($bill->is_master_bill)
+                                                        <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">Master</span>
+                                                    @endif
+                                                    @if($bill->is_house_bill)
+                                                        <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">House</span>
+                                                    @endif
+                                                    @if($bill->contains_dangerous_goods)
+                                                        <span class="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">⚠️</span>
+                                                    @endif
+                                                </div>
+                                                <p class="text-sm text-gray-600 mt-1">
+                                                    {{ $bill->primaryCargoType->name ?? 'Carga General' }}
+                                                </p>
+                                                <p class="text-xs text-gray-500">
+                                                    Creado: {{ $bill->created_at->format('d/m/Y') }}
+                                                </p>
+                                            </div>
+
+                                            {{-- Partes --}}
+                                            <div>
+                                                <div class="text-sm">
+                                                    <div class="font-medium text-gray-900">📤 {{ $bill->shipper->legal_name ?? 'N/A' }}</div>
+                                                    <div class="text-gray-600">📥 {{ $bill->consignee->legal_name ?? 'N/A' }}</div>
+                                                </div>
+                                            </div>
+
+                                            {{-- Ruta --}}
+                                            <div>
+                                                <div class="text-sm">
+                                                    <div class="text-gray-900">
+                                                        🏠 {{ $bill->loadingPort->name ?? 'N/A' }}
+                                                    </div>
+                                                    <div class="text-gray-600 flex items-center">
+                                                        <span class="mr-1">→</span> 
+                                                        {{ $bill->dischargePort->name ?? 'N/A' }}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {{-- Datos Técnicos --}}
+                                            <div>
+                                                <div class="text-sm">
+                                                    <div class="text-gray-900 font-medium">
+                                                        ⚖️ {{ number_format($bill->gross_weight_kg ?? 0) }} kg
+                                                    </div>
+                                                    <div class="text-gray-600">
+                                                        📦 {{ number_format($bill->total_packages ?? 0) }} bultos
+                                                    </div>
+                                                    @if($bill->volume_m3)
+                                                        <div class="text-gray-500 text-xs">
+                                                            📐 {{ number_format($bill->volume_m3, 2) }} m³
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {{-- Estado y Acciones --}}
+                                        <div class="flex items-center space-x-3 ml-4">
+                                            {{-- Estado --}}
+                                            <div class="text-center">
+                                                <span class="px-3 py-1 rounded-full text-xs font-medium {{ $statusColors[$bill->status] ?? 'bg-gray-100 text-gray-800' }}">
+                                                    {{ $statusLabels[$bill->status] ?? $bill->status }}
+                                                </span>
+                                                @if($bill->verified_at)
+                                                    <div class="text-xs text-green-600 mt-1">
+                                                        ✓ {{ $bill->verified_at->format('d/m/Y') }}
+                                                    </div>
+                                                @endif
+                                            </div>
+
+                                            {{-- Acciones --}}
+                                            <div class="flex flex-col space-y-1">
+                                                <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
+                                                   class="text-blue-600 hover:text-blue-900 text-sm font-medium">
+                                                    Ver
+                                                </a>
+                                                @if(in_array($bill->status, ['draft', 'pending_review']) && in_array('Cargas', $companyRoles))
+                                                    <a href="{{ route('company.bills-of-lading.edit', $bill) }}" 
+                                                       class="text-green-600 hover:text-green-900 text-sm font-medium">
+                                                        Editar
+                                                    </a>
+                                                @endif
+                                                <a href="{{ route('company.bills-of-lading.pdf', $bill) }}" 
+                                                   class="text-red-600 hover:text-red-900 text-sm font-medium">
+                                                    PDF
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- Vista Compacta (oculta por defecto) --}}
+                                    <div class="compact-view mt-4 pt-4 border-t border-gray-200 hidden">
+                                        <div class="flex items-center justify-between text-sm">
+                                            <div class="flex space-x-4">
+                                                <span>{{ $bill->bill_number }}</span>
+                                                <span>{{ $bill->shipper->legal_name ?? 'N/A' }}</span>
+                                                <span>{{ number_format($bill->gross_weight_kg ?? 0) }} kg</span>
+                                            </div>
+                                            <div class="flex space-x-2">
+                                                <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
+                                                   class="text-blue-600 hover:text-blue-900">Ver</a>
+                                                @if(in_array($bill->status, ['draft', 'pending_review']) && in_array('Cargas', $companyRoles))
+                                                    <a href="{{ route('company.bills-of-lading.edit', $bill) }}" 
+                                                       class="text-green-600 hover:text-green-900">Editar</a>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @empty
+                <div class="bg-white rounded-lg shadow-sm p-12 text-center">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">No hay conocimientos registrados</h3>
+                    <p class="mt-1 text-sm text-gray-500">
+                        @if(request()->hasAny(['search', 'status']))
+                            No se encontraron resultados con los filtros aplicados.
+                        @else
+                            Comience creando su primer conocimiento de embarque.
+                        @endif
+                    </p>
+                    @if(in_array('Cargas', $companyRoles) && !request()->hasAny(['search', 'status']))
+                        <div class="mt-6">
+                            <a href="{{ route('company.bills-of-lading.create') }}" 
+                               class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Crear primer conocimiento
+                            </a>
+                        </div>
+                    @endif
+                </div>
+            @endforelse
+        </div>
+
+        {{-- PAGINACIÓN --}}
+        @if($billsOfLading->hasPages())
+            <div class="mt-6">
+                {{ $billsOfLading->links() }}
+            </div>
+        @endif
+    </div>
+</div>
+
+{{-- JavaScript para interactividad --}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Estado de vista compacta
+    let isCompactView = false;
+
+    // Toggle vista compacta
+    window.toggleCompactView = function() {
+        isCompactView = !isCompactView;
+        const toggleText = document.getElementById('viewToggleText');
+        const billRows = document.querySelectorAll('.bill-row');
+        const compactViews = document.querySelectorAll('.compact-view');
+
+        if (isCompactView) {
+            toggleText.textContent = 'Vista Detallada';
+            billRows.forEach(row => {
+                row.classList.add('compact');
+                const mainContent = row.querySelector('.grid');
+                if (mainContent) mainContent.style.display = 'none';
+            });
+            compactViews.forEach(view => view.classList.remove('hidden'));
+        } else {
+            toggleText.textContent = 'Vista Compacta';
+            billRows.forEach(row => {
+                row.classList.remove('compact');
+                const mainContent = row.querySelector('.grid');
+                if (mainContent) mainContent.style.display = 'grid';
+            });
+            compactViews.forEach(view => view.classList.add('hidden'));
+        }
+    };
+
+    // Toggle viajes
+    window.toggleVoyage = function(voyageId) {
+        const content = document.getElementById('voyage-' + voyageId);
+        const toggle = content.parentElement.querySelector('.voyage-toggle svg');
+        
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            toggle.style.transform = 'rotate(0deg)';
+        } else {
+            content.style.display = 'none';
+            toggle.style.transform = 'rotate(-90deg)';
+        }
+    };
+
+    // Auto-expandir primer viaje si solo hay uno
+    const voyageGroups = document.querySelectorAll('.voyage-group');
+    if (voyageGroups.length === 1) {
+        const firstContent = voyageGroups[0].querySelector('.voyage-content');
+        if (firstContent) firstContent.style.display = 'block';
+    }
+});
+</script>
+
+<style>
+.bill-row.compact {
+    padding: 12px 24px !important;
+}
+
+.voyage-header:hover {
+    background: linear-gradient(to right, rgb(239 246 255), rgb(224 231 255));
+}
+
+.voyage-toggle svg {
+    transition: transform 0.2s ease-in-out;
+}
+
+.voyage-content {
+    transition: all 0.3s ease-in-out;
+}
+
+@media (max-width: 768px) {
+    .bill-row .grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .bill-row .flex.items-center.space-x-3 {
+        margin-left: 0;
+        margin-top: 16px;
+        justify-content: space-between;
+    }
+}
+</style>
+
 </x-app-layout>

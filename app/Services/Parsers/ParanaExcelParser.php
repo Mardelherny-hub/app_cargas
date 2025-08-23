@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use App\Models\ManifestImport;
 use Exception; 
 
 /**
@@ -146,9 +147,11 @@ class ParanaExcelParser implements ManifestParserInterface
 
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
+        $startTime = microtime(true);
         Log::info('Starting PARANA Excel parsing', ['file' => $filePath]);
 
         try {
+            $importRecord = $this->createImportRecord($filePath, $options);
             $reader = IOFactory::createReaderForFile($filePath);
             $reader->setReadDataOnly(true);
             $spreadsheet = $reader->load($filePath);
@@ -187,15 +190,16 @@ class ParanaExcelParser implements ManifestParserInterface
                     // AGREGAR: Verificar si ya existe en base de datos
                     $existingBL = BillOfLading::where('bill_number', $blNumber)->first();
                     
+                   // VALIDACIÓN: Verificar si ya existe BL duplicado
+                    $existingBL = BillOfLading::where('bill_number', $blNumber)->first();
+
                     if ($existingBL) {
-                        Log::info('BL ya existe en BD', ['bill_number' => $blNumber, 'id' => $existingBL->id]);
-                        $bill = $existingBL;
-                        $processedBLs[$blNumber] = $bill;
-                    } else {
-                        $bill = $this->createBillOfLading($shipment, $rowData);
-                        $bills[] = $bill;
-                        $processedBLs[$blNumber] = $bill;
+                        throw new \Exception("Ya existe un conocimiento de embarque con número: {$blNumber}.");
                     }
+
+                    $bill = $this->createBillOfLading($shipment, $rowData);
+                    $bills[] = $bill;
+                    $processedBLs[$blNumber] = $bill;
                 } else {
                     $bill = $processedBLs[$blNumber];
                 }
@@ -220,6 +224,9 @@ class ParanaExcelParser implements ManifestParserInterface
                 'containers_count' => count($containers)
             ]);
 
+            // NUEVO: Registrar objetos creados y completar importación
+            $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $startTime);
+
             return ManifestParseResult::success(
                 voyage: $voyage,
                 shipments: [$shipment],
@@ -228,7 +235,8 @@ class ParanaExcelParser implements ManifestParserInterface
                 statistics: [
                     'processed_rows' => $highestRow - 1,
                     'unique_bills' => count($bills),
-                    'total_containers' => count($containers)
+                    'total_containers' => count($containers),
+                    'import_id' => $importRecord->id // Agregar ID del registro
                 ]
             );
 
@@ -237,6 +245,15 @@ class ParanaExcelParser implements ManifestParserInterface
                 'file' => $filePath,
                 'error' => $e->getMessage()
             ]);
+
+            // NUEVO: Marcar importación como fallida
+            if (isset($importRecord)) {
+                $processingTime = microtime(true) - $startTime;
+                $importRecord->markAsFailed([$e->getMessage()], [
+                    'processing_time_seconds' => round($processingTime, 2),
+                    'errors_count' => 1
+                ]);
+            }
 
             return ManifestParseResult::failure([
                 'Error al procesar archivo PARANA: ' . $e->getMessage()
@@ -312,6 +329,12 @@ class ParanaExcelParser implements ManifestParserInterface
         }
 
         $voyageNumber = 'PARANA-' . now()->format('YmdHis') . '-' . uniqid();
+
+        // VALIDACIÓN: Verificar si ya existe voyage con este número
+        $existingVoyage = Voyage::where('voyage_number', $voyageNumber)->first();
+        if ($existingVoyage) {
+            throw new \Exception("Ya existe un viaje con número: {$voyageNumber}.");
+        }
 
         return Voyage::create([
             'company_id' => $companyId,
@@ -432,6 +455,13 @@ class ParanaExcelParser implements ManifestParserInterface
         $loadingPort = $this->findOrCreatePort($data['POL'] ?? 'ARBUE', 'Buenos Aires');
         $dischargePort = $this->findOrCreatePort($data['POD'] ?? 'PYTVT', 'Villeta');
 
+        // VALIDACIÓN: Verificar si ya existe bill of lading con este número
+        $billNumber = $data['BL_NUMBER'];
+        $existingBill = BillOfLading::where('bill_number', $billNumber)->first();
+        if ($existingBill) {
+            throw new \Exception("Ya existe un conocimiento de embarque con número: {$billNumber}.");
+        }
+
         // CORREGIDO: Generar fechas obligatorias
         $billDate = $this->parseDateFromData($data['BL_DATE']) ?? now();
         $loadingDate = $this->parseDateFromData($data['BL_DATE']) ?? now()->addDays(1);
@@ -504,15 +534,11 @@ class ParanaExcelParser implements ManifestParserInterface
         ]);
 
         // Verificar si ya existe
+       // VALIDACIÓN: Verificar si ya existe contenedor con este número
         $existing = Container::where('container_number', $data['CONTAINER_NUMBER'])->first();
         if ($existing) {
-            Log::info('Container already exists', [
-                'container_id' => $existing->id,
-                'number' => $data['CONTAINER_NUMBER']
-            ]);
-            return $existing;
+            throw new \Exception("Ya existe un contenedor con número: {$data['CONTAINER_NUMBER']}.");
         }
-
         // CORREGIDO: Usar container types existentes en lugar de crear nuevos
         $containerType = $this->findExistingContainerType(
             $data['CONTAINER_TYPE'] ?? '40HC'
@@ -915,5 +941,68 @@ class ParanaExcelParser implements ManifestParserInterface
             ]);
             return null;
         }
+    }
+
+    /**
+     * Crear registro de importación - NUEVO
+     */
+    protected function createImportRecord(string $filePath, array $options): ManifestImport
+    {
+        $fileName = basename($filePath);
+        $fileSize = filesize($filePath);
+        $fileHash = ManifestImport::generateFileHash($filePath);
+        
+        $user = auth()->user();
+        $companyId = $user->company_id ?: ($user->userable_type === 'App\Models\Company' ? $user->userable_id : null);
+        
+        return ManifestImport::createForImport([
+            'company_id' => $companyId,
+            'user_id' => $user->id,
+            'file_name' => $fileName,
+            'file_format' => 'parana',
+            'file_size_bytes' => $fileSize,
+            'file_hash' => $fileHash,
+            'parser_config' => [
+                'parser_class' => self::class,
+                'options' => $options,
+                'vessel_id' => $options['vessel_id'] ?? null
+            ]
+        ]);
+    }
+
+    /**
+     * Completar registro de importación - NUEVO
+     */
+    protected function completeImportRecord(
+        ManifestImport $importRecord, 
+        Voyage $voyage, 
+        array $bills, 
+        array $containers,
+        float $startTime
+    ): void {
+        $processingTime = microtime(true) - $startTime;
+        
+        // Registrar IDs de objetos creados
+        $createdObjects = [
+            'voyages' => [$voyage->id],
+            'shipments' => [$voyage->shipments()->first()->id ?? null],
+            'bills' => array_map(fn($bill) => $bill->id, $bills),
+            'containers' => array_map(fn($container) => $container->id, $containers)
+        ];
+        
+        // Filtrar nulls
+        $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
+        
+        $importRecord->recordCreatedObjects($createdObjects);
+        $importRecord->markAsCompleted([
+            'voyage_id' => $voyage->id,
+            'processing_time_seconds' => round($processingTime, 2),
+            'notes' => 'Importación PARANA Excel completada exitosamente'
+        ]);
+        
+        Log::info('PARANA import record completed', [
+            'import_id' => $importRecord->id,
+            'processing_time' => round($processingTime, 2) . 's'
+        ]);
     }
 }
