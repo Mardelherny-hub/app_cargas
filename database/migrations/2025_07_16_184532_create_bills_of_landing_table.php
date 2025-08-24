@@ -49,6 +49,9 @@ return new class extends Migration
             $table->datetime('bill_date')->comment('Fecha del conocimiento');
             $table->string('manifest_number', 100)->nullable()->comment('Número de manifiesto');
             $table->integer('manifest_line_number')->nullable()->comment('Línea en manifiesto');
+            
+            // ✅ NUEVO CAMPO: Permiso de embarque (columna BU del Excel Paraná)
+            $table->string('permiso_embarque', 100)->nullable()->comment('Permiso de embarque - requerido para webservices Paraguay');
 
             // Fechas operacionales
             $table->datetime('loading_date')->comment('Fecha de carga');
@@ -137,6 +140,21 @@ return new class extends Migration
             $table->decimal('declared_value', 12, 2)->nullable()->comment('Valor declarado');
             $table->json('additional_charges')->nullable()->comment('Cargos adicionales');
 
+            // Webservices integration
+            $table->enum('argentina_status', [
+                'pending', 'sent', 'approved', 'rejected', 'error'
+            ])->default('pending')->comment('Estado webservice Argentina');
+            $table->enum('paraguay_status', [
+                'pending', 'sent', 'approved', 'rejected', 'error'
+            ])->default('pending')->comment('Estado webservice Paraguay');
+            $table->enum('webservice_status', [
+                'not_sent', 'pending', 'sent', 'processing', 'approved', 'rejected', 'error'
+            ])->default('not_sent')->comment('Estado general webservices');
+            $table->datetime('webservice_sent_at')->nullable()->comment('Fecha envío webservice');
+            $table->datetime('argentina_sent_at')->nullable()->comment('Fecha envío Argentina');
+            $table->datetime('paraguay_sent_at')->nullable()->comment('Fecha envío Paraguay');
+            $table->json('webservice_data')->nullable()->comment('Datos webservice JSON');
+
             // Instrucciones y observaciones
             $table->json('special_instructions')->nullable()->comment('Instrucciones especiales');
             $table->text('handling_instructions')->nullable()->comment('Instrucciones manejo');
@@ -157,40 +175,11 @@ return new class extends Migration
 
             // Verificación y discrepancias
             $table->datetime('verified_at')->nullable()->comment('Fecha verificación');
-            $table->unsignedBigInteger('verified_by_user_id')->nullable()->comment('Usuario verificador');
+            $table->unsignedBigInteger('verified_by_user_id')->nullable()->comment('Usuario verificó');
             $table->boolean('has_discrepancies')->default(false)->comment('Tiene discrepancias');
-            $table->json('discrepancy_details')->nullable()->comment('Detalles discrepancias');
+            $table->text('discrepancy_notes')->nullable()->comment('Notas de discrepancias');
 
-            // Webservices integración
-            $table->enum('webservice_status', [
-                'pending', 'sent', 'accepted', 'rejected', 'error'
-            ])->nullable()->comment('Estado webservice');
-            $table->string('webservice_reference', 100)->nullable()->comment('Referencia webservice');
-            $table->datetime('webservice_sent_at')->nullable()->comment('Enviado webservice');
-            $table->datetime('webservice_response_at')->nullable()->comment('Respuesta webservice');
-            $table->text('webservice_error_message')->nullable()->comment('Error webservice');
-
-            // Específicos para Argentina y Paraguay
-            $table->string('argentina_bill_id', 100)->nullable()->comment('ID en webservice Argentina');
-            $table->string('paraguay_bill_id', 100)->nullable()->comment('ID en webservice Paraguay');
-            $table->enum('argentina_status', [
-                'pending', 'sent', 'approved', 'rejected', 'error'
-            ])->nullable()->comment('Estado en Argentina');
-            $table->enum('paraguay_status', [
-                'pending', 'sent', 'approved', 'rejected', 'error'
-            ])->nullable()->comment('Estado en Paraguay');
-            $table->datetime('argentina_sent_at')->nullable()->comment('Enviado a Argentina');
-            $table->datetime('paraguay_sent_at')->nullable()->comment('Enviado a Paraguay');
-            $table->json('webservice_errors')->nullable()->comment('Errores webservice');
-
-            // Entrega y recogida
-            $table->string('delivery_address', 500)->nullable()->comment('Dirección entrega');
-            $table->string('pickup_address', 500)->nullable()->comment('Dirección recogida');
-            $table->string('delivery_contact_name', 100)->nullable()->comment('Contacto entrega');
-            $table->string('delivery_contact_phone', 30)->nullable()->comment('Teléfono contacto');
-            $table->json('delivery_instructions')->nullable()->comment('Instrucciones entrega');
-
-            // Documentos
+            // Documentación y entrega
             $table->json('required_documents')->nullable()->comment('Documentos requeridos');
             $table->json('attached_documents')->nullable()->comment('Documentos adjuntos');
             $table->boolean('original_released')->default(false)->comment('Original liberado');
@@ -223,6 +212,8 @@ return new class extends Migration
             $table->index(['has_discrepancies'], 'idx_bills_discrepancies');
             $table->index(['webservice_status'], 'idx_bills_webservice');
             $table->index(['verified_at'], 'idx_bills_verified');
+            // ✅ NUEVO ÍNDICE: Para búsquedas por permiso de embarque
+            $table->index(['permiso_embarque'], 'idx_bills_permiso_embarque');
 
             // Constraint único
             $table->unique(['bill_number'], 'uk_bills_number');

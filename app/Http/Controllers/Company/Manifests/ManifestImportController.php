@@ -13,6 +13,11 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
 use Illuminate\Support\Str;
+use App\Models\BillOfLading;
+use App\Models\ShipmentItem;
+use App\Models\Container;
+use App\Models\Shipment;
+use App\Models\Voyage;
 
 /**
  * CONTROLADOR UNIFICADO PARA IMPORTACIÓN DE MANIFIESTOS - VERSIÓN CORREGIDA
@@ -468,5 +473,135 @@ class ManifestImportController extends Controller
         $request->session()->forget('import_report_data');
 
         return view('company.manifests.import-report', $reportData);
+    }
+
+    /**
+     * Revertir una importación específica
+     * Solo permite revertir si el voyage está en estado 'planning'
+     */
+    /**
+     * Revertir una importación específica
+     * Solo permite revertir si el voyage está en estado 'planning'
+     */
+    public function revert(Request $request, ManifestImport $import)
+    {
+        // Verificar autenticación básica
+        if (!auth()->check()) {
+            abort(401, 'Usuario no autenticado.');
+        }
+
+        $company = auth()->user()->company;
+        
+        if (!$company || $import->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para revertir esta importación.');
+        }
+
+        // Verificar que puede ser revertida
+        if (!$import->can_be_reverted) {
+            return back()->with('error', 'Esta importación no puede ser revertida: ' . $import->revert_blocked_reason);
+        }
+
+        // Verificar que el voyage esté en planning
+        if ($import->voyage && $import->voyage->status !== 'planning') {
+            return back()->with('error', 'Solo se pueden revertir importaciones con viajes en estado de planificación.');
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Obtener todos los objetos creados
+            $createdObjects = $import->getAllCreatedObjectIds();
+            
+            Log::info('REVERT - Objetos a eliminar:', [
+                'import_id' => $import->id,
+                'created_objects' => $createdObjects
+            ]);
+            
+            $deletedSummary = [];
+
+            // Eliminar en orden correcto (dependencias primero)
+            
+            // 1. Eliminar bills of lading
+            if (!empty($createdObjects['bills'])) {
+                Log::info('REVERT - Eliminando bills of lading', ['ids' => $createdObjects['bills']]);
+                $deletedCount = \App\Models\BillOfLading::whereIn('id', $createdObjects['bills'])->delete();
+                Log::info('REVERT - Bills eliminados', ['count' => $deletedCount]);
+                if ($deletedCount > 0) {
+                    $deletedSummary[] = "{$deletedCount} conocimientos de embarque";
+                }
+            }
+
+            // 2. Eliminar shipment items  
+            if (!empty($createdObjects['items'])) {
+                Log::info('REVERT - Eliminando shipment items', ['ids' => $createdObjects['items']]);
+                $deletedCount = \App\Models\ShipmentItem::whereIn('id', $createdObjects['items'])->delete();
+                Log::info('REVERT - Items eliminados', ['count' => $deletedCount]);
+                if ($deletedCount > 0) {
+                    $deletedSummary[] = "{$deletedCount} items de carga";
+                }
+            }
+
+            // 3. Eliminar contenedores
+            if (!empty($createdObjects['containers'])) {
+                Log::info('REVERT - Eliminando contenedores', ['ids' => $createdObjects['containers']]);
+                $deletedCount = \App\Models\Container::whereIn('id', $createdObjects['containers'])->delete();
+                Log::info('REVERT - Contenedores eliminados', ['count' => $deletedCount]);
+                if ($deletedCount > 0) {
+                    $deletedSummary[] = "{$deletedCount} contenedores";
+                }
+            }
+
+            // 4. Eliminar shipments
+            if (!empty($createdObjects['shipments'])) {
+                Log::info('REVERT - Eliminando shipments', ['ids' => $createdObjects['shipments']]);
+                $deletedCount = \App\Models\Shipment::whereIn('id', $createdObjects['shipments'])->delete();
+                Log::info('REVERT - Shipments eliminados', ['count' => $deletedCount]);
+                if ($deletedCount > 0) {
+                    $deletedSummary[] = "{$deletedCount} envíos";
+                }
+            }
+
+            // 5. Eliminar voyage principal
+            if (!empty($createdObjects['voyages'])) {
+                Log::info('REVERT - Eliminando voyages', ['ids' => $createdObjects['voyages']]);
+                $deletedCount = \App\Models\Voyage::whereIn('id', $createdObjects['voyages'])->delete();
+                Log::info('REVERT - Voyages eliminados', ['count' => $deletedCount]);
+                if ($deletedCount > 0) {
+                    $deletedSummary[] = "{$deletedCount} viajes";
+                }
+            }
+
+            // Marcar importación como revertida
+            $import->markAsReverted(auth()->id(), [
+                'reverted_objects' => $deletedSummary,
+                'reverted_by' => auth()->user()->name,
+                'reverted_reason' => $request->input('reason', 'Reversión manual')
+            ]);
+
+            DB::commit();
+
+            $message = empty($deletedSummary) 
+                ? 'Reversión completada - No había objetos para eliminar'
+                : 'Importación revertida exitosamente. Se eliminaron: ' . implode(', ', $deletedSummary);
+            
+            Log::info('REVERT - Completado exitosamente', [
+                'import_id' => $import->id,
+                'deleted_summary' => $deletedSummary
+            ]);
+            
+            return redirect()->route('company.manifests.import.history')
+                ->with('success', $message);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error al revertir importación', [
+                'import_id' => $import->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return back()->with('error', 'Error al revertir la importación: ' . $e->getMessage());
+        }
     }
 }

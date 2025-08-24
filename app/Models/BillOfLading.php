@@ -128,6 +128,9 @@ class BillOfLading extends Model
         // Auditoria
         'created_by_user_id',
         'last_updated_by_user_id',
+
+        // ✅ NUEVO: Permiso de embarque para webservices Paraguay
+        'permiso_embarque',
     ];
 
     /**

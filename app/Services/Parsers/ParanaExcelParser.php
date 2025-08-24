@@ -445,11 +445,20 @@ class ParanaExcelParser implements ManifestParserInterface
             'phone' => $data['SHIPPER_PHONE'] ?? null
         ], $shipment->voyage->company_id);
 
-        $consignee = $this->findOrCreateClient([
+        // MEJORADO: Parsear datos mezclados del consignatario
+        $consigneeData = [
             'name' => $data['CONSIGNEE_NAME'] ?? 'Consignee Unknown', 
-            'address' => $data['CONSIGNEE_ADDRESS1'] ?? null,  // CORREGIDO: era CONSIGNEE_ADDRESS
+            'address' => $data['CONSIGNEE_ADDRESS1'] ?? null,
             'phone' => $data['CONSIGNEE_PHONE'] ?? null
-        ], $shipment->voyage->company_id);
+        ];
+
+        // Si la dirección es muy larga, probablemente tiene datos mezclados
+        if (isset($consigneeData['address']) && strlen($consigneeData['address']) > 100) {
+            $parsed = $this->parseConsigneeMixedData($consigneeData['address']);
+            $consigneeData = array_merge($consigneeData, $parsed);
+        }
+
+        $consignee = $this->findOrCreateClient($consigneeData, $shipment->voyage->company_id);
 
         // Obtener puertos
         $loadingPort = $this->findOrCreatePort($data['POL'] ?? 'ARBUE', 'Buenos Aires');
@@ -491,6 +500,12 @@ class ParanaExcelParser implements ManifestParserInterface
             'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
             'total_packages' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),  // CORREGIDO: era PACKAGE_COUNT
             'volume_m3' => $this->parseVolume($data['VOLUME']),
+            'master_bill_number' => $data['MLO_BL_NR'] ?? null, // MLO BL Number agregado
+            'permiso_embarque' => $data['PERMISO'] ?? null, // Permiso de embarque agregado
+            'commodity_code' => $data['NCM'] ?? null, // Código NCM agregado
+            'cargo_marks' => !empty($data['MARKS_DESCRIPTION']) && $data['MARKS_DESCRIPTION'] !== 'N/A' 
+                ? $data['MARKS_DESCRIPTION'] 
+                : 'S/M', // S/M si no hay marcas 
         ]);
 
         Log::info('BillOfLading creado', [
@@ -1004,5 +1019,42 @@ class ParanaExcelParser implements ManifestParserInterface
             'import_id' => $importRecord->id,
             'processing_time' => round($processingTime, 2) . 's'
         ]);
+    }
+
+    protected function parseConsigneeMixedData(string $mixedData): array
+    {
+        // Parsear RUC/ID fiscal
+        $ruc = null;
+        if (preg_match('/RUC[:\s]*([0-9\-\s]+)/i', $mixedData, $matches)) {
+            $ruc = trim(str_replace(['-', ' '], '', $matches[1]));
+        }
+
+        // Parsear dirección (primera parte antes de TEL/RFC/EMAIL)
+        $address = preg_replace('/\s*(TEL|RFC|EMAIL|RUC).*$/i', '', $mixedData);
+        $address = trim(str_replace($ruc ?? '', '', $address));
+        
+        // Limpiar direcciones muy largas
+        if (strlen($address) > 200) {
+            $address = substr($address, 0, 200);
+        }
+
+        // Parsear teléfono
+        $phone = null;
+        if (preg_match('/TEL[:\s]*([+0-9\-\s]+)/i', $mixedData, $matches)) {
+            $phone = trim($matches[1]);
+        }
+
+        // Parsear email
+        $email = null;
+        if (preg_match('/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i', $mixedData, $matches)) {
+            $email = trim($matches[1]);
+        }
+
+        return [
+            'tax_id' => $ruc,
+            'address' => $address,
+            'phone' => $phone,
+            'email' => $email
+        ];
     }
 }

@@ -280,40 +280,47 @@
 
                                                 <div class="hidden origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10" role="menu" id="dropdown-{{ $import->id }}">
                                                     <div class="py-1" role="none">
-                                                        <a href="{{ route('company.manifests.import.show', $import) }}" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">
-                                                            <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
-                                                                <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
-                                                            </svg>
-                                                            Ver detalles
-                                                        </a>
-                                                        @if($import->voyage)
-                                                            <a href="{{ route('company.voyages.show', $import->voyage) }}" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">
-                                                                <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd"/>
-                                                                </svg>
-                                                                Ver viaje
-                                                            </a>
-                                                        @endif
-                                                        @if($import->canBeReverted())
-                                                            <div class="border-t border-gray-100"></div>
-                                                            <button onclick="confirmRevert({{ $import->id }})" class="flex items-center w-full px-4 py-2 text-sm text-yellow-700 hover:bg-yellow-50" role="menuitem">
-                                                                <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
-                                                                </svg>
-                                                                Revertir importación
-                                                            </button>
-                                                        @endif
-                                                        @if($import->isReverted())
-                                                            <div class="border-t border-gray-100"></div>
-                                                            <div class="flex items-center px-4 py-2 text-sm text-gray-500">
-                                                                <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                                                                </svg>
-                                                                Revertida el {{ $import->reverted_at->format('d/m/Y H:i') }}
-                                                            </div>
-                                                        @endif
-                                                    </div>
+    <a href="{{ route('company.manifests.import.show', $import) }}" 
+       class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">
+        <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+            <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"/>
+        </svg>
+        Ver Detalles
+    </a>
+
+    @if($import->voyage)
+        <a href="{{ route('company.voyages.show', $import->voyage) }}" 
+           class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" role="menuitem">
+            <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd"/>
+            </svg>
+            Ver viaje
+        </a>
+    @endif
+
+    @if($import->can_be_reverted && $import->voyage && $import->voyage->status === 'planning' && !$import->reverted_at)
+        <div class="border-t border-gray-100"></div>
+        <button type="button" 
+                onclick="openRevertModal({{ $import->id }}, '{{ $import->file_name }}')"
+                class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
+            <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+            </svg>
+            Revertir importación
+        </button>
+    @endif
+
+    @if($import->reverted_at)
+        <div class="border-t border-gray-100"></div>
+        <div class="flex items-center px-4 py-2 text-sm text-gray-500">
+            <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+            </svg>
+            Revertida el {{ $import->reverted_at->format('d/m/Y H:i') }}
+        </div>
+    @endif
+</div>
                                                 </div>
                                             </div>
                                         </td>
@@ -406,15 +413,21 @@
                         <button type="button" onclick="closeRevertModal()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300">
                             Cancelar
                         </button>
-                        <form id="revertForm" method="POST" class="inline">
+                        <form id="revertForm" method="POST" action="">
                             @csrf
-                            @method('DELETE')
-                            <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-md text-sm font-medium hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500">
-                                <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
-                                </svg>
-                                Sí, revertir importación
-                            </button>
+                            <input type="hidden" name="reason" value="Reversión manual desde historial">
+                            
+                            <div class="flex justify-end space-x-3 mt-6">
+                                <button type="button" 
+                                        onclick="closeRevertModal()"
+                                        class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
+                                    Cancelar
+                                </button>
+                                <button type="submit" 
+                                        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                                    Confirmar Reversión
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -505,7 +518,7 @@
         function confirmRevert(importId) {
             const modal = document.getElementById('revertModal');
             const form = document.getElementById('revertForm');
-            form.action = `/company/manifests/import/${importId}/revert`;
+            form.action = `{{ route('company.manifests.import.index') }}/${importId}/revert`;
             modal.classList.remove('hidden');
         }
 
@@ -519,6 +532,47 @@
         document.getElementById('revertModal')?.addEventListener('click', function(event) {
             if (event.target === this) {
                 closeRevertModal();
+            }
+        });
+
+        // Variables globales para el modal de reversión
+        let currentImportId = null;
+
+        // Abrir modal de reversión
+        function openRevertModal(importId, fileName) {
+            currentImportId = importId;
+            
+            // Actualizar el título del modal con el nombre del archivo
+            const modalTitle = document.querySelector('#revertModal h3');
+            if (modalTitle) {
+                modalTitle.textContent = `Revertir: ${fileName}`;
+            }
+            
+            // Configurar la acción del formulario
+            const form = document.getElementById('revertForm');
+            if (form) {
+                form.action = `/company/manifests/import/${importId}/revert`;
+            }
+            
+            // Mostrar modal
+            document.getElementById('revertModal').classList.remove('hidden');
+        }
+
+        // Cerrar modal de reversión
+        function closeRevertModal() {
+            currentImportId = null;
+            document.getElementById('revertModal').classList.add('hidden');
+        }
+
+        // Cerrar modal al hacer clic fuera de él
+        document.addEventListener('DOMContentLoaded', function() {
+            const modal = document.getElementById('revertModal');
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        closeRevertModal();
+                    }
+                });
             }
         });
     </script>

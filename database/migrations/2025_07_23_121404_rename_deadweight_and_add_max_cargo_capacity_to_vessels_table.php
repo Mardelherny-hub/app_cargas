@@ -4,10 +4,13 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class RenameDeadweightAndAddMaxCargoCapacityToVesselsTable extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
+     * 
+     * CORRECCIÓN: Convertida a clase anónima para consistencia
+     * Renombra deadweight_tonnage → deadweight_tons y añade max_cargo_capacity
      */
     public function up(): void
     {
@@ -19,7 +22,10 @@ class RenameDeadweightAndAddMaxCargoCapacityToVesselsTable extends Migration
 
             // Add max_cargo_capacity column if it does not exist
             if (!Schema::hasColumn('vessels', 'max_cargo_capacity')) {
-                $table->decimal('max_cargo_capacity', 10, 2)->default(0)->comment('Capacidad máxima de carga en toneladas')->after('deadweight_tons');
+                $table->decimal('max_cargo_capacity', 10, 2)
+                      ->default(0)
+                      ->comment('Capacidad máxima de carga en toneladas')
+                      ->after('deadweight_tons');
             }
         });
     }
@@ -41,4 +47,4 @@ class RenameDeadweightAndAddMaxCargoCapacityToVesselsTable extends Migration
             }
         });
     }
-}
+};

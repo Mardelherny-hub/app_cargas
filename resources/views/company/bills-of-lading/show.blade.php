@@ -137,6 +137,12 @@ if ($user) {
                                 <dd class="text-sm text-gray-900">{{ $billOfLading->house_bill_number }}</dd>
                             </div>
                             @endif
+                            @if($billOfLading->permiso_embarque)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Permiso de Embarque</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->permiso_embarque }}</dd>
+                            </div>
+                            @endif
                             <div>
                                 <dt class="text-sm font-medium text-gray-500">Fecha BL</dt>
                                 <dd class="text-sm text-gray-900">{{ $billOfLading->bill_date ? $billOfLading->bill_date->format('d/m/Y') : 'N/A' }}</dd>
@@ -537,6 +543,18 @@ if ($user) {
                                 <dd class="text-sm text-gray-900">{{ $billOfLading->primaryCargoType->name }}</dd>
                             </div>
                             @endif
+                            @if($billOfLading->commodity_code)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Código NCM</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->commodity_code }}</dd>
+                            </div>
+                            @endif
+                            @if($billOfLading->cargo_marks)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Marcas y Números</dt>
+                                <dd class="text-sm text-gray-900">{{ $billOfLading->cargo_marks }}</dd>
+                            </div>
+                            @endif
                             @if($billOfLading->primaryPackagingType)
                             <div>
                                 <dt class="text-sm font-medium text-gray-500">Tipo de Embalaje Principal</dt>
@@ -687,41 +705,55 @@ if ($user) {
                 </div>
                 @endif
 
-                {{-- OTROS BILLS OF LADING DEL MISMO SHIPMENT --}}
-                @if($shipment && $shipment->billsOfLading && $shipment->billsOfLading->count() > 1)
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="px-6 py-4 border-b border-gray-200">
-                        <h3 class="text-lg font-medium text-gray-900 flex items-center">
-                            <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            Otros BL del Shipment
-                        </h3>
-                    </div>
-                    <div class="px-6 py-4">
-                        <div class="space-y-2">
-                            @foreach($shipment->billsOfLading as $otherBL)
-                                @if($otherBL->id !== $billOfLading->id)
-                                    <div class="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                                        <div>
-                                            <a href="{{ route('company.bills-of-lading.show', $otherBL) }}" 
-                                               class="text-sm font-medium text-blue-600 hover:text-blue-900">
-                                                {{ $otherBL->bill_number }}
-                                            </a>
-                                            <div class="text-xs text-gray-500">
-                                                Items: {{ $otherBL->shipmentItems->count() }}
-                                            </div>
-                                        </div>
-                                        <span class="px-2 py-1 text-xs rounded-full {{ $statusColors[$otherBL->status] ?? 'bg-gray-100 text-gray-800' }}">
-                                            {{ $statusLabels[$otherBL->status] ?? $otherBL->status }}
-                                        </span>
-                                    </div>
-                                @endif
-                            @endforeach
+                {{-- OTROS CONOCIMIENTOS DEL MISMO ENVÍO --}}
+@if($shipment && $shipment->billsOfLading && $shipment->billsOfLading->count() > 1)
+<div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900 flex items-center">
+            <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Otros Conocimientos ({{ $shipment->billsOfLading->count() - 1 }})
+        </h3>
+    </div>
+    <div class="px-6 py-4">
+        @php
+            $otherBills = $shipment->billsOfLading->where('id', '!=', $billOfLading->id);
+            $showCount = min(3, $otherBills->count());
+            $hasMore = $otherBills->count() > 3;
+        @endphp
+        
+        <div class="grid gap-2">
+            @foreach($otherBills->take(3) as $otherBL)
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div class="flex-1">
+                        <a href="{{ route('company.bills-of-lading.show', $otherBL) }}" 
+                           class="font-medium text-blue-600 hover:text-blue-900">
+                            {{ $otherBL->bill_number }}
+                        </a>
+                        <div class="text-xs text-gray-500 mt-1">
+                            Items: {{ $otherBL->shipmentItems->count() }} | 
+                            Peso: {{ number_format($otherBL->gross_weight_kg ?? 0) }} kg
                         </div>
                     </div>
+                    <span class="px-2 py-1 text-xs rounded-full {{ $statusColors[$otherBL->status] ?? 'bg-gray-100 text-gray-800' }}">
+                        {{ $statusLabels[$otherBL->status] ?? $otherBL->status }}
+                    </span>
                 </div>
-                @endif
+            @endforeach
+        </div>
+        
+        @if($hasMore)
+            <div class="mt-3 text-center">
+                <a href="{{ route('company.bills-of-lading.index', ['shipment_id' => $shipment->id]) }}" 
+                   class="text-sm text-blue-600 hover:text-blue-900 font-medium">
+                    Ver todos ({{ $otherBills->count() }}) →
+                </a>
+            </div>
+        @endif
+    </div>
+</div>
+@endif
 
                 {{-- AUDITORÍA --}}
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">

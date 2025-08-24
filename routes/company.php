@@ -409,6 +409,7 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::get('/history', [ManifestImportController::class, 'history'])->name('history');
         Route::get('/report', [ManifestImportController::class, 'showReport'])->name('report');
         Route::get('/history/{import}', [ManifestImportController::class, 'showImport'])->name('show');
+        Route::post('/{import}/revert', [ManifestImportController::class, 'revert'])->name('revert');
     });
 
     // === EXPORTACIÓN - ANTES DE RUTAS CON PARÁMETROS ===

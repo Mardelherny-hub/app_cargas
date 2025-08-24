@@ -509,6 +509,13 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'max:50',
                 'required_if:customs_bond_required,true',
             ],
+
+            // Permiso de embarque (opcional)
+            'permiso_embarque' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
         ];
     }
 
@@ -567,6 +574,7 @@ class UpdateBillOfLadingRequest extends FormRequest
             'freight_terms.required' => 'Debe especificar los términos de flete.',
             'incoterms.in' => 'El Incoterm seleccionado no es válido.',
             'currency_code.regex' => 'El código de moneda debe ser de 3 letras mayúsculas (ej: USD, BRL, ARS).',
+            'permiso_embarque.max' => 'El permiso de embarque no puede exceder 100 caracteres.',
         ];
     }
 

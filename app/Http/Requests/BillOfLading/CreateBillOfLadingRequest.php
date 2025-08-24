@@ -484,6 +484,13 @@ class CreateBillOfLadingRequest extends FormRequest
             'requires_surrender' => [
                 'boolean',
             ],
+
+            // Permiso de embarque (opcional)
+            'permiso_embarque' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
         ];
     }
 
@@ -548,6 +555,7 @@ class CreateBillOfLadingRequest extends FormRequest
             // Documentos
             'original_release_date.required_if' => 'Debe especificar la fecha cuando el original fue liberado.',
             'customs_bond_number.required_if' => 'Debe especificar el número de garantía cuando se requiere.',
+            'permiso_embarque.max' => 'El permiso de embarque no puede exceder 100 caracteres.',
         ];
     }
 
