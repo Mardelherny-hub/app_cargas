@@ -371,8 +371,8 @@ if ($user) {
                                     + Agregar Item
                                 </a>
                                 @if($itemsCount > 15)
-                                    <a href="{{ route('company.shipment-items.index', ['bill_of_lading_id' => $billOfLading->id]) }}" 
-                                       class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm font-medium">
+                                    <a href="{{ route('company.bills-of-lading.show', ['bill_of_lading' => $billOfLading->id, 'show_all_items' => '1']) }}#items" 
+                                    class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded text-sm font-medium">
                                         Ver Todos ({{ $itemsCount }})
                                     </a>
                                 @endif
@@ -477,8 +477,8 @@ if ($user) {
                                     <span class="text-sm text-gray-600">
                                         Mostrando 8 de {{ $itemsCount }} items
                                     </span>
-                                    <a href="{{ route('company.shipment-items.index', ['bill_of_lading_id' => $billOfLading->id]) }}" 
-                                       class="ml-2 text-blue-600 hover:text-blue-900 text-sm font-medium">
+                                    <a href="{{ route('company.bills-of-lading.show', ['bill_of_lading' => $billOfLading->id, 'show_all_items' => '1']) }}#items" 
+                                    class="ml-2 text-blue-600 hover:text-blue-900 text-sm font-medium">
                                         Ver todos →
                                     </a>
                                 </div>
