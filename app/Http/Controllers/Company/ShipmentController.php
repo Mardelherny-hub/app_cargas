@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class ShipmentController extends Controller
 {
@@ -222,7 +223,13 @@ class ShipmentController extends Controller
             $validated = $request->validate([
                 // Relaciones requeridas
                 'voyage_id' => 'required|exists:voyages,id',
-                'vessel_id' => 'required|exists:vessels,id',
+                'vessel_id' => [
+                    'required',
+                    'exists:vessels,id',
+                    Rule::unique('shipments')->where(function ($query) use ($request) {
+                        return $query->where('voyage_id', $request->voyage_id);
+                    })
+                ],
                 'captain_id' => 'nullable|exists:captains,id',
                 
                 // Información básica
@@ -259,19 +266,6 @@ class ShipmentController extends Controller
             if ($voyage->company_id !== $this->getUserCompany()->id) {
                 throw new \Exception('El viaje no pertenece a su empresa.');
             }
-
-            // NUEVO: Auto-heredar vessel_id y captain_id del viaje
-            //$validated['vessel_id'] = $voyage->lead_vessel_id;
-            //$validated['captain_id'] = $voyage->captain_id;
-
-            // NUEVO: Validación automática - no permitir duplicados en el mismo viaje
-            //$existingShipment = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
-            //    ->where('vessel_id', $validated['vessel_id'])
-            //    ->first();
-
-            //if ($existingShipment) {
-            //    throw new \Exception('Ya existe un shipment para esta embarcación en el viaje ' . $voyage->voyage_number);
-            //}
 
             // Calcular secuencia automáticamente
             $maxSequence = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
@@ -395,8 +389,8 @@ class ShipmentController extends Controller
     // ===== NUEVO MÉTODO: Actualizar estadísticas del viaje =====
     private function updateVoyageStats($voyage): void
     {
-        $shipmentStats = $voyage->shipments()->selectRaw('
-            COUNT(*) as total_shipments,
+        $shipmentStats = $voyage->shipments()->selectRaw(
+            'COUNT(*) as total_shipments,
             SUM(cargo_weight_loaded) as total_weight,
             SUM(containers_loaded) as total_containers,
             SUM(cargo_capacity_tons) as total_capacity

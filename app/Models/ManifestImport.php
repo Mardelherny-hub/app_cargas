@@ -5,6 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+
 use Carbon\Carbon;
 
 /**
@@ -437,16 +441,166 @@ class ManifestImport extends Model
      */
     public function getAllCreatedObjectIds(): array
     {
+        // 1) Leer lo que ya dejó trackeado la importación (si existe)
+        $voyageIds    = collect($this->created_voyage_ids ?? [])->filter()->values();
+        $shipmentIds  = collect($this->created_shipment_ids ?? [])->filter()->values();
+        $billIds      = collect($this->created_bill_ids ?? [])->filter()->values();
+        $containerIds = collect($this->created_container_ids ?? [])->filter()->values();
+        $itemIds      = collect($this->created_item_ids ?? [])->filter()->values();
+
+        // 2) Descubrir nombres reales de tablas
+        $billsTable = Schema::hasTable('bills_of_lading')
+            ? 'bills_of_lading'
+            : (Schema::hasTable('bills_of_landing') ? 'bills_of_landing' : null);
+
+        $itemsTable = Schema::hasTable('shipment_items')
+            ? 'shipment_items'
+            : (Schema::hasTable('shipments_items') ? 'shipments_items' : null);
+
+        $containersTable = Schema::hasTable('containers') ? 'containers' : null;
+        $shipmentsTable  = Schema::hasTable('shipments')  ? 'shipments'  : null;
+        $voyagesTable    = Schema::hasTable('voyages')    ? 'voyages'    : null;
+
+        // 3) Fallbacks por created_by_import_id o relaciones típicas
+        if ($voyageIds->isEmpty() && $voyagesTable) {
+            if (Schema::hasColumn($voyagesTable, 'created_by_import_id')) {
+                $voyageIds = DB::table($voyagesTable)
+                    ->where('created_by_import_id', $this->id)
+                    ->pluck('id');
+            } elseif (isset($this->voyage_id)) {
+                $voyageIds = collect([$this->voyage_id])->filter();
+            } elseif (method_exists($this, 'voyage') && optional($this->voyage)->id) {
+                $voyageIds = collect([$this->voyage->id]);
+            }
+        }
+
+        if ($shipmentsTable && $shipmentIds->isEmpty()) {
+            if (Schema::hasColumn($shipmentsTable, 'created_by_import_id')) {
+                $shipmentIds = DB::table($shipmentsTable)
+                    ->where('created_by_import_id', $this->id)
+                    ->pluck('id');
+            } elseif ($voyageIds->isNotEmpty() && Schema::hasColumn($shipmentsTable, 'voyage_id')) {
+                $shipmentIds = DB::table($shipmentsTable)
+                    ->whereIn('voyage_id', $voyageIds)
+                    ->pluck('id');
+            }
+        }
+
+        if ($billsTable && $billIds->isEmpty()) {
+            if (Schema::hasColumn($billsTable, 'created_by_import_id')) {
+                $billIds = DB::table($billsTable)
+                    ->where('created_by_import_id', $this->id)
+                    ->pluck('id');
+            } elseif ($shipmentIds->isNotEmpty() && Schema::hasColumn($billsTable, 'shipment_id')) {
+                $billIds = DB::table($billsTable)
+                    ->whereIn('shipment_id', $shipmentIds)
+                    ->pluck('id');
+            }
+        }
+
+        if ($itemsTable && $itemIds->isEmpty()) {
+            if (Schema::hasColumn($itemsTable, 'created_by_import_id')) {
+                $itemIds = DB::table($itemsTable)
+                    ->where('created_by_import_id', $this->id)
+                    ->pluck('id');
+            } else {
+                $c = collect();
+                $bolItemFk = null;
+                if (Schema::hasColumn($itemsTable, 'bill_of_lading_id'))   $bolItemFk = 'bill_of_lading_id';
+                if (Schema::hasColumn($itemsTable, 'bill_of_landing_id'))  $bolItemFk = $bolItemFk ?? 'bill_of_landing_id';
+
+                if ($bolItemFk && $billIds->isNotEmpty()) {
+                    $c = $c->merge(DB::table($itemsTable)->whereIn($bolItemFk, $billIds)->pluck('id'));
+                }
+                if ($shipmentIds->isNotEmpty() && Schema::hasColumn($itemsTable, 'shipment_id')) {
+                    $c = $c->merge(DB::table($itemsTable)->whereIn('shipment_id', $shipmentIds)->pluck('id'));
+                }
+                $itemIds = $c->unique()->values();
+            }
+        }
+
+        // 4) Containers por FKs directas (si existieran)
+        if ($containersTable && $containerIds->isEmpty()) {
+            $c = collect();
+
+            $bolFk = null;
+            if (Schema::hasColumn($containersTable, 'bill_of_lading_id'))   $bolFk = 'bill_of_lading_id';
+            if (Schema::hasColumn($containersTable, 'bill_of_landing_id'))  $bolFk = $bolFk ?? 'bill_of_landing_id';
+
+            if ($bolFk && $billIds->isNotEmpty()) {
+                $c = $c->merge(DB::table($containersTable)->whereIn($bolFk, $billIds)->pluck('id'));
+            }
+            if ($shipmentIds->isNotEmpty() && Schema::hasColumn($containersTable, 'shipment_id')) {
+                $c = $c->merge(DB::table($containersTable)->whereIn('shipment_id', $shipmentIds)->pluck('id'));
+            }
+
+            // 5) 🔎 BÚSQUEDA AUTOMÁTICA DE PIVOTES QUE REFERENCIAN container_id
+            //    (caso PARANA: contenedores asociados a ítems vía pivote)
+            //    Recorremos todas las tablas y buscamos columnas: container_id + {shipment_item_id | bill_of_lading_id | bill_of_landing_id | shipment_id | voyage_id}
+            $driver = DB::getDriverName();
+            $tables = [];
+
+            if ($driver === 'mysql') {
+                $rows = DB::select('SHOW TABLES');
+                foreach ($rows as $row) {
+                    $tables[] = array_values((array)$row)[0] ?? null;
+                }
+            } else {
+                // fallback simple si no es MySQL (ajustar si fuera necesario)
+                $tables = []; // podrías listar manualmente tus posibles pivotes aquí
+            }
+
+            foreach ($tables as $t) {
+                if (!$t || !Schema::hasTable($t)) continue;
+                $cols = collect(Schema::getColumnListing($t));
+
+                if (!$cols->contains('container_id')) continue;
+
+                $linkCols = $cols->intersect([
+                    'shipment_item_id',
+                    'bill_of_lading_id',
+                    'bill_of_landing_id',
+                    'shipment_id',
+                    'voyage_id',
+                ]);
+
+                if ($linkCols->isEmpty()) continue;
+
+                // Construimos consulta al pivote para recolectar container_id por cualquier conjunto de IDs que tengamos
+                $q = DB::table($t)->select('container_id');
+
+                $hasFilter = false;
+                if ($itemIds->isNotEmpty() && $cols->contains('shipment_item_id')) {
+                    $q->orWhereIn('shipment_item_id', $itemIds); $hasFilter = true;
+                }
+                if ($billIds->isNotEmpty()) {
+                    if ($cols->contains('bill_of_lading_id'))  { $q->orWhereIn('bill_of_lading_id',  $billIds); $hasFilter = true; }
+                    if ($cols->contains('bill_of_landing_id')) { $q->orWhereIn('bill_of_landing_id', $billIds); $hasFilter = true; }
+                }
+                if ($shipmentIds->isNotEmpty() && $cols->contains('shipment_id')) {
+                    $q->orWhereIn('shipment_id', $shipmentIds); $hasFilter = true;
+                }
+                if ($voyageIds->isNotEmpty() && $cols->contains('voyage_id')) {
+                    $q->orWhereIn('voyage_id', $voyageIds); $hasFilter = true;
+                }
+
+                if ($hasFilter) {
+                    $c = $c->merge($q->pluck('container_id'));
+                }
+            }
+
+            $containerIds = $c->unique()->values();
+        }
+
         return [
-            'voyages' => $this->created_voyage_ids ?: [],
-            'shipments' => $this->created_shipment_ids ?: [],
-            'bills' => $this->created_bill_ids ?: [],
-            'items' => $this->created_item_ids ?: [],
-            'containers' => $this->created_container_ids ?: [],
-            'clients' => $this->created_client_ids ?: [],
-            'ports' => $this->created_port_ids ?: []
+            'voyages'    => $voyageIds->values()->all(),
+            'shipments'  => $shipmentIds->values()->all(),
+            'bills'      => $billIds->values()->all(),
+            'containers' => $containerIds->values()->all(),
+            'items'      => $itemIds->values()->all(),
         ];
     }
+
 
     /**
      * Generar hash del archivo para detectar duplicados
@@ -478,4 +632,33 @@ class ManifestImport extends Model
             'can_be_reverted' => true
         ], $data));
     }
+
+// Detecta la tabla pivote contenedores⇆ítems (sin inventar nombres raros)
+public function detectContainerPivot(): ?array
+{
+    $candidates = [
+        'container_shipment_item',
+        'container_shipment_items',
+        'container_items',
+    ];
+
+    foreach ($candidates as $table) {
+        if (
+            Schema::hasTable($table) &&
+            Schema::hasColumn($table, 'container_id') &&
+            Schema::hasColumn($table, 'shipment_item_id')
+        ) {
+            return [
+                'table'        => $table,
+                'container_fk' => 'container_id',
+                'item_fk'      => 'shipment_item_id',
+            ];
+        }
+    }
+
+    return null;
+}
+
+
+
 }

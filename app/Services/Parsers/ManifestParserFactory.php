@@ -6,11 +6,13 @@ use App\Contracts\ManifestParserInterface;
 use App\Services\Parsers\KlineDataParser;
 use App\Services\Parsers\ParanaExcelParser;
 // TODO: Agregar otros parsers cuando estén implementados
-use App\Services\Parsers\GuaranCsvParser;
+use App\Services\Parsers\GuaranExcelParser;
 use App\Services\Parsers\LoginXmlParser;
 // use App\Services\Parsers\TfpTextParser;
 // use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\NavsurTextParser;
+use App\Services\Parsers\CmspEdiParser;
+
 use Exception;
 use Illuminate\Support\Facades\Log;
 
@@ -34,10 +36,10 @@ class ManifestParserFactory
     protected array $parsers = [
         KlineDataParser::class,
         ParanaExcelParser::class,
-        GuaranCsvParser::class, 
+        GuaranExcelParser::class, 
         LoginXmlParser::class,
         // TfpTextParser::class,
-        // CmspEdiParser::class,
+        CmspEdiParser::class,
         NavsurTextParser::class,
     ];
 
@@ -47,12 +49,10 @@ class ManifestParserFactory
     protected array $extensionMappings = [
         'dat' => [KlineDataParser::class],
         'txt' => [KlineDataParser::class, NavsurTextParser::class],
-        //'txt' => [KlineDataParser::class, TfpTextParser::class, NavsurTextParser::class],
-        'xlsx' => [ParanaExcelParser::class],
-        'xls' => [ParanaExcelParser::class],
-        'csv' => [], // GuaranCsvParser::class
+        'xlsx' => [ParanaExcelParser::class, GuaranExcelParser::class],
+        'xls' => [ParanaExcelParser::class, GuaranExcelParser::class],
         'xml' => [LoginXmlParser::class], // LoginXmlParser::class
-        'edi' => [], // CmspEdiParser::class
+        'edi' => [CmspEdiParser::class],
     ];
 
     /**

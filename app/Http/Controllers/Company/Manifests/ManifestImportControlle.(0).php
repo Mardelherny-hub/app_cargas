@@ -485,9 +485,12 @@ class ManifestImportController extends Controller
      */
     public function revert(Request $request, ManifestImport $import)
     {
+        // Verificar autenticación básica
+        if (!auth()->check()) {
+            abort(401, 'Usuario no autenticado.');
+        }
 
         $company = auth()->user()->company;
-
         
         if (!$company || $import->company_id !== $company->id) {
             abort(403, 'No tiene permisos para revertir esta importación.');
@@ -502,15 +505,13 @@ class ManifestImportController extends Controller
         if ($import->voyage && $import->voyage->status !== 'planning') {
             return back()->with('error', 'Solo se pueden revertir importaciones con viajes en estado de planificación.');
         }
-        
 
         try {
-        
             DB::beginTransaction();
 
             // Obtener todos los objetos creados
             $createdObjects = $import->getAllCreatedObjectIds();
-            //dd($createdObjects);
+            
             Log::info('REVERT - Objetos a eliminar:', [
                 'import_id' => $import->id,
                 'created_objects' => $createdObjects
@@ -519,28 +520,6 @@ class ManifestImportController extends Controller
             $deletedSummary = [];
 
             // Eliminar en orden correcto (dependencias primero)
-            // 0) Eliminar filas de PIVOTE contenedores⇆ítems (si la tabla existe)
-            $pivotMeta = $import->detectContainerPivot();
-            if ($pivotMeta) {
-                $deletedPivot = 0;
-
-                if (!empty($createdObjects['items'])) {
-                    $deletedPivot += DB::table($pivotMeta['table'])
-                        ->whereIn($pivotMeta['item_fk'], $createdObjects['items'])
-                        ->delete();
-                }
-                if (!empty($createdObjects['containers'])) {
-                    $deletedPivot += DB::table($pivotMeta['table'])
-                        ->whereIn($pivotMeta['container_fk'], $createdObjects['containers'])
-                        ->delete();
-                }
-
-                Log::info('REVERT - Pivote contenedor⇆ítem eliminada', [
-                    'table' => $pivotMeta['table'],
-                    'count' => $deletedPivot,
-                ]);
-            }
-
             
             // 1. Eliminar bills of lading
             if (!empty($createdObjects['bills'])) {

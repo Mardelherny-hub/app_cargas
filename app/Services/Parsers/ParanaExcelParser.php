@@ -6,6 +6,7 @@ use App\Contracts\ManifestParserInterface;
 use App\ValueObjects\ManifestParseResult;
 use App\Models\Voyage;
 use App\Models\Shipment;
+use App\Models\ShipmentItem;
 use App\Models\BillOfLading;
 use App\Models\Container;
 use App\Models\Client;
@@ -33,29 +34,30 @@ class ParanaExcelParser implements ManifestParserInterface
 {
     // Mapeo exacto de columnas según análisis real
     protected array $columnMap = [
+        // Información de la empresa
         'A' => 'LOCATION_NAME',           // MAERSK LINE ARGENTINA S.A
-        'B' => 'ADDRESS_LINE1',           // Dirección empresa
+        'B' => 'ADDRESS_LINE1',           
         'C' => 'ADDRESS_LINE2',           
         'D' => 'ADDRESS_LINE3',           
-        'E' => 'CITY',                    // Ciudad empresa
-        'F' => 'ZIP',                     // Código postal
-        'G' => 'COUNTRY_NAME',            // País empresa
-        'H' => 'TELEPHONE_NO',            // Teléfono
-        'I' => 'FAX_NO',                  // Fax
-        'J' => 'EMAIL_ID',                // Email
+        'E' => 'CITY',                    
+        'F' => 'ZIP',                     
+        'G' => 'COUNTRY_NAME',            
+        'H' => 'TELEPHONE_NO',            
+        'I' => 'FAX_NO',                  
+        'J' => 'EMAIL_ID',                
         'K' => 'MANIFEST_TYPE',           // CM = Consolidado Marítimo
-        'L' => 'BARGE_ID',                // ID barcaza
+        'L' => 'BARGE_ID',                
         'M' => 'BARGE_NAME',              // PAR13001
         'N' => 'VOYAGE_NO',               // V022NB
         'O' => 'BL_NUMBER',               // Número BL
-        'P' => 'BL_DATE',                 // Fecha BL
+        'P' => 'BL_DATE',                 
         'Q' => 'POL',                     // Puerto carga: ARBUE
-        'R' => 'POL_TERMINAL',            // Terminal carga
+        'R' => 'POL_TERMINAL',            
         'S' => 'POD',                     // Puerto descarga: PYTVT
-        'T' => 'POD_TERMINAL',            // TERPORT VILLETA
-        'U' => 'FREIGHT_TERMS',           // Términos flete
-        'V' => 'SHIPPER_NAME',            // Embarcador
-        'W' => 'SHIPPER_ADDRESS1',        // Dirección embarcador
+        'T' => 'POD_TERMINAL',            
+        'U' => 'FREIGHT_TERMS',           
+        'V' => 'SHIPPER_NAME',            
+        'W' => 'SHIPPER_ADDRESS1',        // ← AQUÍ ESTÁ EL CUIT: "CUIT: 30688415531"
         'X' => 'SHIPPER_ADDRESS2',        
         'Y' => 'SHIPPER_ADDRESS3',        
         'Z' => 'SHIPPER_CITY',            
@@ -63,8 +65,8 @@ class ParanaExcelParser implements ManifestParserInterface
         'AB' => 'SHIPPER_COUNTRY',        
         'AC' => 'SHIPPER_PHONE',          
         'AD' => 'SHIPPER_FAX',            
-        'AE' => 'CONSIGNEE_NAME',         // Consignatario
-        'AF' => 'CONSIGNEE_ADDRESS1',     
+        'AE' => 'CONSIGNEE_NAME',         // ← Nombre consignatario
+        'AF' => 'CONSIGNEE_ADDRESS1',     // ← Solo dirección, NO hay CUIT/RUC
         'AG' => 'CONSIGNEE_ADDRESS2',     
         'AH' => 'CONSIGNEE_ADDRESS3',     
         'AI' => 'CONSIGNEE_CITY',         
@@ -72,8 +74,8 @@ class ParanaExcelParser implements ManifestParserInterface
         'AK' => 'CONSIGNEE_COUNTRY',      
         'AL' => 'CONSIGNEE_PHONE',        
         'AM' => 'CONSIGNEE_FAX',          
-        'AN' => 'NOTIFY_PARTY_NAME',      // Notificado
-        'AO' => 'NOTIFY_PARTY_ADDRESS1',  
+        'AN' => 'NOTIFY_PARTY_NAME',      // ← Nombre notificatario
+        'AO' => 'NOTIFY_PARTY_ADDRESS1',  // ← Solo dirección, NO hay RUC
         'AP' => 'NOTIFY_PARTY_ADDRESS2',  
         'AQ' => 'NOTIFY_PARTY_ADDRESS3',  
         'AR' => 'NOTIFY_PARTY_CITY',      
@@ -82,30 +84,30 @@ class ParanaExcelParser implements ManifestParserInterface
         'AU' => 'NOTIFY_PARTY_PHONE',     
         'AV' => 'NOTIFY_PARTY_FAX',       
         'AW' => 'PFD',                    
-        'AX' => 'CONTAINER_NUMBER',       // Número contenedor
-        'AY' => 'CONTAINER_TYPE',         // 40HC, 20DV, 40DV, 40FR, 20TN, 40RH
+        'AX' => 'CONTAINER_NUMBER',       
+        'AY' => 'CONTAINER_TYPE',         // 40HC, 20DV, etc.
         'AZ' => 'CONTAINER_STATUS',       
-        'BA' => 'SEAL_NO',                // Número sello
-        'BB' => 'PACK_TYPE',              // Tipo empaque
-        'BC' => 'NUMBER_OF_PACKAGES',     // Cantidad bultos
-        'BD' => 'GROSS_WEIGHT',           // Peso bruto
-        'BE' => 'NET_WEIGHT',             // Peso neto
-        'BF' => 'TARE_WEIGHT',            // Peso tara
-        'BG' => 'VOLUME',                 // Volumen
+        'BA' => 'SEAL_NO',                
+        'BB' => 'PACK_TYPE',              // ← Tipo empaque real
+        'BC' => 'NUMBER_OF_PACKAGES',     
+        'BD' => 'GROSS_WEIGHT',           
+        'BE' => 'NET_WEIGHT',             
+        'BF' => 'TARE_WEIGHT',            
+        'BG' => 'VOLUME',                 // ← Volumen
         'BH' => 'REMARKS',                
         'BI' => 'MARKS_DESCRIPTION',      
-        'BJ' => 'DESCRIPTION',            // Descripción mercadería
-        'BK' => 'IMO_NUMBER',             // Número IMO (peligrosas)
-        'BL' => 'UN_NUMBER',              // Número UN
-        'BM' => 'FLASH_POINT',            // Punto inflamación
-        'BN' => 'TEMP_MAX',               // Temperatura máxima
-        'BO' => 'TEMP_MIN',               // Temperatura mínima
-        'BP' => 'NCM',                    // Código NCM
+        'BJ' => 'DESCRIPTION',            
+        'BK' => 'IMO_NUMBER',             
+        'BL' => 'UN_NUMBER',              
+        'BM' => 'FLASH_POINT',            
+        'BN' => 'TEMP_MAX',               
+        'BO' => 'TEMP_MIN',               
+        'BP' => 'NCM',                    
         'BQ' => 'REMARKS1',               
         'BR' => 'REMARKS2',               
         'BS' => 'REMARKS3',               
-        'BT' => 'MLO_BL_NR',              // MLO BL Number
-        'BU' => 'PERMISO'                 // Número permiso
+        'BT' => 'MLO_BL_NR',              // ← MBL (Madre)
+        'BU' => 'PERMISO'                 // ← Permiso de Embarque
     ];
 
     public function canParse(string $filePath): bool
@@ -175,6 +177,7 @@ class ParanaExcelParser implements ManifestParserInterface
             // Procesar filas de datos (ignorar header si existe)
             $containers = [];
             $bills = [];
+            $items = [];
             $processedBLs = [];
             
             for ($row = 2; $row <= $highestRow; $row++) {
@@ -213,7 +216,7 @@ class ParanaExcelParser implements ManifestParserInterface
                 // AGREGAR: Crear ShipmentItem para cada fila
                 $shipmentItem = $this->createShipmentItem($bill, $rowData);
                 if ($shipmentItem) {
-                    // No necesitamos array, solo logging
+                    $items[] = $shipmentItem;
                     Log::info('ShipmentItem created', ['item_id' => $shipmentItem->id]);
                 }
             }
@@ -221,11 +224,12 @@ class ParanaExcelParser implements ManifestParserInterface
             Log::info('PARANA parsing completed', [
                 'voyage_id' => $voyage->id,
                 'bills_count' => count($bills),
-                'containers_count' => count($containers)
+                'containers_count' => count($containers),
+                'items_count' => count($items)
             ]);
 
             // NUEVO: Registrar objetos creados y completar importación
-            $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $startTime);
+            $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $items, $startTime);
 
             return ManifestParseResult::success(
                 voyage: $voyage,
@@ -263,17 +267,24 @@ class ParanaExcelParser implements ManifestParserInterface
 
     protected function extractVoyageData($worksheet): array
     {
-        // Datos del voyage desde primera fila
+        // Detectar si la fila 1 es encabezado (por el contenido de A1)
+        $a1 = trim((string)$worksheet->getCell('A1')->getCalculatedValue());
+        $isHeaderRow = in_array(mb_strtoupper($a1), ['LOCATION NAME','COMPANY','LOCATION'], true);
+
+        // Si la fila 1 es encabezado, los datos reales empiezan en la 2
+        $row = $isHeaderRow ? 2 : 1;
+
         return [
-            'company_name' => $worksheet->getCell('A1')->getCalculatedValue() ?: 'MAERSK LINE ARGENTINA S.A',
-            'barge_name' => $worksheet->getCell('M1')->getCalculatedValue() ?: 'PAR13001',
-            'voyage_number' => $worksheet->getCell('N1')->getCalculatedValue() ?: 'V022NB',
-            'pol' => $worksheet->getCell('Q1')->getCalculatedValue() ?: 'ARBUE',
-            'pod' => $worksheet->getCell('S1')->getCalculatedValue() ?: 'PYTVT',
-            'pol_terminal' => $worksheet->getCell('R1')->getCalculatedValue(),
-            'pod_terminal' => $worksheet->getCell('T1')->getCalculatedValue() ?: 'TERPORT VILLETA'
+            'company_name'   => $worksheet->getCell('A' . $row)->getCalculatedValue() ?: 'MAERSK LINE ARGENTINA S.A',
+            'barge_name'     => $worksheet->getCell('M' . $row)->getCalculatedValue() ?: 'PAR13001',
+            'voyage_number'  => $worksheet->getCell('N' . $row)->getCalculatedValue() ?: 'V022NB',
+            'POL'            => $worksheet->getCell('Q' . $row)->getCalculatedValue() ?: 'ARBUE',
+            'POD'            => $worksheet->getCell('S' . $row)->getCalculatedValue() ?: 'PYTVT',
+            'POL_terminal'   => $worksheet->getCell('R' . $row)->getCalculatedValue(),
+            'POD_terminal'   => $worksheet->getCell('T' . $row)->getCalculatedValue() ?: 'TERPORT VILLETA',
         ];
     }
+
 
     protected function extractRowData($worksheet, int $row): array
     {
@@ -282,6 +293,7 @@ class ParanaExcelParser implements ManifestParserInterface
             $value = $worksheet->getCell($col . $row)->getCalculatedValue();
             $data[$field] = $value;
         }
+
         return $data;
     }
 
@@ -312,8 +324,9 @@ class ParanaExcelParser implements ManifestParserInterface
         }
 
         // Crear/buscar puertos PRIMERO para obtener country_ids
-        $originPort = $this->findOrCreatePort($data['pol'], 'Buenos Aires');
-        $destPort = $this->findOrCreatePort($data['pod'], 'Terminal Villeta');
+
+        $originPort = $this->findOrCreatePort($data['POL'], 'Buenos Aires');
+        $destPort = $this->findOrCreatePort($data['POD'], 'Terminal Villeta');
         
         // CORREGIDO: Buscar o crear vessel con campos obligatorios
         // USAR vessel seleccionado en lugar de crear fake
@@ -492,8 +505,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'discharge_port_id' => $dischargePort->id,
             'freight_terms' => 'prepaid',
             'status' => 'draft',
-            'primary_cargo_type_id' => 1,
-            'primary_packaging_type_id' => 1,
+            'primary_cargo_type_id' => $this->determinateCargoTypeId($data),
+            'primary_packaging_type_id' => $this->determinatePackagingTypeId($data),
             
             // AGREGADO: Campos adicionales con valores por defecto
             'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
@@ -566,10 +579,10 @@ class ParanaExcelParser implements ManifestParserInterface
             'current_gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
             'cargo_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
             'max_gross_weight_kg' => 30000,
-            'condition' => 'L', // Loaded
+            'condition' => 'L', // Loaded - valor fijo válido
+            'shipper_seal' => $data['SEAL_NO'] ?? null,
             'operational_status' => 'loaded',
             'current_port_id' => $bill->loading_port_id,
-            'shipper_seal' => $data['SEAL_NO'] ?? null,
             'webservice_data' => json_encode([
                 'parana_data' => [
                     'description' => $data['DESCRIPTION'] ?? null,
@@ -674,20 +687,20 @@ class ParanaExcelParser implements ManifestParserInterface
     {
         // Mapeo de códigos conocidos a nombres
         $portNames = [
-            'ARBUE' => 'Buenos Aires',
-            'ARROS' => 'Rosario',
-            'ARCAM' => 'Campana',
-            'ARCON' => 'Concepción del Uruguay',
-            'ARSFE' => 'Santa Fe',
-            'ARPAR' => 'Paraná',
-            'PYASU' => 'Asunción',
-            'PYCON' => 'Concepción',
-            'PYTVT' => 'Terminal Villeta',
-            'PYVIL' => 'Villeta',
-            'PYPIL' => 'Pilar',
-            'BRRIG' => 'Rio Grande',
-            'BRPOA' => 'Porto Alegre',
-            'BRSFS' => 'Santos',
+            'ARBUE' => 'Puerto de Buenos Aires',           // ✅ Más descriptivo
+            'ARROS' => 'Puerto de Rosario',
+            'ARCAM' => 'Puerto de Campana',
+            'ARCON' => 'Puerto de Concepción del Uruguay',
+            'ARSFE' => 'Puerto de Santa Fe',
+            'ARPAR' => 'Puerto de Paraná',
+            'PYASU' => 'Puerto de Asunción',
+            'PYCON' => 'Puerto de Concepción',
+            'PYTVT' => 'Terminal Villeta',                 // ✅ Mantener nombre real
+            'PYVIL' => 'Puerto de Villeta',
+            'PYPIL' => 'Puerto de Pilar',
+            'BRRIG' => 'Puerto de Rio Grande',
+            'BRPOA' => 'Puerto de Porto Alegre',
+            'BRSFS' => 'Puerto de Santos',
         ];
 
         return $portNames[$code] ?? "Puerto {$code}";
@@ -714,9 +727,11 @@ class ParanaExcelParser implements ManifestParserInterface
             'ARBUE' => 'Buenos Aires',
             'ARROS' => 'Rosario', 
             'ARSFE' => 'Santa Fe',
+            'ARPAR' => 'Paraná',
             'PYASU' => 'Asunción',
-            'PYTVT' => 'Villeta',
+            'PYTVT' => 'Villeta',        // ✅ Consistente con Terminal Villeta
             'PYCON' => 'Concepción',
+            'PYVIL' => 'Villeta',
         ];
         
         return $cityMap[$code] ?? $defaultCity;
@@ -738,16 +753,20 @@ class ParanaExcelParser implements ManifestParserInterface
         // Buscar cliente existente por nombre
         $taxId = $this->generateValidTaxId($clientData['name']);
 
+        // Determinar país del cliente ANTES de buscar
+        $clientCountryId = $this->determineClientCountry($clientData, $companyId);
+
         $client = Client::where('tax_id', $taxId)
-                        ->where('country_id', 1)
+                        ->where('country_id', $clientCountryId)  // ✅ País dinámico
                         ->first();
 
         // Si no existe por tax_id, buscar por nombre como fallback
         if (!$client) {
             $client = Client::where('legal_name', $clientData['name'])
-                            ->where('country_id', 1)
+                            ->where('country_id', $clientCountryId)  // ✅ País dinámico
                             ->first();
         }
+        
         if ($client) {
             Log::info('Cliente existente encontrado', ['client_id' => $client->id]);
             return $client;
@@ -769,7 +788,7 @@ class ParanaExcelParser implements ManifestParserInterface
             'legal_name' => $clientData['name'],
             'commercial_name' => $clientData['name'],
             'tax_id' => $taxId, // CORREGIDO: máximo 11 caracteres
-            'country_id' => 1, // Argentina por defecto
+            'country_id' => $clientCountryId,
             'document_type_id' => 1, // Tipo por defecto
             'status' => 'active',
             'address' => $clientData['address'] ?? null,
@@ -937,8 +956,12 @@ class ParanaExcelParser implements ManifestParserInterface
                 'package_quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
                 'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
                 'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
-                'cargo_type_id' => 1,
-                'packaging_type_id' => 1,
+                'cargo_type_id' => $this->determinateCargoTypeId($data),
+                'packaging_type_id' => $this->determinatePackagingTypeId($data),                
+                'volume_m3' => $this->parseVolume($data['VOLUME']),
+                'commodity_code' => $data['NCM'] ?? null,                             // BP
+                'cargo_marks' => $data['MARKS_DESCRIPTION'] ?? null,                  // BI
+                'created_by_user_id' => auth()->id()
             ]);
 
             Log::info('ShipmentItem created successfully', [
@@ -946,6 +969,20 @@ class ParanaExcelParser implements ManifestParserInterface
                 'line_number' => $shipmentItem->line_number,
                 'bill_id' => $bill->id
             ]);
+
+            // Crear relación con contenedor si existe
+            if (!empty($data['CONTAINER_NUMBER'])) {
+                $container = Container::where('container_number', $data['CONTAINER_NUMBER'])->first();
+                
+                if ($container) {
+                    $shipmentItem->containers()->attach($container->id, [
+                        'package_quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
+                        'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
+                        'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
+                        'volume_m3' => $this->parseVolume($data['VOLUME']),
+                    ]);
+                }
+            }
 
             return $shipmentItem;
         } catch (\Exception $e) {
@@ -993,6 +1030,7 @@ class ParanaExcelParser implements ManifestParserInterface
         Voyage $voyage, 
         array $bills, 
         array $containers,
+        array $items,
         float $startTime
     ): void {
         $processingTime = microtime(true) - $startTime;
@@ -1002,7 +1040,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'voyages' => [$voyage->id],
             'shipments' => [$voyage->shipments()->first()->id ?? null],
             'bills' => array_map(fn($bill) => $bill->id, $bills),
-            'containers' => array_map(fn($container) => $container->id, $containers)
+            'containers' => array_map(fn($container) => $container->id, $containers),
+            'items' => array_map(fn($item) => $item->id, $items)                                                                                    
         ];
         
         // Filtrar nulls
@@ -1057,4 +1096,168 @@ class ParanaExcelParser implements ManifestParserInterface
             'email' => $email
         ];
     }
+
+    // determinar el tipo de carga 
+    protected function determinateCargoTypeId(array $data): int
+    {
+        // Si tiene número de contenedor, es carga contenerizada
+        if (!empty($data['CONTAINER_NUMBER'])) {
+            // Buscar tipo "Contenedores" exacto
+            $containerCargoType = \App\Models\CargoType::where('name', 'Contenedores')
+                                                    ->where('active', 1)
+                                                    ->first();
+            
+            // También intentar con otros nombres posibles
+            if (!$containerCargoType) {
+                $containerCargoType = \App\Models\CargoType::where('name', 'LIKE', '%Container%')
+                                                        ->orWhere('code', 'CON001')
+                                                        ->where('active', 1)
+                                                        ->first();
+            }
+            
+            if ($containerCargoType) {
+                return $containerCargoType->id;
+            }
+        }
+        
+        // Fallback: Carga General
+        return 1;
+    }
+
+    //determinar el tipo de embalaje
+    protected function determinatePackagingTypeId(array $data): int
+    {
+        $packType = $data['PACK_TYPE'] ?? null;
+        
+        if ($packType) {
+            // Mapear tipos del Excel a tipos de la BD
+            $packTypeMap = [
+                'PACKAGE' => 'Paquete',
+                'ROLLS' => 'Rollo', 
+                'BOX' => 'Caja',
+                'BAGS' => 'Bolsa'
+            ];
+            
+            $mappedType = $packTypeMap[$packType] ?? $packType;
+            
+            $packagingType = \App\Models\PackagingType::where('name', 'LIKE', '%' . $mappedType . '%')
+                                                    ->where('active', 1)
+                                                    ->first();
+            
+            if ($packagingType) {
+                return $packagingType->id;
+            }
+        }
+        
+        // Fallback
+        return 1;
+    }
+
+    protected function findContainerTypeId(string $containerType): ?\App\Models\ContainerType
+    {
+        // Mapear tipos del Excel a códigos de la BD
+        $typeMapping = [
+            '20GP' => '20GP',
+            '20DV' => '20GP', 
+            '40GP' => '40GP',
+            '40DV' => '40GP',
+            '40HC' => '40HC',
+            '20RF' => '20RF',
+            '20OT' => '20OT',
+        ];
+        
+        $mappedCode = $typeMapping[$containerType] ?? $containerType;
+        
+        return \App\Models\ContainerType::where('code', $mappedCode)
+                                    ->where('active', true)
+                                    ->first();
+    }
+
+    /**
+     * Determinar país del cliente basado en contexto
+     */
+    protected function determineClientCountry(array $clientData, int $companyId): int
+    {
+        // Analizar dirección del cliente
+        $address = strtoupper($clientData['address'] ?? '');
+        
+        // Si tiene RUC o menciona Paraguay -> Paraguay (2)
+        if (str_contains($address, 'RUC') || 
+            str_contains($address, 'PARAGUAY') || 
+            str_contains($address, 'ASUNCION') ||
+            str_contains($address, 'VILLETA')) {
+            return 2; // Paraguay
+        }
+        
+        // Si tiene CUIT o menciona Argentina -> Argentina (1)  
+        if (str_contains($address, 'CUIT') || 
+            str_contains($address, 'ARGENTINA') ||
+            str_contains($address, 'BUENOS AIRES')) {
+            return 1; // Argentina
+        }
+        
+        // Si menciona Brasil -> Brasil (3)
+        if (str_contains($address, 'BRASIL') || 
+            str_contains($address, 'BRAZIL')) {
+            return 3; // Brasil
+        }
+        
+        // Default: Argentina (origen típico del shipper PARANA)
+        return 1;
+    }
+
+    protected function scanValueLikeColumns(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): array
+{
+    $rows = $sheet->toArray(null, true, true, true);
+    $headersRow = $rows[1] ?? [];
+    $candidates = [];
+
+    // patrones típicos de valor declarado / monto
+    $needles = [
+        'VALUE', 'DECLARED', 'INVOICE', 'CIF', 'FOB', 'AMOUNT', 'USD', 'U$S', 'U$D', 'TOTAL'
+    ];
+
+    // 1) detectar por encabezado
+    foreach ($headersRow as $col => $title) {
+        $t = mb_strtoupper(trim((string)$title));
+        foreach ($needles as $n) {
+            if ($t !== '' && str_contains($t, $n)) {
+                $candidates[$col] = $t;
+                break;
+            }
+        }
+    }
+
+    // 2) si no hay headers claros, buscar por “formas” en las primeras 30 filas
+    if (empty($candidates)) {
+        for ($r = 1; $r <= min(30, count($rows)); $r++) {
+            foreach (($rows[$r] ?? []) as $col => $val) {
+                $v = (string)$val;
+                // heurística: $/USD/ números grandes con separadores
+                if (preg_match('/(\$|USD|U\$S|U\$D)/i', $v) || preg_match('/\d{1,3}([.,]\d{3})+([.,]\d{2})?/', $v)) {
+                    $candidates[$col] = $headersRow[$col] ?? '(sin header)';
+                }
+            }
+        }
+    }
+
+    // 3) sample: devolvemos hasta 10 valores no vacíos por columna candidata
+    $samples = [];
+    foreach ($candidates as $col => $title) {
+        $vals = [];
+        $limit = 10;
+        for ($r = 2; $r <= min(count($rows), 200) && count($vals) < $limit; $r++) {
+            $cell = trim((string)($rows[$r][$col] ?? ''));
+            if ($cell !== '') $vals[] = $cell;
+        }
+        $samples[] = [
+            'column' => $col,
+            'header' => $title,
+            'examples' => $vals,
+        ];
+    }
+
+    return $samples;
+}
+
 }
