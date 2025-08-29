@@ -88,45 +88,33 @@ class Container extends Model
     /**
      * Ítems de mercadería asignados a este contenedor
      * Relación many-to-many con datos adicionales en tabla pivote
+     * 
+     * ✅ CORREGIDO: Solo campos que SÍ EXISTEN en container_shipment_item según migración
      */
     public function shipmentItems(): BelongsToMany
     {
         return $this->belongsToMany(ShipmentItem::class, 'container_shipment_item')
             ->withPivot([
+                // ✅ Campos de distribución de cantidades - SÍ EXISTEN
                 'package_quantity',
                 'gross_weight_kg',
                 'net_weight_kg',
                 'volume_m3',
+                
+                // ✅ Campos de porcentajes - SÍ EXISTEN
                 'quantity_percentage',
                 'weight_percentage',
                 'volume_percentage',
+                
+                // ✅ Campos de carga - SÍ EXISTEN
                 'loaded_at',
                 'sealed_at',
                 'loading_sequence',
-                'position_in_container',
-                'stowage_reference',
-                'handling_instructions',
-                'special_requirements',
-                'customs_seal_number',
-                'temperature_setting',
-                'humidity_setting',
-                'loading_notes',
-                'inspector_notes',
-                'quality_approved',
-                'quality_notes',
-                'requires_inspection',
-                'inspection_type',
-                'inspection_completed',
-                'inspection_date',
-                'inspector_user_id',
-                'damaged_during_loading',
-                'damage_description',
+                
+                // ✅ Campos de estado y control - SÍ EXISTEN
                 'status',
-                'has_discrepancies',
-                'discrepancy_notes',
-                'requires_review',
-                'reviewed_by_user_id',
-                'reviewed_at',
+                
+                // ✅ Campos de auditoría - SÍ EXISTEN
                 'created_date',
                 'created_by_user_id',
                 'last_updated_date',
@@ -136,10 +124,10 @@ class Container extends Model
     }
 
     /**
- * Tipo de contenedor
- */
-public function containerType(): BelongsTo
-{
-    return $this->belongsTo(ContainerType::class, 'container_type_id');
-}
+     * Tipo de contenedor
+     */
+    public function containerType(): BelongsTo
+    {
+        return $this->belongsTo(ContainerType::class, 'container_type_id');
+    }
 }
