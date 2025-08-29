@@ -70,6 +70,15 @@
                         </div>
 
                     @elseif($user && ($user->hasRole('company-admin') || $user->hasRole('user')))
+                        <!-- Búsqueda Global - Integrar en la navegación existente -->
+                        <div class="hidden sm:block sm:ml-6 inline-flex items-center px-1 pt-1 text-sm font-medium leading-5 text-gray-900 focus:outline-none focus:border-indigo-700 transition duration-150 ease-in-out">
+                            <div class="flex items-center space-x-4 mt-4">
+                                <!-- Buscador Global -->
+                                <div class="relative">
+                                    @livewire('global-search')
+                                </div>
+                            </div>
+                        </div>
                         <!-- COMPANY ADMIN Y OPERADORES (USER) Navigation -->
                         <x-nav-link href="{{ route('company.dashboard') }}" :active="request()->routeIs('company.dashboard')">
                             {{ __('Dashboard') }}
@@ -478,6 +487,13 @@
 
             @elseif($user && ($user->hasRole('company-admin') || $user->hasRole('user')))
                 <!-- Responsive Navigation for Company Admin and Operadores -->
+                <!-- En el menú móvil -->
+                <div class="px-4 pt-2 pb-3 space-y-1 sm:hidden">
+                    <div class="mb-3">
+                        @livewire('global-search')
+                    </div>
+                    <!-- Resto del menú móvil -->
+                </div>
                 <x-responsive-nav-link :href="route('company.dashboard')" :active="request()->routeIs('company.dashboard')">
                     {{ __('Dashboard') }}
                 </x-responsive-nav-link>
