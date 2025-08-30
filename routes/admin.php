@@ -10,6 +10,9 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\ClientController;
 use App\Http\Controllers\Admin\VesselOwnerController;
 use App\Http\Controllers\Admin\VesselTypeController;
+use App\Http\Controllers\Admin\ContainerTypeController;
+use App\Http\Controllers\Admin\CargoTypeController;
+use App\Http\Controllers\Admin\PackagingTypeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -167,6 +170,18 @@ Route::prefix('vessel-types')->name('admin.vessel-types.')->group(function () {
     Route::post('/bulk-action', [VesselTypeController::class, 'bulkAction'])->name('bulk-action');
 });
 
+// gestion de tipos de contenedores, cargos y envases
+
+Route::middleware(['auth', 'role:super-admin'])->group(function () {
+    Route::resource('container-types', ContainerTypeController::class)
+        ->names('admin.container-types');
+
+    Route::resource('cargo-types', CargoTypeController::class)
+        ->names('admin.cargo-types');
+
+    Route::resource('packaging-types', PackagingTypeController::class)
+        ->names('admin.packaging-types');
+});
 // Reportes y Estadísticas
 Route::prefix('reports')->name('admin.reports.')->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('index');
