@@ -311,6 +311,10 @@ class ClientsSeeder extends Seeder
     /**
      * Crear un cliente individual
      */
+    /**
+     * Crear un cliente individual
+     * CORREGIDO: Sin actualizar primary_contact_data_id que no existe
+     */
     private function createClient(
         array $clientData,
         Country $country,
@@ -355,9 +359,10 @@ class ClientsSeeder extends Seeder
                 'notes' => 'Cliente creado por seeder - datos de prueba',
             ];
 
+            // CREAR EL CLIENTE
             $client = Client::create($clientRecord);
 
-            // Crear datos de contacto y vincularlos
+            // CREAR CONTACTO PRINCIPAL (ya no se vincula a primary_contact_data_id)
             $emails = isset($clientData['email']) ? explode(';', $clientData['email']) : [];
             $primaryEmail = $emails[0] ?? null;
             $secondaryEmail = $emails[1] ?? null;
@@ -374,9 +379,9 @@ class ClientsSeeder extends Seeder
                 'created_by_user_id' => User::first()->id,
             ]);
 
-            // Actualizar cliente con el ID del contacto principal
-            $client->primary_contact_data_id = $contact->id;
-            $client->save();
+            // ❌ REMOVIDO: No actualizar primary_contact_data_id porque no existe en la tabla clients
+            // $client->primary_contact_data_id = $contact->id;
+            // $client->save();
 
             $this->command->line("  ✓ {$clientData['legal_name']}");
 
