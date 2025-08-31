@@ -11,6 +11,7 @@ use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\CustomOffice;
 use App\Models\BillOfLading;
+use App\Models\Country;
 use App\Traits\UserHelper;
 
 class BillOfLadingEditForm extends Component
@@ -69,25 +70,48 @@ class BillOfLadingEditForm extends Component
 
     // === DIRECCIONES ESPECÍFICAS (igual que en CREATE) ===
     // Shipper
-    public $bl_shipper_use_specific = false;
-    public $bl_shipper_address_1 = '';  
-    public $bl_shipper_address_2 = '';
-    public $bl_shipper_city = '';
-    public $bl_shipper_state = '';
+    public $shipper_use_specific = false;
+    public $shipper_specific_address_1 = '';
+    public $shipper_specific_address_2 = '';
+    public $shipper_specific_city = '';
+    public $shipper_specific_state = '';
+    public $shipper_specific_postal_code = '';
+    public $shipper_specific_country = '';
+    public $shipper_specific_phone = '';
+    public $shipper_specific_email = '';
 
-    // Consignee  
-    public $bl_consignee_use_specific = false;
-    public $bl_consignee_address_1 = '';
-    public $bl_consignee_address_2 = '';
-    public $bl_consignee_city = '';
-    public $bl_consignee_state = '';
+    // Consignee
+    public $consignee_use_specific = false;
+    public $consignee_specific_address_1 = '';
+    public $consignee_specific_address_2 = '';
+    public $consignee_specific_city = '';
+    public $consignee_specific_state = '';
+    public $consignee_specific_postal_code = '';
+    public $consignee_specific_country = '';
+    public $consignee_specific_phone = '';
+    public $consignee_specific_email = '';
 
-    // Notify
-    public $bl_notify_use_specific = false;
-    public $bl_notify_address_1 = '';
-    public $bl_notify_address_2 = '';
-    public $bl_notify_city = '';
-    public $bl_notify_state = '';
+    // Notify Party
+    public $notify_use_specific = false;
+    public $notify_specific_address_1 = '';
+    public $notify_specific_address_2 = '';
+    public $notify_specific_city = '';
+    public $notify_specific_state = '';
+    public $notify_specific_postal_code = '';
+    public $notify_specific_country = '';
+    public $notify_specific_phone = '';
+    public $notify_specific_email = '';
+
+    // === CREACIÓN RÁPIDA DE CLIENTES ===
+    public $showCreateClientModal = false;
+    public $clientType = '';
+    public $new_legal_name = '';
+    public $new_tax_id = '';
+    public $new_country_id = '';
+    public $new_email = '';
+    public $new_phone = '';
+    public $new_address = '';
+    public $new_city = '';
 
     // === CONSOLIDACIÓN ===
     public $is_consolidated = false;
@@ -110,6 +134,7 @@ class BillOfLadingEditForm extends Component
     public $customsOffices;
     public $cargoTypes;
     public $packagingTypes;
+    public $countries;
 
     /**
      * Reglas de validación (copiadas del componente original)
@@ -125,11 +150,11 @@ class BillOfLadingEditForm extends Component
         'currency_code' => 'required|in:USD,ARS,EUR,BRL',
         'incoterms' => 'nullable|string|max:10',
         'shipper_id' => 'required|exists:clients,id,status,active',
-        'consignee_id' => 'required|exists:clients,id,status,active|different:shipper_id',
+        'consignee_id' => 'required|exists:clients,id,status,active',
         'notify_party_id' => 'nullable|exists:clients,id,status,active',
         'cargo_owner_id' => 'nullable|exists:clients,id,status,active',
         'loading_port_id' => 'required|exists:ports,id,active,1',
-        'discharge_port_id' => 'required|exists:ports,id,active,1|different:loading_port_id',
+        'discharge_port_id' => 'required|exists:ports,id,active,1',
         'transshipment_port_id' => 'nullable|exists:ports,id,active,1',
         'final_destination_port_id' => 'nullable|exists:ports,id,active,1',
         'loading_customs_id' => 'nullable|exists:custom_offices,id,active,1',
@@ -138,10 +163,10 @@ class BillOfLadingEditForm extends Component
         'primary_packaging_type_id' => 'required|exists:packaging_types,id,active,1',
         'cargo_description' => 'required|string|max:3000',
         'cargo_marks' => 'nullable|string|max:1000',
-        'commodity_code' => 'nullable|string|max:100',
+        'commodity_code' => 'nullable|string|max:50',
         'total_packages' => 'required|integer|min:1',
         'gross_weight_kg' => 'required|numeric|min:0.01',
-        'net_weight_kg' => 'nullable|numeric|min:0|lte:gross_weight_kg',
+        'net_weight_kg' => 'nullable|numeric|min:0',
         'volume_m3' => 'nullable|numeric|min:0',
         'measurement_unit' => 'nullable|string|max:20',
         'contains_dangerous_goods' => 'boolean',
@@ -155,6 +180,19 @@ class BillOfLadingEditForm extends Component
         'is_master_bill' => 'boolean',
         'is_house_bill' => 'boolean',
         'master_bill_number' => 'nullable|string|max:50|required_if:is_house_bill,true',
+        'original_released' => 'boolean',
+        'documentation_complete' => 'boolean',
+    ];
+
+    protected $casts = [
+        'contains_dangerous_goods' => 'boolean',
+        'requires_refrigeration' => 'boolean',
+        'is_perishable' => 'boolean',
+        'is_priority' => 'boolean',
+        'requires_inspection' => 'boolean',
+        'is_consolidated' => 'boolean',
+        'is_master_bill' => 'boolean',
+        'is_house_bill' => 'boolean',
         'original_released' => 'boolean',
         'documentation_complete' => 'boolean',
     ];
@@ -196,6 +234,7 @@ class BillOfLadingEditForm extends Component
         $this->customsOffices = CustomOffice::where('active', true)->orderBy('name')->get();
         $this->cargoTypes = CargoType::where('active', true)->orderBy('name')->get();
         $this->packagingTypes = PackagingType::where('active', true)->orderBy('name')->get();
+        $this->countries = Country::where('active', true)->orderBy('name')->get();
     }
 
     /**
@@ -295,7 +334,6 @@ class BillOfLadingEditForm extends Component
     private function loadSpecificContactData($contact, $prefix)
     {
         $this->{$prefix . '_use_specific'} = $contact->use_specific_data;
-        $this->{$prefix . '_specific_company_name'} = $contact->specific_company_name ?? '';
         $this->{$prefix . '_specific_address_1'} = $contact->specific_address_line_1 ?? '';
         $this->{$prefix . '_specific_address_2'} = $contact->specific_address_line_2 ?? '';
         $this->{$prefix . '_specific_city'} = $contact->specific_city ?? '';
@@ -307,73 +345,200 @@ class BillOfLadingEditForm extends Component
     }
 
     /**
-     * Actualizar contactos específicos
+     * Métodos para modal de creación de clientes (copiados del create)
+     */
+    public function openCreateClientModal($type)
+    {
+        $this->clientType = $type;
+        $this->showCreateClientModal = true;
+        $this->resetClientModalData();
+    }
+
+    public function cancelCreateClient()
+    {
+        $this->showCreateClientModal = false;
+        $this->resetClientModalData();
+    }
+
+    private function resetClientModalData()
+    {
+        $this->new_legal_name = '';
+        $this->new_tax_id = '';
+        $this->new_country_id = '';
+        $this->new_email = '';
+        $this->new_phone = '';
+        $this->new_address = '';
+        $this->new_city = '';
+    }
+
+    public function createClient()
+    {
+        $this->validate([
+            'new_legal_name' => 'required|string|min:3|max:255',
+            'new_tax_id' => 'required|string|max:15',
+            'new_country_id' => 'required|exists:countries,id',
+            'new_email' => 'nullable|email|max:255',
+            'new_phone' => 'nullable|string|max:20',
+            'new_address' => 'nullable|string|max:255',
+            'new_city' => 'nullable|string|max:100',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $company = $this->getUserCompany();
+
+            $client = Client::create([
+                'legal_name' => $this->new_legal_name,
+                'tax_id' => $this->new_tax_id,
+                'country_id' => $this->new_country_id,
+                'status' => 'active',
+                'client_type' => 'both',
+                'created_by_company_id' => $company->id,
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            // Crear datos de contacto si se proporcionaron
+            if ($this->new_email || $this->new_phone || $this->new_address) {
+                $client->contactData()->create([
+                    'email' => $this->new_email,
+                    'phone' => $this->new_phone,
+                    'address_line_1' => $this->new_address,
+                    'city' => $this->new_city,
+                    'country_id' => $this->new_country_id,
+                    'is_primary' => true,
+                    'created_by_user_id' => auth()->id(),
+                ]);
+            }
+
+            // Asignar al campo correspondiente
+            switch ($this->clientType) {
+                case 'shipper':
+                    $this->shipper_id = $client->id;
+                    break;
+                case 'consignee':
+                    $this->consignee_id = $client->id;
+                    break;
+                case 'notify':
+                    $this->notify_party_id = $client->id;
+                    break;
+                case 'cargo_owner':
+                    $this->cargo_owner_id = $client->id;
+                    break;
+            }
+
+            // Recargar clientes
+            $this->loadFormData();
+
+            DB::commit();
+
+            session()->flash('message', 'Cliente creado exitosamente.');
+            $this->showCreateClientModal = false;
+            $this->resetClientModalData();
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            session()->flash('error', 'Error al crear cliente: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Actualizar direcciones específicas
      */
     private function updateSpecificContacts()
     {
         // Eliminar contactos específicos existentes
         $this->billOfLading->specificContacts()->delete();
 
-        // Crear nuevos contactos específicos si aplica
-        $this->createSpecificContactIfNeeded('shipper', $this->shipper_id);
-        $this->createSpecificContactIfNeeded('consignee', $this->consignee_id);
-        if ($this->notify_party_id) {
-            $this->createSpecificContactIfNeeded('notify_party', $this->notify_party_id, 'notify');
+        $contactsToCreate = [];
+
+        // Shipper
+        if ($this->shipper_use_specific && $this->shipper_id) {
+            $shipperContactData = $this->getClientPrimaryContactData($this->shipper_id);
+            if ($shipperContactData) {
+                $contactsToCreate[] = [
+                    'client_contact_data_id' => $shipperContactData->id,
+                    'role' => 'shipper',
+                    'use_specific_data' => true,
+                    'specific_address_line_1' => $this->shipper_specific_address_1,
+                    'specific_address_line_2' => $this->shipper_specific_address_2,
+                    'specific_city' => $this->shipper_specific_city,
+                    'specific_state_province' => $this->shipper_specific_state,
+                    'specific_postal_code' => $this->shipper_specific_postal_code,
+                    'specific_country' => $this->shipper_specific_country,
+                    'specific_phone' => $this->shipper_specific_phone,
+                    'specific_email' => $this->shipper_specific_email,
+                    'created_by_user_id' => auth()->id(),
+                ];
+            }
+        }
+
+        // Consignee
+        if ($this->consignee_use_specific && $this->consignee_id) {
+            $consigneeContactData = $this->getClientPrimaryContactData($this->consignee_id);
+            if ($consigneeContactData) {
+                $contactsToCreate[] = [
+                    'client_contact_data_id' => $consigneeContactData->id,
+                    'role' => 'consignee',
+                    'use_specific_data' => true,
+                    'specific_address_line_1' => $this->consignee_specific_address_1,
+                    'specific_address_line_2' => $this->consignee_specific_address_2,
+                    'specific_city' => $this->consignee_specific_city,
+                    'specific_state_province' => $this->consignee_specific_state,
+                    'specific_postal_code' => $this->consignee_specific_postal_code,
+                    'specific_country' => $this->consignee_specific_country,
+                    'specific_phone' => $this->consignee_specific_phone,
+                    'specific_email' => $this->consignee_specific_email,
+                    'created_by_user_id' => auth()->id(),
+                ];
+            }
+        }
+
+        // Notify Party
+        if ($this->notify_use_specific && $this->notify_party_id) {
+            $notifyContactData = $this->getClientPrimaryContactData($this->notify_party_id);
+            if ($notifyContactData) {
+                $contactsToCreate[] = [
+                    'client_contact_data_id' => $notifyContactData->id,
+                    'role' => 'notify_party',
+                    'use_specific_data' => true,
+                    'specific_address_line_1' => $this->notify_specific_address_1,
+                    'specific_address_line_2' => $this->notify_specific_address_2,
+                    'specific_city' => $this->notify_specific_city,
+                    'specific_state_province' => $this->notify_specific_state,
+                    'specific_postal_code' => $this->notify_specific_postal_code,
+                    'specific_country' => $this->notify_specific_country,
+                    'specific_phone' => $this->notify_specific_phone,
+                    'specific_email' => $this->notify_specific_email,
+                    'created_by_user_id' => auth()->id(),
+                ];
+            }
+        }
+
+        // Crear los contactos específicos
+        foreach ($contactsToCreate as $contactData) {
+            $this->billOfLading->specificContacts()->create($contactData);
         }
     }
 
     /**
-     * Crear contacto específico si es necesario
+     * Obtener el ContactData principal de un cliente
      */
-    private function createSpecificContactIfNeeded($role, $clientId, $prefix = null)
+    private function getClientPrimaryContactData($clientId)
     {
-        $prefix = $prefix ?: $role;
-        $useSpecific = $this->{$prefix . '_use_specific'};
-
-        if (!$useSpecific) return;
-
-        // Obtener datos del contacto principal del cliente
-        $client = Client::find($clientId);
-        $clientContact = $client->contactData->first();
-
-        if (!$clientContact) return;
-
-        \App\Models\BillOfLadingContact::create([
-            'bill_of_lading_id' => $this->billOfLading->id,
-            'client_contact_data_id' => $clientContact->id,
-            'role' => $role,
-            'use_specific_data' => true,
-            'specific_company_name' => $this->{$prefix . '_specific_company_name'} ?: null,
-            'specific_address_line_1' => $this->{$prefix . '_specific_address_1'} ?: null,
-            'specific_address_line_2' => $this->{$prefix . '_specific_address_2'} ?: null,
-            'specific_city' => $this->{$prefix . '_specific_city'} ?: null,
-            'specific_state_province' => $this->{$prefix . '_specific_state'} ?: null,
-            'specific_postal_code' => $this->{$prefix . '_specific_postal_code'} ?: null,
-            'specific_country' => $this->{$prefix . '_specific_country'} ?: null,
-            'specific_phone' => $this->{$prefix . '_specific_phone'} ?: null,
-            'specific_email' => $this->{$prefix . '_specific_email'} ?: null,
-            'created_by_user_id' => auth()->id(),
-        ]);
+        return \App\Models\Client::find($clientId)
+            ?->contactData()
+            ->where('is_primary', true)
+            ->first();
     }
 
     /**
-     * Obtener nombre del cliente seleccionado
-     */
-    public function getSelectedClientName($clientId)
-    {
-        if (!$clientId) return '';
-        
-        $client = $this->clients->firstWhere('id', $clientId);
-        return $client ? $client->legal_name : '';
-    }
-
-    /**
-     * Actualizar BL - basado en el método submit() del create
+     * Actualizar conocimiento
      */
     public function submit()
     {
         $this->loading = true;
-
+        
         try {
             $this->validate();
 

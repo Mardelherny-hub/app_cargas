@@ -1,4 +1,5 @@
-<div class="py-6"
+<div>
+    <div class="py-6"
      x-data="packagingCreate({
         groups: {
             @php
@@ -235,3 +236,5 @@ function packagingCreate(init){
     }
 }
 </script>
+
+</div>
