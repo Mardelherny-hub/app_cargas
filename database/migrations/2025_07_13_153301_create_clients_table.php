@@ -46,15 +46,6 @@ return new class extends Migration
                 ->nullable()
                 ->comment('Nombre comercial del cliente');
 
-            // Datos de contacto básicos para webservices
-            $table->string('address', 500)
-                ->nullable()
-                ->comment('Dirección principal - utilizada en webservices');
-
-            $table->string('email', 500)
-                ->nullable()
-                ->comment('Emails principales separados por punto y coma para cartas de aviso');
-
             // Referencias opcionales a catálogos operativos
             $table->foreignId('primary_port_id')
                 ->nullable()

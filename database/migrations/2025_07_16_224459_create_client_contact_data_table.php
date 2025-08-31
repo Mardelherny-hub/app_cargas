@@ -226,11 +226,34 @@ return new class extends Migration
 
     }
 
+    // Agregar la columna de contacto principal a la tabla de clientes
+    // Se hace aquí para evitar problemas de dependencias circulares en las migraciones
+    public function addPrimaryContactDataIdToClientsTable(): void
+    {
+                Schema::table('clients', function (Blueprint $table) {
+                $table->foreignId('primary_contact_data_id')
+                ->nullable()
+                ->after('customs_offices_id')
+                ->constrained('client_contact_data')
+                ->onDelete('set null')
+                ->comment('ID del contacto principal del cliente');
+        });
+    }
+
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
         Schema::dropIfExists('client_contact_data');
+
+        // Eliminar la columna de la tabla de clientes si existe
+        // Esto es para asegurar que el rollback funcione correctamente
+        if (Schema::hasTable('clients') && Schema::hasColumn('clients', 'primary_contact_data_id')) {
+            Schema::table('clients', function (Blueprint $table) {
+                $table->dropForeign(['primary_contact_data_id']);
+                $table->dropColumn('primary_contact_data_id');
+            });
+        }
     }
 };

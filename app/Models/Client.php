@@ -32,10 +32,9 @@ class Client extends Model
         'document_type_id',
         'legal_name',
         'commercial_name',
-        'address',
-        'email',
         'primary_port_id',
         'customs_offices_id',
+        'primary_contact_data_id',
         'status',
         'created_by_company_id',
         'verified_at',
@@ -95,16 +94,45 @@ class Client extends Model
         return $this->hasMany(ClientContactData::class);
     }
 
-    public function primaryContact(): HasOne
+    public function primaryContact(): BelongsTo
     {
-        return $this->hasOne(ClientContactData::class)
-                   ->where('is_primary', true)
-                   ->where('active', true);
+        return $this->belongsTo(ClientContactData::class, 'primary_contact_data_id');
     }
 
     public function activeContacts(): HasMany
     {
         return $this->hasMany(ClientContactData::class)->where('active', true);
+    }
+
+    // =====================================================
+    // ACCESSORS FOR PRIMARY CONTACT
+    // =====================================================
+
+    public function getPrimaryEmailAttribute(): ?string
+    {
+        return $this->primaryContact?->email;
+    }
+
+    public function getPrimaryPhoneAttribute(): ?string
+    {
+        return $this->primaryContact?->phone ?? $this->primaryContact?->mobile_phone;
+    }
+
+    public function getPrimaryAddressAttribute(): ?string
+    {
+        if (!$this->primaryContact) {
+            return null;
+        }
+        return $this->primaryContact->full_address;
+    }
+
+    public function hasCompleteContactInfo(): bool
+    {
+        $primary = $this->primaryContact;
+        if (!$primary) {
+            return false;
+        }
+        return !empty($primary->email) && !empty($primary->phone) && !empty($primary->address_line_1);
     }
 
     // =====================================================
@@ -173,15 +201,6 @@ class Client extends Model
     public function isVerified(): bool
     {
         return $this->verified_at !== null;
-    }
-
-    public function getEmailsList(): array
-    {
-        if (empty($this->email)) {
-            return [];
-        }
-        
-        return array_filter(array_map('trim', explode(';', $this->email)));
     }
 
     // =====================================================

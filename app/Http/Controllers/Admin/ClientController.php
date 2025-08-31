@@ -9,10 +9,10 @@ use App\Models\DocumentType;
 use App\Models\Port;
 use App\Models\CustomOffice;
 use App\Models\Company;
-use App\Http\Requests\CreateClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Http\Requests\BulkClientImportRequest;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -116,29 +116,40 @@ class ClientController extends Controller
     /**
      * Crear nuevo cliente.
      */
-    public function store(CreateClientRequest $request)
+    public function store(Request $request)
     {
         // Autorización explícita usando la política
         $this->authorize('create', Client::class);
 
+        // VALIDACIÓN: Se mueve la validación aquí. El FormRequest anterior era incorrecto
+        // y causaba un fallo de validación silencioso, lo que provocaba la recarga de la página.
+        $validatedData = $request->validate([
+            'legal_name' => 'required|string|max:255',
+            'commercial_name' => 'nullable|string|max:255',
+            'tax_id' => [
+                'required', 'string', 'max:50',
+                // La validación ahora es más precisa: el tax_id debe ser único POR PAÍS.
+                Rule::unique('clients')->where(fn ($query) => $query->where('country_id', $request->country_id))
+            ],
+            'country_id' => 'required|integer|exists:countries,id',
+            'document_type_id' => 'required|integer|exists:document_types,id',
+            'contacts' => 'nullable|array',
+            'contacts.*.contact_person_name' => 'nullable|string|max:255',
+            'contacts.*.email' => 'nullable|email|max:255',
+            'contacts.*.phone' => 'nullable|string|max:50',
+            'contacts.*.address_line_1' => 'nullable|string|max:255',
+            'contacts.*.is_primary' => 'sometimes|boolean',
+        ]);
+
         try {
             DB::beginTransaction();
-
-            // Debug: ver qué datos llegan
-            $allData = $request->all();
-            $validatedData = $request->validated();
             
             Log::info('Client creation debug', [
-                'all_data' => $allData,
+                'all_data' => $request->all(),
                 'validated_data' => $validatedData,
                 'contacts_data' => $request->contacts ?? 'No contacts provided',
                 'user_id' => Auth::id()
             ]);
-
-            // Verificar que tax_id existe
-            if (!isset($validatedData['tax_id'])) {
-                throw new \Exception('El campo tax_id es requerido');
-            }
 
             // Limpiar CUIT/RUC
             $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
@@ -156,17 +167,14 @@ class ClientController extends Controller
             $validatedData['status'] = 'active';
             $validatedData['verified_at'] = now();
 
-            // Crear cliente
-            $client = Client::create($validatedData);
+            $clientData = collect($validatedData)->except('contacts')->toArray();
+            $client = Client::create($clientData);
 
             // Crear múltiples contactos si se proporcionan
             if ($request->has('contacts') && is_array($request->contacts)) {
-                Log::info('Creating contacts for client', [
-                    'client_id' => $client->id,
-                    'contacts_count' => count($request->contacts),
-                    'contacts_data' => $request->contacts
-                ]);
-                $this->createMultipleContacts($client, $request->contacts);
+                $primaryContactId = $this->createMultipleContacts($client, $request->contacts);
+                $client->primary_contact_data_id = $primaryContactId;
+                $client->save();
             }
 
             DB::commit();
@@ -227,20 +235,33 @@ class ClientController extends Controller
      */
     public function update(UpdateClientRequest $request, Client $client)
     {
+        
+
         try {
+            dd($client);
             DB::beginTransaction();
 
             $validatedData = $request->validated();
+            $clientData = collect($validatedData)->except('contacts')->toArray();
 
             // Limpiar CUIT/RUC
-            $validatedData['tax_id'] = preg_replace('/[^0-9]/', '', $validatedData['tax_id']);
+            if (isset($clientData['tax_id'])) {
+                $clientData['tax_id'] = preg_replace('/[^0-9]/', '', $clientData['tax_id']);
+            }
 
             // Actualizar cliente
-            $client->update($validatedData);
+            $client->update($clientData);
 
-            // Actualizar contactos si se proporcionan
+            // Actualizar contactos si se proporcionan y vincular el principal
+            $primaryContactId = $client->primary_contact_data_id; // Mantener el actual por defecto
             if ($request->has('contacts') && is_array($request->contacts)) {
-                $this->updateMultipleContacts($client, $request->contacts);
+                $primaryContactId = $this->updateMultipleContacts($client, $request->contacts);
+            }
+
+            // Si el ID del contacto principal cambió, actualizarlo en el cliente
+            if ($client->primary_contact_data_id != $primaryContactId) {
+                $client->primary_contact_data_id = $primaryContactId;
+                $client->save();
             }
 
             DB::commit();
@@ -254,7 +275,7 @@ class ClientController extends Controller
             
             Log::error('Error updating client', [
                 'client_id' => $client->id,
-                'data' => $request->validated(),
+                'data' => $request->all(),
                 'error' => $e->getMessage(),
                 'user_id' => Auth::id()
             ]);
@@ -614,100 +635,87 @@ class ClientController extends Controller
     // MÉTODOS AUXILIARES PARA CONTACTOS
     // =====================================================
 
-    /**
-     * Crear múltiples contactos para un cliente
-     *
-     * 🔧 CORRECCIÓN CRÍTICA: El método actual tiene mapeo incorrecto de campos
-     */
-    private function createMultipleContacts(Client $client, array $contacts): void
+   private function createMultipleContacts(Client $client, array $contactsData): ?int
     {
-        // Agregar logging detallado para debug
-        Log::info('createMultipleContacts - START', [
-            'client_id' => $client->id,
-            'contacts_count' => count($contacts),
-            'raw_contacts_data' => $contacts
-        ]);
+        $primaryContactId = null;
 
-        foreach ($contacts as $index => $contactData) {
-            Log::info("Processing contact #{$index}", [
-                'contact_data' => $contactData,
-                'keys' => array_keys($contactData)
-            ]);
-
-            // Saltar contactos completamente vacíos
-            if (empty($contactData['email']) && 
-                empty($contactData['phone']) && 
-                empty($contactData['mobile_phone']) && 
-                empty($contactData['contact_person_name'])) {
-                Log::info("Skipping empty contact #{$index}");
+        foreach ($contactsData as $contactData) {
+            // Saltar si no hay datos mínimos
+            if (empty($contactData['email']) && empty($contactData['phone']) && empty($contactData['address_line_1'])) {
                 continue;
             }
-            
-            // 🔧 CORRECCIÓN PRINCIPAL: Mapeo correcto de todos los campos
-            $contactRecord = $client->contactData()->create([
-                'contact_type' => 'general', // Siempre 'general' según requerimientos FASE 6
-                
-                // 🔧 CAMPOS PERSONALES - Mapeo correcto
-                'contact_person_name' => $contactData['contact_person_name'] ?? null,
-                'contact_person_position' => $contactData['contact_person_position'] ?? null,
-                'contact_person_phone' => $contactData['contact_person_phone'] ?? null,
-                'contact_person_email' => $contactData['contact_person_email'] ?? null,
-                
-                // 🔧 CAMPOS DE COMUNICACIÓN - Mapeo correcto
+
+            $isPrimary = !empty($contactData['is_primary']);
+
+            $contact = $client->contactData()->create([
                 'email' => $contactData['email'] ?? null,
-                'secondary_email' => $contactData['secondary_email'] ?? null,
                 'phone' => $contactData['phone'] ?? null,
-                'mobile_phone' => $contactData['mobile_phone'] ?? null,
-                'fax' => $contactData['fax'] ?? null,
-                
-                // 🔧 CAMPOS DE DIRECCIÓN - Mapeo correcto
                 'address_line_1' => $contactData['address_line_1'] ?? null,
-                'address_line_2' => $contactData['address_line_2'] ?? null,
-                'city' => $contactData['city'] ?? null,
-                'state_province' => $contactData['state_province'] ?? null,
-                'postal_code' => $contactData['postal_code'] ?? null,
-                'country_id' => $contactData['country_id'] ?? null,
-                
-                // 🔧 CAMPOS DE CONFIGURACIÓN
-                'notes' => $contactData['notes'] ?? null,
-                'internal_notes' => $contactData['internal_notes'] ?? null,
-                'timezone' => $contactData['timezone'] ?? 'America/Argentina/Buenos_Aires',
-                'accepts_email_notifications' => isset($contactData['accepts_email_notifications']) ? (bool) $contactData['accepts_email_notifications'] : true,
-                'accepts_sms_notifications' => isset($contactData['accepts_sms_notifications']) ? (bool) $contactData['accepts_sms_notifications'] : false,
-                
-                // 🔧 CAMPOS DE ESTADO
-                'is_primary' => isset($contactData['is_primary']) ? (bool) $contactData['is_primary'] : ($index === 0),
+                'is_primary' => $isPrimary,
                 'active' => true,
-                'verified' => false,
-                
-                // 🔧 CAMPOS DE AUDITORÍA
                 'created_by_user_id' => auth()->id(),
             ]);
 
-            Log::info("Contact created successfully", [
-                'contact_id' => $contactRecord->id,
-                'client_id' => $client->id,
-                'contact_person_name' => $contactRecord->contact_person_name,
-                'email' => $contactRecord->email,
-                'phone' => $contactRecord->phone,
-                'is_primary' => $contactRecord->is_primary
-            ]);
+            if ($isPrimary) {
+                $primaryContactId = $contact->id;
+            }
         }
 
-        Log::info('createMultipleContacts - END', [
-            'client_id' => $client->id,
-            'total_contacts_created' => $client->contactData()->count()
-        ]);
+        // Si no se marcó un primario, asignar el primero
+        if (!$primaryContactId && $client->contactData()->count() > 0) {
+            $firstContact = $client->contactData()->first();
+            $firstContact->is_primary = true;
+            $firstContact->save();
+            $primaryContactId = $firstContact->id;
+        }
+
+        return $primaryContactId;
     }
+    
     /**
      * Actualizar múltiples contactos de un cliente
      */
-    private function updateMultipleContacts(Client $client, array $contacts): void
+    private function updateMultipleContacts(Client $client, array $contactsData): ?int
     {
-        // Eliminar contactos existentes
-        $client->contactData()->delete();
-        
-        // Crear nuevos contactos
-        $this->createMultipleContacts($client, $contacts);
+        $incomingContactIds = [];
+        $primaryContactId = null;
+
+        // 1. Actualizar contactos existentes y crear nuevos
+        foreach ($contactsData as $contactData) {
+            // Usar updateOrCreate: si el ID existe, actualiza; si no, crea.
+            $contact = $client->contactData()->updateOrCreate(
+                ['id' => $contactData['id'] ?? null], // Clave para buscar
+                [                                     // Datos para actualizar o crear
+                    'email' => $contactData['email'] ?? null,
+                    'phone' => $contactData['phone'] ?? null,
+                    'address_line_1' => $contactData['address_line_1'] ?? null,
+                    'is_primary' => !empty($contactData['is_primary']),
+                    'active' => true,
+                    'updated_by_user_id' => auth()->id(),
+                ]
+            );
+
+            $incomingContactIds[] = $contact->id;
+
+            if (!empty($contactData['is_primary'])) {
+                $primaryContactId = $contact->id;
+            }
+        }
+
+        // 2. Eliminar contactos que ya no están en el formulario
+        $client->contactData()->whereNotIn('id', $incomingContactIds)->delete();
+
+        // 3. Asegurar que solo un contacto sea el principal
+        if ($primaryContactId) {
+            $client->contactData()->where('id', '!=', $primaryContactId)->update(['is_primary' => false]);
+        } elseif ($client->contactData()->count() > 0) {
+            // Si no hay primario (p.ej. se eliminó), asignar el primero
+            $firstContact = $client->contactData()->first();
+            $firstContact->is_primary = true;
+            $firstContact->save();
+            $primaryContactId = $firstContact->id;
+        }
+
+        return $primaryContactId;
     }
 }

@@ -140,20 +140,41 @@
                                 @enderror
                             </div>
 
+                            <!-- Estado -->
+                            <div>
+                                <label for="status" class="block text-sm font-medium text-gray-700">
+                                    Estado <span class="text-red-500">*</span>
+                                </label>
+                                <select name="status" id="status" 
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" required>
+                                    @php
+                                        $statusValue = old('status', $client->status ?? 'active');
+                                    @endphp
+                                    <option value="active"   {{ $statusValue === 'active' ? 'selected' : '' }}>Activo</option>
+                                    <option value="inactive" {{ $statusValue === 'inactive' ? 'selected' : '' }}>Inactivo</option>
+                                    <option value="suspended"{{ $statusValue === 'suspended' ? 'selected' : '' }}>Suspendido</option>
+                                </select>
+                                @error('status') 
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p> 
+                                @enderror
+                            </div>
+
+
                             <!-- Aduana Habitual -->
                             <div>
-                                <label for="custom_office_id" class="block text-sm font-medium text-gray-700">Aduana Habitual</label>
-                                <select name="custom_office_id" 
-                                        id="custom_office_id" 
+                                <label for="custom_offices_id" class="block text-sm font-medium text-gray-700">Aduana Habitual</label>
+                                <select name="custom_offices_id" 
+                                        id="custom_offices_id" 
                                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('customs_office_id') border-red-300 @enderror">
                                     <option value="">Seleccione una aduana</option>
                                     @foreach($customOffices as $office)
-                                        <option value="{{ $office->id }}" {{ (old('custom_office_id', $client->customs_office_id) == $office->id) ? 'selected' : '' }}>
+                                        <option value="{{ $office->id }}" 
+                                            {{ (old('custom_offices_id', $client->customs_office_id) == $office->id) ? 'selected' : '' }}>
                                             {{ $office->name }}
                                         </option>
                                     @endforeach
                                 </select>
-                                @error('custom_office_id')
+                                @error('custom_offices_id')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>

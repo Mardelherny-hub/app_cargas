@@ -347,8 +347,6 @@ class ClientsSeeder extends Seeder
                 'document_type_id' => $documentType->id,
                 'legal_name' => $clientData['legal_name'],
                 'commercial_name' => $clientData['commercial_name'] ?? null,
-                'address' => $clientData['address'] ?? null,
-                'email' => $clientData['email'] ?? null,
                 'primary_port_id' => $ports->where('country_id', $country->id)->random()->id ?? null,
                 'customs_offices_id' => $customs->where('country_id', $country->id)->random()->id ?? null,
                 'status' => 'active',
@@ -357,7 +355,28 @@ class ClientsSeeder extends Seeder
                 'notes' => 'Cliente creado por seeder - datos de prueba',
             ];
 
-            Client::create($clientRecord);
+            $client = Client::create($clientRecord);
+
+            // Crear datos de contacto y vincularlos
+            $emails = isset($clientData['email']) ? explode(';', $clientData['email']) : [];
+            $primaryEmail = $emails[0] ?? null;
+            $secondaryEmail = $emails[1] ?? null;
+
+            $contact = $client->contactData()->create([
+                'email' => $primaryEmail,
+                'secondary_email' => $secondaryEmail,
+                'address_line_1' => $clientData['address'] ?? null,
+                'city' => $country->name === 'Argentina' ? 'Buenos Aires' : 'Asunción',
+                'state_province' => $country->name === 'Argentina' ? 'CABA' : 'Asunción',
+                'postal_code' => $country->name === 'Argentina' ? 'C1000' : '1001',
+                'is_primary' => true,
+                'active' => true,
+                'created_by_user_id' => User::first()->id,
+            ]);
+
+            // Actualizar cliente con el ID del contacto principal
+            $client->primary_contact_data_id = $contact->id;
+            $client->save();
 
             $this->command->line("  ✓ {$clientData['legal_name']}");
 

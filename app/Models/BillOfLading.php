@@ -976,4 +976,260 @@ class BillOfLading extends Model
         return $statuses[$this->status] ?? $this->status;
     }
 
+    // =====================================================
+    // MÉTODOS HELPER PARA DIRECCIONES ESPECÍFICAS
+    // Agregar estos métodos al modelo BillOfLading.php
+    // =====================================================
+
+    /**
+     * Verificar si tiene direcciones específicas configuradas
+     */
+    public function hasSpecificAddresses(): bool
+    {
+        return $this->specificContacts()->exists();
+    }
+
+    /**
+     * Obtener dirección del cargador para mostrar
+     * Prioriza dirección específica, fallback a genérica
+     */
+    public function getShipperDisplayAddress(): string
+    {
+        $specificContact = $this->shipperContact;
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->full_address;
+        }
+        
+        // Fallback: usar dirección del cliente shipper (SIEMPRE debe existir)
+        if ($this->shipper) {
+            $shipperContact = $this->shipper->contactData?->first();
+            if ($shipperContact) {
+                $parts = array_filter([
+                    $shipperContact->address_line_1,
+                    $shipperContact->address_line_2,
+                    $shipperContact->city,
+                    $shipperContact->state_province,
+                    $shipperContact->postal_code,
+                ]);
+                return implode(', ', $parts) ?: 'Dirección incompleta';
+            }
+        }
+        
+        return 'Sin cliente asignado';
+    }
+
+    /**
+     * Obtener dirección del consignatario para mostrar
+     * Prioriza dirección específica, fallback a genérica
+     */
+    public function getConsigneeDisplayAddress(): string
+    {
+        $specificContact = $this->consigneeContact;
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->full_address;
+        }
+        
+        // Fallback: usar dirección del cliente consignee (SIEMPRE debe existir)
+        if ($this->consignee) {
+            $consigneeContact = $this->consignee->contactData?->first();
+            if ($consigneeContact) {
+                $parts = array_filter([
+                    $consigneeContact->address_line_1,
+                    $consigneeContact->address_line_2,
+                    $consigneeContact->city,
+                    $consigneeContact->state_province,
+                    $consigneeContact->postal_code,
+                ]);
+                return implode(', ', $parts) ?: 'Dirección incompleta';
+            }
+        }
+        
+        return 'Sin cliente asignado';
+    }
+
+    /**
+     * Obtener dirección de la parte a notificar para mostrar
+     * Prioriza dirección específica, fallback a genérica
+     */
+    public function getNotifyPartyDisplayAddress(): string
+    {
+        $specificContact = $this->specificContacts()->where('role', 'notify_party')->first();
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->full_address;
+        }
+        
+        // Fallback: usar dirección del cliente notify party
+        if ($this->notify_party_id && $this->notifyParty) {
+            $notifyPartyContact = $this->notifyParty->contactData?->first();
+            if ($notifyPartyContact) {
+                $parts = array_filter([
+                    $notifyPartyContact->address_line_1,
+                    $notifyPartyContact->address_line_2,
+                    $notifyPartyContact->city,
+                    $notifyPartyContact->state_province,
+                    $notifyPartyContact->postal_code,
+                ]);
+                return implode(', ', $parts) ?: 'Dirección incompleta';
+            }
+        }
+        
+        return 'No aplica';
+    }
+
+    /**
+     * Obtener nombre de empresa del cargador para mostrar
+     * Prioriza nombre específico, fallback a genérico
+     */
+    public function getShipperDisplayName(): string
+    {
+        $specificContact = $this->shipperContact;
+        
+        if ($specificContact && $specificContact->use_specific_data && $specificContact->specific_company_name) {
+            return $specificContact->specific_company_name;
+        }
+        
+        return $this->shipper?->legal_name ?? 'Sin cliente asignado';
+    }
+
+    /**
+     * Obtener nombre de empresa del consignatario para mostrar
+     * Prioriza nombre específico, fallback a genérico
+     */
+    public function getConsigneeDisplayName(): string
+    {
+        $specificContact = $this->consigneeContact;
+        
+        if ($specificContact && $specificContact->use_specific_data && $specificContact->specific_company_name) {
+            return $specificContact->specific_company_name;
+        }
+        
+        return $this->consignee?->legal_name ?? 'Sin cliente asignado';
+    }
+
+    /**
+     * Obtener nombre de empresa de la parte a notificar para mostrar
+     * Prioriza nombre específico, fallback a genérico
+     */
+    public function getNotifyPartyDisplayName(): string
+    {
+        $specificContact = $this->specificContacts()->where('role', 'notify_party')->first();
+        
+        if ($specificContact && $specificContact->use_specific_data && $specificContact->specific_company_name) {
+            return $specificContact->specific_company_name;
+        }
+        
+        if ($this->notify_party_id) {
+            return $this->notifyParty?->legal_name ?? 'Sin cliente asignado';
+        }
+        
+        return 'No aplica';
+    }
+
+    /**
+     * Obtener datos completos del cargador para exportación/PDFs
+     */
+    public function getShipperCompleteData(): array
+    {
+        $specificContact = $this->shipperContact;
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->getCompleteDataForExport();
+        }
+        
+        // Fallback: datos del cliente base
+        $shipperContact = $this->shipper?->contactData?->first();
+        if ($shipperContact) {
+            return [
+                'company_name' => $this->shipper->legal_name,
+                'address' => $this->getShipperDisplayAddress(),
+                'contact_person' => $shipperContact->contact_person_name ?? '',
+                'phone' => $shipperContact->phone ?? '',
+                'email' => $shipperContact->email ?? '',
+                'tax_id' => $this->shipper->tax_id ?? '',
+            ];
+        }
+        
+        return [
+            'company_name' => 'Sin cliente asignado',
+            'address' => '',
+            'contact_person' => '',
+            'phone' => '',
+            'email' => '',
+            'tax_id' => '',
+        ];
+    }
+
+    /**
+     * Obtener datos completos del consignatario para exportación/PDFs
+     */
+    public function getConsigneeCompleteData(): array
+    {
+        $specificContact = $this->consigneeContact;
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->getCompleteDataForExport();
+        }
+        
+        // Fallback: datos del cliente base
+        $consigneeContact = $this->consignee?->contactData?->first();
+        if ($consigneeContact) {
+            return [
+                'company_name' => $this->consignee->legal_name,
+                'address' => $this->getConsigneeDisplayAddress(),
+                'contact_person' => $consigneeContact->contact_person_name ?? '',
+                'phone' => $consigneeContact->phone ?? '',
+                'email' => $consigneeContact->email ?? '',
+                'tax_id' => $this->consignee->tax_id ?? '',
+            ];
+        }
+        
+        return [
+            'company_name' => 'Sin cliente asignado',
+            'address' => '',
+            'contact_person' => '',
+            'phone' => '',
+            'email' => '',
+            'tax_id' => '',
+        ];
+    }
+
+    /**
+     * Obtener datos completos de la parte a notificar para exportación/PDFs
+     */
+    public function getNotifyPartyCompleteData(): array
+    {
+        $specificContact = $this->specificContacts()->where('role', 'notify_party')->first();
+        
+        if ($specificContact && $specificContact->use_specific_data) {
+            return $specificContact->getCompleteDataForExport();
+        }
+        
+        // Fallback: datos del cliente base
+        if ($this->notify_party_id) {
+            $notifyPartyContact = $this->notifyParty?->contactData?->first();
+            if ($notifyPartyContact) {
+                return [
+                    'company_name' => $this->notifyParty->legal_name,
+                    'address' => $this->getNotifyPartyDisplayAddress(),
+                    'contact_person' => $notifyPartyContact->contact_person_name ?? '',
+                    'phone' => $notifyPartyContact->phone ?? '',
+                    'email' => $notifyPartyContact->email ?? '',
+                    'tax_id' => $this->notifyParty->tax_id ?? '',
+                ];
+            }
+        }
+        
+        return [
+            'company_name' => 'No aplica',
+            'address' => '',
+            'contact_person' => '',
+            'phone' => '',
+            'email' => '',
+            'tax_id' => '',
+        ];
+    }
+
 }

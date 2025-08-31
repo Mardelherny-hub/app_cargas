@@ -47,16 +47,18 @@ class CreateClientRequest extends FormRequest
             'legal_name' => 'required|string|min:3|max:255',
             'commercial_name' => 'nullable|string|max:255',
             
-            // Datos de contacto básicos
-            'address' => 'nullable|string|max:500',
-            'email' => 'nullable|string|max:500',
-
             // Referencias operativas opcionales
             'primary_port_id' => 'nullable|exists:ports,id',
             'customs_offices_id' => 'nullable|exists:customs_offices,id',
 
             // Observaciones
             'notes' => 'nullable|string|max:1000',
+
+            // Contactos
+            'contacts' => 'nullable|array|min:1',
+            'contacts.*.email' => 'nullable|email|max:255',
+            'contacts.*.phone' => 'nullable|string|max:50',
+            'contacts.*.address_line_1' => 'nullable|string|max:255',
         ];
     }
 
@@ -76,8 +78,6 @@ class CreateClientRequest extends FormRequest
             'legal_name.min' => 'La razón social debe tener al menos 3 caracteres.',
             'legal_name.max' => 'La razón social no puede tener más de 255 caracteres.',
             'commercial_name.max' => 'El nombre comercial no puede tener más de 255 caracteres.',
-            'address.max' => 'La dirección no puede tener más de 500 caracteres.',
-            'email.max' => 'El campo email no puede tener más de 500 caracteres.',
             'primary_port_id.exists' => 'El puerto seleccionado no es válido.',
             'customs_offices_id.exists' => 'La aduana seleccionada no es válida.',
             'notes.max' => 'Las observaciones no pueden tener más de 1000 caracteres.'
@@ -115,15 +115,6 @@ class CreateClientRequest extends FormRequest
         if ($this->has('tax_id')) {
             $this->merge([
                 'tax_id' => preg_replace('/[^0-9]/', '', $this->tax_id)
-            ]);
-        }
-
-        // Limpiar email - convertir múltiples emails separados por coma/punto y coma a formato estándar
-        if ($this->has('email') && !empty($this->email)) {
-            $emails = preg_split('/[;,]\s*/', $this->email);
-            $emails = array_filter(array_map('trim', $emails));
-            $this->merge([
-                'email' => implode(';', $emails)
             ]);
         }
     }

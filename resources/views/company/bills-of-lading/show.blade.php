@@ -167,99 +167,176 @@ if ($user) {
                 </div>
 
                 {{-- PARTES INVOLUCRADAS --}}
-                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                    <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                        <h3 class="text-lg font-medium text-gray-900 flex items-center">
-                            <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                            Partes Involucradas
-                        </h3>
-                        @if(isset($permissions['can_edit']) && $permissions['can_edit'])
-                            <a href="{{ route('company.bills-of-lading.edit', $billOfLading) }}" 
-                               class="text-blue-600 hover:text-blue-900 text-sm font-medium">
-                                Editar →
-                            </a>
+                {{-- ============================================================ --}}
+{{-- REEMPLAZAR la sección "Partes Involucradas" existente por esta nueva --}}
+{{-- Busca: <div class="bg-white shadow-sm rounded-lg p-6"> que contenga "Partes Involucradas" --}}
+{{-- ============================================================ --}}
+
+{{-- Partes Involucradas (CON DIRECCIONES ESPECÍFICAS) --}}
+<div class="bg-white shadow-sm rounded-lg p-6">
+    <div class="flex items-center justify-between mb-6">
+        <h3 class="text-lg font-medium text-gray-900">Partes Involucradas</h3>
+        
+        {{-- Indicador de direcciones específicas --}}
+        @if($billOfLading->hasSpecificAddresses())
+            <span class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
+                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h12a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1V8z" clip-rule="evenodd"/>
+                </svg>
+                Direcciones Específicas
+            </span>
+        @endif
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {{-- Cargador/Exportador --}}
+        <div class="border-l-4 border-green-500 pl-4">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Cargador/Exportador</h4>
+                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getShipperDisplayName() }}</p>
+                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->shipper->tax_id ?? '-' }}</p>
+                    
+                    {{-- Dirección específica o genérica --}}
+                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                        <p class="text-gray-700 font-medium">Dirección:</p>
+                        <p class="text-gray-600">{{ $billOfLading->getShipperDisplayAddress() }}</p>
+                        
+                        {{-- Indicador si es específica --}}
+                        @if($billOfLading->shipperContact && $billOfLading->shipperContact->use_specific_data)
+                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Dirección específica
+                            </span>
                         @endif
                     </div>
-                    <div class="px-6 py-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {{-- Cargador --}}
-                            @if($billOfLading->shipper)
-                            <div class="border-l-4 border-blue-500 pl-4">
-                                <div class="flex justify-between items-start">
-                                    <div class="flex-1">
-                                        <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Cargador/Exportador</h4>
-                                        <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->shipper->legal_name }}</p>
-                                        <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->shipper->tax_id }}</p>
-                                        @if($billOfLading->shipper->country)
-                                            <p class="text-sm text-gray-600">País: {{ $billOfLading->shipper->country->name }}</p>
-                                        @endif
-                                    </div>
-                                    <a href="{{ route('company.clients.show', $billOfLading->shipper) }}" 
-                                       class="text-blue-600 hover:text-blue-900 text-xs">
-                                        Ver →
-                                    </a>
-                                </div>
-                            </div>
-                            @endif
+                    
+                    @if($billOfLading->shipper->country)
+                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->shipper->country->name }}</p>
+                    @endif
+                </div>
+                <a href="{{ route('company.clients.show', $billOfLading->shipper) }}" 
+                   class="text-blue-600 hover:text-blue-900 text-xs">
+                    Ver →
+                </a>
+            </div>
+        </div>
 
-                            {{-- Consignatario --}}
-                            @if($billOfLading->consignee)
-                            <div class="border-l-4 border-green-500 pl-4">
-                                <div class="flex justify-between items-start">
-                                    <div class="flex-1">
-                                        <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Consignatario/Importador</h4>
-                                        <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->consignee->legal_name }}</p>
-                                        <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->consignee->tax_id }}</p>
-                                        @if($billOfLading->consignee->country)
-                                            <p class="text-sm text-gray-600">País: {{ $billOfLading->consignee->country->name }}</p>
-                                        @endif
-                                    </div>
-                                    <a href="{{ route('company.clients.show', $billOfLading->consignee) }}" 
-                                       class="text-blue-600 hover:text-blue-900 text-xs">
-                                        Ver →
-                                    </a>
-                                </div>
-                            </div>
-                            @endif
+        {{-- Consignatario/Importador --}}
+        @if($billOfLading->consignee)
+        <div class="border-l-4 border-blue-500 pl-4">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Consignatario/Importador</h4>
+                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getConsigneeDisplayName() }}</p>
+                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->consignee->tax_id ?? '-' }}</p>
+                    
+                    {{-- Dirección específica o genérica --}}
+                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                        <p class="text-gray-700 font-medium">Dirección:</p>
+                        <p class="text-gray-600">{{ $billOfLading->getConsigneeDisplayAddress() }}</p>
+                        
+                        {{-- Indicador si es específica --}}
+                        @if($billOfLading->consigneeContact && $billOfLading->consigneeContact->use_specific_data)
+                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Dirección específica
+                            </span>
+                        @endif
+                    </div>
+                    
+                    @if($billOfLading->consignee->country)
+                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->consignee->country->name }}</p>
+                    @endif
+                </div>
+                <a href="{{ route('company.clients.show', $billOfLading->consignee) }}" 
+                   class="text-blue-600 hover:text-blue-900 text-xs">
+                    Ver →
+                </a>
+            </div>
+        </div>
+        @endif
 
-                            {{-- Parte a Notificar --}}
-                            @if($billOfLading->notifyParty)
-                            <div class="border-l-4 border-yellow-500 pl-4">
-                                <div class="flex justify-between items-start">
-                                    <div class="flex-1">
-                                        <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Parte a Notificar</h4>
-                                        <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->notifyParty->legal_name }}</p>
-                                        <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->notifyParty->tax_id }}</p>
-                                    </div>
-                                    <a href="{{ route('company.clients.show', $billOfLading->notifyParty) }}" 
-                                       class="text-blue-600 hover:text-blue-900 text-xs">
-                                        Ver →
-                                    </a>
-                                </div>
-                            </div>
-                            @endif
-
-                            {{-- Propietario de Carga --}}
-                            @if($billOfLading->cargoOwner)
-                            <div class="border-l-4 border-purple-500 pl-4">
-                                <div class="flex justify-between items-start">
-                                    <div class="flex-1">
-                                        <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Propietario de Carga</h4>
-                                        <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->cargoOwner->legal_name }}</p>
-                                        <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->cargoOwner->tax_id }}</p>
-                                    </div>
-                                    <a href="{{ route('company.clients.show', $billOfLading->cargoOwner) }}" 
-                                       class="text-blue-600 hover:text-blue-900 text-xs">
-                                        Ver →
-                                    </a>
-                                </div>
-                            </div>
-                            @endif
-                        </div>
+        {{-- Parte a Notificar --}}
+        @if($billOfLading->notifyParty)
+        <div class="border-l-4 border-yellow-500 pl-4">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Parte a Notificar</h4>
+                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getNotifyPartyDisplayName() }}</p>
+                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->notifyParty->tax_id ?? '-' }}</p>
+                    
+                    {{-- Dirección específica o genérica --}}
+                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                        <p class="text-gray-700 font-medium">Dirección:</p>
+                        <p class="text-gray-600">{{ $billOfLading->getNotifyPartyDisplayAddress() }}</p>
+                        
+                        {{-- Indicador si es específica --}}
+                        @php
+                            $notifySpecificContact = $billOfLading->specificContacts()->where('role', 'notify_party')->first();
+                        @endphp
+                        @if($notifySpecificContact && $notifySpecificContact->use_specific_data)
+                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Dirección específica
+                            </span>
+                        @endif
                     </div>
                 </div>
+                <a href="{{ route('company.clients.show', $billOfLading->notifyParty) }}" 
+                   class="text-blue-600 hover:text-blue-900 text-xs">
+                    Ver →
+                </a>
+            </div>
+        </div>
+        @endif
+
+        {{-- Propietario de Carga --}}
+        @if($billOfLading->cargoOwner)
+        <div class="border-l-4 border-purple-500 pl-4">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Propietario de Carga</h4>
+                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->cargoOwner->legal_name }}</p>
+                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->cargoOwner->tax_id ?? '-' }}</p>
+                    
+                    {{-- Dirección genérica (cargo owner no tiene específicas por ahora) --}}
+                    @if($billOfLading->cargoOwner->contactData->first())
+                        @php
+                            $cargoContact = $billOfLading->cargoOwner->contactData->first();
+                            $cargoAddress = collect([
+                                $cargoContact->address_line_1,
+                                $cargoContact->address_line_2,
+                                $cargoContact->city,
+                                $cargoContact->state_province,
+                                $cargoContact->postal_code
+                            ])->filter()->implode(', ');
+                        @endphp
+                        <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                            <p class="text-gray-700 font-medium">Dirección:</p>
+                            <p class="text-gray-600">{{ $cargoAddress ?: 'Dirección no disponible' }}</p>
+                        </div>
+                    @endif
+                    
+                    @if($billOfLading->cargoOwner->country)
+                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->cargoOwner->country->name }}</p>
+                    @endif
+                </div>
+                <a href="{{ route('company.clients.show', $billOfLading->cargoOwner) }}" 
+                   class="text-blue-600 hover:text-blue-900 text-xs">
+                    Ver →
+                </a>
+            </div>
+        </div>
+        @endif
+    </div>
+</div>
 
                 {{-- RUTAS Y PUERTOS --}}
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">

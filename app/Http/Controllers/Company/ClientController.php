@@ -223,7 +223,7 @@ class ClientController extends Controller
     public function update(UpdateClientRequest $request, Client $client)
     {
         $this->authorize('update', $client);
-        
+        //dd($request);
         try {
             DB::beginTransaction();
 
@@ -237,14 +237,32 @@ class ClientController extends Controller
 
             // Actualizar cliente
             $client->update($validatedData);
+            //dd($request);
 
-            // Manejar contactos si se proporcionan
-            if ($request->has('contacts') && is_array($request->contacts)) {
-                // Por simplicidad, aquí se mantiene la lógica existente
-                // La gestión completa de contactos se puede expandir después
-                $this->updateClientContacts($client, $request->contacts);
+            $contactsPayload = $request->input('contacts');
+
+            // Fallback: si la vista no envía contacts[], armamos uno a partir de los campos raíz
+            if (empty($contactsPayload) || !is_array($contactsPayload)) {
+                $contactsPayload = [[
+                    'id'                      => null,
+                    'contact_type'            => 'general',
+                    'email'                   => $request->input('email'),
+                    'phone'                   => $request->input('phone'),
+                    'mobile_phone'            => $request->input('mobile_phone'),
+                    'address_line_1'          => $request->input('address_line_1'),
+                    'address_line_2'          => $request->input('address_line_2'),
+                    'city'                    => $request->input('city'),
+                    'state_province'          => $request->input('state_province'),
+                    'contact_person_name'     => $request->input('contact_person_name'),
+                    'contact_person_position' => $request->input('contact_person_position'),
+                    'notes'                   => $request->input('notes'),
+                    'is_primary'              => true,
+                    'active'                  => true,
+                ]];
             }
-
+                
+                $this->updateClientContacts($client, $request->contacts);
+            
             DB::commit();
 
             return redirect()
@@ -268,27 +286,93 @@ class ClientController extends Controller
         }
     }
 
-    /**
-     * Actualizar contactos del cliente (método básico)
-     */
     private function updateClientContacts(Client $client, array $contactsData): void
     {
-        // Implementación básica - puede expandirse según necesidades
-        // Por ahora solo actualiza el contacto principal si existe
-        $primaryContact = $client->primaryContact;
-        
-        if ($primaryContact && !empty($contactsData)) {
-            $firstContact = $contactsData[0] ?? [];
-            if (!empty($firstContact)) {
-                $primaryContact->update([
-                    'email' => $firstContact['email'] ?? $primaryContact->email,
-                    'phone' => $firstContact['phone'] ?? $primaryContact->phone,
-                    'mobile_phone' => $firstContact['mobile_phone'] ?? $primaryContact->mobile_phone,
-                    'contact_person_name' => $firstContact['contact_person_name'] ?? $primaryContact->contact_person_name,
-                ]);
+        // 1) Filtrar filas vacías (si no tienen nada relevante, se ignoran)
+        $filtered = [];
+        foreach ($contactsData as $row) {
+            if (
+                !empty($row['email']) ||
+                !empty($row['phone']) ||
+                !empty($row['mobile_phone']) ||
+                !empty($row['contact_person_name']) ||
+                !empty($row['address_line_1']) ||
+                !empty($row['city']) ||
+                !empty($row['notes'])
+            ) {
+                $filtered[] = $row;
             }
         }
+
+        // Si no quedó ninguna fila, se eliminan todos los contactos del cliente
+        if (empty($filtered)) {
+            $client->contactData()->delete();
+            return;
+        }
+
+        // 2) Normalizar primario: si ninguno viene marcado, el primero válido será principal
+        $hasPrimary = false;
+        foreach ($filtered as &$row) {
+            $row['is_primary'] = !empty($row['is_primary']) ? 1 : 0;
+            if ($row['is_primary']) { $hasPrimary = true; }
+        }
+        unset($row);
+        if (!$hasPrimary && count($filtered) > 0) {
+            $filtered[0]['is_primary'] = 1;
+        }
+
+        // 3) Mapear existentes por ID
+        $existing = $client->contactData()->get()->keyBy('id');
+        $keptIds = [];
+
+        // 4) UPSERT por cada contacto del formulario
+        foreach ($filtered as $row) {
+            $payload = [
+                'contact_type'            => $row['contact_type']            ?? 'general',
+                'email'                   => $row['email']                   ?? null,
+                'phone'                   => $row['phone']                   ?? null,
+                'mobile_phone'            => $row['mobile_phone']            ?? null,
+                'address_line_1'          => $row['address_line_1']          ?? null,
+                'address_line_2'          => $row['address_line_2']          ?? null,
+                'city'                    => $row['city']                    ?? null,
+                'state_province'          => $row['state_province']          ?? null,
+                'contact_person_name'     => $row['contact_person_name']     ?? null,
+                'contact_person_position' => $row['contact_person_position'] ?? null,
+                'notes'                   => $row['notes']                   ?? null,
+                'is_primary'              => !empty($row['is_primary']),
+            ];
+
+            $id = isset($row['id']) ? (int) $row['id'] : null;
+
+            if ($id && $existing->has($id)) {
+                // Actualizar existente
+                $existing[$id]->update($payload);
+                $keptIds[] = $id;
+            } else {
+                // Crear nuevo
+                $payload['active'] = true;
+                $payload['created_by_user_id'] = \Illuminate\Support\Facades\Auth::id();
+                $new = $client->contactData()->create($payload);
+                $keptIds[] = $new->id;
+            }
+        }
+
+        // 5) Eliminar los que ya no están en el formulario
+        $client->contactData()->whereNotIn('id', $keptIds)->delete();
+
+        // 6) Asegurar un único "is_primary"
+        $primary = $client->contactData()->where('is_primary', true)->orderBy('id')->first();
+        if (!$primary) {
+            $first = $client->contactData()->orderBy('id')->first();
+            if ($first) {
+                $first->update(['is_primary' => true]);
+            }
+        } else {
+            $client->contactData()->where('id', '!=', $primary->id)->update(['is_primary' => false]);
+        }
     }
+
+
 
     /**
      * Eliminar cliente (solo company-admin)
