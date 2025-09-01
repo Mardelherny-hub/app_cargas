@@ -96,6 +96,14 @@
                                         class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.packaging-types.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         {{ __('Tipos de Packaging') }}
                                     </a>
+                                    <a href="{{ route('admin.ports.index') }}" 
+                                        class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.ports.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        {{ __('Puertos') }}
+                                    </a>
+                                    <a href="{{ route('admin.countries.index') }}" 
+                                        class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.countries.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        {{ __('Países') }}
+                                    </a>
                                     </div>
                             </div>
                         </div>                                  

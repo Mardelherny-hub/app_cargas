@@ -13,6 +13,8 @@ use App\Http\Controllers\Admin\VesselTypeController;
 use App\Http\Controllers\Admin\ContainerTypeController;
 use App\Http\Controllers\Admin\CargoTypeController;
 use App\Http\Controllers\Admin\PackagingTypeController;
+use App\Http\Controllers\Admin\PortController;
+use App\Http\Controllers\Admin\CountryController;
 
 /*
 |--------------------------------------------------------------------------
@@ -182,6 +184,22 @@ Route::middleware(['auth', 'role:super-admin'])->group(function () {
     Route::resource('packaging-types', PackagingTypeController::class)
         ->names('admin.packaging-types');
 });
+
+Route::middleware(['auth', 'role:super-admin'])->group(function () {
+
+    /** ==========================
+     *  CRUD de Países
+     *  ========================== */
+    Route::resource('countries', CountryController::class)
+        ->names('admin.countries');
+
+    /** ==========================
+     *  CRUD de Puertos
+     *  ========================== */
+    Route::resource('ports', PortController::class)
+        ->names('admin.ports');
+});
+
 // Reportes y Estadísticas
 Route::prefix('reports')->name('admin.reports.')->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('index');
