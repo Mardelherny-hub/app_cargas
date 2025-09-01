@@ -32,8 +32,8 @@ return new class extends Migration
 
             // Regional configuration
             $table->string('currency_code', 3)->nullable(); // ARS, PYG, USD
-            $table->string('timezone', 50)->default('America/Argentina/Buenos_Aires');
-            $table->string('primary_language', 5)->default('es');
+            $table->string('timezone', 50)->nullable();
+            $table->string('primary_language', 5)->nullable();
 
             // Operational configuration
             $table->boolean('allows_import')->default(true);

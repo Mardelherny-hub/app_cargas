@@ -44,6 +44,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             BaseCatalogsSeeder::class,
         ]);
+
+        $this->call(PortsFromUnlocodeSeeder::class);
         
         $this->command->info('  ✅ Catálogos base completados');
         $this->command->info('');

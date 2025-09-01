@@ -33,7 +33,7 @@ class BaseCatalogsSeeder extends Seeder
         $this->createDocumentTypes();
 
         // 3. Crear puertos principales
-        $this->createPorts();
+        //$this->createPorts();
 
         // 4. Crear aduanas principales
         $this->createCustomOffices();
@@ -42,14 +42,30 @@ class BaseCatalogsSeeder extends Seeder
         $this->displaySummary();
     }
 
-    /**
-     * Crear países (Argentina y Paraguay)
-     * Usando estructura exacta de create_countries_table.php
+   /**
+     * Crear países desde CSV (estructura exacta de la migración) o fallback al array local.
+     *
+     * CSV esperado: database/data/countries_full.csv (UTF-8, con cabeceras)
+     * Columnas (todas opcionales excepto alpha2_code, iso_code):
+     * iso_code,alpha2_code,numeric_code,name,official_name,nationality,
+     * customs_code,senasa_code,document_format,currency_code,timezone,
+     * primary_language,allows_import,allows_export,allows_transit,requires_visa,
+     * active,display_order,is_primary
      */
     private function createCountries(): void
     {
-        $this->command->info('🇦🇷🇵🇾 Creando países...');
+        $this->command->info('🌎 Creando países (CSV o fallback)…');
 
+        $csvPath = base_path('database/data/countries_full.csv');
+
+        // Si existe CSV → lo usamos
+        if (is_readable($csvPath)) {
+            $this->seedCountriesFromCsv($csvPath);
+            return;
+        }
+
+        // Fallback a tu array actual (tal cual venías)
+        $this->command->warn('⚠️ No se encontró database/data/countries_full.csv. Usando fallback local.');
         $countries = [
             [
                 'iso_code'        => 'BRA',
@@ -60,7 +76,7 @@ class BaseCatalogsSeeder extends Seeder
                 'nationality'     => 'brasileño',
                 'customs_code'    => 'BR',
                 'senasa_code'     => 'BR',
-                'document_format' => '99.999.999/9999-99', // CNPJ aprox.
+                'document_format' => '99.999.999/9999-99',
                 'currency_code'   => 'BRL',
                 'timezone'        => 'America/Sao_Paulo',
                 'primary_language'=> 'pt',
@@ -81,7 +97,7 @@ class BaseCatalogsSeeder extends Seeder
                 'nationality'     => 'uruguayo',
                 'customs_code'    => 'UY',
                 'senasa_code'     => 'UY',
-                'document_format' => '9.999.999-9', // CI aprox.
+                'document_format' => '9.999.999-9',
                 'currency_code'   => 'UYU',
                 'timezone'        => 'America/Montevideo',
                 'primary_language'=> 'es',
@@ -93,7 +109,6 @@ class BaseCatalogsSeeder extends Seeder
                 'display_order'   => 4,
                 'is_primary'      => true,
             ],
-
             [
                 'iso_code' => 'ARG',
                 'alpha2_code' => 'AR',
@@ -135,18 +150,139 @@ class BaseCatalogsSeeder extends Seeder
                 'active' => true,
                 'display_order' => 2,
                 'is_primary' => true,
-            ]
+            ],
         ];
 
         foreach ($countries as $countryData) {
-            $country = Country::updateOrCreate(
-                ['alpha2_code' => $countryData['alpha2_code']],
-                $countryData
+            // Solo inserta columnas que existan en la tabla (evita errores si migración cambia)
+            $payload = $this->filterByExistingColumns('countries', $countryData);
+            $country = \App\Models\Country::updateOrCreate(
+                ['alpha2_code' => $payload['alpha2_code']],
+                $payload
             );
-
             $this->command->line("  ✓ {$country->name} ({$country->alpha2_code})");
         }
     }
+
+    /**
+     * Lee CSV de países y hace upsert manteniendo estructura exacta de tu migración.
+     */
+    private function seedCountriesFromCsv(string $csvPath): void
+    {
+        $this->command->info("📥 Cargando países desde CSV: " . str_replace(base_path() . '/', '', $csvPath));
+
+        $cols = \Illuminate\Support\Facades\Schema::getColumnListing('countries');
+
+        $fh = fopen($csvPath, 'r');
+        if (!$fh) {
+            $this->command->error("No pude abrir el CSV de países.");
+            return;
+        }
+
+        $header = fgetcsv($fh);
+        if (!$header) {
+            fclose($fh);
+            $this->command->error("CSV vacío o sin cabeceras.");
+            return;
+        }
+
+        // normalizar cabeceras
+        $header = array_map(fn($h) => strtolower(trim((string)$h)), $header);
+        $idx = fn(string $name) => array_search($name, $header, true);
+
+        // Campos clave
+        $cAlpha2 = $idx('alpha2_code');
+        $cIso3   = $idx('iso_code');
+
+        if ($cAlpha2 === false || $cIso3 === false) {
+            fclose($fh);
+            $this->command->error("El CSV debe incluir al menos: alpha2_code, iso_code.");
+            return;
+        }
+
+        $count = 0;
+        while (($row = fgetcsv($fh)) !== false) {
+            $alpha2 = strtoupper(trim((string)($row[$cAlpha2] ?? '')));
+            $iso3   = strtoupper(trim((string)($row[$cIso3] ?? '')));
+            if ($alpha2 === '' || $iso3 === '') continue;
+
+            // Construimos payload desde las columnas presentes en CSV y existentes en la tabla
+            $map = [
+                'iso_code'        => $idx('iso_code'),
+                'alpha2_code'     => $idx('alpha2_code'),
+                'numeric_code'    => $idx('numeric_code'),
+                'name'            => $idx('name'),
+                'official_name'   => $idx('official_name'),
+                'nationality'     => $idx('nationality'),
+                'customs_code'    => $idx('customs_code'),
+                'senasa_code'     => $idx('senasa_code'),
+                'document_format' => $idx('document_format'),
+                'currency_code'   => $idx('currency_code'),
+                'timezone'        => $idx('timezone'),
+                'primary_language'=> $idx('primary_language'),
+                'allows_import'   => $idx('allows_import'),
+                'allows_export'   => $idx('allows_export'),
+                'allows_transit'  => $idx('allows_transit'),
+                'requires_visa'   => $idx('requires_visa'),
+                'active'          => $idx('active'),
+                'display_order'   => $idx('display_order'),
+                'is_primary'      => $idx('is_primary'),
+            ];
+
+            $data = [];
+            foreach ($map as $field => $pos) {
+                if ($pos === false) continue;                 // no está en CSV
+                if (!in_array($field, $cols, true)) continue; // no existe en tabla
+                $val = $row[$pos] ?? null;
+
+                // Normalizar booleans
+                if (in_array($field, ['allows_import','allows_export','allows_transit','requires_visa','active','is_primary'], true)) {
+                    $val = $this->toBool($val);
+                }
+
+                // Normalizar enteros
+                if ($field === 'display_order') {
+                    $val = $val !== null && $val !== '' ? (int)$val : null;
+                }
+
+                $data[$field] = $val === '' ? null : $val;
+            }
+
+            // claves obligatorias
+            $data['alpha2_code'] = $alpha2;
+            $data['iso_code']    = $iso3;
+
+            // timestamps si existen
+            if (in_array('updated_at', $cols, true)) $data['updated_at'] = now();
+            if (in_array('created_at', $cols, true)) $data['created_at'] = now();
+
+            $payload = $this->filterByExistingColumns('countries', $data);
+
+            \App\Models\Country::updateOrCreate(
+                ['alpha2_code' => $alpha2],
+                $payload
+            );
+            $count++;
+        }
+        fclose($fh);
+
+        $this->command->info("✓ Países importados/actualizados desde CSV: {$count}");
+    }
+
+    /** Convierte valores CSV a booleano */
+    private function toBool($v): bool
+    {
+        $s = strtolower(trim((string)$v));
+        return in_array($s, ['1','true','t','yes','y','si','sí','on'], true);
+    }
+
+    /** Filtra arreglo por columnas existentes de la tabla (defensivo) */
+    private function filterByExistingColumns(string $table, array $data): array
+    {
+        $cols = \Illuminate\Support\Facades\Schema::getColumnListing($table);
+        return array_intersect_key($data, array_flip($cols));
+    }
+
 
     /**
      * Crear tipos de documento por país
@@ -442,36 +578,6 @@ class BaseCatalogsSeeder extends Seeder
                 'active' => true,
                 'accepts_new_vessels' => true,
                 'display_order' => 2,
-            ],
-            [
-                'code' => 'PYTVT',
-                'name' => 'Terminal Villeta',
-                'short_name' => 'Villeta',
-                'local_name' => 'Terminal Villeta',
-                'country_id' => $paraguay->id,
-                'city' => 'Villeta',
-                'province_state' => 'Central',
-                'address' => 'Terminal Portuario Villeta',
-                'postal_code' => '3000',
-                'latitude' => -25.5095,
-                'longitude' => -57.3110,
-                'water_depth' => 4.00,
-                'port_type' => 'river',
-                'port_category' => 'major',
-                'handles_containers' => true,
-                'handles_bulk_cargo' => true,
-                'handles_general_cargo' => true,
-                'handles_passengers' => false,
-                'handles_dangerous_goods' => false,
-                'has_customs_office' => true,
-                'max_vessel_length' => 200,
-                'max_draft' => 3.50,
-                'phone' => '+595-21-XXX-XXXX',
-                'email' => 'info@terminalvilleta.com.py',
-                'currency_code' => 'PYG',
-                'active' => true,
-                'accepts_new_vessels' => true,
-                'display_order' => 3,
             ]
         ];
 

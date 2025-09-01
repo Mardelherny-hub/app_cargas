@@ -7,20 +7,16 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 /**
- * CargoTypesSeeder - ACTUALIZADO CON DATOS DE tipocar.txt
+ * CargoTypesSeederTemp - CORREGIDO CON DATOS DE tipocar.txt
  * 
  * MÓDULO 3: VIAJES Y CARGAS
- * Seeder para tipos de carga usando datos del sistema existente + datos nuevos de tipocar.txt
+ * Seeder para tipos de carga usando datos exactos de tipocar.txt
  * 100% coherente con migración create_cargo_types_table.php
  * 
- * DATOS AGREGADOS desde tipocar.txt:
- * 01,DOCUMENTOS - 02,ENVIOS DE BAJO VALOR - 04,ENVIOS DE ALTO VALOR
- * 05,OTRA CARGA NO CONTEN - 06,VEHICULOS - 07,ROLL-ON ROLL-OFF  
- * 08,PALETIZADAS - 09,CONTENEDORES - 10,BREAKBULK
- * 11,CARGA PELIGROSA - 12,BUQUES DE CARGA GENE - 13,CARGA LIQUIDA
- * 14,CARGA CON CONTROL DE - 15,CARGA CONTAMINANTE D - 16,LA CARGA NO ES PELIG
+ * CORRECCIÓN: Agregados campos obligatorios parent_id y level
+ * DATOS EXACTOS desde tipocar.txt (16 tipos de carga)
  */
-class CargoTypesSeeder extends Seeder
+class CargoTypesSeederTemp extends Seeder
 {
     /**
      * Run the database seeds.
@@ -30,60 +26,6 @@ class CargoTypesSeeder extends Seeder
         $now = Carbon::now();
 
         $cargoTypes = [
-            // === DATOS ORIGINALES DEL SISTEMA ===
-            
-            // Contenedores (mantener original)
-            [
-                'code' => 'CONT001',
-                'name' => 'Contenedores ISO',
-                'short_name' => 'Contenedores',
-                'description' => 'Carga transportada en contenedores estándar ISO',
-                'cargo_nature' => 'mixed',
-                'packaging_type' => 'containerized',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => false,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'can_be_mixed' => true,
-                'allows_consolidation' => true,
-                'allows_deconsolidation' => true,
-                'allows_transshipment' => true,
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 10,
-                'created_date' => $now,
-            ],
-
-            // Carga General (mantener original)
-            [
-                'code' => 'GEN001',
-                'name' => 'Carga General',
-                'short_name' => 'General',
-                'description' => 'Carga diversa no especializada',
-                'cargo_nature' => 'mixed',
-                'packaging_type' => 'break_bulk',
-                'requires_refrigeration' => false,
-                'requires_special_handling' => false,
-                'is_dangerous_goods' => false,
-                'requires_permits' => false,
-                'is_perishable' => false,
-                'is_fragile' => false,
-                'requires_fumigation' => false,
-                'can_be_mixed' => true,
-                'allows_consolidation' => true,
-                'allows_deconsolidation' => true,
-                'allows_transshipment' => true,
-                'active' => true,
-                'is_common' => true,
-                'display_order' => 20,
-                'created_date' => $now,
-            ],
-
-            // === NUEVOS DATOS DESDE tipocar.txt ===
-
             // 01,DOCUMENTOS
             [
                 'code' => 'DOC001',
@@ -91,7 +33,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Documentos',
                 'description' => 'Documentos y correspondencia',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'other',
                 'packaging_type' => 'break_bulk',
                 'requires_refrigeration' => false,
@@ -118,7 +60,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Bajo Valor',
                 'description' => 'Envíos de mercadería de bajo valor comercial',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => false,
@@ -138,6 +80,33 @@ class CargoTypesSeeder extends Seeder
                 'created_date' => $now,
             ],
 
+            // 03,ENVIOS DE BAJO VALOR (duplicado en tipocar.txt)
+            [
+                'code' => 'EBV002',
+                'name' => 'ENVIOS DE BAJO VALOR',
+                'short_name' => 'Bajo Valor Alt',
+                'description' => 'Envíos de mercadería de bajo valor comercial (alternativo)',
+                'parent_id' => null,
+                'level' => 1,
+                'cargo_nature' => 'mixed',
+                'packaging_type' => 'containerized',
+                'requires_refrigeration' => false,
+                'requires_special_handling' => false,
+                'is_dangerous_goods' => false,
+                'requires_permits' => false,
+                'is_perishable' => false,
+                'is_fragile' => false,
+                'requires_fumigation' => false,
+                'can_be_mixed' => true,
+                'allows_consolidation' => true,
+                'allows_deconsolidation' => true,
+                'allows_transshipment' => true,
+                'active' => true,
+                'is_common' => false,
+                'display_order' => 115,
+                'created_date' => $now,
+            ],
+
             // 04,ENVIOS DE ALTO VALOR
             [
                 'code' => 'EAV001',
@@ -145,7 +114,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Alto Valor',
                 'description' => 'Envíos de mercadería de alto valor comercial',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => false,
@@ -172,7 +141,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'No Contenedorizada',
                 'description' => 'Carga general no transportada en contenedores',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'solid',
                 'packaging_type' => 'break_bulk',
                 'requires_refrigeration' => false,
@@ -199,7 +168,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Vehículos',
                 'description' => 'Vehículos automotores y maquinaria rodante',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'solid',
                 'packaging_type' => 'ro_ro',
                 'requires_refrigeration' => false,
@@ -223,10 +192,10 @@ class CargoTypesSeeder extends Seeder
             [
                 'code' => 'RORO001',
                 'name' => 'ROLL-ON ROLL-OFF',
-                'short_name' => 'Ro-Ro',
-                'description' => 'Carga rodante embarcada/desembarcada por medios propios',
+                'short_name' => 'RoRo',
+                'description' => 'Carga rodante que se embarca por medios propios',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'solid',
                 'packaging_type' => 'ro_ro',
                 'requires_refrigeration' => false,
@@ -251,10 +220,10 @@ class CargoTypesSeeder extends Seeder
                 'code' => 'PAL001',
                 'name' => 'PALETIZADAS',
                 'short_name' => 'Paletizadas',
-                'description' => 'Mercadería organizada y transportada en pallets',
+                'description' => 'Carga organizada y asegurada sobre pallets',
                 'parent_id' => null,
-                'level' => 0,
-                'cargo_nature' => 'solid',
+                'level' => 1,
+                'cargo_nature' => 'mixed',
                 'packaging_type' => 'break_bulk',
                 'requires_refrigeration' => false,
                 'requires_special_handling' => false,
@@ -273,14 +242,14 @@ class CargoTypesSeeder extends Seeder
                 'created_date' => $now,
             ],
 
-            // 09,CONTENEDORES (versión específica del .txt)
+            // 09,CONTENEDORES
             [
                 'code' => 'CON001',
                 'name' => 'CONTENEDORES',
                 'short_name' => 'Contenedores',
                 'description' => 'Carga transportada en contenedores ISO',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => false,
@@ -307,7 +276,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Breakbulk',
                 'description' => 'Carga general fraccionada no contenedorizada',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'solid',
                 'packaging_type' => 'break_bulk',
                 'requires_refrigeration' => false,
@@ -334,7 +303,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Peligrosa',
                 'description' => 'Mercancías peligrosas según clasificación IMDG',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => false,
@@ -361,7 +330,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Carga General',
                 'description' => 'Carga diversa transportada en buques de carga general',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'break_bulk',
                 'requires_refrigeration' => false,
@@ -388,7 +357,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Líquida',
                 'description' => 'Líquidos transportados en tanques o contenedores especializados',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'liquid',
                 'packaging_type' => 'bulk',
                 'requires_refrigeration' => false,
@@ -415,7 +384,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Refrigerada',
                 'description' => 'Carga que requiere control específico de temperatura',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => true,
@@ -442,7 +411,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'Contaminante',
                 'description' => 'Carga con potencial contaminante declarado',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'mixed',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => false,
@@ -469,7 +438,7 @@ class CargoTypesSeeder extends Seeder
                 'short_name' => 'No Peligrosa',
                 'description' => 'Carga general sin clasificación de mercancía peligrosa',
                 'parent_id' => null,
-                'level' => 0,
+                'level' => 1,
                 'cargo_nature' => 'solid',
                 'packaging_type' => 'containerized',
                 'requires_refrigeration' => false,
@@ -496,7 +465,7 @@ class CargoTypesSeeder extends Seeder
         $this->command->info('✅ Tipos de carga creados exitosamente');
         $this->command->info('📦 Total de tipos creados: ' . count($cargoTypes));
         $this->command->line('');
-        $this->command->line('Tipos creados:');
+        $this->command->line('Tipos creados desde tipocar.txt:');
         foreach ($cargoTypes as $type) {
             $this->command->line("  - {$type['code']}: {$type['name']}");
         }

@@ -1,0 +1,250 @@
+iso_code,alpha2_code,numeric_code,name,official_name,nationality,customs_code,senasa_code,document_format,currency_code,timezone,primary_language,allows_import,allows_export,allows_transit,requires_visa,active,display_order,is_primary
+AFG,AF,004,Afghanistan,Afghanistan,,,,,,,,1,1,1,0,1,1,0
+ALA,AX,248,"Åland Islands","Åland Islands",,,,,,,,1,1,1,0,1,2,0
+ALB,AL,008,Albania,Albania,,,,,,,,1,1,1,0,1,3,0
+DZA,DZ,012,Algeria,Algeria,,,,,,,,1,1,1,0,1,4,0
+ASM,AS,016,"American Samoa","American Samoa",,,,,,,,1,1,1,0,1,5,0
+AND,AD,020,Andorra,Andorra,,,,,,,,1,1,1,0,1,6,0
+AGO,AO,024,Angola,Angola,,,,,,,,1,1,1,0,1,7,0
+AIA,AI,660,Anguilla,Anguilla,,,,,,,,1,1,1,0,1,8,0
+ATA,AQ,010,Antarctica,Antarctica,,,,,,,,1,1,1,0,1,9,0
+ATG,AG,028,"Antigua and Barbuda","Antigua and Barbuda",,,,,,,,1,1,1,0,1,10,0
+ARG,AR,032,Argentina,Argentina,,,,,,,,1,1,1,0,1,11,0
+ARM,AM,051,Armenia,Armenia,,,,,,,,1,1,1,0,1,12,0
+ABW,AW,533,Aruba,Aruba,,,,,,,,1,1,1,0,1,13,0
+AUS,AU,036,Australia,Australia,,,,,,,,1,1,1,0,1,14,0
+AUT,AT,040,Austria,Austria,,,,,,,,1,1,1,0,1,15,0
+AZE,AZ,031,Azerbaijan,Azerbaijan,,,,,,,,1,1,1,0,1,16,0
+BHS,BS,044,Bahamas,Bahamas,,,,,,,,1,1,1,0,1,17,0
+BHR,BH,048,Bahrain,Bahrain,,,,,,,,1,1,1,0,1,18,0
+BGD,BD,050,Bangladesh,Bangladesh,,,,,,,,1,1,1,0,1,19,0
+BRB,BB,052,Barbados,Barbados,,,,,,,,1,1,1,0,1,20,0
+BLR,BY,112,Belarus,Belarus,,,,,,,,1,1,1,0,1,21,0
+BEL,BE,056,Belgium,Belgium,,,,,,,,1,1,1,0,1,22,0
+BLZ,BZ,084,Belize,Belize,,,,,,,,1,1,1,0,1,23,0
+BEN,BJ,204,Benin,Benin,,,,,,,,1,1,1,0,1,24,0
+BMU,BM,060,Bermuda,Bermuda,,,,,,,,1,1,1,0,1,25,0
+BTN,BT,064,Bhutan,Bhutan,,,,,,,,1,1,1,0,1,26,0
+BOL,BO,068,"Bolivia, Plurinational State of","Bolivia, Plurinational State of",,,,,,,,1,1,1,0,1,27,0
+BES,BQ,535,"Bonaire, Sint Eustatius and Saba","Bonaire, Sint Eustatius and Saba",,,,,,,,1,1,1,0,1,28,0
+BIH,BA,070,"Bosnia and Herzegovina","Bosnia and Herzegovina",,,,,,,,1,1,1,0,1,29,0
+BWA,BW,072,Botswana,Botswana,,,,,,,,1,1,1,0,1,30,0
+BVT,BV,074,"Bouvet Island","Bouvet Island",,,,,,,,1,1,1,0,1,31,0
+BRA,BR,076,Brazil,Brazil,,,,,,,,1,1,1,0,1,32,0
+IOT,IO,086,"British Indian Ocean Territory","British Indian Ocean Territory",,,,,,,,1,1,1,0,1,33,0
+BRN,BN,096,"Brunei Darussalam","Brunei Darussalam",,,,,,,,1,1,1,0,1,34,0
+BGR,BG,100,Bulgaria,Bulgaria,,,,,,,,1,1,1,0,1,35,0
+BFA,BF,854,"Burkina Faso","Burkina Faso",,,,,,,,1,1,1,0,1,36,0
+BDI,BI,108,Burundi,Burundi,,,,,,,,1,1,1,0,1,37,0
+CPV,CV,132,"Cabo Verde","Cabo Verde",,,,,,,,1,1,1,0,1,38,0
+KHM,KH,116,Cambodia,Cambodia,,,,,,,,1,1,1,0,1,39,0
+CMR,CM,120,Cameroon,Cameroon,,,,,,,,1,1,1,0,1,40,0
+CAN,CA,124,Canada,Canada,,,,,,,,1,1,1,0,1,41,0
+CYM,KY,136,"Cayman Islands","Cayman Islands",,,,,,,,1,1,1,0,1,42,0
+CAF,CF,140,"Central African Republic","Central African Republic",,,,,,,,1,1,1,0,1,43,0
+TCD,TD,148,Chad,Chad,,,,,,,,1,1,1,0,1,44,0
+CHL,CL,152,Chile,Chile,,,,,,,,1,1,1,0,1,45,0
+CHN,CN,156,China,China,,,,,,,,1,1,1,0,1,46,0
+CXR,CX,162,"Christmas Island","Christmas Island",,,,,,,,1,1,1,0,1,47,0
+CCK,CC,166,"Cocos (Keeling) Islands","Cocos (Keeling) Islands",,,,,,,,1,1,1,0,1,48,0
+COL,CO,170,Colombia,Colombia,,,,,,,,1,1,1,0,1,49,0
+COM,KM,174,Comoros,Comoros,,,,,,,,1,1,1,0,1,50,0
+COG,CG,178,Congo,Congo,,,,,,,,1,1,1,0,1,51,0
+COD,CD,180,"Congo, Democratic Republic of the","Congo, Democratic Republic of the",,,,,,,,1,1,1,0,1,52,0
+COK,CK,184,"Cook Islands","Cook Islands",,,,,,,,1,1,1,0,1,53,0
+CRI,CR,188,"Costa Rica","Costa Rica",,,,,,,,1,1,1,0,1,54,0
+CIV,CI,384,"Côte d'Ivoire","Côte d'Ivoire",,,,,,,,1,1,1,0,1,55,0
+HRV,HR,191,Croatia,Croatia,,,,,,,,1,1,1,0,1,56,0
+CUB,CU,192,Cuba,Cuba,,,,,,,,1,1,1,0,1,57,0
+CUW,CW,531,Curaçao,Curaçao,,,,,,,,1,1,1,0,1,58,0
+CYP,CY,196,Cyprus,Cyprus,,,,,,,,1,1,1,0,1,59,0
+CZE,CZ,203,Czechia,Czechia,,,,,,,,1,1,1,0,1,60,0
+DNK,DK,208,Denmark,Denmark,,,,,,,,1,1,1,0,1,61,0
+DJI,DJ,262,Djibouti,Djibouti,,,,,,,,1,1,1,0,1,62,0
+DMA,DM,212,Dominica,Dominica,,,,,,,,1,1,1,0,1,63,0
+DOM,DO,214,"Dominican Republic","Dominican Republic",,,,,,,,1,1,1,0,1,64,0
+ECU,EC,218,Ecuador,Ecuador,,,,,,,,1,1,1,0,1,65,0
+EGY,EG,818,Egypt,Egypt,,,,,,,,1,1,1,0,1,66,0
+SLV,SV,222,"El Salvador","El Salvador",,,,,,,,1,1,1,0,1,67,0
+GNQ,GQ,226,"Equatorial Guinea","Equatorial Guinea",,,,,,,,1,1,1,0,1,68,0
+ERI,ER,232,Eritrea,Eritrea,,,,,,,,1,1,1,0,1,69,0
+EST,EE,233,Estonia,Estonia,,,,,,,,1,1,1,0,1,70,0
+SWZ,SZ,748,Eswatini,Eswatini,,,,,,,,1,1,1,0,1,71,0
+ETH,ET,231,Ethiopia,Ethiopia,,,,,,,,1,1,1,0,1,72,0
+FLK,FK,238,"Falkland Islands (Malvinas)","Falkland Islands (Malvinas)",,,,,,,,1,1,1,0,1,73,0
+FRO,FO,234,"Faroe Islands","Faroe Islands",,,,,,,,1,1,1,0,1,74,0
+FJI,FJ,242,Fiji,Fiji,,,,,,,,1,1,1,0,1,75,0
+FIN,FI,246,Finland,Finland,,,,,,,,1,1,1,0,1,76,0
+FRA,FR,250,France,France,,,,,,,,1,1,1,0,1,77,0
+GUF,GF,254,"French Guiana","French Guiana",,,,,,,,1,1,1,0,1,78,0
+PYF,PF,258,"French Polynesia","French Polynesia",,,,,,,,1,1,1,0,1,79,0
+ATF,TF,260,"French Southern Territories","French Southern Territories",,,,,,,,1,1,1,0,1,80,0
+GAB,GA,266,Gabon,Gabon,,,,,,,,1,1,1,0,1,81,0
+GMB,GM,270,Gambia,Gambia,,,,,,,,1,1,1,0,1,82,0
+GEO,GE,268,Georgia,Georgia,,,,,,,,1,1,1,0,1,83,0
+DEU,DE,276,Germany,Germany,,,,,,,,1,1,1,0,1,84,0
+GHA,GH,288,Ghana,Ghana,,,,,,,,1,1,1,0,1,85,0
+GIB,GI,292,Gibraltar,Gibraltar,,,,,,,,1,1,1,0,1,86,0
+GRC,GR,300,Greece,Greece,,,,,,,,1,1,1,0,1,87,0
+GRL,GL,304,Greenland,Greenland,,,,,,,,1,1,1,0,1,88,0
+GRD,GD,308,Grenada,Grenada,,,,,,,,1,1,1,0,1,89,0
+GLP,GP,312,Guadeloupe,Guadeloupe,,,,,,,,1,1,1,0,1,90,0
+GUM,GU,316,Guam,Guam,,,,,,,,1,1,1,0,1,91,0
+GTM,GT,320,Guatemala,Guatemala,,,,,,,,1,1,1,0,1,92,0
+GGY,GG,831,Guernsey,Guernsey,,,,,,,,1,1,1,0,1,93,0
+GIN,GN,324,Guinea,Guinea,,,,,,,,1,1,1,0,1,94,0
+GNB,GW,624,Guinea-Bissau,Guinea-Bissau,,,,,,,,1,1,1,0,1,95,0
+GUY,GY,328,Guyana,Guyana,,,,,,,,1,1,1,0,1,96,0
+HTI,HT,332,Haiti,Haiti,,,,,,,,1,1,1,0,1,97,0
+HMD,HM,334,"Heard Island and McDonald Islands","Heard Island and McDonald Islands",,,,,,,,1,1,1,0,1,98,0
+VAT,VA,336,"Holy See","Holy See",,,,,,,,1,1,1,0,1,99,0
+HND,HN,340,Honduras,Honduras,,,,,,,,1,1,1,0,1,100,0
+HKG,HK,344,"Hong Kong","Hong Kong",,,,,,,,1,1,1,0,1,101,0
+HUN,HU,348,Hungary,Hungary,,,,,,,,1,1,1,0,1,102,0
+ISL,IS,352,Iceland,Iceland,,,,,,,,1,1,1,0,1,103,0
+IND,IN,356,India,India,,,,,,,,1,1,1,0,1,104,0
+IDN,ID,360,Indonesia,Indonesia,,,,,,,,1,1,1,0,1,105,0
+IRN,IR,364,"Iran, Islamic Republic of","Iran, Islamic Republic of",,,,,,,,1,1,1,0,1,106,0
+IRQ,IQ,368,Iraq,Iraq,,,,,,,,1,1,1,0,1,107,0
+IRL,IE,372,Ireland,Ireland,,,,,,,,1,1,1,0,1,108,0
+IMN,IM,833,"Isle of Man","Isle of Man",,,,,,,,1,1,1,0,1,109,0
+ISR,IL,376,Israel,Israel,,,,,,,,1,1,1,0,1,110,0
+ITA,IT,380,Italy,Italy,,,,,,,,1,1,1,0,1,111,0
+JAM,JM,388,Jamaica,Jamaica,,,,,,,,1,1,1,0,1,112,0
+JPN,JP,392,Japan,Japan,,,,,,,,1,1,1,0,1,113,0
+JEY,JE,832,Jersey,Jersey,,,,,,,,1,1,1,0,1,114,0
+JOR,JO,400,Jordan,Jordan,,,,,,,,1,1,1,0,1,115,0
+KAZ,KZ,398,Kazakhstan,Kazakhstan,,,,,,,,1,1,1,0,1,116,0
+KEN,KE,404,Kenya,Kenya,,,,,,,,1,1,1,0,1,117,0
+KIR,KI,296,Kiribati,Kiribati,,,,,,,,1,1,1,0,1,118,0
+PRK,KP,408,"Korea, Democratic People's Republic of","Korea, Democratic People's Republic of",,,,,,,,1,1,1,0,1,119,0
+KOR,KR,410,"Korea, Republic of","Korea, Republic of",,,,,,,,1,1,1,0,1,120,0
+KWT,KW,414,Kuwait,Kuwait,,,,,,,,1,1,1,0,1,121,0
+KGZ,KG,417,Kyrgyzstan,Kyrgyzstan,,,,,,,,1,1,1,0,1,122,0
+LAO,LA,418,"Lao People's Democratic Republic","Lao People's Democratic Republic",,,,,,,,1,1,1,0,1,123,0
+LVA,LV,428,Latvia,Latvia,,,,,,,,1,1,1,0,1,124,0
+LBN,LB,422,Lebanon,Lebanon,,,,,,,,1,1,1,0,1,125,0
+LSO,LS,426,Lesotho,Lesotho,,,,,,,,1,1,1,0,1,126,0
+LBR,LR,430,Liberia,Liberia,,,,,,,,1,1,1,0,1,127,0
+LBY,LY,434,Libya,Libya,,,,,,,,1,1,1,0,1,128,0
+LIE,LI,438,Liechtenstein,Liechtenstein,,,,,,,,1,1,1,0,1,129,0
+LTU,LT,440,Lithuania,Lithuania,,,,,,,,1,1,1,0,1,130,0
+LUX,LU,442,Luxembourg,Luxembourg,,,,,,,,1,1,1,0,1,131,0
+MAC,MO,446,Macao,Macao,,,,,,,,1,1,1,0,1,132,0
+MDG,MG,450,Madagascar,Madagascar,,,,,,,,1,1,1,0,1,133,0
+MWI,MW,454,Malawi,Malawi,,,,,,,,1,1,1,0,1,134,0
+MYS,MY,458,Malaysia,Malaysia,,,,,,,,1,1,1,0,1,135,0
+MDV,MV,462,Maldives,Maldives,,,,,,,,1,1,1,0,1,136,0
+MLI,ML,466,Mali,Mali,,,,,,,,1,1,1,0,1,137,0
+MLT,MT,470,Malta,Malta,,,,,,,,1,1,1,0,1,138,0
+MHL,MH,584,"Marshall Islands","Marshall Islands",,,,,,,,1,1,1,0,1,139,0
+MTQ,MQ,474,Martinique,Martinique,,,,,,,,1,1,1,0,1,140,0
+MRT,MR,478,Mauritania,Mauritania,,,,,,,,1,1,1,0,1,141,0
+MUS,MU,480,Mauritius,Mauritius,,,,,,,,1,1,1,0,1,142,0
+MYT,YT,175,Mayotte,Mayotte,,,,,,,,1,1,1,0,1,143,0
+MEX,MX,484,Mexico,Mexico,,,,,,,,1,1,1,0,1,144,0
+FSM,FM,583,"Micronesia, Federated States of","Micronesia, Federated States of",,,,,,,,1,1,1,0,1,145,0
+MDA,MD,498,"Moldova, Republic of","Moldova, Republic of",,,,,,,,1,1,1,0,1,146,0
+MCO,MC,492,Monaco,Monaco,,,,,,,,1,1,1,0,1,147,0
+MNG,MN,496,Mongolia,Mongolia,,,,,,,,1,1,1,0,1,148,0
+MNE,ME,499,Montenegro,Montenegro,,,,,,,,1,1,1,0,1,149,0
+MSR,MS,500,Montserrat,Montserrat,,,,,,,,1,1,1,0,1,150,0
+MAR,MA,504,Morocco,Morocco,,,,,,,,1,1,1,0,1,151,0
+MOZ,MZ,508,Mozambique,Mozambique,,,,,,,,1,1,1,0,1,152,0
+MMR,MM,104,Myanmar,Myanmar,,,,,,,,1,1,1,0,1,153,0
+NAM,NA,516,Namibia,Namibia,,,,,,,,1,1,1,0,1,154,0
+NRU,NR,520,Nauru,Nauru,,,,,,,,1,1,1,0,1,155,0
+NPL,NP,524,Nepal,Nepal,,,,,,,,1,1,1,0,1,156,0
+NLD,NL,528,"Netherlands, Kingdom of the","Netherlands, Kingdom of the",,,,,,,,1,1,1,0,1,157,0
+NCL,NC,540,"New Caledonia","New Caledonia",,,,,,,,1,1,1,0,1,158,0
+NZL,NZ,554,"New Zealand","New Zealand",,,,,,,,1,1,1,0,1,159,0
+NIC,NI,558,Nicaragua,Nicaragua,,,,,,,,1,1,1,0,1,160,0
+NER,NE,562,Niger,Niger,,,,,,,,1,1,1,0,1,161,0
+NGA,NG,566,Nigeria,Nigeria,,,,,,,,1,1,1,0,1,162,0
+NIU,NU,570,Niue,Niue,,,,,,,,1,1,1,0,1,163,0
+NFK,NF,574,"Norfolk Island","Norfolk Island",,,,,,,,1,1,1,0,1,164,0
+MKD,MK,807,"North Macedonia","North Macedonia",,,,,,,,1,1,1,0,1,165,0
+MNP,MP,580,"Northern Mariana Islands","Northern Mariana Islands",,,,,,,,1,1,1,0,1,166,0
+NOR,NO,578,Norway,Norway,,,,,,,,1,1,1,0,1,167,0
+OMN,OM,512,Oman,Oman,,,,,,,,1,1,1,0,1,168,0
+PAK,PK,586,Pakistan,Pakistan,,,,,,,,1,1,1,0,1,169,0
+PLW,PW,585,Palau,Palau,,,,,,,,1,1,1,0,1,170,0
+PSE,PS,275,"Palestine, State of","Palestine, State of",,,,,,,,1,1,1,0,1,171,0
+PAN,PA,591,Panama,Panama,,,,,,,,1,1,1,0,1,172,0
+PNG,PG,598,"Papua New Guinea","Papua New Guinea",,,,,,,,1,1,1,0,1,173,0
+PRY,PY,600,Paraguay,Paraguay,,,,,,,,1,1,1,0,1,174,0
+PER,PE,604,Peru,Peru,,,,,,,,1,1,1,0,1,175,0
+PHL,PH,608,Philippines,Philippines,,,,,,,,1,1,1,0,1,176,0
+PCN,PN,612,Pitcairn,Pitcairn,,,,,,,,1,1,1,0,1,177,0
+POL,PL,616,Poland,Poland,,,,,,,,1,1,1,0,1,178,0
+PRT,PT,620,Portugal,Portugal,,,,,,,,1,1,1,0,1,179,0
+PRI,PR,630,"Puerto Rico","Puerto Rico",,,,,,,,1,1,1,0,1,180,0
+QAT,QA,634,Qatar,Qatar,,,,,,,,1,1,1,0,1,181,0
+REU,RE,638,Réunion,Réunion,,,,,,,,1,1,1,0,1,182,0
+ROU,RO,642,Romania,Romania,,,,,,,,1,1,1,0,1,183,0
+RUS,RU,643,"Russian Federation","Russian Federation",,,,,,,,1,1,1,0,1,184,0
+RWA,RW,646,Rwanda,Rwanda,,,,,,,,1,1,1,0,1,185,0
+BLM,BL,652,"Saint Barthélemy","Saint Barthélemy",,,,,,,,1,1,1,0,1,186,0
+SHN,SH,654,"Saint Helena, Ascension and Tristan da Cunha","Saint Helena, Ascension and Tristan da Cunha",,,,,,,,1,1,1,0,1,187,0
+KNA,KN,659,"Saint Kitts and Nevis","Saint Kitts and Nevis",,,,,,,,1,1,1,0,1,188,0
+LCA,LC,662,"Saint Lucia","Saint Lucia",,,,,,,,1,1,1,0,1,189,0
+MAF,MF,663,"Saint Martin (French part)","Saint Martin (French part)",,,,,,,,1,1,1,0,1,190,0
+SPM,PM,666,"Saint Pierre and Miquelon","Saint Pierre and Miquelon",,,,,,,,1,1,1,0,1,191,0
+VCT,VC,670,"Saint Vincent and the Grenadines","Saint Vincent and the Grenadines",,,,,,,,1,1,1,0,1,192,0
+WSM,WS,882,Samoa,Samoa,,,,,,,,1,1,1,0,1,193,0
+SMR,SM,674,"San Marino","San Marino",,,,,,,,1,1,1,0,1,194,0
+STP,ST,678,"Sao Tome and Principe","Sao Tome and Principe",,,,,,,,1,1,1,0,1,195,0
+SAU,SA,682,"Saudi Arabia","Saudi Arabia",,,,,,,,1,1,1,0,1,196,0
+SEN,SN,686,Senegal,Senegal,,,,,,,,1,1,1,0,1,197,0
+SRB,RS,688,Serbia,Serbia,,,,,,,,1,1,1,0,1,198,0
+SYC,SC,690,Seychelles,Seychelles,,,,,,,,1,1,1,0,1,199,0
+SLE,SL,694,"Sierra Leone","Sierra Leone",,,,,,,,1,1,1,0,1,200,0
+SGP,SG,702,Singapore,Singapore,,,,,,,,1,1,1,0,1,201,0
+SXM,SX,534,"Sint Maarten (Dutch part)","Sint Maarten (Dutch part)",,,,,,,,1,1,1,0,1,202,0
+SVK,SK,703,Slovakia,Slovakia,,,,,,,,1,1,1,0,1,203,0
+SVN,SI,705,Slovenia,Slovenia,,,,,,,,1,1,1,0,1,204,0
+SLB,SB,090,"Solomon Islands","Solomon Islands",,,,,,,,1,1,1,0,1,205,0
+SOM,SO,706,Somalia,Somalia,,,,,,,,1,1,1,0,1,206,0
+ZAF,ZA,710,"South Africa","South Africa",,,,,,,,1,1,1,0,1,207,0
+SGS,GS,239,"South Georgia and the South Sandwich Islands","South Georgia and the South Sandwich Islands",,,,,,,,1,1,1,0,1,208,0
+SSD,SS,728,"South Sudan","South Sudan",,,,,,,,1,1,1,0,1,209,0
+ESP,ES,724,Spain,Spain,,,,,,,,1,1,1,0,1,210,0
+LKA,LK,144,"Sri Lanka","Sri Lanka",,,,,,,,1,1,1,0,1,211,0
+SDN,SD,729,Sudan,Sudan,,,,,,,,1,1,1,0,1,212,0
+SUR,SR,740,Suriname,Suriname,,,,,,,,1,1,1,0,1,213,0
+SJM,SJ,744,"Svalbard and Jan Mayen","Svalbard and Jan Mayen",,,,,,,,1,1,1,0,1,214,0
+SWE,SE,752,Sweden,Sweden,,,,,,,,1,1,1,0,1,215,0
+CHE,CH,756,Switzerland,Switzerland,,,,,,,,1,1,1,0,1,216,0
+SYR,SY,760,"Syrian Arab Republic","Syrian Arab Republic",,,,,,,,1,1,1,0,1,217,0
+TWN,TW,158,"Taiwan, Province of China","Taiwan, Province of China",,,,,,,,1,1,1,0,1,218,0
+TJK,TJ,762,Tajikistan,Tajikistan,,,,,,,,1,1,1,0,1,219,0
+TZA,TZ,834,"Tanzania, United Republic of","Tanzania, United Republic of",,,,,,,,1,1,1,0,1,220,0
+THA,TH,764,Thailand,Thailand,,,,,,,,1,1,1,0,1,221,0
+TLS,TL,626,Timor-Leste,Timor-Leste,,,,,,,,1,1,1,0,1,222,0
+TGO,TG,768,Togo,Togo,,,,,,,,1,1,1,0,1,223,0
+TKL,TK,772,Tokelau,Tokelau,,,,,,,,1,1,1,0,1,224,0
+TON,TO,776,Tonga,Tonga,,,,,,,,1,1,1,0,1,225,0
+TTO,TT,780,"Trinidad and Tobago","Trinidad and Tobago",,,,,,,,1,1,1,0,1,226,0
+TUN,TN,788,Tunisia,Tunisia,,,,,,,,1,1,1,0,1,227,0
+TUR,TR,792,Türkiye,Türkiye,,,,,,,,1,1,1,0,1,228,0
+TKM,TM,795,Turkmenistan,Turkmenistan,,,,,,,,1,1,1,0,1,229,0
+TCA,TC,796,"Turks and Caicos Islands","Turks and Caicos Islands",,,,,,,,1,1,1,0,1,230,0
+TUV,TV,798,Tuvalu,Tuvalu,,,,,,,,1,1,1,0,1,231,0
+UGA,UG,800,Uganda,Uganda,,,,,,,,1,1,1,0,1,232,0
+UKR,UA,804,Ukraine,Ukraine,,,,,,,,1,1,1,0,1,233,0
+ARE,AE,784,"United Arab Emirates","United Arab Emirates",,,,,,,,1,1,1,0,1,234,0
+GBR,GB,826,"United Kingdom of Great Britain and Northern Ireland","United Kingdom of Great Britain and Northern Ireland",,,,,,,,1,1,1,0,1,235,0
+USA,US,840,"United States of America","United States of America",,,,,,,,1,1,1,0,1,236,0
+UMI,UM,581,"United States Minor Outlying Islands","United States Minor Outlying Islands",,,,,,,,1,1,1,0,1,237,0
+URY,UY,858,Uruguay,Uruguay,,,,,,,,1,1,1,0,1,238,0
+UZB,UZ,860,Uzbekistan,Uzbekistan,,,,,,,,1,1,1,0,1,239,0
+VUT,VU,548,Vanuatu,Vanuatu,,,,,,,,1,1,1,0,1,240,0
+VEN,VE,862,"Venezuela, Bolivarian Republic of","Venezuela, Bolivarian Republic of",,,,,,,,1,1,1,0,1,241,0
+VNM,VN,704,"Viet Nam","Viet Nam",,,,,,,,1,1,1,0,1,242,0
+VGB,VG,092,"Virgin Islands (British)","Virgin Islands (British)",,,,,,,,1,1,1,0,1,243,0
+VIR,VI,850,"Virgin Islands (U.S.)","Virgin Islands (U.S.)",,,,,,,,1,1,1,0,1,244,0
+WLF,WF,876,"Wallis and Futuna","Wallis and Futuna",,,,,,,,1,1,1,0,1,245,0
+ESH,EH,732,"Western Sahara","Western Sahara",,,,,,,,1,1,1,0,1,246,0
+YEM,YE,887,Yemen,Yemen,,,,,,,,1,1,1,0,1,247,0
+ZMB,ZM,894,Zambia,Zambia,,,,,,,,1,1,1,0,1,248,0
+ZWE,ZW,716,Zimbabwe,Zimbabwe,,,,,,,,1,1,1,0,1,249,0
