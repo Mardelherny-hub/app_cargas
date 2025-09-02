@@ -82,55 +82,12 @@
             @endif
 
             {{-- COMPONENTE LIVEWIRE PRINCIPAL --}}
-            {{-- Aquí es donde llamamos al componente que acabamos de crear --}}
+            {{-- Aquí es donde llamamos al componente --}}
             @livewire('bill-of-lading-edit-form', ['billOfLading' => $billOfLading])
 
         </div>
     </div>
 
     {{-- Scripts adicionales si son necesarios --}}
-    @push('scripts')
-    <script>
-        // Confirmación antes de salir si hay cambios no guardados
-        let hasUnsavedChanges = false;
-        
-        // Escuchar eventos Livewire para detectar cambios
-        document.addEventListener('livewire:init', () => {
-            Livewire.hook('morph.updated', ({ el, component }) => {
-                // Detectar si hay cambios en el formulario
-                const formElements = el.querySelectorAll('input, select, textarea');
-                formElements.forEach(element => {
-                    element.addEventListener('change', () => {
-                        hasUnsavedChanges = true;
-                    });
-                });
-            });
-
-            // Listener para cuando se envía el formulario exitosamente
-            Livewire.on('form-saved', () => {
-                hasUnsavedChanges = false;
-            });
-        });
-
-        // Confirmar antes de salir de la página
-        window.addEventListener('beforeunload', (e) => {
-            if (hasUnsavedChanges) {
-                e.preventDefault();
-                e.returnValue = '¿Está seguro de que desea salir? Los cambios no guardados se perderán.';
-            }
-        });
-
-        // Confirmar antes de usar enlaces de navegación
-        document.addEventListener('DOMContentLoaded', () => {
-            const navLinks = document.querySelectorAll('a[href*="/bills-of-lading"]');
-            navLinks.forEach(link => {
-                link.addEventListener('click', (e) => {
-                    if (hasUnsavedChanges && !confirm('¿Está seguro de que desea salir? Los cambios no guardados se perderán.')) {
-                        e.preventDefault();
-                    }
-                });
-            });
-        });
-    </script>
-    @endpush
+  
 </x-app-layout>

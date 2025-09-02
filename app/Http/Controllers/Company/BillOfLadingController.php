@@ -7,6 +7,7 @@ use App\Models\BillOfLading;
 use App\Models\Shipment;
 use App\Models\Client;
 use App\Models\Port;
+use App\Models\Country;
 use App\Models\CustomOffice;
 use App\Models\CargoType;
 use App\Models\PackagingType;
@@ -760,183 +761,121 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
     /**
      * Obtener datos para formularios (CORREGIDO - SIN CLIENT_ROLES)
      */
-    private function getFormData($company, Request $request, ?BillOfLading $billOfLading = null): array
-    {
-        return [
-            'shipments' => Shipment::whereHas('voyage', function ($q) use ($company) {
-                $q->where('company_id', $company->id);
-            })->with('voyage:id,voyage_number')->get(['id', 'shipment_number', 'voyage_id']),
-            
-            // CORREGIDO: Todos los clientes pueden ser cualquier cosa
-            'shippers' => Client::where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
+    protected function getFormData($company, \Illuminate\Http\Request $request, ?\App\Models\BillOfLading $billOfLading = null): array
+{
+    $LIMIT = 20;
 
-            'consignees' => Client::where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
+    // IDs preseleccionados (en edit)
+    $selectedShipmentId = $billOfLading->shipment_id ?? null;
 
-            'notifyParties' => Client::where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
-            
-            'cargoOwners' => Client::where('status', 'active')
-                ->orderBy('legal_name')
-                ->get(['id', 'legal_name', 'tax_id']),
-            
-            'loadingPorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'dischargePorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'transshipmentPorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'finalDestinationPorts' => Port::where('active', true)
-                ->with('country:id,name')
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            
-            'customsOffices' => CustomOffice::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'code']),
-            
-            'cargoTypes' => CargoType::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'description']),
-            
-            'packagingTypes' => PackagingType::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'description']),
+    $selectedClientIds = collect([
+        $billOfLading->shipper_id ?? null,
+        $billOfLading->consignee_id ?? null,
+        $billOfLading->notify_party_id ?? null,
+        $billOfLading->cargo_owner_id ?? null,
+    ])->filter()->unique()->values();
 
-            // NUEVAS OPCIONES PARA FORMULARIOS
-            'billTypes' => [
-                'original' => 'Original',
-                'copy' => 'Copia',
-                'duplicate' => 'Duplicado',
-                'amendment' => 'Enmienda',
-            ],
+    $selectedPortIds = collect([
+        $billOfLading->loading_port_id ?? null,
+        $billOfLading->discharge_port_id ?? null,
+        $billOfLading->transshipment_port_id ?? null,
+        $billOfLading->final_destination_port_id ?? null,
+    ])->filter()->unique()->values();
 
-            'priorityLevels' => [
-                'low' => 'Baja',
-                'normal' => 'Normal',
-                'high' => 'Alta',
-                'urgent' => 'Urgente',
-            ],
+    $selectedCustomIds = collect([
+        $billOfLading->loading_customs_id ?? null,
+        $billOfLading->discharge_customs_id ?? null,
+    ])->filter()->unique()->values();
 
-            'freightTerms' => [
-                'prepaid' => 'Flete Pagado',
-                'collect' => 'Flete por Cobrar',
-                'prepaid_advance' => 'Flete Pagado Anticipado',
-            ],
+    // Shipments de la compañía (limit + incluir seleccionado si falta)
+    $shipmentsBase = \App\Models\Shipment::whereHas('voyage', function ($q) use ($company) {
+            $q->where('company_id', $company->id);
+        })
+        ->with('voyage:id,voyage_number')
+        ->orderBy('shipment_number')
+        ->limit($LIMIT)
+        ->get(['id','shipment_number','voyage_id']);
 
-            'paymentTerms' => [
-                'cash' => 'Efectivo',
-                'credit_card' => 'Tarjeta de Crédito',
-                'bank_transfer' => 'Transferencia Bancaria',
-                'check' => 'Cheque',
-                'letter_of_credit' => 'Carta de Crédito',
-                'payment_on_delivery' => 'Pago Contra Entrega',
-                'advance_payment' => 'Pago Anticipado',
-                'consignment' => 'Consignación',
-            ],
-
-            'incotermsList' => [
-                'EXW' => 'Ex Works',
-                'FCA' => 'Free Carrier',
-                'CPT' => 'Carriage Paid To',
-                'CIP' => 'Carriage and Insurance Paid To',
-                'DAP' => 'Delivered at Place',
-                'DPU' => 'Delivered at Place Unloaded',
-                'DDP' => 'Delivered Duty Paid',
-                'FAS' => 'Free Alongside Ship',
-                'FOB' => 'Free on Board',
-                'CFR' => 'Cost and Freight',
-                'CIF' => 'Cost, Insurance and Freight',
-            ],
-
-            'currencies' => [
-                'USD' => 'Dólar Estadounidense (USD)',
-                'EUR' => 'Euro (EUR)',
-                'ARS' => 'Peso Argentino (ARS)',
-                'PYG' => 'Guaraní Paraguayo (PYG)',
-                'BRL' => 'Real Brasileño (BRL)',
-                'UYU' => 'Peso Uruguayo (UYU)',
-            ],
-
-            'measurementUnits' => [
-                'KG' => 'Kilogramos',
-                'TON' => 'Toneladas',
-                'LB' => 'Libras',
-                'CBM' => 'Metros Cúbicos',
-                'CFT' => 'Pies Cúbicos',
-                'LTR' => 'Litros',
-                'PCS' => 'Piezas',
-                'PKG' => 'Bultos',
-            ],
-
-            'defaultValues' => [
-                'bill_date' => now()->format('Y-m-d'),
-                'loading_date' => null,
-                'arrival_date' => null,
-                'freight_terms' => 'prepaid',
-                'bill_type' => 'original',
-                'priority_level' => 'normal',
-                'currency_code' => 'USD',
-                'measurement_unit' => 'KG',
-                'requires_inspection' => false,
-                'contains_dangerous_goods' => false,
-                'requires_refrigeration' => false,
-                'is_transhipment' => false,
-                'is_partial_shipment' => false,
-                'allows_partial_delivery' => true,
-                'requires_documents_on_arrival' => false,
-                'is_consolidated' => false,
-                'is_master_bill' => false,
-                'is_house_bill' => false,
-                'requires_surrender' => false,
-                'payment_terms' => 'cash',
-            ],
-
-            'paymentMethods' => [
-                'cash' => 'Efectivo',
-                'credit' => 'Crédito',
-                'wire_transfer' => 'Transferencia',
-                'check' => 'Cheque',
-                'letter_of_credit' => 'Carta de Crédito',
-            ],
-
-            'deliveryTerms' => [
-                'door_to_door' => 'Puerta a Puerta',
-                'port_to_port' => 'Puerto a Puerto',
-                'door_to_port' => 'Puerta a Puerto',
-                'port_to_door' => 'Puerto a Puerta',
-            ],
-
-            'masterBills' => BillOfLading::whereHas('shipment.voyage', function ($q) use ($company) {
-                $q->where('company_id', $company->id);
-            })
-            ->where('is_master_bill', true)
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('bill_number')
-            ->get(['id', 'bill_number'])
-            ->map(function ($bill) {
-                return [
-                    'id' => $bill->id,
-                    'bill_number' => $bill->bill_number,
-                    'display_name' => $bill->bill_number
-                ];
-            }),        
-                    
-        ];
+    if ($selectedShipmentId && !$shipmentsBase->pluck('id')->contains($selectedShipmentId)) {
+        $extra = \App\Models\Shipment::with('voyage:id,voyage_number')
+            ->where('id', $selectedShipmentId)
+            ->get(['id','shipment_number','voyage_id']);
+        $shipmentsBase = $shipmentsBase->concat($extra)->unique('id')->sortBy('shipment_number')->values();
     }
+
+    // Clientes activos (limit + incluir seleccionados si faltan)
+    $clientsBase = \App\Models\Client::where('status', 'active')
+        ->orderBy('legal_name')
+        ->limit($LIMIT)
+        ->get(['id','legal_name','tax_id']);
+
+    $missingClientIds = $selectedClientIds->diff($clientsBase->pluck('id'));
+    if ($missingClientIds->isNotEmpty()) {
+        $extra = \App\Models\Client::whereIn('id', $missingClientIds)->get(['id','legal_name','tax_id']);
+        $clientsBase = $clientsBase->concat($extra)->unique('id')->sortBy('legal_name')->values();
+    }
+
+    // Puertos activos (limit + incluir seleccionados si faltan)
+    $portsBase = \App\Models\Port::where('active', true)
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get(['id','name','code','country_id']);
+
+    $missingPortIds = $selectedPortIds->diff($portsBase->pluck('id'));
+    if ($missingPortIds->isNotEmpty()) {
+        $extra = \App\Models\Port::whereIn('id', $missingPortIds)->get(['id','name','code','country_id']);
+        $portsBase = $portsBase->concat($extra)->unique('id')->sortBy('name')->values();
+    }
+
+    // Aduanas activas (limit + incluir seleccionadas si faltan)
+    $customsBase = \App\Models\CustomOffice::where('active', true)
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get(['id','name','code']);
+
+    $missingCustomIds = $selectedCustomIds->diff($customsBase->pluck('id'));
+    if ($missingCustomIds->isNotEmpty()) {
+        $extra = \App\Models\CustomOffice::whereIn('id', $missingCustomIds)->get(['id','name','code']);
+        $customsBase = $customsBase->concat($extra)->unique('id')->sortBy('name')->values();
+    }
+
+    // Tablas chicas (mantener completo suele estar ok, pero igual ordenadas)
+    $cargoTypes = \App\Models\CargoType::where('active', true)->orderBy('name')->get(['id','name','description']);
+    $packagingTypes = \App\Models\PackagingType::where('active', true)->orderBy('name')->get(['id','name','description']);
+
+    // Opciones estáticas (tal como las tenías)
+    $billTypes = [
+        'original' => 'Original',
+        'copy'     => 'Copia',
+    ];
+    $freightTerms = ['prepaid','collect','third_party'];
+    $paymentTerms = ['cash','credit','letter_of_credit','other'];
+    $currencies   = ['USD','ARS','EUR','BRL'];
+
+    // Armar el array final en el mismo formato que usás en las vistas
+    return [
+        'shipments'              => $shipmentsBase,
+        'shippers'               => $clientsBase,
+        'consignees'             => $clientsBase,
+        'notifyParties'          => $clientsBase,
+        'cargoOwners'            => $clientsBase,
+
+        'loadingPorts'           => $portsBase,
+        'dischargePorts'         => $portsBase,
+        'transshipmentPorts'     => $portsBase,
+        'finalDestinationPorts'  => $portsBase,
+
+        'customsOffices'         => $customsBase,
+        'cargoTypes'             => $cargoTypes,
+        'packagingTypes'         => $packagingTypes,
+
+        'billTypes'              => $billTypes,
+        'freightTerms'           => $freightTerms,
+        'paymentTerms'           => $paymentTerms,
+        'currencies'             => $currencies,
+    ];
+}
+
 
     /**
      * Obtener datos para filtros (CORREGIDO - SIN CLIENT_ROLES)

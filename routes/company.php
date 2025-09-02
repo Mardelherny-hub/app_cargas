@@ -23,6 +23,7 @@ use App\Http\Controllers\Company\DashboardEstadosController;
 use App\Http\Controllers\Company\Manifests\TestingCustomsController;
 use App\Http\Controllers\Company\ManeFileController;
 
+
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
 use App\Http\Controllers\Company\Manifests\ManifestController;
@@ -159,6 +160,9 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
     Route::get('/{voyage}/containers', [VoyageController::class, 'containers'])->name('containers');
     Route::post('/{voyage}/containers', [VoyageController::class, 'addContainer'])->name('add-container');
     Route::delete('/{voyage}/containers/{container}', [VoyageController::class, 'removeContainer'])->name('remove-container');
+
+    // Validador
+    Route::post('/{voyage}/validate-customs', [VoyageController::class, 'validateForCustoms'])->name('validate-customs');
 });
 
 // Gestión de Propietarios de Embarcaciones

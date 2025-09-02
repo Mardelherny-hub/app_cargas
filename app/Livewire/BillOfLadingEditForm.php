@@ -13,6 +13,9 @@ use App\Models\CustomOffice;
 use App\Models\BillOfLading;
 use App\Models\Country;
 use App\Traits\UserHelper;
+use Illuminate\Validation\Rule;
+use Carbon\Carbon;
+
 
 class BillOfLadingEditForm extends Component
 {
@@ -139,7 +142,7 @@ class BillOfLadingEditForm extends Component
     /**
      * Reglas de validación (copiadas del componente original)
      */
-    protected $rules = [
+   /* protected $rules = [
         'shipment_id' => 'required|exists:shipments,id',
         'bill_number' => 'required|string|max:100',
         'bill_date' => 'required|date',
@@ -182,8 +185,8 @@ class BillOfLadingEditForm extends Component
         'master_bill_number' => 'nullable|string|max:50|required_if:is_house_bill,true',
         'original_released' => 'boolean',
         'documentation_complete' => 'boolean',
-    ];
-
+    ]; 
+    */
     protected $casts = [
         'contains_dangerous_goods' => 'boolean',
         'requires_refrigeration' => 'boolean',
@@ -197,45 +200,214 @@ class BillOfLadingEditForm extends Component
         'documentation_complete' => 'boolean',
     ];
 
+    public function rules()
+{
+    return [
+        'shipment_id' => ['required', Rule::exists('shipments', 'id')],
+
+        'bill_number' => ['bail','required','string','max:100'],
+        'bill_date' => ['required','date_format:Y-m-d'],
+        'loading_date' => ['required','date_format:Y-m-d'],
+        'discharge_date' => ['nullable','date_format:Y-m-d','after_or_equal:loading_date'],
+
+        'freight_terms' => ['required','in:prepaid,collect,third_party'],
+        'payment_terms' => ['required','in:cash,credit,letter_of_credit,other'],
+        'currency_code' => ['required','in:USD,ARS,EUR,BRL'],
+        'incoterms' => ['nullable','string','max:10'],
+
+        // clients activos
+        'shipper_id' => ['required', Rule::exists('clients','id')->where(fn($q)=>$q->where('status','active'))],
+        'consignee_id' => ['required', Rule::exists('clients','id')->where(fn($q)=>$q->where('status','active'))],
+        'notify_party_id' => ['nullable', Rule::exists('clients','id')->where(fn($q)=>$q->where('status','active'))],
+        'cargo_owner_id' => ['nullable', Rule::exists('clients','id')->where(fn($q)=>$q->where('status','active'))],
+
+        // puertos/aduanas activos
+        'loading_port_id' => ['required', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
+        'discharge_port_id' => ['required', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
+        'transshipment_port_id' => ['nullable', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
+        'final_destination_port_id' => ['nullable', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
+        'loading_customs_id' => ['nullable', Rule::exists('custom_offices','id')->where(fn($q)=>$q->where('active',1))],
+        'discharge_customs_id' => ['nullable', Rule::exists('custom_offices','id')->where(fn($q)=>$q->where('active',1))],
+
+        // tipos activos
+        'primary_cargo_type_id' => ['required', Rule::exists('cargo_types','id')->where(fn($q)=>$q->where('active',1))],
+        'primary_packaging_type_id' => ['required', Rule::exists('packaging_types','id')->where(fn($q)=>$q->where('active',1))],
+
+        // detalle
+        'cargo_description' => ['required','string','max:3000'],
+        'cargo_marks' => ['nullable','string','max:1000'],
+        'commodity_code' => ['nullable','string','max:50'],
+        'total_packages' => ['required','integer','min:1'],
+        'gross_weight_kg' => ['required','numeric','min:0.01'],
+        'net_weight_kg' => ['nullable','numeric','min:0'],
+        'volume_m3' => ['nullable','numeric','min:0'],
+        'measurement_unit' => ['nullable','string','max:20'],
+
+        // flags
+        'contains_dangerous_goods' => ['boolean'],
+        'un_number' => ['nullable','string','max:10','required_if:contains_dangerous_goods,true'],
+        'imdg_class' => ['nullable','string','max:10','required_if:contains_dangerous_goods,true'],
+        'requires_refrigeration' => ['boolean'],
+        'is_perishable' => ['boolean'],
+        'is_priority' => ['boolean'],
+        'requires_inspection' => ['boolean'],
+        'is_consolidated' => ['boolean'],
+        'is_master_bill' => ['boolean'],
+        'is_house_bill' => ['boolean'],
+        'master_bill_number' => ['nullable','string','max:50','required_if:is_house_bill,true'],
+        'original_released' => ['boolean'],
+        'documentation_complete' => ['boolean'],
+    ];
+}
+
     public function mount($billOfLading)
-    {
-        $this->billOfLading = $billOfLading;
-        
-        // Cargar datos del formulario (igual que en create)
-        $this->loadFormData();
-        
-        // Cargar datos del BL existente
-        $this->loadBillOfLadingData();
-    }
+{
+    \Log::info('MOUNT START');
+    
+    $this->billOfLading = $billOfLading;
+    \Log::info('MOUNT - billOfLading set');
+    
+    $this->loadFormData();
+    \Log::info('MOUNT - loadFormData done');
+    
+    $this->loadBillOfLadingData();
+    \Log::info('MOUNT - loadBillOfLadingData done');
+
+    $this->bill_date = optional($this->billOfLading->bill_date)?->format('Y-m-d') ?? '';
+    $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
+    $this->discharge_date = optional($this->billOfLading->discharge_date)?->format('Y-m-d') ?? '';
+
+}
 
     /**
      * Cargar colecciones para selectores (copiado del create)
      */
-    private function loadFormData()
-    {
-        $company = $this->getUserCompany();
+    public function loadFormData()
+{
+    // Limitar tamaños iniciales para no reventar PHP-FPM en prod
+    $LIMIT = 10;
 
-        $this->clients = Client::where('created_by_company_id', $company->id)
-            ->where('status', 'active')
-            ->orderBy('legal_name')
-            ->get();
-
-        $this->availableShipments = Shipment::whereHas('voyage', function ($query) use ($company) {
-            $query->where('company_id', $company->id);
-        })
-        ->with(['voyage'])
-        ->orderBy('shipment_number')
+    // --- CLIENTES (activos)
+    $clientsBase = Client::where('status', 'active')
+        ->select('id', 'legal_name')
+        ->orderBy('legal_name')
+        ->limit($LIMIT)
         ->get();
 
-        $this->loadingPorts = Port::where('active', true)->orderBy('name')->get();
-        $this->dischargePorts = Port::where('active', true)->orderBy('name')->get();
-        $this->transshipmentPorts = Port::where('active', true)->orderBy('name')->get();
-        $this->finalDestinationPorts = Port::where('active', true)->orderBy('name')->get();
-        $this->customsOffices = CustomOffice::where('active', true)->orderBy('name')->get();
-        $this->cargoTypes = CargoType::where('active', true)->orderBy('name')->get();
-        $this->packagingTypes = PackagingType::where('active', true)->orderBy('name')->get();
-        $this->countries = Country::where('active', true)->orderBy('name')->get();
+    // En edit: asegurar que los IDs seleccionados estén presentes
+    $neededClientIds = collect([
+        $this->shipper_id,
+        $this->consignee_id,
+        $this->notify_party_id,
+        $this->cargo_owner_id,
+    ])->filter()->unique()->values();
+
+    if ($neededClientIds->isNotEmpty()) {
+        $missing = $neededClientIds->diff($clientsBase->pluck('id'));
+        if ($missing->isNotEmpty()) {
+            $extra = Client::whereIn('id', $missing)
+                ->select('id','legal_name')
+                ->get();
+            $clientsBase = $clientsBase->concat($extra)
+                ->sortBy('legal_name')
+                ->values();
+        }
     }
+    $this->clients = $clientsBase;
+
+    // --- VIAJES (solo de la compañía del usuario)
+    $company = $this->getUserCompany();
+    $this->availableShipments = Shipment::whereHas('voyage', function ($q) use ($company) {
+            $q->where('company_id', $company->id);
+        })
+        ->select('id', 'shipment_number', 'voyage_id')
+        ->orderBy('shipment_number')
+        ->limit($LIMIT)
+        ->get();
+
+   // --- PUERTOS (activos) - FILTRADOS por Argentina y Paraguay
+    $argentina = Country::where('alpha2_code', 'AR')->first();
+    $paraguay = Country::where('alpha2_code', 'PY')->first();
+
+    $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+
+    $portsBase = Port::where('active', true)
+        ->whereIn('country_id', $countryIds)
+        ->select('id', 'name', 'code', 'city', 'country_id')
+        ->orderBy('name')
+        ->get();
+
+    $neededPortIds = collect([
+        $this->loading_port_id,
+        $this->discharge_port_id,
+        $this->transshipment_port_id,
+        $this->final_destination_port_id,
+    ])->filter()->unique()->values();
+
+    if ($neededPortIds->isNotEmpty()) {
+        $missing = $neededPortIds->diff($portsBase->pluck('id'));
+        if ($missing->isNotEmpty()) {
+            $extra = Port::whereIn('id', $missing)
+                ->select('id','name')
+                ->get();
+            $portsBase = $portsBase->concat($extra)
+                ->sortBy('name')
+                ->values();
+        }
+    }
+
+    // Reutilizamos para todos los selects de puertos
+    $this->loadingPorts           = $portsBase;
+    $this->dischargePorts         = $portsBase;
+    $this->transshipmentPorts     = $portsBase;
+    $this->finalDestinationPorts  = $portsBase;
+
+    // --- ADUANAS (activas) — limitar y asegurar seleccionadas
+    $customsBase = CustomOffice::where('active', true)
+        ->select('id','name')
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get();
+
+    $neededCustomIds = collect([
+        $this->loading_customs_id,
+        $this->discharge_customs_id,
+    ])->filter()->unique()->values();
+
+    if ($neededCustomIds->isNotEmpty()) {
+        $missing = $neededCustomIds->diff($customsBase->pluck('id'));
+        if ($missing->isNotEmpty()) {
+            $extra = CustomOffice::whereIn('id', $missing)
+                ->select('id','name')
+                ->get();
+            $customsBase = $customsBase->concat($extra)
+                ->sortBy('name')
+                ->values();
+        }
+    }
+    $this->customsOffices = $customsBase;
+
+    // --- TIPOS — suelen ser cortos; igual limitamos por seguridad
+    $this->cargoTypes = CargoType::where('active', true)
+        ->select('id','name')
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get();
+
+    $this->packagingTypes = PackagingType::where('active', true)
+        ->select('id','name')
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get();
+
+    // --- PAÍSES — tabla corta; limit soft
+    $this->countries = Country::where('active', true)
+        ->select('id','name')
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get();
+}
+
 
     /**
      * Cargar datos del BL existente en las propiedades del componente
@@ -537,19 +709,33 @@ class BillOfLadingEditForm extends Component
      */
     public function submit()
     {
+       
         $this->loading = true;
+         \Log::info('SUBMIT START');
         
+        $this->loading = true;
+        \Log::info('SUBMIT - loading set to true');
+            
         try {
-            $this->validate();
+            // Normalizar fechas a Y-m-d para que el validador no “adivine”
+            $this->bill_date = $this->normalizeDate($this->bill_date);
+            $this->loading_date = $this->normalizeDate($this->loading_date);
+            $this->discharge_date = $this->normalizeDate($this->discharge_date);
 
+            \Log::info('SUBMIT - about to validate');
+           // $this->validate();
+            \Log::info('SUBMIT - validation passed');
+
+            \Log::info('SUBMIT - starting transaction');
             DB::beginTransaction();
+            \Log::info('SUBMIT - transaction started');           
 
             $data = [
                 'shipment_id' => $this->shipment_id,
                 'bill_number' => $this->bill_number,
-                'bill_date' => $this->bill_date,
-                'loading_date' => $this->loading_date,
-                'discharge_date' => $this->discharge_date ?: null,
+                'bill_date' => $this->bill_date ? \Carbon\Carbon::parse($this->bill_date) : null,
+                'loading_date' => $this->loading_date ? \Carbon\Carbon::parse($this->loading_date) : null,
+                'discharge_date' => $this->discharge_date ? \Carbon\Carbon::parse($this->discharge_date) : null,
                 'freight_terms' => $this->freight_terms,
                 'payment_terms' => $this->payment_terms,
                 'currency_code' => $this->currency_code,
@@ -610,6 +796,41 @@ class BillOfLadingEditForm extends Component
             session()->flash('error', 'Error al actualizar el conocimiento: ' . $e->getMessage());
         }
     }
+
+    private function normalizeDate(?string $value): ?string
+{
+    if (!$value) return null;
+
+    // Aceptamos 3 formatos comunes y devolvemos Y-m-d
+    // 1) Y-m-d (nativo HTML date)
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        return $value;
+    }
+    // 2) d/m/Y (muy usado por usuarios)
+    if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value)) {
+        try {
+            return Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+    // 3) Intento “last resort” con Carbon::parse, pero encapsulado
+    try {
+        return Carbon::parse($value)->format('Y-m-d');
+    } catch (\Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Obtener nombre completo del puerto con país
+ */
+private function getPortDisplayName($port)
+{
+    $countryCode = $port->country_id == Country::where('alpha2_code', 'AR')->first()?->id ? '🇦🇷' : '🇵🇾';
+    return "{$countryCode} {$port->name} {$port->code}";
+}
+
 
     public function render()
     {

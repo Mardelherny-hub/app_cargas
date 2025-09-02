@@ -331,21 +331,25 @@ class BillOfLadingCreateForm extends Component
         ->orderBy('shipment_number')
         ->get();
 
-        $this->loadingPorts = Port::where('active', true)
+        // --- PUERTOS (activos) - FILTRADOS por Argentina y Paraguay
+        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
+        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+
+        $portsBase = Port::where('active', true)
+            ->whereIn('country_id', $countryIds)
+            ->select('id', 'name', 'code', 'city', 'country_id')
             ->orderBy('name')
             ->get();
 
-        $this->dischargePorts = Port::where('active', true)
-            ->orderBy('name')
-            ->get();
+        // Reutilizar para todos los selects de puertos
+        $this->loadingPorts = $portsBase;
+        $this->dischargePorts = $portsBase;
+        $this->transshipmentPorts = $portsBase;
+        $this->finalDestinationPorts = $portsBase;
 
-        $this->transshipmentPorts = Port::where('active', true)
-            ->orderBy('name')
-            ->get();
-
-        $this->finalDestinationPorts = Port::where('active', true)
-            ->orderBy('name')
-            ->get();
+        // Hacer países disponibles para la vista
+        $this->countries = collect([$argentina, $paraguay])->filter();
 
         $this->customsOffices = CustomOffice::where('active', true)
             ->orderBy('name')

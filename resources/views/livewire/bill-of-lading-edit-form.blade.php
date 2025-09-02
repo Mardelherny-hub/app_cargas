@@ -29,7 +29,11 @@
     </script>
 
     {{-- Formulario --}}
-    <form wire:submit.prevent="submit" class="space-y-8">
+    <form wire:submit.prevent="submit" class="space-y-8" x-data="{
+        shipper_use_specific: @entangle('shipper_use_specific'),
+        consignee_use_specific: @entangle('consignee_use_specific'), 
+        notify_use_specific: @entangle('notify_use_specific')
+    }">
         
         {{-- Información Básica --}}
         <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -207,11 +211,11 @@
                         {{-- Dirección específica para Shipper --}}
                         <div class="mt-4">
                             <label class="flex items-center">
-                                <input wire:model.live="shipper_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                <input x-model="shipper_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
                                 <span class="ml-2 text-sm text-gray-600">Usar dirección específica para este conocimiento</span>
                             </label>
                             
-                            @if($shipper_use_specific)
+                            <div x-show="shipper_use_specific" class="mt-3 space-y-3 p-3 bg-gray-50 rounded-md">
                                 <div class="mt-3 space-y-3 p-3 bg-gray-50 rounded-md">
                                     <div>
                                         <input wire:model="shipper_specific_address_1" type="text" placeholder="Dirección línea 1"
@@ -240,7 +244,7 @@
                                                class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 </div>
-                            @endif
+                            </div>
                         </div>
                     </div>
 
@@ -426,8 +430,14 @@
                         <select wire:model="loading_port_id" id="loading_port_id" required
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_port_id') border-red-300 @enderror">
                             <option value="">Seleccionar puerto de carga</option>
-                            @foreach($loadingPorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }}</option>
+                            @foreach($loadingPorts as $port)                            
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('loading_port_id')
@@ -444,7 +454,13 @@
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('discharge_port_id') border-red-300 @enderror">
                             <option value="">Seleccionar puerto de descarga</option>
                             @foreach($dischargePorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }}</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('discharge_port_id')
@@ -461,7 +477,13 @@
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('transshipment_port_id') border-red-300 @enderror">
                             <option value="">Sin transbordo</option>
                             @foreach($transshipmentPorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }}</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('transshipment_port_id')
@@ -478,7 +500,13 @@
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('final_destination_port_id') border-red-300 @enderror">
                             <option value="">Mismo que descarga</option>
                             @foreach($finalDestinationPorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }}</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('final_destination_port_id')

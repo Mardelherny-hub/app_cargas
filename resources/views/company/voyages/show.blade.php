@@ -284,6 +284,81 @@
                 @endif
             </div>
 
+            <!-- Validación para Webservices Aduaneros -->
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="px-4 py-5 sm:p-6">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                        🏛️ Validación para Webservices Aduaneros
+                    </h3>
+
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {{-- Paraguay --}}
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-medium text-gray-900 mb-3">🇵🇾 Paraguay (GDSF)</h4>
+                            
+                            <div class="space-y-2">
+                                <button type="button" 
+                                        onclick="validateVoyage('manifiesto', 'PY')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded border">
+                                    📋 Validar Manifiesto
+                                </button>
+                                <button type="button" 
+                                        onclick="validateVoyage('adjuntos', 'PY')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded border">
+                                    📎 Validar Adjuntos
+                                </button>
+                                <button type="button" 
+                                        onclick="validateVoyage('consulta', 'PY')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded border">
+                                    🔍 Validar Consulta
+                                </button>
+                                <button type="button" 
+                                        onclick="validateVoyage('cierre', 'PY')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded border">
+                                    ✅ Validar Cierre
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- Argentina --}}
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <h4 class="font-medium text-gray-900 mb-3">🇦🇷 Argentina (AFIP)</h4>
+                            
+                            <div class="space-y-2">
+                                <button type="button" 
+                                        onclick="validateVoyage('anticipada', 'AR')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded border">
+                                    🚢 Información Anticipada
+                                </button>
+                                <button type="button" 
+                                        onclick="validateVoyage('micdta', 'AR')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded border">
+                                    📋 MIC/DTA
+                                </button>
+                                <button type="button" 
+                                        onclick="validateVoyage('desconsolidado', 'AR')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded border">
+                                    📦 Desconsolidado
+                                </button>
+                                <button type="button" 
+                                        onclick="validateVoyage('transbordo', 'AR')"
+                                        class="w-full text-left px-3 py-2 text-sm bg-green-50 hover:bg-green-100 rounded border">
+                                    🔄 Transbordo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Área de resultados --}}
+                    <div id="validation-results" class="mt-6 hidden">
+                        <div class="border-t border-gray-200 pt-4">
+                            <h4 class="font-medium text-gray-900 mb-3" id="validation-title"></h4>
+                            <div id="validation-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Información Adicional -->
             @if($voyage->special_instructions || $voyage->operational_notes)
             <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -345,4 +420,114 @@
 
         </div>
     </div>
+
+    {{-- JavaScript simple para las validaciones --}}
+<script>
+   function validateVoyage(webserviceType, country) {
+    const resultArea = document.getElementById('validation-results');
+    const title = document.getElementById('validation-title');
+    const content = document.getElementById('validation-content');
+    
+    // Mostrar loading
+    title.textContent = 'Validando ' + webserviceType + ' para ' + (country === 'AR' ? 'Argentina' : 'Paraguay') + '...';
+    content.innerHTML = '<div class="text-gray-500">Validando datos...</div>';
+    resultArea.classList.remove('hidden');
+    
+    // Hacer la validación
+    fetch('{{ route("company.voyages.validate-customs", $voyage) }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+        },
+        body: JSON.stringify({
+            webservice_type: webserviceType,
+            country: country
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        displayValidationResults(data, webserviceType, country);
+    })
+    .catch(error => {
+        content.innerHTML = '<div class="text-red-600">Error: ' + error.message + '</div>';
+    });
+}
+
+function displayValidationResults(data, webserviceType, country) {
+    const title = document.getElementById('validation-title');
+    const content = document.getElementById('validation-content');
+    
+    const countryName = country === 'AR' ? 'Argentina' : 'Paraguay';
+    title.textContent = 'Resultado: ' + webserviceType + ' - ' + countryName;
+    
+    const result = data.validation_result;
+    const summary = data.summary;
+    
+    let html = '';
+    
+    // Mostrar estado general
+    if (result.is_valid) {
+        html += '<div class="bg-green-50 border border-green-200 rounded p-3 mb-4">';
+        html += '<div class="flex items-center">';
+        html += '<div class="text-green-600">✅</div>';
+        html += '<div class="ml-2 text-green-800 font-medium">Validación exitosa</div>';
+        html += '</div>';
+        html += '<p class="text-green-700 text-sm mt-1">' + (summary.summary_message || 'El viaje puede enviarse a la aduana.') + '</p>';
+        html += '</div>';
+    } else {
+        html += '<div class="bg-red-50 border border-red-200 rounded p-3 mb-4">';
+        html += '<div class="flex items-center">';
+        html += '<div class="text-red-600">❌</div>';
+        html += '<div class="ml-2 text-red-800 font-medium">Errores encontrados</div>';
+        html += '</div>';
+        html += '<p class="text-red-700 text-sm mt-1">' + (summary.summary_message || 'Se encontraron errores que deben corregirse.') + '</p>';
+        html += '</div>';
+    }
+    
+    // Mostrar errores agrupados
+    if (data.grouped_errors && Object.keys(data.grouped_errors).length > 0) {
+        html += '<div class="space-y-3">';
+        
+        for (const [category, errors] of Object.entries(data.grouped_errors)) {
+            if (errors.length > 0) {
+                html += '<div class="border border-red-200 rounded p-3">';
+                html += '<h5 class="font-medium text-red-800 capitalize mb-2">' + category.replace('_', ' ') + '</h5>';
+                html += '<ul class="text-sm text-red-700 space-y-1">';
+                
+                errors.forEach(error => {
+                    html += '<li class="flex items-start">';
+                    html += '<span class="text-red-500 mr-2">•</span>';
+                    html += '<span>' + error + '</span>';
+                    html += '</li>';
+                });
+                
+                html += '</ul>';
+                html += '</div>';
+            }
+        }
+        
+        html += '</div>';
+    }
+    
+    // Mostrar warnings si existen
+    if (result.warnings && result.warnings.length > 0) {
+        html += '<div class="bg-yellow-50 border border-yellow-200 rounded p-3 mt-4">';
+        html += '<h5 class="font-medium text-yellow-800 mb-2">⚠️ Advertencias</h5>';
+        html += '<ul class="text-sm text-yellow-700 space-y-1">';
+        
+        result.warnings.forEach(warning => {
+            html += '<li class="flex items-start">';
+            html += '<span class="text-yellow-500 mr-2">•</span>';
+            html += '<span>' + warning + '</span>';
+            html += '</li>';
+        });
+        
+        html += '</ul>';
+        html += '</div>';
+    }
+    
+    content.innerHTML = html;
+    }
+</script>
 </x-app-layout>

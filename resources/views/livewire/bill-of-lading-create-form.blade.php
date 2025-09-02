@@ -293,7 +293,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_port_id') border-red-300 @enderror">
                             <option value="">Seleccione puerto</option>
                             @foreach($loadingPorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country_code ?? 'N/A' }})</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('loading_port_id')
@@ -310,7 +316,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('discharge_port_id') border-red-300 @enderror">
                             <option value="">Seleccione puerto</option>
                             @foreach($dischargePorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country_code ?? 'N/A' }})</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('discharge_port_id')
@@ -327,7 +339,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('transshipment_port_id') border-red-300 @enderror">
                             <option value="">Seleccione puerto (opcional)</option>
                             @foreach($transshipmentPorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country_code ?? 'N/A' }})</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('transshipment_port_id')
@@ -344,7 +362,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('final_destination_port_id') border-red-300 @enderror">
                             <option value="">Seleccione puerto (opcional)</option>
                             @foreach($finalDestinationPorts as $port)
-                                <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country_code ?? 'N/A' }})</option>
+                                <option value="{{ $port->id }}">
+                                    @if($port->country_id == 11)
+                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @else
+                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
+                                    @endif
+                                </option>
                             @endforeach
                         </select>
                         @error('final_destination_port_id')

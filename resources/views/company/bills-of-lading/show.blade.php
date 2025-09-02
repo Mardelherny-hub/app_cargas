@@ -20,12 +20,10 @@ if ($user) {
             {{ __('Conocimiento de Embarque') }} - {{ $billOfLading->bill_number }}
         </h2>
         <div class="flex space-x-2">
-            @if(isset($permissions['can_edit']) && $permissions['can_edit'])
                 <a href="{{ route('company.bills-of-lading.edit', $billOfLading) }}" 
                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                     Editar
                 </a>
-            @endif
             <a href="{{ route('company.bills-of-lading.pdf', $billOfLading) }}" 
                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 PDF
