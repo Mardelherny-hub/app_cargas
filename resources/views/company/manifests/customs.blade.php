@@ -183,7 +183,7 @@
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                @php
+                                    @php
                                         // Obtener todos los estados de webservice del voyage
                                         $webserviceStatuses = $voyage->webserviceStatuses;
                                         $hasAnyStatus = $webserviceStatuses->isNotEmpty();
@@ -254,63 +254,38 @@
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    @php
-                                        $webserviceStatuses = $voyage->webserviceStatuses;
-                                        $lastTransaction = $voyage->webserviceTransactions->last();
-                                        $hasNewSystem = $webserviceStatuses->isNotEmpty();
-                                        
-                                        $companyRoles = auth()->user()->company->getRoles() ?? [];
-                                        $availableWebservices = [];
-                                        
-                                        if (in_array('Cargas', $companyRoles)) {
-                                            $availableWebservices[] = ['type' => 'anticipada', 'country' => 'AR', 'name' => 'Anticipada'];
-                                            $availableWebservices[] = ['type' => 'micdta', 'country' => 'AR', 'name' => 'MIC/DTA'];
-                                            $availableWebservices[] = ['type' => 'mane', 'country' => 'AR', 'name' => 'MANE'];
-                                        }
-                                        if (in_array('Desconsolidador', $companyRoles)) {
-                                            $availableWebservices[] = ['type' => 'desconsolidado', 'country' => 'AR', 'name' => 'Desconsolidado'];
-                                        }
-                                        if (in_array('Transbordos', $companyRoles)) {
-                                            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'AR', 'name' => 'Transbordo AR'];
-                                            $availableWebservices[] = ['type' => 'transbordo', 'country' => 'PY', 'name' => 'Transbordo PY'];
-                                        }
-                                    @endphp
-                                    
-                                    <div class="flex flex-wrap gap-1">
-                                        @foreach($availableWebservices as $ws)
-                                            @php
-                                                $wsStatus = $webserviceStatuses->where('webservice_type', $ws['type'])
-                                                                            ->where('country', $ws['country'])
-                                                                            ->first();
-                                                $canSend = !$wsStatus || in_array($wsStatus->status, ['pending', 'error', 'expired']);
-                                                $isError = $wsStatus && $wsStatus->status === 'error';
-                                                $isSent = $wsStatus && in_array($wsStatus->status, ['sent', 'approved']);
-                                            @endphp
-                                            
-                                            @if($canSend)
-                                                {{-- REUTILIZAR MODAL EXISTENTE con webservice específico --}}
-                                                <button type="button"
-                                                        class="inline-flex items-center px-2 py-1 text-xs {{ $isError ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded"
-                                                        onclick="showSendModalSpecific({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $ws['country'] }}', '{{ $ws['type'] }}')">
-                                                    {{ $isError ? '🔄' : '🚀' }} {{ $ws['name'] }}
+                                    <!-- Botones de Envío Individual - VERSIÓN INTEGRADA CON ADJUNTOS -->
+                                    <div class="flex flex-col space-y-2">
+                                        <!-- Primera fila: Botones de envío tradicionales -->
+                                        <div class="flex space-x-2">
+                                            {{-- Argentina --}}
+                                            @if($voyage->destinationPort->country->alpha2_code === 'AR' || 
+                                                ($voyage->originPort->country->alpha2_code === 'AR' && $voyage->destinationPort->country->alpha2_code === 'PY'))
+                                                <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'AR')"
+                                                        class="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1">
+                                                    🇦🇷 Argentina
                                                 </button>
-                                            @elseif($isSent)
-                                                <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
-                                                    ✅ {{ $ws['name'] }}
-                                                </span>
                                             @endif
-                                        @endforeach
-                                    </div>
-                                    
-                                    {{-- Enlaces de estado --}}
-                                    @if($hasNewSystem)
-                                        <div class="mt-1">
-                                            <a href="{{ route('company.manifests.customs.voyage-statuses', $voyage->id) }}" 
-                                            class="text-gray-600 hover:text-gray-900 text-xs">
-                                                📊 Ver Estados
-                                            </a>
+                                            
+                                            {{-- Paraguay --}}
+                                            @if($voyage->destinationPort->country->alpha2_code === 'PY' || 
+                                                ($voyage->originPort->country->alpha2_code === 'PY' && $voyage->destinationPort->country->alpha2_code === 'AR'))
+                                                <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'PY')"
+                                                        class="inline-flex items-center px-3 py-1 border border-green-300 rounded-md text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1">
+                                                    🇵🇾 Paraguay
+                                                </button>
+                                            @endif
                                         </div>
-                                    @endif
+                                        
+                                        {{-- Segunda fila: Adjuntos Paraguay (NUEVO) --}}
+                                       @if($voyage->destinationPort->country->alpha2_code === 'PY')
+                                        <button onclick="showAttachmentsModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $voyage->originPort->name ?? "N/A" }} → {{ $voyage->destinationPort->name ?? "N/A" }}')"
+                                                class="inline-flex items-center px-3 py-1 bg-yellow-50 border border-yellow-200 rounded-md text-xs font-medium text-yellow-700 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                                                title="Gestionar adjuntos Paraguay">
+                                            📎 Adjuntos
+                                        </button>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                             @empty
@@ -440,6 +415,124 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal de Adjuntos Paraguay -->
+    <div id="attachments-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <!-- Header del Modal -->
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">
+                        📎 Adjuntos Paraguay GDSF
+                    </h3>
+                    <button onclick="closeAttachmentsModal()" 
+                            class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Información del Viaje -->
+                <div id="modal-voyage-details" class="bg-blue-50 p-4 rounded-lg mb-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 id="modal-voyage-title" class="font-medium text-blue-900">
+                                <!-- Se llena dinámicamente con JS -->
+                            </h4>
+                            <p id="modal-voyage-route" class="text-sm text-blue-700">
+                                <!-- Se llena dinámicamente con JS -->
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                🇵🇾 Paraguay GDSF
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Área de Subida de Archivos - MÚLTIPLES DOCUMENTOS -->
+                <div class="mb-6">
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+                        <div class="space-y-2">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <div class="text-sm text-gray-600">
+                                <label for="pdf-files" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                                    <span>📄 Seleccionar PDFs</span>
+                                    <input id="pdf-files" name="pdf-files" type="file" class="sr-only" multiple accept=".pdf">
+                                </label>
+                                <span class="pl-1">o arrastrar aquí</span>
+                            </div>
+                            <p class="text-xs text-gray-500">
+                                <strong>Múltiples archivos PDF.</strong> Máximo 10MB por archivo.
+                            </p>
+                            <p class="text-xs text-blue-600">
+                                💡 Los documentos se AGREGAN a los existentes (no se reemplazan)
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Lista de archivos seleccionados -->
+                    <div id="selected-files-list" class="hidden mt-4">
+                        <h5 class="text-sm font-medium text-gray-700 mb-2">📎 Nuevos archivos a subir:</h5>
+                        <div id="files-container" class="space-y-2">
+                            <!-- Se llena dinámicamente -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Adjuntos Existentes - GESTIÓN INDIVIDUAL -->
+                <div id="existing-attachments" class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-sm font-medium text-gray-700">📋 Documentos Actuales</h4>
+                        <span id="attachments-counter" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            0 archivos
+                        </span>
+                    </div>
+                    <div id="existing-files-container" class="space-y-2">
+                        <div class="text-center text-gray-500 py-4">
+                            <svg class="mx-auto h-8 w-8 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <p class="text-sm">Cargando adjuntos existentes...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botones de Acción -->
+                <div class="flex justify-between items-center pt-4 border-t border-gray-200">
+                    <button onclick="closeAttachmentsModal()" 
+                            class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors">
+                        Cancelar
+                    </button>
+                    
+                    <div class="space-x-2">
+                        <button id="clear-files-btn" onclick="clearSelectedFiles()"
+                                class="hidden px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors">
+                            🗑️ Limpiar
+                        </button>
+                        
+                        <button id="upload-files-btn" onclick="uploadFiles()"
+                                class="hidden px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                            ⬆️ Subir Archivos
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div id="upload-progress" class="hidden mt-4">
+                    <div class="bg-gray-200 rounded-full h-2">
+                        <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <p id="upload-status" class="text-sm text-gray-600 mt-2">Preparando subida...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     @push('scripts')
     <script>
@@ -594,6 +687,366 @@
             // Mostrar modal
             document.getElementById('send-modal').classList.remove('hidden');
         }
+
+        let currentVoyageId = null;
+let selectedFiles = [];
+
+// Mostrar modal de adjuntos
+function showAttachmentsModal(voyageId, voyageNumber, route) {
+    currentVoyageId = voyageId;
+    
+    // Actualizar información del voyage
+    document.getElementById('modal-voyage-title').textContent = `Viaje: ${voyageNumber}`;
+    document.getElementById('modal-voyage-route').textContent = route;
+    
+    // Limpiar archivos seleccionados previos
+    clearSelectedFiles();
+    
+    // Cargar adjuntos existentes
+    loadExistingAttachments(voyageId);
+    
+    // Mostrar modal
+    document.getElementById('attachments-modal').classList.remove('hidden');
+}
+
+// Cerrar modal
+function closeAttachmentsModal() {
+    document.getElementById('attachments-modal').classList.add('hidden');
+    currentVoyageId = null;
+    selectedFiles = [];
+}
+
+// Manejar selección de archivos
+document.getElementById('pdf-files').addEventListener('change', function(e) {
+    handleFileSelection(e.target.files);
+});
+
+// Manejar drag & drop
+const dropZone = document.querySelector('#attachments-modal .border-dashed');
+dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('border-blue-500', 'bg-blue-50');
+});
+
+dropZone.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+});
+
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+    handleFileSelection(e.dataTransfer.files);
+});
+
+// Procesar archivos seleccionados
+function handleFileSelection(files) {
+    selectedFiles = Array.from(files).filter(file => file.type === 'application/pdf');
+    
+    if (selectedFiles.length !== files.length) {
+        alert('Solo se permiten archivos PDF');
+    }
+    
+    updateSelectedFilesList();
+}
+
+// Actualizar lista de archivos seleccionados
+function updateSelectedFilesList() {
+    const container = document.getElementById('files-container');
+    const listDiv = document.getElementById('selected-files-list');
+    const uploadBtn = document.getElementById('upload-files-btn');
+    const clearBtn = document.getElementById('clear-files-btn');
+    
+    if (selectedFiles.length === 0) {
+        listDiv.classList.add('hidden');
+        uploadBtn.classList.add('hidden');
+        clearBtn.classList.add('hidden');
+        return;
+    }
+    
+    listDiv.classList.remove('hidden');
+    uploadBtn.classList.remove('hidden');
+    clearBtn.classList.remove('hidden');
+    
+    container.innerHTML = selectedFiles.map((file, index) => `
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+            <div class="flex items-center">
+                <svg class="w-4 h-4 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
+                </svg>
+                <span class="text-sm">${file.name}</span>
+                <span class="text-xs text-gray-500 ml-2">(${(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+            </div>
+            <button onclick="removeFile(${index})" class="text-red-500 hover:text-red-700">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    `).join('');
+}
+
+// Remover archivo específico
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    updateSelectedFilesList();
+}
+
+// Limpiar todos los archivos
+function clearSelectedFiles() {
+    selectedFiles = [];
+    document.getElementById('pdf-files').value = '';
+    updateSelectedFilesList();
+}
+
+// Subir archivos
+async function uploadFiles() {
+    if (selectedFiles.length === 0) return;
+    
+    const formData = new FormData();
+    selectedFiles.forEach(file => {
+        formData.append('files[]', file);
+    });
+    
+    const progressDiv = document.getElementById('upload-progress');
+    const progressBar = document.getElementById('upload-progress-bar');
+    const statusText = document.getElementById('upload-status');
+    
+    progressDiv.classList.remove('hidden');
+    statusText.textContent = 'Subiendo archivos...';
+    
+    try {
+        const response = await fetch(`{{ route('company.manifests.customs.upload-attachments', '') }}/${currentVoyageId}`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            progressBar.style.width = '100%';
+            statusText.textContent = '¡Archivos subidos exitosamente!';
+            
+            setTimeout(() => {
+                clearSelectedFiles();
+                loadExistingAttachments(currentVoyageId);
+                progressDiv.classList.add('hidden');
+            }, 2000);
+        } else {
+            throw new Error(result.error || 'Error al subir archivos');
+        }
+    } catch (error) {
+        statusText.textContent = 'Error: ' + error.message;
+        progressBar.style.width = '0%';
+    }
+}
+
+// Cargar adjuntos existentes - VERSIÓN REAL
+async function loadExistingAttachments(voyageId) {
+    const container = document.getElementById('existing-files-container');
+    const counter = document.getElementById('attachments-counter');
+    
+    try {
+        // Consulta real a la API
+        const response = await fetch(`/company/manifests/customs/${voyageId}/attachments-list`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Error al cargar adjuntos');
+        }
+        
+        const attachments = await response.json();
+        
+        if (attachments.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-gray-500 py-4">
+                    <p class="text-sm">No hay documentos adjuntos</p>
+                    <p class="text-xs text-gray-400">Los archivos subidos aparecerán aquí</p>
+                </div>
+            `;
+            counter.textContent = '0 archivos';
+        } else {
+            container.innerHTML = attachments.map(file => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div class="flex items-center flex-1">
+                        <svg class="w-5 h-5 text-red-600 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd" />
+                        </svg>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900 truncate">${file.name}</p>
+                            <p class="text-xs text-gray-500">${file.size} • ${file.uploaded_at}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="downloadAttachment(${file.id})" 
+                                class="p-1 text-blue-600 hover:text-blue-800 transition-colors"
+                                title="Descargar">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </button>
+                        <button onclick="deleteAttachment(${file.id}, '${file.name}')" 
+                                class="p-1 text-red-600 hover:text-red-800 transition-colors"
+                                title="Eliminar">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            counter.textContent = `${attachments.length} archivo${attachments.length !== 1 ? 's' : ''}`;
+        }
+    } catch (error) {
+        container.innerHTML = `
+            <div class="text-center text-red-500 py-4">
+                <p class="text-sm">Error cargando adjuntos existentes</p>
+                <p class="text-xs text-gray-400">${error.message}</p>
+            </div>
+        `;
+        counter.textContent = 'Error';
+    }
+}
+
+// Descargar adjunto específico
+async function downloadAttachment(fileId) {
+    try {
+        window.open(`/company/manifests/customs/attachments/${fileId}/download`);
+    } catch (error) {
+        alert('Error al descargar el archivo');
+    }
+}
+
+// Eliminar adjunto específico
+async function deleteAttachment(fileId, fileName) {
+    if (!confirm(`¿Está seguro de eliminar "${fileName}"?\n\nEsta acción no se puede deshacer.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/company/manifests/customs/attachments/${fileId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Recargar lista de adjuntos
+            loadExistingAttachments(currentVoyageId);
+            
+            // Mostrar mensaje de éxito temporal
+            alert(`Archivo "${fileName}" eliminado correctamente`);
+        } else {
+            throw new Error(result.error || 'Error al eliminar archivo');
+        }
+    } catch (error) {
+        alert('Error al eliminar el archivo: ' + error.message);
+    }
+}
+
+// Cerrar modal with Escape
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeAttachmentsModal();
+    }
+});
+
+        // Descargar adjunto específico
+        async function downloadAttachment(fileId) {
+            try {
+                // TODO: Implementar endpoint de descarga
+                console.log('Descargando archivo ID:', fileId);
+                // window.open(`/company/manifests/customs/attachments/${fileId}/download`);
+            } catch (error) {
+                alert('Error al descargar el archivo');
+            }
+        }
+
+        // Eliminar adjunto específico
+        async function deleteAttachment(fileId, fileName) {
+            if (!confirm(`¿Está seguro de eliminar "${fileName}"?\n\nEsta acción no se puede deshacer.`)) {
+                return;
+            }
+            
+            try {
+                // TODO: Implementar endpoint de eliminación
+                const response = await fetch(`/company/manifests/customs/attachments/${fileId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Recargar lista de adjuntos
+                    loadExistingAttachments(currentVoyageId);
+                    
+                    // Mostrar mensaje de éxito
+                    showSuccessMessage(`Archivo "${fileName}" eliminado correctamente`);
+                } else {
+                    throw new Error(result.error || 'Error al eliminar archivo');
+                }
+            } catch (error) {
+                alert('Error al eliminar el archivo: ' + error.message);
+            }
+        }
+
+        // Función helper para mostrar mensajes de éxito
+        function showSuccessMessage(message) {
+            // TODO: Implementar toast/notification
+            console.log('SUCCESS:', message);
+        }
+
+        // Cerrar modal with Escape
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeAttachmentsModal();
+            }
+        });
+
+        // Función para verificar adjuntos existentes (llamar al cargar la página)
+        async function checkExistingAttachments() {
+            const indicators = document.querySelectorAll('[id^="attachments-indicator-"]');
+            
+            indicators.forEach(async (indicator) => {
+                const voyageId = indicator.id.replace('attachments-indicator-', '');
+                
+                try {
+                    // TODO: Implementar endpoint para consultar adjuntos existentes
+                    // const response = await fetch(`/company/manifests/customs/${voyageId}/attachments-count`);
+                    // const data = await response.json();
+                    
+                    // if (data.count > 0) {
+                    //     indicator.textContent = `📄 ${data.count}`;
+                    //     indicator.classList.remove('hidden');
+                    // }
+                } catch (error) {
+                    console.log('No se pudieron verificar adjuntos para voyage:', voyageId);
+                }
+            });
+        }
+
+        // Llamar al cargar la página
+        document.addEventListener('DOMContentLoaded', function() {
+            checkExistingAttachments();
+        });
     </script>
     @endpush
 </x-app-layout>

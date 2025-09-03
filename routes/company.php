@@ -312,6 +312,17 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
         return redirect()->route('company.manifests.import.store')
             ->withInput($request->all());
     })->name('process-import');
+
+    
+   /*  // Paraguay Attachments
+    Route::prefix('webservices/paraguay')->name('company.webservices.paraguay.')->group(function () {
+        Route::get('/voyages/{voyage}/attachments', [App\Http\Controllers\Company\Webservices\ParaguayAttachmentController::class, 'index'])
+            ->name('attachments.index');
+        Route::post('/voyages/{voyage}/attachments/upload', [App\Http\Controllers\Company\Webservices\ParaguayAttachmentController::class, 'upload'])
+            ->name('attachments.upload');
+    }); */
+
+
 });
 
 // Reportes
@@ -439,6 +450,12 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     
     // NUEVO: Ruta específica para vista MANE
     Route::get('/mane', [ManifestCustomsController::class, 'maneIndex'])->name('mane');
+
+    Route::get('/{voyage}/attachments', [ManifestCustomsController::class, 'attachmentsIndex'])->name('attachments');
+    Route::get('/{voyage}/attachments-list', [ManifestCustomsController::class, 'getAttachmentsList'])->name('attachments-list');
+    Route::post('/{voyage}/upload-attachments', [ManifestCustomsController::class, 'uploadAttachments'])->name('upload-attachments');
+    Route::get('/attachments/{attachment}/download', [ManifestCustomsController::class, 'downloadAttachment'])->name('attachment-download');
+    Route::delete('/attachments/{attachment}', [ManifestCustomsController::class, 'deleteAttachment'])->name('attachment-delete');
 });
 
     // === 🧪 TESTING DE ENVÍOS A ADUANA - NUEVA SECCIÓN ===

@@ -16,6 +16,8 @@ use App\Models\BillOfLading;
 use App\Models\VoyageWebserviceStatus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use App\Services\Webservice\ParaguayAttachmentService;
+use App\Traits\UserHelper;
 
 /**
  * COMPLETADO: ManifestCustomsController - VERSIÓN FINAL CORREGIDA
@@ -1430,4 +1432,340 @@ public function voyageStatuses($voyageId)
             'has_master_bill' => $masterBillExists
         ]);
     }
+
+    /**
+     * ✅ NUEVO: Mostrar formulario de adjuntos para Paraguay
+     * Integrado en ManifestCustomsController para mantener coherencia
+     */
+    public function attachmentsIndex(Voyage $voyage)
+    {
+        // Verificar permisos usando métodos existentes del controlador
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para gestionar adjuntos de Paraguay.');
+        }
+
+        // Verificar empresa usando método del controlador base
+        $company = auth()->user()->getUserCompany();
+        if (!$company || !$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No puede acceder a este viaje.');
+        }
+
+        // Cargar relaciones necesarias para la vista
+        $voyage->load([
+            'originPort:id,name,code', 
+            'destinationPort:id,name,code',
+            'vessel:id,name,imo_number',
+            'shipments.billsOfLading'
+        ]);
+
+        // Obtener adjuntos existentes (si los hay)
+        $existingAttachments = [];
+        // TODO: Implementar consulta de adjuntos existentes cuando se implemente el almacenamiento
+        
+        return view('company.manifests.customs.attachments', [
+            'voyage' => $voyage,
+            'company' => $company,
+            'existingAttachments' => $existingAttachments,
+            'maxFileSize' => '10MB',
+            'allowedExtensions' => 'PDF'
+        ]);
+    }
+
+  
+
+    /**
+     * ✅ OPCIONAL: Método helper para verificar si el controlador tiene acceso a empresa
+     * Reutiliza lógica existente del sistema
+     */
+    private function canAccessCompany(int $companyId): bool
+    {
+        $userCompany = auth()->user()->getUserCompany();
+        return $userCompany && $userCompany->id === $companyId;
+    }
+
+    /**
+     * ✅ OPCIONAL: Método helper para verificar roles de empresa
+     * Integrado con el sistema de permisos existente
+     */
+    private function hasCompanyRole(string $role): bool
+    {
+        $user = auth()->user();
+        $company = $user->getUserCompany();
+        
+        if (!$company) {
+            return false;
+        }
+
+        $companyRoles = $company->company_roles ?? [];
+        return in_array($role, $companyRoles);
+    }
+
+    // ==========================================
+    // MÉTODOS DE ADJUNTOS PARAGUAY - AGREGAR AL ManifestCustomsController
+    // AGREGAR AL FINAL DE LA CLASE, ANTES DEL ÚLTIMO }
+    // ==========================================
+
+    /**
+     * ✅ NUEVO: Obtener lista de adjuntos existentes
+     * Endpoint: GET /manifests/customs/{voyage}/attachments-list
+     */
+    public function getAttachmentsList(Voyage $voyage)
+    {
+        // Verificar permisos
+        if (!$this->hasCompanyRole('Cargas')) {
+            return response()->json(['error' => 'No tiene permisos'], 403);
+        }
+
+        // Verificar empresa
+        $company = auth()->user()->getUserCompany();
+        if (!$company || !$this->canAccessCompany($voyage->company_id)) {
+            return response()->json(['error' => 'No puede acceder a este viaje'], 403);
+        }
+
+        try {
+            // TODO: Implementar tabla/modelo de adjuntos cuando esté listo
+            // Por ahora simular estructura vacía
+            
+            // Estructura esperada por el frontend:
+            $attachments = [];
+            // $attachments = VoyageAttachment::where('voyage_id', $voyage->id)
+            //     ->where('country', 'PY')
+            //     ->orderBy('created_at', 'desc')
+            //     ->get()
+            //     ->map(function($attachment) {
+            //         return [
+            //             'id' => $attachment->id,
+            //             'name' => $attachment->original_name,
+            //             'size' => $this->formatFileSize($attachment->file_size),
+            //             'uploaded_at' => $attachment->created_at->format('Y-m-d H:i'),
+            //         ];
+            //     })->toArray();
+
+            return response()->json($attachments);
+
+        } catch (\Exception $e) {
+            Log::error('Error obteniendo lista de adjuntos', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Error obteniendo adjuntos: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ NUEVO: Descargar adjunto específico
+     * Endpoint: GET /manifests/customs/attachments/{attachment}/download
+     */
+    public function downloadAttachment($attachmentId)
+    {
+        // Verificar permisos
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para descargar adjuntos');
+        }
+
+        try {
+            // TODO: Implementar cuando tengamos el modelo de adjuntos
+            // $attachment = VoyageAttachment::findOrFail($attachmentId);
+            
+            // Verificar que pertenece a la empresa
+            // if (!$this->canAccessCompany($attachment->voyage->company_id)) {
+            //     abort(403, 'No puede acceder a este adjunto');
+            // }
+
+            // Por ahora devolver error amigable
+            return response()->json([
+                'error' => 'Función de descarga pendiente de implementación'
+            ], 501);
+
+            // Implementación futura:
+            // $filePath = storage_path('app/' . $attachment->file_path);
+            // 
+            // if (!file_exists($filePath)) {
+            //     abort(404, 'Archivo no encontrado');
+            // }
+            // 
+            // return response()->download($filePath, $attachment->original_name);
+
+        } catch (\Exception $e) {
+            Log::error('Error descargando adjunto', [
+                'attachment_id' => $attachmentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'error' => 'Error descargando archivo: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ NUEVO: Eliminar adjunto específico
+     * Endpoint: DELETE /manifests/customs/attachments/{attachment}
+     */
+    public function deleteAttachment($attachmentId)
+    {
+        // Verificar permisos
+        if (!$this->hasCompanyRole('Cargas')) {
+            return response()->json(['error' => 'No tiene permisos'], 403);
+        }
+
+        try {
+            // TODO: Implementar cuando tengamos el modelo de adjuntos
+            // $attachment = VoyageAttachment::findOrFail($attachmentId);
+            
+            // Verificar que pertenece a la empresa
+            // if (!$this->canAccessCompany($attachment->voyage->company_id)) {
+            //     return response()->json(['error' => 'No puede eliminar este adjunto'], 403);
+            // }
+
+            // Por ahora devolver error amigable
+            return response()->json([
+                'success' => false,
+                'error' => 'Función de eliminación pendiente de implementación'
+            ], 501);
+
+            // Implementación futura:
+            // // Eliminar archivo físico
+            // $filePath = storage_path('app/' . $attachment->file_path);
+            // if (file_exists($filePath)) {
+            //     unlink($filePath);
+            // }
+            // 
+            // // Eliminar registro de BD
+            // $attachment->delete();
+            // 
+            // return response()->json([
+            //     'success' => true,
+            //     'message' => 'Adjunto eliminado correctamente'
+            // ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error eliminando adjunto', [
+                'attachment_id' => $attachmentId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error eliminando archivo: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ ACTUALIZAR: Subir adjuntos - VERSIÓN MÚLTIPLE
+     * Endpoint: POST /manifests/customs/{voyage}/upload-attachments
+     */
+    public function uploadAttachments(Request $request, Voyage $voyage)
+    {
+        // Verificar permisos
+        if (!$this->hasCompanyRole('Cargas')) {
+            return response()->json(['error' => 'No tiene permisos para subir adjuntos'], 403);
+        }
+
+        // Verificar empresa
+        $company = auth()->user()->getUserCompany();
+        if (!$company || !$this->canAccessCompany($voyage->company_id)) {
+            return response()->json(['error' => 'No puede acceder a este viaje'], 403);
+        }
+
+        // Validación - MÚLTIPLES archivos
+        $request->validate([
+            'files' => 'required|array|min:1|max:10', // Hasta 10 archivos
+            'files.*' => 'required|file|mimes:pdf|max:10240' // 10MB por archivo PDF
+        ]);
+
+        try {
+            // OPCIÓN A: Usar ParaguayAttachmentService existente (mantener compatibilidad)
+            $attachmentService = new ParaguayAttachmentService($company);
+            
+            $result = $attachmentService->uploadDocuments(
+                $voyage, 
+                $request->file('files') ?? [], 
+                auth()->id()
+            );
+
+            // OPCIÓN B: Implementación directa (cuando tengamos modelo de adjuntos)
+            // $uploadedFiles = [];
+            // $errors = [];
+            // 
+            // foreach ($request->file('files') as $index => $file) {
+            //     try {
+            //         // Generar nombre único
+            //         $fileName = time() . '_' . $index . '_' . $file->getClientOriginalName();
+            //         
+            //         // Guardar archivo
+            //         $filePath = $file->storeAs('attachments/paraguay/' . $voyage->id, $fileName);
+            //         
+            //         // Crear registro en BD
+            //         $attachment = VoyageAttachment::create([
+            //             'voyage_id' => $voyage->id,
+            //             'country' => 'PY',
+            //             'webservice_type' => 'paraguay_customs',
+            //             'original_name' => $file->getClientOriginalName(),
+            //             'file_name' => $fileName,
+            //             'file_path' => $filePath,
+            //             'file_size' => $file->getSize(),
+            //             'mime_type' => $file->getMimeType(),
+            //             'uploaded_by' => auth()->id(),
+            //         ]);
+            //         
+            //         $uploadedFiles[] = [
+            //             'id' => $attachment->id,
+            //             'name' => $attachment->original_name,
+            //             'size' => $this->formatFileSize($attachment->file_size),
+            //         ];
+            //         
+            //     } catch (\Exception $e) {
+            //         $errors[] = 'Error subiendo ' . $file->getClientOriginalName() . ': ' . $e->getMessage();
+            //     }
+            // }
+            // 
+            // return response()->json([
+            //     'success' => count($uploadedFiles) > 0,
+            //     'uploaded_files' => $uploadedFiles,
+            //     'errors' => $errors,
+            //     'total_uploaded' => count($uploadedFiles),
+            //     'total_errors' => count($errors),
+            // ]);
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            // Log del error usando el sistema existente del controlador
+            Log::error('Error subiendo adjuntos Paraguay múltiples', [
+                'voyage_id' => $voyage->id,
+                'company_id' => $company->id,
+                'user_id' => auth()->id(),
+                'files_count' => count($request->file('files') ?? []),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ HELPER: Formatear tamaño de archivo
+     */
+    private function formatFileSize(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        
+        for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
+            $bytes /= 1024;
+        }
+        
+        return round($bytes, 1) . ' ' . $units[$i];
+    }
+
+   
+
 }
