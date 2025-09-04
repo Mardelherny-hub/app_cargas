@@ -574,4 +574,307 @@ class WebserviceController extends Controller
         return $actions;
     }
 
+    
+/**
+ * Obtener detalles completos de una transacción de webservice
+ * Ruta: GET /company/webservices/transaction/{id}
+ */
+public function getTransactionDetails($transactionId)
+{
+    // 1. Verificar permisos
+    if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No tiene permisos para ver los detalles.'
+        ], 403);
+    }
+
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No se encontró la empresa asociada.'
+        ], 404);
+    }
+
+    try {
+        // 2. Buscar la transacción
+        $transaction = WebserviceTransaction::where('id', $transactionId)
+            ->where('company_id', $company->id)
+            ->with(['user:id,name'])
+            ->first();
+
+        if (!$transaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transacción no encontrada.'
+            ], 404);
+        }
+
+        // 3. Preparar datos de la transacción
+        $transactionData = [
+            'id' => $transaction->id,
+            'transaction_id' => $transaction->transaction_id,
+            'external_reference' => $transaction->external_reference,
+            'webservice_type' => $transaction->webservice_type,
+            'country' => $transaction->country,
+            'webservice_url' => $transaction->webservice_url,
+            'status' => $transaction->status,
+            'retry_count' => $transaction->retry_count,
+            'max_retries' => $transaction->max_retries,
+            'environment' => $transaction->environment,
+            'user_name' => $transaction->user->name ?? null,
+            'created_at' => $transaction->created_at,
+            'sent_at' => $transaction->sent_at,
+            'response_at' => $transaction->response_at,
+            'response_time_ms' => $transaction->response_time_ms,
+            'error_code' => $transaction->error_code,
+            'error_message' => $transaction->error_message,
+            'confirmation_number' => $transaction->confirmation_number,
+            'container_count' => $transaction->container_count,
+            'total_weight_kg' => $transaction->total_weight_kg,
+            'total_value' => $transaction->total_value,
+            'currency_code' => $transaction->currency_code,
+            'request_xml' => !empty($transaction->request_xml),
+            'response_xml' => !empty($transaction->response_xml),
+        ];
+
+        // 4. Preparar datos de la respuesta básicos (hasta implementar relación con WebserviceResponse)
+        $responseData = null;
+        if ($transaction->status === 'success') {
+            $responseData = [
+                'confirmation_number' => $transaction->confirmation_number,
+                'reference_number' => $transaction->external_reference,
+                'voyage_number' => null, // TODO: extraer del success_data
+                'manifest_number' => null,
+                'tracking_numbers' => $transaction->tracking_numbers,
+                'container_numbers' => null,
+                'customs_status' => 'approved', // Simulado por ahora
+                'customs_processed_at' => $transaction->response_at,
+                'requires_action' => false,
+                'urgent_action_required' => false,
+                'action_deadline' => null,
+                'action_description' => null,
+                'payment_status' => null,
+                'customs_fees' => null,
+                'documents_required' => false,
+                'documents_approved' => true,
+                'validation_errors' => null,
+                'validation_warnings' => null,
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'transaction' => $transactionData,
+            'response' => $responseData,
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Error obteniendo detalles de transacción', [
+            'transaction_id' => $transactionId,
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al obtener los detalles: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Obtener XML de request o response de una transacción
+ * Ruta: GET /company/webservices/transaction/{id}/xml/{type}
+ */
+public function getTransactionXML($transactionId, $type)
+{
+    // 1. Verificar permisos
+    if (!$this->canPerform('manage_webservices') && !$this->isUser()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No tiene permisos para ver los XMLs.'
+        ], 403);
+    }
+
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No se encontró la empresa asociada.'
+        ], 404);
+    }
+
+    // 2. Validar tipo
+    if (!in_array($type, ['request', 'response'])) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Tipo de XML inválido.'
+        ], 400);
+    }
+
+    try {
+        // 3. Buscar la transacción
+        $transaction = WebserviceTransaction::where('id', $transactionId)
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$transaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transacción no encontrada.'
+            ], 404);
+        }
+
+        // 4. Obtener XML según el tipo
+        $xmlField = $type . '_xml';
+        $xmlContent = $transaction->{$xmlField};
+
+        if (!$xmlContent) {
+            return response()->json([
+                'success' => false,
+                'message' => "No hay XML de {$type} disponible para esta transacción."
+            ], 404);
+        }
+
+        // 5. Formatear XML para mejor visualización
+        $formattedXml = $this->formatXML($xmlContent);
+
+        return response()->json([
+            'success' => true,
+            'xml' => $formattedXml,
+            'type' => $type,
+            'transaction_id' => $transaction->transaction_id,
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al obtener el XML: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Reintentar una transacción fallida
+ * Ruta: POST /company/webservices/transaction/{id}/retry
+ */
+public function retryTransaction($transactionId)
+{
+    // 1. Verificar permisos
+    if (!$this->canPerform('manage_webservices')) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No tiene permisos para reintentar transacciones.'
+        ], 403);
+    }
+
+    $company = $this->getUserCompany();
+
+    if (!$company) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No se encontró la empresa asociada.'
+        ], 404);
+    }
+
+    try {
+        // 2. Buscar la transacción
+        $transaction = WebserviceTransaction::where('id', $transactionId)
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$transaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transacción no encontrada.'
+            ], 404);
+        }
+
+        // 3. Validar que se pueda reintentar
+        if ($transaction->status === 'success') {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se puede reintentar una transacción exitosa.'
+            ], 400);
+        }
+
+        if ($transaction->retry_count >= $transaction->max_retries) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Se ha alcanzado el máximo número de reintentos.'
+            ], 400);
+        }
+
+        // 4. Actualizar transacción para reintento
+        $transaction->update([
+            'status' => 'pending',
+            'retry_count' => $transaction->retry_count + 1,
+            'next_retry_at' => null,
+            'error_code' => null,
+            'error_message' => null,
+            'response_at' => null,
+            'response_time_ms' => null,
+        ]);
+
+        // 5. Log del reintento
+        Log::info('Transacción marcada para reintento', [
+            'transaction_id' => $transaction->id,
+            'company_id' => $company->id,
+            'user_id' => auth()->id(),
+            'retry_count' => $transaction->retry_count,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Transacción marcada para reintento exitosamente.',
+            'retry_count' => $transaction->retry_count,
+            'max_retries' => $transaction->max_retries,
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Error al reintentar transacción', [
+            'transaction_id' => $transactionId,
+            'company_id' => $company->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Error interno al reintentar la transacción.'
+        ], 500);
+    }
+}
+
+/**
+ * Formatear XML para mejor visualización
+ */
+private function formatXML(string $xml): string
+{
+    try {
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $dom->preserveWhiteSpace = false;
+        $dom->formatOutput = true;
+        
+        // Suprimir warnings de XML malformado
+        libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml);
+        libxml_clear_errors();
+        
+        if ($loaded) {
+            return $dom->saveXML();
+        } else {
+            // Si no se puede formatear, devolver el XML original
+            return $xml;
+        }
+    } catch (\Exception $e) {
+        // Si hay cualquier error, devolver el XML original
+        return $xml;
+    }
+}
+
+
+
 }

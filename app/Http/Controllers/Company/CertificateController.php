@@ -122,13 +122,31 @@ class CertificateController extends Controller
 
         // 4. Validación
         $request->validate([
-            'certificate' => 'required|file|mimes:p12,pfx|max:2048',
+            'certificate' => [
+                'required',
+                'file',
+                'max:2048', // 2MB máximo
+                function ($attribute, $value, $fail) {
+                    if ($value) {
+                        $extension = strtolower($value->getClientOriginalExtension());
+                        $allowedExtensions = ['p12', 'pfx'];
+                        
+                        if (!in_array($extension, $allowedExtensions)) {
+                            $fail('El archivo debe tener extensión .p12 o .pfx');
+                        }
+                        
+                        // Verificar que sea un archivo binario válido
+                        if ($value->getSize() < 100) {
+                            $fail('El archivo es demasiado pequeño para ser un certificado válido');
+                        }
+                    }
+                }
+            ],
             'password' => 'required|string|min:1',
             'alias' => 'nullable|string|max:255',
             'expires_at' => 'required|date|after:today',
         ], [
             'certificate.required' => 'Debe seleccionar un archivo de certificado.',
-            'certificate.mimes' => 'El certificado debe ser un archivo .p12 o .pfx.',
             'certificate.max' => 'El archivo no puede ser mayor a 2MB.',
             'password.required' => 'La contraseña del certificado es obligatoria.',
             'expires_at.required' => 'La fecha de vencimiento es obligatoria.',

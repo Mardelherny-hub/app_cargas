@@ -270,7 +270,8 @@ Route::prefix('export')->name('company.export.')->group(function () {
     Route::get('/history/{export}', [ExportController::class, 'showExport'])->name('show-export');
 });
 
-// Webservices
+
+// Webservices - USAR WebserviceController (sin 'S')
 Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/', [WebserviceController::class, 'index'])->name('index');
     Route::get('/send', [WebserviceController::class, 'send'])->name('send');
@@ -286,23 +287,33 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/history', [WebserviceController::class, 'history'])->name('history');
     Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
 
-   // Acciones adicionales del historial
+    // NUEVAS RUTAS para detalles de transacciones
+    Route::get('/transaction/{id}', [WebserviceController::class, 'getTransactionDetails'])
+          ->name('transaction')
+          ->where('id', '[0-9]+');
+          
+    Route::get('/transaction/{id}/xml/{type}', [WebserviceController::class, 'getTransactionXML'])
+          ->name('transaction.xml')
+          ->where('id', '[0-9]+')
+          ->where('type', 'request|response');
+          
+    Route::post('/transaction/{id}/retry', [WebserviceController::class, 'retryTransaction'])
+          ->name('transaction.retry')
+          ->where('id', '[0-9]+');
+
+    // Acciones adicionales del historial
     Route::post('/retry/{webservice}', [WebserviceController::class, 'retryTransaction'])->name('retry-transaction');
     Route::post('/send-pending/{webservice}', [WebserviceController::class, 'processPendingTransaction'])->name('send-pending-transaction');
     Route::post('/export', [WebserviceController::class, 'export'])->name('export');
     
-    // Descargas - NUEVAS RUTAS
+    // Descargas
     Route::get('/download/{webservice}/xml', [WebserviceController::class, 'downloadXml'])->name('download-xml');
     Route::get('/download/{webservice}/pdf', [WebserviceController::class, 'downloadPdf'])->name('download-pdf');
 
     // Datos PARANA para autocompletar (AJAX)
     Route::get('/parana-data', [WebserviceController::class, 'getParanaData'])->name('parana-data');
 
-    // Importación de manifiestos
-    //Route::get('/import', [WebserviceController::class, 'showImport'])->name('import');
-    //Route::post('/import', [WebserviceController::class, 'importManifest'])->name('process-import');
-
-    // Importación de manifiestos - REDIRECCIÓN a controlador apropiado
+    // Importación de manifiestos - REDIRECCIÓN
     Route::get('/import', function() {
         return redirect()->route('company.manifests.import.index')
             ->with('info', 'Use este formulario para importar manifiestos en los formatos soportados.');
@@ -312,17 +323,6 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
         return redirect()->route('company.manifests.import.store')
             ->withInput($request->all());
     })->name('process-import');
-
-    
-   /*  // Paraguay Attachments
-    Route::prefix('webservices/paraguay')->name('company.webservices.paraguay.')->group(function () {
-        Route::get('/voyages/{voyage}/attachments', [App\Http\Controllers\Company\Webservices\ParaguayAttachmentController::class, 'index'])
-            ->name('attachments.index');
-        Route::post('/voyages/{voyage}/attachments/upload', [App\Http\Controllers\Company\Webservices\ParaguayAttachmentController::class, 'upload'])
-            ->name('attachments.upload');
-    }); */
-
-
 });
 
 // Reportes

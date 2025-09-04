@@ -304,13 +304,49 @@
 
     @push('scripts')
     <script>
+        
         function testCertificate() {
             if (!confirm('¿Desea probar la conectividad del certificado con los webservices?')) {
                 return;
             }
 
-            // TODO: Implementar test de certificado via AJAX
-            alert('Función de prueba en desarrollo. Próximamente disponible.');
+            // Mostrar indicador de carga
+            const testButton = document.querySelector('button[onclick="testCertificate()"]');
+            const originalText = testButton.innerHTML;
+            testButton.innerHTML = '⏳ Probando...';
+            testButton.disabled = true;
+
+            // Crear modal de progreso
+            showTestProgressModal();
+
+            // Realizar la prueba via AJAX - NOTA: Cambiar la URL por la correcta
+            fetch('{{ route("company.certificates.test") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showTestResults(data.results);
+                } else {
+                    showTestError(data.message || 'Error desconocido en la prueba');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showTestError('Error de conexión: ' + error.message);
+            })
+            .finally(() => {
+                // Restaurar botón
+                testButton.innerHTML = originalText;
+                testButton.disabled = false;
+                hideTestProgressModal();
+            });
         }
     </script>
     @endpush

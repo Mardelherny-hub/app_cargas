@@ -22,7 +22,7 @@
                 <div class="p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-6">Configurar Certificado Digital</h3>
 
-                    <form method="POST" Route::post('/upload', [CertificateController::class, 'processUpload'])->name('process-upload'); enctype="multipart/form-data" id="certificateForm">
+                    <form method="POST" action="{{ route('company.certificates.process-upload') }}" enctype="multipart/form-data" id="certificateForm">
                         @csrf
 
                         <!-- Zona de Subida de Archivo -->
