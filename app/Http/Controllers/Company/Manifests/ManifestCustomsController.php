@@ -18,6 +18,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use App\Services\Webservice\ParaguayAttachmentService;
 use App\Traits\UserHelper;
+use App\Models\Company;
+use Illuminate\Support\Facades\DB;
+use Exception;
 
 /**
  * COMPLETADO: ManifestCustomsController - VERSIÓN FINAL CORREGIDA
@@ -876,26 +879,52 @@ class ManifestCustomsController extends Controller
      * Actualizar transacción con respuesta del servicio - MÉTODO HELPER
      */
     private function updateTransactionWithResponse(WebserviceTransaction $transaction, array $response)
-    {
-        $updateData = [
-            'response_at' => now(),
-            'updated_at' => now(),
-        ];
+{
+    // ✅ DEBUG: Verificar nivel de transacciones
+    $level = \DB::transactionLevel();
+    Log::info('🔧 DB TRANSACTION LEVEL', ['level' => $level, 'transaction_id' => $transaction->id]);
 
-        if ($response['success'] ?? false) {
-            $updateData['status'] = 'success';
-            $updateData['response_xml'] = $response['response_xml'] ?? null;
-            $updateData['external_reference'] = $response['external_reference'] ?? null;
-        } else {
-            $updateData['status'] = 'error';
-            $updateData['error_message'] = $response['error_message'] ?? 'Error de conectividad con webservice';
-            $updateData['error_code'] = $response['error_code'] ?? 'CONNECTIVITY_ERROR';
-            $updateData['is_blocking_error'] = $response['is_blocking'] ?? false;
-            $updateData['requires_manual_review'] = $response['requires_review'] ?? false;
-        }
+    Log::info('🔧 INICIO updateTransactionWithResponse', [
+        'transaction_id' => $transaction->id,
+        'response_success' => $response['success'] ?? false
+    ]);
 
-        $transaction->update($updateData);
+    $updateData = [
+        'response_at' => now(),
+        'updated_at' => now(),
+        'response_time_ms' => $response['response_time_ms'] ?? null,
+    ];
+
+    if ($response['success'] ?? false) {
+        $updateData['status'] = 'success';
+        $updateData['confirmation_number'] = $response['confirmation_number'] ?? null;
+    } else {
+        $updateData['status'] = 'error';
+        $updateData['error_message'] = $this->buildErrorMessage($response);
+        $updateData['error_code'] = $response['error_code'] ?? 'CONNECTIVITY_ERROR';
     }
+
+    Log::info('🔧 DATOS PARA UPDATE', ['transaction_id' => $transaction->id, 'update_data' => $updateData]);
+
+    // ✅ UPDATE DIRECTO
+    $affected = \DB::table('webservice_transactions')
+        ->where('id', $transaction->id)
+        ->update($updateData);
+
+    Log::info('🔧 UPDATE EJECUTADO', ['transaction_id' => $transaction->id, 'affected_rows' => $affected]);
+
+    // ✅ VERIFICACIÓN INMEDIATA
+    $verify = \DB::table('webservice_transactions')
+        ->where('id', $transaction->id)
+        ->first(['status', 'error_message']);
+
+    Log::info('🔧 VERIFICACIÓN POST-UPDATE', [
+        'transaction_id' => $transaction->id,
+        'expected_status' => $updateData['status'],
+        'actual_status' => $verify->status,
+        'match' => $verify->status === $updateData['status']
+    ]);
+}
 
     /**
      * ✅ MÉTODO ACTUALIZADO: Enviar manifiesto con soporte para múltiples webservices
@@ -1016,6 +1045,21 @@ class ManifestCustomsController extends Controller
                     'error',
                     ['error_message' => $e->getMessage()]
                 );
+            }
+
+            DB::commit(); // Si usas DB::beginTransaction()
+
+            // Al final del método send(), antes del return
+            $finalTransactionLevel = \DB::transactionLevel();
+            Log::info('🔧 NIVEL FINAL DE TRANSACCIONES', [
+                'final_transaction_level' => $finalTransactionLevel,
+                'transaction_id' => $transaction->id
+            ]);
+
+            // ✅ SI HAY TRANSACCIÓN ACTIVA, HACER COMMIT EXPLÍCITO
+            if ($finalTransactionLevel > 0) {
+                Log::info('🔧 HACIENDO COMMIT EXPLÍCITO');
+                \DB::commit();
             }
 
             return back()->with('error', 'Error crítico en envío: ' . $e->getMessage());
@@ -1766,6 +1810,24 @@ public function voyageStatuses($voyageId)
         return round($bytes, 1) . ' ' . $units[$i];
     }
 
+    /**
+ * Construir mensaje de error detallado desde response
+ */
+private function buildErrorMessage(array $response): string
+{
+    // Si hay errores específicos, usarlos
+    if (!empty($response['errors']) && is_array($response['errors'])) {
+        return implode('. ', $response['errors']);
+    }
+    
+    // Si hay error_message específico
+    if (!empty($response['error_message'])) {
+        return $response['error_message'];
+    }
+    
+    // Fallback genérico
+    return 'Error de conectividad con webservice';
+}
    
 
 }

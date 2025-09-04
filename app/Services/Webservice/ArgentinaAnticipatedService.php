@@ -122,6 +122,7 @@ class ArgentinaAnticipatedService
             if (!$validation['is_valid']) {
                 $result['errors'] = $validation['errors'];
                 $result['warnings'] = $validation['warnings'];
+                DB::rollback();
                 return $result;
             }
 

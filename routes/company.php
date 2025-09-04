@@ -287,6 +287,8 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/history', [WebserviceController::class, 'history'])->name('history');
     Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
 
+    Route::get('/dashboard', [WebserviceController::class, 'dashboard'])->name('dashboard');
+    
     // NUEVAS RUTAS para detalles de transacciones
     Route::get('/transaction/{id}', [WebserviceController::class, 'getTransactionDetails'])
           ->name('transaction')
