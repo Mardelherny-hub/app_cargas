@@ -232,10 +232,18 @@
                                                     };
                                                 @endphp
                                                 
-                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {{ $badgeColor }}"
-                                                    title="{{ $status->getWebserviceTypeDescription() }} ({{ $status->getCountryDescription() }}) - {{ $status->getStatusDescription() }}">
-                                                    {{ $badgeIcon }} {{ $shortName }}
-                                                </span>
+                                                <div class="flex flex-col items-start">
+                                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {{ $badgeColor }}"
+                                                        title="{{ $status->getWebserviceTypeDescription() }} ({{ $status->getCountryDescription() }}) - {{ $status->getStatusDescription() }}">
+                                                        {{ $badgeIcon }} {{ $shortName }}
+                                                    </span>
+                                                    
+                                                    @if(in_array($status->status, ['error', 'rejected']) && $status->last_error_message)
+                                                        <div class="text-xs text-red-600 mt-1 break-words whitespace-normal max-w-40 leading-tight">
+                                                            {{ Str::limit($status->last_error_message, 80) }}
+                                                        </div>
+                                                    @endif
+                                                </div>
                                             @endforeach
                                         </div>
                                         
