@@ -1038,7 +1038,7 @@ public function isCertificateValid(): bool
                     'transbordo' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
                 ]
             ],
-            'bypass_testing' => true
+            'bypass_testing' => false
         ], $config);
     }
 
@@ -1066,7 +1066,7 @@ public function isCertificateValid(): bool
                     'servicioreferencia' => 'https://secure.aduana.gov.py/wsdl/tere2/servicioreferencia',
                 ]
             ],
-            'bypass_testing' => true
+            'bypass_testing' => false
         ], $config);
     }
 
@@ -1100,7 +1100,7 @@ public function isCertificateValid(): bool
     public function shouldBypassTesting(string $country): bool
     {
         $config = $this->getWebserviceConfig($country);
-        return $config['bypass_testing'] ?? true;
+        return $config['bypass_testing'] ?? false;
     }
 
     /**

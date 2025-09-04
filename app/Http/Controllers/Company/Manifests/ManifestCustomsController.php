@@ -1020,11 +1020,11 @@ class ManifestCustomsController extends Controller
                     'error',
                     [
                         'error_code' => $response['error_code'] ?? 'UNKNOWN_ERROR',
-                        'error_message' => $response['error_message'] ?? 'Error de conectividad'
+                        'error_message' => $this->buildErrorMessage($response)
                     ]
                 );
                 
-                $errorMessage = $response['error_message'] ?? 'Error de conectividad con el webservice aduanero';
+                $errorMessage = $this->buildErrorMessage($response);
                 return back()->with('error', "Error en envío {$request->webservice_type} a " . strtoupper($country) . ': ' . $errorMessage);
             }
 
@@ -1825,8 +1825,13 @@ private function buildErrorMessage(array $response): string
         return $response['error_message'];
     }
     
-    // Fallback genérico
-    return 'Error de conectividad con webservice';
+    // Si hay código de error, incluirlo
+    if (!empty($response['error_code'])) {
+        return "Error {$response['error_code']}: " . ($response['error_details'] ?? 'Error del webservice aduanero');
+    }
+    
+    // Fallback más específico
+    return 'Error del webservice aduanero - verificar configuración y datos enviados';
 }
    
 
