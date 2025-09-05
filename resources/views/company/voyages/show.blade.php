@@ -21,6 +21,13 @@
                         </svg>
                         Editar
                     </a>
+                    <a href="{{ route('company.voyages.detail', $voyage) }}" 
+                    class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded inline-flex items-center">
+                        🚀 Ir al Cockpit del Viaje
+                        <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </a>
                 @endif
 
                 @if(in_array($voyage->status, ['planning', 'approved']))

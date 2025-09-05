@@ -1,4 +1,3 @@
-{{-- resources/views/company/voyages/index.blade.php --}}
 <x-app-layout>
     <x-slot name="header">
         <div class="flex justify-between items-center">
@@ -167,6 +166,10 @@
                                                     Ref: {{ $voyage->internal_reference }}
                                                 </div>
                                             @endif
+                                            <a href="{{ route('company.voyages.detail', $voyage) }}" 
+                                               class="text-xs text-red-600 hover:text-red-500">
+                                               🎯 Cockpit
+                                            </a>
                                         </td>
 
                                         {{-- Ruta & Fechas (Combinado) --}}

@@ -158,7 +158,16 @@ class ShipmentItemController extends Controller
                             ->get();
         }
         $clients = Client::where('status', 'active')->orderBy('legal_name')->get();
-        $ports = \App\Models\Port::where('active', true)->orderBy('name')->get();
+        // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
+        $ports = \App\Models\Port::where('active', true)
+            ->whereIn('country_id', function($query) {
+                $query->select('id')
+                    ->from('countries')
+                    ->whereIn('alpha2_code', ['AR', 'PY']);
+            })
+            ->select('id', 'name', 'code', 'city', 'country_id')
+            ->orderBy('name')
+            ->get();
         $countries = \App\Models\Country::orderBy('name')->get();
         
         // NUEVO: Cargar tipos de contenedores para la nueva funcionalidad

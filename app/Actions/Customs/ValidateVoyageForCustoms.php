@@ -222,32 +222,58 @@ class ValidateVoyageForCustoms
     }
 
     /**
-     * Validar requerimientos básicos del sistema
-     */
-    private function validateSystemRequirements(string $webserviceType, string $country): void
-    {
-        $this->validationResults['validations_performed'][] = 'system_requirements';
+ * Validar requerimientos básicos del sistema - CORREGIDO para usar UserHelper
+ */
+private function validateSystemRequirements(string $webserviceType, string $country): void
+{
+    $this->validationResults['validations_performed'][] = 'system_requirements';
 
-        // Validar que la empresa está activa
-        if (!$this->company->active) {
-            $this->validationResults['errors'][] = 'La empresa no está activa en el sistema';
-        }
-
-        // Validar que los webservices están habilitados para la empresa
-        if (!$this->company->ws_active) {
-            $this->validationResults['errors'][] = 'Los webservices están deshabilitados para esta empresa';
-        }
-
-        // Validar combinación de webservice y país
-        if (!isset(self::VALIDATION_RULES[$country][$webserviceType])) {
-            $this->validationResults['errors'][] = "Combinación no soportada: {$webserviceType} para {$country}";
-        }
-
-        // Validar que el usuario tiene permisos
-        if ($this->user && !$this->user->can('send-customs-webservices')) {
-            $this->validationResults['errors'][] = 'El usuario no tiene permisos para enviar webservices aduaneros';
-        }
+    // Validar que la empresa está activa
+    if (!$this->company->active) {
+        $this->validationResults['errors'][] = 'La empresa no está activa en el sistema';
     }
+
+    // Validar que los webservices están habilitados para la empresa
+    if (!$this->company->ws_active) {
+        $this->validationResults['errors'][] = 'Los webservices están deshabilitados para esta empresa';
+    }
+
+    // Validar combinación de webservice y país
+    if (!isset(self::VALIDATION_RULES[$country][$webserviceType])) {
+        $this->validationResults['errors'][] = "Combinación no soportada: {$webserviceType} para {$country}";
+    }
+
+    // CORREGIDO: Validar permisos usando el patrón del sistema
+    // Verificar que la empresa tenga el rol apropiado según el webservice
+    $requiredRole = $this->getRequiredCompanyRole($webserviceType, $country);
+    if ($requiredRole && !in_array($requiredRole, $this->company->company_roles ?? [])) {
+        $this->validationResults['errors'][] = "Su empresa no tiene el rol '{$requiredRole}' requerido para {$webserviceType}";
+    }
+}
+
+/**
+ * NUEVO: Obtener el rol de empresa requerido según el webservice
+ */
+private function getRequiredCompanyRole(string $webserviceType, string $country): ?string
+{
+    $roleMapping = [
+        'AR' => [
+            'anticipada' => 'Cargas',
+            'micdta' => 'Cargas',
+            'desconsolidado' => 'Desconsolidador',
+            'transbordo' => 'Transbordos',
+        ],
+        'PY' => [
+            'manifiesto' => 'Cargas',
+            'adjuntos' => 'Cargas',
+            'consulta' => 'Cargas',
+            'rectificacion' => 'Cargas',
+            'cierre' => 'Cargas',
+        ]
+    ];
+
+    return $roleMapping[$country][$webserviceType] ?? null;
+}
 
     /**
      * Validar certificados digitales requeridos
@@ -360,7 +386,7 @@ class ValidateVoyageForCustoms
     }
 
     /**
-     * Validar fechas del viaje
+     * Validar fechas del viaje - CORREGIDO para campos reales
      */
     private function validateVoyageDates(Voyage $voyage, array $rules): void
     {
@@ -377,13 +403,13 @@ class ValidateVoyageForCustoms
             }
         }
 
-        // Validar fecha de llegada
-        if ($voyage->arrival_date && $voyage->departure_date) {
-            if ($voyage->arrival_date->lt($voyage->departure_date)) {
-                $this->validationResults['errors'][] = 'La fecha de llegada no puede ser anterior a la fecha de salida';
+        // CORREGIDO: Usar estimated_arrival_date en lugar de arrival_date
+        if ($voyage->estimated_arrival_date && $voyage->departure_date) {
+            if ($voyage->estimated_arrival_date->lt($voyage->departure_date)) {
+                $this->validationResults['errors'][] = 'La fecha de llegada estimada no puede ser anterior a la fecha de salida';
             }
             
-            $daysDifference = $voyage->departure_date->diffInDays($voyage->arrival_date);
+            $daysDifference = $voyage->departure_date->diffInDays($voyage->estimated_arrival_date);
             if ($daysDifference > 90) {
                 $this->validationResults['warnings'][] = 'El viaje tiene una duración muy larga (más de 90 días)';
             }

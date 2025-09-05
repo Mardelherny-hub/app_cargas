@@ -142,6 +142,7 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
     Route::get('/create', [VoyageController::class, 'create'])->name('create');
     Route::post('/', [VoyageController::class, 'store'])->name('store');
     Route::get('/{voyage}', [VoyageController::class, 'show'])->name('show');
+    Route::get('/{voyage}/detail', [VoyageController::class, 'showDetail'])->name('detail');
     Route::get('/{voyage}/edit', [VoyageController::class, 'edit'])->name('edit');
     Route::put('/{voyage}', [VoyageController::class, 'update'])->name('update');
     Route::delete('/{voyage}', [VoyageController::class, 'destroy'])->name('destroy');
@@ -448,7 +449,7 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
     Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
     Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
-        Route::get('/voyage/{voyageId}/statuses', [ManifestCustomsController::class, 'voyageStatuses'])->name('voyage-statuses');
+    Route::get('/voyage/{voyageId}/statuses', [ManifestCustomsController::class, 'voyageStatuses'])->name('voyage-statuses');
     
     // NUEVO: Ruta específica para vista MANE
     Route::get('/mane', [ManifestCustomsController::class, 'maneIndex'])->name('mane');

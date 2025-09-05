@@ -515,33 +515,72 @@ public function store(Request $request)
     }
 
     /**
-     * CORRECCIÓN DEFINITIVA - getFormData()
-     */
-    private function getFormData()
-    {
-        $company = $this->getUserCompany();
+ * CORRECCIÓN DEFINITIVA - getFormData() optimizado
+ * Aplicando EXACTAMENTE la misma solución que en BillOfLading
+ */
+private function getFormData()
+{
+    // LIMITAR TAMAÑOS INICIALES para colecciones pequeñas
+    $LIMIT = 10;
+    
+    $company = $this->getUserCompany();
 
-        return [
-            'vessels' => \App\Models\Vessel::where('company_id', $company->id)
-                ->where('active', true)
-                ->get(['id', 'name', 'imo_number', 'max_cargo_capacity']),
-            
-            'captains' => \App\Models\Captain::where('primary_company_id', $company->id)
-                ->where('active', true)
-                ->get(['id', 'full_name', 'license_number']),
-            
-            'operators' => \App\Models\Operator::where('company_id', $company->id)
-                ->where('active', true)
-                ->selectRaw('id, CONCAT(first_name, " ", last_name) as full_name, position')
-                ->get(),
-            
-            'countries' => \App\Models\Country::where('active', true)
-                ->get(['id', 'name', 'iso_code']),
-            
-            'ports' => \App\Models\Port::where('active', true)
-                ->get(['id', 'name', 'code', 'country_id']),
-        ];
-    }
+    // --- EMBARCACIONES (activas de la compañía) - LIMITADAS
+    $vessels = \App\Models\Vessel::where('company_id', $company->id)
+        ->where('active', true)
+        ->select('id', 'name', 'imo_number', 'cargo_capacity_tons')
+        ->orderBy('name')
+        ->limit($LIMIT)
+        ->get();
+    
+    // --- CAPITANES (activos) - AMPLIADA: empresa + freelance + disponibles
+    $captains = \App\Models\Captain::where('active', true)
+        ->where('available_for_hire', true)
+        ->where(function($query) use ($company) {
+            $query->where('primary_company_id', $company->id)  // De la empresa
+                ->orWhereNull('primary_company_id')           // Freelance
+                ->orWhere('employment_status', 'freelance');  // Disponibles
+        })
+        ->select('id', 'full_name', 'license_number', 'employment_status')
+        ->orderBy('full_name')
+        ->limit($LIMIT)
+        ->get();
+    
+    // --- OPERADORES (activos de la compañía) - LIMITADOS
+    $operators = \App\Models\Operator::where('company_id', $company->id)
+        ->where('active', true)
+        ->selectRaw('id, CONCAT(first_name, " ", last_name) as full_name, position')
+        ->orderBy('first_name')
+        ->limit($LIMIT)
+        ->get();
+    
+    // --- PAÍSES (activos) - Solo Argentina y Paraguay como en BL
+    $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
+    $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+
+    $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+
+    $countries = \App\Models\Country::where('active', true)
+        ->whereIn('id', $countryIds)
+        ->select('id', 'name', 'alpha2_code')
+        ->orderBy('name')
+        ->get();
+    
+    // --- PUERTOS (activos) - TODOS los de Argentina y Paraguay (como en BL)
+    $ports = \App\Models\Port::where('active', true)
+        ->whereIn('country_id', $countryIds)
+        ->select('id', 'name', 'code', 'city', 'country_id')
+        ->orderBy('name')
+        ->get();
+
+    return [
+        'vessels' => $vessels,
+        'captains' => $captains,
+        'operators' => $operators,
+        'countries' => $countries,
+        'ports' => $ports,
+    ];
+}
 
     /**
      * Eliminar viaje - VERSIÓN CORREGIDA
@@ -857,4 +896,237 @@ public function store(Request $request)
         
         return $pdf->download($filename);
     }
+
+    /**
+     * Mostrar vista detallada completa del viaje - "Cockpit" del viaje
+     * Incluye: Resumen ejecutivo + Shipments + Bills of Lading + Items + Contenedores
+     * 
+     * BASADO EN ESTRUCTURA VERIFICADA:
+     * Voyage → Shipments → Bills of Lading → Shipment Items → Containers
+     */
+    public function showDetail($id)
+    {
+        try {
+            // 1. Cargar viaje con todas las relaciones verificadas
+            $voyage = Voyage::with([
+                // Relaciones básicas del viaje
+                'company',
+                'leadVessel',
+                'captain', 
+                'originCountry',
+                'destinationCountry',
+                'originPort',
+                'destinationPort',
+                'transshipmentPort',
+                
+                // Jerarquía completa de datos
+                'shipments' => function($query) {
+                    $query->orderBy('sequence_in_voyage');
+                },
+                'shipments.vessel',
+                'shipments.captain',
+                'shipments.billsOfLading' => function($query) {
+                    $query->orderBy('bill_number');
+                },
+                'shipments.billsOfLading.shipper',
+                'shipments.billsOfLading.consignee',
+                'shipments.billsOfLading.notifyParty',
+                'shipments.billsOfLading.shipmentItems.cargoType',
+                'shipments.billsOfLading.shipmentItems.packagingType',
+                'shipments.billsOfLading.shipmentItems.containers'
+            ])->findOrFail($id);
+
+            // 2. Verificar permisos (usar métodos existentes del controlador)
+            if (!$this->canAccessCompany($voyage->company_id)) {
+                abort(403, 'No tiene permisos para ver este viaje.');
+            }
+
+            // 3. Calcular estadísticas del viaje usando relaciones verificadas
+            $stats = $this->calculateVoyageStats($voyage);
+            
+            // 4. Preparar datos de completitud para cada shipment
+            $shipmentData = $this->prepareShipmentData($voyage->shipments);
+            
+            // 5. Calcular estado general del viaje
+            $voyageStatus = $this->calculateVoyageStatus($voyage, $stats);
+
+            return view('company.voyages.detail', compact(
+                'voyage',
+                'stats', 
+                'shipmentData',
+                'voyageStatus'
+            ));
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Error cargando detalles del viaje: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Calcular estadísticas del viaje usando relaciones verificadas
+     */
+    private function calculateVoyageStats(Voyage $voyage): array
+    {
+        $totalShipments = $voyage->shipments->count();
+        $totalBillsOfLading = $voyage->shipments->sum(function($shipment) {
+            return $shipment->billsOfLading->count();
+        });
+        
+        $totalItems = 0;
+        $totalWeight = 0;
+        $totalContainers = 0;
+        $uniqueContainers = collect();
+        
+        foreach ($voyage->shipments as $shipment) {
+            foreach ($shipment->billsOfLading as $bl) {
+                $totalItems += $bl->shipmentItems->count();
+                $totalWeight += $bl->shipmentItems->sum('gross_weight_kg');
+                
+                // Contar contenedores únicos
+                foreach ($bl->shipmentItems as $item) {
+                    foreach ($item->containers as $container) {
+                        $uniqueContainers->push($container->id);
+                    }
+                }
+            }
+        }
+        
+        $totalContainers = $uniqueContainers->unique()->count();
+        
+        return [
+            'total_shipments' => $totalShipments,
+            'total_bills_of_lading' => $totalBillsOfLading,
+            'total_items' => $totalItems,
+            'total_weight_kg' => $totalWeight,
+            'total_containers' => $totalContainers,
+            'capacity_utilization' => $voyage->total_cargo_capacity_tons > 0 
+                ? round(($totalWeight / 1000) / $voyage->total_cargo_capacity_tons * 100, 2)
+                : 0,
+            'container_utilization' => $voyage->total_container_capacity > 0
+                ? round($totalContainers / $voyage->total_container_capacity * 100, 2) 
+                : 0
+        ];
+    }
+
+    /**
+     * Preparar datos de completitud para cada shipment
+     */
+    private function prepareShipmentData($shipments): array
+    {
+        $shipmentData = [];
+        
+        foreach ($shipments as $shipment) {
+            $billsCount = $shipment->billsOfLading->count();
+            $verifiedBills = $shipment->billsOfLading->whereNotNull('verified_at')->count();
+            $itemsCount = $shipment->billsOfLading->sum(function($bl) {
+                return $bl->shipmentItems->count();
+            });
+            
+            $shipmentData[] = [
+                'shipment' => $shipment,
+                'bills_count' => $billsCount,
+                'verified_bills' => $verifiedBills,
+                'items_count' => $itemsCount,
+                'completion_percentage' => $billsCount > 0 ? round($verifiedBills / $billsCount * 100) : 0,
+                'has_items' => $itemsCount > 0,
+                'ready_for_customs' => $billsCount > 0 && $verifiedBills === $billsCount && $itemsCount > 0
+            ];
+        }
+        
+        return $shipmentData;
+    }
+
+    /**
+     * Calcular estado general del viaje
+     */
+    private function calculateVoyageStatus(Voyage $voyage, array $stats): array
+    {
+        $readyShipments = collect($this->prepareShipmentData($voyage->shipments))
+            ->where('ready_for_customs', true)
+            ->count();
+        
+        $totalShipments = $voyage->shipments->count();
+        $completionPercentage = $totalShipments > 0 ? round($readyShipments / $totalShipments * 100) : 0;
+        
+        // Determinar estado general
+        $overallStatus = 'draft';
+        if ($completionPercentage === 100) {
+            $overallStatus = 'ready';
+        } elseif ($completionPercentage > 0) {
+            $overallStatus = 'in_progress';
+        }
+        
+        return [
+            'overall_status' => $overallStatus,
+            'completion_percentage' => $completionPercentage,
+            'ready_shipments' => $readyShipments,
+            'total_shipments' => $totalShipments,
+            'can_send_to_customs' => $completionPercentage === 100 && $stats['total_bills_of_lading'] > 0
+        ];
+    }
+
+    /**
+ * Generar PDF general del viaje (diferente al manifest PDF)
+ * Este PDF muestra información completa del viaje para impresión/archivo
+ */
+public function generatePdf(Voyage $voyage)
+{
+    // 1. Verificar permisos básicos
+    if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
+        abort(403, 'No tiene permisos para generar PDFs.');
+    }
+
+    // 2. Verificar que el viaje pertenece a la empresa del usuario
+    if (!$this->canAccessCompany($voyage->company_id)) {
+        abort(403, 'No tiene permisos para generar este PDF.');
+    }
+
+    // 3. Verificar si el usuario puede ver este viaje específico
+    if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
+        abort(403, 'No tiene permisos para generar este PDF.');
+    }
+
+    // 4. Cargar relaciones necesarias para el PDF completo
+    $voyage->load([
+        'company',
+        'leadVessel',
+        'captain',
+        'originCountry',
+        'destinationCountry', 
+        'originPort',
+        'destinationPort',
+        'transshipmentPort',
+        'shipments' => function($query) {
+            $query->orderBy('sequence_in_voyage');
+        },
+        'shipments.vessel',
+        'shipments.captain',
+        'shipments.billsOfLading' => function($query) {
+            $query->orderBy('bill_number');
+        },
+        'shipments.billsOfLading.shipper',
+        'shipments.billsOfLading.consignee',
+        'shipments.billsOfLading.notifyParty',
+        'shipments.billsOfLading.shipmentItems.cargoType',
+        'shipments.billsOfLading.shipmentItems.packagingType',
+        'shipments.billsOfLading.shipmentItems.containers'
+    ]);
+
+    // 5. Calcular estadísticas para el PDF
+    $stats = $this->calculateVoyageStats($voyage);
+
+    // 6. Generar PDF usando vista específica
+    $pdf = \PDF::loadView('company.voyages.manifest-pdf', compact('voyage'));    
+    // 7. Configurar PDF
+    $pdf->setPaper('A4', 'portrait');
+    $pdf->setOptions([
+        'defaultFont' => 'Arial',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled' => true
+    ]);
+    
+    $filename = "viaje-{$voyage->voyage_number}-" . date('Y-m-d') . ".pdf";
+    
+    return $pdf->download($filename);
+}
 }
