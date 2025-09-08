@@ -267,11 +267,12 @@ class BillOfLadingEditForm extends Component
     $this->billOfLading = $billOfLading;
     \Log::info('MOUNT - billOfLading set');
     
+    $this->loadBillOfLadingData();
+    \Log::info('MOUNT - loadBillOfLadingData done');
+
     $this->loadFormData();
     \Log::info('MOUNT - loadFormData done');
     
-    $this->loadBillOfLadingData();
-    \Log::info('MOUNT - loadBillOfLadingData done');
 
     $this->bill_date = optional($this->billOfLading->bill_date)?->format('Y-m-d') ?? '';
     $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
@@ -284,71 +285,49 @@ class BillOfLadingEditForm extends Component
      */
     public function loadFormData()
 {
-    // Limitar tamaños iniciales para no reventar PHP-FPM en prod
-    $LIMIT = 10;
-
-    // --- CLIENTES (activos)
-    $clientsBase = Client::where('status', 'active')
+    // --- CLIENTES (activos) - traer todos, es tabla manejable
+    $this->clients = Client::where('status', 'active')
         ->select('id', 'legal_name')
         ->orderBy('legal_name')
-        ->limit($LIMIT)
         ->get();
 
-    // En edit: asegurar que los IDs seleccionados estén presentes
-    $neededClientIds = collect([
-        $this->shipper_id,
-        $this->consignee_id,
-        $this->notify_party_id,
-        $this->cargo_owner_id,
-    ])->filter()->unique()->values();
-
-    if ($neededClientIds->isNotEmpty()) {
-        $missing = $neededClientIds->diff($clientsBase->pluck('id'));
-        if ($missing->isNotEmpty()) {
-            $extra = Client::whereIn('id', $missing)
-                ->select('id','legal_name')
-                ->get();
-            $clientsBase = $clientsBase->concat($extra)
-                ->sortBy('legal_name')
-                ->values();
-        }
-    }
-    $this->clients = $clientsBase;
-
-    // --- VIAJES (solo de la compañía del usuario)
+    // --- VIAJES (solo de la compañía del usuario) - traer todos de la empresa
     $company = $this->getUserCompany();
     $this->availableShipments = Shipment::whereHas('voyage', function ($q) use ($company) {
             $q->where('company_id', $company->id);
         })
         ->select('id', 'shipment_number', 'voyage_id')
         ->orderBy('shipment_number')
-        ->limit($LIMIT)
         ->get();
 
-   // --- PUERTOS (activos) - FILTRADOS por Argentina y Paraguay
+    // --- PUERTOS (activos) - SOLO AQUÍ aplicar límite por performance + incluir seleccionados
+    $LIMIT = 100; // Límite solo para puertos
+    
     $argentina = Country::where('alpha2_code', 'AR')->first();
     $paraguay = Country::where('alpha2_code', 'PY')->first();
-
     $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
 
+    // Puertos base (limitados a AR/PY)
     $portsBase = Port::where('active', true)
         ->whereIn('country_id', $countryIds)
         ->select('id', 'name', 'code', 'city', 'country_id')
         ->orderBy('name')
+        ->limit($LIMIT)
         ->get();
 
-    $neededPortIds = collect([
+    // ASEGURAR que los puertos seleccionados en el BL estén incluidos
+    $selectedPortIds = collect([
         $this->loading_port_id,
         $this->discharge_port_id,
         $this->transshipment_port_id,
         $this->final_destination_port_id,
     ])->filter()->unique()->values();
 
-    if ($neededPortIds->isNotEmpty()) {
-        $missing = $neededPortIds->diff($portsBase->pluck('id'));
+    if ($selectedPortIds->isNotEmpty()) {
+        $missing = $selectedPortIds->diff($portsBase->pluck('id'));
         if ($missing->isNotEmpty()) {
             $extra = Port::whereIn('id', $missing)
-                ->select('id','name')
+                ->select('id','name','code','city','country_id')
                 ->get();
             $portsBase = $portsBase->concat($extra)
                 ->sortBy('name')
@@ -356,55 +335,33 @@ class BillOfLadingEditForm extends Component
         }
     }
 
-    // Reutilizamos para todos los selects de puertos
-    $this->loadingPorts           = $portsBase;
-    $this->dischargePorts         = $portsBase;
-    $this->transshipmentPorts     = $portsBase;
-    $this->finalDestinationPorts  = $portsBase;
+    // Reutilizar para todos los selects de puertos
+    $this->loadingPorts = $portsBase;
+    $this->dischargePorts = $portsBase;
+    $this->transshipmentPorts = $portsBase;
+    $this->finalDestinationPorts = $portsBase;
 
-    // --- ADUANAS (activas) — limitar y asegurar seleccionadas
-    $customsBase = CustomOffice::where('active', true)
+    // --- ADUANAS (activas) - traer todas, tabla manejable
+    $this->customsOffices = CustomOffice::where('active', true)
         ->select('id','name')
         ->orderBy('name')
-        ->limit($LIMIT)
         ->get();
 
-    $neededCustomIds = collect([
-        $this->loading_customs_id,
-        $this->discharge_customs_id,
-    ])->filter()->unique()->values();
-
-    if ($neededCustomIds->isNotEmpty()) {
-        $missing = $neededCustomIds->diff($customsBase->pluck('id'));
-        if ($missing->isNotEmpty()) {
-            $extra = CustomOffice::whereIn('id', $missing)
-                ->select('id','name')
-                ->get();
-            $customsBase = $customsBase->concat($extra)
-                ->sortBy('name')
-                ->values();
-        }
-    }
-    $this->customsOffices = $customsBase;
-
-    // --- TIPOS — suelen ser cortos; igual limitamos por seguridad
+    // --- TIPOS - traer todos, tablas pequeñas
     $this->cargoTypes = CargoType::where('active', true)
         ->select('id','name')
         ->orderBy('name')
-        ->limit($LIMIT)
         ->get();
 
     $this->packagingTypes = PackagingType::where('active', true)
         ->select('id','name')
         ->orderBy('name')
-        ->limit($LIMIT)
         ->get();
 
-    // --- PAÍSES — tabla corta; limit soft
+    // --- PAÍSES - traer todos, tabla manejable
     $this->countries = Country::where('active', true)
         ->select('id','name')
         ->orderBy('name')
-        ->limit($LIMIT)
         ->get();
 }
 
@@ -428,10 +385,10 @@ class BillOfLadingEditForm extends Component
         $this->incoterms = $bl->incoterms ?? '';
 
         // Partes
-        $this->shipper_id = $bl->shipper_id ?? '';
-        $this->consignee_id = $bl->consignee_id ?? '';
-        $this->notify_party_id = $bl->notify_party_id ?? '';
-        $this->cargo_owner_id = $bl->cargo_owner_id ?? '';
+        $this->shipper_id = $bl->shipper_id;
+        $this->consignee_id = $bl->consignee_id;
+        $this->notify_party_id = $bl->notify_party_id;
+        $this->cargo_owner_id = $bl->cargo_owner_id;
 
         // Puertos
         $this->loading_port_id = $bl->loading_port_id ?? '';
@@ -493,7 +450,7 @@ class BillOfLadingEditForm extends Component
                 case 'consignee':
                     $this->loadSpecificContactData($contact, 'consignee');
                     break;
-                case 'notify_party':
+                case 'notify':
                     $this->loadSpecificContactData($contact, 'notify');
                     break;
             }

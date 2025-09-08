@@ -1128,22 +1128,115 @@ public function isCertificateValid(): bool
         }
     }
 
-    /**
-     * Obtener datos de la empresa para webservices de Argentina
-     */
-    public function getArgentinaWebserviceData(): array
-    {
-        $config = $this->getArgentinaConfig();
-        
-        return [
-            'cuit' => $config['cuit'],
-            'company_name' => $config['company_name'],
-            'domicilio_fiscal' => $config['domicilio_fiscal'],
-            'actividad_principal' => $config['actividad_principal'],
-            'monotributo' => $config['monotributo'],
-            'should_bypass' => $this->shouldBypassTesting('argentina'),
-        ];
+/**
+ * ✅ AGREGAR al final de la clase Company, antes del último }
+ * Solo si NO existe el método getArgentinaWebserviceData()
+ */
+
+/**
+ * Obtener datos de la empresa para webservices de Argentina
+ */
+public function getArgentinaWebserviceData(): array
+{
+    $config = $this->getArgentinaConfig();
+    
+    return [
+        'cuit' => $config['cuit'] ?? $this->tax_id,
+        'company_name' => $config['company_name'] ?? $this->legal_name,
+        'domicilio_fiscal' => $config['domicilio_fiscal'] ?? $this->address,
+        'username' => $config['username'] ?? null,
+        'password' => $config['password'] ?? null,
+        'certificate_alias' => $config['certificate_alias'] ?? $this->certificate_alias,
+        'actividad_principal' => $config['actividad_principal'] ?? null,
+        'monotributo' => $config['monotributo'] ?? false,
+        'should_bypass' => $this->shouldBypassTesting('argentina'),
+    ];
+}
+
+/**
+ * Validar configuración de webservice para un país
+ */
+public function validateWebserviceConfig(string $country): array
+{
+    $errors = [];
+    
+    switch (strtolower($country)) {
+        case 'argentina':
+            $data = $this->getArgentinaWebserviceData();
+            
+            if (empty($data['cuit'])) {
+                $errors[] = 'CUIT de empresa no configurado';
+            } elseif (strlen(preg_replace('/[^0-9]/', '', $data['cuit'])) !== 11) {
+                $errors[] = 'CUIT de empresa inválido (debe tener 11 dígitos)';
+            }
+            
+            if (empty($data['company_name'])) {
+                $errors[] = 'Nombre de empresa no configurado';
+            }
+            
+            break;
+            
+        case 'paraguay':
+            $data = $this->getParaguayWebserviceData();
+            
+            if (empty($data['ruc'])) {
+                $errors[] = 'RUC de empresa no configurado para Paraguay';
+            }
+            
+            if (empty($data['company_name'])) {
+                $errors[] = 'Nombre de empresa no configurado para Paraguay';
+            }
+            
+            break;
+            
+        default:
+            $errors[] = "País no soportado: {$country}";
     }
+    
+    return $errors;
+}
+
+/**
+ * Verificar si la configuración es de testing/desarrollo
+ */
+public function isTestingConfiguration(string $country, array $data): bool
+{
+    switch (strtolower($country)) {
+        case 'argentina':
+            // CUITs de testing conocidos
+            $testingCuits = ['20123456789', '30000000003', '99999999999', '20000000001'];
+            $cuit = preg_replace('/[^0-9]/', '', $data['cuit'] ?? '');
+            
+            if (in_array($cuit, $testingCuits)) {
+                return true;
+            }
+            
+            // Nombres de empresa de testing
+            $companyName = strtoupper($data['company_name'] ?? '');
+            $testingNames = ['TEST', 'TESTING', 'DESARROLLO', 'DEMO', 'PRUEBA'];
+            
+            foreach ($testingNames as $testName) {
+                if (strpos($companyName, $testName) !== false) {
+                    return true;
+                }
+            }
+            
+            break;
+            
+        case 'paraguay':
+            // Similar lógica para Paraguay
+            $testingRucs = ['123456789', '000000001'];
+            $ruc = preg_replace('/[^0-9]/', '', $data['ruc'] ?? '');
+            
+            if (in_array($ruc, $testingRucs)) {
+                return true;
+            }
+            
+            break;
+    }
+    
+    return false;
+}
 
     /**
      * Obtener datos de la empresa para webservices de Paraguay
@@ -1162,92 +1255,8 @@ public function isCertificateValid(): bool
         ];
     }
 
-    /**
-     * Verificar si la configuración es de testing/desarrollo para cualquier país
-     */
-    public function isTestingConfiguration(string $country, array $data): bool
-    {
-        $testingPatterns = [];
-        
-        switch (strtolower($country)) {
-            case 'argentina':
-                $testingPatterns = [
-                    'tax_id' => ['20123456789', '30000000003', '99999999999', '20000000001'],
-                    'company_name' => ['TEST', 'TESTING', 'DESARROLLO', 'DEMO', 'PRUEBA'],
-                ];
-                
-                // Verificar CUIT de testing
-                if (in_array($data['cuit'] ?? '', $testingPatterns['tax_id'])) {
-                    return true;
-                }
-                
-                // Verificar nombre de empresa de testing
-                $companyName = strtoupper($data['company_name'] ?? '');
-                foreach ($testingPatterns['company_name'] as $pattern) {
-                    if (strpos($companyName, $pattern) !== false) {
-                        return true;
-                    }
-                }
-                break;
-                
-            case 'paraguay':
-                $testingPatterns = [
-                    'tax_id' => ['80123456-7', '12345678-9', '00000000-0'],
-                    'company_name' => ['TEST', 'TESTING', 'DESARROLLO', 'DEMO', 'PRUEBA'],
-                ];
-                
-                // Verificar RUC de testing
-                if (in_array($data['ruc'] ?? '', $testingPatterns['tax_id'])) {
-                    return true;
-                }
-                
-                // Verificar nombre de empresa de testing
-                $companyName = strtoupper($data['company_name'] ?? '');
-                foreach ($testingPatterns['company_name'] as $pattern) {
-                    if (strpos($companyName, $pattern) !== false) {
-                        return true;
-                    }
-                }
-                break;
-        }
-        
-        return false;
-    }
+   
 
-    /**
-     * Validar configuración de webservices para un país
-     */
-    public function validateWebserviceConfig(string $country): array
-    {
-        $errors = [];
-        $config = $this->getWebserviceConfig($country);
-        
-        if (empty($config)) {
-            $errors[] = "No hay configuración para {$country}";
-            return $errors;
-        }
-
-        switch (strtolower($country)) {
-            case 'argentina':
-                if (empty($config['cuit'])) {
-                    $errors[] = 'CUIT de Argentina es requerido';
-                }
-                if (empty($config['company_name'])) {
-                    $errors[] = 'Razón social para Argentina es requerida';
-                }
-                break;
-                
-            case 'paraguay':
-                if (empty($config['ruc'])) {
-                    $errors[] = 'RUC de Paraguay es requerido';
-                }
-                if (empty($config['company_name'])) {
-                    $errors[] = 'Razón social para Paraguay es requerida';
-                }
-                break;
-        }
-
-        return $errors;
-    }
+  
 
 }

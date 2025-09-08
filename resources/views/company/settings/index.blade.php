@@ -216,6 +216,136 @@
                             </button>
                         </div>
                     </form>
+                    <!-- Configuración de Webservices -->
+<form method="POST" action="{{ route('company.settings.update-webservices') }}" class="space-y-8">
+    @csrf
+    @method('PUT')
+
+    <!-- Configuración General de Webservices -->
+    <div class="bg-blue-50 rounded-lg p-6">
+        <h4 class="text-lg font-semibold text-blue-900 mb-4">Configuración de Webservices</h4>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label for="ws_environment" class="block text-sm font-medium text-gray-700">
+                    Ambiente *
+                </label>
+                <select name="ws_environment" id="ws_environment" required
+                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="testing" {{ $currentSettings['webservices']['ws_environment'] === 'testing' ? 'selected' : '' }}>Testing (Pruebas)</option>
+                    <option value="production" {{ $currentSettings['webservices']['ws_environment'] === 'production' ? 'selected' : '' }}>Producción</option>
+                </select>
+            </div>
+
+            <div class="flex items-center">
+                <input type="hidden" name="ws_active" value="0">
+                <input type="checkbox" name="ws_active" id="ws_active" value="1"
+                       {{ $currentSettings['webservices']['ws_active'] ? 'checked' : '' }}
+                       class="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="ws_active" class="ml-3 block text-sm text-gray-700">
+                    <span class="font-medium">Activar webservices</span>
+                    <span class="block text-gray-500">Permite comunicación con sistemas de aduana</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuración Argentina (AFIP) -->
+    <div class="bg-green-50 rounded-lg p-6">
+        <h4 class="text-lg font-semibold text-green-900 mb-4">Configuración Argentina (AFIP)</h4>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label for="argentina_cuit" class="block text-sm font-medium text-gray-700">
+                    CUIT
+                </label>
+                <input type="text" name="argentina_cuit" id="argentina_cuit" maxlength="11"
+                       value="{{ old('argentina_cuit', $currentSettings['argentina']['cuit']) }}"
+                       placeholder="30123456789"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500">
+            </div>
+
+            <div>
+                <label for="argentina_company_name" class="block text-sm font-medium text-gray-700">
+                    Razón Social para AFIP *
+                </label>
+                <input type="text" name="argentina_company_name" id="argentina_company_name" required
+                       value="{{ old('argentina_company_name', $currentSettings['argentina']['company_name']) }}"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500">
+            </div>
+        </div>
+
+        <div class="mt-6">
+            <label for="argentina_domicilio_fiscal" class="block text-sm font-medium text-gray-700">
+                Domicilio Fiscal para AFIP *
+            </label>
+            <textarea name="argentina_domicilio_fiscal" id="argentina_domicilio_fiscal" rows="2" required
+                      class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500">{{ old('argentina_domicilio_fiscal', $currentSettings['argentina']['domicilio_fiscal']) }}</textarea>
+        </div>
+
+        <div class="mt-6 flex items-center">
+            <input type="hidden" name="argentina_bypass_testing" value="0">
+            <input type="checkbox" name="argentina_bypass_testing" id="argentina_bypass_testing" value="1"
+                   {{ $currentSettings['argentina']['bypass_testing'] ? 'checked' : '' }}
+                   class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded">
+            <label for="argentina_bypass_testing" class="ml-2 block text-sm text-gray-700">
+                Simular respuestas (bypass testing) - Solo para desarrollo
+            </label>
+        </div>
+    </div>
+
+    <!-- Configuración Paraguay (DNA) -->
+    <div class="bg-yellow-50 rounded-lg p-6">
+        <h4 class="text-lg font-semibold text-yellow-900 mb-4">Configuración Paraguay (DNA)</h4>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label for="paraguay_ruc" class="block text-sm font-medium text-gray-700">
+                    RUC
+                </label>
+                <input type="text" name="paraguay_ruc" id="paraguay_ruc" 
+                       value="{{ old('paraguay_ruc', $currentSettings['paraguay']['ruc']) }}"
+                       placeholder="12345678"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
+            </div>
+
+            <div>
+                <label for="paraguay_company_name" class="block text-sm font-medium text-gray-700">
+                    Razón Social para DNA *
+                </label>
+                <input type="text" name="paraguay_company_name" id="paraguay_company_name" required
+                       value="{{ old('paraguay_company_name', $currentSettings['paraguay']['company_name']) }}"
+                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
+            </div>
+        </div>
+
+        <div class="mt-6">
+            <label for="paraguay_domicilio_fiscal" class="block text-sm font-medium text-gray-700">
+                Domicilio Fiscal para DNA *
+            </label>
+            <textarea name="paraguay_domicilio_fiscal" id="paraguay_domicilio_fiscal" rows="2" required
+                      class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500">{{ old('paraguay_domicilio_fiscal', $currentSettings['paraguay']['domicilio_fiscal']) }}</textarea>
+        </div>
+
+        <div class="mt-6 flex items-center">
+            <input type="hidden" name="paraguay_bypass_testing" value="0">
+            <input type="checkbox" name="paraguay_bypass_testing" id="paraguay_bypass_testing" value="1"
+                   {{ $currentSettings['paraguay']['bypass_testing'] ? 'checked' : '' }}
+                   class="h-4 w-4 text-yellow-600 focus:ring-yellow-500 border-gray-300 rounded">
+            <label for="paraguay_bypass_testing" class="ml-2 block text-sm text-gray-700">
+                Simular respuestas (bypass testing) - Solo para desarrollo
+            </label>
+        </div>
+    </div>
+
+    <!-- Botón de guardar -->
+    <div class="flex justify-end">
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md text-sm font-medium">
+            Guardar Configuración de Webservices
+        </button>
+    </div>
+</form>
 
                     <!-- Información adicional -->
                     <div class="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">

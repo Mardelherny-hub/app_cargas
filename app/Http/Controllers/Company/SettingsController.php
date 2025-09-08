@@ -41,6 +41,7 @@ class SettingsController extends Controller
         }
 
         // Configuraciones actuales
+        // En SettingsController.php - método index()
         $currentSettings = [
             'general' => [
                 'legal_name' => $company->legal_name,
@@ -52,16 +53,14 @@ class SettingsController extends Controller
                 'address' => $company->address,
                 'city' => $company->city,
                 'postal_code' => $company->postal_code,
-                'id_maria' => $company->id_maria,
             ],
             'webservices' => [
                 'ws_environment' => $company->ws_environment,
                 'ws_active' => $company->ws_active,
-                'certificate_expires_at' => $company->certificate_expires_at,
-                'has_certificate' => !empty($company->certificate_path),
+                'ws_config' => $company->ws_config,  // ← AGREGAR ESTO
             ],
-            'business_roles' => $company->company_roles ?? [],
-            'roles_config' => $company->roles_config ?? [],
+            'argentina' => $company->getArgentinaConfig(),    // ← AGREGAR ESTO
+            'paraguay' => $company->getParaguayConfig(),      // ← AGREGAR ESTO
         ];
 
         // Estadísticas de configuración
@@ -536,5 +535,73 @@ class SettingsController extends Controller
         // TODO: Implementar validación real del certificado
         // Por ahora, verificar que existe y no esté vencido
         return $company->certificate_expires_at && $company->certificate_expires_at > now();
+    }
+
+    /**
+     * Actualizar configuración de webservices específica por país
+     */
+    public function updateWebservices(Request $request)
+    {
+        if (!$this->isCompanyAdmin()) {
+            abort(403, 'Solo los administradores de empresa pueden modificar la configuración de webservices.');
+        }
+
+        $request->validate([
+            'ws_environment' => 'required|in:testing,production',
+            'ws_active' => 'boolean',
+            
+            // Argentina
+            'argentina_cuit' => 'nullable|string|size:11',
+            'argentina_company_name' => 'required|string|max:255',
+            'argentina_domicilio_fiscal' => 'required|string|max:500',
+            'argentina_bypass_testing' => 'boolean',
+            
+            // Paraguay
+            'paraguay_ruc' => 'nullable|string|min:6|max:9',
+            'paraguay_company_name' => 'required|string|max:255',
+            'paraguay_domicilio_fiscal' => 'required|string|max:500',
+            'paraguay_bypass_testing' => 'boolean',
+        ]);
+
+        try {
+            $company = $this->getUserCompany();
+            
+            // Actualizar configuración básica
+            $company->update([
+                'ws_environment' => $request->ws_environment,
+                'ws_active' => $request->boolean('ws_active'),
+            ]);
+
+            // Actualizar configuración por país
+            $wsConfig = $company->ws_config ?? [];
+            
+            $wsConfig['argentina'] = [
+                'cuit' => $request->argentina_cuit,
+                'company_name' => $request->argentina_company_name,
+                'domicilio_fiscal' => $request->argentina_domicilio_fiscal,
+                'afip_enabled' => true,
+                'bypass_testing' => $request->boolean('argentina_bypass_testing'),
+            ];
+            
+            $wsConfig['paraguay'] = [
+                'ruc' => $request->paraguay_ruc,
+                'company_name' => $request->paraguay_company_name,
+                'domicilio_fiscal' => $request->paraguay_domicilio_fiscal,
+                'dna_enabled' => true,
+                'bypass_testing' => $request->boolean('paraguay_bypass_testing'),
+            ];
+
+            $company->update(['ws_config' => $wsConfig]);
+
+            return back()->with('success', 'Configuración de webservices actualizada correctamente.');
+
+        } catch (\Exception $e) {
+            Log::error('Error updating webservices configuration', [
+                'company_id' => $company->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return back()->with('error', 'Error al actualizar la configuración: ' . $e->getMessage());
+        }
     }
 }

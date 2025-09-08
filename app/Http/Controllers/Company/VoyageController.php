@@ -142,8 +142,14 @@ class VoyageController extends Controller
                 ->get();
 
             // 6. Consultar todos los puertos activos (agrupados por país para JavaScript)
+            // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
+            $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
+            $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+            $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+
             $ports = Port::where('active', true)
                 ->where('accepts_new_vessels', true)
+                ->whereIn('country_id', $countryIds)
                 ->with('country:id,name')
                 ->select('id', 'name', 'code', 'city', 'country_id')
                 ->orderBy('country_id')

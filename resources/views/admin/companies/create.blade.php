@@ -135,11 +135,12 @@
 
                             <div class="mt-6">
                                 <label for="address" class="block text-sm font-medium text-gray-700 mb-2">
-                                    Dirección
+                                    Dirección *
                                 </label>
                                 <textarea name="address" 
                                           id="address" 
                                           rows="2"
+                                          required
                                           placeholder="Dirección completa de la empresa"
                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">{{ old('address') }}</textarea>
                             </div>
@@ -328,8 +329,6 @@
         </div>
     </div>
 
-    // FIX COMPLETO PARA: resources/views/admin/companies/create.blade.php
-// Reemplazar todo el bloque JavaScript existente con este código corregido
 
 <script>
     // CONFIGURACIÓN CORREGIDA - Validaciones específicas por país

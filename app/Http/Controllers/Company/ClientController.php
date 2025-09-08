@@ -88,8 +88,16 @@ class ClientController extends Controller
         
         $countries = Country::where('active', true)->orderBy('name')->get();
         $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
-        $ports = Port::where('active', true)->orderBy('name')->get();
-        $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
+        // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
+        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
+        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+
+        $ports = Port::where('active', true)
+            ->whereIn('country_id', $countryIds)
+            ->select('id', 'name', 'code', 'city', 'country_id')
+            ->orderBy('name')
+            ->get();        $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
 
         return view('company.clients.create', compact('countries', 'documentTypes', 'ports', 'customOffices'));
     }
@@ -210,8 +218,16 @@ class ClientController extends Controller
         
         $countries = Country::where('active', true)->orderBy('name')->get();
         $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
-        $ports = Port::where('active', true)->orderBy('name')->get();
-        $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
+        // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
+        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
+        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+
+        $ports = Port::where('active', true)
+            ->whereIn('country_id', $countryIds)
+            ->select('id', 'name', 'code', 'city', 'country_id')
+            ->orderBy('name')
+            ->get();        $customOffices = CustomOffice::where('active', true)->orderBy('name')->get();
 
         return view('company.clients.edit', compact('client', 'countries', 'documentTypes', 'ports', 'customOffices'));
     }

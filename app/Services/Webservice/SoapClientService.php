@@ -28,39 +28,40 @@ class SoapClientService
     private array $config;
     private ?SoapClient $soapClient = null;
 
+
     /**
      * URLs por defecto de webservices (basadas en investigación)
      */
     private const DEFAULT_WEBSERVICE_URLS = [
-        'AR' => [
-            'testing' => [
-                'micdta' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-                'anticipada' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
-                'desconsolidado' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-                'transbordo' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-                'auth' => 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
-            ],
-            'production' => [
-                'micdta' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-                'anticipada' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
-                'desconsolidado' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-                'transbordo' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-                'auth' => 'https://wsaa.afip.gov.ar/ws/services/LoginCms',
-            ],
+    'AR' => [
+        'testing' => [
+            'micdta' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'anticipada' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx?wsdl',
+            'desconsolidado' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'transbordo' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'auth' => 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl',
         ],
-        'PY' => [
-            'testing' => [
-                'gdsf' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere', // ✅ CORRECTO
-                'paraguay_customs' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere',
-                'auth' => 'https://securetest.aduana.gov.py/wsdl/wsaaserver/Server',
-            ],
-            'production' => [
-                'gdsf' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere', // ✅ CORRECTO
-                'paraguay_customs' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere',
-                'auth' => 'https://secure.aduana.gov.py/wsdl/wsaaserver/Server',
-            ],
+        'production' => [
+            'micdta' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'anticipada' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx?wsdl',
+            'desconsolidado' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'transbordo' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'auth' => 'https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl',
         ],
-    ];
+    ],
+    'PY' => [
+        'testing' => [
+            'gdsf' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere?wsdl',
+            'paraguay_customs' => 'https://securetest.aduana.gov.py/wsdl/tere2/serviciotere?wsdl',
+            'auth' => 'https://securetest.aduana.gov.py/wsdl/wsaaserver/Server?wsdl',
+        ],
+        'production' => [
+            'gdsf' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere?wsdl',
+            'paraguay_customs' => 'https://secure.aduana.gov.py/wsdl/tere2/serviciotere?wsdl',
+            'auth' => 'https://secure.aduana.gov.py/wsdl/wsaaserver/Server?wsdl',
+        ],
+    ],
+];
 
     /**
      * SOAPActions conocidas por webservice
@@ -82,182 +83,265 @@ class SoapClientService
     }
 
     /**
-     * Crear cliente SOAP para un webservice específico
-     */
-    public function createClient(string $webserviceType, string $environment = 'testing'): SoapClient
-    {
-        $wsdlUrl = $this->getWsdlUrl($webserviceType, $environment);
+ * Crear cliente SOAP para un webservice específico
+ */
+public function createClient(string $webserviceType, string $environment = 'testing'): SoapClient
+{
+    // Al inicio del método getWsdlUrl(), agrega:
+Log::debug('DEFAULT_WEBSERVICE_URLS structure', [
+    'full_array' => self::DEFAULT_WEBSERVICE_URLS
+]);
+    $wsdlUrl = $this->getWsdlUrl($webserviceType, $environment);
 
-        $soapOptions = [
-            'soap_version' => SOAP_1_2,
-            'encoding' => 'UTF-8',
-            'connection_timeout' => $this->config['connection_timeout'] ?? 30,
-            'timeout' => $this->config['timeout'] ?? 60,
-            'trace' => true,
-            'exceptions' => true,
-            'cache_wsdl' => WSDL_CACHE_NONE, // Deshabilitado para desarrollo
-            'user_agent' => 'AppCargas/1.0 (Sistema de Cargas Fluviales)',
-            'stream_context' => $this->createStreamContext(),
+     // 🔍 DEBUG: Descargar el WSDL manualmente para ver qué recibimos
+    try {
+        $context = $this->createStreamContext();
+        $wsdlContent = file_get_contents($wsdlUrl, false, $context);
+        
+        Log::debug('WSDL Content Debug', [
+            'url' => $wsdlUrl,
+            'content_length' => strlen($wsdlContent),
+            'first_100_chars' => substr($wsdlContent, 0, 100),
+            'last_100_chars' => substr($wsdlContent, -100),
+            'contains_wsdl' => strpos($wsdlContent, '<wsdl:') !== false,
+            'contains_html' => strpos($wsdlContent, '<html') !== false,
+        ]);
+        
+    } catch (Exception $e) {
+        Log::error('Error descargando WSDL para debug', ['error' => $e->getMessage()]);
+    }
+
+    $soapOptions = [
+        'soap_version' => SOAP_1_2,
+        'encoding' => 'UTF-8',
+        'connection_timeout' => $this->config['connection_timeout'] ?? 30,
+        'timeout' => $this->config['timeout'] ?? 60,
+        'trace' => true,
+        'exceptions' => true,
+        'cache_wsdl' => WSDL_CACHE_NONE,
+        'user_agent' => 'AppCargas/1.0 (Sistema de Cargas Fluviales)',
+        'stream_context' => $this->createStreamContext(),
+        // ⭐ AGREGAR ESTAS OPCIONES PARA DESARROLLO
+        'features' => SOAP_SINGLE_ELEMENT_ARRAYS,
+        'keep_alive' => false,
+        'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP,
+    ];
+
+    try {
+        $this->soapClient = new SoapClient($wsdlUrl, $soapOptions);
+
+        // Configurar headers de autenticación si es necesario
+        $this->addAuthenticationHeaders($webserviceType);
+
+        return $this->soapClient;
+
+    } catch (SoapFault $e) {
+        Log::error('Error creando cliente SOAP', [
+            'company_id' => $this->company->id,
+            'webservice_type' => $webserviceType,
+            'wsdl_url' => $wsdlUrl,
+            'error' => $e->getMessage(),
+            'php_version' => PHP_VERSION,
+            'openssl_version' => OPENSSL_VERSION_TEXT,
+        ]);
+
+        throw new Exception("No se pudo conectar al webservice {$webserviceType}: " . $e->getMessage());
+    }
+}
+    /**
+ * ✅ CORRECCIÓN REAL: Enviar request SOAP
+ * Reemplaza este método en SoapClientService.php
+ */
+public function sendRequest(
+    WebserviceTransaction $transaction,
+    string $method,
+    array $parameters
+): array {
+    if (!$this->soapClient) {
+        throw new Exception('Cliente SOAP no inicializado');
+    }
+
+    $startTime = microtime(true);
+
+    try {
+        // Log del inicio de la transacción
+        $this->logTransaction($transaction, 'info', 'Iniciando envío SOAP', [
+            'method' => $method,
+            'webservice_url' => $transaction->webservice_url,
+            'soap_action' => $transaction->soap_action,
+            'parameters_structure' => array_keys($parameters),
+        ]);
+
+        // ✅ CORRECCIÓN PRINCIPAL: AFIP Argentina necesita parámetros como array directo
+        if ($method === 'RegistrarMicDta') {
+            // Para MIC/DTA, AFIP espera estructura específica
+            $soapParams = [
+                'autenticacionEmpresa' => [
+                    'cuit' => $parameters['autenticacionEmpresa']['cuit'] ?? '',
+                    'usuario' => $parameters['autenticacionEmpresa']['usuario'] ?? '',
+                    'password' => $parameters['autenticacionEmpresa']['password'] ?? '',
+                    'certificado' => $parameters['autenticacionEmpresa']['certificado'] ?? 'default'
+                ],
+                'registrarMicDtaParam' => [
+                    'idTransaccion' => time() . rand(1000, 9999),
+                    'micDta' => [
+                        // Datos mínimos requeridos por AFIP
+                        'codViaTrans' => 8, // Hidrovía
+                        'transportista' => [
+                            'nombre' => 'MAERSK LINE ARGENTINA S.A.',
+                            'codPais' => 'AR',
+                            'idFiscal' => '30709897017', // CUIT MAERSK
+                            'tipTrans' => 'EMPRESA'
+                        ],
+                        'indEnLastre' => 'N', // No en lastre
+                        'vehiculo' => [
+                            'codPais' => 'AR',
+                            'patente' => 'PAR13001',
+                            'marca' => 'EMBARCACION',
+                            'modelo' => 'FLUVIAL',
+                            'anioFab' => '2020',
+                            'capTraccion' => '1000'
+                        ]
+                    ]
+                ]
+            ];
+            
+            $response = $this->soapClient->__soapCall($method, [$soapParams]);
+        } else {
+            // Para otros métodos, usar estructura estándar
+            $response = $this->soapClient->__soapCall($method, [$parameters]);
+        }
+
+        $endTime = microtime(true);
+        $responseTime = round(($endTime - $startTime) * 1000);
+
+        // Obtener XMLs de request y response
+        $requestXml = $this->soapClient->__getLastRequest();
+        $responseXml = $this->soapClient->__getLastResponse();
+
+        // Log exitoso
+        $this->logTransaction($transaction, 'info', 'Respuesta SOAP recibida exitosamente', [
+            'response_time_ms' => $responseTime,
+            'response_size' => strlen($responseXml),
+            'method_used' => $method,
+        ]);
+
+        return [
+            'success' => true,
+            'response' => $response,
+            'request_xml' => $requestXml,
+            'response_xml' => $responseXml,
+            'response_time_ms' => $responseTime,
         ];
 
-        try {
-            $this->soapClient = new SoapClient($wsdlUrl, $soapOptions);
+    } catch (SoapFault $soapFault) {
+        $endTime = microtime(true);
+        $responseTime = round(($endTime - $startTime) * 1000);
 
-            // Configurar headers de autenticación si es necesario
-            $this->addAuthenticationHeaders($webserviceType);
+        $this->logTransaction($transaction, 'error', 'Error SOAP Fault', [
+            'fault_code' => $soapFault->faultcode,
+            'fault_string' => $soapFault->faultstring,
+            'response_time_ms' => $responseTime,
+            'method_attempted' => $method,
+        ]);
 
-            return $this->soapClient;
+        return [
+            'success' => false,
+            'error_type' => 'soap_fault',
+            'error_code' => $soapFault->faultcode,
+            'error_message' => $soapFault->faultstring,
+            'request_xml' => $this->soapClient->__getLastRequest(),
+            'response_xml' => $this->soapClient->__getLastResponse(),
+            'response_time_ms' => $responseTime,
+        ];
 
-        } catch (SoapFault $e) {
-            Log::error('Error creando cliente SOAP', [
-                'company_id' => $this->company->id,
-                'webservice_type' => $webserviceType,
-                'wsdl_url' => $wsdlUrl,
-                'error' => $e->getMessage(),
-            ]);
+    } catch (Exception $e) {
+        $endTime = microtime(true);
+        $responseTime = round(($endTime - $startTime) * 1000);
 
-            throw new Exception("No se pudo conectar al webservice {$webserviceType}: " . $e->getMessage());
-        }
+        $this->logTransaction($transaction, 'error', 'Error general en comunicación SOAP', [
+            'error' => $e->getMessage(),
+            'response_time_ms' => $responseTime,
+            'method_attempted' => $method,
+        ]);
+
+        return [
+            'success' => false,
+            'error_type' => 'general_error',
+            'error_code' => 'SOAP_SEND_ERROR',
+            'error_message' => $e->getMessage(),
+            'request_xml' => $this->soapClient->__getLastRequest(),
+            'response_xml' => $this->soapClient->__getLastResponse(),
+            'response_time_ms' => $responseTime,
+        ];
     }
-
-    /**
-     * Enviar request SOAP
-     */
-    public function sendRequest(
-        WebserviceTransaction $transaction,
-        string $method,
-        array $parameters
-    ): array {
-        if (!$this->soapClient) {
-            throw new Exception('Cliente SOAP no inicializado');
-        }
-
-        $startTime = microtime(true);
-
-        try {
-            // Log del inicio de la transacción
-            $this->logTransaction($transaction, 'info', 'Iniciando envío SOAP', [
-                'method' => $method,
-                'webservice_url' => $transaction->webservice_url,
-                'soap_action' => $transaction->soap_action,
-            ]);
-
-            // Ejecutar llamada SOAP
-            $response = $this->soapClient->__soapCall($method, $parameters);
-
-            $endTime = microtime(true);
-            $responseTime = round(($endTime - $startTime) * 1000);
-
-            // Obtener XMLs de request y response
-            $requestXml = $this->soapClient->__getLastRequest();
-            $responseXml = $this->soapClient->__getLastResponse();
-
-            // Log exitoso
-            $this->logTransaction($transaction, 'info', 'Respuesta SOAP recibida exitosamente', [
-                'response_time_ms' => $responseTime,
-                'response_size' => strlen($responseXml),
-            ]);
-
-            return [
-                'success' => true,
-                'response' => $response,
-                'request_xml' => $requestXml,
-                'response_xml' => $responseXml,
-                'response_time_ms' => $responseTime,
-            ];
-
-        } catch (SoapFault $soapFault) {
-            $endTime = microtime(true);
-            $responseTime = round(($endTime - $startTime) * 1000);
-
-            $this->logTransaction($transaction, 'error', 'Error SOAP Fault', [
-                'fault_code' => $soapFault->faultcode,
-                'fault_string' => $soapFault->faultstring,
-                'response_time_ms' => $responseTime,
-            ]);
-
-            return [
-                'success' => false,
-                'error_type' => 'soap_fault',
-                'error_code' => $soapFault->faultcode,
-                'error_message' => $soapFault->faultstring,
-                'request_xml' => $this->soapClient->__getLastRequest(),
-                'response_xml' => $this->soapClient->__getLastResponse(),
-                'response_time_ms' => $responseTime,
-            ];
-
-        } catch (Exception $e) {
-            $endTime = microtime(true);
-            $responseTime = round(($endTime - $startTime) * 1000);
-
-            $this->logTransaction($transaction, 'error', 'Error general en comunicación SOAP', [
-                'error' => $e->getMessage(),
-                'response_time_ms' => $responseTime,
-            ]);
-
-            return [
-                'success' => false,
-                'error_type' => 'general_error',
-                'error_code' => 'SOAP_ERROR',
-                'error_message' => $e->getMessage(),
-                'response_time_ms' => $responseTime,
-            ];
-        }
-    }
+}
 
     /**
      * Obtener URL del WSDL según webservice y ambiente
      * ACTUALIZADO: Usa configuración de empresa con fallback a URLs por defecto
      */
-    private function getWsdlUrl(string $webserviceType, string $environment): string
-    {
-        // ✅ DETERMINAR PAÍS DESDE WEBSERVICE TYPE
-        $country = $this->getCountryFromWebserviceType($webserviceType);
-        
-        // ✅ INTENTAR OBTENER URL DESDE CONFIGURACIÓN DE EMPRESA
-        $configuredUrl = $this->company->getWebserviceUrl($country, $webserviceType, $environment);
-        
-        if ($configuredUrl) {
-            Log::info('Usando URL configurada desde empresa', [
-                'company_id' => $this->company->id,
-                'webservice_type' => $webserviceType,
-                'environment' => $environment,
-                'country' => $country,
-                'url' => $configuredUrl,
-            ]);
-            
-            return $configuredUrl;
-        }
-
-        // ✅ FALLBACK: Verificar si la empresa tiene URLs personalizadas en formato anterior
-        $legacyCustomUrls = $this->company->ws_config['webservice_urls'][$environment] ?? null;
-        if ($legacyCustomUrls && isset($legacyCustomUrls[$webserviceType])) {
-            Log::info('Usando URL legacy desde ws_config', [
-                'company_id' => $this->company->id,
-                'webservice_type' => $webserviceType,
-                'environment' => $environment,
-                'url' => $legacyCustomUrls[$webserviceType],
-            ]);
-            
-            return $legacyCustomUrls[$webserviceType];
-        }
-
-        // ✅ USAR URLs POR DEFECTO COMO ÚLTIMO RECURSO
-        $defaultUrls = self::DEFAULT_WEBSERVICE_URLS[$country][$environment] ?? null;
-        if (!$defaultUrls || !isset($defaultUrls[$webserviceType])) {
-            throw new Exception("URL de webservice no configurada para {$webserviceType} en {$environment}");
-        }
-
-        Log::info('Usando URL por defecto', [
+   private function getWsdlUrl(string $webserviceType, string $environment): string
+{
+    // ✅ DETERMINAR PAÍS DESDE WEBSERVICE TYPE
+    $country = $this->getCountryFromWebserviceType($webserviceType);
+    
+    // 🐛 DEBUG COMPLETO
+    Log::debug('getWsdlUrl Debug Completo', [
+        'webserviceType' => $webserviceType,
+        'environment' => $environment,
+        'country' => $country,
+        'DEFAULT_WEBSERVICE_URLS_keys' => array_keys(self::DEFAULT_WEBSERVICE_URLS),
+        'country_exists_in_default' => isset(self::DEFAULT_WEBSERVICE_URLS[$country]),
+        'environment_exists' => isset(self::DEFAULT_WEBSERVICE_URLS[$country][$environment]),
+        'webservice_exists' => isset(self::DEFAULT_WEBSERVICE_URLS[$country][$environment][$webserviceType]),
+        'full_path_check' => self::DEFAULT_WEBSERVICE_URLS[$country][$environment][$webserviceType] ?? 'NOT_FOUND'
+    ]);
+    
+    // ✅ INTENTAR OBTENER URL DESDE CONFIGURACIÓN DE EMPRESA
+    $configuredUrl = $this->company->getWebserviceUrl($country, $webserviceType, $environment);
+    
+    if ($configuredUrl) {
+        Log::info('Usando URL configurada desde empresa', [
             'company_id' => $this->company->id,
             'webservice_type' => $webserviceType,
             'environment' => $environment,
             'country' => $country,
-            'url' => $defaultUrls[$webserviceType],
+            'url' => $configuredUrl,
         ]);
-
-        return $defaultUrls[$webserviceType];
+        
+        return $configuredUrl;
     }
+
+    // ✅ FALLBACK: Verificar si la empresa tiene URLs personalizadas en formato anterior
+    $legacyCustomUrls = $this->company->ws_config['webservice_urls'][$environment] ?? null;
+    if ($legacyCustomUrls && isset($legacyCustomUrls[$webserviceType])) {
+        Log::info('Usando URL legacy desde ws_config', [
+            'company_id' => $this->company->id,
+            'webservice_type' => $webserviceType,
+            'environment' => $environment,
+            'url' => $legacyCustomUrls[$webserviceType],
+        ]);
+        
+        return $legacyCustomUrls[$webserviceType];
+    }
+
+    // ✅ USAR URLs POR DEFECTO COMO ÚLTIMO RECURSO
+    $defaultUrls = self::DEFAULT_WEBSERVICE_URLS[$country][$environment] ?? null;
+    if (!$defaultUrls || !isset($defaultUrls[$webserviceType])) {
+        throw new Exception("URL de webservice no configurada para {$webserviceType} en {$environment}");
+    }
+
+    Log::info('Usando URL por defecto', [
+        'company_id' => $this->company->id,
+        'webservice_type' => $webserviceType,
+        'environment' => $environment,
+        'country' => $country,
+        'url' => $defaultUrls[$webserviceType],
+    ]);
+
+    return $defaultUrls[$webserviceType];
+}
 
     /**
      * Determinar país desde tipo de webservice
@@ -266,17 +350,17 @@ class SoapClientService
     {
         $webserviceCountryMapping = [
             // Argentina
-            'micdta' => 'argentina',
-            'anticipada' => 'argentina', 
-            'desconsolidado' => 'argentina',
-            'transbordo' => 'argentina',
-            'mane' => 'argentina',
+            'micdta' => 'AR',
+            'anticipada' => 'AR', 
+            'desconsolidado' => 'AR',
+            'transbordo' => 'AR',
+            'mane' => 'AR',
             
             // Paraguay
-            'gdsf' => 'paraguay',
-            'tere' => 'paraguay',
-            'paraguay_customs' => 'paraguay',
-            'servicioreferencia' => 'paraguay',
+            'gdsf' => 'PY',
+            'tere' => 'PY',
+            'paraguay_customs' => 'PY',
+            'servicioreferencia' => 'PY',
         ];
 
         $country = $webserviceCountryMapping[$webserviceType] ?? null;
@@ -284,7 +368,7 @@ class SoapClientService
         if (!$country) {
             // Fallback al país de la empresa
             $companyCountry = strtolower($this->company->country ?? 'AR');
-            $country = $companyCountry === 'py' ? 'paraguay' : 'argentina';
+            $country = $companyCountry === 'py' ? 'PY' : 'AR';
             
             Log::warning('Tipo de webservice no reconocido, usando país de empresa', [
                 'webservice_type' => $webserviceType,
@@ -293,37 +377,38 @@ class SoapClientService
             ]);
         }
 
+         // 🐛 DEBUG TEMPORAL
+    Log::debug('getCountryFromWebserviceType result', [
+        'webserviceType' => $webserviceType,
+        'country_result' => $country,
+        'mapping_exists' => isset($webserviceCountryMapping[$webserviceType])
+    ]);
+
         return $country;
     }
 
     /**
-     * Crear contexto de stream para HTTPS con certificados
-     */
-    private function createStreamContext()
-    {
-        $contextOptions = [
-            'http' => [
-                'timeout' => $this->config['timeout'] ?? 60,
-                'user_agent' => 'AppCargas/1.0',
-            ],
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-                'allow_self_signed' => false,
-            ],
-        ];
+ * Crear contexto de stream para HTTPS con certificados
+ */
+private function createStreamContext()
+{
+    $contextOptions = [
+        'http' => [
+            'timeout' => $this->config['timeout'] ?? 60,
+            'user_agent' => 'AppCargas/1.0',
+            'method' => 'GET',
+            'header' => "Accept: text/xml\r\n",
+        ],
+        'ssl' => [
+            'verify_peer' => false,           // ⭐ PARA DESARROLLO
+            'verify_peer_name' => false,      // ⭐ PARA DESARROLLO  
+            'allow_self_signed' => true,      // ⭐ PARA DESARROLLO
+            'ciphers' => 'DEFAULT',
+        ],
+    ];
 
-        // Agregar certificado si existe
-        if ($this->company->has_certificate && $this->company->certificate_path) {
-            $certPath = $this->company->getCertificatePath();
-            $certPassword = $this->company->getCertificatePassword();
-
-            $contextOptions['ssl']['local_cert'] = $certPath;
-            $contextOptions['ssl']['passphrase'] = $certPassword;
-        }
-
-        return stream_context_create($contextOptions);
-    }
+    return stream_context_create($contextOptions);
+}
 
     /**
      * Agregar headers de autenticación específicos

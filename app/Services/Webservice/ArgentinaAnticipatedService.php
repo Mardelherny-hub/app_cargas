@@ -159,42 +159,42 @@ class ArgentinaAnticipatedService
                 'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
             ]);
 
-            if ($shouldBypass || $this->config['environment'] === 'testing') {
-                if ($isTestingConfig || $shouldBypass) {
+            //if ($shouldBypass || $this->config['environment'] === 'testing') {
+            //    if ($isTestingConfig || $shouldBypass) {
                     
-                    $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Anticipada', [
-                        'transaction_id' => $transaction->id,
-                        'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
-                        'cuit_used' => $argentinaData['cuit'] ?? 'testing-mode',
-                    ]);
+            //        $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Anticipada', [
+            //            'transaction_id' => $transaction->id,
+            //            'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+            //            'cuit_used' => $argentinaData['cuit'] ?? 'testing-mode',
+            //        ]);
 
                     // Generar respuesta simulada exitosa
-                    $bypassResponse = $this->generateBypassResponse($voyage, $transaction);
+            //        $bypassResponse = $this->generateBypassResponse($voyage, $transaction);
 
                     // Actualizar transacción como exitosa
-                    $transaction->update([
-                        'status' => 'success',
-                        'voyage_reference' => $bypassResponse['voyage_reference'],
-                        'response_data' => $bypassResponse['response_data'],
-                        'completed_at' => now(),
-                    ]);
+            //        $transaction->update([
+            //            'status' => 'success',
+            //            'voyage_reference' => $bypassResponse['voyage_reference'],
+            //            'response_data' => $bypassResponse['response_data'],
+            //            'completed_at' => now(),
+            //        ]);
 
-                    $result['success'] = true;
-                    $result['voyage_reference'] = $bypassResponse['voyage_reference'];
-                    $result['response_data'] = $bypassResponse['response_data'];
-                    $result['warnings'][] = 'Respuesta simulada - Bypass activado para testing';
+            //        $result['success'] = true;
+            //        $result['voyage_reference'] = $bypassResponse['voyage_reference'];
+            //        $result['response_data'] = $bypassResponse['response_data'];
+            //        $result['warnings'][] = 'Respuesta simulada - Bypass activado para testing';
 
-                    DB::commit();
+            //        DB::commit();
 
-                    $this->logOperation('info', 'Bypass completado exitosamente', [
-                        'transaction_id' => $transaction->id,
-                        'voyage_reference' => $bypassResponse['voyage_reference'],
-                        'bypass_reason' => $shouldBypass ? 'Empresarial' : 'Testing config',
-                    ]);
+            //        $this->logOperation('info', 'Bypass completado exitosamente', [
+            //            'transaction_id' => $transaction->id,
+             //           'voyage_reference' => $bypassResponse['voyage_reference'],
+            //            'bypass_reason' => $shouldBypass ? 'Empresarial' : 'Testing config',
+            //        ]);
 
-                    return $result;
-                }
-            }
+            //        return $result;
+            //    }
+            //}
 
             // 5. Preparar cliente SOAP y enviar
             $soapClient = $this->prepareSoapClient();

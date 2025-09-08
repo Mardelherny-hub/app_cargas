@@ -245,6 +245,7 @@ class CompanyController extends Controller
                 'ws_active' => $request->boolean('ws_active', false),
                 'active' => $request->boolean('active', true),
                 'created_date' => now(),
+                'ws_config' => $this->generateWebserviceConfig($request),
             ]);
 
             return redirect()->route('admin.companies.index')
@@ -287,6 +288,28 @@ class CompanyController extends Controller
         $config['features'] = array_unique($config['features']);
 
         return $config;
+    }
+
+    private function generateWebserviceConfig(Request $request): array
+    {
+        return [
+            'argentina' => [
+                'cuit' => $request->country === 'AR' ? $request->tax_id : null,
+                'company_name' => $request->legal_name,
+                'domicilio_fiscal' => $request->address ?? 'No especificado',
+                'afip_enabled' => true,
+                'bypass_testing' => false,
+                'webservices' => in_array('Cargas', $request->company_roles ?? []) ? ['anticipada', 'micdta'] : [],
+            ],
+            'paraguay' => [
+                'ruc' => $request->country === 'PY' ? $request->tax_id : null,
+                'company_name' => $request->legal_name,
+                'domicilio_fiscal' => $request->address ?? 'No especificado',
+                'dna_enabled' => true,
+                'bypass_testing' => false,
+                'webservices' => in_array('Cargas', $request->company_roles ?? []) ? ['manifiestos', 'consultas'] : [],
+            ]
+        ];
     }
 
     /**

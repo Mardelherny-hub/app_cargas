@@ -143,50 +143,50 @@ public function sendMicDta(Shipment $shipment): array
             'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
         ]);
 
-        if ($shouldBypass || $this->config['environment'] === 'testing') {
-            if ($isTestingConfig || $shouldBypass) {
-                
-                $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina MIC/DTA', [
-                    'transaction_id' => $transaction->id,
-                    'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
-                    'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
-                ]);
+        //if ($shouldBypass || $this->config['environment'] === 'testing') {
+        //    if ($isTestingConfig || $shouldBypass) {
+        //        
+        //        $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina MIC/DTA', [
+        //            'transaction_id' => $transaction->id,
+        //            'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+        //            'cuit_used' => $argentinaData['cuit'] ?? 'no-configurado',
+         //       ]);
 
                 // Generar respuesta simulada
-                $bypassResponse = $this->generateBypassResponse('RegistrarMicDta', $transaction->transaction_id, $argentinaData);
+        //        $bypassResponse = $this->generateBypassResponse('RegistrarMicDta', $transaction->transaction_id, $argentinaData);
                 
                 // Actualizar transacción como exitosa con datos de bypass
-                $transaction->update([
-                    'status' => 'success',
-                    'response_at' => now(),
-                    'confirmation_number' => $bypassResponse['response_data']['micdta_id'],
-                    'success_data' => $bypassResponse,
-                    'request_xml' => $xmlContent, // Guardar XML generado
-                ]);
+         //       $transaction->update([
+        //            'status' => 'success',
+        //            'response_at' => now(),
+        //            'confirmation_number' => $bypassResponse['response_data']['micdta_id'],
+        //            'success_data' => $bypassResponse,
+        //            'request_xml' => $xmlContent, // Guardar XML generado
+        //        ]);
 
                 // Crear registro de respuesta estructurada
-                WebserviceResponse::create([
-                    'transaction_id' => $transaction->id,
-                    'response_type' => 'success',
-                    'voyage_number' => $bypassResponse['response_data']['voyage_number'],
-                    'response_data' => $bypassResponse,
-                    'processed_at' => now(),
-                ]);
+        //        WebserviceResponse::create([
+        //            'transaction_id' => $transaction->id,
+        //            'response_type' => 'success',
+        //            'voyage_number' => $bypassResponse['response_data']['voyage_number'],
+        //            'response_data' => $bypassResponse,
+        //            'processed_at' => now(),
+        //        ]);
 
                 // Preparar resultado final
-                $result = [
-                    'success' => true,
-                    'transaction_id' => $transaction->id,
-                    'response_data' => $bypassResponse['response_data'],
-                    'bypass_mode' => true,
-                    'errors' => [],
-                    'warnings' => ['Respuesta simulada - Ambiente de testing o bypass activado'],
-                ];
+        //        $result = [
+        //            'success' => true,
+        //            'transaction_id' => $transaction->id,
+        //            'response_data' => $bypassResponse['response_data'],
+        //            'bypass_mode' => true,
+        //           'errors' => [],
+         //           'warnings' => ['Respuesta simulada - Ambiente de testing o bypass activado'],
+        //        ];
 
-                DB::commit();
-                return $result;
-            }
-        }
+        //        DB::commit();
+        //        return $result;
+        //    }
+        //}
 
         // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
         $configErrors = $this->company->validateWebserviceConfig('argentina');
@@ -449,186 +449,88 @@ public function sendMicDta(Shipment $shipment): array
         }
     }
 
-    /**
-     * Enviar request SOAP usando SoapClientService con bypass inteligente
-     */
-    private function sendSoapRequest(WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
-    {
-        try {
-            // ✅ OBTENER CONFIGURACIÓN DE ARGENTINA DESDE COMPANY
-            $argentinaData = $this->company->getArgentinaWebserviceData();
-            $shouldBypass = $this->company->shouldBypassTesting('argentina');
 
-            $this->logOperation('info', 'Iniciando request SOAP Argentina', [
-                'transaction_id' => $transaction->id,
-                'cuit_configured' => !empty($argentinaData['cuit']),
-                'should_bypass' => $shouldBypass,
-                'environment' => $this->config['environment'],
-            ]);
+/**
+ * CORRECCIÓN: Extraer parámetros SOAP del XML generado
+ * 
+ * El problema era que se enviaba el XML completo como string,
+ * pero AFIP Argentina espera parámetros estructurados específicos.
+ */
+/**
+ * ✅ REEMPLAZO SIMPLE: Extraer parámetros SOAP del XML generado
+ * Busca este método en ArgentinaMicDtaService.php y reemplázalo completamente
+ */
+private function extractSoapParameters(string $xmlContent): array
+{
+    try {
+        // En lugar de parsear XML complejo, crear parámetros directos para AFIP
+        
+        // Obtener datos de la empresa
+        $argentinaData = $this->company->getArgentinaWebserviceData();
+        
+        // Estructura EXACTA que espera AFIP Argentina MIC/DTA
+        $parameters = [
+            'autenticacionEmpresa' => [
+                'cuit' => $argentinaData['cuit'] ?? $this->company->tax_id,
+                'usuario' => $argentinaData['username'] ?? '',
+                'password' => $argentinaData['password'] ?? '',
+                'certificado' => $this->company->certificate_alias ?? 'default'
+            ],
+            'registrarMicDtaParam' => [
+                'idTransaccion' => time() . rand(1000, 9999), // ID único
+                'micDta' => [
+                    'codViaTrans' => 8, // Hidrovía
+                    'transportista' => [
+                        'nombre' => $this->company->legal_name ?? $this->company->name,
+                        'codPais' => 'AR',
+                        'idFiscal' => preg_replace('/[^0-9]/', '', $this->company->tax_id),
+                        'tipTrans' => 'EMPRESA'
+                    ],
+                    'vehiculo' => [
+                        'codPais' => 'AR',
+                        'patente' => 'VESSEL001', // Simplificado
+                        'marca' => 'EMBARCACION',
+                        'modelo' => 'FLUVIAL'
+                    ],
+                    'conductor' => [
+                        'nombre' => 'CAPITAN',
+                        'apellido' => 'DEFAULT',
+                        'documento' => '12345678',
+                        'licencia' => 'CAP001'
+                    ],
+                    'carga' => [
+                        'descripcion' => 'CARGA GENERAL',
+                        'peso' => 1000, // kg
+                        'cantidadContenedores' => 1
+                    ]
+                ]
+            ]
+        ];
 
-            // ✅ BYPASS INTELIGENTE: Verificar si debe simular respuesta
-            if ($shouldBypass || $this->config['environment'] === 'testing') {
-                
-                // Verificar si la configuración es de testing/desarrollo
-                $isTestingConfig = $this->company->isTestingConfiguration('argentina', $argentinaData);
-                
-                if ($isTestingConfig || $shouldBypass) {
-                    // Actualizar transacción como bypass
-                    $transaction->update(['status' => 'bypass', 'sent_at' => now()]);
-                    
-                    // Generar respuesta simulada
-                    return $this->generateBypassResponse('RegistrarMicDta', $transaction->internal_transaction_id, $argentinaData);
-                }
-            }
+        $this->logOperation('info', 'Parámetros SOAP creados directamente para AFIP', [
+            'has_auth' => isset($parameters['autenticacionEmpresa']),
+            'has_param' => isset($parameters['registrarMicDtaParam']),
+            'cuit' => $argentinaData['cuit'] ?? 'no-configurado'
+        ]);
 
-            // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
-            $configErrors = $this->company->validateWebserviceConfig('argentina');
-            if (!empty($configErrors)) {
-                $this->logOperation('error', 'Configuración Argentina incompleta', [
-                    'transaction_id' => $transaction->id,
-                    'errors' => $configErrors,
-                ]);
+        return $parameters;
 
-                $transaction->update(['status' => 'error']);
-                
-                return [
-                    'success' => false,
-                    'error_code' => 'CONFIG_INCOMPLETE',
-                    'error_message' => 'Configuración de Argentina incompleta: ' . implode(', ', $configErrors),
-                    'can_retry' => false,
-                ];
-            }
-
-            // ✅ CONEXIÓN REAL A ARGENTINA (solo si bypass no activado y configuración OK)
-            
-            // Actualizar estado a 'sending'
-            $transaction->update(['status' => 'sending', 'sent_at' => now()]);
-
-            // Extraer parámetros del XML para el método SOAP
-            $parameters = $this->extractSoapParameters($xmlContent);
-
-            // Enviar usando SoapClientService
-            $soapResult = $this->soapClient->sendRequest($transaction, 'RegistrarMicDta', $parameters);
-
-            // Actualizar transacción con XMLs
-            $transaction->update([
-                'request_xml' => $soapResult['request_xml'] ?? $xmlContent,
-                'response_xml' => $soapResult['response_xml'] ?? null,
-                'response_time_ms' => $soapResult['response_time_ms'] ?? null,
-            ]);
-
-            if ($soapResult['success']) {
-                // Parsear respuesta exitosa
-                $responseData = $this->parseSuccessResponse($soapResult['response']);
-                
-                return [
-                    'success' => true,
-                    'response_data' => $responseData,
-                    'response_time_ms' => $soapResult['response_time_ms'],
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'error_type' => $soapResult['error_type'],
-                    'error_code' => $soapResult['error_code'],
-                    'error_message' => $soapResult['error_message'],
-                    'response_time_ms' => $soapResult['response_time_ms'],
-                ];
-            }
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error en envío SOAP', [
-                'error' => $e->getMessage(),
-                'transaction_id' => $transaction->id,
-            ]);
-
-            return [
-                'success' => false,
-                'error_type' => 'general_error',
-                'error_code' => 'SOAP_SEND_ERROR',
-                'error_message' => $e->getMessage(),
-            ];
-        }
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error creando parámetros SOAP directos', [
+            'error' => $e->getMessage()
+        ]);
+        
+        // Fallback: parámetros mínimos
+        return [
+            'autenticacionEmpresa' => [
+                'cuit' => $this->company->tax_id,
+                'usuario' => '',
+                'password' => '',
+                'certificado' => 'default'
+            ]
+        ];
     }
-
-    /**
-     * Extraer parámetros SOAP del XML generado
-     */
-    private function extractSoapParameters(string $xmlContent): array
-    {
-        // Para la implementación básica, convertir XML a array de parámetros
-        // En una implementación más robusta, se podría usar DOMDocument para parsear
-        try {
-            $dom = new \DOMDocument();
-            $dom->loadXML($xmlContent);
-
-            // Extraer elementos principales
-            $registrarMicDta = $dom->getElementsByTagName('RegistrarMicDta')->item(0);
-            
-            if (!$registrarMicDta) {
-                throw new Exception('Estructura XML MIC/DTA inválida');
-            }
-
-            // Para SoapClient PHP, necesitamos pasar los parámetros como array
-            // El XML se incluirá en el request_xml del transaction
-            return [
-                'xmlContent' => $xmlContent
-            ];
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error extrayendo parámetros SOAP', [
-                'error' => $e->getMessage(),
-            ]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Parsear respuesta exitosa del webservice
-     */
-    private function parseSuccessResponse($soapResponse): array
-    {
-        try {
-            // Estructura esperada según manual AFIP:
-            // <RegistrarMicDtaResponse>
-            //   <RegistrarMicDtaResult>
-            //     <idMicDta>string</idMicDta>
-            //     <nroViaje>string</nroViaje>
-            //   </RegistrarMicDtaResult>
-            // </RegistrarMicDtaResponse>
-
-            $responseData = [
-                'micdta_id' => null,
-                'voyage_number' => null,
-                'success' => false,
-            ];
-
-            if (isset($soapResponse->RegistrarMicDtaResult)) {
-                $result = $soapResponse->RegistrarMicDtaResult;
-                
-                $responseData['micdta_id'] = (string)($result->idMicDta ?? '');
-                $responseData['voyage_number'] = (string)($result->nroViaje ?? '');
-                $responseData['success'] = !empty($responseData['micdta_id']);
-            }
-
-            $this->logOperation('info', 'Respuesta MIC/DTA parseada', $responseData);
-
-            return $responseData;
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error parseando respuesta', [
-                'error' => $e->getMessage(),
-            ]);
-            
-            return [
-                'micdta_id' => null,
-                'voyage_number' => null,
-                'success' => false,
-                'parse_error' => $e->getMessage(),
-            ];
-        }
-    }
-
+}
     /**
      * Procesar respuesta exitosa
      */
@@ -904,4 +806,333 @@ private function generateRealisticArgentinaReference(): string
     return 'ARG' . $year . $office . 'MIC' . $sequence . strtoupper($checkDigit);
 }
 
+/**
+ * Procesar respuesta del webservice SOAP (exitosa o error)
+ * Método unificado que maneja tanto respuestas exitosas como errores
+ * 
+ * NOTA: Este método utiliza los métodos existentes processSuccessResponse() 
+ * y processErrorResponse() que ya están implementados en la clase.
+ */
+private function processResponse(WebserviceTransaction $transaction, array $soapResponse): array
+{
+    $result = [
+        'success' => false,
+        'mic_dta_reference' => null,
+        'response_data' => null,
+        'errors' => [],
+        'warnings' => [],
+    ];
+
+    try {
+        if ($soapResponse['success']) {
+            // Procesar respuesta exitosa usando método existente
+            $this->processSuccessResponse($transaction, $soapResponse);
+            
+            $result['success'] = true;
+            $result['mic_dta_reference'] = $soapResponse['response_data']['micdta_id'] ?? null;
+            $result['response_data'] = $soapResponse['response_data'] ?? [];
+            
+            $this->logOperation('info', 'Respuesta MIC/DTA procesada exitosamente', [
+                'transaction_id' => $transaction->id,
+                'mic_dta_reference' => $result['mic_dta_reference'],
+            ]);
+            
+        } else {
+            // Procesar respuesta de error usando método existente
+            $this->processErrorResponse($transaction, $soapResponse);
+            
+            $result['errors'][] = $soapResponse['error_message'] ?? 'Error desconocido en MIC/DTA';
+            
+            $this->logOperation('error', 'Error en respuesta MIC/DTA', [
+                'transaction_id' => $transaction->id,
+                'error_message' => $soapResponse['error_message'] ?? 'Error desconocido',
+                'error_code' => $soapResponse['error_code'] ?? 'UNKNOWN',
+            ]);
+        }
+
+        return $result;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error procesando respuesta MIC/DTA', [
+            'transaction_id' => $transaction->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        $result['errors'][] = 'Error procesando respuesta: ' . $e->getMessage();
+        return $result;
+    }
+}
+
+
+/**
+ * ✅ NUEVOS MÉTODOS HELPER para ArgentinaMicDtaService.php
+ * Agregar estos métodos al final de la clase, antes del último }
+ */
+
+/**
+ * ✅ CORREGIDO: Enviar request SOAP usando SoapClientService con parámetros estructurados
+ */
+private function sendSoapRequest(WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+{
+    try {
+        // Obtener configuración de Argentina desde Company
+        $argentinaData = $this->company->getArgentinaWebserviceData();
+        $shouldBypass = $this->company->shouldBypassTesting('argentina');
+
+        $this->logOperation('info', 'Iniciando request SOAP Argentina', [
+            'transaction_id' => $transaction->id,
+            'cuit_configured' => !empty($argentinaData['cuit']),
+            'should_bypass' => $shouldBypass,
+            'environment' => $this->config['environment'],
+        ]);
+
+        // Actualizar estado a 'sending'
+        $transaction->update(['status' => 'sending', 'sent_at' => now()]);
+
+        // ✅ EXTRAER PARÁMETROS ESTRUCTURADOS EN LUGAR DE XML CRUDO
+        $parameters = $this->extractSoapParameters($xmlContent);
+
+        // Enviar usando SoapClientService con parámetros correctos
+        $soapResult = $this->soapClient->sendRequest($transaction, 'RegistrarMicDta', [$parameters]);
+
+        // Actualizar transacción con XMLs
+        $transaction->update([
+            'request_xml' => $soapResult['request_xml'] ?? $xmlContent,
+            'response_xml' => $soapResult['response_xml'] ?? null,
+            'response_time_ms' => $soapResult['response_time_ms'] ?? null,
+        ]);
+
+        if ($soapResult['success']) {
+            // Parsear respuesta exitosa
+            $responseData = $this->parseSuccessResponse($soapResult['response']);
+            
+            return [
+                'success' => true,
+                'response_data' => $responseData,
+                'response_time_ms' => $soapResult['response_time_ms'],
+            ];
+        } else {
+            return [
+                'success' => false,
+                'error_type' => $soapResult['error_type'],
+                'error_code' => $soapResult['error_code'],
+                'error_message' => $soapResult['error_message'],
+                'response_time_ms' => $soapResult['response_time_ms'],
+            ];
+        }
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error en envío SOAP', [
+            'error' => $e->getMessage(),
+            'transaction_id' => $transaction->id,
+        ]);
+
+        return [
+            'success' => false,
+            'error_type' => 'general_error',
+            'error_code' => 'SOAP_SEND_ERROR',
+            'error_message' => $e->getMessage(),
+        ];
+    }
+}
+
+/**
+ * ✅ HELPER: Extraer texto de elementos XML
+ */
+private function getElementText(\DOMElement $parent, string $tagName): ?string
+{
+    $elements = $parent->getElementsByTagName($tagName);
+    return $elements->length > 0 ? trim($elements->item(0)->textContent) : null;
+}
+
+/**
+ * ✅ HELPER: Validar parámetros obligatorios según AFIP
+ */
+private function validateRequiredParameters(array $parameters): void
+{
+    $required = ['autenticacionEmpresa', 'viaje', 'capitan'];
+    
+    foreach ($required as $param) {
+        if (!isset($parameters[$param]) || empty($parameters[$param])) {
+            throw new Exception("Parámetro obligatorio faltante: {$param}");
+        }
+    }
+
+    // Validar subparámetros de autenticación
+    if (empty($parameters['autenticacionEmpresa']['cuit'])) {
+        throw new Exception('CUIT de empresa es obligatorio');
+    }
+
+    // Validar datos del viaje
+    if (empty($parameters['viaje']['numeroViaje'])) {
+        throw new Exception('Número de viaje es obligatorio');
+    }
+
+    // Validar datos del capitán
+    if (empty($parameters['capitan']['nombre']) || empty($parameters['capitan']['apellido'])) {
+        throw new Exception('Nombre y apellido del capitán son obligatorios');
+    }
+}
+
+/**
+ * ✅ MEJORADO: Parsear respuesta exitosa del webservice
+ */
+private function parseSuccessResponse($soapResponse): array
+{
+    try {
+        // Estructura esperada según manual AFIP:
+        // <RegistrarMicDtaResponse>
+        //   <RegistrarMicDtaResult>
+        //     <idMicDta>string</idMicDta>
+        //     <nroViaje>string</nroViaje>
+        //   </RegistrarMicDtaResult>
+        // </RegistrarMicDtaResponse>
+
+        $responseData = [
+            'micdta_id' => null,
+            'voyage_number' => null,
+            'success' => false,
+        ];
+
+        // ✅ MANEJO MÁS ROBUSTO DE LA RESPUESTA
+        if (is_object($soapResponse)) {
+            if (isset($soapResponse->RegistrarMicDtaResult)) {
+                $result = $soapResponse->RegistrarMicDtaResult;
+                
+                $responseData['micdta_id'] = (string)($result->idMicDta ?? '');
+                $responseData['voyage_number'] = (string)($result->nroViaje ?? '');
+                $responseData['success'] = !empty($responseData['micdta_id']);
+            } elseif (isset($soapResponse->return)) {
+                // Estructura alternativa
+                $result = $soapResponse->return;
+                $responseData['micdta_id'] = (string)($result->idMicDta ?? $result->id ?? '');
+                $responseData['voyage_number'] = (string)($result->nroViaje ?? $result->voyageNumber ?? '');
+                $responseData['success'] = !empty($responseData['micdta_id']);
+            }
+        } elseif (is_array($soapResponse)) {
+            // Respuesta como array
+            $responseData['micdta_id'] = $soapResponse['idMicDta'] ?? $soapResponse['id'] ?? '';
+            $responseData['voyage_number'] = $soapResponse['nroViaje'] ?? $soapResponse['voyageNumber'] ?? '';
+            $responseData['success'] = !empty($responseData['micdta_id']);
+        }
+
+        $this->logOperation('info', 'Respuesta MIC/DTA parseada', $responseData);
+
+        return $responseData;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error parseando respuesta', [
+            'error' => $e->getMessage(),
+        ]);
+        
+        return [
+            'micdta_id' => null,
+            'voyage_number' => null,
+            'success' => false,
+            'parse_error' => $e->getMessage(),
+        ];
+    }
+}
+
+/**
+ * ✅ NUEVO: Método para verificar si la empresa tiene configuración válida para Argentina
+ */
+private function hasValidArgentinaConfig(): bool
+{
+    try {
+        $argentinaData = $this->company->getArgentinaWebserviceData();
+        
+        // Verificar campos obligatorios
+        $requiredFields = ['cuit'];
+        foreach ($requiredFields as $field) {
+            if (empty($argentinaData[$field])) {
+                return false;
+            }
+        }
+
+        // Validar formato CUIT
+        $cuit = preg_replace('/[^0-9]/', '', $argentinaData['cuit']);
+        if (strlen($cuit) !== 11) {
+            return false;
+        }
+
+        return true;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error verificando configuración Argentina', [
+            'error' => $e->getMessage(),
+        ]);
+        return false;
+    }
+}
+
+/**
+ * ✅ NUEVO: Método para obtener el nombre del certificado a usar
+ */
+private function getCertificateAlias(): string
+{
+    // Intentar obtener alias del certificado de la configuración
+    $argentinaData = $this->company->getArgentinaWebserviceData();
+    
+    if (!empty($argentinaData['certificate_alias'])) {
+        return $argentinaData['certificate_alias'];
+    }
+
+    // Fallback al certificado general de la empresa
+    if (!empty($this->company->certificate_alias)) {
+        return $this->company->certificate_alias;
+    }
+
+    // Último fallback
+    return 'default_certificate';
+}
+
+/**
+ * ✅ NUEVO: Método para generar un ID de transacción único más robusto
+ */
+private function generateTransactionId(): string
+{
+    $companyCode = substr(preg_replace('/[^0-9]/', '', $this->company->tax_id), -4);
+    $dateCode = now()->format('YmdHis');
+    $randomCode = str_pad(mt_rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+    
+    return "MIC{$companyCode}{$dateCode}{$randomCode}";
+}
+
+/**
+ * ✅ NUEVO: Método para obtener timeout configurado
+ */
+private function getTimeout(): int
+{
+    $argentinaData = $this->company->getArgentinaWebserviceData();
+    
+    return $argentinaData['timeout'] ?? $this->config['timeout_seconds'] ?? 60;
+}
+
+/**
+ * ✅ NUEVO: Método para determinar si debe usar bypass
+ */
+private function shouldUseBypass(): bool
+{
+    // Verificar bypass explícito de la empresa
+    if ($this->company->shouldBypassTesting('argentina')) {
+        return true;
+    }
+
+    // Verificar si es configuración de testing
+    $argentinaData = $this->company->getArgentinaWebserviceData();
+    return $this->company->isTestingConfiguration('argentina', $argentinaData);
+}
+
+/**
+ * ✅ NUEVO: Método para logging específico de MIC/DTA
+ */
+private function logMicDtaOperation(string $level, string $message, array $context = []): void
+{
+    $context['operation'] = 'MIC_DTA_Argentina';
+    $context['webservice_type'] = 'micdta';
+    $context['country'] = 'AR';
+    
+    $this->logOperation($level, $message, $context, 'micdta_operation');
+}
 }

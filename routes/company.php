@@ -560,6 +560,7 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
     Route::put('/security', [SettingsController::class, 'updateSecurity'])->name('update-security');
     Route::put('/notifications', [SettingsController::class, 'updateNotifications'])->name('update-notifications');
     Route::put('/preferences', [SettingsController::class, 'updatePreferences'])->name('update-preferences');
+        Route::put('/webservices', [SettingsController::class, 'updateWebservices'])->name('update-webservices'); 
 });
 
 // Importación de archivos KLine.DAT
@@ -568,3 +569,53 @@ Route::post('/imports/kline', [ImporterController::class, 'import'])->name('comp
 
 
 
+// Diagnóstico de webservices (para debugging de conectividad)
+Route::get('/diagnostic/webservices', function() {
+    $company = auth()->user()->getUserCompany();
+    if (!$company) {
+        return response()->json(['error' => 'No company found for user']);
+    }
+    
+    try {
+        $testingService = new \App\Services\Webservice\TestingCustomsService($company);
+        
+        // Crear un voyage dummy para el test (requerido por runCompleteTest)
+        $voyage = $company->voyages()->first();
+        if (!$voyage) {
+            return response()->json([
+                'error' => 'No voyage found for testing',
+                'message' => 'Se necesita al menos un voyage para realizar el test de conectividad'
+            ]);
+        }
+        
+        // Test completo de conectividad
+        $result = $testingService->runCompleteTest($voyage, [
+            'environment' => 'testing',
+            'webservice_type' => 'micdta'
+        ]);
+        
+        return response()->json([
+            'timestamp' => now()->toISOString(),
+            'server_info' => [
+                'environment' => app()->environment(),
+                'php_version' => PHP_VERSION,
+                'laravel_version' => app()->version(),
+            ],
+            'connectivity_test' => $result['connectivity_test'] ?? $result,
+            'company_config' => [
+                'ws_config' => $company->ws_config,
+                'ws_environment' => $company->ws_environment,
+                'certificate_configured' => !empty($company->certificate_path),
+            ]
+        ], 200, [], JSON_PRETTY_PRINT);
+        
+    } catch (\Exception $e) {
+        
+        return response()->json([
+            'error' => 'Test failed',
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+   
+})->name('diagnostic.webservices');

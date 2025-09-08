@@ -40,7 +40,7 @@ class UpdateClientRequest extends FormRequest
             'tax_id' => [
                 'required',
                 'string',
-                'max:11',
+                'max:13',
                 'unique:clients,tax_id,' . $clientId . ',id,country_id,' . $this->country_id
             ],
             'country_id' => 'required|exists:countries,id',

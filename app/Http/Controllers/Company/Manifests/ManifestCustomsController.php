@@ -274,6 +274,7 @@ class ManifestCustomsController extends Controller
                 ]);
                 
                 // Enviar
+                Log::info('🔥 ANTES DE LLAMAR sendToWebservice');
                 $service = $this->getWebserviceByType($request->webservice_type, $voyage);
                 $response = $service->send($voyage, [
                     'transaction_id' => $transaction->transaction_id,
@@ -932,6 +933,7 @@ class ManifestCustomsController extends Controller
      */
     public function send(Request $request, $voyageId)
     {
+        
         // ✅ LOG DE DEBUG TEMPORAL
         Log::info('🔥 CONTROLLER SEND INICIADO', [
             'voyage_id' => $voyageId,
@@ -948,12 +950,22 @@ class ManifestCustomsController extends Controller
             'priority' => 'nullable|in:normal,high,urgent',
         ]);
 
+        Log::info('🔥 VALIDACIÓN PASADA');
+
         try {
+            Log::info('🔥 VALIDACIÓN PASADA');
             // ✅ NUEVO: Determinar país del webservice específico
             $country = $this->getCountryFromWebserviceType($request->webservice_type);
+            Log::info('🔥 PAÍS DETERMINADO', ['country' => $country]);
             
             // ✅ NUEVO: Verificar si puede enviar este webservice específico
             $canSend = $this->canSendSpecificWebservice($voyage, $request->webservice_type, $country);
+            Log::info('🔥 VERIFICANDO PERMISOS DE ENVÍO ESPECÍFICO', [
+                'webservice_type' => $request->webservice_type,
+                'country' => $country,
+                'can_send_result' => $canSend,
+            ]);
+            
             if (!$canSend['allowed']) {
                 return back()->with('error', 'No se puede enviar: ' . $canSend['reason']);
             }
@@ -985,7 +997,10 @@ class ManifestCustomsController extends Controller
 
             // Seleccionar servicio según país y tipo
             $service = $this->getWebserviceByType($request->webservice_type, $voyage);
-            
+            Log::info('🔥 SERVICIO CREADO', [
+                    'service_class' => get_class($service),
+                    'webservice_type' => $request->webservice_type
+                ]);
             // Enviar a aduana usando el método correcto según el tipo
             $response = $this->sendToWebservice($service, $request->webservice_type, $voyage, [
                 'transaction_id' => $transaction->transaction_id,
@@ -1154,6 +1169,14 @@ class ManifestCustomsController extends Controller
             ->where('country', $country)
             ->where('webservice_type', $webserviceType)
             ->first();
+
+            Log::info('Webservice status found', [
+                'voyage_id' => $voyage->id,
+                'webservice_type' => $webserviceType,
+                'country' => $country,
+                'status' => $webserviceStatus->status,
+                'can_send' => $webserviceStatus->canSend(),
+            ]);
 
         if ($webserviceStatus) {
             return [

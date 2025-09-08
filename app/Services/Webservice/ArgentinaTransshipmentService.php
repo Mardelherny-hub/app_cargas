@@ -183,45 +183,45 @@ class ArgentinaTransshipmentService
                 'cuit' => $argentinaData['cuit'] ?? 'no-configurado',
             ]);
 
-            if ($shouldBypass || $this->config['environment'] === 'testing') {
-                if ($isTestingConfig || $shouldBypass) {
+            //if ($shouldBypass || $this->config['environment'] === 'testing') {
+            //    if ($isTestingConfig || $shouldBypass) {
                     
-                    $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Transbordo', [
-                        'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
-                        'cuit_used' => $argentinaData['cuit'] ?? 'testing-mode',
-                    ]);
+            //        $this->logOperation('info', 'BYPASS ACTIVADO: Simulando respuesta Argentina Transbordo', [
+            //            'reason' => $shouldBypass ? 'Bypass empresarial activado' : 'Configuración de testing detectada',
+            //            'cuit_used' => $argentinaData['cuit'] ?? 'testing-mode',
+            //        ]);
 
                     // Crear transacción mínima para el bypass
-                    $transaction = $this->createBypassTransaction($voyage, $bargeData);
-                    $result['transaction_id'] = $transaction->id;
+            //        $transaction = $this->createBypassTransaction($voyage, $bargeData);
+            //        $result['transaction_id'] = $transaction->id;
 
                     // Generar respuesta simulada exitosa
-                    $bypassResponse = $this->generateBypassResponse($voyage, $transaction);
+             //       $bypassResponse = $this->generateBypassResponse($voyage, $transaction);
 
                     // Actualizar transacción como exitosa
-                    $transaction->update([
-                        'status' => 'success',
-                        'voyage_reference' => $bypassResponse['transshipment_reference'],
-                        'response_data' => $bypassResponse['response_data'],
-                        'completed_at' => now(),
-                    ]);
+            //        $transaction->update([
+            //            'status' => 'success',
+            //            'voyage_reference' => $bypassResponse['transshipment_reference'],
+            //            'response_data' => $bypassResponse['response_data'],
+            //            'completed_at' => now(),
+            //        ]);
 
-                    $result['success'] = true;
-                    $result['transshipment_reference'] = $bypassResponse['transshipment_reference'];
-                    $result['response_data'] = $bypassResponse['response_data'];
-                    $result['warnings'][] = 'Respuesta simulada - Bypass activado para testing';
+             //       $result['success'] = true;
+            //        $result['transshipment_reference'] = $bypassResponse['transshipment_reference'];
+            //        $result['response_data'] = $bypassResponse['response_data'];
+            //        $result['warnings'][] = 'Respuesta simulada - Bypass activado para testing';
 
-                    DB::commit();
+            //        DB::commit();
 
-                    $this->logOperation('info', 'Bypass completado exitosamente', [
-                        'transaction_id' => $transaction->id,
-                        'transshipment_reference' => $bypassResponse['transshipment_reference'],
-                        'bypass_reason' => $shouldBypass ? 'Empresarial' : 'Testing config',
-                    ]);
+            //        $this->logOperation('info', 'Bypass completado exitosamente', [
+            //            'transaction_id' => $transaction->id,
+            //            'transshipment_reference' => $bypassResponse['transshipment_reference'],
+            //            'bypass_reason' => $shouldBypass ? 'Empresarial' : 'Testing config',
+            //        ]);
 
-                    return $result;
-                }
-            }
+            //        return $result;
+            //    }
+            //}
 
             // 1. Validaciones integrales pre-envío (solo si no hay bypass)
             $validation = $this->validateForTransshipment($bargeData, $voyage);

@@ -41,8 +41,16 @@ class ContainerSeeder extends Seeder
         // Obtener datos de seeders existentes
         $containerTypes = ContainerType::where('active', true)->get();
         $clients = Client::where('status', 'active')->get();
-        $ports = Port::where('active', true)->get();
+        // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
+        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
+        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
 
+        $ports = Port::where('active', true)
+            ->whereIn('country_id', $countryIds)
+            ->select('id', 'name', 'code', 'city', 'country_id')
+            ->orderBy('name')
+            ->get();
         if ($containerTypes->isEmpty() || $clients->isEmpty() || $ports->isEmpty()) {
             $this->command->error('❌ Faltan datos base. Ejecute primero ContainerTypesSeeder, ClientsSeeder y BaseCatalogsSeeder.');
             return;

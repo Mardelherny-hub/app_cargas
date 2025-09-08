@@ -320,15 +320,15 @@ class ParaguayCustomsService
         ]);
 
         // ✅ BYPASS INTELIGENTE: Verificar si debe simular respuesta
-        if ($shouldBypass || $this->config['environment'] === 'testing') {
-            
-            // Verificar si la configuración es de testing/desarrollo
-            $isTestingConfig = $this->isTestingConfiguration($paraguayData);
-            
-            if ($isTestingConfig || $shouldBypass) {
-                return $this->generateBypassResponse($operation, $transactionId, $paraguayData);
-            }
-        }
+        //if ($shouldBypass || $this->config['environment'] === 'testing') {
+        //    
+        //    // Verificar si la configuración es de testing/desarrollo
+        //    $isTestingConfig = $this->isTestingConfiguration($paraguayData);
+        //    
+        //    if ($isTestingConfig || $shouldBypass) {
+        //        return $this->generateBypassResponse($operation, $transactionId, $paraguayData);
+        //    }
+        //}
 
         // ✅ VALIDAR CONFIGURACIÓN ANTES DE CONEXIÓN REAL
         $configErrors = $this->company->validateWebserviceConfig('paraguay');

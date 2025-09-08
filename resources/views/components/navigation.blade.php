@@ -46,7 +46,7 @@
                                 </svg>
                             </button>
 
-                            <div x-show="open" @click.away="open = false" x-transition
+                            <div x-show="open" @click.away="open = false" x-transition x-cloak
                                 class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-1">
                                     <a href="{{ route('admin.users.index') }}" 
@@ -81,7 +81,7 @@
                                 </svg>
                             </button>
 
-                            <div x-show="open" @click.away="open = false" x-transition 
+                            <div x-show="open" @click.away="open = false" x-transition x-cloak
                                 class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-1">
                                     <a href="{{ route('admin.container-types.index') }}" 
@@ -134,7 +134,7 @@
                                 </svg>
                             </button>
 
-                            <div x-show="open" @click.away="open = false" x-transition
+                            <div x-show="open" @click.away="open = false" x-transition x-cloak
                                 class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-1">
                                     <a href="{{ route('company.vessel-owners.index') }}"
@@ -186,7 +186,7 @@
                                 </svg>
                             </button>
 
-                            <div x-show="open" @click.away="open = false" x-transition
+                            <div x-show="open" @click.away="open = false" x-transition x-cloak
                                 class="absolute top-full left-0 mt-1 w-96 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-2">
                                     <!-- Header -->
@@ -364,7 +364,7 @@
                                 </svg>
                             </button>
 
-                            <div x-show="open" @click.away="open = false" x-transition
+                            <div x-show="open" @click.away="open = false" x-transition x-cloak
                                 class="absolute top-full left-0 mt-1 w-80 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-2">
                                     <!-- Header -->
@@ -374,28 +374,28 @@
                                     </div>
 
                                     <!-- Dashboard de Métricas -->
-<a href="{{ route('company.webservices.dashboard') }}" 
-   class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.webservices.dashboard') ? 'bg-purple-50 text-purple-700 font-medium' : '' }}">
-    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-    <div>
-        <div class="font-medium">Dashboard de Métricas</div>
-        <div class="text-xs text-gray-500">Estadísticas y gráficos</div>
-    </div>
-</a>
+                                    <a href="{{ route('company.webservices.dashboard') }}" 
+                                    class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.webservices.dashboard') ? 'bg-purple-50 text-purple-700 font-medium' : '' }}">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                            <div class="font-medium">Dashboard de Métricas</div>
+                                            <div class="text-xs text-gray-500">Estadísticas y gráficos</div>
+                                        </div>
+                                    </a>
 
-<!-- Envíos a Aduanas -->
-<a href="{{ route('company.manifests.customs.index') }}" 
-   class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.manifests.customs.*') ? 'bg-green-50 text-green-700 font-medium' : '' }}">
-    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-    </svg>
-    <div>
-        <div class="font-medium">Envíos a Aduanas</div>
-        <div class="text-xs text-gray-500">AFIP/DNA - Manifiestos</div>
-    </div>
-</a>
+                                    <!-- Envíos a Aduanas -->
+                                    <a href="{{ route('company.manifests.customs.index') }}" 
+                                    class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.manifests.customs.*') ? 'bg-green-50 text-green-700 font-medium' : '' }}">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                        </svg>
+                                        <div>
+                                            <div class="font-medium">Envíos a Aduanas</div>
+                                            <div class="text-xs text-gray-500">AFIP/DNA - Manifiestos</div>
+                                        </div>
+                                    </a>
 
                                     <!-- Dashboard Webservices -->
                                     <a href="{{ route('company.webservices.index') }}" 
