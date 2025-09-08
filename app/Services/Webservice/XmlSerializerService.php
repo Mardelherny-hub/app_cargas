@@ -921,14 +921,15 @@ class XmlSerializerService
         $cuitElement->textContent = preg_replace('/[^0-9]/', '', $this->company->tax_id);
         $autenticacion->appendChild($cuitElement);
 
-        // Tipo agente - Para TitEnvios es BODEGA
+        // Tipo agente - Para TitEnvios es BODEGA el tipo debe ser TRANSPORTISTA
+        $argentinaData = $this->company->getArgentinaWebserviceData();
+    
         $tipoAgente = $this->createElement('TipoAgente');
-        $tipoAgente->textContent = 'ATA';
+        $tipoAgente->textContent = $argentinaData['tipo_agente'] ?? 'TRSP';
         $autenticacion->appendChild($tipoAgente);
 
-        // Rol - BODEGA para RegistrarTitEnvios según manual AFIP
         $rol = $this->createElement('Rol');
-        $rol->textContent = 'BODEGA';
+        $rol->textContent = $argentinaData['rol'] ?? 'TRSP';
         $autenticacion->appendChild($rol);
 
         return $autenticacion;
@@ -969,7 +970,8 @@ class XmlSerializerService
 
         // Tipo de título
         $tipoTitulo = $this->createElement('TipoTitulo');
-        $tipoTitulo->textContent = 'CARGA_GENERAL';
+        $tipoTituloCode = $this->getTipoTituloFromShipment($shipment);
+        $tipoTitulo->textContent = $tipoTituloCode;
         $titulo->appendChild($tipoTitulo);
 
         // Información del transportista
@@ -1012,13 +1014,33 @@ class XmlSerializerService
         $resumenMercaderias = $this->createElement('ResumenMercaderias');
         $titulo->appendChild($resumenMercaderias);
 
+        // Sumar peso real de todos los bultos (bills of lading)
+        $pesoTotalCalculado = 0;
+        $cantidadBultosCalculada = 0;
+
+        if ($shipment->billsOfLading) {
+            foreach ($shipment->billsOfLading as $bill) {
+                // Peso en gramos (como aparece en PesoBulto)
+                $pesoTotalCalculado += ($bill->gross_weight_kg ?? 0) * 1000;
+                $cantidadBultosCalculada += $bill->total_packages ?? 0;
+            }
+        }
+
+        // Si no hay bills, usar datos del shipment
+        if ($pesoTotalCalculado === 0) {
+            $pesoTotalCalculado = ($shipment->cargo_weight_loaded ?? 1) * 1000;
+            $cantidadBultosCalculada = $shipment->total_packages ?? 1;
+        }
+
+        // ResumenMercaderias debe coincidir con suma de bultos
         $pesoTotalMercaderias = $this->createElement('PesoTotal');
-        $pesoTotalMercaderias->textContent = $shipment->cargo_weight_loaded * 1000; // a kg
+        $pesoTotalMercaderias->textContent = (string)($pesoTotalCalculado / 1000); // Misma unidad que PesoBulto
         $resumenMercaderias->appendChild($pesoTotalMercaderias);
 
         $cantidadBultosTotales = $this->createElement('CantidadBultos');
-        $cantidadBultosTotales->textContent = $shipment->total_packages ?? 1;
+        $cantidadBultosTotales->textContent = (string)max(1, $cantidadBultosCalculada);
         $resumenMercaderias->appendChild($cantidadBultosTotales);
+
 
         // Información de embarcación - desde relación real
         if ($shipment->vessel) {
@@ -1038,43 +1060,269 @@ class XmlSerializerService
     }
 
     /**
+     * NUEVO: Obtener TipoTitulo desde base de datos
+     */
+    private function getTipoTituloFromShipment(Shipment $shipment): string
+    {
+        // Buscar en tabla title_types o shipment_types si existe
+        // Si no existe la tabla, intentar desde configuración
+        try {
+            // Opción 1: Desde tipo de shipment
+            if ($shipment->type && Schema::hasTable('shipment_types')) {
+                $shipmentType = \DB::table('shipment_types')
+                    ->where('code', $shipment->type)
+                    ->whereNotNull('afip_title_code')
+                    ->first();
+                
+                if ($shipmentType) {
+                    return $shipmentType->afip_title_code;
+                }
+            }
+
+            // Opción 2: Desde configuración de empresa
+            $argentinaData = $this->company->getArgentinaWebserviceData();
+            if (isset($argentinaData['default_title_type'])) {
+                return $argentinaData['default_title_type'];
+            }
+
+            // Opción 3: Basado en tipo de carga del shipment
+            if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
+                $firstBill = $shipment->billsOfLading->first();
+                if ($firstBill->primaryCargoType && $firstBill->primaryCargoType->afip_title_code) {
+                    return $firstBill->primaryCargoType->afip_title_code;
+                }
+            }
+
+            // Fallback: usar código general
+            return '1'; // 1 = Carga General según AFIP
+
+        } catch (\Exception $e) {
+            Log::warning('Error obteniendo TipoTitulo desde BD', [
+                'error' => $e->getMessage(),
+                'shipment_id' => $shipment->id
+            ]);
+            return '1'; // Fallback seguro
+        }
+    }
+
+    /**
+     * NUEVO: Calcular peso total real desde bills of lading (en gramos)
+     */
+    private function calcularPesoTotalDesdeBills(Shipment $shipment): int
+    {
+        $pesoTotal = 0;
+        
+        if ($shipment->billsOfLading) {
+            foreach ($shipment->billsOfLading as $bill) {
+                // Sumar peso en gramos
+                $peso = ($bill->gross_weight_kg ?? 0) * 1000;
+                $pesoTotal += $peso;
+            }
+        }
+        
+        // Si no hay bills, usar peso del shipment
+        if ($pesoTotal === 0 && $shipment->cargo_weight_loaded) {
+            $pesoTotal = $shipment->cargo_weight_loaded * 1000;
+        }
+        
+        return max(1000, $pesoTotal); // Mínimo 1kg
+    }
+
+    /**
+     * NUEVO: Calcular cantidad real de bultos desde bills of lading
+     */
+    private function calcularCantidadBultosDesdeBills(Shipment $shipment): int
+    {
+        $totalBultos = 0;
+        
+        if ($shipment->billsOfLading) {
+            foreach ($shipment->billsOfLading as $bill) {
+                $totalBultos += $bill->total_packages ?? 0;
+            }
+        }
+        
+        // Si no hay bills, usar total del shipment
+        if ($totalBultos === 0 && $shipment->total_packages) {
+            $totalBultos = $shipment->total_packages;
+        }
+        
+        return max(1, $totalBultos); // Mínimo 1 bulto
+    }
+
+    /**
      * Crear información de envíos
      */
     private function createEnviosInfo($parentElement, Shipment $shipment)
+{
+    $envios = $this->createElement('Envios');
+    $parentElement->appendChild($envios);
+
+    $envio = $this->createElement('Envio');
+    $envios->appendChild($envio);
+
+    // Número de envío
+    $numeroEnvio = $this->createElement('NumeroEnvio');
+    $numeroEnvio->textContent = $shipment->shipment_number;
+    $envio->appendChild($numeroEnvio);
+
+    // Descripción de la carga
+    $descripcion = $this->createElement('DescripcionCarga');
+    $descripcion->textContent = $shipment->description ?? 'CARGA GENERAL';
+    $envio->appendChild($descripcion);
+
+    // Peso total calculado
+    $peso = $this->createElement('PesoTotal');
+    $pesoEnKg = $this->calcularPesoEnviosEnKg($shipment);
+    $peso->textContent = (string)$pesoEnKg;
+    $envio->appendChild($peso);
+
+    // Usar SOLO el método createBultosInfo (NO createBultosInfoSinHardcode)
+    if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
+        $this->createBultosInfo($envio, $shipment);
+    }
+
+    return $envios;
+}
+
+    /**
+     * NUEVO: Obtener código embalaje válido SOLO desde BD
+     */
+    private function getValidPackagingCodeFromBD($bill): string
     {
-        $envios = $this->createElement('Envios');
-        $parentElement->appendChild($envios);
+        try {
+            // Intentar desde relación bill → packaging_type
+            if ($bill->primaryPackagingType && $bill->primaryPackagingType->argentina_ws_code) {
+                return $bill->primaryPackagingType->argentina_ws_code;
+            }
 
-        // Envío principal basado en shipment
-        $envio = $this->createElement('Envio');
-        $envios->appendChild($envio);
+            // Intentar desde packaging_type_id directo
+            if ($bill->primary_packaging_type_id) {
+                $packagingType = \App\Models\PackagingType::where('id', $bill->primary_packaging_type_id)
+                    ->whereNotNull('argentina_ws_code')
+                    ->first();
+                
+                if ($packagingType) {
+                    return $packagingType->argentina_ws_code;
+                }
+            }
 
-        // Número de envío
-        $numeroEnvio = $this->createElement('NumeroEnvio');
-        $numeroEnvio->textContent = $shipment->shipment_number;
-        $envio->appendChild($numeroEnvio);
+            // Buscar packaging por defecto para contenedores
+            $defaultPackaging = \App\Models\PackagingType::where('active', true)
+                ->whereNotNull('argentina_ws_code')
+                ->orderBy('is_default', 'desc')
+                ->first();
 
-        // Descripción de la carga
-        $descripcion = $this->createElement('DescripcionCarga');
-        $descripcion->textContent = $shipment->description ?? 'CARGA GENERAL';
-        $envio->appendChild($descripcion);
+            if ($defaultPackaging) {
+                return $defaultPackaging->argentina_ws_code;
+            }
 
-        // Peso total
-        $peso = $this->createElement('PesoTotal');
-        $peso->textContent = $shipment->total_weight ?? 1000; // kg
-        $envio->appendChild($peso);
+            // ERROR: No hay códigos en BD
+            throw new \Exception('No se encontraron códigos de embalaje AFIP en BD');
 
-        // Información de contenedores si existen
-        if ($shipment->containers && $shipment->containers->count() > 0) {
-            $this->createContenedoresInfo($envio, $shipment);
+        } catch (\Exception $e) {
+            Log::error('Error obteniendo código embalaje AFIP', [
+                'bill_id' => $bill->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            // FALLO CRÍTICO: No usar fallback hardcoded
+            throw new \Exception('Código embalaje AFIP requerido - verificar tabla packaging_types');
         }
+    }
 
-        // Información de bultos si existen
-        if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
-            $this->createBultosInfo($envio, $shipment);
+    /**
+     * NUEVO: Obtener código mercadería válido SOLO desde BD
+     */
+    private function getValidCargoCodeFromBD($bill): string
+    {
+        try {
+            // Intentar desde relación bill → cargo_type
+            if ($bill->primaryCargoType && $bill->primaryCargoType->code) {
+                return $bill->primaryCargoType->code;
+            }
+
+            // Intentar desde cargo_type_id directo
+            if ($bill->primary_cargo_type_id) {
+                $cargoType = \App\Models\CargoType::where('id', $bill->primary_cargo_type_id)
+                    ->whereNotNull('code')
+                    ->first();
+                
+                if ($cargoType) {
+                    return $cargoType->code;
+                }
+            }
+
+            // Buscar cargo por defecto
+            $defaultCargo = \App\Models\CargoType::where('active', true)
+                ->whereNotNull('code')
+                ->orderBy('is_default', 'desc')
+                ->first();
+
+            if ($defaultCargo) {
+                return $defaultCargo->code;
+            }
+
+            // ERROR: No hay códigos en BD
+            throw new \Exception('No se encontraron códigos de mercadería en BD');
+
+        } catch (\Exception $e) {
+            Log::error('Error obteniendo código mercadería', [
+                'bill_id' => $bill->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            // FALLO CRÍTICO: No usar fallback hardcoded
+            throw new \Exception('Código mercadería requerido - verificar tabla cargo_types');
         }
+    }
 
-        return $envios;
+    /**
+     * NUEVO: Obtener nombre packaging SOLO desde BD
+     */
+    private function getPackagingNameFromBD($bill): string
+    {
+        try {
+            if ($bill->primaryPackagingType && $bill->primaryPackagingType->name) {
+                return $bill->primaryPackagingType->name;
+            }
+
+            if ($bill->primary_packaging_type_id) {
+                $packagingType = \App\Models\PackagingType::find($bill->primary_packaging_type_id);
+                if ($packagingType) {
+                    return $packagingType->name;
+                }
+            }
+
+            throw new \Exception('Nombre de embalaje requerido');
+
+        } catch (\Exception $e) {
+            Log::error('Error obteniendo nombre embalaje', [
+                'bill_id' => $bill->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            throw new \Exception('Nombre embalaje requerido - verificar relaciones BD');
+        }
+    }
+
+    /**
+     * NUEVO: Calcular peso de envíos en kg (consistente con ResumenMercaderias)
+     */
+    private function calcularPesoEnviosEnKg(Shipment $shipment): int
+    {
+        $pesoTotal = 0;
+        
+        if ($shipment->billsOfLading) {
+            foreach ($shipment->billsOfLading as $bill) {
+                $pesoTotal += $bill->gross_weight_kg ?? 0;
+            }
+        }
+        
+        if ($pesoTotal === 0 && $shipment->cargo_weight_loaded) {
+            $pesoTotal = $shipment->cargo_weight_loaded;
+        }
+        
+        return max(1, $pesoTotal); // Mínimo 1kg
     }
 
     /**
@@ -1145,101 +1393,101 @@ class XmlSerializerService
     }
 
     /**
- * Crear información de contenedores CON CÓDIGOS AFIP OBLIGATORIOS
- */
-private function createContenedoresInfo($parentElement, Shipment $shipment)
-{
-    $contenedores = $this->createElement('Contenedores');
-    $parentElement->appendChild($contenedores);
+     * Crear información de contenedores CON CÓDIGOS AFIP OBLIGATORIOS
+     */
+    private function createContenedoresInfo($parentElement, Shipment $shipment)
+    {
+        $contenedores = $this->createElement('Contenedores');
+        $parentElement->appendChild($contenedores);
 
-    // Verificar si hay contenedores reales
-    $containers = $shipment->containers ?? collect();
-    
-    if ($containers->isEmpty() && $shipment->containers_loaded > 0) {
-        // Crear contenedores virtuales basados en datos del shipment
-        for ($i = 1; $i <= $shipment->containers_loaded; $i++) {
-            $contenedor = $this->createElement('Contenedor');
-            $contenedores->appendChild($contenedor);
+        // Verificar si hay contenedores reales
+        $containers = $shipment->containers ?? collect();
+        
+        if ($containers->isEmpty() && $shipment->containers_loaded > 0) {
+            // Crear contenedores virtuales basados en datos del shipment
+            for ($i = 1; $i <= $shipment->containers_loaded; $i++) {
+                $contenedor = $this->createElement('Contenedor');
+                $contenedores->appendChild($contenedor);
 
-            // Número de contenedor virtual
-            $numero = $this->createElement('NumeroContenedor');
-            $numero->textContent = 'VIRT' . str_pad($i, 6, '0', STR_PAD_LEFT);
-            $contenedor->appendChild($numero);
+                // Número de contenedor virtual
+                $numero = $this->createElement('NumeroContenedor');
+                $numero->textContent = 'VIRT' . str_pad($i, 6, '0', STR_PAD_LEFT);
+                $contenedor->appendChild($numero);
 
-            // ✅ OBLIGATORIO AFIP: Código ISO del contenedor
-            $codigoISO = $this->createElement('CodigoISOContenedor');
-            $codigoISO->textContent = '42G1'; // 40HC por defecto
-            $contenedor->appendChild($codigoISO);
+                // ✅ OBLIGATORIO AFIP: Código ISO del contenedor
+                $codigoISO = $this->createElement('CodigoISOContenedor');
+                $codigoISO->textContent = '42G1'; // 40HC por defecto
+                $contenedor->appendChild($codigoISO);
 
-            // Tipo de contenedor
-            $tipo = $this->createElement('TipoContenedor');
-            $tipo->textContent = '40HC';
-            $contenedor->appendChild($tipo);
+                // Tipo de contenedor
+                $tipo = $this->createElement('TipoContenedor');
+                $tipo->textContent = '40HC';
+                $contenedor->appendChild($tipo);
 
 
 
-            // OBLIGATORIO AFIP: Código ISO del contenedor desde tabla container_types
-            $codigoISO = $this->createElement('CodigoISOContenedor');
-            $isoCode = $container->containerType?->argentina_ws_code;
-            if (!$isoCode) {
-                // Fallback: buscar tipo activo con código
-                $defaultType = \App\Models\ContainerType::where('active', true)
-                    ->whereNotNull('argentina_ws_code')
-                    ->first();
-                $isoCode = $defaultType?->argentina_ws_code ?? '42G1';
+                // OBLIGATORIO AFIP: Código ISO del contenedor desde tabla container_types
+                $codigoISO = $this->createElement('CodigoISOContenedor');
+                $isoCode = $container->containerType?->argentina_ws_code;
+                if (!$isoCode) {
+                    // Fallback: buscar tipo activo con código
+                    $defaultType = \App\Models\ContainerType::where('active', true)
+                        ->whereNotNull('argentina_ws_code')
+                        ->first();
+                    $isoCode = $defaultType?->argentina_ws_code ?? '42G1';
+                }
+                $codigoISO->textContent = $isoCode;
+                $contenedor->appendChild($codigoISO);
+
+                // OBLIGATORIO AFIP: Peso bruto del contenedor
+                $pesoBruto = $this->createElement('PesoBrutoContenedor');
+                $peso = $container->gross_weight ?? $container->tare_weight ?? 25000;
+                $pesoBruto->textContent = (string)$peso;
+                $contenedor->appendChild($pesoBruto);
             }
-            $codigoISO->textContent = $isoCode;
-            $contenedor->appendChild($codigoISO);
+        } else {
+            // Usar contenedores reales
+            foreach ($containers as $container) {
+                $contenedor = $this->createElement('Contenedor');
+                $contenedores->appendChild($contenedor);
 
-            // OBLIGATORIO AFIP: Peso bruto del contenedor
-            $pesoBruto = $this->createElement('PesoBrutoContenedor');
-            $peso = $container->gross_weight ?? $container->tare_weight ?? 25000;
-            $pesoBruto->textContent = (string)$peso;
-            $contenedor->appendChild($pesoBruto);
-        }
-    } else {
-        // Usar contenedores reales
-        foreach ($containers as $container) {
-            $contenedor = $this->createElement('Contenedor');
-            $contenedores->appendChild($contenedor);
+                // Número de contenedor
+                $numero = $this->createElement('NumeroContenedor');
+                $numero->textContent = $container->container_number ?? 'UNKNOWN';
+                $contenedor->appendChild($numero);
 
-            // Número de contenedor
-            $numero = $this->createElement('NumeroContenedor');
-            $numero->textContent = $container->container_number ?? 'UNKNOWN';
-            $contenedor->appendChild($numero);
+                // ✅ OBLIGATORIO AFIP: Código ISO del contenedor desde ContainerType
+                $codigoISO = $this->createElement('CodigoISOContenedor');
+                $isoCode = $container->containerType?->argentina_ws_code ?? '42G1';
+                $codigoISO->textContent = $isoCode;
+                $contenedor->appendChild($codigoISO);
 
-            // ✅ OBLIGATORIO AFIP: Código ISO del contenedor desde ContainerType
-            $codigoISO = $this->createElement('CodigoISOContenedor');
-            $isoCode = $container->containerType?->argentina_ws_code ?? '42G1';
-            $codigoISO->textContent = $isoCode;
-            $contenedor->appendChild($codigoISO);
+                // Tipo de contenedor
+                $tipo = $this->createElement('TipoContenedor');
+                $tipo->textContent = $container->container_type ?? '40HC';
+                $contenedor->appendChild($tipo);                 
 
-            // Tipo de contenedor
-            $tipo = $this->createElement('TipoContenedor');
-            $tipo->textContent = $container->container_type ?? '40HC';
-            $contenedor->appendChild($tipo);                 
-
-            // Precintos si existen
-            if ($container->seals && count($container->seals) > 0) {
-                $precintos = $this->createElement('Precintos');
-                $contenedor->appendChild($precintos);
-                
-                foreach ($container->seals as $seal) {
-                    $precinto = $this->createElement('Precinto');
-                    $precinto->textContent = $seal->seal_number ?? 'NO_SEAL';
-                    $precintos->appendChild($precinto);
+                // Precintos si existen
+                if ($container->seals && count($container->seals) > 0) {
+                    $precintos = $this->createElement('Precintos');
+                    $contenedor->appendChild($precintos);
+                    
+                    foreach ($container->seals as $seal) {
+                        $precinto = $this->createElement('Precinto');
+                        $precinto->textContent = $seal->seal_number ?? 'NO_SEAL';
+                        $precintos->appendChild($precinto);
+                    }
                 }
             }
         }
+
+        return $contenedores;
     }
 
-    return $contenedores;
-}
-
     /**
- * Crear información de bultos CON CÓDIGOS AFIP OBLIGATORIOS
- */
-private function createBultosInfo($parentElement, Shipment $shipment)
+     * Crear información de bultos CON CÓDIGOS AFIP OBLIGATORIOS
+     */
+    private function createBultosInfo($parentElement, Shipment $shipment)
 {
     $bultos = $this->createElement('Bultos');
     $parentElement->appendChild($bultos);
@@ -1250,7 +1498,7 @@ private function createBultosInfo($parentElement, Shipment $shipment)
 
         // Número de conocimiento
         $numeroBill = $this->createElement('NumeroConocimiento');
-        $numeroBill->textContent = $bill->bill_number;
+        $numeroBill->textContent = $bill->bill_number ?? $bill->number ?? 'BL' . $bill->id;
         $bulto->appendChild($numeroBill);
 
         // Descripción mercadería
@@ -1258,46 +1506,40 @@ private function createBultosInfo($parentElement, Shipment $shipment)
         $descripcion->textContent = $bill->cargo_description ?? 'MERCADERIA GENERAL';
         $bulto->appendChild($descripcion);
 
-        // OBLIGATORIO AFIP: Código de embalaje desde tabla packaging_types
+        // Código de embalaje desde BD
         $codigoEmbalaje = $this->createElement('CodigoEmbalaje');
-        $packagingCode = $bill->primaryPackagingType?->argentina_ws_code;
-        if (!$packagingCode) {
-            // Fallback: buscar primer packaging activo con código
-            $defaultPackaging = \App\Models\PackagingType::where('active', true)
-                ->whereNotNull('argentina_ws_code')
-                ->first();
-            $packagingCode = $defaultPackaging?->argentina_ws_code ?? 'GEN';
-        }
+        $packagingCode = $bill->primaryPackagingType?->argentina_ws_code ?? '05';
         $codigoEmbalaje->textContent = $packagingCode;
         $bulto->appendChild($codigoEmbalaje);
 
-        // OBLIGATORIO AFIP: Tipo de embalaje (descripción)
-        $tipoEmbalaje = $this->createElement('TipoEmbalaje');
-        $tipoEmbalaje->textContent = $bill->primaryPackagingType?->name ?? 'EMBALAJE GENERAL';
-        $bulto->appendChild($tipoEmbalaje);
-
-        // OBLIGATORIO AFIP: Código de mercadería desde tabla cargo_types
-        $codigoMercaderia = $this->createElement('CodigoMercaderia');
-        $cargoCode = $bill->primaryCargoType?->code;
-        if (!$cargoCode) {
-            // Fallback: buscar primer cargo activo
-            $defaultCargo = \App\Models\CargoType::where('active', true)->first();
-            $cargoCode = $defaultCargo?->code ?? 'GEN001';
+        // REGLA AFIP: Para código "05" (contenedor) NO agregar TipoEmbalaje
+        if ($packagingCode === '05') {
+            $condicion = $this->createElement('CondicionDelContenedor');
+            $condicion->textContent = 'P'; // P = muelle a muelle
+            $bulto->appendChild($condicion);
+        } else {
+            $tipoEmbalaje = $this->createElement('TipoEmbalaje');
+            $tipoEmbalaje->textContent = $bill->primaryPackagingType?->name ?? 'EMBALAJE GENERAL';
+            $bulto->appendChild($tipoEmbalaje);
         }
+
+        // Código de mercadería desde BD
+        $codigoMercaderia = $this->createElement('CodigoMercaderia');
+        $cargoCode = $bill->primaryCargoType?->code ?? 'GEN001';
         $codigoMercaderia->textContent = $cargoCode;
         $bulto->appendChild($codigoMercaderia);
 
         // Cantidad de bultos
         $cantidad = $this->createElement('CantidadBultos');
-        $cantidad->textContent = $bill->total_packages ?? 1;
+        $cantidad->textContent = max(1, $bill->total_packages ?? 1);
         $bulto->appendChild($cantidad);
 
-        // Peso del bulto - desde base de datos real
+        // Peso del bulto en kg
         $peso = $this->createElement('PesoBulto');
-        $peso->textContent = $bill->gross_weight_kg ?? 1000;
+        $peso->textContent = number_format($bill->gross_weight_kg ?? 1000, 2, '.', '');
         $bulto->appendChild($peso);
 
-        // OBLIGATORIO AFIP: Unidad de medida
+        // Unidad de medida
         $unidadMedida = $this->createElement('UnidadMedida');
         $unidadMedida->textContent = $bill->measurement_unit ?? 'KG';
         $bulto->appendChild($unidadMedida);
