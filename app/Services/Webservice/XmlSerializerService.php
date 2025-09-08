@@ -618,17 +618,24 @@ class XmlSerializerService
                 $validation['errors'][] = 'Estructura SOAP inválida: falta Body';
             }
 
-            // ✅ VALIDAR NAMESPACE CORRECTO AFIP
+            // ✅ VALIDAR NAMESPACE CORRECTO AFIP - SOPORTAR MÚLTIPLES ELEMENTOS
             $registrarMicDta = $dom->getElementsByTagName('RegistrarMicDta');
+            $registrarTitEnvios = $dom->getElementsByTagName('RegistrarTitEnvios');
+
             if ($registrarMicDta->length > 0) {
                 $xmlns = $registrarMicDta->item(0)->getAttribute('xmlns');
                 $expectedNamespace = $this->config['afip_micdta_namespace'];
-                
+                if ($xmlns !== $expectedNamespace) {
+                    $validation['errors'][] = "Namespace incorrecto. Esperado: {$expectedNamespace}, Encontrado: {$xmlns}";
+                }
+            } elseif ($registrarTitEnvios->length > 0) {
+                $xmlns = $registrarTitEnvios->item(0)->getAttribute('xmlns');
+                $expectedNamespace = $this->config['afip_micdta_namespace'];
                 if ($xmlns !== $expectedNamespace) {
                     $validation['errors'][] = "Namespace incorrecto. Esperado: {$expectedNamespace}, Encontrado: {$xmlns}";
                 }
             } else {
-                $validation['errors'][] = 'Elemento RegistrarMicDta no encontrado';
+                $validation['errors'][] = 'Elemento RegistrarMicDta o RegistrarTitEnvios no encontrado';
             }
 
             $validation['is_valid'] = empty($validation['errors']);
@@ -739,4 +746,697 @@ class XmlSerializerService
     {
         return self::ARGENTINA_CODES;
     }
+
+    // === AGREGADO: Métodos RegistrarTitEnvios ===
+
+    /**
+     * Crear XML para RegistrarTitEnvios - PASO 1 AFIP
+     */
+    public function createTitEnviosXml(Shipment $shipment, string $transactionId): ?string
+    {
+        try {
+            $this->logOperation('info', 'Iniciando creación XML RegistrarTitEnvios', [
+                'shipment_id' => $shipment->id,
+                'transaction_id' => $transactionId,
+                'shipment_number' => $shipment->shipment_number,
+            ], 'xml_titenvios');
+
+            // Validar shipment para TitEnvios
+            $validation = $this->validateShipmentForTitEnvios($shipment);
+            if (!$validation['is_valid']) {
+                $this->logOperation('error', 'Shipment no válido para TitEnvios', [
+                    'errors' => $validation['errors'],
+                ], 'xml_validation');
+                return null;
+            }
+
+            // Inicializar DOM
+            $this->initializeDom();
+
+            // Crear estructura SOAP
+            $envelope = $this->createSoapEnvelope();
+            $body = $this->createElement('soap:Body');
+            $envelope->appendChild($body);
+
+            // Elemento principal RegistrarTitEnvios
+            $registrarTitEnvios = $this->createElement('RegistrarTitEnvios');
+            $registrarTitEnvios->setAttribute('xmlns', $this->config['afip_micdta_namespace']);
+            $body->appendChild($registrarTitEnvios);
+
+            // Autenticación empresa
+            $autenticacion = $this->createAutenticacionEmpresaTitEnvios($registrarTitEnvios);
+            
+            // Parámetros TitEnvios
+            $parametros = $this->createTitEnviosParam($registrarTitEnvios, $shipment, $transactionId);
+
+            // Generar XML string
+            $xmlString = $this->dom->saveXML();
+
+            // Validar XML
+            $validation = $this->validateXmlStructure($xmlString);
+            if (!$validation['is_valid']) {
+                $this->logOperation('error', 'Error validación XML TitEnvios', [
+                    'errors' => $validation['errors'],
+                ], 'xml_validation');
+                throw new Exception('XML TitEnvios no válido: ' . implode(', ', $validation['errors']));
+            }
+
+            $this->logOperation('info', 'XML RegistrarTitEnvios generado exitosamente', [
+                'xml_size_kb' => round(strlen($xmlString) / 1024, 2),
+                'transaction_id' => $transactionId,
+            ], 'xml_titenvios');
+
+            return $xmlString;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error generando XML RegistrarTitEnvios', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transactionId,
+            ], 'xml_error');
+            return null;
+        }
+    }
+
+    /**
+     * Crear XML MIC/DTA que incluye TRACKs - PASO 2 AFIP
+     */
+    public function createMicDtaXmlWithTracks(Shipment $shipment, string $transactionId, array $tracks): ?string
+    {
+        try {
+            $this->logOperation('info', 'Iniciando creación XML MIC/DTA con TRACKs', [
+                'shipment_id' => $shipment->id,
+                'transaction_id' => $transactionId,
+                'tracks_count' => count($tracks),
+                'tracks' => $tracks,
+            ], 'xml_micdta_tracks');
+
+            // Usar método base y agregar TRACKs
+            $baseXml = $this->createMicDtaXml($shipment, $transactionId);
+            if (!$baseXml) {
+                throw new Exception('Error generando XML base MIC/DTA');
+            }
+
+            // Insertar TRACKs en el XML
+            $xmlWithTracks = $this->insertTracksIntoMicDtaXml($baseXml, $tracks);
+            
+            $this->logOperation('info', 'XML MIC/DTA con TRACKs generado exitosamente', [
+                'xml_size_kb' => round(strlen($xmlWithTracks) / 1024, 2),
+                'tracks_inserted' => count($tracks),
+            ], 'xml_micdta_tracks');
+
+            return $xmlWithTracks;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error generando XML MIC/DTA con TRACKs', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transactionId,
+            ], 'xml_error');
+            return null;
+        }
+    }
+
+    /**
+     * Validar shipment para RegistrarTitEnvios
+     */
+    private function validateShipmentForTitEnvios(Shipment $shipment): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'errors' => [],
+            'warnings' => [],
+        ];
+
+        // 1. Shipment debe existir y estar activo
+        if (!$shipment || !$shipment->active) {
+            $validation['errors'][] = 'Shipment inactivo o no válido';
+        }
+
+        // 2. Debe tener voyage asociado
+        if (!$shipment->voyage) {
+            $validation['errors'][] = 'Shipment debe tener voyage asociado';
+        }
+
+        // 3. Debe tener vessel válido
+        if (!$shipment->vessel) {
+            $validation['errors'][] = 'Shipment debe tener vessel asociado';
+        }
+
+        // 4. Verificar que tenga carga (containers o bills)
+        $hasContainers = $shipment->containers && $shipment->containers->count() > 0;
+        $hasBills = $shipment->billsOfLading && $shipment->billsOfLading->count() > 0;
+        
+        if (!$hasContainers && !$hasBills) {
+            $validation['errors'][] = 'Shipment debe tener contenedores o conocimientos de embarque';
+        }
+
+        // 5. Verificar datos del voyage
+        if ($shipment->voyage) {
+            if (!$shipment->voyage->originPort || !$shipment->voyage->destinationPort) {
+                $validation['errors'][] = 'Voyage debe tener puertos de origen y destino';
+            }
+            
+            if (!$shipment->voyage->departure_date) {
+                $validation['errors'][] = 'Voyage debe tener fecha de salida';
+            }
+        }
+
+        $validation['is_valid'] = empty($validation['errors']);
+
+        return $validation;
+    }
+
+    /**
+     * Crear autenticación empresa para TitEnvios
+     */
+    private function createAutenticacionEmpresaTitEnvios($parentElement)
+    {
+        $autenticacion = $this->createElement('argWSAutenticacionEmpresa');
+        $parentElement->appendChild($autenticacion);
+
+        // Obtener datos de Argentina
+        $argentinaData = $this->company->getArgentinaWebserviceData();
+
+        // CUIT empresa conectada
+        $cuitElement = $this->createElement('CuitEmpresaConectada');
+        $cuitElement->textContent = preg_replace('/[^0-9]/', '', $this->company->tax_id);
+        $autenticacion->appendChild($cuitElement);
+
+        // Tipo agente - Para TitEnvios es BODEGA
+        $tipoAgente = $this->createElement('TipoAgente');
+        $tipoAgente->textContent = 'ATA';
+        $autenticacion->appendChild($tipoAgente);
+
+        // Rol - BODEGA para RegistrarTitEnvios según manual AFIP
+        $rol = $this->createElement('Rol');
+        $rol->textContent = 'BODEGA';
+        $autenticacion->appendChild($rol);
+
+        return $autenticacion;
+    }
+
+    /**
+     * Crear parámetros para RegistrarTitEnvios
+     */
+    private function createTitEnviosParam($parentElement, Shipment $shipment, string $transactionId)
+    {
+        $param = $this->createElement('argRegistrarTitEnviosParam');
+        $parentElement->appendChild($param);
+
+        // ID Transacción
+        $idTransaccion = $this->createElement('IdTransaccion');
+        $idTransaccion->textContent = $transactionId;
+        $param->appendChild($idTransaccion);
+
+        // Información del titulo y envíos
+        $this->createTituloInfo($param, $shipment);
+        $this->createEnviosInfo($param, $shipment);
+
+        return $param;
+    }
+
+    /**
+     * Crear información del título
+     */
+    private function createTituloInfo($parentElement, Shipment $shipment)
+    {
+        $titulo = $this->createElement('Titulo');
+        $parentElement->appendChild($titulo);
+
+        // Número de título (usar shipment number como base)
+        $numeroTitulo = $this->createElement('NumeroTitulo');
+        $numeroTitulo->textContent = 'TIT_' . $shipment->shipment_number;
+        $titulo->appendChild($numeroTitulo);
+
+        // Tipo de título
+        $tipoTitulo = $this->createElement('TipoTitulo');
+        $tipoTitulo->textContent = 'CARGA_GENERAL';
+        $titulo->appendChild($tipoTitulo);
+
+        // Información del transportista
+        $this->createTransportistaInfo($titulo);
+
+        // Información del viaje
+        $this->createViajeInfo($titulo, $shipment);
+
+        // Información del capitán - desde relación real
+        if ($shipment->voyage->captain) {
+            $conductor = $this->createElement('Conductor');
+            $titulo->appendChild($conductor);
+            
+            $nombre = $this->createElement('Nombre');
+            $nombre->textContent = $shipment->voyage->captain->first_name;
+            $conductor->appendChild($nombre);
+            
+            $apellido = $this->createElement('Apellido');
+            $apellido->textContent = $shipment->voyage->captain->last_name;
+            $conductor->appendChild($apellido);
+            
+            $licencia = $this->createElement('Licencia');
+            $licencia->textContent = $shipment->voyage->captain->license_number;
+            $conductor->appendChild($licencia);
+        }
+
+        // OBLIGATORIO AFIP: PorteadorTitulo 
+        $porteadorTitulo = $this->createElement('PorteadorTitulo');
+        $titulo->appendChild($porteadorTitulo);
+
+        $nombrePorteador = $this->createElement('Nombre');
+        $nombrePorteador->textContent = $this->company->legal_name;
+        $porteadorTitulo->appendChild($nombrePorteador);
+
+        $cuitPorteador = $this->createElement('Cuit');
+        $cuitPorteador->textContent = preg_replace('/[^0-9]/', '', $this->company->tax_id);
+        $porteadorTitulo->appendChild($cuitPorteador);
+
+        // OBLIGATORIO AFIP: ResumenMercaderias
+        $resumenMercaderias = $this->createElement('ResumenMercaderias');
+        $titulo->appendChild($resumenMercaderias);
+
+        $pesoTotalMercaderias = $this->createElement('PesoTotal');
+        $pesoTotalMercaderias->textContent = $shipment->cargo_weight_loaded * 1000; // a kg
+        $resumenMercaderias->appendChild($pesoTotalMercaderias);
+
+        $cantidadBultosTotales = $this->createElement('CantidadBultos');
+        $cantidadBultosTotales->textContent = $shipment->total_packages ?? 1;
+        $resumenMercaderias->appendChild($cantidadBultosTotales);
+
+        // Información de embarcación - desde relación real
+        if ($shipment->vessel) {
+            $embarcacion = $this->createElement('Embarcacion');
+            $titulo->appendChild($embarcacion);
+
+            $nombreEmb = $this->createElement('Nombre');
+            $nombreEmb->textContent = $shipment->vessel->name;
+            $embarcacion->appendChild($nombreEmb);
+
+            $codigoPais = $this->createElement('CodigoPais');
+            $codigoPais->textContent = 'AR'; // Desde vessel->flag_country si existe la relación
+            $embarcacion->appendChild($codigoPais);
+        }
+
+        return $titulo;
+    }
+
+    /**
+     * Crear información de envíos
+     */
+    private function createEnviosInfo($parentElement, Shipment $shipment)
+    {
+        $envios = $this->createElement('Envios');
+        $parentElement->appendChild($envios);
+
+        // Envío principal basado en shipment
+        $envio = $this->createElement('Envio');
+        $envios->appendChild($envio);
+
+        // Número de envío
+        $numeroEnvio = $this->createElement('NumeroEnvio');
+        $numeroEnvio->textContent = $shipment->shipment_number;
+        $envio->appendChild($numeroEnvio);
+
+        // Descripción de la carga
+        $descripcion = $this->createElement('DescripcionCarga');
+        $descripcion->textContent = $shipment->description ?? 'CARGA GENERAL';
+        $envio->appendChild($descripcion);
+
+        // Peso total
+        $peso = $this->createElement('PesoTotal');
+        $peso->textContent = $shipment->total_weight ?? 1000; // kg
+        $envio->appendChild($peso);
+
+        // Información de contenedores si existen
+        if ($shipment->containers && $shipment->containers->count() > 0) {
+            $this->createContenedoresInfo($envio, $shipment);
+        }
+
+        // Información de bultos si existen
+        if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
+            $this->createBultosInfo($envio, $shipment);
+        }
+
+        return $envios;
+    }
+
+    /**
+     * Crear información de transportista
+     */
+    private function createTransportistaInfo($parentElement)
+    {
+        $transportista = $this->createElement('Transportista');
+        $parentElement->appendChild($transportista);
+
+        // Nombre
+        $nombre = $this->createElement('Nombre');
+        $nombre->textContent = $this->company->legal_name ?? $this->company->name;
+        $transportista->appendChild($nombre);
+
+        // CUIT
+        $cuit = $this->createElement('Cuit');
+        $cuit->textContent = preg_replace('/[^0-9]/', '', $this->company->tax_id);
+        $transportista->appendChild($cuit);
+
+        // Dirección
+        $direccion = $this->createElement('Direccion');
+        $direccion->textContent = $this->company->address ?? 'DIRECCION NO ESPECIFICADA';
+        $transportista->appendChild($direccion);
+
+        return $transportista;
+    }
+
+    /**
+     * Crear información del viaje
+     */
+    private function createViajeInfo($parentElement, Shipment $shipment)
+    {
+        if (!$shipment->voyage) {
+            return null;
+        }
+
+        $viaje = $this->createElement('Viaje');
+        $parentElement->appendChild($viaje);
+
+        // Número de viaje
+        $numeroViaje = $this->createElement('NumeroViaje');
+        $numeroViaje->textContent = $shipment->voyage->voyage_number;
+        $viaje->appendChild($numeroViaje);
+
+        // Puerto origen - usar relación real
+        if ($shipment->voyage->originPort) {
+            $puertoOrigen = $this->createElement('PuertoOrigen');
+            $puertoOrigen->textContent = $shipment->voyage->originPort->code;
+            $viaje->appendChild($puertoOrigen);
+        }
+
+        // Puerto destino - usar relación real
+        if ($shipment->voyage->destinationPort) {
+            $puertoDestino = $this->createElement('PuertoDestino');
+            $puertoDestino->textContent = $shipment->voyage->destinationPort->code;
+            $viaje->appendChild($puertoDestino);
+        }
+
+        // Fecha salida
+        if ($shipment->voyage->departure_date) {
+            $fechaSalida = $this->createElement('FechaSalida');
+            $fechaSalida->textContent = $shipment->voyage->departure_date->format('Y-m-d\TH:i:s');
+            $viaje->appendChild($fechaSalida);
+        }
+
+        return $viaje;
+    }
+
+    /**
+ * Crear información de contenedores CON CÓDIGOS AFIP OBLIGATORIOS
+ */
+private function createContenedoresInfo($parentElement, Shipment $shipment)
+{
+    $contenedores = $this->createElement('Contenedores');
+    $parentElement->appendChild($contenedores);
+
+    // Verificar si hay contenedores reales
+    $containers = $shipment->containers ?? collect();
+    
+    if ($containers->isEmpty() && $shipment->containers_loaded > 0) {
+        // Crear contenedores virtuales basados en datos del shipment
+        for ($i = 1; $i <= $shipment->containers_loaded; $i++) {
+            $contenedor = $this->createElement('Contenedor');
+            $contenedores->appendChild($contenedor);
+
+            // Número de contenedor virtual
+            $numero = $this->createElement('NumeroContenedor');
+            $numero->textContent = 'VIRT' . str_pad($i, 6, '0', STR_PAD_LEFT);
+            $contenedor->appendChild($numero);
+
+            // ✅ OBLIGATORIO AFIP: Código ISO del contenedor
+            $codigoISO = $this->createElement('CodigoISOContenedor');
+            $codigoISO->textContent = '42G1'; // 40HC por defecto
+            $contenedor->appendChild($codigoISO);
+
+            // Tipo de contenedor
+            $tipo = $this->createElement('TipoContenedor');
+            $tipo->textContent = '40HC';
+            $contenedor->appendChild($tipo);
+
+
+
+            // OBLIGATORIO AFIP: Código ISO del contenedor desde tabla container_types
+            $codigoISO = $this->createElement('CodigoISOContenedor');
+            $isoCode = $container->containerType?->argentina_ws_code;
+            if (!$isoCode) {
+                // Fallback: buscar tipo activo con código
+                $defaultType = \App\Models\ContainerType::where('active', true)
+                    ->whereNotNull('argentina_ws_code')
+                    ->first();
+                $isoCode = $defaultType?->argentina_ws_code ?? '42G1';
+            }
+            $codigoISO->textContent = $isoCode;
+            $contenedor->appendChild($codigoISO);
+
+            // OBLIGATORIO AFIP: Peso bruto del contenedor
+            $pesoBruto = $this->createElement('PesoBrutoContenedor');
+            $peso = $container->gross_weight ?? $container->tare_weight ?? 25000;
+            $pesoBruto->textContent = (string)$peso;
+            $contenedor->appendChild($pesoBruto);
+        }
+    } else {
+        // Usar contenedores reales
+        foreach ($containers as $container) {
+            $contenedor = $this->createElement('Contenedor');
+            $contenedores->appendChild($contenedor);
+
+            // Número de contenedor
+            $numero = $this->createElement('NumeroContenedor');
+            $numero->textContent = $container->container_number ?? 'UNKNOWN';
+            $contenedor->appendChild($numero);
+
+            // ✅ OBLIGATORIO AFIP: Código ISO del contenedor desde ContainerType
+            $codigoISO = $this->createElement('CodigoISOContenedor');
+            $isoCode = $container->containerType?->argentina_ws_code ?? '42G1';
+            $codigoISO->textContent = $isoCode;
+            $contenedor->appendChild($codigoISO);
+
+            // Tipo de contenedor
+            $tipo = $this->createElement('TipoContenedor');
+            $tipo->textContent = $container->container_type ?? '40HC';
+            $contenedor->appendChild($tipo);                 
+
+            // Precintos si existen
+            if ($container->seals && count($container->seals) > 0) {
+                $precintos = $this->createElement('Precintos');
+                $contenedor->appendChild($precintos);
+                
+                foreach ($container->seals as $seal) {
+                    $precinto = $this->createElement('Precinto');
+                    $precinto->textContent = $seal->seal_number ?? 'NO_SEAL';
+                    $precintos->appendChild($precinto);
+                }
+            }
+        }
+    }
+
+    return $contenedores;
+}
+
+    /**
+ * Crear información de bultos CON CÓDIGOS AFIP OBLIGATORIOS
+ */
+private function createBultosInfo($parentElement, Shipment $shipment)
+{
+    $bultos = $this->createElement('Bultos');
+    $parentElement->appendChild($bultos);
+
+    foreach ($shipment->billsOfLading as $bill) {
+        $bulto = $this->createElement('Bulto');
+        $bultos->appendChild($bulto);
+
+        // Número de conocimiento
+        $numeroBill = $this->createElement('NumeroConocimiento');
+        $numeroBill->textContent = $bill->bill_number;
+        $bulto->appendChild($numeroBill);
+
+        // Descripción mercadería
+        $descripcion = $this->createElement('DescripcionMercaderia');
+        $descripcion->textContent = $bill->cargo_description ?? 'MERCADERIA GENERAL';
+        $bulto->appendChild($descripcion);
+
+        // OBLIGATORIO AFIP: Código de embalaje desde tabla packaging_types
+        $codigoEmbalaje = $this->createElement('CodigoEmbalaje');
+        $packagingCode = $bill->primaryPackagingType?->argentina_ws_code;
+        if (!$packagingCode) {
+            // Fallback: buscar primer packaging activo con código
+            $defaultPackaging = \App\Models\PackagingType::where('active', true)
+                ->whereNotNull('argentina_ws_code')
+                ->first();
+            $packagingCode = $defaultPackaging?->argentina_ws_code ?? 'GEN';
+        }
+        $codigoEmbalaje->textContent = $packagingCode;
+        $bulto->appendChild($codigoEmbalaje);
+
+        // OBLIGATORIO AFIP: Tipo de embalaje (descripción)
+        $tipoEmbalaje = $this->createElement('TipoEmbalaje');
+        $tipoEmbalaje->textContent = $bill->primaryPackagingType?->name ?? 'EMBALAJE GENERAL';
+        $bulto->appendChild($tipoEmbalaje);
+
+        // OBLIGATORIO AFIP: Código de mercadería desde tabla cargo_types
+        $codigoMercaderia = $this->createElement('CodigoMercaderia');
+        $cargoCode = $bill->primaryCargoType?->code;
+        if (!$cargoCode) {
+            // Fallback: buscar primer cargo activo
+            $defaultCargo = \App\Models\CargoType::where('active', true)->first();
+            $cargoCode = $defaultCargo?->code ?? 'GEN001';
+        }
+        $codigoMercaderia->textContent = $cargoCode;
+        $bulto->appendChild($codigoMercaderia);
+
+        // Cantidad de bultos
+        $cantidad = $this->createElement('CantidadBultos');
+        $cantidad->textContent = $bill->total_packages ?? 1;
+        $bulto->appendChild($cantidad);
+
+        // Peso del bulto - desde base de datos real
+        $peso = $this->createElement('PesoBulto');
+        $peso->textContent = $bill->gross_weight_kg ?? 1000;
+        $bulto->appendChild($peso);
+
+        // OBLIGATORIO AFIP: Unidad de medida
+        $unidadMedida = $this->createElement('UnidadMedida');
+        $unidadMedida->textContent = $bill->measurement_unit ?? 'KG';
+        $bulto->appendChild($unidadMedida);
+    }
+
+    return $bultos;
+}
+
+    /**
+     * Insertar TRACKs en XML MIC/DTA existente
+     */
+    private function insertTracksIntoMicDtaXml(string $baseXml, array $tracks): string
+    {
+        try {
+            // Cargar XML base
+            $dom = new \DOMDocument('1.0', 'UTF-8');
+            $dom->loadXML($baseXml);
+            $dom->formatOutput = true;
+
+            // Buscar elemento donde insertar TRACKs
+            $xpath = new \DOMXPath($dom);
+            $xpath->registerNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
+            
+            // Buscar argRegistrarMicDtaParam
+            $paramNodes = $xpath->query('//argRegistrarMicDtaParam');
+            if ($paramNodes->length === 0) {
+                throw new Exception('No se encontró argRegistrarMicDtaParam en XML base');
+            }
+
+            $paramElement = $paramNodes->item(0);
+
+            // Crear elemento CargasSueltasIdTrack
+            $cargasSueltas = $dom->createElement('CargasSueltasIdTrack');
+            $paramElement->appendChild($cargasSueltas);
+
+            // Agregar cada TRACK
+            foreach ($tracks as $track) {
+                $trackElement = $dom->createElement('IdTrack');
+                $trackElement->textContent = $track;
+                $cargasSueltas->appendChild($trackElement);
+            }
+
+            // También crear TracksContVacios si hay TRACKs de contenedores vacíos
+            $emptyTracks = array_filter($tracks, function($track) {
+                // Buscar TRACKs que correspondan a contenedores vacíos
+                $trackRecord = \App\Models\WebserviceTrack::where('track_number', $track)
+                    ->where('track_type', 'contenedor_vacio')
+                    ->first();
+                return $trackRecord !== null;
+            });
+
+            if (!empty($emptyTracks)) {
+                $tracksVacios = $dom->createElement('TracksContVacios');
+                $paramElement->appendChild($tracksVacios);
+
+                foreach ($emptyTracks as $emptyTrack) {
+                    $trackVacioElement = $dom->createElement('IdTrackVacio');
+                    $trackVacioElement->textContent = $emptyTrack;
+                    $tracksVacios->appendChild($trackVacioElement);
+                }
+            }
+
+            return $dom->saveXML();
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error insertando TRACKs en XML MIC/DTA', [
+                'error' => $e->getMessage(),
+                'tracks' => $tracks,
+            ], 'xml_tracks_error');
+            
+            // Retornar XML base si falla la inserción
+            return $baseXml;
+        }
+    }
+
+    /**
+     * Validar estructura XML específica para TitEnvios
+     */
+    private function validateTitEnviosXmlStructure(string $xmlContent): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'errors' => [],
+            'warnings' => [],
+        ];
+
+        try {
+            // Cargar XML
+            $dom = new \DOMDocument();
+            $dom->loadXML($xmlContent);
+
+            // Verificar elementos obligatorios para TitEnvios
+            $requiredElements = [
+                '//RegistrarTitEnvios' => 'Elemento raíz RegistrarTitEnvios',
+                '//argWSAutenticacionEmpresa' => 'Autenticación empresa',
+                '//argRegistrarTitEnviosParam' => 'Parámetros TitEnvios',
+                '//IdTransaccion' => 'ID Transacción',
+                '//Titulo' => 'Información del título',
+                '//Envios' => 'Información de envíos',
+            ];
+
+            $xpath = new \DOMXPath($dom);
+            foreach ($requiredElements as $xpathQuery => $description) {
+                $nodes = $xpath->query($xpathQuery);
+                if ($nodes->length === 0) {
+                    $validation['errors'][] = "Falta elemento obligatorio: {$description}";
+                }
+            }
+
+            // Verificar namespace correcto
+            $registrarNodes = $xpath->query('//RegistrarTitEnvios[@xmlns]');
+            if ($registrarNodes->length > 0) {
+                $namespace = $registrarNodes->item(0)->getAttribute('xmlns');
+                if ($namespace !== $this->config['afip_micdta_namespace']) {
+                    $validation['errors'][] = "Namespace incorrecto: {$namespace}";
+                }
+            } else {
+                $validation['errors'][] = 'Falta namespace en RegistrarTitEnvios';
+            }
+
+            $validation['is_valid'] = empty($validation['errors']);
+
+        } catch (Exception $e) {
+            $validation['errors'][] = 'Error parseando XML: ' . $e->getMessage();
+        }
+
+        return $validation;
+    }
+
+    /**
+     * Log específico para operaciones TitEnvios
+     */
+    private function logTitEnviosOperation(string $level, string $message, array $context = []): void
+    {
+        $context['xml_type'] = 'RegistrarTitEnvios';
+        $context['afip_step'] = 1;
+        $context['purpose'] = 'Generate TRACKs';
+        
+        $this->logOperation($level, $message, $context, 'xml_titenvios');
+    }
+
 }

@@ -1135,4 +1135,525 @@ private function logMicDtaOperation(string $level, string $message, array $conte
     
     $this->logOperation($level, $message, $context, 'micdta_operation');
 }
+
+
+/**
+ * SESIÓN 2: MÉTODOS TRACKs LIMPIOS - SOLO AFIP REAL
+ * 
+ * ARCHIVO: app/Services/Webservice/ArgentinaMicDtaService.php
+ * INSTRUCCIONES: Agregar estos métodos al final de la clase, antes del último }
+ */
+
+// === SISTEMA TRACKs AFIP - MÉTODOS PRINCIPALES ===
+
+/**
+ * Registrar títulos y envíos (RegistrarTitEnvios) - PASO 1 AFIP
+ */
+public function registrarTitEnvios(Shipment $shipment): array
+{
+    $result = [
+        'success' => false,
+        'tracks' => [],
+        'transaction_id' => null,
+        'errors' => [],
+    ];
+
+    try {
+        $this->logOperation('info', 'Iniciando RegistrarTitEnvios - Paso 1 AFIP', [
+            'shipment_id' => $shipment->id,
+            'shipment_number' => $shipment->shipment_number,
+        ]);
+
+        // 1. Crear transacción específica para TitEnvios
+        $transaction = $this->createTitEnviosTransaction($shipment);
+        $result['transaction_id'] = $transaction->id;
+        $this->currentTransactionId = $transaction->id;
+
+        // 2. Generar XML para RegistrarTitEnvios
+        $xmlContent = $this->xmlSerializer->createTitEnviosXml($shipment, $transaction->transaction_id);
+        if (!$xmlContent) {
+            throw new Exception('Error generando XML RegistrarTitEnvios');
+        }
+
+        // 3. Envío real a AFIP
+        $soapClient = $this->prepareSoapClient();
+        $soapResponse = $this->sendTitEnviosSoapRequest($transaction, $soapClient, $xmlContent);
+
+        // 4. Procesar respuesta y crear TRACKs
+        if ($soapResponse['success']) {
+            $result = $this->processTitEnviosResponse($transaction, $soapResponse, $shipment);
+        } else {
+            $result['errors'] = $soapResponse['errors'] ?? ['Error en RegistrarTitEnvios'];
+        }
+
+        return $result;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error en RegistrarTitEnvios', [
+            'error' => $e->getMessage(),
+            'shipment_id' => $shipment->id,
+        ]);
+
+        $result['errors'][] = $e->getMessage();
+        return $result;
+    }
+}
+
+/**
+ * Envío MIC/DTA completo usando TRACKs - PASO 2 AFIP
+ */
+public function sendMicDtaWithTracks(Shipment $shipment, array $tracks = null): array
+{
+    $result = [
+        'success' => false,
+        'transaction_id' => null,
+        'tracks_used' => [],
+        'errors' => [],
+    ];
+
+    DB::beginTransaction();
+
+    try {
+        $this->logOperation('info', 'Iniciando MIC/DTA con TRACKs - Paso 2 AFIP', [
+            'shipment_id' => $shipment->id,
+            'tracks_provided' => count($tracks ?? []),
+        ]);
+
+        // 1. Obtener o generar TRACKs
+        if (empty($tracks)) {
+            $this->logOperation('info', 'TRACKs no proporcionados, ejecutando RegistrarTitEnvios primero');
+            
+            $titEnviosResult = $this->registrarTitEnvios($shipment);
+            if (!$titEnviosResult['success']) {
+                $result['errors'] = array_merge(['Error en RegistrarTitEnvios:'], $titEnviosResult['errors']);
+                return $result;
+            }
+            
+            $tracks = $titEnviosResult['tracks'];
+        }
+
+        // 2. Validar TRACKs disponibles
+        $availableTracks = $this->validateTracksForMicDta($tracks);
+        if (empty($availableTracks)) {
+            $result['errors'][] = 'No hay TRACKs válidos disponibles para MIC/DTA';
+            return $result;
+        }
+
+        // 3. Crear transacción MIC/DTA
+        $transaction = $this->createTransaction($shipment);
+        $result['transaction_id'] = $transaction->id;
+        $this->currentTransactionId = $transaction->id;
+
+        // 4. Generar XML MIC/DTA con TRACKs
+        $xmlContent = $this->xmlSerializer->createMicDtaXmlWithTracks($shipment, $transaction->transaction_id, $availableTracks);
+        if (!$xmlContent) {
+            throw new Exception('Error generando XML MIC/DTA con TRACKs');
+        }
+
+        // 5. Enviar a AFIP
+        $soapClient = $this->prepareSoapClient();
+        $soapResponse = $this->sendSoapRequest($transaction, $soapClient, $xmlContent);
+        $result = $this->processResponse($transaction, $soapResponse);
+
+        // 6. Marcar TRACKs como usados si fue exitoso
+        if ($result['success']) {
+            $this->markTracksAsUsed($availableTracks, 'used_in_micdta');
+            $result['tracks_used'] = $availableTracks;
+        }
+
+        DB::commit();
+        return $result;
+
+    } catch (Exception $e) {
+        DB::rollBack();
+        
+        $this->logOperation('error', 'Error en MIC/DTA con TRACKs', [
+            'error' => $e->getMessage(),
+            'shipment_id' => $shipment->id,
+        ]);
+
+        $result['errors'][] = $e->getMessage();
+        return $result;
+    }
+}
+
+// === MÉTODOS DE SOPORTE TRACKs ===
+
+/**
+ * Crear transacción específica para RegistrarTitEnvios
+ */
+private function createTitEnviosTransaction(Shipment $shipment): WebserviceTransaction
+{
+    $transactionId = 'TITENV_' . time() . '_' . rand(1000, 9999);
+    
+    return WebserviceTransaction::create([
+        'company_id' => $this->company->id,
+        'user_id' => $this->user->id,
+        'shipment_id' => $shipment->id,
+        'voyage_id' => $shipment->voyage_id,
+        'transaction_id' => $transactionId,
+        'webservice_type' => 'micdta',
+        'country' => 'AR',
+        'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+        'status' => 'pending',
+        'environment' => $this->config['environment'],
+        'webservice_url' => $this->getWebserviceUrl(),
+        'timeout_seconds' => $this->config['timeout_seconds'] ?? 60,
+        'max_retries' => $this->config['max_retries'],
+        'retry_intervals' => json_encode($this->config['retry_intervals']),
+        'requires_certificate' => $this->config['require_certificate'],
+        'additional_metadata' => [
+            'method' => 'RegistrarTitEnvios',
+            'step' => 1,
+            'purpose' => 'Generar TRACKs para MIC/DTA',
+        ],
+    ]);
+}
+
+/**
+ * Crear registros WebserviceTrack en base de datos
+ */
+private function createWebserviceTracks(int $transactionId, array $tracksData): array
+{
+    $tracks = [];
+    
+    foreach ($tracksData as $trackData) {
+        $track = WebserviceTrack::create([
+            'webservice_transaction_id' => $transactionId,
+            'shipment_id' => $trackData['shipment_id'] ?? null,
+            'container_id' => $trackData['container_id'] ?? null,
+            'bill_of_lading_id' => $trackData['bill_of_lading_id'] ?? null,
+            'track_number' => $trackData['track_number'],
+            'track_type' => $trackData['track_type'] ?? 'envio',
+            'webservice_method' => 'RegistrarTitEnvios',
+            'reference_type' => $trackData['reference_type'] ?? 'shipment',
+            'reference_number' => $trackData['reference_number'],
+            'description' => $trackData['description'] ?? null,
+            'afip_title_number' => $trackData['afip_title_number'] ?? null,
+            'afip_metadata' => $trackData['afip_metadata'] ?? null,
+            'generated_at' => now(),
+            'status' => 'generated',
+            'created_by_user_id' => $this->user->id,
+            'created_from_ip' => request()->ip(),
+            'process_chain' => ['generated'],
+        ]);
+        
+        $tracks[] = $track;
+    }
+    
+    $this->logOperation('info', 'TRACKs creados en base de datos', [
+        'transaction_id' => $transactionId,
+        'tracks_count' => count($tracks),
+        'track_numbers' => collect($tracks)->pluck('track_number')->toArray(),
+    ]);
+    
+    return $tracks;
+}
+
+/**
+ * Validar TRACKs disponibles para usar en MIC/DTA
+ */
+private function validateTracksForMicDta(array $trackNumbers): array
+{
+    if (empty($trackNumbers)) {
+        return [];
+    }
+    
+    // Obtener TRACKs desde base de datos
+    $availableTracks = WebserviceTrack::whereIn('track_number', $trackNumbers)
+        ->where('status', 'generated')
+        ->where('webservice_method', 'RegistrarTitEnvios')
+        ->get();
+    
+    $validTracks = [];
+    foreach ($availableTracks as $track) {
+        // Verificar que no haya expirado
+        if (!$track->isExpired()) {
+            $validTracks[] = $track->track_number;
+        } else {
+            $this->logOperation('warning', 'TRACK expirado encontrado', [
+                'track_number' => $track->track_number,
+                'generated_at' => $track->generated_at,
+                'hours_since_generation' => $track->generated_at->diffInHours(now()),
+            ]);
+        }
+    }
+    
+    $this->logOperation('info', 'Validación de TRACKs completada', [
+        'tracks_requested' => count($trackNumbers),
+        'tracks_available' => count($validTracks),
+        'tracks_expired' => count($trackNumbers) - count($validTracks),
+    ]);
+    
+    return $validTracks;
+}
+
+/**
+ * Marcar TRACKs como usados en el proceso
+ */
+private function markTracksAsUsed(array $trackNumbers, string $status): void
+{
+    if (empty($trackNumbers)) {
+        return;
+    }
+    
+    $updatedCount = WebserviceTrack::whereIn('track_number', $trackNumbers)
+        ->where('status', 'generated')
+        ->update([
+            'status' => $status,
+            'used_at' => now(),
+            'process_chain' => DB::raw("JSON_ARRAY_APPEND(COALESCE(process_chain, JSON_ARRAY()), '$', '$status')"),
+        ]);
+    
+    $this->logOperation('info', 'TRACKs marcados como usados', [
+        'status' => $status,
+        'tracks_updated' => $updatedCount,
+        'track_numbers' => $trackNumbers,
+    ]);
+}
+
+/**
+ * Procesar respuesta real de RegistrarTitEnvios desde AFIP
+ */
+private function processTitEnviosResponse(WebserviceTransaction $transaction, array $soapResponse, Shipment $shipment): array
+{
+    $result = [
+        'success' => false,
+        'tracks' => [],
+        'transaction_id' => $transaction->id,
+    ];
+    
+    try {
+        // Extraer TRACKs de la respuesta AFIP
+        $afipTracks = $this->extractTracksFromAfipResponse($soapResponse['response_data'] ?? []);
+        
+        if (empty($afipTracks)) {
+            throw new Exception('No se recibieron TRACKs válidos de AFIP');
+        }
+        
+        // Crear registros de TRACKs en base de datos
+        $tracks = $this->createWebserviceTracks($transaction->id, $afipTracks);
+        
+        // Actualizar transacción como exitosa
+        $transaction->update([
+            'status' => 'success',
+            'completed_at' => now(),
+            'external_reference' => $soapResponse['confirmation_number'] ?? null,
+        ]);
+        
+        // Crear registro de respuesta
+        WebserviceResponse::create([
+            'transaction_id' => $transaction->id,
+            'response_type' => 'success',
+            'confirmation_number' => $soapResponse['confirmation_number'] ?? null,
+            'argentina_tracks_env' => collect($tracks)->pluck('track_number')->toArray(),
+            'customs_status' => 'processed',
+            'customs_processed_at' => now(),
+        ]);
+        
+        $result['success'] = true;
+        $result['tracks'] = collect($tracks)->pluck('track_number')->toArray();
+        
+        return $result;
+        
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error procesando respuesta RegistrarTitEnvios', [
+            'error' => $e->getMessage(),
+            'transaction_id' => $transaction->id,
+        ]);
+        
+        $transaction->update([
+            'status' => 'error',
+            'error_message' => $e->getMessage(),
+            'completed_at' => now(),
+        ]);
+        
+        throw $e;
+    }
+}
+
+/**
+ * Extraer TRACKs de respuesta AFIP real
+ */
+private function extractTracksFromAfipResponse(array $responseData): array
+{
+    $tracks = [];
+    
+    // Según documentación AFIP, la respuesta contiene TracksEnv
+    if (isset($responseData['TracksEnv']) && is_array($responseData['TracksEnv'])) {
+        foreach ($responseData['TracksEnv'] as $index => $trackNumber) {
+            $tracks[] = [
+                'track_number' => $trackNumber,
+                'track_type' => 'envio',
+                'reference_type' => 'shipment',
+                'reference_number' => 'ENV_' . ($index + 1),
+                'afip_metadata' => [
+                    'source' => 'RegistrarTitEnvios',
+                    'response_index' => $index,
+                ],
+            ];
+        }
+    }
+    
+    // TracksContVacios para contenedores vacíos
+    if (isset($responseData['TracksContVacios']) && is_array($responseData['TracksContVacios'])) {
+        foreach ($responseData['TracksContVacios'] as $index => $trackNumber) {
+            $tracks[] = [
+                'track_number' => $trackNumber,
+                'track_type' => 'contenedor_vacio',
+                'reference_type' => 'container',
+                'reference_number' => 'CONT_VACIO_' . ($index + 1),
+                'afip_metadata' => [
+                    'source' => 'RegistrarTitEnvios',
+                    'response_index' => $index,
+                    'container_type' => 'empty',
+                ],
+            ];
+        }
+    }
+    
+    return $tracks;
+}
+
+/**
+ * Enviar request SOAP específico para RegistrarTitEnvios
+ */
+private function sendTitEnviosSoapRequest(WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+{
+    try {
+        $this->logOperation('info', 'Enviando RegistrarTitEnvios a AFIP', [
+            'transaction_id' => $transaction->id,
+        ]);
+        
+        // Actualizar estado
+        $transaction->update(['status' => 'sending', 'sent_at' => now()]);
+        
+        // Extraer parámetros para TitEnvios
+        $parameters = $this->extractTitEnviosParameters($xmlContent);
+        
+        // Enviar usando SoapClientService
+        $soapResult = $this->soapClient->sendRequest($transaction, 'RegistrarTitEnvios', [$parameters]);
+        
+        // Log temporal del XML generado
+        $this->logOperation('debug', 'XML RegistrarTitEnvios generado', [
+            'transaction_id' => $transaction->id,
+            'xml_content' => $xmlContent,
+        ], 'xml_debug');
+        
+        // Actualizar transacción con XMLs
+        $transaction->update([
+            'request_xml' => $soapResult['request_xml'] ?? $xmlContent,
+            'response_xml' => $soapResult['response_xml'] ?? null,
+            'response_time_ms' => $soapResult['response_time_ms'] ?? null,
+        ]);
+        
+        return $soapResult;
+        
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error en request SOAP RegistrarTitEnvios', [
+            'error' => $e->getMessage(),
+            'transaction_id' => $transaction->id,
+        ]);
+        
+        $transaction->update([
+            'status' => 'error',
+            'error_message' => $e->getMessage(),
+        ]);
+        
+        throw $e;
+    }
+}
+
+/**
+ * Extraer parámetros específicos para RegistrarTitEnvios
+ */
+private function extractTitEnviosParameters(string $xmlContent): array
+{
+    $argentinaData = $this->company->getArgentinaWebserviceData();
+    
+    return [
+        'argWSAutenticacionEmpresa' => [
+            'CuitEmpresaConectada' => preg_replace('/[^0-9]/', '', $this->company->tax_id),
+            'TipoAgente' => 'ATA',
+            'Rol' => 'BODEGA', // RegistrarTitEnvios es rol BODEGA según manual AFIP
+        ],
+        'argRegistrarTitEnviosParam' => [
+            'idTransaccion' => time() . rand(1000, 9999),
+            // TODO: Implementar estructura completa según XmlSerializerService
+            'xmlData' => $xmlContent,
+        ],
+    ];
+}
+
+/**
+ * Obtener estadísticas de TRACKs para la empresa
+ */
+public function getTracksStatistics(): array
+{
+    try {
+        $stats = [
+            'total_tracks' => 0,
+            'tracks_generated' => 0,
+            'tracks_used_micdta' => 0,
+            'tracks_completed' => 0,
+            'tracks_expired' => 0,
+            'tracks_by_type' => [],
+            'recent_tracks' => [],
+        ];
+        
+        $tracks = WebserviceTrack::whereHas('webserviceTransaction', function ($query) {
+            $query->where('company_id', $this->company->id);
+        });
+        
+        $stats['total_tracks'] = $tracks->count();
+        $stats['tracks_generated'] = $tracks->clone()->where('status', 'generated')->count();
+        $stats['tracks_used_micdta'] = $tracks->clone()->where('status', 'used_in_micdta')->count();
+        $stats['tracks_completed'] = $tracks->clone()->where('status', 'completed')->count();
+        
+        // Contar expirados
+        $stats['tracks_expired'] = $tracks->clone()
+            ->where('status', 'generated')
+            ->where('generated_at', '<', now()->subHours(24))
+            ->count();
+        
+        // Por tipo
+        $tracksByType = $tracks->clone()
+            ->select('track_type', DB::raw('count(*) as count'))
+            ->groupBy('track_type')
+            ->pluck('count', 'track_type')
+            ->toArray();
+        
+        $stats['tracks_by_type'] = $tracksByType;
+        
+        // TRACKs recientes
+        $stats['recent_tracks'] = $tracks->clone()
+            ->with(['shipment', 'webserviceTransaction'])
+            ->latest()
+            ->limit(10)
+            ->get()
+            ->map(function ($track) {
+                return [
+                    'track_number' => $track->track_number,
+                    'status' => $track->status,
+                    'track_type' => $track->track_type,
+                    'generated_at' => $track->generated_at,
+                    'shipment_number' => $track->shipment?->shipment_number,
+                ];
+            })
+            ->toArray();
+        
+        return $stats;
+        
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error obteniendo estadísticas TRACKs', [
+            'error' => $e->getMessage(),
+        ]);
+        
+        return [
+            'total_tracks' => 0,
+            'error' => $e->getMessage(),
+        ];
+    }
+}
+
 }

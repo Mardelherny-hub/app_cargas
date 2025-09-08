@@ -167,16 +167,16 @@
                                 <dt class="text-sm font-medium text-gray-500">Barcaza</dt>
                                 <dd class="mt-1 text-sm text-gray-900">{{ $webservice->voyage->barge_name ?? 'N/A' }}</dd>
                             </div>
-                            @if($webservice->voyage->departure_port)
+                            @if($webservice->voyage->originPort)
                             <div>
                                 <dt class="text-sm font-medium text-gray-500">Puerto Salida</dt>
-                                <dd class="mt-1 text-sm text-gray-900">{{ $webservice->voyage->departure_port }}</dd>
+                                <dd class="mt-1 text-sm text-gray-900">{{ $webservice->voyage->originPort }}</dd>
                             </div>
                             @endif
-                            @if($webservice->voyage->arrival_port)
+                            @if($webservice->voyage->destinationPort)
                             <div>
                                 <dt class="text-sm font-medium text-gray-500">Puerto Llegada</dt>
-                                <dd class="mt-1 text-sm text-gray-900">{{ $webservice->voyage->arrival_port }}</dd>
+                                <dd class="mt-1 text-sm text-gray-900">{{ $webservice->voyage->destinationPort }}</dd>
                             </div>
                             @endif
                         </dl>

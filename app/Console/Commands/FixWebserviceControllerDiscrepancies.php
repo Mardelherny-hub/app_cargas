@@ -52,8 +52,8 @@ class FixWebserviceControllerDiscrepancies extends Command
         'voyage' => [
             'voyage_code' => 'voyage_number',
             'barge_name' => 'internal_reference',
-            'departure_port' => 'origin_port_id',
-            'arrival_port' => 'destination_port_id',
+            'originPort' => 'origin_port_id',
+            'destinationPort' => 'destination_port_id',
         ],
         'webservice_transaction' => [
             // Aquí se pueden agregar más mappings si se detectan
