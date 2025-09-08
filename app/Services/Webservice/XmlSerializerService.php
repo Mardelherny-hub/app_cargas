@@ -43,6 +43,8 @@ class XmlSerializerService
             'xsi' => 'http://www.w3.org/2001/XMLSchema-instance',
             'xsd' => 'http://www.w3.org/2001/XMLSchema',
         ],
+        // ✅ NUEVO: Namespace correcto para AFIP Argentina
+        'afip_micdta_namespace' => 'http://schemas.afip.gob.ar/wgesregsintia2/v1',
     ];
 
     /**
@@ -65,15 +67,14 @@ class XmlSerializerService
         $this->company = $company;
         $this->config = array_merge(self::DEFAULT_CONFIG, $config);
         
-        $this->logOperation('info', 'XmlSerializerService inicializado', [
+        $this->logOperation('info', 'XmlSerializerService inicializado con namespace corregido', [
             'company_id' => $company->id,
             'company_name' => $company->legal_name,
-            'config' => $config,
+            'afip_namespace' => $this->config['afip_micdta_namespace'],
         ]);
     }
-
     /**
-     * ✅ MÉTODO PRINCIPAL: Crear XML MIC/DTA Argentina - VERSIÓN CORREGIDA ÚNICA
+     * ✅ CORRECCIÓN PRINCIPAL: Método createMicDtaXml con namespace correcto
      */
     public function createMicDtaXml(Shipment $shipment, string $transactionId): ?string
     {
@@ -96,50 +97,44 @@ class XmlSerializerService
             // Inicializar DOM
             $this->initializeDom();
 
-            // Crear estructura SOAP con namespace correcto
+            // Crear estructura SOAP
             $envelope = $this->createSoapEnvelope();
             $body = $this->createElement('soap:Body');
             $envelope->appendChild($body);
 
-            // ✅ CREAR ELEMENTO REGISTRAR MIC/DTA CON NAMESPACE CORRECTO
+            // ✅ CORRECCIÓN CRÍTICA: Namespace XML correcto
             $registrarMicDta = $this->createElement('RegistrarMicDta');
-            $registrarMicDta->setAttribute('xmlns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+            
+            // ❌ ANTES (INCORRECTO):
+            // $registrarMicDta->setAttribute('xmlns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+            
+            // ✅ DESPUÉS (CORRECTO):
+            $registrarMicDta->setAttribute('xmlns', $this->config['afip_micdta_namespace']);
+            
             $body->appendChild($registrarMicDta);
 
-            // ✅ 1. AUTENTICACIÓN DE EMPRESA (obligatorio)
-            $this->createAutenticacionEmpresaMicDta($registrarMicDta);
-
-            // ✅ 2. DATOS DEL VIAJE (obligatorio)
-            $this->createViajeMicDta($registrarMicDta, $shipment, $transactionId);
-
-            // ✅ 3. DATOS DEL CAPITÁN (obligatorio)
-            $this->createCapitanMicDta($registrarMicDta, $shipment);
-
-            // ✅ 4. LISTA DE CONTENEDORES (si existen)
-            $this->createContenedoresMicDta($registrarMicDta, $shipment);
-
-            // ✅ 5. INFORMACIÓN DE CARGA (obligatorio)
-            $this->createCargaMicDta($registrarMicDta, $shipment);
-
-            // ✅ 6. TRANSACTION ID (obligatorio)
-            $transactionElement = $this->createElement('transactionId', $transactionId);
-            $registrarMicDta->appendChild($transactionElement);
+            // ✅ AGREGAR AUTENTICACIÓN EMPRESA según especificación AFIP
+            $autenticacion = $this->createAutenticacionEmpresaMicDta($registrarMicDta);
+            
+            // ✅ AGREGAR PARÁMETROS MIC/DTA según especificación AFIP
+            $parametros = $this->createMicDtaParam($registrarMicDta, $shipment, $transactionId);
 
             // Generar XML string
             $xmlString = $this->dom->saveXML();
-            
-            // ✅ VALIDAR XML GENERADO
-            $xmlValidation = $this->validateXmlStructure($xmlString);
-            if (!$xmlValidation['is_valid']) {
-                $this->logOperation('error', 'XML MIC/DTA generado no es válido', [
-                    'errors' => $xmlValidation['errors'],
+
+            // ✅ VALIDAR XML ANTES DE RETORNAR
+            $validation = $this->validateXmlStructure($xmlString);
+            if (!$validation['is_valid']) {
+                $this->logOperation('error', 'Error en validación XML', [
+                    'errors' => $validation['errors'],
                 ], 'xml_validation');
-                return null;
+                throw new Exception('XML generado no válido: ' . implode(', ', $validation['errors']));
             }
 
             $this->logOperation('info', 'XML MIC/DTA creado exitosamente', [
                 'xml_length' => strlen($xmlString),
                 'transaction_id' => $transactionId,
+                'namespace_used' => $this->config['afip_micdta_namespace'],
             ], 'xml_generation');
 
             return $xmlString;
@@ -154,6 +149,39 @@ class XmlSerializerService
             ], 'xml_error');
             return null;
         }
+    }
+
+    private function createMicDtaParam(DOMElement $parent, Shipment $shipment, string $transactionId): DOMElement
+    {
+        $parametros = $this->createElement('argRegistrarMicDtaParam');
+        $parent->appendChild($parametros);
+
+        // ✅ ID de transacción (máximo 15 caracteres según especificación)
+        $idTransaccion = $this->createElement('idTransaccion', substr($transactionId, 0, 15));
+        $parametros->appendChild($idTransaccion);
+
+        // ✅ Estructura MIC/DTA principal
+        $micDta = $this->createElement('micDta');
+        $parametros->appendChild($micDta);
+
+        // ✅ Código de vía de transporte (8 = Hidrovía según EDIFACT 8067)
+        $codViaTrans = $this->createElement('codViaTrans', '8');
+        $micDta->appendChild($codViaTrans);
+
+        // ✅ Agregar datos del transportista (obligatorio)
+        $this->createTransportistaMicDta($micDta, $shipment);
+
+        // ✅ Agregar datos del propietario del vehículo (obligatorio)
+        $this->createPropietarioVehiculoMicDta($micDta, $shipment);
+
+        // ✅ Indicador en lastre (S/N)
+        $indEnLastre = $this->createElement('indEnLastre', $shipment->is_ballast ? 'S' : 'N');
+        $micDta->appendChild($indEnLastre);
+
+        // ✅ Datos de la embarcación (obligatorio)
+        $this->createEmbarcacionMicDta($micDta, $shipment);
+
+        return $parametros;
     }
 
     /**
@@ -198,34 +226,25 @@ class XmlSerializerService
     }
 
     /**
-     * ✅ Crear elemento autenticación empresa para MIC/DTA
+     * ✅ CORRECCIÓN: Crear autenticación de empresa según especificación AFIP
+     * NOTA: Método renombrado para coincidir con la implementación actual
      */
-    private function createAutenticacionEmpresaMicDta(\DOMElement $parent): \DOMElement
+    private function createAutenticacionEmpresaMicDta(DOMElement $parent): DOMElement
     {
-        $autenticacion = $this->createElement('autenticacionEmpresa');
+        $autenticacion = $this->createElement('argWSAutenticacionEmpresa');
         $parent->appendChild($autenticacion);
 
-        // Obtener datos de webservice Argentina de la empresa
-        $argentinaData = $this->company->getArgentinaWebserviceData();
+        // ✅ CUIT de empresa conectada (sin guiones, según especificación)
+        $cuit = $this->createElement('CuitEmpresaConectada', $this->cleanTaxId($this->company->tax_id));
+        $autenticacion->appendChild($cuit);
 
-        // CUIT (obligatorio)
-        $cuitElement = $this->createElement('cuit', $argentinaData['cuit'] ?? $this->company->tax_id);
-        $autenticacion->appendChild($cuitElement);
+        // ✅ Tipo de agente (según documentación AFIP: "TRSP")
+        $tipoAgente = $this->createElement('TipoAgente', 'TRSP');
+        $autenticacion->appendChild($tipoAgente);
 
-        // Usuario y contraseña (si están configurados)
-        if (!empty($argentinaData['username'])) {
-            $usuarioElement = $this->createElement('usuario', $argentinaData['username']);
-            $autenticacion->appendChild($usuarioElement);
-        }
-
-        if (!empty($argentinaData['password'])) {
-            $passwordElement = $this->createElement('password', $argentinaData['password']);
-            $autenticacion->appendChild($passwordElement);
-        }
-
-        // Certificado (alias o referencia)
-        $certificadoElement = $this->createElement('certificado', $this->company->certificate_alias ?? 'default');
-        $autenticacion->appendChild($certificadoElement);
+        // ✅ Rol de la empresa (según documentación AFIP: "TRSP")
+        $rol = $this->createElement('Rol', 'TRSP');
+        $autenticacion->appendChild($rol);
 
         return $autenticacion;
     }
@@ -438,7 +457,131 @@ class XmlSerializerService
     }
 
     /**
-     * ✅ Validar estructura XML contra schema
+     * ✅ NUEVO: Crear datos del transportista según especificación AFIP
+     */
+    private function createTransportistaMicDta(DOMElement $parent, Shipment $shipment): DOMElement
+    {
+        $transportista = $this->createElement('transportista');
+        $parent->appendChild($transportista);
+
+        // Nombre/Razón Social
+        $nombre = $this->createElement('nombre', $this->company->legal_name ?? $this->company->name);
+        $transportista->appendChild($nombre);
+
+        // Domicilio
+        $domicilio = $this->createElement('domicilio');
+        $transportista->appendChild($domicilio);
+        
+        $nombreCalle = $this->createElement('nombreCalle', $this->company->address ?? 'Dirección no especificada');
+        $domicilio->appendChild($nombreCalle);
+
+        $ciudad = $this->createElement('ciudad', $this->company->city ?? 'Buenos Aires');
+        $domicilio->appendChild($ciudad);
+
+        // País (AR para Argentina)
+        $codPais = $this->createElement('codPais', 'AR');
+        $transportista->appendChild($codPais);
+
+        // Identificación fiscal
+        $idFiscal = $this->createElement('idFiscal', $this->cleanTaxId($this->company->tax_id));
+        $transportista->appendChild($idFiscal);
+
+        // Tipo de transportista (1 = Transportista marítimo/fluvial)
+        $tipTrans = $this->createElement('tipTrans', '1');
+        $transportista->appendChild($tipTrans);
+
+        return $transportista;
+    }
+
+    /**
+     * ✅ NUEVO: Crear datos del propietario del vehículo
+     */
+    private function createPropietarioVehiculoMicDta(DOMElement $parent, Shipment $shipment): DOMElement
+    {
+        $propVehiculo = $this->createElement('propVehiculo');
+        $parent->appendChild($propVehiculo);
+
+        // Por defecto, el propietario es la misma empresa
+        $nombre = $this->createElement('nombre', $this->company->legal_name ?? $this->company->name);
+        $propVehiculo->appendChild($nombre);
+
+        // Domicilio
+        $domicilio = $this->createElement('domicilio');
+        $propVehiculo->appendChild($domicilio);
+        
+        $nombreCalle = $this->createElement('nombreCalle', $this->company->address ?? 'Dirección no especificada');
+        $domicilio->appendChild($nombreCalle);
+
+        // País
+        $codPais = $this->createElement('codPais', 'AR');
+        $propVehiculo->appendChild($codPais);
+
+        // Identificación fiscal
+        $idFiscal = $this->createElement('idFiscal', $this->cleanTaxId($this->company->tax_id));
+        $propVehiculo->appendChild($idFiscal);
+
+        return $propVehiculo;
+    }
+
+    /**
+     * ✅ NUEVO: Crear datos de la embarcación según especificación AFIP
+     */
+    private function createEmbarcacionMicDta(DOMElement $parent, Shipment $shipment): DOMElement
+    {
+        $embarcacion = $this->createElement('embarcacion');
+        $parent->appendChild($embarcacion);
+
+        $vessel = $shipment->vessel ?? $shipment->voyage->leadVessel;
+
+        // País de la embarcación
+        $codPais = $this->createElement('codPais', $vessel->flag_country ?? 'AR');
+        $embarcacion->appendChild($codPais);
+
+        // ID de la embarcación (matrícula)
+        $id = $this->createElement('id', $vessel->registration_number ?? $vessel->name ?? 'UNKNOWN');
+        $embarcacion->appendChild($id);
+
+        // Nombre de la embarcación
+        $nombre = $this->createElement('nombre', $vessel->name ?? 'Vessel Unknown');
+        $embarcacion->appendChild($nombre);
+
+        // Tipo de embarcación (BAR = Barcaza, EMP = Empujador, BUM = Buque Motor)
+        $tipEmb = $this->createElement('tipEmb', $this->mapVesselTypeToAfip($vessel->vesselType->name ?? 'barge'));
+        $embarcacion->appendChild($tipEmb);
+
+        // Indicador si integra convoy (S/N)
+        $indIntegraConvoy = $this->createElement('indIntegraConvoy', 'N'); // Por defecto no
+        $embarcacion->appendChild($indIntegraConvoy);
+
+        return $embarcacion;
+    }
+
+    /**
+     * ✅ HELPER: Mapear tipos de embarcación del sistema a códigos AFIP
+     */
+    private function mapVesselTypeToAfip(string $vesselType): string
+    {
+        $mapping = [
+            'barge' => 'BAR',
+            'tugboat' => 'EMP', 
+            'pusher' => 'EMP',
+            'self_propelled' => 'BUM',
+            'motor_vessel' => 'BUM',
+        ];
+
+        return $mapping[strtolower($vesselType)] ?? 'BAR'; // Default: Barcaza
+    }
+
+    /**
+     * ✅ HELPER: Limpiar CUIT/CUIL (quitar guiones y espacios)
+     */
+    private function cleanTaxId(string $taxId): string
+    {
+        return preg_replace('/[^0-9]/', '', $taxId);
+    }
+
+    /**
+     * ✅ CORRECCIÓN: Validar estructura XML con namespace correcto
      */
     public function validateXmlStructure(string $xml, string $schemaPath = null): array
     {
@@ -452,7 +595,7 @@ class XmlSerializerService
             $dom = new DOMDocument();
             $dom->preserveWhiteSpace = false;
             
-            // ✅ CAPTURAR ERRORES DE PARSING XML
+            // Capturar errores de parsing XML
             libxml_use_internal_errors(true);
             
             if (!$dom->loadXML($xml)) {
@@ -475,13 +618,17 @@ class XmlSerializerService
                 $validation['errors'][] = 'Estructura SOAP inválida: falta Body';
             }
 
-            // Validar namespace específico Argentina
+            // ✅ VALIDAR NAMESPACE CORRECTO AFIP
             $registrarMicDta = $dom->getElementsByTagName('RegistrarMicDta');
             if ($registrarMicDta->length > 0) {
                 $xmlns = $registrarMicDta->item(0)->getAttribute('xmlns');
-                if (empty($xmlns)) {
-                    $validation['errors'][] = "Namespace faltante en RegistrarMicDta";
+                $expectedNamespace = $this->config['afip_micdta_namespace'];
+                
+                if ($xmlns !== $expectedNamespace) {
+                    $validation['errors'][] = "Namespace incorrecto. Esperado: {$expectedNamespace}, Encontrado: {$xmlns}";
                 }
+            } else {
+                $validation['errors'][] = 'Elemento RegistrarMicDta no encontrado';
             }
 
             $validation['is_valid'] = empty($validation['errors']);
