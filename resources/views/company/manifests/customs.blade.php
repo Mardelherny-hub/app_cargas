@@ -262,39 +262,54 @@
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <!-- Botones de Envío Individual - VERSIÓN INTEGRADA CON ADJUNTOS -->
-                                    <div class="flex flex-col space-y-2">
-                                        <!-- Primera fila: Botones de envío tradicionales -->
-                                        <div class="flex space-x-2">
-                                            {{-- Argentina --}}
-                                            @if($voyage->destinationPort->country->alpha2_code === 'AR' || 
-                                                ($voyage->originPort->country->alpha2_code === 'AR' && $voyage->destinationPort->country->alpha2_code === 'PY'))
-                                                <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'AR')"
-                                                        class="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1">
-                                                    🇦🇷 Argentina
-                                                </button>
-                                            @endif
-                                            
-                                            {{-- Paraguay --}}
-                                            @if($voyage->destinationPort->country->alpha2_code === 'PY' || 
-                                                ($voyage->originPort->country->alpha2_code === 'PY' && $voyage->destinationPort->country->alpha2_code === 'AR'))
-                                                <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'PY')"
-                                                        class="inline-flex items-center px-3 py-1 border border-green-300 rounded-md text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1">
-                                                    🇵🇾 Paraguay
-                                                </button>
-                                            @endif
-                                        </div>
+                                <!-- Botones de Envío Individual -->
+                                <div class="flex flex-col space-y-2">
+                                    <!-- Primera fila: Botones de envío tradicionales -->
+                                    <div class="flex space-x-2">
+                                        {{-- Argentina Tradicional --}}
+                                        @if($voyage->destinationPort->country->alpha2_code === 'AR' || 
+                                            ($voyage->originPort->country->alpha2_code === 'AR' && $voyage->destinationPort->country->alpha2_code === 'PY'))
+                                            <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'AR')"
+                                                    class="inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1">
+                                                🇦🇷 Argentina
+                                            </button>
+                                        @endif
                                         
-                                        {{-- Segunda fila: Adjuntos Paraguay (NUEVO) --}}
-                                       @if($voyage->destinationPort->country->alpha2_code === 'PY')
-                                        <button onclick="showAttachmentsModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $voyage->originPort->name ?? "N/A" }} → {{ $voyage->destinationPort->name ?? "N/A" }}')"
-                                                class="inline-flex items-center px-3 py-1 bg-yellow-50 border border-yellow-200 rounded-md text-xs font-medium text-yellow-700 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                                                title="Gestionar adjuntos Paraguay">
-                                            📎 Adjuntos
-                                        </button>
+                                        {{-- Paraguay --}}
+                                        @if($voyage->destinationPort->country->alpha2_code === 'PY' || 
+                                            ($voyage->originPort->country->alpha2_code === 'PY' && $voyage->destinationPort->country->alpha2_code === 'AR'))
+                                            <button onclick="showSendModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', 'PY')"
+                                                    class="inline-flex items-center px-3 py-1 border border-green-300 rounded-md text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1">
+                                                🇵🇾 Paraguay
+                                            </button>
                                         @endif
                                     </div>
-                                </td>
+                                    
+                                    <!-- ✅ NUEVA: Segunda fila con botón específico MIC/DTA Completo -->
+                                    @if($voyage->destinationPort->country->alpha2_code === 'AR' || 
+                                        ($voyage->originPort->country->alpha2_code === 'AR' && $voyage->destinationPort->country->alpha2_code === 'PY'))
+                                    <div class="flex space-x-2">
+                                        <button onclick="showMicDtaCompleteModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}')"
+                                                class="inline-flex items-center px-3 py-1 border border-purple-300 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1">
+                                            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                            </svg>
+                                            📋 MIC/DTA Completo
+                                        </button>
+                                    </div>
+                                    @endif
+                                    
+                                    <!-- Tercera fila: Adjuntos Paraguay (existente) -->
+                                    @if($voyage->destinationPort->country->alpha2_code === 'PY')
+                                    <div class="flex space-x-2">
+                                        <button onclick="showAttachmentsModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $voyage->originPort->name ?? "N/A" }} → {{ $voyage->destinationPort->name ?? "N/A" }}')"
+                                                class="inline-flex items-center px-3 py-1 border border-yellow-300 rounded-md text-xs font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1">
+                                            📎 Adjuntos PY
+                                        </button>
+                                    </div>
+                                    @endif
+                                </div>
+                            </td>
                             </tr>
                             @empty
                             <tr>
@@ -358,15 +373,46 @@
                                 Tipo de Webservice
                             </label>
                             <select name="webservice_type" id="webservice_type" required
-                                    class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">Seleccionar...</option>
-                                <option value="micdta">🇦🇷 Argentina MIC/DTA</option>
+                                    class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    onchange="updateWebserviceInfo()">
+                                <option value="">Seleccionar webservice</option>
+                                
+                                <!-- ✅ MODIFICADO: MIC/DTA con información TRACKs -->
+                                <option value="micdta" data-process="tracks">
+                                    🇦🇷 Argentina MIC/DTA (Sistema TRACKs Automático)
+                                </option>
+                                
+                                <!-- ✅ OTROS: Sin cambios -->
                                 <option value="anticipada">🇦🇷 Argentina Anticipada</option>
                                 <option value="desconsolidado">🇦🇷 Argentina Desconsolidados</option>
                                 <option value="transbordo">🚢 Argentina Transbordos</option>
                                 <option value="mane">🏝️ Argentina MANE/Malvina</option>
                                 <option value="paraguay_customs">🇵🇾 Paraguay DNA</option>
                             </select>
+                            <div id="tracks-info-panel" class="hidden mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div class="flex items-start space-x-3">
+                                    <div class="flex-shrink-0">
+                                        <svg class="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h4 class="text-sm font-medium text-blue-900 mb-2">
+                                            🔄 Sistema TRACKs AFIP - Proceso Automático
+                                        </h4>
+                                        <div class="text-sm text-blue-800 space-y-1">
+                                            <p class="font-medium">Este envío ejecutará automáticamente:</p>
+                                            <ol class="list-decimal list-inside ml-4 space-y-1">
+                                                <li><strong>Paso 1:</strong> RegistrarTitEnvios (genera TRACKs AFIP)</li>
+                                                <li><strong>Paso 2:</strong> RegistrarMicDta (usa TRACKs del paso 1)</li>
+                                            </ol>
+                                            <div class="mt-3 p-2 bg-blue-100 rounded text-xs">
+                                                <strong>Nota:</strong> El proceso es secuencial y automático. No requiere intervención manual entre pasos.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         
                         <div>
@@ -536,6 +582,230 @@
                         <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
                     </div>
                     <p id="upload-status" class="text-sm text-gray-600 mt-2">Preparando subida...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✅ NUEVO: Modal MIC/DTA Completo - PASO A PASO -->
+    <div id="micdta-complete-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <!-- Header del Modal -->
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-900">
+                            📋 MIC/DTA con Títulos y Envíos AFIP
+                        </h3>
+                        <p class="text-sm text-gray-600 mt-1">
+                            Proceso paso a paso para <span id="complete-voyage-title" class="font-medium"></span>
+                        </p>
+                    </div>
+                    <button onclick="closeMicDtaCompleteModal()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- PASO 1: Configuración Inicial -->
+                <div id="step-1-config" class="space-y-6">
+                    <!-- Información del Proceso -->
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                        <div class="flex items-start space-x-3">
+                            <div class="flex-shrink-0">
+                                <svg class="w-5 h-5 text-purple-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="text-sm font-medium text-purple-900 mb-2">
+                                    Proceso controlado paso a paso:
+                                </h4>
+                                <ol class="text-sm text-purple-800 space-y-2">
+                                    <li class="flex items-center space-x-2">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                                        <span><strong>Registro de Títulos y Envíos:</strong> Genera identificadores únicos → <em>Pausa para revisión</em></span>
+                                    </li>
+                                    <li class="flex items-center space-x-2">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-gray-400 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                                        <span><strong>Manifiesto de Carga:</strong> Envía MIC/DTA usando identificadores validados</span>
+                                    </li>
+                                </ol>
+                                <div class="mt-3 p-2 bg-purple-100 rounded text-xs">
+                                    <strong>Ventaja:</strong> Podrá revisar y validar los identificadores antes de enviar el manifiesto final.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Formulario Configuración -->
+                    <form id="step1-form">
+                        @csrf
+                        <input type="hidden" name="webservice_type" value="micdta">
+                        <input type="hidden" name="step" value="1">
+                        <input type="hidden" id="complete-voyage-id" name="voyage_id">
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <div>
+                                <label for="complete-environment" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Ambiente AFIP
+                                </label>
+                                <select name="environment" id="complete-environment" required
+                                        class="w-full border-gray-300 rounded-md shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <option value="testing">🧪 Testing (Homologación)</option>
+                                    <option value="production">🏭 Producción</option>
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label for="complete-priority" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Prioridad
+                                </label>
+                                <select name="priority" id="complete-priority"
+                                        class="w-full border-gray-300 rounded-md shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                                    <option value="normal">Normal</option>
+                                    <option value="high">Alta</option>
+                                    <option value="urgent">Urgente</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Warning Producción -->
+                        <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg hidden" id="complete-production-warning">
+                            <div class="flex items-start space-x-3">
+                                <svg class="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <div>
+                                    <h4 class="text-sm font-medium text-red-900">⚠️ Envío a Producción AFIP</h4>
+                                    <p class="text-sm text-red-700 mt-1">
+                                        Este envío será procesado por AFIP en ambiente de producción.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-end space-x-3">
+                            <button type="button" onclick="closeMicDtaCompleteModal()"
+                                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">
+                                Cancelar
+                            </button>
+                            <button type="submit"
+                                    class="px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-transparent rounded-md shadow-sm hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                                🚀 Paso 1: Generar Títulos y Envíos
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- PASO 2: Progreso y Resultado Paso 1 -->
+                <div id="step-1-progress" class="hidden space-y-6">
+                    <div class="text-center py-8">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                        <h4 class="text-lg font-medium text-gray-900">Ejecutando Paso 1</h4>
+                        <p class="text-sm text-gray-600">Enviando Registro de Títulos y Envíos a AFIP...</p>
+                    </div>
+                </div>
+
+                <!-- PASO 3: Revisión de TRACKs Generados -->
+                <div id="step-1-review" class="hidden space-y-6">
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div class="flex items-start space-x-3">
+                            <svg class="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <div class="flex-1">
+                                <h4 class="text-sm font-medium text-green-900">✅ Paso 1 Completado</h4>
+                                <p class="text-sm text-green-700 mt-1">
+                                    Títulos y Envíos registrados exitosamente en AFIP. Revise los identificadores generados.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de TRACKs Generados -->
+                    <div class="bg-white border border-gray-200 rounded-lg">
+                        <div class="px-4 py-3 border-b border-gray-200">
+                            <h4 class="text-sm font-medium text-gray-900">Identificadores Generados (TRACKs)</h4>
+                            <p class="text-xs text-gray-600 mt-1">Estos identificadores se usarán en el Paso 2</p>
+                        </div>
+                        <div class="overflow-hidden">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Track ID</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Referencia</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tracks-table-body" class="bg-white divide-y divide-gray-200">
+                                    <!-- Los TRACKs se llenarán aquí dinámicamente -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Detalles de la Transacción -->
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <h4 class="text-sm font-medium text-gray-900 mb-2">Detalles de la Transacción</h4>
+                        <div class="grid grid-cols-2 gap-4 text-xs">
+                            <div>
+                                <span class="font-medium">Transaction ID:</span>
+                                <span id="step1-transaction-id" class="ml-1 font-mono">-</span>
+                            </div>
+                            <div>
+                                <span class="font-medium">Fecha:</span>
+                                <span id="step1-timestamp" class="ml-1">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botones de Acción -->
+                    <div class="flex justify-between">
+                        <button type="button" onclick="goBackToStep1()"
+                                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">
+                            ← Volver a Configuración
+                        </button>
+                        <div class="space-x-3">
+                            <button type="button" onclick="closeMicDtaCompleteModal()"
+                                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">
+                                Terminar Aquí
+                            </button>
+                            <button type="button" onclick="proceedToStep2()"
+                                    class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                🚀 Paso 2: Enviar Manifiesto
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PASO 4: Progreso Paso 2 -->
+                <div id="step-2-progress" class="hidden space-y-6">
+                    <div class="text-center py-8">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+                        <h4 class="text-lg font-medium text-gray-900">Ejecutando Paso 2</h4>
+                        <p class="text-sm text-gray-600">Enviando Manifiesto de Carga con identificadores validados...</p>
+                    </div>
+                </div>
+
+                <!-- PASO 5: Resultado Final -->
+                <div id="final-result" class="hidden space-y-6">
+                    <div id="final-status-panel" class="border rounded-lg p-4">
+                        <!-- Se llenará dinámicamente -->
+                    </div>
+                    
+                    <div class="flex justify-end space-x-3">
+                        <button type="button" onclick="viewTransactionDetails()"
+                                class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700">
+                            Ver Detalles Completos
+                        </button>
+                        <button type="button" onclick="closeMicDtaCompleteModal()"
+                                class="px-4 py-2 text-sm font-medium text-white bg-gray-600 border border-transparent rounded-md shadow-sm hover:bg-gray-700">
+                            Cerrar
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1055,6 +1325,277 @@ document.addEventListener('keydown', function(event) {
         document.addEventListener('DOMContentLoaded', function() {
             checkExistingAttachments();
         });
+
+        // Función para mostrar/ocultar información según webservice seleccionado
+        function updateWebserviceInfo() {
+            const select = document.getElementById('webservice_type');
+            const tracksPanel = document.getElementById('tracks-info-panel');
+            
+            if (select.value === 'micdta') {
+                tracksPanel.classList.remove('hidden');
+            } else {
+                tracksPanel.classList.add('hidden');
+            }
+        }
+
+        // Llamar al cargar la página si hay valor preseleccionado
+        document.addEventListener('DOMContentLoaded', function() {
+            updateWebserviceInfo();
+        });
+
+        // Variables para el modal MIC/DTA Completo
+        let selectedCompleteVoyageId = null;
+        let step1TransactionId = null;
+        let generatedTracks = [];
+
+        // Mostrar modal MIC/DTA Completo
+        function showMicDtaCompleteModal(voyageId, voyageNumber) {
+            selectedCompleteVoyageId = voyageId;
+            
+            // Resetear estado
+            resetCompleteModal();
+            
+            // Actualizar información del modal
+            document.getElementById('complete-voyage-title').textContent = voyageNumber;
+            document.getElementById('complete-voyage-id').value = voyageId;
+            
+            // Mostrar modal
+            document.getElementById('micdta-complete-modal').classList.remove('hidden');
+        }
+
+        // Cerrar modal MIC/DTA Completo
+        function closeMicDtaCompleteModal() {
+            document.getElementById('micdta-complete-modal').classList.add('hidden');
+            selectedCompleteVoyageId = null;
+            step1TransactionId = null;
+            generatedTracks = [];
+        }
+
+        // Resetear modal a estado inicial
+        function resetCompleteModal() {
+            // Mostrar solo paso 1
+            document.getElementById('step-1-config').classList.remove('hidden');
+            document.getElementById('step-1-progress').classList.add('hidden');
+            document.getElementById('step-1-review').classList.add('hidden');
+            document.getElementById('step-2-progress').classList.add('hidden');
+            document.getElementById('final-result').classList.add('hidden');
+            
+            // Limpiar datos
+            step1TransactionId = null;
+            generatedTracks = [];
+        }
+
+        // Volver al paso 1
+        function goBackToStep1() {
+            resetCompleteModal();
+        }
+
+        // Manejar cambio de ambiente para mostrar warning
+        document.getElementById('complete-environment').addEventListener('change', function() {
+            const warning = document.getElementById('complete-production-warning');
+            if (this.value === 'production') {
+                warning.classList.remove('hidden');
+            } else {
+                warning.classList.add('hidden');
+            }
+        });
+
+        // Interceptar envío del formulario Paso 1
+        document.getElementById('step1-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            executeStep1();
+        });
+
+        // Ejecutar Paso 1: RegistrarTitEnvios
+        function executeStep1() {
+            // Mostrar progreso
+            document.getElementById('step-1-config').classList.add('hidden');
+            document.getElementById('step-1-progress').classList.remove('hidden');
+            
+            // Preparar datos del formulario
+            const formData = new FormData(document.getElementById('step1-form'));
+            formData.append('step', '1'); // Indicar que es solo paso 1
+            
+            // Enviar a controller
+            fetch(`/company/manifests/customs/${selectedCompleteVoyageId}/send-step1`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showStep1Results(data);
+                } else {
+                    showStep1Error(data);
+                }
+            })
+            .catch(error => {
+                showStep1Error({ error_message: 'Error de conexión: ' + error.message });
+            });
+        }
+
+        // Mostrar resultados del Paso 1
+        function showStep1Results(data) {
+            // Ocultar progreso
+            document.getElementById('step-1-progress').classList.add('hidden');
+            
+            // Guardar datos
+            step1TransactionId = data.transaction_id;
+            generatedTracks = data.tracks || [];
+            
+            // Llenar tabla de TRACKs
+            const tableBody = document.getElementById('tracks-table-body');
+            tableBody.innerHTML = '';
+            
+            if (generatedTracks.length > 0) {
+                generatedTracks.forEach(track => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="px-4 py-2 text-xs font-mono">${track.track_number}</td>
+                        <td class="px-4 py-2 text-xs">${track.track_type || 'envio'}</td>
+                        <td class="px-4 py-2 text-xs">${track.reference_number || 'N/A'}</td>
+                        <td class="px-4 py-2 text-xs">
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Generado
+                            </span>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } else {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="px-4 py-2 text-xs text-center text-gray-500">
+                            No se generaron TRACKs (posible error en respuesta AFIP)
+                        </td>
+                    </tr>
+                `;
+            }
+            
+            // Llenar detalles de transacción
+            document.getElementById('step1-transaction-id').textContent = data.transaction_id || 'N/A';
+            document.getElementById('step1-timestamp').textContent = new Date().toLocaleString();
+            
+            // Mostrar panel de revisión
+            document.getElementById('step-1-review').classList.remove('hidden');
+        }
+
+        // Mostrar error del Paso 1
+        function showStep1Error(data) {
+            // Ocultar progreso
+            document.getElementById('step-1-progress').classList.add('hidden');
+            
+            // Mostrar error
+            alert('❌ Error en Paso 1:\n\n' + (data.error_message || 'Error desconocido'));
+            
+            // Volver a configuración
+            goBackToStep1();
+        }
+
+        // Proceder al Paso 2
+        function proceedToStep2() {
+            if (!step1TransactionId || generatedTracks.length === 0) {
+                alert('⚠️ No hay TRACKs válidos para proceder al Paso 2');
+                return;
+            }
+            
+            // Mostrar progreso del paso 2
+            document.getElementById('step-1-review').classList.add('hidden');
+            document.getElementById('step-2-progress').classList.remove('hidden');
+            
+            // Preparar datos para paso 2
+            const formData = new FormData();
+            formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+            formData.append('step', '2');
+            formData.append('step1_transaction_id', step1TransactionId);
+            formData.append('tracks', JSON.stringify(generatedTracks.map(t => t.track_number)));
+            
+            // Enviar paso 2
+            fetch(`/company/manifests/customs/${selectedCompleteVoyageId}/send-step2`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                showFinalResults(data);
+            })
+            .catch(error => {
+                showFinalResults({ 
+                    success: false, 
+                    error_message: 'Error de conexión: ' + error.message 
+                });
+            });
+        }
+
+        // Mostrar resultados finales
+        function showFinalResults(data) {
+            // Ocultar progreso
+            document.getElementById('step-2-progress').classList.add('hidden');
+            
+            // Preparar panel de resultados
+            const statusPanel = document.getElementById('final-status-panel');
+            
+            if (data.success) {
+                statusPanel.className = 'border border-green-200 bg-green-50 rounded-lg p-4';
+                statusPanel.innerHTML = `
+                    <div class="flex items-start space-x-3">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <div class="flex-1">
+                            <h4 class="text-sm font-medium text-green-900">✅ Proceso Completo Exitoso</h4>
+                            <p class="text-sm text-green-700 mt-1">
+                                Ambos pasos ejecutados correctamente. MIC/DTA enviado con identificadores validados.
+                            </p>
+                            <div class="mt-3 text-xs text-green-600">
+                                <p><strong>Paso 1:</strong> ${generatedTracks.length} identificadores generados</p>
+                                <p><strong>Paso 2:</strong> Manifiesto enviado exitosamente</p>
+                                ${data.confirmation_number ? `<p><strong>Confirmación:</strong> ${data.confirmation_number}</p>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                statusPanel.className = 'border border-red-200 bg-red-50 rounded-lg p-4';
+                statusPanel.innerHTML = `
+                    <div class="flex items-start space-x-3">
+                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <div class="flex-1">
+                            <h4 class="text-sm font-medium text-red-900">❌ Error en Paso 2</h4>
+                            <p class="text-sm text-red-700 mt-1">
+                                El Paso 1 fue exitoso, pero falló el envío del manifiesto.
+                            </p>
+                            <div class="mt-3 text-xs text-red-600">
+                                <p><strong>Error:</strong> ${data.error_message || 'Error desconocido'}</p>
+                                <p><strong>Nota:</strong> Los identificadores del Paso 1 siguen siendo válidos.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Mostrar resultado final
+            document.getElementById('final-result').classList.remove('hidden');
+        }
+
+        // Ver detalles de transacción
+        function viewTransactionDetails() {
+            if (step1TransactionId) {
+                window.open(`/company/manifests/customs/status/${step1TransactionId}`, '_blank');
+            }
+        }
+
     </script>
+
+
     @endpush
 </x-app-layout>

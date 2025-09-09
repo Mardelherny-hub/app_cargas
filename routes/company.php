@@ -447,6 +447,9 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     Route::get('/debug', [ManifestCustomsController::class, 'debug'])->name('debug');
     Route::post('/send-batch', [ManifestCustomsController::class, 'sendBatch'])->name('sendBatch');
     Route::post('/{voyageId}/send', [ManifestCustomsController::class, 'send'])->name('send');
+    // ✅ NUEVAS: Rutas para proceso paso a paso MIC/DTA
+    Route::post('/{voyageId}/send-step1', [ManifestCustomsController::class, 'sendStep1'])->name('send-step1');
+    Route::post('/{voyageId}/send-step2', [ManifestCustomsController::class, 'sendStep2'])->name('send-step2');
     Route::get('/{transactionId}/status', [ManifestCustomsController::class, 'status'])->name('status');
     Route::post('/{transactionId}/retry', [ManifestCustomsController::class, 'retry'])->name('retry');
     Route::get('/voyage/{voyageId}/statuses', [ManifestCustomsController::class, 'voyageStatuses'])->name('voyage-statuses');

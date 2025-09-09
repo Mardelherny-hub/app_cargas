@@ -748,12 +748,25 @@ class ManifestCustomsController extends Controller
                     ]);
                     return $response;
                     
-                case 'micdta':
-                    $firstShipment = $voyage->shipments()->first();
-                    if (!$firstShipment) {
-                        throw new \Exception('El viaje no tiene shipments para enviar MIC/DTA');
+                    // ✅ NUEVO: Usar automáticamente sistema TRACKs para MIC/DTA
+                    Log::info('🔥 CASO MIC/DTA - Usando SISTEMA TRACKs automáticamente');
+                    
+                    // Obtener primer shipment del voyage para TRACKs
+                    $shipment = $voyage->shipments()->first();
+                    if (!$shipment) {
+                        throw new Exception("El voyage {$voyage->voyage_number} no tiene shipments para procesar con TRACKs");
                     }
-                    return $service->sendMicDta($firstShipment);
+                    
+                    // Ejecutar flujo TRACKs completo automáticamente
+                    $response = $service->sendMicDtaWithTracks($shipment);
+                    
+                    Log::info('🔥 RESPUESTA TRACKs MIC/DTA', [
+                        'success' => $response['success'] ?? false,
+                        'tracks_used' => count($response['tracks_used'] ?? []),
+                        'transaction_id' => $response['transaction_id'] ?? null,
+                    ]);
+                    
+                    return $response;
 
                 case 'desconsolidado':
                     $tituloMadre = $voyage->shipments()->first();
@@ -1856,6 +1869,170 @@ private function buildErrorMessage(array $response): string
     // Fallback más específico
     return 'Error del webservice aduanero - verificar configuración y datos enviados';
 }
+
+    
+
+    /**
+     * ✅ NUEVO: Ejecutar solo Paso 1 - RegistrarTitEnvios
+     */
+    public function sendStep1(Request $request, $voyageId)
+    {
+        $voyage = $this->getVoyageForCustoms($voyageId);
+
+        $request->validate([
+            'environment' => 'required|in:testing,production',
+            'priority' => 'nullable|in:normal,high,urgent',
+        ]);
+
+        try {
+            Log::info('🔥 INICIANDO PASO 1 - RegistrarTitEnvios', [
+                'voyage_id' => $voyageId,
+                'voyage_number' => $voyage->voyage_number,
+                'environment' => $request->environment,
+                'user_id' => auth()->id(),
+            ]);
+
+            // Obtener primer shipment del voyage
+            $shipment = $voyage->shipments()->first();
+            if (!$shipment) {
+                return response()->json([
+                    'success' => false,
+                    'error_message' => "El voyage {$voyage->voyage_number} no tiene shipments asociados",
+                ]);
+            }
+
+            // Crear servicio MIC/DTA
+            $company = auth()->user()->getUserCompany();
+            $user = auth()->user();
+            $config = ['environment' => $request->environment];
+            $service = new \App\Services\Webservice\ArgentinaMicDtaService($company, $user, $config);
+
+            // Ejecutar SOLO RegistrarTitEnvios
+            $result = $service->registrarTitEnvios($shipment);
+
+            Log::info('🔥 RESULTADO PASO 1', [
+                'success' => $result['success'],
+                'transaction_id' => $result['transaction_id'],
+                'tracks_count' => count($result['tracks'] ?? []),
+            ]);
+
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Paso 1 completado: Títulos y Envíos registrados',
+                    'transaction_id' => $result['transaction_id'],
+                    'tracks' => $result['tracks'] ?? [],
+                    'tracks_count' => count($result['tracks'] ?? []),
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error_message' => implode('. ', $result['errors']),
+                    'transaction_id' => $result['transaction_id'],
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error en Paso 1 - RegistrarTitEnvios', [
+                'voyage_id' => $voyageId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_message' => 'Error en Paso 1: ' . $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * ✅ NUEVO: Ejecutar solo Paso 2 - RegistrarMicDta con TRACKs validados
+     */
+    public function sendStep2(Request $request, $voyageId)
+    {
+        $voyage = $this->getVoyageForCustoms($voyageId);
+
+        $request->validate([
+            'step1_transaction_id' => 'required|string',
+            'tracks' => 'required|string', // JSON string con array de track_numbers
+        ]);
+
+        try {
+            Log::info('🔥 INICIANDO PASO 2 - RegistrarMicDta', [
+                'voyage_id' => $voyageId,
+                'voyage_number' => $voyage->voyage_number,
+                'step1_transaction_id' => $request->step1_transaction_id,
+                'user_id' => auth()->id(),
+            ]);
+
+            // Decodificar TRACKs
+            $trackNumbers = json_decode($request->tracks, true);
+            if (!is_array($trackNumbers) || empty($trackNumbers)) {
+                return response()->json([
+                    'success' => false,
+                    'error_message' => 'No se proporcionaron TRACKs válidos para el Paso 2',
+                ]);
+            }
+
+            Log::info('🔥 TRACKs para usar en Paso 2', [
+                'tracks_count' => count($trackNumbers),
+                'tracks' => $trackNumbers,
+            ]);
+
+            // Obtener primer shipment del voyage
+            $shipment = $voyage->shipments()->first();
+            if (!$shipment) {
+                return response()->json([
+                    'success' => false,
+                    'error_message' => "El voyage {$voyage->voyage_number} no tiene shipments asociados",
+                ]);
+            }
+
+            // Crear servicio MIC/DTA
+            $company = auth()->user()->getUserCompany();
+            $user = auth()->user();
+            $service = new \App\Services\Webservice\ArgentinaMicDtaService($company, $user);
+
+            // Ejecutar MIC/DTA usando TRACKs específicos
+            $result = $service->sendMicDtaWithTracks($shipment, $trackNumbers);
+
+            Log::info('🔥 RESULTADO PASO 2', [
+                'success' => $result['success'],
+                'transaction_id' => $result['transaction_id'],
+                'tracks_used' => count($result['tracks_used'] ?? []),
+            ]);
+
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Proceso completo: MIC/DTA enviado con TRACKs validados',
+                    'transaction_id' => $result['transaction_id'],
+                    'tracks_used' => $result['tracks_used'] ?? [],
+                    'confirmation_number' => $result['confirmation_number'] ?? null,
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error_message' => implode('. ', $result['errors']),
+                    'transaction_id' => $result['transaction_id'],
+                ]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error en Paso 2 - RegistrarMicDta', [
+                'voyage_id' => $voyageId,
+                'step1_transaction_id' => $request->step1_transaction_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_message' => 'Error en Paso 2: ' . $e->getMessage(),
+            ]);
+        }
+    }
    
 
 }
