@@ -1128,10 +1128,7 @@ public function isCertificateValid(): bool
         }
     }
 
-/**
- * ✅ AGREGAR al final de la clase Company, antes del último }
- * Solo si NO existe el método getArgentinaWebserviceData()
- */
+
 
 /**
  * Obtener datos de la empresa para webservices de Argentina

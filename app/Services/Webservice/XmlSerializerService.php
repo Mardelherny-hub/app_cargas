@@ -185,6 +185,560 @@ class XmlSerializerService
     }
 
     /**
+     * Crear XML para RegistrarConvoy - PASO 3 AFIP
+     */
+    public function createConvoyXml($shipments, string $transactionId, string $convoyId, array $tracks): ?string
+    {
+        try {
+            $this->logOperation('info', 'Iniciando creación XML RegistrarConvoy', [
+                'convoy_id' => $convoyId,
+                'transaction_id' => $transactionId,
+                'shipments_count' => is_countable($shipments) ? count($shipments) : $shipments->count(),
+                'tracks_count' => count($tracks),
+            ], 'xml_convoy');
+
+            // Validar precondiciones
+            $validation = $this->validateShipmentsForConvoy($shipments);
+            if (!$validation['is_valid']) {
+                $this->logOperation('error', 'Shipments no válidos para convoy', [
+                    'errors' => $validation['errors'],
+                ], 'xml_validation');
+                return null;
+            }
+
+            // Inicializar DOM
+            $this->initializeDom();
+
+            // Crear estructura SOAP
+            $envelope = $this->createSoapEnvelope();
+            $body = $this->createElement('soap:Body');
+            $envelope->appendChild($body);
+
+            // Elemento principal RegistrarConvoy
+            $registrarConvoy = $this->createElement('RegistrarConvoy');
+            $registrarConvoy->setAttribute('xmlns', $this->config['afip_micdta_namespace']);
+            $body->appendChild($registrarConvoy);
+
+            // Autenticación empresa
+            $autenticacion = $this->createAutenticacionEmpresaConvoy($registrarConvoy);
+            
+            // Parámetros convoy
+            $parametros = $this->createConvoyParam($registrarConvoy, $shipments, $transactionId, $convoyId, $tracks);
+
+            // Generar XML string
+            $xmlString = $this->dom->saveXML();
+
+            // Validar XML antes de retornar
+            $validation = $this->validateXmlStructure($xmlString);
+            if (!$validation['is_valid']) {
+                $this->logOperation('error', 'Error en validación XML convoy', [
+                    'errors' => $validation['errors'],
+                ], 'xml_validation');
+                throw new Exception('XML convoy no válido: ' . implode(', ', $validation['errors']));
+            }
+
+            $this->logOperation('info', 'XML RegistrarConvoy creado exitosamente', [
+                'xml_length' => strlen($xmlString),
+                'convoy_id' => $convoyId,
+                'namespace_used' => $this->config['afip_micdta_namespace'],
+            ], 'xml_convoy');
+
+            return $xmlString;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error creando XML RegistrarConvoy', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'convoy_id' => $convoyId,
+                'transaction_id' => $transactionId,
+            ], 'xml_error');
+            return null;
+        }
+    }
+
+    /**
+     * Validar shipments para convoy
+     */
+    private function validateShipmentsForConvoy($shipments): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'errors' => [],
+            'warnings' => [],
+        ];
+
+        // Convertir a collection si es array
+        if (is_array($shipments)) {
+            $shipments = collect($shipments);
+        }
+
+        // Validar que hay shipments
+        if ($shipments->isEmpty()) {
+            $validation['errors'][] = 'No hay shipments para formar convoy';
+            return $validation;
+        }
+
+        // Validar mínimo 2 shipments para convoy
+        if ($shipments->count() < 2) {
+            $validation['warnings'][] = 'Convoy con un solo shipment (válido pero poco común)';
+        }
+
+        // Validar que todos los shipments son válidos
+        foreach ($shipments as $shipment) {
+            if (!$shipment || !$shipment->id) {
+                $validation['errors'][] = 'Shipment inválido encontrado';
+                continue;
+            }
+
+            // Validar voyage asociado
+            if (!$shipment->voyage) {
+                $validation['errors'][] = "Shipment {$shipment->shipment_number} no tiene voyage asociado";
+            }
+
+            // Validar vessel
+            if (!$shipment->vessel && !$shipment->voyage?->leadVessel) {
+                $validation['errors'][] = "Shipment {$shipment->shipment_number} no tiene vessel asociado";
+            }
+        }
+
+        // Validar que todos pertenecen a la misma empresa
+        $companyIds = $shipments->pluck('voyage.company_id')->unique()->filter();
+        if ($companyIds->count() > 1) {
+            $validation['errors'][] = 'Todos los shipments deben pertenecer a la misma empresa';
+        }
+
+        if (!$companyIds->contains($this->company->id)) {
+            $validation['errors'][] = 'Los shipments no pertenecen a la empresa actual';
+        }
+
+        $validation['is_valid'] = empty($validation['errors']);
+
+        return $validation;
+    }
+
+    /**
+     * Crear autenticación empresa para convoy
+     */
+    private function createAutenticacionEmpresaConvoy(DOMElement $parent): DOMElement
+    {
+        $autenticacion = $this->createElement('argWSAutenticacionEmpresa');
+        $parent->appendChild($autenticacion);
+
+        // CUIT empresa conectada
+        $cuit = $this->createElement('CuitEmpresaConectada', $this->cleanTaxId($this->company->tax_id));
+        $autenticacion->appendChild($cuit);
+
+        // Tipo agente para convoy (mismo que MIC/DTA)
+        $tipoAgente = $this->createElement('TipoAgente', 'TRSP');
+        $autenticacion->appendChild($tipoAgente);
+
+        // Rol empresa para convoy
+        $rol = $this->createElement('Rol', 'TRSP');
+        $autenticacion->appendChild($rol);
+
+        return $autenticacion;
+    }
+
+    /**
+     * Crear parámetros para RegistrarConvoy
+     */
+    private function createConvoyParam(DOMElement $parent, $shipments, string $transactionId, string $convoyId, array $tracks): DOMElement
+    {
+        $parametros = $this->createElement('argRegistrarConvoyParam');
+        $parent->appendChild($parametros);
+
+        // ID de transacción (máximo 15 caracteres)
+        $idTransaccion = $this->createElement('idTransaccion', substr($transactionId, 0, 15));
+        $parametros->appendChild($idTransaccion);
+
+        // Estructura convoy principal
+        $convoy = $this->createElement('convoy');
+        $parametros->appendChild($convoy);
+
+        // ID del convoy
+        $idConvoy = $this->createElement('idConvoy', $convoyId);
+        $convoy->appendChild($idConvoy);
+
+        // Fecha y hora de formación del convoy
+        $fechaFormacion = $this->createElement('fechaFormacionConvoy', now()->format('Y-m-d\TH:i:s'));
+        $convoy->appendChild($fechaFormacion);
+
+        // Datos del convoy
+        $this->createConvoyData($convoy, $shipments, $tracks);
+
+        // Lista de embarcaciones del convoy
+        $this->createEmbarcacionesConvoy($convoy, $shipments);
+
+        // TRACKs de MIC/DTA incluidos en el convoy
+        $this->createTracksConvoy($convoy, $tracks);
+
+        return $parametros;
+    }
+
+    /**
+     * Crear datos generales del convoy
+     */
+    private function createConvoyData(DOMElement $parent, $shipments, array $tracks): DOMElement
+    {
+        $datosConvoy = $this->createElement('datosConvoy');
+        $parent->appendChild($datosConvoy);
+
+        // Cantidad de embarcaciones
+        $cantidadEmbarcaciones = $this->createElement('cantidadEmbarcaciones', (string)$shipments->count());
+        $datosConvoy->appendChild($cantidadEmbarcaciones);
+
+        // Puerto de formación (usar primer shipment como referencia)
+        $firstShipment = is_array($shipments) ? $shipments[0] : $shipments->first();
+        $puertoFormacion = $this->createElement('puertoFormacion', 
+            $firstShipment->voyage->originPort->code ?? 'ARBUE');
+        $datosConvoy->appendChild($puertoFormacion);
+
+        // Puerto de destino (usar primer shipment como referencia)
+        $puertoDestino = $this->createElement('puertoDestino', 
+            $firstShipment->voyage->destinationPort->code ?? 'PYTVT');
+        $datosConvoy->appendChild($puertoDestino);
+
+        // Tipo de convoy (fluvial para hidrovía)
+        $tipoConvoy = $this->createElement('tipoConvoy', 'FLUVIAL');
+        $datosConvoy->appendChild($tipoConvoy);
+
+        // Observaciones
+        $observaciones = $this->createElement('observaciones', 
+            "Convoy formado por {$shipments->count()} embarcaciones - Generado automáticamente");
+        $datosConvoy->appendChild($observaciones);
+
+        return $datosConvoy;
+    }
+
+    /**
+     * Crear lista de embarcaciones del convoy
+     */
+    private function createEmbarcacionesConvoy(DOMElement $parent, $shipments): void
+    {
+        $embarcaciones = $this->createElement('embarcacionesConvoy');
+        $parent->appendChild($embarcaciones);
+
+        foreach ($shipments as $index => $shipment) {
+            $embarcacion = $this->createElement('embarcacion');
+            $embarcaciones->appendChild($embarcacion);
+
+            $vessel = $shipment->vessel ?? $shipment->voyage->leadVessel;
+
+            // Posición en el convoy (1, 2, 3...)
+            $posicion = $this->createElement('posicionConvoy', (string)($index + 1));
+            $embarcacion->appendChild($posicion);
+
+            // Datos de la embarcación
+            $nombre = $this->createElement('nombreEmbarcacion', $vessel->name ?? 'Vessel Unknown');
+            $embarcacion->appendChild($nombre);
+
+            $matricula = $this->createElement('matriculaEmbarcacion', 
+                $vessel->registration_number ?? $vessel->name ?? 'UNKNOWN');
+            $embarcacion->appendChild($matricula);
+
+            // Tipo de embarcación
+            $tipo = $this->createElement('tipoEmbarcacion', 
+                $this->mapVesselTypeToAfip($vessel->vesselType->name ?? 'barge'));
+            $embarcacion->appendChild($tipo);
+
+            // País de bandera
+            $paisBandera = $this->createElement('paisBandera', $vessel->flag_country ?? 'AR');
+            $embarcacion->appendChild($paisBandera);
+
+            // Función en el convoy (REMOLCADO, EMPUJADOR, AUTÓNOMO)
+            $funcionConvoy = $this->createElement('funcionEnConvoy', 
+                $this->determineFunctionInConvoy($vessel, $index));
+            $embarcacion->appendChild($funcionConvoy);
+        }
+    }
+
+    /**
+     * Crear TRACKs asociados al convoy
+     */
+    private function createTracksConvoy(DOMElement $parent, array $tracks): void
+    {
+        if (empty($tracks)) {
+            return;
+        }
+
+        $tracksConvoy = $this->createElement('tracksAsociados');
+        $parent->appendChild($tracksConvoy);
+
+        foreach ($tracks as $trackNumber) {
+            $track = $this->createElement('trackMicDta');
+            $track->textContent = $trackNumber;
+            $tracksConvoy->appendChild($track);
+        }
+
+        // Cantidad total de TRACKs
+        $cantidadTracks = $this->createElement('cantidadTracks', (string)count($tracks));
+        $tracksConvoy->appendChild($cantidadTracks);
+    }
+
+    /**
+     * Determinar función de embarcación en convoy
+     */
+    private function determineFunctionInConvoy($vessel, int $position): string
+    {
+        // Lógica para determinar función según tipo de vessel y posición
+        $vesselType = strtolower($vessel->vesselType->name ?? 'barge');
+        
+        if (in_array($vesselType, ['tugboat', 'pusher'])) {
+            return 'EMPUJADOR';
+        }
+        
+        if (in_array($vesselType, ['self_propelled', 'motor_vessel'])) {
+            return 'AUTÓNOMO';
+        }
+        
+        // Las barcazas normalmente van remolcadas
+        return 'REMOLCADO';
+    }
+
+    /**
+     * Crear XML para RegistrarSalidaZonaPrimaria - PASO 4 AFIP (Final)
+     */
+    public function createSalidaZonaPrimariaXml(array $convoyData, string $transactionId): ?string
+    {
+        try {
+            $this->logOperation('info', 'Iniciando creación XML RegistrarSalidaZonaPrimaria', [
+                'convoy_id' => $convoyData['convoy_id'] ?? 'N/A',
+                'transaction_id' => $transactionId,
+                'puerto_salida' => $convoyData['puerto_salida'] ?? 'N/A',
+            ], 'xml_salida');
+
+            // Validar datos de entrada
+            if (empty($convoyData['convoy_id'])) {
+                throw new Exception('ID de convoy requerido para RegistrarSalidaZonaPrimaria');
+            }
+
+            // Inicializar DOM
+            $this->initializeDom();
+
+            // Crear estructura SOAP
+            $envelope = $this->createSoapEnvelope();
+            $body = $this->createElement('soap:Body');
+            $envelope->appendChild($body);
+
+            // Elemento principal RegistrarSalidaZonaPrimaria
+            $registrarSalida = $this->createElement('RegistrarSalidaZonaPrimaria');
+            $registrarSalida->setAttribute('xmlns', $this->config['afip_micdta_namespace']);
+            $body->appendChild($registrarSalida);
+
+            // Autenticación empresa
+            $autenticacion = $this->createAutenticacionEmpresaSalida($registrarSalida);
+            
+            // Parámetros salida
+            $parametros = $this->createSalidaParam($registrarSalida, $convoyData, $transactionId);
+
+            // Generar XML string
+            $xmlString = $this->dom->saveXML();
+
+            // Validar XML antes de retornar
+            $validation = $this->validateXmlStructure($xmlString);
+            if (!$validation['is_valid']) {
+                $this->logOperation('error', 'Error en validación XML salida', [
+                    'errors' => $validation['errors'],
+                ], 'xml_validation');
+                throw new Exception('XML salida no válido: ' . implode(', ', $validation['errors']));
+            }
+
+            $this->logOperation('info', 'XML RegistrarSalidaZonaPrimaria creado exitosamente', [
+                'xml_length' => strlen($xmlString),
+                'convoy_id' => $convoyData['convoy_id'],
+                'namespace_used' => $this->config['afip_micdta_namespace'],
+            ], 'xml_salida');
+
+            return $xmlString;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error creando XML RegistrarSalidaZonaPrimaria', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'convoy_data' => $convoyData,
+                'transaction_id' => $transactionId,
+            ], 'xml_error');
+            return null;
+        }
+    }
+
+    /**
+     * Crear autenticación empresa para salida zona primaria
+     */
+    private function createAutenticacionEmpresaSalida(DOMElement $parent): DOMElement
+    {
+        $autenticacion = $this->createElement('argWSAutenticacionEmpresa');
+        $parent->appendChild($autenticacion);
+
+        // CUIT empresa conectada
+        $cuit = $this->createElement('CuitEmpresaConectada', $this->cleanTaxId($this->company->tax_id));
+        $autenticacion->appendChild($cuit);
+
+        // Tipo agente
+        $tipoAgente = $this->createElement('TipoAgente', 'TRSP');
+        $autenticacion->appendChild($tipoAgente);
+
+        // Rol empresa
+        $rol = $this->createElement('Rol', 'TRSP');
+        $autenticacion->appendChild($rol);
+
+        return $autenticacion;
+    }
+
+    /**
+     * Crear parámetros para RegistrarSalidaZonaPrimaria
+     */
+    private function createSalidaParam(DOMElement $parent, array $convoyData, string $transactionId): DOMElement
+    {
+        $parametros = $this->createElement('argRegistrarSalidaZonaPrimariaParam');
+        $parent->appendChild($parametros);
+
+        // ID de transacción
+        $idTransaccion = $this->createElement('idTransaccion', substr($transactionId, 0, 15));
+        $parametros->appendChild($idTransaccion);
+
+        // Estructura salida principal
+        $salidaZonaPrimaria = $this->createElement('salidaZonaPrimaria');
+        $parametros->appendChild($salidaZonaPrimaria);
+
+        // ID del convoy que sale
+        $idConvoy = $this->createElement('idConvoyReferencia', $convoyData['convoy_id']);
+        $salidaZonaPrimaria->appendChild($idConvoy);
+
+        // Datos de la salida
+        $this->createDatosSalida($salidaZonaPrimaria, $convoyData);
+
+        // Información del operativo de salida
+        $this->createOperativoSalida($salidaZonaPrimaria, $convoyData);
+
+        return $parametros;
+    }
+
+    /**
+     * Crear datos generales de la salida
+     */
+    private function createDatosSalida(DOMElement $parent, array $convoyData): DOMElement
+    {
+        $datosSalida = $this->createElement('datosSalida');
+        $parent->appendChild($datosSalida);
+
+        // Fecha y hora de salida
+        $fechaHoraSalida = $this->createElement('fechaHoraSalida', 
+            isset($convoyData['fecha_salida']) ? 
+            Carbon::parse($convoyData['fecha_salida'])->format('Y-m-d\TH:i:s') : 
+            now()->format('Y-m-d\TH:i:s'));
+        $datosSalida->appendChild($fechaHoraSalida);
+
+        // Puerto/lugar de salida
+        $lugarSalida = $this->createElement('codigoLugarSalida', 
+            $convoyData['puerto_salida'] ?? 'ARBUE');
+        $datosSalida->appendChild($lugarSalida);
+
+        // Destino final
+        $destinoFinal = $this->createElement('codigoDestinoFinal', 
+            $convoyData['puerto_destino'] ?? 'PYTVT');
+        $datosSalida->appendChild($destinoFinal);
+
+        // Tipo de salida (NORMAL, URGENTE, PROGRAMADA)
+        $tipoSalida = $this->createElement('tipoSalida', 
+            $convoyData['tipo_salida'] ?? 'NORMAL');
+        $datosSalida->appendChild($tipoSalida);
+
+        // Observaciones de la salida
+        $observaciones = $this->createElement('observacionesSalida', 
+            $convoyData['observaciones'] ?? 'Salida de zona primaria - Convoy completo');
+        $datosSalida->appendChild($observaciones);
+
+        return $datosSalida;
+    }
+
+    /**
+     * Crear información del operativo de salida
+     */
+    private function createOperativoSalida(DOMElement $parent, array $convoyData): DOMElement
+    {
+        $operativo = $this->createElement('operativoSalida');
+        $parent->appendChild($operativo);
+
+        // Autoridad que autoriza la salida
+        $autoridadAutoriza = $this->createElement('autoridadAutoriza', 
+            $convoyData['autoridad'] ?? 'ADUANA ARGENTINA');
+        $operativo->appendChild($autoridadAutoriza);
+
+        // Número de autorización (si existe)
+        if (isset($convoyData['numero_autorizacion'])) {
+            $numeroAutorizacion = $this->createElement('numeroAutorizacion', 
+                $convoyData['numero_autorizacion']);
+            $operativo->appendChild($numeroAutorizacion);
+        }
+
+        // Canal de salida (VERDE, AMARILLO, ROJO)
+        $canalSalida = $this->createElement('canalSalida', 
+            $convoyData['canal_salida'] ?? 'VERDE');
+        $operativo->appendChild($canalSalida);
+
+        // Inspector actuante (si hay)
+        if (isset($convoyData['inspector'])) {
+            $inspector = $this->createElement('inspectorActuante', 
+                $convoyData['inspector']);
+            $operativo->appendChild($inspector);
+        }
+
+        // Documentación presentada
+        $this->createDocumentacionPresentada($operativo, $convoyData);
+
+        return $operativo;
+    }
+
+    /**
+     * Crear documentación presentada para la salida
+     */
+    private function createDocumentacionPresentada(DOMElement $parent, array $convoyData): void
+    {
+        $documentacion = $this->createElement('documentacionPresentada');
+        $parent->appendChild($documentacion);
+
+        // Manifiestos incluidos
+        $manifiestos = $this->createElement('manifiestosPresentados');
+        $documentacion->appendChild($manifiestos);
+
+        $cantidadManifiestos = $this->createElement('cantidadManifiestos', 
+            (string)($convoyData['cantidad_manifiestos'] ?? 1));
+        $manifiestos->appendChild($cantidadManifiestos);
+
+        // Documentos adicionales
+        $documentosAdicionales = $this->createElement('documentosAdicionales');
+        $documentacion->appendChild($documentosAdicionales);
+
+        // Lista de documentos estándar
+        $tiposDocumentos = [
+            'CERTIFICADO_NAVEGABILIDAD' => 'S',
+            'LICENCIA_CAPITAN' => 'S', 
+            'POLIZA_SEGURO' => 'S',
+            'CERTIFICADO_CARGA' => isset($convoyData['tiene_carga']) ? 'S' : 'N',
+            'PERMISO_TRANSITO' => 'S'
+        ];
+
+        foreach ($tiposDocumentos as $tipo => $presenta) {
+            $documento = $this->createElement('documento');
+            $documentosAdicionales->appendChild($documento);
+
+            $tipoDoc = $this->createElement('tipoDocumento', $tipo);
+            $documento->appendChild($tipoDoc);
+
+            $presentaDoc = $this->createElement('presenta', $presenta);
+            $documento->appendChild($presentaDoc);
+        }
+
+        // Observaciones sobre documentación
+        $obsDocumentacion = $this->createElement('observacionesDocumentacion', 
+            'Documentación completa presentada según normativa vigente');
+        $documentacion->appendChild($obsDocumentacion);
+    }
+
+    /**
      * ✅ MÉTODOS HELPER CORREGIDOS Y UNIFICADOS
      */
 
@@ -1055,31 +1609,41 @@ class XmlSerializerService
     $envios = $this->createElement('Envios');
     $parentElement->appendChild($envios);
 
-    $envio = $this->createElement('Envio');
-    $envios->appendChild($envio);
+    // OBLIGATORIO AFIP: Número de conocimiento (18 caracteres)
+    $numeroConocimiento = $this->createElement('NumeroConocimiento');
+    $conocimientoNum = $shipment->shipment_number ?? 'SIN-NUMERO';
+    $numeroConocimiento->textContent = substr(str_pad($conocimientoNum, 18, '0', STR_PAD_LEFT), 0, 18);
+    $envios->appendChild($numeroConocimiento);
 
-    // Número de envío
-    $numeroEnvio = $this->createElement('NumeroEnvio');
-    $numeroEnvio->textContent = $shipment->shipment_number;
-    $envio->appendChild($numeroEnvio);
+    // OBLIGATORIO AFIP: Aduana (3 caracteres) 
+    $aduana = $this->createElement('Aduana');
+    $aduanaCode = $this->getAduanaCodeFromPort($shipment->voyage->destinationPort ?? null);
+    $aduana->textContent = $aduanaCode;
+    $envios->appendChild($aduana);
 
-    // Descripción de la carga
-    $descripcion = $this->createElement('DescripcionCarga');
-    $descripcion->textContent = $shipment->description ?? 'CARGA GENERAL';
-    $envio->appendChild($descripcion);
-
-    // Peso total calculado
-    $peso = $this->createElement('PesoTotal');
-    $pesoEnKg = $this->calcularPesoEnviosEnKg($shipment);
-    $peso->textContent = (string)$pesoEnKg;
-    $envio->appendChild($peso);
-
-    // Usar SOLO el método createBultosInfo (NO createBultosInfoSinHardcode)
-    if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
-        $this->createBultosInfo($envio, $shipment);
-    }
+    // OBLIGATORIO AFIP: Código lugar operativo (5 caracteres)
+    $lugarOperativo = $this->createElement('CodigoLugarOperativoDescarga');
+    $portCode = $shipment->voyage->destinationPort->code ?? 'ARBUE';
+    $lugarOperativo->textContent = substr($portCode, 0, 5);
+    $envios->appendChild($lugarOperativo);
 
     return $envios;
+}
+
+private function getAduanaCodeFromPort($port): string
+{
+    if (!$port || !$port->code) {
+        return '621'; // Buenos Aires por defecto
+    }
+
+    $aduanaMapping = [
+        'ARBUE' => '621', // Buenos Aires
+        'ARROS' => '620', // Rosario  
+        'ARSLA' => '620', // San Lorenzo -> Rosario
+        'PYASU' => '001', // Asunción Paraguay
+    ];
+
+    return $aduanaMapping[$port->code] ?? '621';
 }
 
     /**
@@ -1590,48 +2154,44 @@ class XmlSerializerService
  * porque faltan campos OBLIGATORIOS en el XML
  */
 
-/**
- * ✅ AGREGAR: Crear información del conductor (OBLIGATORIO AFIP)
- */
 private function createConductorInfo($parentElement, Shipment $shipment)
 {
     $conductor = $this->createElement('Conductor');
     $parentElement->appendChild($conductor);
 
-    // Buscar captain en shipment o voyage
+    // Buscar captain: primero en shipment, después en voyage
     $captain = $shipment->captain ?? $shipment->voyage->captain ?? null;
 
     if ($captain) {
         // Usar datos reales del captain
         $nombre = $this->createElement('Nombre');
-        $nombre->textContent = $captain->first_name ?? 'Roberto Daniel';
+        $nombre->textContent = $captain->first_name ?? 'NO ESPECIFICADO';
         $conductor->appendChild($nombre);
 
         $apellido = $this->createElement('Apellido');
-        $apellido->textContent = $captain->last_name ?? 'Gutierrez Morales';
+        $apellido->textContent = $captain->last_name ?? 'NO ESPECIFICADO';
         $conductor->appendChild($apellido);
 
         $licencia = $this->createElement('Licencia');
-        $licencia->textContent = $captain->license_number ?? 'PNA-AR-001789';
+        $licencia->textContent = $captain->license_number ?? 'SIN LICENCIA';
         $conductor->appendChild($licencia);
     } else {
-        // Datos por defecto válidos para AFIP
+        // Sin capitán asignado
         $nombre = $this->createElement('Nombre');
-        $nombre->textContent = 'Roberto Daniel';
+        $nombre->textContent = 'SIN ASIGNAR';
         $conductor->appendChild($nombre);
 
         $apellido = $this->createElement('Apellido');
-        $apellido->textContent = 'Gutierrez Morales';
+        $apellido->textContent = 'SIN ASIGNAR';
         $conductor->appendChild($apellido);
 
         $licencia = $this->createElement('Licencia');
-        $licencia->textContent = 'PNA-AR-001789';
+        $licencia->textContent = 'SIN LICENCIA';
         $conductor->appendChild($licencia);
     }
 
     return $conductor;
 }
-
 /**
  * ✅ AGREGAR: Crear información de la embarcación (OBLIGATORIO AFIP)
  */

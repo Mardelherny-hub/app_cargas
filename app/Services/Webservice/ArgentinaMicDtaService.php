@@ -225,6 +225,601 @@ class ArgentinaMicDtaService
         return $this->sendMicDtaWithTracks($shipment);
     }
 
+    /**
+     * Registrar convoy (RegistrarConvoy) - PASO 3 AFIP
+     * Agrupa múltiples MIC/DTA bajo un convoy único
+     */
+    public function registrarConvoy(array $shipmentIds, string $convoyName = null): array
+    {
+        $result = [
+            'success' => false,
+            'convoy_id' => null,
+            'transaction_id' => null,
+            'shipments_included' => [],
+            'tracks_used' => [],
+            'errors' => [],
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            $this->logOperation('info', 'Iniciando RegistrarConvoy - Paso 3 AFIP', [
+                'shipment_ids' => $shipmentIds,
+                'convoy_name' => $convoyName,
+                'shipments_count' => count($shipmentIds),
+            ]);
+
+            // 1. Validar shipments y obtener TRACKs disponibles
+            $validationResult = $this->validateShipmentsForConvoy($shipmentIds);
+            if (!$validationResult['is_valid']) {
+                $result['errors'] = $validationResult['errors'];
+                return $result;
+            }
+
+            $shipments = $validationResult['shipments'];
+            $availableTracks = $validationResult['tracks'];
+
+            // 2. Generar nombre de convoy si no se proporciona
+            $convoyId = $convoyName ?? $this->generateConvoyReference($shipments);
+
+            // 3. Crear transacción para convoy
+            $transaction = $this->createConvoyTransaction($shipments, $convoyId);
+            $result['transaction_id'] = $transaction->id;
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. Generar XML para RegistrarConvoy
+            $xmlContent = $this->xmlSerializer->createConvoyXml($shipments, $transaction->transaction_id, $convoyId, $availableTracks);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML RegistrarConvoy');
+            }
+
+            // 5. Enviar a AFIP
+            $soapClient = $this->prepareSoapClient();
+            $soapResponse = $this->sendConvoySoapRequest($transaction, $soapClient, $xmlContent);
+
+            // 6. Procesar respuesta
+            if ($soapResponse['success']) {
+                $result = $this->processConvoyResponse($transaction, $soapResponse, $shipments, $convoyId);
+                
+                // Marcar TRACKs como usados en convoy
+                if ($result['success']) {
+                    $this->markTracksAsUsed($availableTracks, 'used_in_convoy');
+                    $result['tracks_used'] = $availableTracks;
+                    $result['shipments_included'] = collect($shipments)->pluck('id')->toArray();
+                }
+            } else {
+                $result['errors'] = $soapResponse['errors'] ?? ['Error en RegistrarConvoy'];
+            }
+
+            DB::commit();
+            return $result;
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            $this->logOperation('error', 'Error en RegistrarConvoy', [
+                'error' => $e->getMessage(),
+                'shipment_ids' => $shipmentIds,
+                'convoy_name' => $convoyName,
+            ]);
+
+            $result['errors'][] = $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * Validar shipments para formar convoy
+     */
+    private function validateShipmentsForConvoy(array $shipmentIds): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'shipments' => [],
+            'tracks' => [],
+            'errors' => [],
+        ];
+
+        try {
+            // 1. Obtener shipments válidos
+            $shipments = Shipment::whereIn('id', $shipmentIds)
+                ->where('active', true)
+                ->get();
+
+            if ($shipments->count() !== count($shipmentIds)) {
+                $validation['errors'][] = 'Algunos shipments no existen o están inactivos';
+                return $validation;
+            }
+
+            // 2. Verificar que todos pertenezcan a la misma empresa
+            $companyIds = $shipments->pluck('voyage.company_id')->unique()->filter();
+            if ($companyIds->count() > 1 || !$companyIds->contains($this->company->id)) {
+                $validation['errors'][] = 'Todos los shipments deben pertenecer a la misma empresa';
+                return $validation;
+            }
+
+            // 3. Obtener TRACKs disponibles para convoy
+            $allTracks = [];
+            foreach ($shipments as $shipment) {
+                $shipmentTracks = WebserviceTrack::where('shipment_id', $shipment->id)
+                    ->where('status', 'used_in_micdta')
+                    ->where('webservice_method', 'RegistrarTitEnvios')
+                    ->pluck('track_number')
+                    ->toArray();
+
+                if (empty($shipmentTracks)) {
+                    $validation['errors'][] = "Shipment {$shipment->shipment_number} no tiene TRACKs válidos para convoy";
+                    return $validation;
+                }
+
+                $allTracks = array_merge($allTracks, $shipmentTracks);
+            }
+
+            // 4. Verificar que no se hayan usado ya en otro convoy
+            $usedInConvoy = WebserviceTrack::whereIn('track_number', $allTracks)
+                ->where('status', 'used_in_convoy')
+                ->count();
+
+            if ($usedInConvoy > 0) {
+                $validation['errors'][] = 'Algunos TRACKs ya fueron usados en otro convoy';
+                return $validation;
+            }
+
+            $validation['is_valid'] = true;
+            $validation['shipments'] = $shipments;
+            $validation['tracks'] = $allTracks;
+
+            return $validation;
+
+        } catch (Exception $e) {
+            $validation['errors'][] = 'Error validando shipments para convoy: ' . $e->getMessage();
+            return $validation;
+        }
+    }
+
+    /**
+     * Crear transacción para convoy
+     */
+    private function createConvoyTransaction($shipments, string $convoyId): WebserviceTransaction
+    {
+        $transactionId = 'CONVOY_' . time() . '_' . rand(1000, 9999);
+        
+        return WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'shipment_id' => $shipments->first()->id, // Primer shipment como referencia
+            'voyage_id' => $shipments->first()->voyage_id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'micdta',
+            'country' => 'AR',
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy',
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'webservice_url' => $this->getWebserviceUrl(),
+            'timeout_seconds' => $this->config['timeout_seconds'] ?? 60,
+            'max_retries' => $this->config['max_retries'],
+            'retry_intervals' => json_encode($this->config['retry_intervals']),
+            'requires_certificate' => $this->config['require_certificate'],
+            'additional_metadata' => [
+                'method' => 'RegistrarConvoy',
+                'step' => 3,
+                'purpose' => 'Agrupar múltiples MIC/DTA en convoy',
+                'convoy_id' => $convoyId,
+                'shipments_count' => $shipments->count(),
+                'shipment_ids' => $shipments->pluck('id')->toArray(),
+            ],
+        ]);
+    }
+
+    /**
+     * Generar referencia única para convoy
+     */
+    private function generateConvoyReference($shipments): string
+    {
+        $year = now()->format('Y');
+        $month = now()->format('m');
+        $sequence = str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
+        
+        return "CONVOY_{$year}{$month}_{$sequence}_{$this->company->id}";
+    }
+
+    /**
+     * Enviar SOAP Request para RegistrarConvoy
+     */
+    private function sendConvoySoapRequest(WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+    {
+        $result = [
+            'success' => false,
+            'response_data' => null,
+            'errors' => [],
+        ];
+
+        try {
+            $this->logOperation('info', 'Enviando SOAP RegistrarConvoy', [
+                'transaction_id' => $transaction->id,
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+            ]);
+
+            // Preparar parámetros SOAP
+            $soapParams = [
+                'xmlParam' => $xmlContent,
+            ];
+
+            // Llamada SOAP real
+            $soapResponse = $soapClient->__soapCall('RegistrarConvoy', $soapParams);
+
+            if ($soapResponse) {
+                $result['success'] = true;
+                $result['response_data'] = $soapResponse;
+                
+                $this->logOperation('info', 'Respuesta SOAP RegistrarConvoy recibida', [
+                    'transaction_id' => $transaction->id,
+                    'has_response' => !empty($soapResponse),
+                ]);
+            } else {
+                $result['errors'][] = 'Respuesta SOAP vacía';
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $result['errors'][] = 'Error SOAP RegistrarConvoy: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en SOAP RegistrarConvoy', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $result;
+        }
+    }
+
+    /**
+     * Procesar respuesta de RegistrarConvoy
+     */
+    private function processConvoyResponse(WebserviceTransaction $transaction, array $soapResponse, $shipments, string $convoyId): array
+    {
+        $result = [
+            'success' => false,
+            'convoy_id' => $convoyId,
+            'transaction_id' => $transaction->id,
+        ];
+        
+        try {
+            // Actualizar transacción como exitosa
+            $transaction->update([
+                'status' => 'success',
+                'completed_at' => now(),
+                'external_reference' => $soapResponse['response_data']['convoy_reference'] ?? $convoyId,
+            ]);
+            
+            // Crear registro de respuesta
+            WebserviceResponse::create([
+                'transaction_id' => $transaction->id,
+                'response_type' => 'success',
+                'confirmation_number' => $soapResponse['response_data']['confirmation_number'] ?? null,
+                'customs_status' => 'convoy_processed',
+                'customs_processed_at' => now(),
+                'additional_data' => [
+                    'convoy_id' => $convoyId,
+                    'shipments_count' => $shipments->count(),
+                    'convoy_reference' => $soapResponse['response_data']['convoy_reference'] ?? null,
+                ],
+            ]);
+            
+            $result['success'] = true;
+            $result['convoy_reference'] = $soapResponse['response_data']['convoy_reference'] ?? $convoyId;
+            
+            $this->logOperation('info', 'Convoy registrado exitosamente', [
+                'transaction_id' => $transaction->id,
+                'convoy_id' => $convoyId,
+                'shipments_count' => $shipments->count(),
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error procesando respuesta RegistrarConvoy', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+            
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * Registrar salida de zona primaria - PASO 4 AFIP (Final)
+     */
+    public function registrarSalidaZonaPrimaria(array $convoyData): array
+    {
+        $result = [
+            'success' => false,
+            'salida_reference' => null,
+            'transaction_id' => null,
+            'convoy_id' => null,
+            'errors' => [],
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            $this->logOperation('info', 'Iniciando RegistrarSalidaZonaPrimaria - Paso 4 AFIP', [
+                'convoy_data' => $convoyData,
+            ]);
+
+            // 1. Validar datos del convoy
+            $validation = $this->validateConvoyForSalida($convoyData);
+            if (!$validation['is_valid']) {
+                $result['errors'] = $validation['errors'];
+                return $result;
+            }
+
+            $convoyId = $convoyData['convoy_id'];
+
+            // 2. Crear transacción para salida
+            $transaction = $this->createSalidaTransaction($convoyData);
+            $result['transaction_id'] = $transaction->id;
+            $this->currentTransactionId = $transaction->id;
+
+            // 3. Generar XML para RegistrarSalidaZonaPrimaria
+            $xmlContent = $this->xmlSerializer->createSalidaZonaPrimariaXml($convoyData, $transaction->transaction_id);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML RegistrarSalidaZonaPrimaria');
+            }
+
+            // 4. Enviar a AFIP
+            $soapClient = $this->prepareSoapClient();
+            $soapResponse = $this->sendSalidaSoapRequest($transaction, $soapClient, $xmlContent);
+
+            // 5. Procesar respuesta
+            if ($soapResponse['success']) {
+                $result = $this->processSalidaResponse($transaction, $soapResponse, $convoyId);
+                
+                if ($result['success']) {
+                    $result['convoy_id'] = $convoyId;
+                    
+                    // Marcar TRACKs como completados
+                    $this->markConvoyTracksAsCompleted($convoyId);
+                }
+            } else {
+                $result['errors'] = $soapResponse['errors'] ?? ['Error en RegistrarSalidaZonaPrimaria'];
+            }
+
+            DB::commit();
+            return $result;
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            $this->logOperation('error', 'Error en RegistrarSalidaZonaPrimaria', [
+                'error' => $e->getMessage(),
+                'convoy_data' => $convoyData,
+            ]);
+
+            $result['errors'][] = $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * Validar convoy para salida de zona primaria
+     */
+    private function validateConvoyForSalida(array $convoyData): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'errors' => [],
+        ];
+
+        // Verificar campos obligatorios
+        if (empty($convoyData['convoy_id'])) {
+            $validation['errors'][] = 'ID de convoy requerido';
+        }
+
+        if (empty($convoyData['puerto_salida'])) {
+            $validation['errors'][] = 'Puerto de salida requerido';
+        }
+
+        // Verificar que el convoy existe y fue registrado
+        $convoyExists = WebserviceTransaction::where('additional_metadata->convoy_id', $convoyData['convoy_id'])
+            ->where('soap_action', 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy')
+            ->where('status', 'success')
+            ->where('company_id', $this->company->id)
+            ->exists();
+
+        if (!$convoyExists) {
+            $validation['errors'][] = 'Convoy no encontrado o no registrado exitosamente';
+        }
+
+        $validation['is_valid'] = empty($validation['errors']);
+        return $validation;
+    }
+
+    /**
+     * Crear transacción para salida de zona primaria
+     */
+    private function createSalidaTransaction(array $convoyData): WebserviceTransaction
+    {
+        $transactionId = 'SALIDA_' . time() . '_' . rand(1000, 9999);
+        
+        return WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'shipment_id' => null,
+            'voyage_id' => null,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'micdta',
+            'country' => 'AR',
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'webservice_url' => $this->getWebserviceUrl(),
+            'timeout_seconds' => $this->config['timeout_seconds'] ?? 60,
+            'max_retries' => $this->config['max_retries'],
+            'retry_intervals' => json_encode($this->config['retry_intervals']),
+            'requires_certificate' => $this->config['require_certificate'],
+            'additional_metadata' => [
+                'method' => 'RegistrarSalidaZonaPrimaria',
+                'step' => 4,
+                'purpose' => 'Finalizar proceso AFIP - Salida de zona primaria',
+                'convoy_id' => $convoyData['convoy_id'],
+                'puerto_salida' => $convoyData['puerto_salida'] ?? null,
+            ],
+        ]);
+    }
+
+    /**
+     * Enviar SOAP Request para RegistrarSalidaZonaPrimaria
+     */
+    private function sendSalidaSoapRequest(WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+    {
+        $result = [
+            'success' => false,
+            'response_data' => null,
+            'errors' => [],
+        ];
+
+        try {
+            $this->logOperation('info', 'Enviando SOAP RegistrarSalidaZonaPrimaria', [
+                'transaction_id' => $transaction->id,
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+            ]);
+
+            $soapParams = [
+                'xmlParam' => $xmlContent,
+            ];
+
+            $soapResponse = $soapClient->__soapCall('RegistrarSalidaZonaPrimaria', $soapParams);
+
+            if ($soapResponse) {
+                $result['success'] = true;
+                $result['response_data'] = $soapResponse;
+                
+                $this->logOperation('info', 'Respuesta SOAP RegistrarSalidaZonaPrimaria recibida', [
+                    'transaction_id' => $transaction->id,
+                    'has_response' => !empty($soapResponse),
+                ]);
+            } else {
+                $result['errors'][] = 'Respuesta SOAP vacía';
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $result['errors'][] = 'Error SOAP RegistrarSalidaZonaPrimaria: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en SOAP RegistrarSalidaZonaPrimaria', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $result;
+        }
+    }
+
+    /**
+     * Procesar respuesta de RegistrarSalidaZonaPrimaria
+     */
+    private function processSalidaResponse(WebserviceTransaction $transaction, array $soapResponse, string $convoyId): array
+    {
+        $result = [
+            'success' => false,
+            'salida_reference' => null,
+            'transaction_id' => $transaction->id,
+        ];
+        
+        try {
+            $transaction->update([
+                'status' => 'success',
+                'completed_at' => now(),
+                'external_reference' => $soapResponse['response_data']['salida_reference'] ?? null,
+            ]);
+            
+            WebserviceResponse::create([
+                'transaction_id' => $transaction->id,
+                'response_type' => 'success',
+                'confirmation_number' => $soapResponse['response_data']['confirmation_number'] ?? null,
+                'customs_status' => 'salida_processed',
+                'customs_processed_at' => now(),
+                'additional_data' => [
+                    'convoy_id' => $convoyId,
+                    'salida_reference' => $soapResponse['response_data']['salida_reference'] ?? null,
+                    'numero_salida' => $soapResponse['response_data']['numero_salida'] ?? null,
+                ],
+            ]);
+            
+            $result['success'] = true;
+            $result['salida_reference'] = $soapResponse['response_data']['salida_reference'] ?? null;
+            
+            $this->logOperation('info', 'Salida de zona primaria registrada exitosamente', [
+                'transaction_id' => $transaction->id,
+                'convoy_id' => $convoyId,
+                'salida_reference' => $result['salida_reference'],
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error procesando respuesta RegistrarSalidaZonaPrimaria', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+            
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * Marcar TRACKs del convoy como completados
+     */
+    private function markConvoyTracksAsCompleted(string $convoyId): void
+    {
+        try {
+            // Buscar TRACKs asociados al convoy
+            $convoyTransaction = WebserviceTransaction::where('additional_metadata->convoy_id', $convoyId)
+                ->where('soap_action', 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy')
+                ->where('company_id', $this->company->id)
+                ->first();
+
+            if ($convoyTransaction) {
+                $shipmentIds = $convoyTransaction->additional_metadata['shipment_ids'] ?? [];
+                
+                WebserviceTrack::whereIn('shipment_id', $shipmentIds)
+                    ->where('status', 'used_in_convoy')
+                    ->update([
+                        'status' => 'completed',
+                        'completed_at' => now(),
+                        'notes' => 'Proceso AFIP completado - Salida de zona primaria registrada',
+                        'process_chain' => DB::raw("JSON_ARRAY_APPEND(process_chain, '$', 'completed')")
+                    ]);
+
+                $this->logOperation('info', 'TRACKs del convoy marcados como completados', [
+                    'convoy_id' => $convoyId,
+                    'shipment_ids' => $shipmentIds,
+                ]);
+            }
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error marcando TRACKs como completados', [
+                'convoy_id' => $convoyId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     // ========================================================================
     // MÉTODOS DE SOPORTE TRACKs
     // ========================================================================
