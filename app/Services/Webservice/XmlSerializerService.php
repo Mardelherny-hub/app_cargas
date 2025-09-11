@@ -13,6 +13,7 @@ use Exception;
 use DOMDocument;
 use DOMElement;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 /**
@@ -1346,6 +1347,13 @@ class XmlSerializerService
             // Generar XML string
             $xmlString = $this->dom->saveXML();
 
+            // ✅ TEMPORAL: Log del XML para debug
+$this->logOperation('debug', 'XML RegistrarTitEnvios generado', [
+    'xml_content' => $xmlString,
+    'xml_size' => strlen($xmlString),
+    'transaction_id' => $transactionId,
+], 'xml_debug');
+
             // Validar XML
             $validation = $this->validateXmlStructure($xmlString);
             if (!$validation['is_valid']) {
@@ -1361,6 +1369,8 @@ class XmlSerializerService
             ], 'xml_titenvios');
 
             return $xmlString;
+
+            
 
         } catch (Exception $e) {
             $this->logOperation('error', 'Error generando XML RegistrarTitEnvios', [
@@ -1627,6 +1637,21 @@ class XmlSerializerService
     $lugarOperativo->textContent = substr($portCode, 0, 5);
     $envios->appendChild($lugarOperativo);
 
+    // OBLIGATORIO: Marca de los bultos
+    $marcaBultos = $this->createElement('MarcaBultos');
+    $marcaBultos->textContent = $shipment->cargo_marks ?? 'MARCA GENERAL';
+    $envios->appendChild($marcaBultos);
+
+    // OBLIGATORIO: Indicador de consolidado (S/N)
+    $indConsolidado = $this->createElement('IndicadorConsolidado');
+    $indConsolidado->textContent = 'N'; // N = No consolidado
+    $envios->appendChild($indConsolidado);
+
+    // OBLIGATORIO: Indicador de tránsito/transbordo (S/N)  
+    $indTransito = $this->createElement('IndicadorTransitoTransbordo');
+    $indTransito->textContent = 'N'; // N = No es tránsito
+    $envios->appendChild($indTransito);
+
     return $envios;
 }
 
@@ -1790,7 +1815,7 @@ private function getAduanaCodeFromPort($port): string
     /**
      * Crear información de transportista
      */
-    private function createTransportistaInfo($parentElement)
+    private function createTransportistaInfo($parentElement, Shipment $shipment = null)
     {
         $transportista = $this->createElement('Transportista');
         $parentElement->appendChild($transportista);
@@ -2144,198 +2169,202 @@ private function getAduanaCodeFromPort($port): string
     }
 
 
-/**
- * 🚨 URGENTE: MÉTODOS FALTANTES PARA RegistrarTitEnvios
- * 
- * ARCHIVO: app/Services/Webservice/XmlSerializerService.php
- * INSTRUCCIONES: AGREGAR estos métodos al final de la clase, antes del último }
- * 
- * PROBLEMA: AFIP devuelve "Object reference not set to an instance of an object" 
- * porque faltan campos OBLIGATORIOS en el XML
- */
+    /**
+     * PROBLEMA: AFIP devuelve "Object reference not set to an instance of an object" 
+     * porque faltan campos OBLIGATORIOS en el XML
+     */
 
-private function createConductorInfo($parentElement, Shipment $shipment)
-{
-    $conductor = $this->createElement('Conductor');
-    $parentElement->appendChild($conductor);
+    private function createConductorInfo($parentElement, Shipment $shipment)
+    {
+        $conductor = $this->createElement('Conductor');
+        $parentElement->appendChild($conductor);
 
-    // Buscar captain: primero en shipment, después en voyage
-    $captain = $shipment->captain ?? $shipment->voyage->captain ?? null;
+        // Buscar captain: primero en shipment, después en voyage
+        $captain = $shipment->captain ?? $shipment->voyage->captain ?? null;
 
-    if ($captain) {
-        // Usar datos reales del captain
-        $nombre = $this->createElement('Nombre');
-        $nombre->textContent = $captain->first_name ?? 'NO ESPECIFICADO';
-        $conductor->appendChild($nombre);
+        if ($captain) {
+            // Usar datos reales del captain
+            $nombre = $this->createElement('Nombre');
+            $nombre->textContent = $captain->first_name ?? 'NO ESPECIFICADO';
+            $conductor->appendChild($nombre);
 
-        $apellido = $this->createElement('Apellido');
-        $apellido->textContent = $captain->last_name ?? 'NO ESPECIFICADO';
-        $conductor->appendChild($apellido);
+            $apellido = $this->createElement('Apellido');
+            $apellido->textContent = $captain->last_name ?? 'NO ESPECIFICADO';
+            $conductor->appendChild($apellido);
 
-        $licencia = $this->createElement('Licencia');
-        $licencia->textContent = $captain->license_number ?? 'SIN LICENCIA';
-        $conductor->appendChild($licencia);
-    } else {
-        // Sin capitán asignado
-        $nombre = $this->createElement('Nombre');
-        $nombre->textContent = 'SIN ASIGNAR';
-        $conductor->appendChild($nombre);
+            $licencia = $this->createElement('Licencia');
+            $licencia->textContent = $captain->license_number ?? 'SIN LICENCIA';
+            $conductor->appendChild($licencia);
+        } else {
+            // Sin capitán asignado
+            $nombre = $this->createElement('Nombre');
+            $nombre->textContent = 'SIN ASIGNAR';
+            $conductor->appendChild($nombre);
 
-        $apellido = $this->createElement('Apellido');
-        $apellido->textContent = 'SIN ASIGNAR';
-        $conductor->appendChild($apellido);
+            $apellido = $this->createElement('Apellido');
+            $apellido->textContent = 'SIN ASIGNAR';
+            $conductor->appendChild($apellido);
 
-        $licencia = $this->createElement('Licencia');
-        $licencia->textContent = 'SIN LICENCIA';
-        $conductor->appendChild($licencia);
-    }
-
-    return $conductor;
-}
-/**
- * ✅ AGREGAR: Crear información de la embarcación (OBLIGATORIO AFIP)
- */
-private function createEmbarcacionInfo($parentElement, Shipment $shipment)
-{
-    $embarcacion = $this->createElement('Embarcacion');
-    $parentElement->appendChild($embarcacion);
-
-    // Buscar vessel en shipment o voyage
-    $vessel = $shipment->vessel ?? $shipment->voyage->vessel ?? null;
-
-    if ($vessel) {
-        // Usar datos reales del vessel
-        $nombre = $this->createElement('Nombre');
-        $nombre->textContent = $vessel->name ?? 'Río Paraná I';
-        $embarcacion->appendChild($nombre);
-
-        // País de la embarcación (obligatorio) - Argentina por defecto
-        $codigoPais = $this->createElement('CodigoPais');
-        $codigoPais->textContent = $vessel->flag_country ?? 'AR';
-        $embarcacion->appendChild($codigoPais);
-
-        // Matrícula (si está disponible)
-        if (!empty($vessel->registration_number)) {
-            $matricula = $this->createElement('Matricula');
-            $matricula->textContent = $vessel->registration_number;
-            $embarcacion->appendChild($matricula);
+            $licencia = $this->createElement('Licencia');
+            $licencia->textContent = 'SIN LICENCIA';
+            $conductor->appendChild($licencia);
         }
 
-        // IMO (si está disponible)
-        if (!empty($vessel->imo_number)) {
-            $imo = $this->createElement('NumeroIMO');
-            $imo->textContent = $vessel->imo_number;
-            $embarcacion->appendChild($imo);
+        return $conductor;
+    }
+    /**
+     * ✅ AGREGAR: Crear información de la embarcación (OBLIGATORIO AFIP)
+     */
+    private function createEmbarcacionInfo($parentElement, Shipment $shipment)
+    {
+        $embarcacion = $this->createElement('Embarcacion');
+        $parentElement->appendChild($embarcacion);
+
+        // Buscar vessel en shipment o voyage
+        $vessel = $shipment->vessel ?? $shipment->voyage->vessel ?? null;
+
+        if ($vessel) {
+            // Usar datos reales del vessel
+            $nombre = $this->createElement('Nombre');
+            $nombre->textContent = $vessel->name ?? 'Río Paraná I';
+            $embarcacion->appendChild($nombre);
+
+            // País de la embarcación (obligatorio) - Argentina por defecto
+            $codigoPais = $this->createElement('CodigoPais');
+            $codigoPais->textContent = $vessel->flag_country ?? 'AR';
+            $embarcacion->appendChild($codigoPais);
+
+            // Matrícula (si está disponible)
+            if (!empty($vessel->registration_number)) {
+                $matricula = $this->createElement('Matricula');
+                $matricula->textContent = $vessel->registration_number;
+                $embarcacion->appendChild($matricula);
+            }
+
+            // IMO (si está disponible)
+            if (!empty($vessel->imo_number)) {
+                $imo = $this->createElement('NumeroIMO');
+                $imo->textContent = $vessel->imo_number;
+                $embarcacion->appendChild($imo);
+            }
+        } else {
+            // Datos por defecto válidos para AFIP
+            $nombre = $this->createElement('Nombre');
+            $nombre->textContent = 'Río Paraná I';
+            $embarcacion->appendChild($nombre);
+
+            $codigoPais = $this->createElement('CodigoPais');
+            $codigoPais->textContent = 'AR';
+            $embarcacion->appendChild($codigoPais);
         }
-    } else {
-        // Datos por defecto válidos para AFIP
+
+        return $embarcacion;
+    }
+
+    /**
+     * ✅ CORREGIR: createTituloInfo completo con campos obligatorios
+     */
+    private function createTituloInfo($parentElement, Shipment $shipment)
+    {
+        $titulo = $this->createElement('Titulo');
+        $parentElement->appendChild($titulo);
+
+        // 1. Número de título (obligatorio)
+        $numeroTitulo = $this->createElement('NumeroTitulo');
+        $numeroTitulo->textContent = 'TIT_' . ($shipment->shipment_number ?? 'MAE-2025-0001');
+        $titulo->appendChild($numeroTitulo);
+
+        // 2. Tipo de título (obligatorio) - 1 = Carga Suelta según AFIP
+        $tipoTitulo = $this->createElement('TipoTitulo');
+        $tipoTitulo->textContent = '1';
+        $titulo->appendChild($tipoTitulo);
+        // OBLIGATORIO AFIP: Identificador del viaje (16 caracteres)
+        $identificadorViaje = $this->createElement('IdentificadorViaje');
+        $viageId = str_pad($shipment->voyage->voyage_number, 16, '0', STR_PAD_LEFT);
+        $identificadorViaje->textContent = substr($viageId, 0, 16);
+        $titulo->appendChild($identificadorViaje);
+        // OBLIGATORIO AFIP: CUIT del ATA MT (11 dígitos)
+        $cuitAtaMt = $this->createElement('CuitAtaMt');
+        $cuitAtaMt->textContent = $this->cleanTaxId($this->company->tax_id);
+        $titulo->appendChild($cuitAtaMt);
+
+        // 3. Transportista (obligatorio)
+        $this->createTransportistaInfo($titulo, $shipment);
+
+        // 4. Viaje (obligatorio)
+        $this->createViajeInfo($titulo, $shipment);
+
+        // 5. ✅ NUEVO: Conductor (obligatorio según AFIP)
+        $this->createConductorInfo($titulo, $shipment);
+
+        // 6. PorteadorTitulo (obligatorio)
+        $this->createPorteadorTituloInfo($titulo, $shipment);
+
+        // 7. ResumenMercaderias (obligatorio)
+        $this->createResumenMercaderiasInfo($titulo, $shipment);
+
+        // 8. ✅ NUEVO: Embarcacion (obligatorio según manual AFIP)
+        $this->createEmbarcacionInfo($titulo, $shipment);
+
+        return $titulo;
+    }
+
+    /**
+     * ✅ AGREGAR: Crear información del porteador del título
+     */
+    private function createPorteadorTituloInfo($parentElement, Shipment $shipment)
+    {
+        $porteadorTitulo = $this->createElement('PorteadorTitulo');
+        $parentElement->appendChild($porteadorTitulo);
+
+        // Nombre (obligatorio)
         $nombre = $this->createElement('Nombre');
-        $nombre->textContent = 'Río Paraná I';
-        $embarcacion->appendChild($nombre);
+        $nombre->textContent = $this->company->legal_name ?? $this->company->name;
+        $porteadorTitulo->appendChild($nombre);
 
-        $codigoPais = $this->createElement('CodigoPais');
-        $codigoPais->textContent = 'AR';
-        $embarcacion->appendChild($codigoPais);
+        // CUIT (obligatorio)
+        $cuit = $this->createElement('Cuit');
+        $cuit->textContent = preg_replace('/[^0-9]/', '', $this->company->tax_id);
+        $porteadorTitulo->appendChild($cuit);
+
+        return $porteadorTitulo;
     }
 
-    return $embarcacion;
-}
+    /**
+     * ✅ AGREGAR: Crear resumen de mercaderías con cálculos correctos
+     */
+    private function createResumenMercaderiasInfo($parentElement, Shipment $shipment)
+    {
+        $resumenMercaderias = $this->createElement('ResumenMercaderias');
+        $parentElement->appendChild($resumenMercaderias);
 
-/**
- * ✅ CORREGIR: createTituloInfo completo con campos obligatorios
- */
-private function createTituloInfo($parentElement, Shipment $shipment)
-{
-    $titulo = $this->createElement('Titulo');
-    $parentElement->appendChild($titulo);
+        // Calcular peso total y cantidad de bultos
+        $pesoTotal = 0;
+        $cantidadBultos = 0;
 
-    // 1. Número de título (obligatorio)
-    $numeroTitulo = $this->createElement('NumeroTitulo');
-    $numeroTitulo->textContent = 'TIT_' . ($shipment->shipment_number ?? 'MAE-2025-0001');
-    $titulo->appendChild($numeroTitulo);
-
-    // 2. Tipo de título (obligatorio) - 1 = Carga Suelta según AFIP
-    $tipoTitulo = $this->createElement('TipoTitulo');
-    $tipoTitulo->textContent = '1';
-    $titulo->appendChild($tipoTitulo);
-
-    // 3. Transportista (obligatorio)
-    $this->createTransportistaInfo($titulo, $shipment);
-
-    // 4. Viaje (obligatorio)
-    $this->createViajeInfo($titulo, $shipment);
-
-    // 5. ✅ NUEVO: Conductor (obligatorio según AFIP)
-    $this->createConductorInfo($titulo, $shipment);
-
-    // 6. PorteadorTitulo (obligatorio)
-    $this->createPorteadorTituloInfo($titulo, $shipment);
-
-    // 7. ResumenMercaderias (obligatorio)
-    $this->createResumenMercaderiasInfo($titulo, $shipment);
-
-    // 8. ✅ NUEVO: Embarcacion (obligatorio según manual AFIP)
-    $this->createEmbarcacionInfo($titulo, $shipment);
-
-    return $titulo;
-}
-
-/**
- * ✅ AGREGAR: Crear información del porteador del título
- */
-private function createPorteadorTituloInfo($parentElement, Shipment $shipment)
-{
-    $porteadorTitulo = $this->createElement('PorteadorTitulo');
-    $parentElement->appendChild($porteadorTitulo);
-
-    // Nombre (obligatorio)
-    $nombre = $this->createElement('Nombre');
-    $nombre->textContent = $this->company->legal_name ?? $this->company->name;
-    $porteadorTitulo->appendChild($nombre);
-
-    // CUIT (obligatorio)
-    $cuit = $this->createElement('Cuit');
-    $cuit->textContent = preg_replace('/[^0-9]/', '', $this->company->tax_id);
-    $porteadorTitulo->appendChild($cuit);
-
-    return $porteadorTitulo;
-}
-
-/**
- * ✅ AGREGAR: Crear resumen de mercaderías con cálculos correctos
- */
-private function createResumenMercaderiasInfo($parentElement, Shipment $shipment)
-{
-    $resumenMercaderias = $this->createElement('ResumenMercaderias');
-    $parentElement->appendChild($resumenMercaderias);
-
-    // Calcular peso total y cantidad de bultos
-    $pesoTotal = 0;
-    $cantidadBultos = 0;
-
-    // Calcular desde bills of lading si existen
-    if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
-        foreach ($shipment->billsOfLading as $bill) {
-            $pesoTotal += $bill->gross_weight_kg ?? 0;
-            $cantidadBultos += $bill->package_count ?? 1;
+        // Calcular desde bills of lading si existen
+        if ($shipment->billsOfLading && $shipment->billsOfLading->count() > 0) {
+            foreach ($shipment->billsOfLading as $bill) {
+                $pesoTotal += $bill->gross_weight_kg ?? 0;
+                $cantidadBultos += $bill->package_count ?? 1;
+            }
+        } else {
+            // Usar datos del shipment
+            $pesoTotal = $shipment->gross_weight_kg ?? 32245;
+            $cantidadBultos = $shipment->package_count ?? 375;
         }
-    } else {
-        // Usar datos del shipment
-        $pesoTotal = $shipment->gross_weight_kg ?? 32245;
-        $cantidadBultos = $shipment->package_count ?? 375;
+
+        // Peso total (obligatorio)
+        $peso = $this->createElement('PesoTotal');
+        $peso->textContent = (string)round($pesoTotal);
+        $resumenMercaderias->appendChild($peso);
+
+        // Cantidad de bultos (obligatorio)
+        $cantidad = $this->createElement('CantidadBultos');
+        $cantidad->textContent = (string)$cantidadBultos;
+        $resumenMercaderias->appendChild($cantidad);
+
+        return $resumenMercaderias;
     }
-
-    // Peso total (obligatorio)
-    $peso = $this->createElement('PesoTotal');
-    $peso->textContent = (string)round($pesoTotal);
-    $resumenMercaderias->appendChild($peso);
-
-    // Cantidad de bultos (obligatorio)
-    $cantidad = $this->createElement('CantidadBultos');
-    $cantidad->textContent = (string)$cantidadBultos;
-    $resumenMercaderias->appendChild($cantidad);
-
-    return $resumenMercaderias;
-}
 
 }

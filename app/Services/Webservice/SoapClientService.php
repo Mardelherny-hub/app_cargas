@@ -520,10 +520,13 @@ public function sendRequest(
         $requestXml = $this->soapClient->__getLastRequest();
         $responseXml = $this->soapClient->__getLastResponse();
 
-        $this->logTransaction($transaction, 'error', 'Error SOAP Fault', [
+        $this->logTransaction($transaction, 'error', 'Error detallado SOAP RegistrarTitEnvios', [
             'method' => $method,
             'fault_code' => $e->faultcode,
             'fault_string' => $e->faultstring,
+            'soap_request' => $requestXml,
+            'soap_response' => $responseXml,
+            'soap_headers' => $this->soapClient->__getLastResponseHeaders() ?? null,
             'response_time_ms' => $responseTime,
         ]);
 

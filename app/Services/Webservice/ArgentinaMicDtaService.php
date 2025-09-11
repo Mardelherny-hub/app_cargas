@@ -969,41 +969,42 @@ class ArgentinaMicDtaService
         ];
 
         try {
-            $this->logOperation('info', 'Enviando SOAP RegistrarTitEnvios', [
-                'transaction_id' => $transaction->id,
-                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
-            ]);
-
-            // Preparar parámetros SOAP
-            $soapParams = [
-                'xmlParam' => $xmlContent,
-            ];
-
-            // Llamada SOAP real
-            $soapResponse = $soapClient->__soapCall('RegistrarTitEnvios', $soapParams);
-
+            // Llamada SOAP directa con el XML completo como string
+            $soapResponse = $soapClient->__doRequest(
+                $xmlContent, 
+                $this->getWebserviceUrl(), 
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                SOAP_1_2
+            );
+            
             if ($soapResponse) {
                 $result['success'] = true;
                 $result['response_data'] = $soapResponse;
-                
-                $this->logOperation('info', 'Respuesta SOAP RegistrarTitEnvios recibida', [
-                    'transaction_id' => $transaction->id,
-                    'has_response' => !empty($soapResponse),
-                ]);
-            } else {
-                $result['errors'][] = 'Respuesta SOAP vacía';
             }
-
-            return $result;
-
-        } catch (Exception $e) {
+        } catch (Exception $e) {    
+            // Capturar respuesta SOAP completa para debugging AFIP
+            $lastRequest = null;
+            $lastResponse = null;
+            $lastHeaders = null;
+            
+            try {
+                $lastRequest = $soapClient->__getLastRequest();
+                $lastResponse = $soapClient->__getLastResponse();
+                $lastHeaders = $soapClient->__getLastResponseHeaders();
+            } catch (Exception $debugException) {
+                // Ignorar errores de debug
+            }
+            
             $result['errors'][] = 'Error SOAP RegistrarTitEnvios: ' . $e->getMessage();
             
-            $this->logOperation('error', 'Error en SOAP RegistrarTitEnvios', [
+            $this->logOperation('error', 'Error detallado SOAP RegistrarTitEnvios', [
                 'transaction_id' => $transaction->id,
                 'error' => $e->getMessage(),
+                'soap_request' => $lastRequest,
+                'soap_response' => $lastResponse,
+                'soap_headers' => $lastHeaders,
             ]);
-
+            
             return $result;
         }
     }

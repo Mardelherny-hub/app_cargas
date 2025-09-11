@@ -566,6 +566,7 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
         Route::put('/webservices', [SettingsController::class, 'updateWebservices'])->name('update-webservices'); 
 });
 
+
 // Importación de archivos KLine.DAT
 Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
 Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
@@ -622,3 +623,140 @@ Route::get('/diagnostic/webservices', function() {
     }
    
 })->name('diagnostic.webservices');
+
+
+// =============================================================================
+// SISTEMA MODULAR WEBSERVICES - RUTAS SIMPLES (FASE 1)
+// =============================================================================
+
+/**
+ * SISTEMA SIMPLE/MODULAR DE WEBSERVICES
+ * 
+ * Estas rutas funcionan EN PARALELO al sistema existente de webservices.
+ * Prefijo '/simple/webservices' para evitar conflictos.
+ * 
+ * FASE 1: MIC/DTA Argentina (PRIORITARIO)
+ * FASE 2-5: Otros webservices se agregan progresivamente
+ * 
+ * Controlador único: SimpleManifestController maneja TODOS los webservices
+ */
+Route::prefix('simple/webservices')->name('company.simple.')->group(function () {
+    
+    // ====================================
+    // DASHBOARD PRINCIPAL MODULAR
+    // ====================================
+    
+    /**
+     * Dashboard principal con selector de webservices
+     * Muestra todos los voyages disponibles y estados de todos los webservices
+     */
+    Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'dashboard'])
+        ->name('dashboard');
+
+    // ====================================
+    // MIC/DTA ARGENTINA (FASE 1 - ACTIVO)
+    // ====================================
+    
+    Route::prefix('micdta')->name('micdta.')->group(function () {
+        
+        /**
+         * Lista de voyages disponibles para MIC/DTA Argentina
+         * Filtros: estado, fecha, empresa
+         */
+        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaIndex'])
+            ->name('index');
+        
+        /**
+         * Formulario de envío MIC/DTA para voyage específico
+         * Incluye validación, vista previa y opciones de envío
+         */
+        Route::get('/{voyage}', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaShow'])
+            ->name('show')
+            ->whereNumber('voyage');
+        
+        /**
+         * Procesar envío MIC/DTA (AJAX)
+         * Ejecuta flujo secuencial: RegistrarTitEnvios → RegistrarMicDta
+         */
+        Route::post('/{voyage}/send', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaSend'])
+            ->name('send')
+            ->whereNumber('voyage');
+    });
+
+    // ====================================
+    // INFORMACIÓN ANTICIPADA ARGENTINA (FASE 2 - PRÓXIMAMENTE)
+    // ====================================
+    
+    Route::prefix('anticipada')->name('anticipada.')->group(function () {
+        
+        /**
+         * Lista de voyages para Información Anticipada
+         * FASE 2: Implementar ArgentinaAnticipatedService
+         */
+        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anticipadaIndex'])
+            ->name('index');
+            
+        // TODO FASE 2: Rutas específicas anticipada
+        // Route::get('/{voyage}', [SimpleManifestController::class, 'anticipadaShow'])->name('show');
+        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'anticipadaSend'])->name('send');
+    });
+
+    // ====================================
+    // MANIFIESTOS PARAGUAY (FASE 3 - PRÓXIMAMENTE)
+    // ====================================
+    
+    Route::prefix('manifiesto')->name('manifiesto.')->group(function () {
+        
+        /**
+         * Lista de voyages para Manifiestos Paraguay
+         * FASE 3: Implementar ParaguayManifestService
+         */
+        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoIndex'])
+            ->name('index');
+            
+        // TODO FASE 3: Rutas específicas Paraguay
+        // Route::get('/{voyage}', [SimpleManifestController::class, 'manifiestoShow'])->name('show');
+        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'manifiestoSend'])->name('send');
+    });
+
+    // ====================================
+    // DESCONSOLIDADOS ARGENTINA (FASE 4 - PRÓXIMAMENTE)
+    // ====================================
+    
+    Route::prefix('desconsolidado')->name('desconsolidado.')->group(function () {
+        
+        /**
+         * Lista de voyages para Desconsolidados Argentina
+         * FASE 4: Implementar ArgentinaDeconsolidationService
+         */
+        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'desconsolidadoIndex'])
+            ->name('index');
+            
+        // TODO FASE 4: Rutas específicas desconsolidado
+        // Route::get('/{voyage}', [SimpleManifestController::class, 'desconsolidadoShow'])->name('show');
+        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'desconsolidadoSend'])->name('send');
+    });
+
+    // ====================================
+    // TRANSBORDOS ARGENTINA/PARAGUAY (FASE 5 - PRÓXIMAMENTE)
+    // ====================================
+    
+    Route::prefix('transbordo')->name('transbordo.')->group(function () {
+        
+        /**
+         * Lista de voyages para Transbordos
+         * FASE 5: Implementar ArgentinaTransshipmentService
+         */
+        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'transbordoIndex'])
+            ->name('index');
+            
+        // TODO FASE 5: Rutas específicas transbordo
+        // Route::get('/{voyage}', [SimpleManifestController::class, 'transbordoShow'])->name('show');
+        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'transbordoSend'])->name('send');
+    });
+    
+});
+
+// =============================================================================
+// FIN SISTEMA MODULAR WEBSERVICES
+// =============================================================================
