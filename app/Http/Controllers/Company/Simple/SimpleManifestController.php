@@ -200,9 +200,9 @@ class SimpleManifestController extends Controller
      */
     public function micDtaShow(Voyage $voyage)
     {
-        if (!$this->canPerform('webservices.micdta')) {
+        /* if (!$this->canPerform('webservices.micdta')) {
             abort(403, 'No tiene permisos para MIC/DTA.');
-        }
+        } */
 
         $company = $this->getUserCompany();
         if ($voyage->company_id !== $company->id) {
@@ -233,7 +233,7 @@ class SimpleManifestController extends Controller
             'company' => $company,
             'validation' => $validation,
             'micdta_status' => $micDtaStatus,
-            'last_transactions' => $voyage->webserviceTransactions->take(5),
+            'last_transactions' => $voyage->webserviceTransactions()->where('webservice_type', 'micdta')->latest()->take(10)->get(),
         ]);
     }
 
@@ -242,12 +242,12 @@ class SimpleManifestController extends Controller
      */
     public function micDtaSend(Request $request, Voyage $voyage)
     {
-        if (!$this->canPerform('webservices.send')) {
+        /* if (!$this->canPerform('webservices.send')) {
             return response()->json([
                 'success' => false,
                 'message' => 'No tiene permisos para enviar webservices.'
             ], 403);
-        }
+        } */
 
         $company = $this->getUserCompany();
         if ($voyage->company_id !== $company->id) {

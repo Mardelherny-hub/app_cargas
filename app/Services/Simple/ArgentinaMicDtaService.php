@@ -122,10 +122,11 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $totalContainers = 0;
             foreach ($voyage->shipments as $shipment) {
                 foreach ($shipment->billsOfLading as $bol) {
-                    $containers = $bol->shipmentItems()
-                        ->whereNotNull('container_number')
-                        ->distinct('container_number')
-                        ->count();
+                    $containers = \DB::table('container_shipment_item')
+                        ->join('shipment_items', 'container_shipment_item.shipment_item_id', '=', 'shipment_items.id')
+                        ->where('shipment_items.bill_of_lading_id', $bol->id)
+                        ->distinct('container_shipment_item.container_id')
+                        ->count('container_shipment_item.container_id');
                     $totalContainers += $containers;
                 }
             }
@@ -324,16 +325,26 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     /**
      * Generar XML para RegistrarTitEnvios
      */
-    private function generateTitEnviosXml(Voyage $voyage): ?string
+    private function generateTitEnviosXml(Voyage $voyage): array
     {
+        $results = [];
         try {
-            return $this->xmlSerializer->createTitEnviosXml($voyage, $this->generateTransactionId());
+            foreach ($voyage->shipments as $shipment) {
+                $xml = $this->xmlSerializer->createTitEnviosXml($shipment, $this->generateTransactionId());
+                if ($xml) {
+                    $results[] = [
+                        'shipment_id' => $shipment->id,
+                        'xml' => $xml
+                    ];
+                }
+            }
+            return $results;
         } catch (Exception $e) {
             $this->logOperation('error', 'Error generando XML TitEnvios', [
                 'error' => $e->getMessage(),
                 'voyage_id' => $voyage->id,
             ]);
-            return null;
+            return [];
         }
     }
 

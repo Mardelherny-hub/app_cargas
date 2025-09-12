@@ -373,7 +373,7 @@ abstract class BaseWebserviceService
                 'level' => $level,
                 'message' => $message,
                 'category' => 'webservice_operation',
-                'context_data' => $context,
+                'context' => $context,
                 'environment' => $this->config['environment'] ?? 'testing',
             ]);
         }
