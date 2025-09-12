@@ -241,12 +241,27 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $transactionId = 'TITENV_' . time() . '_' . $shipment->id;
                 $xml = $this->xmlSerializer->createRegistrarTitEnviosXml($shipment, $transactionId);
 
+                $this->logOperation('info', 'XML enviado a AFIP - RegistrarTitEnvios', [
+                    'xml_content' => $xml,
+                    'xml_length' => strlen($xml),
+                    'transaction_id' => $transactionId,
+                    'shipment_id' => $shipment->id
+                ]);
+
+                // Debug: Mostrar XML que enviamos a AFIP
+                $this->logOperation('info', 'XML enviado a AFIP - RegistrarTitEnvios', [
+                    'xml_content' => $xml,
+                    'xml_length' => strlen($xml),
+                    'transaction_id' => $transactionId,
+                    'voyage_id' => $voyage->id
+                ]);
                 // Envío directo a AFIP
                 $response = $soapClient->__doRequest(
                     $xml,
                     $this->getWsdlUrl(),
                     'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
-                    SOAP_1_2
+                    SOAP_1_1,
+                    false
                 );
                 // VALIDAR respuesta
                 if ($response === null || $response === false) {
@@ -305,12 +320,21 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $transactionId = 'MICDTA_' . time() . '_' . $voyage->id;
             $xml = $this->xmlSerializer->createRegistrarMicDtaXml($voyage, $tracks, $transactionId);
 
+            // DEBUG: Verificar qué método se ejecutó realmente
+            $this->logOperation('debug', 'Verificando XML generado', [
+                'method_called' => 'createRegistrarMicDtaXml',
+                'xml_contains_micdta' => strpos($xml, 'RegistrarMicDta') !== false,
+                'xml_contains_titenvios' => strpos($xml, 'RegistrarTitEnvios') !== false,
+                'xml_first_100' => substr($xml, 0, 100)
+            ]);
+
             // Envío directo a AFIP
             $response = $soapClient->__doRequest(
                 $xml,
                 $this->getWsdlUrl(),
                 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
-                SOAP_1_2
+                SOAP_1_1,
+                false
             );
 
             // Procesar respuesta
@@ -486,6 +510,17 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     private function extractTracksFromResponse(string $response): array
     {
+        if (strpos($response, 'soap:Fault') !== false) {
+            // Extraer mensaje de error
+            if (preg_match('/<faultstring>([^<]+)<\/faultstring>/', $response, $matches)) {
+                $errorMsg = $matches[1];
+                $this->logOperation('error', 'SOAP Fault recibido de AFIP', [
+                    'fault_string' => $errorMsg,
+                    'response_full' => $response
+                ]);
+                throw new Exception("Error SOAP de AFIP: " . $errorMsg);
+            }
+        }
         if (!$response) {
             return [];
         }
