@@ -28,9 +28,10 @@ class SimpleXmlGenerator
     private const AFIP_NAMESPACE = 'Ar.Gob.Afip.Dga.wgesregsintia2';
     private const WSAA_NAMESPACE = 'http://ar.gob.afip.dif.wgesregsintia2/';
 
-    public function __construct(Company $company)
+    public function __construct(Company $company, array $config = [])
     {
         $this->company = $company;
+        $this->config = $config;
     }
 
     /**
@@ -47,7 +48,7 @@ class SimpleXmlGenerator
         // Crear XML usando string directo (más simple que DOM)
         $xml = $this->createSoapEnvelope();
         
-        $xml .= '<ns1:RegistrarTitEnvios xmlns:ns1="' . self::AFIP_NAMESPACE . '">';
+        $xml .= '<ns1:RegistrarTitEnvios>';
         
         // Autenticación empresa
         $xml .= '<argWSAutenticacionEmpresa>';
@@ -111,10 +112,9 @@ class SimpleXmlGenerator
      * Crear XML para RegistrarMicDta - PASO 2 AFIP
      * Usa TRACKs generados en paso 1
      */
-    public function createRegistrarMicDtaXml(Shipment $shipment, string $transactionId, array $tracks = []): string
+    public function createRegistrarMicDtaXml(Voyage $voyage, array $tracks, string $transactionId): string
     {
-        $voyage = $shipment->voyage;
-        $vessel = $shipment->vessel ?? $voyage->leadVessel;
+        $vessel = $voyage->leadVessel;
 
         $xml = $this->createSoapEnvelope();
         
@@ -181,17 +181,10 @@ class SimpleXmlGenerator
     private function createSoapEnvelope(): string
     {
         return '<?xml version="1.0" encoding="UTF-8"?>' .
-               '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" ' .
-               'xmlns:ns1="' . self::AFIP_NAMESPACE . '" ' .
-               'xmlns:ns2="' . self::WSAA_NAMESPACE . '">' .
-               '<env:Header>' .
-               '<ns2:Auth>' .
-               '<item><key>Token</key><value>VEVTVElOR19UT0tFTl8xMDA1XzE3NTc2NDU1NTM=</value></item>' .
-               '<item><key>Sign</key><value>VEVTVElOR19TSUdOXzMwNjg4NDE1NTMxXzE3NTc2NDU1NTM=</value></item>' .
-               '<item><key>Cuit</key><value>' . $this->company->tax_id . '</value></item>' .
-               '</ns2:Auth>' .
-               '</env:Header>' .
-               '<env:Body>';
+            '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" ' .
+            'xmlns:ns1="' . self::AFIP_NAMESPACE . '">' .
+            '<soap:Header/>' .
+            '<soap:Body>';
     }
 
     /**

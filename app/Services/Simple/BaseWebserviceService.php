@@ -9,8 +9,9 @@ use App\Models\VoyageWebserviceStatus;
 use App\Models\WebserviceTransaction;
 use App\Models\WebserviceLog;
 use App\Models\WebserviceResponse;
+use SoapClient;
+use SoapFault;
 use App\Services\Webservice\CertificateManagerService;
-use App\Services\Webservice\SoapClientService;
 use App\Services\Simple\SimpleXmlGenerator;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -46,9 +47,9 @@ abstract class BaseWebserviceService
     protected array $config;
     protected ?int $currentTransactionId = null;
     
-    // Servicios integrados existentes
+    // Servicios integrados directos
     protected CertificateManagerService $certificateManager;
-    protected SoapClientService $soapClient;
+    protected ?SoapClient $soapClient = null;
     protected SimpleXmlGenerator $xmlSerializer;
 
     /**
@@ -85,9 +86,8 @@ abstract class BaseWebserviceService
         $this->user = $user;
         $this->config = array_merge(self::BASE_CONFIG, $this->getWebserviceConfig(), $config);
 
-        // Inicializar servicios existentes
-        $this->certificateManager = new CertificateManagerService($company);
-        $this->soapClient = new SoapClientService($company, $this->config);
+        // Inicializar servicios directos
+            $this->certificateManager = new CertificateManagerService($company);  
         $this->xmlSerializer = new SimpleXmlGenerator($company, $this->config);
 
         $this->logOperation('info', 'BaseWebserviceService inicializado', [
@@ -98,10 +98,41 @@ abstract class BaseWebserviceService
         ]);
     }
 
+    /**
+     * Crear cliente SOAP nativo
+     */
+    protected function createSoapClient(): SoapClient
+    {
+        if ($this->soapClient) {
+            return $this->soapClient;
+        }
+
+        $wsdlUrl = $this->getWsdlUrl();
+        
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true
+            ]
+        ]);
+
+        $this->soapClient = new SoapClient($wsdlUrl, [
+            'trace' => true,
+            'exceptions' => true,
+            'soap_version' => SOAP_1_2,
+            'stream_context' => $context,
+            'connection_timeout' => $this->config['timeout_seconds'] ?? 60,
+        ]);
+
+        return $this->soapClient;
+    }
+
     // ====================================
     // MÉTODOS ABSTRACTOS - IMPLEMENTAR EN CLASES HIJAS
     // ====================================
 
+    
     /**
      * Tipo de webservice específico (ej: 'micdta', 'anticipada', 'manifiesto')
      */
@@ -126,6 +157,12 @@ abstract class BaseWebserviceService
      * Envío específico del webservice
      */
     abstract protected function sendSpecificWebservice(Voyage $voyage, array $options = []): array;
+
+    /**
+     * URL del WSDL específico del webservice
+     */
+    abstract protected function getWsdlUrl(): string;
+
 
     // ====================================
     // MÉTODOS PÚBLICOS PRINCIPALES

@@ -65,6 +65,21 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * URL del WSDL para MIC/DTA Argentina
+     */
+    protected function getWsdlUrl(): string
+    {
+        $environment = $this->config['environment'] ?? 'testing';
+        
+        $urls = [
+            'testing' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'production' => 'https://wsaduext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+        ];
+        
+        return $urls[$environment] ?? $urls['testing'];
+    }
+
+    /**
      * Validaciones específicas para MIC/DTA Argentina
      */
     protected function validateSpecificData(Voyage $voyage): array
@@ -158,180 +173,174 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     protected function sendSpecificWebservice(Voyage $voyage, array $options = []): array
     {
-        $this->logOperation('info', 'Iniciando flujo secuencial MIC/DTA AFIP', [
-            'voyage_id' => $voyage->id,
-            'voyage_number' => $voyage->voyage_number,
-        ]);
-
         try {
-            // PASO 1: RegistrarTitEnvios (genera TRACKs)
-            $titEnviosResult = $this->sendRegistrarTitEnvios($voyage);
+            $this->logOperation('info', 'Iniciando envío MIC/DTA Argentina', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // PASO 1: RegistrarTitEnvios (generar TRACKs)
+            $titEnviosResult = $this->registrarTitEnvios($voyage);
             if (!$titEnviosResult['success']) {
                 return $titEnviosResult;
             }
 
-            // PASO 2: RegistrarMicDta (usa TRACKs generados)
-            $micDtaResult = $this->sendRegistrarMicDta($voyage, $titEnviosResult['tracks']);
+            // PASO 2: RegistrarMicDta (usar TRACKs generados)
+            $micDtaResult = $this->registrarMicDta($voyage, $titEnviosResult['tracks']);
             
             return $micDtaResult;
 
         } catch (Exception $e) {
-            $this->logOperation('error', 'Error en flujo MIC/DTA', [
-                'error' => $e->getMessage(),
+            $this->logOperation('error', 'Error en envío MIC/DTA', [
                 'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
             ]);
 
             return [
                 'success' => false,
-                'error_message' => 'Error en flujo MIC/DTA: ' . $e->getMessage(),
+                'error_message' => $e->getMessage(),
+                'error_code' => 'MICDTA_SEND_ERROR',
             ];
         }
     }
 
     /**
-     * PASO 1: RegistrarTitEnvios - Generar TRACKs
+     * PASO 1: Registrar Títulos y Envíos para generar TRACKs
      */
-    private function sendRegistrarTitEnvios(Voyage $voyage): array
+    private function registrarTitEnvios(Voyage $voyage): array
     {
-        $this->logOperation('info', 'PASO 1: Iniciando RegistrarTitEnvios', [
-            'voyage_id' => $voyage->id,
-        ]);
-
-        $allTracks = [];
-        $allResponses = [];
-        $hasErrors = false;
-
         try {
-            // 1. Generar XML para cada shipment en el voyage
-            $xmlsToProcess = $this->generateTitEnviosXml($voyage);
-            if (empty($xmlsToProcess)) {
-                throw new Exception('No se pudo generar ningún XML para TitEnvios.');
+            $this->logOperation('info', 'Iniciando RegistrarTitEnvios', [
+                'voyage_id' => $voyage->id,
+            ]);
+
+            // Crear cliente SOAP
+            $soapClient = $this->createSoapClient();
+
+            $this->logOperation('debug', 'SoapClient creado', [
+                'wsdl_url' => $this->getWsdlUrl(),
+                'client_created' => $soapClient ? 'yes' : 'no',
+            ]);
+
+            try {
+                $functions = $soapClient->__getFunctions();
+                $this->logOperation('debug', 'WSDL cargado correctamente', [
+                    'functions_count' => count($functions),
+                ]);
+            } catch (Exception $e) {
+                $this->logOperation('error', 'Error cargando WSDL', [
+                    'error' => $e->getMessage(),
+                ]);
             }
 
-            foreach ($xmlsToProcess as $item) {
-                $shipmentId = $item['shipment_id'];
-                $xmlContent = $item['xml'];
+            // Procesar cada shipment del voyage
+            $allTracks = [];
+            
+            foreach ($voyage->shipments as $shipment) {
+                // Generar XML usando SimpleXmlGenerator
+                $transactionId = 'TITENV_' . time() . '_' . $shipment->id;
+                $xml = $this->xmlSerializer->createRegistrarTitEnviosXml($shipment, $transactionId);
 
-                // 2. Preparar cliente SOAP
-                $soapClient = $this->soapClient->createClient(
-                    $this->getWebserviceType(),
-                    $this->config['environment']
+                // Envío directo a AFIP
+                $response = $soapClient->__doRequest(
+                    $xml,
+                    $this->getWsdlUrl(),
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                    SOAP_1_2
                 );
-
-                // 3. Enviar SOAP request
-                $soapResult = $this->soapClient->sendRequest(
-                    $this->getCurrentTransaction(), // Asume una transacción por voyage
-                    'RegistrarTitEnvios',
-                    ['xmlContent' => $xmlContent] // Pasar el XML como parámetro
-                );
-
-                if (!$soapResult['success']) {
-                    $hasErrors = true;
-                    $this->logOperation('error', 'Error en SOAP RegistrarTitEnvios para shipment', [
-                        'shipment_id' => $shipmentId,
-                        'error' => $soapResult['error_message']
-                    ]);
-                    continue; // Continuar con el siguiente shipment
+                // VALIDAR respuesta
+                if ($response === null || $response === false) {
+                    $lastError = $soapClient->__getLastResponse();
+                    throw new Exception("SOAP response null. Last response: " . ($lastError ?: 'No response'));
                 }
 
-                // 4. Procesar respuesta y extraer TRACKs
-                $tracks = $this->extractTracksFromResponse($soapResult['response_xml'], $voyage);
-                $allTracks = array_merge($allTracks, $tracks);
-                $allResponses[] = $soapResult['response_xml'];
+                // Procesar respuesta y extraer TRACKs
+                $tracks = $this->extractTracksFromResponse($response);
+                if (empty($tracks)) {
+                    throw new Exception("No se generaron TRACKs para shipment {$shipment->id}");
+                }
 
-                // 5. Guardar TRACKs en base de datos
-                $this->saveTracks($voyage, $tracks);
-            }
+                $allTracks[$shipment->id] = $tracks;
 
-            if ($hasErrors && empty($allTracks)) {
-                 throw new Exception('Todos los envíos de RegistrarTitEnvios fallaron.');
+                $this->logOperation('info', 'TRACKs generados exitosamente', [
+                    'shipment_id' => $shipment->id,
+                    'tracks_count' => count($tracks),
+                ]);
             }
 
             return [
-                'success' => !$hasErrors,
+                'success' => true,
                 'tracks' => $allTracks,
-                'response_xml' => implode("\n", $allResponses),
             ];
 
         } catch (Exception $e) {
             $this->logOperation('error', 'Error en RegistrarTitEnvios', [
-                'error' => $e->getMessage(),
                 'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
             ]);
 
             return [
                 'success' => false,
-                'error_message' => 'RegistrarTitEnvios falló: ' . $e->getMessage(),
+                'error_message' => $e->getMessage(),
+                'error_code' => 'TITENVIOS_ERROR',
             ];
         }
     }
 
     /**
-     * PASO 2: RegistrarMicDta - Usar TRACKs generados
+     * PASO 2: Registrar MIC/DTA usando TRACKs generados
      */
-    private function sendRegistrarMicDta(Voyage $voyage, array $tracks): array
+    private function registrarMicDta(Voyage $voyage, array $tracks): array
     {
-        $this->logOperation('info', 'PASO 2: Iniciando RegistrarMicDta', [
-            'voyage_id' => $voyage->id,
-            'tracks_count' => count($tracks),
-        ]);
-
         try {
-            // 1. Validar que tenemos TRACKs
-            if (empty($tracks)) {
-                throw new Exception('No hay TRACKs disponibles para MIC/DTA');
-            }
-
-            // 2. Generar XML MicDta con TRACKs
-            $xmlContent = $this->generateMicDtaXml($voyage, $tracks);
-            if (!$xmlContent) {
-                throw new Exception('Error generando XML MicDta');
-            }
-
-            // 3. Preparar cliente SOAP
-            $soapClient = $this->soapClient->createClient(
-                $this->getWebserviceType(),
-                $this->config['environment']
-            );
-
-            // 4. Enviar SOAP request
-            $soapResult = $this->soapClient->sendRequest(
-                $this->getCurrentTransaction(),
-                'RegistrarMicDta',
-                ['xmlContent' => $xmlContent]
-            );
-
-            if (!$soapResult['success']) {
-                throw new Exception('Error en SOAP RegistrarMicDta: ' . $soapResult['error_message']);
-            }
-
-            // 5. Procesar respuesta final
-            $confirmationNumber = $this->extractConfirmationFromResponse($soapResult['response_xml']);
-
-            $this->logOperation('info', 'RegistrarMicDta exitoso', [
+            $this->logOperation('info', 'Iniciando RegistrarMicDta', [
                 'voyage_id' => $voyage->id,
-                'confirmation_number' => $confirmationNumber,
+                'tracks_count' => count($tracks),
+            ]);
+
+            // Crear cliente SOAP
+            $soapClient = $this->createSoapClient();
+
+            // Generar XML MIC/DTA con TRACKs
+            $transactionId = 'MICDTA_' . time() . '_' . $voyage->id;
+            $xml = $this->xmlSerializer->createRegistrarMicDtaXml($voyage, $tracks, $transactionId);
+
+            // Envío directo a AFIP
+            $response = $soapClient->__doRequest(
+                $xml,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
+                SOAP_1_2
+            );
+
+            // Procesar respuesta
+            $result = $this->processMicDtaResponse($response);
+
+            $this->logOperation('info', 'MIC/DTA procesado exitosamente', [
+                'voyage_id' => $voyage->id,
+                'mic_dta_id' => $result['mic_dta_id'] ?? null,
             ]);
 
             return [
                 'success' => true,
-                'confirmation_number' => $confirmationNumber,
-                'tracks_used' => $tracks,
-                'response_xml' => $soapResult['response_xml'],
+                'mic_dta_id' => $result['mic_dta_id'] ?? null,
+                'response_data' => $result,
             ];
 
         } catch (Exception $e) {
             $this->logOperation('error', 'Error en RegistrarMicDta', [
-                'error' => $e->getMessage(),
                 'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
             ]);
 
             return [
                 'success' => false,
-                'error_message' => 'RegistrarMicDta falló: ' . $e->getMessage(),
+                'error_message' => $e->getMessage(),
+                'error_code' => 'MICDTA_ERROR',
             ];
         }
     }
+    
 
     // ====================================
     // MÉTODOS AUXILIARES
@@ -379,46 +388,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         }
     }
 
-    /**
-     * Extraer TRACKs de respuesta AFIP
-     */
-    private function extractTracksFromResponse(string $responseXml, Voyage $voyage): array
-    {
-        $tracks = [];
-        
-        try {
-            $dom = new \DOMDocument();
-            $dom->loadXML($responseXml);
-            
-            // Buscar elementos de TRACK en la respuesta
-            $trackElements = $dom->getElementsByTagName('Track');
-            
-            foreach ($trackElements as $trackElement) {
-                $trackNumber = $trackElement->textContent;
-                if ($trackNumber) {
-                    $tracks[] = [
-                        'track_number' => $trackNumber,
-                        'shipment_id' => null, // Se asignará al guardar
-                        'generated_at' => now(),
-                    ];
-                }
-            }
-
-            $this->logOperation('info', 'TRACKs extraídos de respuesta', [
-                'tracks_count' => count($tracks),
-                'voyage_id' => $voyage->id,
-            ]);
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error extrayendo TRACKs', [
-                'error' => $e->getMessage(),
-                'voyage_id' => $voyage->id,
-            ]);
-        }
-
-        return $tracks;
-    }
-
+    
     /**
      * Guardar TRACKs en base de datos
      */
@@ -509,5 +479,53 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             return \App\Models\WebserviceTransaction::find($this->currentTransactionId);
         }
         return null;
+    }
+
+    /**
+     * Extraer TRACKs de la respuesta AFIP
+     */
+    private function extractTracksFromResponse(string $response): array
+    {
+        if (!$response) {
+            return [];
+        }
+        // LOG para debug - ver qué devuelve AFIP
+        $this->logOperation('debug', 'Respuesta AFIP completa para análisis', [
+            'response_content' => $response,
+            'response_length' => strlen($response),
+        ]);
+        
+        $tracks = [];
+        
+        // Múltiples formatos posibles de AFIP
+        if (preg_match_all('/<TracksEnv>([^<]+)<\/TracksEnv>/', $response, $matches)) {
+            $tracks = $matches[1];
+        } elseif (preg_match_all('/<Track>([^<]+)<\/Track>/', $response, $matches)) {
+            $tracks = $matches[1];
+        } elseif (preg_match_all('/<trackId>([^<]+)<\/trackId>/', $response, $matches)) {
+            $tracks = $matches[1];
+        }
+        
+        $this->logOperation('info', 'TRACKs extraídos de respuesta', [
+            'tracks_found' => count($tracks),
+            'tracks' => $tracks,
+        ]);
+        
+        return $tracks;
+    }
+
+    /**
+     * Procesar respuesta MIC/DTA
+     */
+    private function processMicDtaResponse(string $response): array
+    {
+        $result = ['mic_dta_id' => null];
+        
+        // Buscar ID de MIC/DTA en la respuesta
+        if (preg_match('/<MicDtaId>([^<]+)<\/MicDtaId>/', $response, $matches)) {
+            $result['mic_dta_id'] = $matches[1];
+        }
+        
+        return $result;
     }
 }
