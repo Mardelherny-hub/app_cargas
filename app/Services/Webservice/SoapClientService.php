@@ -480,11 +480,20 @@ public function sendRequest(
 
         // ✅ ESTRUCTURA SIMPLIFICADA PARA AFIP
         if ($method === 'RegistrarTitEnvios' || $method === 'RegistrarMicDta') {
-            // Para AFIP, usar estructura XML directa
-            $xmlParam = $parameters['xmlParam'] ?? $parameters[0] ?? '';
+            $xmlContent = $parameters['xmlContent'] ?? ($parameters[0] ?? null);
+            if (!$xmlContent || !is_string($xmlContent)) {
+                throw new Exception("El contenido XML para {$method} es inválido.");
+            }
             
             // Llamada SOAP con XML directo
             $response = $this->soapClient->__soapCall($method, ['xmlParam' => $xmlParam]);
+            // Para AFIP, se debe usar __doRequest para enviar el XML como un string
+            $response = $this->soapClient->__doRequest(
+                $xmlContent,
+                $this->soapClient->__getLocation(),
+                $transaction->soap_action,
+                $this->soapClient->soap_version
+            );
         } else {
             // Para otros métodos, usar estructura estándar
             $response = $this->soapClient->__soapCall($method, $parameters);

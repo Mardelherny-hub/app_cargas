@@ -197,45 +197,60 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             'voyage_id' => $voyage->id,
         ]);
 
+        $allTracks = [];
+        $allResponses = [];
+        $hasErrors = false;
+
         try {
-            // 1. Generar XML para TitEnvios
-            $xmlContent = $this->generateTitEnviosXml($voyage);
-            if (!$xmlContent) {
-                throw new Exception('Error generando XML TitEnvios');
+            // 1. Generar XML para cada shipment en el voyage
+            $xmlsToProcess = $this->generateTitEnviosXml($voyage);
+            if (empty($xmlsToProcess)) {
+                throw new Exception('No se pudo generar ningún XML para TitEnvios.');
             }
 
-            // 2. Preparar cliente SOAP
-            $soapClient = $this->soapClient->createClient(
-                $this->getWebserviceType(),
-                $this->config['environment']
-            );
+            foreach ($xmlsToProcess as $item) {
+                $shipmentId = $item['shipment_id'];
+                $xmlContent = $item['xml'];
 
-            // 3. Enviar SOAP request
-            $soapResult = $this->soapClient->sendRequest(
-                $this->getCurrentTransaction(),
-                'RegistrarTitEnvios',
-                ['xmlContent' => $xmlContent]
-            );
+                // 2. Preparar cliente SOAP
+                $soapClient = $this->soapClient->createClient(
+                    $this->getWebserviceType(),
+                    $this->config['environment']
+                );
 
-            if (!$soapResult['success']) {
-                throw new Exception('Error en SOAP RegistrarTitEnvios: ' . $soapResult['error_message']);
+                // 3. Enviar SOAP request
+                $soapResult = $this->soapClient->sendRequest(
+                    $this->getCurrentTransaction(), // Asume una transacción por voyage
+                    'RegistrarTitEnvios',
+                    ['xmlContent' => $xmlContent] // Pasar el XML como parámetro
+                );
+
+                if (!$soapResult['success']) {
+                    $hasErrors = true;
+                    $this->logOperation('error', 'Error en SOAP RegistrarTitEnvios para shipment', [
+                        'shipment_id' => $shipmentId,
+                        'error' => $soapResult['error_message']
+                    ]);
+                    continue; // Continuar con el siguiente shipment
+                }
+
+                // 4. Procesar respuesta y extraer TRACKs
+                $tracks = $this->extractTracksFromResponse($soapResult['response_xml'], $voyage);
+                $allTracks = array_merge($allTracks, $tracks);
+                $allResponses[] = $soapResult['response_xml'];
+
+                // 5. Guardar TRACKs en base de datos
+                $this->saveTracks($voyage, $tracks);
             }
 
-            // 4. Procesar respuesta y extraer TRACKs
-            $tracks = $this->extractTracksFromResponse($soapResult['response_xml'], $voyage);
-            
-            // 5. Guardar TRACKs en base de datos
-            $this->saveTracks($voyage, $tracks);
-
-            $this->logOperation('info', 'RegistrarTitEnvios exitoso', [
-                'voyage_id' => $voyage->id,
-                'tracks_generated' => count($tracks),
-            ]);
+            if ($hasErrors && empty($allTracks)) {
+                 throw new Exception('Todos los envíos de RegistrarTitEnvios fallaron.');
+            }
 
             return [
-                'success' => true,
-                'tracks' => $tracks,
-                'response_xml' => $soapResult['response_xml'],
+                'success' => !$hasErrors,
+                'tracks' => $allTracks,
+                'response_xml' => implode("\n", $allResponses),
             ];
 
         } catch (Exception $e) {
@@ -330,7 +345,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         $results = [];
         try {
             foreach ($voyage->shipments as $shipment) {
-                $xml = $this->xmlSerializer->createTitEnviosXml($shipment, $this->generateTransactionId());
+                $xml = $this->xmlSerializer->createRegistrarTitEnviosXml($shipment, $this->generateTransactionId());
                 if ($xml) {
                     $results[] = [
                         'shipment_id' => $shipment->id,
@@ -473,9 +488,16 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     private function isValidArgentinaPort(string $portCode): bool
     {
-        // Códigos típicos de puertos Argentina para hidrovía
-        $validCodes = ['ARBUE', 'ARRSA', 'ARSFE', 'ARPAR', 'ARCAM'];
-        return in_array($portCode, $validCodes);
+        // Para MIC/DTA Argentina, aceptar puertos argentinos + paraguayos con afip_code
+        $argentinaCodes = ['ARBUE', 'ARRSA', 'ARSFE', 'ARPAR', 'ARCAM'];
+        
+        if (in_array($portCode, $argentinaCodes)) {
+            return true;
+        }
+        
+        // Verificar puertos paraguayos con afip_code configurado
+        $port = \App\Models\Port::where('code', $portCode)->first();
+        return $port && isset($port->webservice_config['afip_code']);
     }
 
     /**

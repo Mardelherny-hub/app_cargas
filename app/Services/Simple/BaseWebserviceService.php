@@ -11,7 +11,7 @@ use App\Models\WebserviceLog;
 use App\Models\WebserviceResponse;
 use App\Services\Webservice\CertificateManagerService;
 use App\Services\Webservice\SoapClientService;
-use App\Services\Webservice\XmlSerializerService;
+use App\Services\Simple\SimpleXmlGenerator;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -49,7 +49,7 @@ abstract class BaseWebserviceService
     // Servicios integrados existentes
     protected CertificateManagerService $certificateManager;
     protected SoapClientService $soapClient;
-    protected XmlSerializerService $xmlSerializer;
+    protected SimpleXmlGenerator $xmlSerializer;
 
     /**
      * Configuración base común a todos los webservices
@@ -88,7 +88,7 @@ abstract class BaseWebserviceService
         // Inicializar servicios existentes
         $this->certificateManager = new CertificateManagerService($company);
         $this->soapClient = new SoapClientService($company, $this->config);
-        $this->xmlSerializer = new XmlSerializerService($company, $this->config);
+        $this->xmlSerializer = new SimpleXmlGenerator($company, $this->config);
 
         $this->logOperation('info', 'BaseWebserviceService inicializado', [
             'webservice_type' => $this->getWebserviceType(),
