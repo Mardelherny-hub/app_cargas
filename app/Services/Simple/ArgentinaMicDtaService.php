@@ -238,7 +238,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             
             foreach ($voyage->shipments as $shipment) {
                 // Generar XML usando SimpleXmlGenerator
-                $transactionId = 'TITENV_' . time() . '_' . $shipment->id;
+                $transactionId = 12345678901;
+                $transactionId = substr($transactionId, 0, 20);
                 $xml = $this->xmlSerializer->createRegistrarTitEnviosXml($shipment, $transactionId);
 
                 $this->logOperation('info', 'XML enviado a AFIP - RegistrarTitEnvios', [
