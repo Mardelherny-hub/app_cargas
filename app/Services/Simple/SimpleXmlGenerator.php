@@ -42,118 +42,153 @@ class SimpleXmlGenerator
      */
     public function createRegistrarTitEnviosXml(Shipment $shipment, string $transactionId): string
     {
-        // Obtener datos necesarios
-        $voyage = $shipment->voyage;
-        $vessel = $shipment->vessel ?? $voyage->leadVessel;
-        $captain = $shipment->captain ?? $voyage->captain;
-        // Obtener tokens WSAA para autenticación
-        $wsaaTokens = $this->getWSAATokens();
+        $wsdl     = 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl';
+        $endpoint = 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx';
 
-        // Crear XML usando string directo siguiendo documentación oficial AFIP
-        $xml = $this->createSoapEnvelope();
-        
-        $xml .= '<RegistrarTitEnvios xmlns="' . self::AFIP_NAMESPACE . '">';
+        $options = [
+            'trace'        => 1,          // para __getLastRequest/Response
+            'exceptions'   => true,       // lanzar SoapFault
+            'cache_wsdl'   => WSDL_CACHE_NONE,
+            'soap_version' => SOAP_1_1,   // según binding del WSDL
+        ];
+        try {
 
-        // Autenticación empresa como PRIMER parámetro
-        $xml .= '<argWSAutenticacionEmpresa>';
-        $xml .= '<Token>' . $wsaaTokens['token'] . '</Token>';
-        $xml .= '<Sign>' . $wsaaTokens['sign'] . '</Sign>';
-        $xml .= '<CuitEmpresaConectada>' . $this->company->tax_id . '</CuitEmpresaConectada>';
-        $xml .= '<TipoAgente>TRSP</TipoAgente>';
-        $xml .= '<Rol>TRSP</Rol>';
-        $xml .= '</argWSAutenticacionEmpresa>';
-        // Parámetros TitEnvios - ESTRUCTURA OFICIAL AFIP
-        $xml .= '<argRegistrarTitEnviosParam>';
-        $xml .= '<idTransaccion>' . $transactionId . '</idTransaccion>';
-        
-        // ESTRUCTURA OFICIAL: titulosTransEnvios
-        $xml .= '<titulosTransEnvios>';
-        $xml .= '<TitTransEnvio>';
-        $xml .= '<codViaTrans>' . ($voyage->transport_mode_code ?? '8') . '</codViaTrans>';
-        $xml .= '<idTitTrans>' . $shipment->shipment_number . '</idTitTrans>';
-        $xml .= '<obsDeclaAduInter>' . ($shipment->customs_notes ?? '') . '</obsDeclaAduInter>';
-        
-        // Remitente
-        $xml .= '<remitente>';
-        $xml .= '<cuit>' . $this->company->tax_id . '</cuit>';
-        $xml .= '<razonSocial>' . htmlspecialchars($this->company->legal_name) . '</razonSocial>';
-        $xml .= '</remitente>';
-        
-        // Consignatario
-        $xml .= '<consignatario>';
-        $xml .= '<cuit>' . ($shipment->consignee_tax_id ?? $this->company->tax_id) . '</cuit>';
-        $xml .= '<razonSocial>' . htmlspecialchars($shipment->consignee_name ?? $this->company->legal_name) . '</razonSocial>';
-        $xml .= '</consignatario>';
-        
-        // Destinatario
-        $xml .= '<destinatario>';
-        $xml .= '<cuit>' . ($shipment->destination_tax_id ?? $this->company->tax_id) . '</cuit>';
-        $xml .= '<razonSocial>' . htmlspecialchars($shipment->destination_name ?? $this->company->legal_name) . '</razonSocial>';
-        $xml .= '</destinatario>';
-        
-        // Notificado
-        $xml .= '<notificado>';
-        $xml .= '<cuit>' . ($shipment->notify_party_tax_id ?? $this->company->tax_id) . '</cuit>';
-        $xml .= '<razonSocial>' . htmlspecialchars($shipment->notify_party_name ?? $this->company->legal_name) . '</razonSocial>';
-        $xml .= '</notificado>';
-        
-        $xml .= '<indFinCom>' . ($shipment->commercial_purpose ?? 'S') . '</indFinCom>';
-        $xml .= '<indFraccTransp>' . ($shipment->is_fractional ? 'S' : 'N') . '</indFraccTransp>';
-        $xml .= '<indConsol>' . ($shipment->is_consolidated ? 'S' : 'N') . '</indConsol>';
-        $xml .= '<idManiCargaArrPaisPart>' . ($shipment->origin_manifest_id ?? '') . '</idManiCargaArrPaisPart>';
-        $xml .= '<idDocTranspArrPaisPart>' . ($shipment->origin_transport_doc ?? '') . '</idDocTranspArrPaisPart>';
-        
-        // Origen
-        $xml .= '<origen>';
-        $xml .= '<codPais>' . ($voyage->originPort?->country?->numeric_code ?? '032') . '</codPais>';
-        $xml .= '<codPuerto>' . ($voyage->originPort?->code ?? 'ARBUE') . '</codPuerto>';
-        $xml .= '</origen>';
-        
-        // Destino
-        $xml .= '<destino>';
-        $xml .= '<codPais>' . ($voyage->destinationPort?->country?->numeric_code ?? '600') . '</codPais>';
-        $xml .= '<codPuerto>' . ($voyage->destinationPort?->code ?? 'PYTVT') . '</codPuerto>';
-        $xml .= '</destino>';
-        
-        // Envíos
-        $xml .= '<envios>';
-        $xml .= '<Envio>';
-        $xml .= '<idEnvio>' . $shipment->sequence_in_voyage . '</idEnvio>';
-        $xml .= '<fechaEmb>' . ($voyage->departure_date?->format('Y-m-d') ?? now()->format('Y-m-d')) . '</fechaEmb>';
-        $xml .= '<codPuertoEmb>' . ($voyage->originPort?->code ?? 'ARBUE') . '</codPuertoEmb>';
-        $xml .= '<codPuertoDesc>' . ($voyage->destinationPort?->code ?? 'PYTVT') . '</codPuertoDesc>';
-        $xml .= '<idFiscalATAMIC>' . $this->company->tax_id . '</idFiscalATAMIC>';
-        $xml .= '</Envio>';
-        $xml .= '</envios>';
-        
-        $xml .= '</TitTransEnvio>';
-        $xml .= '</titulosTransEnvios>';
-        
-        // Títulos contenedores vacíos
-        $xml .= '<titulosTransContVacios>';
-        $xml .= '</titulosTransContVacios>';
-        
-        // Contenedores
-        $xml .= '<contenedores>';
-        // Solo si hay contenedores cargados
-        if ($shipment->containers_loaded > 0) {
-            for ($i = 1; $i <= $shipment->containers_loaded; $i++) {
-                $xml .= '<Contenedor>';
-                $xml .= '<id>' . ($shipment->shipment_number . '_CONT' . str_pad($i, 3, '0', STR_PAD_LEFT)) . '</id>';
-                $xml .= '<codMedida>' . ($vessel->default_container_size ?? '20') . '</codMedida>';
-                $xml .= '<condicion>' . ($shipment->container_condition ?? 'P') . '</condicion>';
-                $xml .= '<accesorio>' . ($shipment->container_accessories ?? '') . '</accesorio>';
-                $xml .= '</Contenedor>';
-            }
+            $client = new \SoapClient($wsdl, $options);
+            $voyage = $shipment->voyage;
+            $wsaa   = $this->getWSAATokens(); // ['token','sign','cuit']
+
+            $nsSoap = 'http://schemas.xmlsoap.org/soap/envelope/';
+            $nsXsi  = 'http://www.w3.org/2001/XMLSchema-instance';
+            $nsXsd  = 'http://www.w3.org/2001/XMLSchema';
+            $nsSvc  = 'Ar.Gob.Afip.Dga.wgesregsintia2';
+
+            // Ajustá estos campos a tus models/datos reales
+            $codAduOrigen = (string)($voyage->originPort?->customs_code ?? '');     // ej "019"
+            $codPaisDest  = (string)($voyage->destinationPort?->country?->numeric_code ?? '600');
+            $codAduDest   = (string)($voyage->destinationPort?->customs_code ?? ''); // ej "051"
+            $idManif      = (string)($shipment->origin_manifest_id   ?? 'SIN_MANIFIESTO');
+            $idDocTrp     = (string)($shipment->origin_transport_doc ?? 'SIN_DOC');
+
+            // Contenedores (juntá todos)
+            $containers = $shipment->shipmentItems()
+                ->with(['containers.containerType', 'containers.seals'])
+                ->get()
+                ->flatMap(fn($it) => $it->containers);
+
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0','UTF-8');
+
+            // Envelope
+            $w->startElementNs('soap','Envelope',$nsSoap);
+            $w->writeAttribute('xmlns:xsi', $nsXsi);
+            $w->writeAttribute('xmlns:xsd', $nsXsd);
+
+            /* // Header Sacamos el header por error 7007
+            $w->startElementNs('soap','Header',$nsSoap);
+                $w->startElement('Auth');              // sin prefijo
+                $w->writeAttribute('xmlns',$nsSvc);  // namespace del servicio
+                
+                $w->writeElement('Cuit',  (string)$this->company->tax_id);
+                $w->endElement(); // Auth
+            $w->endElement(); // Header */
+
+            // Body
+            $w->startElementNs('soap','Body',$nsSoap);
+                $w->startElement('RegistrarTitEnvios');
+                $w->writeAttribute('xmlns', $nsSvc);
+
+                // argWSAutenticacionEmpresa
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign',  $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id); // s:long
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // argRegistrarTitEnviosParam
+                $w->startElement('argRegistrarTitEnviosParam');
+                    $w->writeElement('idTransaccion', (string)$transactionId);
+
+                    // titulosTransEnvios
+                    $w->startElement('titulosTransEnvios');
+                    $w->startElement('TitTransEnvio');
+                        $w->writeElement('codViaTrans','8'); // int
+                        $w->writeElement('idTitTrans',(string)$shipment->shipment_number);
+
+                        $w->writeElement('indFinCom','S');
+                        $w->writeElement('indFraccTransp','N');
+                        $w->writeElement('indConsol','N');
+
+                        $w->writeElement('idManiCargaArrPaisPart', $idManif);
+                        $w->writeElement('idDocTranspArrPaisPart', $idDocTrp);
+
+                        if ($codAduOrigen !== '') {
+                        $w->startElement('origen');
+                            $w->writeElement('codAdu', $codAduOrigen);
+                        $w->endElement();
+                        }
+
+                        if ($codPaisDest !== '' || $codAduDest !== '') {
+                        $w->startElement('destino');
+                            if ($codPaisDest !== '') $w->writeElement('codPais', $codPaisDest);
+                            if ($codAduDest  !== '') $w->writeElement('codAdu',  $codAduDest);
+                        $w->endElement();
+                        }
+
+                        // envios (obligatorio idEnvio)
+                        $w->startElement('envios');
+                        $w->startElement('Envio');
+                            $w->writeElement('idEnvio','1'); // int requerido
+                            $w->writeElement('idFiscalATAMIC', (string)$this->company->tax_id); // opcional
+                        $w->endElement();
+                        $w->endElement();
+
+                    $w->endElement(); // TitTransEnvio
+                    $w->endElement();   // titulosTransEnvios
+
+                    // contenedores (solo si hay)
+                    if ($containers->isNotEmpty()) {
+                    $w->startElement('contenedores');
+                        foreach ($containers as $c) {
+                        $w->startElement('Contenedor');
+                            $w->writeElement('id',        (string)$c->container_number);
+                            $w->writeElement('codMedida', (string)($c->containerType?->argentina_ws_code ?? '42G1'));
+                            $map = ['L'=>'P','V'=>'V','full'=>'P','empty'=>'V'];
+                            $w->writeElement('condicion', (string)($map[$c->condition] ?? $c->condition));
+                            if ($c->seals && $c->seals->isNotEmpty()) {
+                            $w->startElement('precintos'); // ArrayOfString2
+                                foreach ($c->seals as $s) {
+                                $w->writeElement('precinto', (string)$s->seal_number);
+                                }
+                            $w->endElement();
+                            }
+                        $w->endElement();
+                        }
+                    $w->endElement();
+                    }
+
+                $w->endElement(); // argRegistrarTitEnviosParam
+                $w->endElement();   // RegistrarTitEnvios
+            $w->endElement();     // Body
+            $w->endElement();       // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (\SoapFault $f) {
+            \Log::error('RegistrarTitEnvios Fault', [
+                'faultcode' => $f->faultcode ?? null,
+                'faultstring' => $f->getMessage(),
+                'detail' => isset($f->detail) ? (is_string($f->detail) ? $f->detail : json_encode($f->detail)) : null,
+                'last_request' => $client->__getLastRequest(),
+                'last_response' => $client->__getLastResponse(),
+            ]);
+            throw $f;
         }
-        $xml .= '</contenedores>';
-        
-        $xml .= '</argRegistrarTitEnviosParam>';
-        $xml .= '</RegistrarTitEnvios>';
-        $xml .= $this->closeSoapEnvelope();
-
-        return $xml;
     }
+
 
     /**
      * Crear XML para RegistrarMicDta - PASO 2 AFIP
@@ -161,6 +196,7 @@ class SimpleXmlGenerator
      */
     public function createRegistrarMicDtaXml(Voyage $voyage, array $tracks, string $transactionId): string
     {
+
         $vessel = $voyage->leadVessel;
 
         $xml = $this->createSoapEnvelope();
@@ -293,59 +329,83 @@ class SimpleXmlGenerator
     }
 
     /**
-     * Obtener tokens WSAA para autenticación AFIP
+     * Obtener tokens WSAA para autenticación AFIP - TA ESPECÍFICO para wgesregsintia2
      */
     private function getWSAATokens(): array
-{
-    error_log("=== INICIO DEBUG WSAA ===");
-    
-    try {
-        $certificateManager = new \App\Services\Webservice\CertificateManagerService($this->company);
-        
-        $certData = $certificateManager->readCertificate();
-        if (!$certData) {
-            error_log("ERROR: No se pudo leer certificado");
-            throw new Exception("No se pudo leer el certificado .p12");
+    {
+        // LIMPIAR CACHE ANTES DE GENERAR NUEVO TA
+        $this->clearWSAACache();
+        try {
+            error_log("WSAA: Iniciando obtención TA para service=wgesregsintia2");
+            
+            $certificateManager = new \App\Services\Webservice\CertificateManagerService($this->company);
+            
+            // Leer certificado
+            $certData = $certificateManager->readCertificate();
+            if (!$certData) {
+                throw new Exception("No se pudo leer el certificado .p12");
+            }
+            
+            // Log certificado usado
+            $certInfo = $certificateManager->extractCertificateInfo($certData);
+            error_log("WSAA: Certificado para firmar TRA - CN=" . ($certInfo['common_name'] ?? 'N/A') . 
+                    ", Serial=" . substr($certInfo['serial_number'] ?? 'N/A', -8));
+            
+            // Generar LoginTicket ESPECÍFICO para wgesregsintia2
+            $loginTicket = $this->generateLoginTicket();
+            error_log("WSAA: LoginTicket generado - service=wgesregsintia2, longitud=" . strlen($loginTicket));
+            
+            // Firmar LoginTicket
+            $signedTicket = $this->signLoginTicket($loginTicket, $certData);
+            error_log("WSAA: TRA firmado - longitud=" . strlen($signedTicket));
+            
+            // Llamar a WSAA
+            $wsaaTokens = $this->callWSAA($signedTicket);
+            
+            // Log tokens obtenidos (SIN valores completos)
+            error_log("WSAA: TA obtenido exitosamente - Token length=" . strlen($wsaaTokens['token']) . 
+                    ", Sign length=" . strlen($wsaaTokens['sign']) . 
+                    ", Token hash=" . substr(md5($wsaaTokens['token']), 0, 8) .
+                    ", Sign hash=" . substr(md5($wsaaTokens['sign']), 0, 8));
+            
+            return [
+                'token' => $wsaaTokens['token'],
+                'sign' => $wsaaTokens['sign'],
+                'cuit' => $this->company->tax_id
+            ];
+            
+        } catch (Exception $e) {
+            error_log("WSAA ERROR: " . $e->getMessage());
+            error_log("WSAA ERROR en: " . $e->getFile() . ":" . $e->getLine());
+            throw $e; // NO FALLBACK - necesitamos TA real
         }
-        error_log("CERTIFICADO LEÍDO OK");
-
-        $loginTicket = $this->generateLoginTicket();
-        error_log("LOGIN TICKET GENERADO: " . strlen($loginTicket) . " chars");
-
-        $signedTicket = $this->signLoginTicket($loginTicket, $certData);
-        error_log("SIGNED TICKET GENERADO: " . strlen($signedTicket) . " chars");
-
-        $wsaaTokens = $this->callWSAA($signedTicket);
-        error_log("WSAA TOKENS OBTENIDOS");
-        error_log("TOKEN: " . substr($wsaaTokens['token'], 0, 50) . "...");
-        
-        return [
-            'token' => $wsaaTokens['token'],
-            'sign' => $wsaaTokens['sign'],
-            'cuit' => $this->company->tax_id
-        ];
-        
-    } catch (Exception $e) {
-        error_log("ERROR WSAA ESPECÍFICO: " . $e->getMessage());
-        error_log("STACK TRACE: " . $e->getTraceAsString());
-        
-        return [
-            'token' => base64_encode('CERT_' . $this->company->id . '_' . time()),
-            'sign' => base64_encode('SIGN_' . $this->company->tax_id . '_' . time()),
-            'cuit' => $this->company->tax_id
-        ];
     }
-}
 
     /**
-     * Crear envelope SOAP estándar con autenticación WSAA
-     */
-    private function createSoapEnvelope(): string
-    {
-        return '<?xml version="1.0" encoding="UTF-8"?>' .
-            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' .
-            '<soap:Body>';
-    }
+ * Crear envelope SOAP con autenticación WSAA exacta
+ */
+private function createSoapEnvelope(): string
+{
+    // Obtener TA real de WSAA
+    $wsaaTokens = $this->getWSAATokens();
+
+    // Log del header exacto que se enviará
+    error_log("SOAP Header: Auth/Token length=" . strlen($wsaaTokens['token']));
+    error_log("SOAP Header: Auth/Sign length=" . strlen($wsaaTokens['sign'])); 
+    error_log("SOAP Header: Auth/Cuit=" . $wsaaTokens['cuit']);
+    error_log("SOAP Header: Estructura=Auth>Token,Sign,Cuit (sin namespace adicional)");
+
+    return '<?xml version="1.0" encoding="UTF-8"?>' .
+           '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' .
+           '<soap:Header>' .
+           '<Auth>' .
+           '<Token>' . $wsaaTokens['token'] . '</Token>' .
+           '<Sign>' . $wsaaTokens['sign'] . '</Sign>' .
+           '<Cuit>' . $wsaaTokens['cuit'] . '</Cuit>' .
+           '</Auth>' .
+           '</soap:Header>' .
+           '<soap:Body>';
+}
 
     /**
      * Cerrar envelope SOAP
@@ -365,58 +425,123 @@ class SimpleXmlGenerator
         return @$dom->loadXML($xml) !== false;
     }
 
-    private function generateLoginTicket(): string
-    {
-        $uniqueId = uniqid();
-        $generationTime = date('c');
-        $expirationTime = date('c', strtotime('+2 hours'));
-        
-        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-    <loginTicketRequest version=\"1.0\">
-        <header>
-            <uniqueId>{$uniqueId}</uniqueId>
-            <generationTime>{$generationTime}</generationTime>
-            <expirationTime>{$expirationTime}</expirationTime>
-        </header>
-        <service>wgesregsintia2</service>
-    </loginTicketRequest>";
-    }
+private function generateLoginTicket(): string
+{
+    // 1) Generar uniqueId seguro, acotado para evitar overflow en parsers viejos
+    //    31 bits: 0..2147483647
+    $base = time(); // segundos
+    $uniqueId = (int) min($base, 2147483647);
+
+    // 2) Tiempos en UTC para evitar problemas de DST/offset
+    $nowUtc = new \DateTime('now', new \DateTimeZone('UTC'));
+
+    // Ajustá la ventana si AFIP se queja de clock-skew:
+    // -5 min / +12 h suele andar perfecto.
+    $generationTime = (clone $nowUtc)->sub(new \DateInterval('PT5M'));
+    $expirationTime = (clone $nowUtc)->add(new \DateInterval('PT12H'));
+
+    // 3) Formato ISO 8601. Con 'Z' explícita para UTC (estrictamente compatible).
+    $generationTimeStr = $generationTime->format('Y-m-d\TH:i:s\Z');
+    $expirationTimeStr = $expirationTime->format('Y-m-d\TH:i:s\Z');
+
+    // 4) Service EXACTO para este WS
+    $serviceExacto = 'wgesregsintia2';
+
+    // 5) Construir XML minimalista sin indentación/espacios extra
+    //    Importante: este string debe ser EXACTAMENTE el que firmás (CMS).
+    $loginTicket =
+        '<?xml version="1.0" encoding="UTF-8"?>' .
+        '<loginTicketRequest version="1.0">' .
+            '<header>' .
+                '<uniqueId>' . $uniqueId . '</uniqueId>' .
+                '<generationTime>' . $generationTimeStr . '</generationTime>' .
+                '<expirationTime>' . $expirationTimeStr . '</expirationTime>' .
+            '</header>' .
+            '<service>' . $serviceExacto . '</service>' .
+        '</loginTicketRequest>';
+
+    // 6) Logs útiles (no loguees el XML completo en prod si te preocupa el tamaño)
+    error_log("WSAA: Generando LoginTicket (UTC) service={$serviceExacto}");
+    error_log("WSAA: uniqueId={$uniqueId}");
+    error_log("WSAA: generationTime={$generationTimeStr} expirationTime={$expirationTimeStr}");
+
+    // Opcional: hash para trazar que lo firmado == lo enviado
+    error_log('WSAA: sha256(TRA)=' . hash('sha256', $loginTicket));
+
+    return $loginTicket;
+}
 
     private function signLoginTicket(string $loginTicket, array $certData): string
-    {
-        // Crear archivo temporal para el LoginTicket
-        $tempFile = tempnam(sys_get_temp_dir(), 'loginticket');
-        file_put_contents($tempFile, $loginTicket);
-        
-        // Usar directamente cert y pkey del CertificateManagerService
-        $outputFile = $tempFile . '.signed';
-        
-        // Firmar usando el formato correcto del CertificateManagerService
-        if (openssl_pkcs7_sign(
-            $tempFile, 
-            $outputFile, 
-            $certData['cert'],     // Certificado ya en formato correcto
-            $certData['pkey'],     // Clave privada ya en formato correcto
-            [], 
-            PKCS7_NOATTR
-        )) {
-            $signature = file_get_contents($outputFile);
-            
-            // Limpiar archivos temporales
-            unlink($tempFile);
-            unlink($outputFile);
-            
-            return $signature;
+{
+    // Crear archivo temporal para el LoginTicket
+    $loginTicketFile = tempnam(sys_get_temp_dir(), 'loginticket_') . '.xml';
+    file_put_contents($loginTicketFile, $loginTicket);
+    
+    // Crear archivo de certificado temporal con cadena completa
+    $certFile = tempnam(sys_get_temp_dir(), 'cert_') . '.pem';
+    $certContent = $certData['cert'];
+    
+    // Incluir certificados intermedios si existen
+    if (isset($certData['extracerts']) && is_array($certData['extracerts'])) {
+        foreach ($certData['extracerts'] as $extraCert) {
+            $certContent .= "\n" . $extraCert;
         }
-        
-        // Limpiar archivos en caso de error
-        unlink($tempFile);
-        if (file_exists($outputFile)) {
-            unlink($outputFile);
-        }
-        
-        throw new Exception("Error firmando LoginTicket con OpenSSL");
     }
+    
+    file_put_contents($certFile, $certContent);
+    
+    // Crear archivo de clave privada temporal
+    $keyFile = tempnam(sys_get_temp_dir(), 'key_') . '.pem';
+    file_put_contents($keyFile, $certData['pkey']);
+    
+    // Archivo de salida
+    $outputFile = tempnam(sys_get_temp_dir(), 'signed_') . '.p7s';
+    
+    // Intentar con comando OpenSSL externo primero (más confiable)
+    $command = sprintf(
+        'openssl smime -sign -in %s -out %s -signer %s -inkey %s -outform DER -nodetach 2>&1',
+        escapeshellarg($loginTicketFile),
+        escapeshellarg($outputFile),
+        escapeshellarg($certFile),
+        escapeshellarg($keyFile)
+    );
+    
+    exec($command, $output, $returnCode);
+    
+    if ($returnCode === 0 && file_exists($outputFile)) {
+        $signature = file_get_contents($outputFile);
+        $signatureBase64 = base64_encode($signature);
+    } else {
+        // Fallback con openssl_pkcs7_sign usando flags correctos
+        $result = openssl_pkcs7_sign(
+            $loginTicketFile,
+            $outputFile,
+            $certData['cert'],
+            $certData['pkey'],
+            [],
+            PKCS7_BINARY | PKCS7_NOATTR
+        );
+        
+        if (!$result || !file_exists($outputFile)) {
+            throw new Exception("Error firmando LoginTicket. OpenSSL output: " . implode(', ', $output));
+        }
+        
+        $signature = file_get_contents($outputFile);
+        $signatureBase64 = base64_encode($signature);
+    }
+    
+    // Limpiar archivos temporales
+    @unlink($loginTicketFile);
+    @unlink($certFile);
+    @unlink($keyFile);
+    @unlink($outputFile);
+    
+    if (!$signatureBase64) {
+        throw new Exception("Error generando firma Base64 para WSAA");
+    }
+    
+    return $signatureBase64;
+}
 
     private function callWSAA(string $signedTicket): array
     {
@@ -446,6 +571,48 @@ class SimpleXmlGenerator
             'token' => (string)$xml->credentials->token,
             'sign' => (string)$xml->credentials->sign
         ];
+    }
+
+    /**
+     * Limpiar cache de TAs anteriores para forzar generación nueva
+     */
+    private function clearWSAACache(): void
+    {
+        try {
+            // Buscar y eliminar archivos de cache comunes
+            $cachePatterns = [
+                storage_path('app/wsaa_cache*'),
+                storage_path('app/certificates/ta_*'),
+                storage_path('framework/cache/wsaa*'),
+                sys_get_temp_dir() . '/wsaa_*',
+                sys_get_temp_dir() . '/ta_*'
+            ];
+            
+            $filesCleared = 0;
+            foreach ($cachePatterns as $pattern) {
+                $files = glob($pattern);
+                if ($files) {
+                    foreach ($files as $file) {
+                        if (is_file($file) && unlink($file)) {
+                            $filesCleared++;
+                        }
+                    }
+                }
+            }
+            
+            error_log("WSAA Cache: Archivos eliminados={$filesCleared}");
+            
+            // Limpiar cache de Laravel si existe
+            if (function_exists('cache')) {
+                cache()->forget('wsaa_token_' . $this->company->id);
+                cache()->forget('wsaa_sign_' . $this->company->id);
+                cache()->forget('wsaa_expires_' . $this->company->id);
+                error_log("WSAA Cache: Cache Laravel limpiado");
+            }
+            
+        } catch (Exception $e) {
+            error_log("WSAA Cache: Error limpiando cache - " . $e->getMessage());
+        }
     }
     
 }
