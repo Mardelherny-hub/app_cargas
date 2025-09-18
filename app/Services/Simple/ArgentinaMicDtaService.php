@@ -78,6 +78,11 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         return $this->config['wsdl_url'];
     }
 
+    public function getXmlSerializer()
+    {
+        return $this->xmlSerializer;
+    }
+
     /**
      * Validaciones específicas para MIC/DTA Argentina - VERSIÓN DETALLADA
      * Reemplaza el método validateSpecificData() en ArgentinaMicDtaService.php

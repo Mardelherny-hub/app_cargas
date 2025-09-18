@@ -111,247 +111,283 @@
             </div>
 
             {{-- Lista de Voyages --}}
-            <div class="bg-white shadow overflow-hidden rounded-lg">
-                <div class="px-4 py-5 sm:p-6">
-                    <div class="flex items-center justify-between mb-6">
-                        <h3 class="text-lg leading-6 font-medium text-gray-900">
-                            Voyages Disponibles para MIC/DTA ({{ $voyages->total() }})
-                        </h3>
+            <div class="bg-white shadow overflow-hidden sm:rounded-md">
+                @if($voyages->count() > 0)
+                    {{-- Header con acciones masivas --}}
+                    <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                        <div class="flex items-center space-x-4">
+                            <h3 class="text-sm font-medium text-gray-900">
+                                {{ $voyages->total() }} voyage{{ $voyages->total() != 1 ? 's' : '' }} encontrado{{ $voyages->total() != 1 ? 's' : '' }}
+                            </h3>
+                            <div id="loading-indicator" class="hidden flex items-center">
+                                <svg class="animate-spin h-4 w-4 text-blue-500 mr-2" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="text-sm text-blue-600">Consultando estados...</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button id="btn-consultar-masivo" 
+                                    class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Consultar Todos
+                            </button>
+                            <button id="btn-auto-refresh" 
+                                    class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Auto-refresh: <span id="auto-refresh-status">OFF</span>
+                            </button>
+                        </div>
                     </div>
 
-                    @if($voyages->count() > 0)
-                        <div class="space-y-6">
-                            @foreach($voyages as $voyage)
-                                @php
-                                    $micdta_status = $voyage->micdta_status;
-                                    $validation = $voyage->micdta_validation;
-                                    
-                                    // Determinar color y estado visual
-                                    $status_color = 'gray';
-                                    $status_text = 'Sin configurar';
-                                    $can_send = false;
-                                    
-                                    if ($micdta_status) {
-                                        $can_send = $micdta_status->can_send;
-                                        
-                                        switch($micdta_status->status) {
-                                            case 'approved':
-                                                $status_color = 'green';
-                                                $status_text = 'Aprobado';
-                                                break;
-                                            case 'sent':
-                                                $status_color = 'blue';
-                                                $status_text = 'Enviado';
-                                                break;
-                                            case 'sending':
-                                                $status_color = 'blue';
-                                                $status_text = 'Enviando...';
-                                                break;
-                                            case 'validating':
-                                                $status_color = 'yellow';
-                                                $status_text = 'Validando...';
-                                                break;
-                                            case 'pending':
-                                                $status_color = 'yellow';
-                                                $status_text = 'Pendiente';
-                                                break;
-                                            case 'error':
-                                                $status_color = 'red';
-                                                $status_text = 'Error';
-                                                break;
-                                            case 'retry':
-                                                $status_color = 'orange';
-                                                $status_text = 'Reintentando';
-                                                break;
-                                            default:
-                                                $status_color = 'gray';
-                                                $status_text = ucfirst($micdta_status->status);
-                                        }
-                                    }
-                                @endphp
-                                
-                                <div class="border border-gray-200 rounded-lg p-6 hover:bg-gray-50 transition duration-150">
-                                    <div class="flex items-start justify-between">
-                                        {{-- Información del Voyage --}}
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex items-center space-x-4 mb-3">
+                    {{-- Tabla principal simplificada --}}
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Voyage
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Embarcación & Ruta
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Envío MIC/DTA
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Estado AFIP
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Última Consulta
+                                    </th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Acciones
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                @foreach($voyages as $voyage)
+                                    <tr class="hover:bg-gray-50" data-voyage-id="{{ $voyage->id }}">
+                                        {{-- Columna Voyage --}}
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center">
                                                 <div>
-                                                    <h4 class="text-lg font-semibold text-gray-900">
-                                                        {{ $voyage->voyage_number }}
-                                                    </h4>
-                                                    <p class="text-sm text-gray-600">
-                                                        @if($voyage->leadVessel)
-                                                            <span class="font-medium">{{ $voyage->leadVessel->name }}</span>
-                                                        @else
-                                                            <span class="italic text-red-500">Sin embarcación asignada</span>
-                                                        @endif
-                                                    </p>
-                                                </div>
-                                                
-                                                <div class="flex items-center text-sm text-gray-600">
-                                                    <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                                                    </svg>
-                                                    <span>{{ $voyage->originPort->code ?? 'N/D' }}</span>
-                                                    <svg class="w-4 h-4 mx-2" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
-                                                    </svg>
-                                                    <span>{{ $voyage->destinationPort->code ?? 'N/D' }}</span>
-                                                </div>
-                                                
-                                                <div class="text-sm text-gray-600">
-                                                    <span class="font-medium">Shipments:</span> {{ $voyage->shipments->count() }}
+                                                    <div class="text-sm font-medium text-gray-900">{{ $voyage->voyage_number }}</div>
+                                                    <div class="text-sm text-gray-500">{{ $voyage->shipments->count() }} shipment{{ $voyage->shipments->count() != 1 ? 's' : '' }}</div>
                                                 </div>
                                             </div>
+                                        </td>
 
-                                            {{-- Validación MIC/DTA --}}
-                                            @if($validation)
-                                                <div class="mt-3">
-                                                    @if($validation['can_process'])
-                                                        <div class="flex items-center text-sm text-green-700">
-                                                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                                                            </svg>
-                                                            <span class="font-medium">Listo para envío MIC/DTA</span>
-                                                        </div>
-                                                    @else
-                                                        <div class="text-sm">
-                                                            <div class="flex items-center text-red-700 mb-1">
-                                                                <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                                                                </svg>
-                                                                <span class="font-medium">Requiere atención</span>
-                                                            </div>
-                                                            @if(count($validation['errors']) > 0)
-                                                                <div class="ml-5 space-y-1">
-                                                                    @foreach($validation['errors'] as $error)
-                                                                        <p class="text-xs text-red-600">• {{ $error }}</p>
-                                                                    @endforeach
-                                                                </div>
-                                                            @endif
-                                                        </div>
-                                                    @endif
-                                                    
-                                                    @if(count($validation['warnings']) > 0)
-                                                        <div class="mt-2 text-sm">
-                                                            <div class="flex items-center text-yellow-700 mb-1">
-                                                                <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                                                                </svg>
-                                                                <span class="font-medium">Advertencias:</span>
-                                                            </div>
-                                                            <div class="ml-5 space-y-1">
-                                                                @foreach($validation['warnings'] as $warning)
-                                                                    <p class="text-xs text-yellow-600">• {{ $warning }}</p>
-                                                                @endforeach
-                                                            </div>
-                                                        </div>
-                                                    @endif
-                                                </div>
-                                            @endif
-                                        </div>
-
-                                        {{-- Estado y Acciones --}}
-                                        <div class="flex items-center space-x-4">
-                                            {{-- Estado MIC/DTA --}}
-                                            <div class="text-center">
-                                                <div class="text-xs font-medium text-gray-700 mb-2">Estado MIC/DTA</div>
-                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium 
-                                                    @if($status_color === 'green') bg-green-100 text-green-800
-                                                    @elseif($status_color === 'blue') bg-blue-100 text-blue-800
-                                                    @elseif($status_color === 'yellow') bg-yellow-100 text-yellow-800
-                                                    @elseif($status_color === 'red') bg-red-100 text-red-800
-                                                    @elseif($status_color === 'orange') bg-orange-100 text-orange-800
-                                                    @else bg-gray-100 text-gray-800 @endif">
-                                                    {{ $status_text }}
-                                                </span>
-                                                
-                                                @if($micdta_status && $micdta_status->last_sent_at)
-                                                    <div class="text-xs text-gray-500 mt-1">
-                                                        {{ $micdta_status->last_sent_at->format('d/m/Y H:i') }}
-                                                    </div>
-                                                @endif
-                                                
-                                                @if($micdta_status && $micdta_status->confirmation_number)
-                                                    <div class="text-xs text-gray-600 mt-1 font-mono">
-                                                        #{{ $micdta_status->confirmation_number }}
-                                                    </div>
-                                                @endif
+                                        {{-- Columna Embarcación & Ruta --}}
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="text-sm font-medium text-gray-900">{{ $voyage->leadVessel->name ?? 'N/A' }}</div>
+                                            <div class="text-sm text-gray-500">
+                                                {{ $voyage->originPort->code ?? 'N/A' }} → {{ $voyage->destinationPort->code ?? 'N/A' }}
                                             </div>
+                                        </td>
 
-                                            {{-- Acciones --}}
-                                            <div class="flex flex-col space-y-2">
-                                                <a href="{{ route('company.simple.micdta.show', $voyage->id) }}" 
-                                                   class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                                                    <svg class="-ml-1 mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
-                                                        <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>
-                                                    </svg>
-                                                    Ver Detalle
-                                                </a>
-                                                
-                                                @if($validation && $validation['can_process'] && $can_send)
-                                                    <button type="button" 
-                                                            onclick="openSendModal('{{ $voyage->id }}', '{{ $voyage->voyage_number }}')"
-                                                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
-                                                        <svg class="-ml-1 mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.293l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd"/>
+                                        {{-- Columna Envío MIC/DTA (SIMPLIFICADA) --}}
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            @if(isset($voyage->micdta_status) && is_object($voyage->micdta_status))
+                                                {{-- Caso: micdta_status es un objeto VoyageWebserviceStatus --}}
+                                                @if($voyage->micdta_status->status === 'sent')
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
                                                         </svg>
-                                                        Enviar MIC/DTA
-                                                    </button>
+                                                        Enviado
+                                                    </span>
+                                                    @if($voyage->micdta_status->last_sent_at)
+                                                        <div class="text-xs text-gray-500 mt-1">
+                                                            {{ $voyage->micdta_status->last_sent_at->format('d/m/Y H:i') }}
+                                                        </div>
+                                                    @endif
+                                                @elseif($voyage->micdta_status->status === 'approved')
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        Aprobado
+                                                    </span>
+                                                @elseif($voyage->micdta_status->status === 'pending')
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        Pendiente
+                                                    </span>
+                                                @elseif(in_array($voyage->micdta_status->status, ['sending', 'validating']))
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2 animate-spin" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        Procesando...
+                                                    </span>
+                                                @elseif(in_array($voyage->micdta_status->status, ['error', 'rejected']))
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        Error
+                                                    </span>
+                                                @else
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        {{ ucfirst($voyage->micdta_status->status) }}
+                                                    </span>
+                                                @endif
+                                            @else
+                                                {{-- Caso: micdta_status es null o no es objeto --}}
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                                    <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                        <circle cx="4" cy="4" r="3" />
+                                                    </svg>
+                                                    No enviado
+                                                </span>
+                                            @endif
+                                        </td>
+
+                                        {{-- NUEVA COLUMNA: Estado AFIP (SIMPLIFICADA) --}}
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div id="estado-afip-{{ $voyage->id }}" class="estado-afip-container">
+                                                @if(isset($voyage->micdta_status) && is_object($voyage->micdta_status) && in_array($voyage->micdta_status->status, ['sent', 'approved']))
+                                                    {{-- Voyages enviados - mostrar "consultando..." inicialmente --}}
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2 animate-pulse" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        Consultando...
+                                                    </span>
+                                                @else
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                                        <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                                            <circle cx="4" cy="4" r="3" />
+                                                        </svg>
+                                                        No disponible
+                                                    </span>
                                                 @endif
                                             </div>
-                                        </div>
+                                        </td>
+
+                                        {{-- NUEVA COLUMNA: Última Consulta --}}
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div id="ultima-consulta-{{ $voyage->id }}" class="text-sm text-gray-500">
+                                                <span class="text-gray-400">-</span>
+                                            </div>
+                                        </td>
+
+                                        {{-- Columna Acciones (SIMPLIFICADA) --}}
+                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <div class="flex items-center justify-end space-x-2">
+                                                @if(isset($voyage->micdta_status) && is_object($voyage->micdta_status) && in_array($voyage->micdta_status->status, ['sent', 'approved']))
+                                                    {{-- Voyages enviados - mostrar opciones de consulta --}}
+                                                    <button onclick="consultarEstadoIndividual({{ $voyage->id }})" 
+                                                            class="consultar-btn inline-flex items-center px-2 py-1 border border-blue-300 text-xs leading-4 font-medium rounded text-blue-700 bg-blue-50 hover:bg-blue-100">
+                                                        <svg class="-ml-0.5 mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                                        </svg>
+                                                        Consultar
+                                                    </button>
+
+                                                    <button onclick="verHistorialConsultas({{ $voyage->id }})" 
+                                                            class="inline-flex items-center px-2 py-1 border border-gray-300 text-xs leading-4 font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                                                        <svg class="-ml-0.5 mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                                        </svg>
+                                                        Historial
+                                                    </button>
+                                                @elseif(isset($voyage->micdta_validation) && is_array($voyage->micdta_validation) && ($voyage->micdta_validation['can_send'] ?? false))
+                                                    {{-- Voyages que se pueden enviar --}}
+                                                    <a href="{{ route('company.simple.micdta.show', $voyage) }}" 
+                                                    class="inline-flex items-center px-2 py-1 border border-green-300 text-xs leading-4 font-medium rounded text-green-700 bg-green-50 hover:bg-green-100">
+                                                        <svg class="-ml-0.5 mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                                                        </svg>
+                                                        Enviar
+                                                    </a>
+                                                @else
+                                                    {{-- Otros voyages - ver detalles --}}
+                                                    <a href="{{ route('company.simple.micdta.show', $voyage) }}" 
+                                                    class="inline-flex items-center px-2 py-1 border border-gray-300 text-xs leading-4 font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                                                        <svg class="-ml-0.5 mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                                        </svg>
+                                                        Ver
+                                                    </a>
+                                                @endif
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- Paginación --}}
+                    <div class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+                        {{ $voyages->appends(request()->query())->links() }}
+                    </div>
+                @else
+                    {{-- Estado vacío --}}
+                    <div class="text-center py-12">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2M4 13h2m13-8-4 4-4-4m4 4-4 4-4-4"/>
+                        </svg>
+                        <h3 class="mt-2 text-sm font-medium text-gray-900">No hay voyages disponibles</h3>
+                        <p class="mt-1 text-sm text-gray-500">No se encontraron voyages que cumplan con los criterios de búsqueda.</p>
+                    </div>
+                @endif
+            </div>
+
+            {{-- MODALES --}}
+            <div id="modal-historial" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+                <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                    <div class="fixed inset-0" onclick="cerrarModal('modal-historial')"></div>
+                    <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+                        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                            <div class="sm:flex sm:items-start">
+                                <div class="w-full">
+                                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-historial-title">
+                                        Historial de Consultas
+                                    </h3>
+                                    <div id="modal-historial-content" class="mt-2">
+                                        {{-- Contenido cargado dinámicamente --}}
                                     </div>
                                 </div>
-                            @endforeach
+                            </div>
                         </div>
+                        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                            <button onclick="cerrarModal('modal-historial')" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                        {{-- Paginación --}}
-                        @if($voyages->hasPages())
-                            <div class="mt-8">
-                                {{ $voyages->appends(request()->query())->links() }}
-                            </div>
-                        @endif
-                        
-                    @else
-                        {{-- Estado vacío --}}
-                        <div class="text-center py-12">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                            </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">
-                                @if($status_filter)
-                                    No hay voyages con estado "{{ $status_filter }}"
-                                @else
-                                    No hay voyages disponibles para MIC/DTA
-                                @endif
-                            </h3>
-                            <p class="mt-1 text-sm text-gray-500">
-                                @if($status_filter)
-                                    Prueba con un filtro diferente o crea un nuevo voyage.
-                                @else
-                                    Crea un nuevo voyage para comenzar a usar MIC/DTA Argentina.
-                                @endif
-                            </p>
-                            <div class="mt-6">
-                                @if($status_filter)
-                                    <a href="{{ route('company.simple.micdta.index') }}" 
-                                       class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                                        Ver Todos
-                                    </a>
-                                @else
-                                    <a href="{{ route('company.voyages.create') }}" 
-                                       class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                                        <svg class="-ml-1 mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/>
-                                        </svg>
-                                        Crear Voyage
-                                    </a>
-                                @endif
+            <div id="modal-resultado" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+                <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                    <div class="fixed inset-0" onclick="cerrarModal('modal-resultado')"></div>
+                    <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                            <div id="modal-resultado-content">
+                                {{-- Contenido cargado dinámicamente --}}
                             </div>
                         </div>
-                    @endif
+                        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                            <button onclick="cerrarModal('modal-resultado')" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -388,6 +424,306 @@
     {{-- JavaScript para Modal y Envío AJAX --}}
     <script>
         let currentVoyageId = null;
+        let autoRefreshInterval = null;
+        let autoRefreshEnabled = false;
+
+        async function consultarEstadoIndividual(voyageId) {
+            const btn = document.querySelector(`tr[data-voyage-id="${voyageId}"] .consultar-btn`);
+            const estadoContainer = document.getElementById(`estado-afip-${voyageId}`);
+            const consultaContainer = document.getElementById(`ultima-consulta-${voyageId}`);
+            
+            // UI Loading
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `
+                    <svg class="animate-spin -ml-0.5 mr-2 h-3 w-3" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Consultando...
+                `;
+            }
+            
+            if (estadoContainer) {
+                estadoContainer.innerHTML = `
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <svg class="-ml-0.5 mr-1.5 h-2 w-2 animate-pulse" fill="currentColor" viewBox="0 0 8 8">
+                            <circle cx="4" cy="4" r="3" />
+                        </svg>
+                        Consultando...
+                    </span>`;
+            }
+            
+            try {
+                const response = await fetch(`/simple/webservices/micdta/${voyageId}/consultar-estado`, {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Actualizar estado AFIP
+                    if (estadoContainer) {
+                        estadoContainer.innerHTML = `
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                    <circle cx="4" cy="4" r="3" />
+                                </svg>
+                                Consultado
+                            </span>`;
+                    }
+                    
+                    // Actualizar timestamp consulta
+                    if (consultaContainer) {
+                        consultaContainer.innerHTML = `<span class="text-green-600 text-sm">Hace unos segundos</span>`;
+                    }
+                    
+                    // Mostrar notificación
+                    mostrarNotificacion('success', `Estado de ${data.voyage_number} consultado exitosamente`);
+                } else {
+                    if (estadoContainer) {
+                        estadoContainer.innerHTML = `
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                    <circle cx="4" cy="4" r="3" />
+                                </svg>
+                                Error
+                            </span>`;
+                    }
+                    mostrarNotificacion('error', data.error || 'Error consultando estado');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                if (estadoContainer) {
+                    estadoContainer.innerHTML = `
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <svg class="-ml-0.5 mr-1.5 h-2 w-2" fill="currentColor" viewBox="0 0 8 8">
+                                <circle cx="4" cy="4" r="3" />
+                            </svg>
+                            Error conexión
+                        </span>`;
+                }
+                mostrarNotificacion('error', 'Error de conexión al consultar estado');
+            } finally {
+                // Restaurar botón
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `
+                        <svg class="-ml-0.5 mr-1 h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Consultar
+                    `;
+                }
+            }
+        }
+
+        async function consultarEstadoMasivo() {
+            const btn = document.getElementById('btn-consultar-masivo');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `
+                    <svg class="animate-spin -ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Consultando...
+                `;
+            }
+            
+            if (loadingIndicator) {
+                loadingIndicator.classList.remove('hidden');
+            }
+
+            try {
+                const response = await fetch('/simple/webservices/micdta/consultar-estados-masivo', {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const resultado = data.resultado;
+                    mostrarNotificacion('success', 
+                        `Consulta completada: ${resultado.consultas_exitosas} exitosas, ${resultado.consultas_error} errores`
+                    );
+                } else {
+                    mostrarNotificacion('error', data.error || 'Error en consulta masiva');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                mostrarNotificacion('error', 'Error de conexión en consulta masiva');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `
+                        <svg class="-ml-0.5 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Consultar Todos
+                    `;
+                }
+                if (loadingIndicator) {
+                    loadingIndicator.classList.add('hidden');
+                }
+            }
+        }
+
+        async function verHistorialConsultas(voyageId) {
+            try {
+                const response = await fetch(`/simple/webservices/micdta/${voyageId}/historial-consultas`);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('modal-historial-title').textContent = 
+                        `Historial de Consultas - ${data.voyage_number}`;
+                    
+                    let content = `
+                        <div class="mb-4">
+                            <p class="text-sm text-gray-600">Total de transacciones: ${data.total_transacciones}</p>
+                        </div>`;
+                        
+                    if (data.historial && data.historial.length > 0) {
+                        content += `
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enviado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200">`;
+
+                        data.historial.forEach(trans => {
+                            content += `
+                                <tr>
+                                    <td class="px-4 py-2 text-sm">${trans.webservice_type === 'micdta' ? 'Envío' : 'Consulta'}</td>
+                                    <td class="px-4 py-2 text-sm">${trans.status}</td>
+                                    <td class="px-4 py-2 text-sm text-gray-600">${trans.sent_at || 'N/A'}</td>
+                                </tr>`;
+                        });
+
+                        content += `</tbody></table></div>`;
+                    } else {
+                        content += `<p class="text-sm text-gray-500">No hay historial disponible.</p>`;
+                    }
+                    
+                    document.getElementById('modal-historial-content').innerHTML = content;
+                    document.getElementById('modal-historial').classList.remove('hidden');
+                } else {
+                    mostrarNotificacion('error', data.error || 'Error cargando historial');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                mostrarNotificacion('error', 'Error cargando historial');
+            }
+        }
+
+        function cerrarModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function mostrarNotificacion(tipo, mensaje) {
+            const notification = document.createElement('div');
+            const colorClasses = {
+                'success': 'bg-green-500 text-white',
+                'error': 'bg-red-500 text-white',
+                'warning': 'bg-yellow-500 text-white'
+            };
+            
+            notification.className = `fixed top-4 right-4 px-4 py-2 rounded-md shadow-lg z-50 ${colorClasses[tipo] || colorClasses.success}`;
+            notification.textContent = mensaje;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 5000);
+        }
+
+        function toggleAutoRefresh() {
+            const btn = document.getElementById('btn-auto-refresh');
+            const status = document.getElementById('auto-refresh-status');
+            
+            if (!btn || !status) return;
+            
+            if (autoRefreshEnabled) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshEnabled = false;
+                status.textContent = 'OFF';
+                btn.classList.remove('bg-green-50', 'text-green-700');
+                btn.classList.add('bg-white', 'text-gray-700');
+            } else {
+                autoRefreshInterval = setInterval(() => {
+                    // Actualizar estados cada 2 minutos
+                    const voyagesEnviados = document.querySelectorAll('tr[data-voyage-id]');
+                    voyagesEnviados.forEach(row => {
+                        const voyageId = row.getAttribute('data-voyage-id');
+                        const envioStatus = row.querySelector('td:nth-child(3) span')?.textContent;
+                        if (envioStatus && (envioStatus.includes('Enviado') || envioStatus.includes('Aprobado'))) {
+                            // Consultar estado sin interfaz de usuario
+                            fetch(`/simple/webservices/micdta/${voyageId}/estado-afip`)
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.success) {
+                                        const container = document.getElementById(`estado-afip-${voyageId}`);
+                                        const consultaContainer = document.getElementById(`ultima-consulta-${voyageId}`);
+                                        if (container && data.estado_afip) {
+                                            // Actualizar silenciosamente
+                                        }
+                                    }
+                                })
+                                .catch(error => console.error('Error en auto-refresh:', error));
+                        }
+                    });
+                }, 120000); // 2 minutos
+                
+                autoRefreshEnabled = true;
+                status.textContent = 'ON (2min)';
+                btn.classList.remove('bg-white', 'text-gray-700');
+                btn.classList.add('bg-green-50', 'text-green-700');
+            }
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            const btnConsultarMasivo = document.getElementById('btn-consultar-masivo');
+            const btnAutoRefresh = document.getElementById('btn-auto-refresh');
+            
+            if (btnConsultarMasivo) {
+                btnConsultarMasivo.addEventListener('click', consultarEstadoMasivo);
+            }
+            
+            if (btnAutoRefresh) {
+                btnAutoRefresh.addEventListener('click', toggleAutoRefresh);
+            }
+        });
+
+        window.addEventListener('beforeunload', function() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        });
 
         function openSendModal(voyageId, voyageNumber) {
             currentVoyageId = voyageId;

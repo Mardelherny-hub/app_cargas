@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Voyage;
 use App\Models\VoyageWebserviceStatus;
 use App\Models\WebserviceTransaction;
+use App\Models\WebserviceLog;
+use App\Models\WebserviceResponse;
 use App\Services\Simple\ArgentinaMicDtaService;
+use App\Services\Simple\ArgentinaMicDtaStatusService;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -364,6 +367,9 @@ class SimpleManifestController extends Controller
             if ($voyage->company_id !== $company->id) {
                 return response()->json(['error' => 'No autorizado'], 403);
             }
+            //obtener el shipment
+            $shipment_id = $voyage->shipments()->first()->id;
+            
 
             $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
             $status = $micDtaService->getWebserviceStatus($voyage);
@@ -378,9 +384,8 @@ class SimpleManifestController extends Controller
                 ->get(['id', 'transaction_id', 'status', 'created_at', 'error_message']);
 
             // Obtener TRACKs si existen
-            $tracks = \App\Models\WebserviceTrack::where('voyage_id', $voyage->id)
-                ->where('webservice_type', 'micdta')
-                ->where('status', 'active')
+            $tracks = \App\Models\WebserviceTrack::where('shipment_id', $shipment_id)
+                ->where('status', 'used_in_micdta')
                 ->get(['track_number', 'shipment_id', 'generated_at']);
 
             return response()->json([
@@ -452,7 +457,7 @@ class SimpleManifestController extends Controller
             }
 
             $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
-            $xmlGenerator = $micDtaService->xmlSerializer;
+            $xmlGenerator = $micDtaService->getXmlSerializer();
 
             // Generar XMLs de ejemplo
             $shipment = $voyage->shipments()->first();
@@ -694,4 +699,432 @@ class SimpleManifestController extends Controller
             'current_phase' => 1, // FASE 1 activa
         ]);
     }
+
+    /**
+     * ================================================================================
+     * CONSULTAS DE ESTADO MIC/DTA - NUEVA FUNCIONALIDAD
+     * ================================================================================
+     */
+
+    /**
+     * Consultar estado AFIP de un voyage específico (AJAX)
+     * 
+     * Ruta: GET /simple/webservices/micdta/{voyage}/consultar-estado
+     * 
+     * @param int $voyageId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function consultarEstadoIndividual(int $voyageId)
+    {
+        try {
+            $company = $this->getUserCompany();
+            $user = auth()->user();
+            
+            if (!$company || !$user) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Usuario o empresa no encontrados'
+                ], 403);
+            }
+
+            // Verificar que el voyage existe y pertenece a la empresa
+            $voyage = Voyage::where('id', $voyageId)
+                ->where('company_id', $company->id)
+                ->with(['leadVessel', 'originPort', 'destinationPort'])
+                ->first();
+
+            if (!$voyage) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Voyage no encontrado'
+                ], 404);
+            }
+
+            // Buscar transacciones MIC/DTA exitosas usando WebserviceTransaction
+            $transacciones = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $company->id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'sent')
+                ->whereNotNull('external_reference')
+                ->get();
+
+            if ($transacciones->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No hay transacciones MIC/DTA enviadas para consultar',
+                    'voyage_number' => $voyage->voyage_number,
+                ]);
+            }
+
+            // Usar el servicio de consulta de estados
+            $statusService = new ArgentinaMicDtaStatusService($company, $user);
+            $transactionIds = $transacciones->pluck('id')->toArray();
+            
+            $resultado = $statusService->consultarEstadoTransacciones($transactionIds);
+
+            return response()->json([
+                'success' => true,
+                'voyage_number' => $voyage->voyage_number,
+                'transacciones_consultadas' => count($transactionIds),
+                'resultado' => $resultado,
+                'timestamp' => now()->toISOString(),
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error consultando estado: ' . $e->getMessage(),
+                'voyage_id' => $voyageId,
+            ], 500);
+        }
+    }
+    /**
+     * Consultar estados de todos los voyages pendientes (AJAX)
+     * 
+     * Ruta: POST /simple/webservices/micdta/consultar-estados-masivo
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function consultarEstadoMasivo(Request $request)
+    {
+        try {
+            $company = $this->getUserCompany();
+            $user = auth()->user();
+
+            if (!$company || !$user) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Usuario o empresa no encontrados'
+                ], 403);
+            }
+
+            // Usar el servicio para consultar todos los pendientes
+            $statusService = new ArgentinaMicDtaStatusService($company, $user);
+            $resultado = $statusService->consultarEstadoTransacciones();
+
+            return response()->json([
+                'success' => true,
+                'company_name' => $company->legal_name,
+                'resultado' => $resultado,
+                'timestamp' => now()->toISOString(),
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error en consulta masiva: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener historial de consultas de un voyage (AJAX)
+     * 
+     * Ruta: GET /simple/webservices/micdta/{voyage}/historial-consultas
+     * 
+     * @param int $voyageId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function obtenerHistorialConsultas(int $voyageId)
+    {
+        try {
+            $company = $this->getUserCompany();
+            
+            if (!$company) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Empresa no encontrada'
+                ], 403);
+            }
+
+            $voyage = Voyage::where('id', $voyageId)
+                ->where('company_id', $company->id)
+                ->first();
+
+            if (!$voyage) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Voyage no encontrado'
+                ], 404);
+            }
+
+            // Obtener historial usando modelos existentes
+            $transacciones = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $company->id)
+                ->whereIn('webservice_type', ['micdta', 'micdta_status'])
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            $historial = [];
+            foreach ($transacciones as $transaccion) {
+                $historial[] = [
+                    'transaction_id' => $transaccion->id,
+                    'transaction_external_id' => $transaccion->transaction_id,
+                    'webservice_type' => $transaccion->webservice_type,
+                    'status' => $transaccion->status,
+                    'method' => $transaccion->method_name,
+                    'sent_at' => $transaccion->sent_at?->format('d/m/Y H:i'),
+                    'response_at' => $transaccion->response_at?->format('d/m/Y H:i'),
+                    'response_time_ms' => $transaccion->response_time_ms,
+                    'external_reference' => $transaccion->external_reference,
+                    'error_message' => $transaccion->error_message,
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'voyage_number' => $voyage->voyage_number,
+                'historial' => $historial,
+                'total_transacciones' => count($historial),
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error obteniendo historial: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener estado AFIP actual de un voyage para la vista (AJAX)
+     * 
+     * Ruta: GET /simple/webservices/micdta/{voyage}/estado-afip
+     * 
+     * @param int $voyageId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function obtenerEstadoAfip(int $voyageId)
+    {
+        try {
+            $company = $this->getUserCompany();
+            
+            if (!$company) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Empresa no encontrada'
+                ], 403);
+            }
+
+            $voyage = Voyage::where('id', $voyageId)
+                ->where('company_id', $company->id)
+                ->first();
+
+            if (!$voyage) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Voyage no encontrado'
+                ], 404);
+            }
+
+            // USAR EL MÉTODO EXISTENTE getMicDtaStatus() que devuelve VoyageWebserviceStatus
+            $micDtaStatus = $this->getMicDtaStatus($voyage);
+            
+            // Obtener la transacción MIC/DTA más reciente
+            $transaccion = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $company->id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'sent')
+                ->whereNotNull('external_reference')
+                ->latest('sent_at')
+                ->first();
+
+            if (!$transaccion) {
+                return response()->json([
+                    'success' => false,
+                    'estado_afip' => [
+                        'codigo' => 'no_enviado',
+                        'descripcion' => 'MIC/DTA no enviado',
+                        'color' => 'gray',
+                        'icono' => 'clock',
+                        'accion' => 'enviar',
+                    ]
+                ]);
+            }
+
+            // Obtener la consulta de estado más reciente
+            $consultaEstado = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $company->id)
+                ->where('webservice_type', 'micdta_status')
+                ->latest('created_at')
+                ->first();
+
+            $estadoAfip = $this->determinarEstadoAfipParaVista($transaccion, $consultaEstado);
+
+            return response()->json([
+                'success' => true,
+                'voyage_number' => $voyage->voyage_number,
+                'external_reference' => $transaccion->external_reference,
+                'sent_at' => $transaccion->sent_at?->format('d/m/Y H:i'),
+                'last_check' => $consultaEstado?->created_at?->format('d/m/Y H:i'),
+                'estado_afip' => $estadoAfip,
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error obteniendo estado: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // ======================= MÉTODOS AUXILIARES =======================
+
+    /**
+     * Actualizar cache de estados para un voyage específico
+     */
+    private function actualizarCacheEstadosVoyage(Voyage $voyage): void
+    {
+        try {
+            // Actualizar información MIC/DTA del voyage
+            $voyage->micdta_status = $this->getMicDtaStatus($voyage);
+            $voyage->micdta_validation = $this->validateVoyageForMicDta($voyage);
+            
+            // Actualizar campos calculados si es necesario
+            $voyage->loadMissing([
+                'webserviceTransactions' => function($query) {
+                    $query->where('webservice_type', 'micdta')
+                        ->whereNotNull('external_reference');
+                }
+            ]);
+
+        } catch (Exception $e) {
+            // Log error pero no fallar
+            \Log::warning('Error actualizando cache estados voyage', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Actualizar cache de estados para toda la empresa
+     */
+    private function actualizarCacheEstadosEmpresa($company): void
+    {
+        try {
+            // Invalidar cache de estados si se usa
+            // Esto forza a recalcular estados en la próxima carga de vista
+            \Cache::forget("micdta_states_{$company->id}");
+            
+        } catch (Exception $e) {
+            \Log::warning('Error actualizando cache empresa', [
+                'company_id' => $company->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Determinar estado AFIP para mostrar en vista
+     */
+    private function determinarEstadoAfipParaVista($transaccion, $consultaEstado): array
+    {
+        $default = [
+            'codigo' => 'unknown',
+            'descripcion' => 'Estado desconocido',
+            'color' => 'gray',
+            'icono' => 'question',
+            'accion' => 'consultar',
+            'puede_consultar' => true,
+        ];
+
+        if (!$transaccion) {
+            return array_merge($default, [
+                'codigo' => 'no_enviado',
+                'descripcion' => 'No enviado',
+                'accion' => 'enviar',
+                'puede_consultar' => false,
+            ]);
+        }
+
+        // Si no hay consulta de estado, mostrar como "pendiente consulta"
+        if (!$consultaEstado) {
+            return array_merge($default, [
+                'codigo' => 'pendiente_consulta',
+                'descripcion' => 'Pendiente consulta',
+                'color' => 'yellow',
+                'icono' => 'clock',
+                'accion' => 'consultar',
+            ]);
+        }
+
+        // Mapear estados según metadata de consulta
+        $metadata = $consultaEstado->additional_metadata;
+        if (isset($metadata['afip_status']['estado_normalizado'])) {
+            $estado = $metadata['afip_status']['estado_normalizado'];
+            
+            $mapeoEstados = [
+                'approved' => [
+                    'codigo' => 'aprobado',
+                    'descripcion' => 'Aprobado por AFIP',
+                    'color' => 'green',
+                    'icono' => 'check',
+                    'accion' => 'ver',
+                    'puede_consultar' => true,
+                ],
+                'rejected' => [
+                    'codigo' => 'rechazado', 
+                    'descripcion' => 'Rechazado por AFIP',
+                    'color' => 'red',
+                    'icono' => 'x',
+                    'accion' => 'ver_error',
+                    'puede_consultar' => true,
+                ],
+                'processing' => [
+                    'codigo' => 'procesando',
+                    'descripcion' => 'En procesamiento',
+                    'color' => 'blue',
+                    'icono' => 'loader',
+                    'accion' => 'consultar',
+                    'puede_consultar' => true,
+                ],
+                'pending' => [
+                    'codigo' => 'pendiente',
+                    'descripcion' => 'Pendiente en AFIP',
+                    'color' => 'yellow',
+                    'icono' => 'clock',
+                    'accion' => 'consultar',
+                    'puede_consultar' => true,
+                ],
+            ];
+
+            return $mapeoEstados[$estado] ?? $default;
+        }
+
+        return $default;
+    }
+
+    /**
+     * Helper para obtener el estado string del voyage (compatible con vista)
+     * CORRIGE el problema de acceso a objeto como array
+     */
+    private function getMicDtaStatusString(Voyage $voyage): string
+    {
+        $statusObject = $this->getMicDtaStatus($voyage);
+        
+        if (!$statusObject) {
+            return 'not_sent';
+        }
+        
+        // Mapear estados del objeto VoyageWebserviceStatus a strings simples para la vista
+        $statusMap = [
+            'sent' => 'sent',
+            'approved' => 'sent', // Para efectos de la vista, ambos se muestran como "enviado"
+            'pending' => 'pending',
+            'error' => 'error',
+            'rejected' => 'error',
+            'sending' => 'pending',
+            'validating' => 'pending',
+        ];
+        
+        return $statusMap[$statusObject->status] ?? 'not_sent';
+    }
+
+    /**
+     * ================================================================================
+     * FIN EXTENSIÓN CONSULTAS ESTADO
+     * ================================================================================
+     */
 }

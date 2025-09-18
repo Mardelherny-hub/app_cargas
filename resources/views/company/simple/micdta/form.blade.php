@@ -321,7 +321,7 @@
         // Actualizar estado del voyage
         async function refreshStatus() {
             try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/status`, {
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/status`, {
                     headers: {
                         'X-CSRF-TOKEN': getCSRFToken(),
                         'Accept': 'application/json'
@@ -345,7 +345,7 @@
         // Validar datos del voyage
         async function validateData() {
             try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/validate`, {
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/validate`, {
                     headers: {
                         'X-CSRF-TOKEN': getCSRFToken(),
                         'Accept': 'application/json'
@@ -367,7 +367,7 @@
             try {
                 showNotification('Generando preview XML...', 'info');
                 
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/preview-xml`, {
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/preview-xml`, {
                     headers: {
                         'X-CSRF-TOKEN': getCSRFToken(),
                         'Accept': 'application/json'
@@ -391,7 +391,7 @@
         // Cargar log de actividad
         async function loadActivityLog() {
             try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/activity`, {
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/activity`, {
                     headers: {
                         'X-CSRF-TOKEN': getCSRFToken(),
                         'Accept': 'application/json'

@@ -89,6 +89,7 @@ abstract class BaseWebserviceService
         // Inicializar servicios directos
             $this->certificateManager = new CertificateManagerService($company);  
         $this->xmlSerializer = new SimpleXmlGenerator($company, $this->config);
+        Log::info('Merged config in BaseWebserviceService: ', $this->config);
 
         $this->logOperation('info', 'BaseWebserviceService inicializado', [
             'webservice_type' => $this->getWebserviceType(),

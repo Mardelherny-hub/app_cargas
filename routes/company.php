@@ -710,6 +710,31 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::delete('/{voyage}/reset', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaReset'])
             ->name('reset')
             ->whereNumber('voyage');
+
+        /**
+         * ================================================================================
+         * CONSULTAS DE ESTADO MIC/DTA - NUEVAS RUTAS
+         * ================================================================================
+         */
+
+        // Consulta de estado individual por voyage (AJAX)
+        Route::get('/{voyage}/consultar-estado', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'consultarEstadoIndividual'])
+            ->name('consultar-estado')
+            ->whereNumber('voyage');
+
+        // Consulta masiva de estados pendientes (AJAX) 
+        Route::post('/consultar-estados-masivo', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'consultarEstadoMasivo'])
+            ->name('consultar-estados-masivo');
+
+        // Obtener historial de consultas de un voyage (AJAX)
+        Route::get('/{voyage}/historial-consultas', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerHistorialConsultas'])
+            ->name('historial-consultas')
+            ->whereNumber('voyage');
+
+        // Obtener estado AFIP actual para la vista (AJAX)
+        Route::get('/{voyage}/estado-afip', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerEstadoAfip'])
+            ->name('estado-afip')
+            ->whereNumber('voyage');
     });
 
     // ====================================
