@@ -735,6 +735,54 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/{voyage}/estado-afip', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerEstadoAfip'])
             ->name('estado-afip')
             ->whereNumber('voyage');
+
+        /**
+         * ================================================================================
+         * ACTUALIZACIÓN DE POSICIÓN GPS MIC/DTA - NUEVAS RUTAS
+         * ================================================================================
+         */
+
+        // Actualizar posición GPS individual de un voyage (AJAX)
+        Route::post('/{voyage}/actualizar-posicion', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'actualizarPosicionIndividual'])
+            ->name('actualizar-posicion')
+            ->whereNumber('voyage');
+
+        // Actualizar posiciones GPS masiva de un voyage (AJAX)
+        Route::post('/{voyage}/actualizar-posiciones-masiva', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'actualizarPosicionMasiva'])
+            ->name('actualizar-posiciones-masiva')
+            ->whereNumber('voyage');
+
+        // Obtener historial de posiciones GPS de un voyage (AJAX)
+        Route::get('/{voyage}/historial-posiciones', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerHistorialPosiciones'])
+            ->name('historial-posiciones')
+            ->whereNumber('voyage');
+
+        // Obtener estado GPS actual de un voyage para la vista (AJAX)
+        Route::get('/{voyage}/estado-gps', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerEstadoGps'])
+            ->name('estado-gps')
+            ->whereNumber('voyage');
+
+        // Obtener puntos de control AFIP disponibles (AJAX)
+        Route::get('/puntos-control', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerPuntosControl'])
+            ->name('puntos-control');
+
+        /**
+         * ================================================================================
+         * RUTAS GPS ADICIONALES PARA FUNCIONALIDADES AVANZADAS
+         * ================================================================================
+         */
+
+        // Validar coordenadas GPS antes del envío (AJAX)
+        Route::post('/validar-coordenadas', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'validarCoordenadas'])
+            ->name('validar-coordenadas');
+
+        // Detectar punto de control por coordenadas (AJAX)
+        Route::post('/detectar-punto-control', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'detectarPuntoControl'])
+            ->name('detectar-punto-control');
+
+        // Obtener configuración GPS AFIP (AJAX)
+        Route::get('/config-gps', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerConfigGps'])
+            ->name('config-gps');
     });
 
     // ====================================
