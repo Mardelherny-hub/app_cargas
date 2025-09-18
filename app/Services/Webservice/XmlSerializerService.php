@@ -1955,15 +1955,13 @@ private function getAduanaCodeFromPort($port): string
                 $contenedor->appendChild($tipo);                 
 
                 // Precintos si existen
-                if ($container->seals && count($container->seals) > 0) {
+                if (!empty($container->shipper_seal)) {
                     $precintos = $this->createElement('Precintos');
                     $contenedor->appendChild($precintos);
                     
-                    foreach ($container->seals as $seal) {
-                        $precinto = $this->createElement('Precinto');
-                        $precinto->textContent = $seal->seal_number ?? 'NO_SEAL';
-                        $precintos->appendChild($precinto);
-                    }
+                    $precinto = $this->createElement('Precinto');
+                    $precinto->textContent = $container->shipper_seal;
+                    $precintos->appendChild($precinto);
                 }
             }
         }

@@ -681,6 +681,35 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::post('/{voyage}/send', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaSend'])
             ->name('send')
             ->whereNumber('voyage');
+
+        // Agregar dentro del grupo Route::prefix('micdta')->name('micdta.')->group(function () {
+
+        // Rutas AJAX para funcionalidad dinámica
+        Route::get('/{voyage}/status', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaStatus'])
+            ->name('status')
+            ->whereNumber('voyage');
+
+        Route::get('/{voyage}/validate', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaValidate'])
+            ->name('validate')
+            ->whereNumber('voyage');
+
+        Route::get('/{voyage}/preview-xml', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaPreviewXml'])
+            ->name('preview-xml')
+            ->whereNumber('voyage');
+
+        Route::get('/{voyage}/activity', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaActivity'])
+            ->name('activity')
+            ->whereNumber('voyage');
+
+        // Rutas adicionales útiles
+        Route::post('/{voyage}/resend', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaResend'])
+            ->name('resend')
+            ->whereNumber('voyage');
+
+        // Solo para desarrollo - resetear estado
+        Route::delete('/{voyage}/reset', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'micDtaReset'])
+            ->name('reset')
+            ->whereNumber('voyage');
     });
 
     // ====================================

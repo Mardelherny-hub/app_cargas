@@ -194,111 +194,7 @@ class SimpleManifestController extends Controller
             'status_filter' => $request->status,
         ]);
     }
-
-    /**
-     * Formulario de envío MIC/DTA para voyage específico
-     */
-    public function micDtaShow(Voyage $voyage)
-    {
-        /* if (!$this->canPerform('webservices.micdta')) {
-            abort(403, 'No tiene permisos para MIC/DTA.');
-        } */
-
-        $company = $this->getUserCompany();
-        if ($voyage->company_id !== $company->id) {
-            abort(403, 'Voyage no pertenece a su empresa.');
-        }
-
-        // Cargar relaciones necesarias
-        $voyage->load([
-            'leadVessel',
-            'originPort.country',
-            'destinationPort.country',
-            'shipments.billsOfLading.shipmentItems',
-            'webserviceStatuses' => function($query) {
-                $query->where('webservice_type', 'micdta');
-            },
-            'webserviceTransactions' => function($query) {
-                $query->where('webservice_type', 'micdta')
-                      ->latest();
-            }
-        ]);
-
-        // Validar voyage para MIC/DTA
-        $validation = $this->validateVoyageForMicDta($voyage);
-        $micDtaStatus = $this->getMicDtaStatus($voyage);
-
-        return view('company.simple.micdta.form', [
-            'voyage' => $voyage,
-            'company' => $company,
-            'validation' => $validation,
-            'micdta_status' => $micDtaStatus,
-            'last_transactions' => $voyage->webserviceTransactions()->where('webservice_type', 'micdta')->latest()->take(10)->get(),
-        ]);
-    }
-
-    /**
-     * Procesar envío MIC/DTA
-     */
-    public function micDtaSend(Request $request, Voyage $voyage)
-    {
-        /* if (!$this->canPerform('webservices.send')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No tiene permisos para enviar webservices.'
-            ], 403);
-        } */
-
-        $company = $this->getUserCompany();
-        if ($voyage->company_id !== $company->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Voyage no pertenece a su empresa.'
-            ], 403);
-        }
-
-        try {
-            // Crear servicio MIC/DTA
-            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
-
-            // Validar antes de enviar
-            $validation = $micDtaService->canProcessVoyage($voyage);
-            if (!$validation['can_process']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Voyage no válido para MIC/DTA',
-                    'errors' => $validation['errors']
-                ], 422);
-            }
-
-            // Enviar MIC/DTA
-            $result = $micDtaService->sendWebservice($voyage, [
-                'force_send' => $request->boolean('force_send', false),
-                'test_mode' => $request->boolean('test_mode', true),
-            ]);
-
-            if ($result['success']) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'MIC/DTA enviado exitosamente',
-                    'confirmation_number' => $result['confirmation_number'] ?? null,
-                    'transaction_id' => $result['transaction_id'] ?? null,
-                ]);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error enviando MIC/DTA: ' . $result['error_message'],
-                    'transaction_id' => $result['transaction_id'] ?? null,
-                ], 422);
-            }
-
-        } catch (Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error interno: ' . $e->getMessage()
-            ], 500);
-        }
-    }
+  
 
     // ====================================
     // MÉTODOS PREPARADOS PARA OTRAS FASES
@@ -362,19 +258,253 @@ class SimpleManifestController extends Controller
         return $stats;
     }
 
+  
+
     /**
-     * Obtener estado específico MIC/DTA
+     * Obtener tipos de webservices activos
+     */
+    private function getActiveWebserviceTypes(): array
+    {
+        return array_filter(self::WEBSERVICE_TYPES, function($type) {
+            return $type['status'] === 'active';
+        });
+    }
+
+    /**
+     * Procesar envío MIC/DTA (AJAX) - MÉTODO CORREGIDO
+     */
+    public function micDtaSend(Request $request, Voyage $voyage)
+    {
+        try {
+            // Validar permisos
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Voyage no pertenece a su empresa.',
+                ], 403);
+            }
+
+            // Validar que el voyage puede ser procesado
+            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
+            $validation = $micDtaService->canProcessVoyage($voyage);
+            
+            if (!$validation['can_process']) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Voyage no válido para MIC/DTA',
+                    'validation_errors' => $validation['errors'],
+                    'warnings' => $validation['warnings'],
+                ], 400);
+            }
+
+            // Verificar que no está ya en proceso
+            $status = $micDtaService->getWebserviceStatus($voyage);
+            if (in_array($status->status, ['sending', 'validating'])) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'MIC/DTA ya está siendo procesado',
+                    'current_status' => $status->status,
+                ], 409);
+            }
+
+            // ENVIAR WEBSERVICE CON SERVICIOS CORREGIDOS
+            $result = $micDtaService->sendWebservice($voyage, [
+                'force_send' => $request->boolean('force_send', false),
+                'user_notes' => $request->input('notes', ''),
+                'environment' => $company->ws_environment ?? 'testing',
+            ]);
+
+            // Procesar resultado
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'MIC/DTA enviado exitosamente',
+                    'data' => [
+                        'transaction_id' => $result['transaction_id'] ?? null,
+                        'mic_dta_id' => $result['mic_dta_id'] ?? null,
+                        'tracks_generated' => $result['tracks_saved'] ?? 0,
+                        'timestamp' => now()->toISOString(),
+                    ],
+                    'redirect_url' => route('company.simple.micdta.show', $voyage->id),
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Error enviando MIC/DTA',
+                    'details' => $result['error_message'] ?? 'Error desconocido',
+                    'error_code' => $result['error_code'] ?? 'UNKNOWN_ERROR',
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                ], 500);
+            }
+
+        } catch (Exception $e) {
+            Log::error('Error en micDtaSend', [
+                'voyage_id' => $voyage->id,
+                'company_id' => $company->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno del servidor',
+                'details' => app()->environment('local') ? $e->getMessage() : 'Contacte al administrador',
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener estado detallado de MIC/DTA via AJAX
+     */
+    public function micDtaStatus(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['error' => 'No autorizado'], 403);
+            }
+
+            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
+            $status = $micDtaService->getWebserviceStatus($voyage);
+            $validation = $micDtaService->canProcessVoyage($voyage);
+
+            // Obtener últimas transacciones
+            $recentTransactions = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->latest()
+                ->limit(5)
+                ->get(['id', 'transaction_id', 'status', 'created_at', 'error_message']);
+
+            // Obtener TRACKs si existen
+            $tracks = \App\Models\WebserviceTrack::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'active')
+                ->get(['track_number', 'shipment_id', 'generated_at']);
+
+            return response()->json([
+                'status' => [
+                    'current' => $status->status,
+                    'can_send' => $validation['can_process'],
+                    'last_sent_at' => $status->last_sent_at,
+                    'retry_count' => $status->retry_count,
+                ],
+                'validation' => $validation,
+                'tracks' => $tracks->groupBy('shipment_id'),
+                'recent_transactions' => $recentTransactions,
+                'timestamp' => now()->toISOString(),
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Error obteniendo estado MIC/DTA',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Reenviar MIC/DTA (para casos de error)
+     */
+    public function micDtaResend(Request $request, Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['error' => 'No autorizado'], 403);
+            }
+
+            // Resetear estado para permitir reenvío
+            $status = VoyageWebserviceStatus::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->first();
+
+            if ($status) {
+                $status->update([
+                    'status' => 'pending',
+                    'retry_count' => 0,
+                    'last_error_message' => null,
+                ]);
+            }
+
+            // Reenviar
+            return $this->micDtaSend($request, $voyage);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Error reenviando MIC/DTA',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Previsualizar XML que se enviará (para debug)
+     */
+    public function micDtaPreviewXml(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['error' => 'No autorizado'], 403);
+            }
+
+            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
+            $xmlGenerator = $micDtaService->xmlSerializer;
+
+            // Generar XMLs de ejemplo
+            $shipment = $voyage->shipments()->first();
+            if (!$shipment) {
+                return response()->json(['error' => 'No hay shipments para previsualizar'], 400);
+            }
+
+            $xmlTitEnvios = $xmlGenerator->createRegistrarTitEnviosXml($shipment, 'PREVIEW_' . time());
+            $xmlEnvios = $xmlGenerator->createRegistrarEnviosXml($shipment, 'PREVIEW_' . time());
+
+            return response()->json([
+                'preview' => [
+                    'titenvios_xml' => $xmlTitEnvios,
+                    'envios_xml' => $xmlEnvios,
+                    'shipment_id' => $shipment->id,
+                    'generated_at' => now()->toISOString(),
+                ],
+                'info' => [
+                    'shipments_count' => $voyage->shipments()->count(),
+                    'bills_of_lading_count' => $voyage->billsOfLading()->count(),
+                    'total_weight' => $voyage->billsOfLading()
+                        ->join('shipment_items', 'bills_of_lading.id', '=', 'shipment_items.bill_of_lading_id')
+                        ->sum('shipment_items.gross_weight_kg'),
+                ],
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Error generando preview XML',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * MÉTODOS FALTANTES - Agregar al SimpleManifestController.php
+     */
+
+    /**
+     * Obtener estado específico MIC/DTA para un voyage
      */
     private function getMicDtaStatus(Voyage $voyage): ?VoyageWebserviceStatus
     {
-        return $voyage->webserviceStatuses
+        return VoyageWebserviceStatus::where('voyage_id', $voyage->id)
+            ->where('company_id', $this->getUserCompany()->id)
             ->where('webservice_type', 'micdta')
             ->where('country', 'AR')
             ->first();
     }
 
     /**
-     * Validar voyage para MIC/DTA
+     * Validar datos específicos para MIC/DTA Argentina
      */
     private function validateVoyageForMicDta(Voyage $voyage): array
     {
@@ -392,13 +522,164 @@ class SimpleManifestController extends Controller
     }
 
     /**
-     * Obtener tipos de webservices activos
+     * Validar voyage via AJAX (para el JavaScript)
      */
-    private function getActiveWebserviceTypes(): array
+    public function micDtaValidate(Voyage $voyage)
     {
-        return array_filter(self::WEBSERVICE_TYPES, function($type) {
-            return $type['status'] === 'active';
-        });
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['error' => 'No autorizado'], 403);
+            }
+
+            $validation = $this->validateVoyageForMicDta($voyage);
+            
+            return response()->json($validation);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Error en validación',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener log de actividad via AJAX
+     */
+    public function micDtaActivity(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['error' => 'No autorizado'], 403);
+            }
+
+            // Obtener transacciones recientes
+            $recentTransactions = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->latest()
+                ->limit(10)
+                ->get(['id', 'transaction_id', 'status', 'created_at', 'error_message']);
+
+            // Obtener logs recientes
+            $recentLogs = WebserviceLog::whereIn('transaction_id', $recentTransactions->pluck('id'))
+                ->latest()
+                ->limit(20)
+                ->get(['level', 'message', 'created_at', 'context']);
+
+            return response()->json([
+                'recent_transactions' => $recentTransactions,
+                'recent_logs' => $recentLogs,
+                'timestamp' => now()->toISOString(),
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Error cargando actividad',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Completar método micDtaShow con datos faltantes
+     */
+    public function micDtaShow(Voyage $voyage)
+    {
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            abort(403, 'Voyage no pertenece a su empresa.');
+        }
+
+        // Cargar relaciones necesarias
+        $voyage->load([
+            'leadVessel',
+            'originPort',
+            'destinationPort',
+            'shipments.billsOfLading.shipmentItems',
+            'billsOfLading'
+        ]);
+
+        // Obtener estado y validación MIC/DTA
+        $micdta_status = $this->getMicDtaStatus($voyage);
+        $validation = $this->validateVoyageForMicDta($voyage);
+
+        // Obtener información del certificado
+        $certificateManager = new \App\Services\Webservice\CertificateManagerService($company);
+        $certificateValidation = $certificateManager->validateCompanyCertificate();
+
+        return view('company.simple.micdta.form', [
+            'voyage' => $voyage,
+            'company' => $company,
+            'micdta_status' => $micdta_status,
+            'validation' => $validation,
+            'certificate_valid' => $certificateValidation['is_valid'],
+            'certificate_errors' => $certificateValidation['errors'] ?? [],
+        ]);
+    }
+
+    /**
+     * Método para obtener información de configuración de empresa
+     */
+    private function getCompanyWebserviceConfig()
+    {
+        $company = $this->getUserCompany();
+        
+        return [
+            'ws_environment' => $company->ws_environment ?? 'testing',
+            'ws_active' => $company->ws_active ?? false,
+            'certificate_configured' => !empty($company->certificate_path),
+            'certificate_path' => $company->certificate_path,
+        ];
+    }
+
+    /**
+     * Método auxiliar para verificar si puede enviar MIC/DTA
+     */
+    private function canSendMicDta(Voyage $voyage): bool
+    {
+        $validation = $this->validateVoyageForMicDta($voyage);
+        $status = $this->getMicDtaStatus($voyage);
+        
+        return $validation['can_process'] && 
+               (!$status || !in_array($status->status, ['sending', 'validating']));
+    }
+
+    /**
+     * Método para limpiar estado de webservice (útil para testing)
+     */
+    public function micDtaReset(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['error' => 'No autorizado'], 403);
+            }
+
+            // Solo en ambiente de desarrollo/testing
+            if (app()->environment('production')) {
+                return response()->json(['error' => 'No disponible en producción'], 403);
+            }
+
+            // Resetear estado
+            VoyageWebserviceStatus::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Estado MIC/DTA reseteado',
+            ]);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'error' => 'Error reseteando estado',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
