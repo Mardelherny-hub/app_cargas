@@ -813,4 +813,137 @@ private function generateLoginTicket(): string
         }
     }
     
+    /**
+     * ================================================================================
+     * EXTENSIÓN GPS - ACTUALIZAR POSICIÓN AFIP
+     * ================================================================================
+     * 
+     * AGREGAR este método al final de la clase SimpleXmlGenerator.php
+     * antes del último } de la clase
+     */
+
+    /**
+     * Generar XML ActualizarPosicion con WSAA real
+     * Reutiliza el sistema WSAA existente del MIC/DTA
+     * 
+     * @param array $data Datos de posición GPS
+     * @return string XML completo con autenticación WSAA
+     */
+    public function generateActualizarPosicionXml(array $data): string
+    {
+        try {
+            error_log("SimpleXmlGenerator: Generando XML ActualizarPosicion");
+            error_log("SimpleXmlGenerator: External reference=" . ($data['external_reference'] ?? 'N/A'));
+            error_log("SimpleXmlGenerator: Coordinates=" . $data['latitude'] . ',' . $data['longitude']);
+            
+            // ✅ REUTILIZAR sistema WSAA existente (mismo que MIC/DTA)
+            $wsaaTokens = $this->getWSAATokens();
+            
+            error_log("SimpleXmlGenerator: WSAA tokens obtenidos - Token length=" . strlen($wsaaTokens['token']));
+            
+            // ✅ Crear envelope SOAP con autenticación real
+            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            $xml .= '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            $xml .= '<soap:Header>';
+            $xml .= '<Auth>';
+            $xml .= '<Token>' . $wsaaTokens['token'] . '</Token>';
+            $xml .= '<Sign>' . $wsaaTokens['sign'] . '</Sign>';
+            $xml .= '<Cuit>' . $wsaaTokens['cuit'] . '</Cuit>';
+            $xml .= '</Auth>';
+            $xml .= '</soap:Header>';
+            
+            // ✅ Cuerpo específico para ActualizarPosicion
+            $xml .= '<soap:Body>';
+            $xml .= '<wges:ActualizarPosicion xmlns:wges="Ar.Gob.Afip.Dga.wgesregsintia2">';
+            $xml .= '<wges:argActualizarPosicionParam>';
+            
+            // Datos obligatorios ActualizarPosicion según documentación AFIP
+            $xml .= '<wges:referenciaMicDta>' . htmlspecialchars($data['external_reference']) . '</wges:referenciaMicDta>';
+            $xml .= '<wges:latitud>' . number_format($data['latitude'], 8, '.', '') . '</wges:latitud>';
+            $xml .= '<wges:longitud>' . number_format($data['longitude'], 8, '.', '') . '</wges:longitud>';
+            $xml .= '<wges:fechaHoraPosicion>' . ($data['timestamp'] ?? now()->toISOString()) . '</wges:fechaHoraPosicion>';
+            
+            // Observaciones opcionales pero recomendadas
+            if (isset($data['observations']) && !empty($data['observations'])) {
+                $xml .= '<wges:observaciones>' . htmlspecialchars($data['observations']) . '</wges:observaciones>';
+            } else {
+                $xml .= '<wges:observaciones>Actualización GPS automática - Sistema ' . config('app.name', 'PARANA') . '</wges:observaciones>';
+            }
+            
+            // Datos adicionales del voyage si están disponibles
+            if (isset($data['voyage_data']) && is_array($data['voyage_data'])) {
+                if (isset($data['voyage_data']['vessel_name'])) {
+                    $xml .= '<wges:nombreEmbarcacion>' . htmlspecialchars($data['voyage_data']['vessel_name']) . '</wges:nombreEmbarcacion>';
+                }
+                if (isset($data['voyage_data']['voyage_number'])) {
+                    $xml .= '<wges:numeroViaje>' . htmlspecialchars($data['voyage_data']['voyage_number']) . '</wges:numeroViaje>';
+                }
+            }
+            
+            $xml .= '</wges:argActualizarPosicionParam>';
+            $xml .= '</wges:ActualizarPosicion>';
+            $xml .= '</soap:Body>';
+            $xml .= '</soap:Envelope>';
+            
+            error_log("SimpleXmlGenerator: XML ActualizarPosicion generado exitosamente");
+            error_log("SimpleXmlGenerator: XML size=" . strlen($xml) . " bytes");
+            error_log("SimpleXmlGenerator: Has WSAA Auth=" . (str_contains($xml, '<Auth>') ? 'YES' : 'NO'));
+            
+            return $xml;
+            
+        } catch (Exception $e) {
+            error_log("SimpleXmlGenerator ERROR ActualizarPosicion: " . $e->getMessage());
+            error_log("SimpleXmlGenerator ERROR File: " . $e->getFile() . " Line: " . $e->getLine());
+            throw $e;
+        }
+    }
+
+    /**
+     * ================================================================================
+     * MÉTODOS AUXILIARES PARA GPS (si no existen ya)
+     * ================================================================================
+     */
+    
+    /**
+     * Validar datos de posición GPS antes de generar XML
+     * 
+     * @param array $data
+     * @return bool
+     */
+    private function validatePositionData(array $data): bool
+    {
+        // Validar campos obligatorios
+        if (empty($data['external_reference'])) {
+            throw new Exception("Falta referencia MIC/DTA para ActualizarPosicion");
+        }
+        
+        if (!isset($data['latitude']) || !isset($data['longitude'])) {
+            throw new Exception("Faltan coordenadas GPS para ActualizarPosicion");
+        }
+        
+        // Validar rangos de coordenadas
+        $lat = (float) $data['latitude'];
+        $lng = (float) $data['longitude'];
+        
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            throw new Exception("Coordenadas GPS inválidas: lat={$lat}, lng={$lng}");
+        }
+        
+        // Validación específica hidrovía Paraná (advertencia, no error)
+        if ($lat < -35 || $lat > -20 || $lng < -62 || $lng > -54) {
+            error_log("ADVERTENCIA: Coordenadas fuera del rango típico de hidrovía Paraná");
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Crear envelope SOAP base (si no existe método similar)
+     * NOTA: Verificar si ya existe un método similar antes de agregar
+     */
+    private function createBasicSoapEnvelope(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8"?>' .
+               '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+    }
 }

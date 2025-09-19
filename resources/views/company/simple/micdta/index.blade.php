@@ -438,8 +438,10 @@
             </div>
         </div>
     </div>
+
+    
 @push('scripts')
-    <script>
+<script>
     {{-- JavaScript para Modal y Envío AJAX --}}
     <script>
         let currentVoyageId = null;

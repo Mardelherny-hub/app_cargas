@@ -98,141 +98,141 @@
             </div>
 
              {{-- ===================================================================== --}}
-                    {{-- DISEÑO UX PROGRESIVO AFIP - SECUENCIA VISUAL INTUITIVA --}}
-                    {{-- ===================================================================== --}}
+            {{-- DISEÑO UX PROGRESIVO AFIP - SECUENCIA VISUAL INTUITIVA --}}
+            {{-- ===================================================================== --}}
 
-                    {{-- INDICADOR DE PROGRESO AFIP --}}
-                    <div class="mt-6 mb-8">
-                        <div class="bg-white shadow rounded-lg overflow-hidden">
-                            <div class="px-6 py-4 bg-blue-50 border-b border-blue-100">
-                                <h3 class="text-lg font-medium text-blue-900 flex items-center">
-                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                    Proceso AFIP - Hidrovía Paraná
-                                </h3>
-                                <p class="mt-1 text-sm text-blue-700">
-                                    Secuencia oficial requerida por AFIP para manifiestos internacionales
-                                </p>
+            {{-- INDICADOR DE PROGRESO AFIP --}}
+            <div class="mt-6 mb-8">
+                <div class="bg-white shadow rounded-lg overflow-hidden">
+                    <div class="px-6 py-4 bg-blue-50 border-b border-blue-100">
+                        <h3 class="text-lg font-medium text-blue-900 flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Proceso AFIP - Hidrovía Paraná
+                        </h3>
+                        <p class="mt-1 text-sm text-blue-700">
+                            Secuencia oficial requerida por AFIP para manifiestos internacionales
+                        </p>
+                    </div>
+                    
+                    {{-- BARRA DE PROGRESO VISUAL --}}
+                    <div class="px-6 py-6">
+                        <div class="flex items-center justify-between">
+                            
+                            {{-- PASO 1: MIC/DTA --}}
+                            <div class="flex items-center flex-1">
+                                <div class="flex items-center justify-center w-10 h-10 rounded-full 
+                                    @if($micdta_status?->status === 'sent')
+                                        bg-green-500 text-white
+                                    @elseif($micdta_status?->status === 'sending')
+                                        bg-yellow-500 text-white animate-pulse
+                                    @else
+                                        bg-gray-300 text-gray-600
+                                    @endif">
+                                    @if($micdta_status?->status === 'sent')
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                        </svg>
+                                    @elseif($micdta_status?->status === 'sending')
+                                        <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    @else
+                                        <span class="text-sm font-medium">1</span>
+                                    @endif
+                                </div>
+                                <div class="ml-3 min-w-0 flex-1">
+                                    <p class="text-sm font-medium 
+                                        @if($micdta_status?->status === 'sent') text-green-700 
+                                        @elseif($micdta_status?->status === 'sending') text-yellow-700
+                                        @else text-gray-500 @endif">
+                                        MIC/DTA Manifiesto
+                                    </p>
+                                    <p class="text-xs 
+                                        @if($micdta_status?->status === 'sent') text-green-600
+                                        @elseif($micdta_status?->status === 'sending') text-yellow-600  
+                                        @else text-gray-400 @endif">
+                                        @if($micdta_status?->status === 'sent')
+                                            ✅ Enviado exitosamente
+                                        @elseif($micdta_status?->status === 'sending')
+                                            🔄 Enviando...
+                                        @else
+                                            📋 Registrar títulos y envíos
+                                        @endif
+                                    </p>
+                                </div>
                             </div>
                             
-                            {{-- BARRA DE PROGRESO VISUAL --}}
-                            <div class="px-6 py-6">
-                                <div class="flex items-center justify-between">
-                                    
-                                    {{-- PASO 1: MIC/DTA --}}
-                                    <div class="flex items-center flex-1">
-                                        <div class="flex items-center justify-center w-10 h-10 rounded-full 
-                                            @if($micdta_status?->status === 'sent')
-                                                bg-green-500 text-white
-                                            @elseif($micdta_status?->status === 'sending')
-                                                bg-yellow-500 text-white animate-pulse
-                                            @else
-                                                bg-gray-300 text-gray-600
-                                            @endif">
-                                            @if($micdta_status?->status === 'sent')
-                                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                                                </svg>
-                                            @elseif($micdta_status?->status === 'sending')
-                                                <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                </svg>
-                                            @else
-                                                <span class="text-sm font-medium">1</span>
-                                            @endif
-                                        </div>
-                                        <div class="ml-3 min-w-0 flex-1">
-                                            <p class="text-sm font-medium 
-                                                @if($micdta_status?->status === 'sent') text-green-700 
-                                                @elseif($micdta_status?->status === 'sending') text-yellow-700
-                                                @else text-gray-500 @endif">
-                                                MIC/DTA Manifiesto
-                                            </p>
-                                            <p class="text-xs 
-                                                @if($micdta_status?->status === 'sent') text-green-600
-                                                @elseif($micdta_status?->status === 'sending') text-yellow-600  
-                                                @else text-gray-400 @endif">
-                                                @if($micdta_status?->status === 'sent')
-                                                    ✅ Enviado exitosamente
-                                                @elseif($micdta_status?->status === 'sending')
-                                                    🔄 Enviando...
-                                                @else
-                                                    📋 Registrar títulos y envíos
-                                                @endif
-                                            </p>
-                                        </div>
-                                    </div>
-                                    
-                                    {{-- FLECHA 1 → 2 --}}
-                                    <div class="flex-shrink-0 px-4">
-                                        <svg class="w-5 h-5 
-                                            @if($micdta_status?->status === 'sent') text-green-400 
-                                            @else text-gray-300 @endif" 
-                                            fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            {{-- FLECHA 1 → 2 --}}
+                            <div class="flex-shrink-0 px-4">
+                                <svg class="w-5 h-5 
+                                    @if($micdta_status?->status === 'sent') text-green-400 
+                                    @else text-gray-300 @endif" 
+                                    fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                            
+                            {{-- PASO 2: GPS TRACKING --}}
+                            <div class="flex items-center flex-1" id="gps-step">
+                                <div class="flex items-center justify-center w-10 h-10 rounded-full
+                                    @if($micdta_status?->status === 'sent')
+                                        bg-blue-100 text-blue-600 border-2 border-blue-300
+                                    @else
+                                        bg-gray-200 text-gray-400
+                                    @endif">
+                                    @if($micdta_status?->status === 'sent')
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
                                         </svg>
-                                    </div>
-                                    
-                                    {{-- PASO 2: GPS TRACKING --}}
-                                    <div class="flex items-center flex-1" id="gps-step">
-                                        <div class="flex items-center justify-center w-10 h-10 rounded-full
-                                            @if($micdta_status?->status === 'sent')
-                                                bg-blue-100 text-blue-600 border-2 border-blue-300
-                                            @else
-                                                bg-gray-200 text-gray-400
-                                            @endif">
-                                            @if($micdta_status?->status === 'sent')
-                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                                </svg>
-                                            @else
-                                                <span class="text-sm font-medium">2</span>
-                                            @endif
-                                        </div>
-                                        <div class="ml-3 min-w-0 flex-1">
-                                            <p class="text-sm font-medium
-                                                @if($micdta_status?->status === 'sent') text-blue-700
-                                                @else text-gray-500 @endif">
-                                                Seguimiento GPS
-                                            </p>
-                                            <p class="text-xs 
-                                                @if($micdta_status?->status === 'sent') text-blue-600
-                                                @else text-gray-400 @endif">
-                                                @if($micdta_status?->status === 'sent')
-                                                    🛰️ Actualizar posición en ruta
-                                                @else
-                                                    ⏳ Requiere MIC/DTA enviado
-                                                @endif
-                                            </p>
-                                        </div>
-                                    </div>
-                                    
-                                    {{-- FLECHA 2 → 3 --}}
-                                    <div class="flex-shrink-0 px-4">
-                                        <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                                        </svg>
-                                    </div>
-                                    
-                                    {{-- PASO 3: ARRIBO --}}
-                                    <div class="flex items-center flex-1">
-                                        <div class="flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 text-gray-400">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                            </svg>
-                                        </div>
-                                        <div class="ml-3 min-w-0 flex-1">
-                                            <p class="text-sm font-medium text-gray-500">Notificar Arribo</p>
-                                            <p class="text-xs text-gray-400">🏁 Llegada a destino</p>
-                                        </div>
-                                    </div>
+                                    @else
+                                        <span class="text-sm font-medium">2</span>
+                                    @endif
+                                </div>
+                                <div class="ml-3 min-w-0 flex-1">
+                                    <p class="text-sm font-medium
+                                        @if($micdta_status?->status === 'sent') text-blue-700
+                                        @else text-gray-500 @endif">
+                                        Seguimiento GPS
+                                    </p>
+                                    <p class="text-xs 
+                                        @if($micdta_status?->status === 'sent') text-blue-600
+                                        @else text-gray-400 @endif">
+                                        @if($micdta_status?->status === 'sent')
+                                            🛰️ Actualizar posición en ruta
+                                        @else
+                                            ⏳ Requiere MIC/DTA enviado
+                                        @endif
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            {{-- FLECHA 2 → 3 --}}
+                            <div class="flex-shrink-0 px-4">
+                                <svg class="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                            
+                            {{-- PASO 3: ARRIBO --}}
+                            <div class="flex items-center flex-1">
+                                <div class="flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 text-gray-400">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                                    </svg>
+                                </div>
+                                <div class="ml-3 min-w-0 flex-1">
+                                    <p class="text-sm font-medium text-gray-500">Notificar Arribo</p>
+                                    <p class="text-xs text-gray-400">🏁 Llegada a destino</p>
                                 </div>
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
 
             {{-- Formulario de Envío ACTUALIZADO --}}
             <div class="bg-white shadow rounded-lg mb-6">
@@ -711,1110 +711,997 @@
             </div>
         </div>
     </div>
+
+    
 @push('scripts')
 
     <script>
-        // Variables globales
-        const voyageId = {{ $voyage->id }};
-        let isProcessing = false;
-        let statusInterval = null;
+    const voyageId = {{ $voyage->id }};
+    const environment = '{{ config('webservices.environment', 'testing') }}';
+    
+    window.voyageId = voyageId;
+    window.environment = environment;
+    
+    console.log('🔧 Variables Blade inicializadas:', {
+        voyageId: voyageId,
+        environment: environment
+    });
+</script>
 
-        // Inicialización
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeForm();
-            loadInitialStatus();
-            startStatusPolling();
-        });
+{{-- JavaScript Principal (SEGUNDO) --}}
+<script>
+       /**
+ * ================================================================================
+ * SISTEMA COMPLETO MIC/DTA ARGENTINA + GPS - JAVASCRIPT UNIFICADO
+ * ================================================================================
+ * 
+ * Sistema integrado para:
+ * - Envío MIC/DTA a AFIP Argentina
+ * - Gestión GPS (obtener, enviar, automático, manual)
+ * - Actualización de estados en tiempo real
+ * - Validación y logs de actividad
+ * - Preview XML y utilidades
+ * 
+ * Versión: Completa - Sin conflictos - Código limpio
+ * ================================================================================
+ */
 
-        function initializeForm() {
-            const form = document.getElementById('micDtaSendForm');
-            form.addEventListener('submit', handleFormSubmit);
+class MicDtaFormManager {
+    constructor(voyageId) {
+        this.voyageId = voyageId;
+        
+        // Estado del sistema
+        this.state = {
+            isProcessing: false,
+            isGpsUpdating: false,
+            gpsAutoInterval: null,
+            statusPollingInterval: null
+        };
+        
+        // GPS Data
+        this.gpsData = {
+            currentPosition: null,
+            lastUpdate: null,
+            autoMode: false
+        };
+        
+        // Referencias DOM
+        this.elements = {};
+        
+        this.initialize();
+    }
+
+    /**
+     * ================================================================================
+     * INICIALIZACIÓN SISTEMA
+     * ================================================================================
+     */
+    initialize() {
+        this.cacheElements();
+        this.setupEventListeners();
+        this.loadInitialData();
+        this.startStatusPolling();
+        
+        console.log('🚀 Sistema MIC/DTA + GPS inicializado para voyage:', this.voyageId);
+    }
+
+    cacheElements() {
+        // Formulario principal MIC/DTA
+        this.elements.form = document.getElementById('micDtaSendForm');
+        this.elements.sendButton = document.getElementById('sendButton');
+        
+        // Elementos GPS
+        this.elements.btnGetGps = document.getElementById('btn-get-gps');
+        this.elements.btnSendGps = document.getElementById('btn-send-gps');
+        this.elements.btnAutoGps = document.getElementById('btn-auto-gps');
+        this.elements.btnSendManual = document.getElementById('btn-send-manual');
+        this.elements.btnGpsHistory = document.getElementById('btn-gps-history');
+        
+        // Contenedores de información
+        this.elements.gpsStatus = document.getElementById('gps-status');
+        this.elements.currentPosition = document.getElementById('current-position');
+        this.elements.activityLog = document.getElementById('activityLog');
+        this.elements.xmlPreview = document.getElementById('xmlPreviewModal');
+    }
+
+    setupEventListeners() {
+        // Formulario principal MIC/DTA
+        if (this.elements.form) {
+            this.elements.form.addEventListener('submit', (e) => this.handleFormSubmit(e));
         }
 
-        function loadInitialStatus() {
-            refreshStatus();
-            validateData();
-            loadActivityLog();
-        }
-
-        function startStatusPolling() {
-            // Actualizar estado cada 30 segundos si está procesando
-            statusInterval = setInterval(() => {
-                if (isProcessing) {
-                    refreshStatus();
-                }
-            }, 30000);
-        }
-
-        // FUNCIÓN PRINCIPAL: Envío del formulario
-        async function handleFormSubmit(e) {
-            e.preventDefault();
-            
-            if (isProcessing) {
-                showNotification('Ya hay un envío en proceso', 'warning');
-                return;
-            }
-
-            const confirmSend = confirm('¿Está seguro de enviar el MIC/DTA a AFIP Argentina?');
-            if (!confirmSend) return;
-
-            setProcessingState(true);
-            
-            try {
-                const formData = new FormData(e.target);
-                
-                const response = await fetch(e.target.action, {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    showNotification('MIC/DTA enviado exitosamente', 'success');
-                    
-                    // Mostrar detalles del resultado
-                    if (result.data) {
-                        showSuccessDetails(result.data);
-                    }
-                    
-                    // Actualizar estado inmediatamente
-                    setTimeout(() => {
-                        refreshStatus();
-                        loadActivityLog();
-                    }, 2000);
-                    
-                } else {
-                    showNotification(`Error: ${result.error}`, 'error');
-                    if (result.details) {
-                        console.error('Detalles del error:', result.details);
-                    }
-                }
-
-            } catch (error) {
-                console.error('Error en envío:', error);
-                showNotification('Error de comunicación con el servidor', 'error');
-            } finally {
-                setProcessingState(false);
-            }
-        }
-
-        // Actualizar estado del voyage
-        async function refreshStatus() {
-            try {
-                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/status`, {
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                const result = await response.json();
-                
-                if (response.ok) {
-                    updateStatusDisplay(result);
-                    updateFormState(result);
-                } else {
-                    console.error('Error obteniendo estado:', result.error);
-                }
-
-            } catch (error) {
-                console.error('Error en refreshStatus:', error);
-            }
-        }
-
-        // Validar datos del voyage
-        async function validateData() {
-            try {
-                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/validate`, {
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                const result = await response.json();
-                updateValidationDisplay(result);
-
-            } catch (error) {
-                console.error('Error en validación:', error);
-                document.getElementById('validationContent').innerHTML = 
-                    '<div class="text-red-600">Error cargando validaciones</div>';
-            }
-        }
-
-        // Preview XML
-        async function previewXml() {
-            try {
-                showNotification('Generando preview XML...', 'info');
-                
-                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/preview-xml`, {
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                const result = await response.json();
-                
-                if (response.ok) {
-                    showXmlPreview(result.preview);
-                } else {
-                    showNotification(`Error: ${result.error}`, 'error');
-                }
-
-            } catch (error) {
-                console.error('Error en preview XML:', error);
-                showNotification('Error generando preview', 'error');
-            }
-        }
-
-        // Cargar log de actividad
-        async function loadActivityLog() {
-            try {
-                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/activity`, {
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                const result = await response.json();
-                updateActivityLog(result);
-
-            } catch (error) {
-                console.error('Error cargando actividad:', error);
-            }
-        }
-
-        // Funciones de actualización de UI
-        function updateStatusDisplay(statusData) {
-            const content = document.getElementById('statusContent');
-            const status = statusData.status;
-            
-            let statusClass = 'bg-gray-100 text-gray-800';
-            if (status.current === 'sent') statusClass = 'bg-green-100 text-green-800';
-            else if (status.current === 'error') statusClass = 'bg-red-100 text-red-800';
-            else if (status.current === 'sending') statusClass = 'bg-blue-100 text-blue-800';
-
-            content.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <div>
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
-                            ${status.current.toUpperCase()}
-                        </span>
-                        ${status.last_sent_at ? `<p class="text-sm text-gray-600 mt-1">Último envío: ${new Date(status.last_sent_at).toLocaleString()}</p>` : ''}
-                    </div>
-                    <div class="text-right">
-                        <p class="text-sm text-gray-900">Reintentos: ${status.retry_count || 0}</p>
-                        ${statusData.tracks && Object.keys(statusData.tracks).length > 0 ? 
-                            `<p class="text-sm text-gray-600">TRACKs: ${Object.values(statusData.tracks).flat().length}</p>` : ''}
-                    </div>
-                </div>
-            `;
-
-            // Actualizar estado de procesamiento
-            isProcessing = ['sending', 'validating'].includes(status.current);
-        }
-
-      
-        function updateValidationDisplay(validation) {
-            const content = document.getElementById('validationContent');
-            
-            let html = '<div class="space-y-4">';
-            
-            // Estado general
-            if (validation.can_process) {
-                html += `
-                    <div class="flex items-center text-green-600 bg-green-50 border border-green-200 rounded-lg p-3">
-                        <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                        </svg>
-                        <span class="font-medium">Voyage válido para envío MIC/DTA</span>
-                    </div>
-                `;
-            } else {
-                html += `
-                    <div class="flex items-center text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-                        <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                        </svg>
-                        <span class="font-medium">Voyage NO válido para envío MIC/DTA</span>
-                    </div>
-                `;
-            }
-
-            // ERRORES (bloqueantes)
-            if (validation.errors && validation.errors.length > 0) {
-                html += `
-                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-                        <div class="flex items-center mb-3">
-                            <svg class="w-5 h-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                            </svg>
-                            <h4 class="text-sm font-bold text-red-800">ERRORES (deben corregirse antes del envío)</h4>
-                        </div>
-                        <ul class="text-sm text-red-700 space-y-2">
-                `;
-                validation.errors.forEach(error => {
-                    html += `<li class="flex items-start"><span class="text-red-500 mr-2">•</span><span>${error}</span></li>`;
-                });
-                html += '</ul></div>';
-            }
-
-            // ADVERTENCIAS (no bloquean pero recomendable revisar)
-            if (validation.warnings && validation.warnings.length > 0) {
-                html += `
-                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <div class="flex items-center mb-3">
-                            <svg class="w-5 h-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                            </svg>
-                            <h4 class="text-sm font-bold text-yellow-800">ADVERTENCIAS (recomendable revisar)</h4>
-                        </div>
-                        <ul class="text-sm text-yellow-700 space-y-2">
-                `;
-                validation.warnings.forEach(warning => {
-                    html += `<li class="flex items-start"><span class="text-yellow-500 mr-2">⚠</span><span>${warning}</span></li>`;
-                });
-                html += '</ul></div>';
-            }
-
-            // DETALLES (información positiva verificada)
-            if (validation.details && validation.details.length > 0) {
-                html += `
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div class="flex items-center mb-3">
-                            <svg class="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                            </svg>
-                            <h4 class="text-sm font-bold text-green-800">DATOS VERIFICADOS</h4>
-                            <button onclick="toggleDetails()" class="ml-auto text-xs text-green-600 hover:text-green-500">
-                                <span id="toggleDetailsText">Mostrar detalles</span>
-                            </button>
-                        </div>
-                        <div id="detailsList" class="hidden">
-                            <ul class="text-sm text-green-700 space-y-1">
-                `;
-                validation.details.forEach(detail => {
-                    html += `<li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>${detail}</span></li>`;
-                });
-                html += '</ul></div></div>';
-            }
-
-            // Resumen de conteos
-            const errorsCount = validation.errors ? validation.errors.length : 0;
-            const warningsCount = validation.warnings ? validation.warnings.length : 0;
-            const detailsCount = validation.details ? validation.details.length : 0;
-
-            html += `
-                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                    <div class="flex justify-between text-sm">
-                        <span class="text-gray-600">Resumen de validación:</span>
-                        <div class="space-x-4">
-                            <span class="text-red-600">${errorsCount} errores</span>
-                            <span class="text-yellow-600">${warningsCount} advertencias</span>
-                            <span class="text-green-600">${detailsCount} verificados</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            html += '</div>';
-            content.innerHTML = html;
-        }
-
-        function toggleDetails() {
-            const detailsList = document.getElementById('detailsList');
-            const toggleText = document.getElementById('toggleDetailsText');
-            
-            if (detailsList.classList.contains('hidden')) {
-                detailsList.classList.remove('hidden');
-                toggleText.textContent = 'Ocultar detalles';
-            } else {
-                detailsList.classList.add('hidden');
-                toggleText.textContent = 'Mostrar detalles';
-            }
-        }
-
-        function showXmlPreview(preview) {
-            const content = document.getElementById('xmlPreviewContent');
-            
-            content.innerHTML = `
-                <div class="space-y-4">
-                    <div class="border-b border-gray-200 pb-2">
-                        <h4 class="text-sm font-medium text-gray-900">RegistrarTitEnvios XML</h4>
-                        <pre class="mt-2 text-xs bg-gray-100 p-3 rounded overflow-x-auto"><code>${escapeHtml(preview.titenvios_xml)}</code></pre>
-                    </div>
-                    <div>
-                        <h4 class="text-sm font-medium text-gray-900">RegistrarEnvios XML</h4>
-                        <pre class="mt-2 text-xs bg-gray-100 p-3 rounded overflow-x-auto"><code>${escapeHtml(preview.envios_xml)}</code></pre>
-                    </div>
-                </div>
-            `;
-            
-            document.getElementById('xmlPreviewModal').classList.remove('hidden');
-        }
-
-        function closeXmlPreview() {
-            document.getElementById('xmlPreviewModal').classList.add('hidden');
-        }
-
-        function setProcessingState(processing) {
-            isProcessing = processing;
-            const button = document.getElementById('sendButton');
-            const buttonText = document.getElementById('sendButtonText');
-            
-            button.disabled = processing;
-            buttonText.textContent = processing ? 'Enviando...' : 'Enviar MIC/DTA';
-        }
-
-        function showSuccessDetails(data) {
-            let message = 'MIC/DTA enviado exitosamente';
-            if (data.mic_dta_id) message += `\nID MIC/DTA: ${data.mic_dta_id}`;
-            if (data.tracks_generated) message += `\nTRACKs generados: ${data.tracks_generated}`;
-            
-            alert(message);
-        }
-
-        function showNotification(message, type = 'info') {
-            // Implementación simple con alert, puedes mejorar con toast notifications
-            const icons = {
-                success: '✅',
-                error: '❌',
-                warning: '⚠️',
-                info: 'ℹ️'
-            };
-            
-            alert(`${icons[type]} ${message}`);
-        }
-
-        function updateFormState(statusData) {
-            const sendButton = document.getElementById('sendButton');
-            const canSend = statusData.status.can_send && !isProcessing;
-            
-            sendButton.disabled = !canSend;
-        }
-
-        function updateActivityLog(data) {
-            const log = document.getElementById('activityLog');
-            
-            if (data.recent_transactions && data.recent_transactions.length > 0) {
-                let html = '<div class="space-y-3">';
-                data.recent_transactions.forEach(transaction => {
-                    html += `
-                        <div class="border-l-4 ${transaction.status === 'sent' ? 'border-green-400' : 'border-red-400'} pl-3">
-                            <p class="text-sm font-medium">${transaction.transaction_id}</p>
-                            <p class="text-xs text-gray-600">${new Date(transaction.created_at).toLocaleString()}</p>
-                            <p class="text-xs ${transaction.status === 'sent' ? 'text-green-600' : 'text-red-600'}">${transaction.status}</p>
-                            ${transaction.error_message ? `<p class="text-xs text-red-600">${transaction.error_message}</p>` : ''}
-                        </div>
-                    `;
-                });
-                html += '</div>';
-                log.innerHTML = html;
-            } else {
-                log.innerHTML = '<p class="text-gray-500 text-sm">Sin actividad reciente</p>';
-            }
-        }
-
-        // Utilidades
-        function getCSRFToken() {
-            const meta = document.querySelector('meta[name="csrf-token"]');
-            return meta ? meta.getAttribute('content') : '{{ csrf_token() }}';
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Limpiar interval al salir
-        window.addEventListener('beforeunload', function() {
-            if (statusInterval) {
-                clearInterval(statusInterval);
-            }
-        });
-
-                
-        // Variables globales simples
-        let currentGPSData = null;
-
-        // Función para obtener GPS del dispositivo
-        function getCurrentGPS() {
-            if (!navigator.geolocation) {
-                alert('❌ Su navegador no soporta GPS');
-                return;
-            }
-
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = '🔄 Obteniendo GPS...';
-
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    currentGPSData = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: position.coords.accuracy
-                    };
-                    
-                    // Mostrar coordenadas
-                    document.getElementById('coordinates-display').innerHTML = `
-                        <strong>📍 Posición obtenida:</strong><br>
-                        Lat: ${currentGPSData.lat.toFixed(6)}<br>
-                        Lng: ${currentGPSData.lng.toFixed(6)}<br>
-                        <small>Precisión: ±${Math.round(currentGPSData.accuracy)}m</small>
-                    `;
-                    
-                    document.getElementById('current-coordinates').classList.remove('hidden');
-                    button.textContent = '✅ GPS Obtenido';
-                    
-                    // Validar si está en punto de control
-                    checkControlPoint(currentGPSData.lat, currentGPSData.lng);
-                },
-                function(error) {
-                    button.disabled = false;
-                    button.textContent = '🎯 Obtener Mi Ubicación';
-                    alert('❌ Error obteniendo GPS: ' + error.message);
-                },
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
-        }
-
-        // Función para enviar GPS actual a AFIP
-        async function sendCurrentGPS() {
-            if (!currentGPSData) {
-                alert('❌ Primero debe obtener la posición GPS');
-                return;
-            }
-
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = '📡 Enviando a AFIP...';
-
-            try {
-                const response = await fetch(`/simple/webservices/micdta/{{ $voyage->id }}/actualizar-posicion`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        latitude: currentGPSData.lat,
-                        longitude: currentGPSData.lng,
-                        source: 'dispositivo'
-                    })
-                });
-
-                const result = await response.json();
-                
-                if (result.success) {
-                    if (result.skipped) {
-                        alert('ℹ️ ' + result.message);
-                    } else {
-                        let message = '✅ Posición GPS enviada exitosamente a AFIP';
-                        if (result.control_point_detected) {
-                            message += '\n\n🎯 Punto de control detectado: ' + result.control_point_detected.nombre;
-                        }
-                        alert(message);
-                        
-                        // Actualizar estado GPS
-                        refreshGpsStatus();
-                    }
-                } else {
-                    alert('❌ Error: ' + result.error);
-                }
-            } catch (error) {
-                alert('❌ Error de comunicación con AFIP');
-            } finally {
-                button.disabled = false;
-                button.textContent = '📡 Enviar a AFIP Ahora';
-            }
-        }
-
-        // Función para validar y enviar coordenadas manuales
-        async function validateAndSendManual() {
-            const lat = parseFloat(document.getElementById('manual-lat').value);
-            const lng = parseFloat(document.getElementById('manual-lng').value);
-            
-            if (isNaN(lat) || isNaN(lng)) {
-                alert('❌ Por favor ingrese coordenadas válidas');
-                return;
-            }
-            
-            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-                alert('❌ Coordenadas fuera de rango válido');
-                return;
-            }
-
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = '🚀 Enviando...';
-
-            try {
-                const response = await fetch(`/simple/webservices/micdta/{{ $voyage->id }}/actualizar-posicion`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        latitude: lat,
-                        longitude: lng,
-                        source: 'manual'
-                    })
-                });
-
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('✅ Coordenadas enviadas exitosamente a AFIP');
-                    refreshGpsStatus();
-                } else {
-                    alert('❌ Error: ' + result.error);
-                }
-            } catch (error) {
-                alert('❌ Error de comunicación');
-            } finally {
-                button.disabled = false;
-                button.textContent = '🚀 Validar y Enviar';
-            }
-        }
-
-        // Funciones auxiliares simples
-        async function refreshGpsStatus() {
-            // Actualizar estado GPS actual
-            console.log('🔄 Actualizando estado GPS...');
-        }
-
-        function checkControlPoint(lat, lng) {
-            // Verificar si está cerca de punto de control
-            console.log('🎯 Verificando puntos de control...');
-        }
-
-        function showGpsHistory() {
-            alert('📊 Función historial GPS próximamente');
-        }
-
-        function showControlPoints() {
-            alert('🎯 Puntos de Control AFIP:\n\n• Buenos Aires (ARBUE)\n• Rosario (ARROS)\n• Asunción (PYASU)\n• Terminal Villeta (PYTVT)');
-        }
-
-        function showGpsConfig() {
-            alert('⚙️ Configuración GPS AFIP:\n\n• Intervalo mínimo: 15 minutos\n• Tolerancia: 50 metros\n• Ambiente: {{ $company->ws_environment ?? 'testing' }}');
+        // Botones GPS
+        if (this.elements.btnGetGps) {
+            this.elements.btnGetGps.addEventListener('click', () => this.getCurrentGpsPosition());
         }
         
-
-        /**
-         * ================================================================================
-         * GPS JAVASCRIPT SIMPLE - SIN CLASES (MÁS FÁCIL DE ENTENDER)
-         * ================================================================================
-         */
-
-        // Variables globales simples
-        let voyageId = {{ $voyage->id }};
-        let currentGpsPosition = null;
-        let isGpsUpdating = false;
-
-        // Inicializar cuando el DOM esté listo
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🌍 Inicializando GPS para voyage:', voyageId);
-            
-            // Configurar botones GPS
-            setupGpsButtons();
-            
-            // Cargar estado GPS inicial
-            loadCurrentGpsStatus();
-            
-            // Configurar validación coordenadas manuales
-            setupManualCoordinates();
-        });
-
-        /**
-         * Configurar event listeners de los botones GPS
-         */
-        function setupGpsButtons() {
-            // Botón Obtener GPS del navegador
-            const btnGetGps = document.getElementById('btn-get-gps');
-            if (btnGetGps) {
-                btnGetGps.addEventListener('click', getCurrentGpsPosition);
-            }
-
-            // Botón Enviar GPS a AFIP
-            const btnSendGps = document.getElementById('btn-send-gps');
-            if (btnSendGps) {
-                btnSendGps.addEventListener('click', sendGpsToAfip);
-            }
-
-            // Botón GPS Automático
-            const btnAutoGps = document.getElementById('btn-auto-gps');
-            if (btnAutoGps) {
-                btnAutoGps.addEventListener('click', toggleAutoGps);
-            }
-
-            // Botón Enviar Manual
-            const btnSendManual = document.getElementById('btn-send-manual');
-            if (btnSendManual) {
-                btnSendManual.addEventListener('click', sendManualCoordinates);
-            }
-
-            // Botón Ver Historial
-            const btnGpsHistory = document.getElementById('btn-gps-history');
-            if (btnGpsHistory) {
-                btnGpsHistory.addEventListener('click', showGpsHistory);
-            }
+        if (this.elements.btnSendGps) {
+            this.elements.btnSendGps.addEventListener('click', () => this.sendGpsToAfip());
+        }
+        
+        if (this.elements.btnAutoGps) {
+            this.elements.btnAutoGps.addEventListener('click', () => this.toggleAutoGps());
+        }
+        
+        if (this.elements.btnSendManual) {
+            this.elements.btnSendManual.addEventListener('click', () => this.sendManualCoordinates());
+        }
+        
+        if (this.elements.btnGpsHistory) {
+            this.elements.btnGpsHistory.addEventListener('click', () => this.showGpsHistory());
         }
 
-        /**
-         * Obtener posición GPS del navegador
-         */
-        function getCurrentGpsPosition() {
-            if (!navigator.geolocation) {
-                showNotification('error', 'Su navegador no soporta GPS');
-                return;
-            }
+        // Coordenadas manuales - validación en tiempo real
+        this.setupManualCoordinatesValidation();
+        
+        // Cleanup al salir
+        window.addEventListener('beforeunload', () => this.cleanup());
+    }
 
-            const btn = document.getElementById('btn-get-gps');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Obteniendo GPS...';
-            }
+    loadInitialData() {
+        this.refreshStatus();
+        this.validateData();
+        this.loadActivityLog();
+        this.loadCurrentGpsStatus();
+    }
 
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    // GPS obtenido exitosamente
-                    currentGpsPosition = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: position.coords.accuracy,
-                        timestamp: new Date()
-                    };
+    /**
+     * ================================================================================
+     * MÓDULO MIC/DTA - ENVÍO Y GESTIÓN FORMULARIO
+     * ================================================================================
+     */
+    async handleFormSubmit(event) {
+        event.preventDefault();
+        
+        if (this.state.isProcessing) {
+            this.showNotification('Ya hay un envío en proceso', 'warning');
+            return;
+        }
 
-                    displayCurrentPosition();
-                    showNotification('success', `GPS obtenido: ${currentGpsPosition.lat.toFixed(6)}, ${currentGpsPosition.lng.toFixed(6)}`);
+        const confirmSend = confirm('¿Está seguro de enviar el MIC/DTA a AFIP Argentina?\n\nEsta acción no se puede deshacer.');
+        if (!confirmSend) return;
 
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path></svg> Obtener Posición GPS';
-                    }
-                },
-                function(error) {
-                    // Error obteniendo GPS
-                    let errorMsg = 'Error obteniendo GPS';
-                    switch (error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMsg = 'Permiso GPS denegado';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMsg = 'GPS no disponible';
-                            break;
-                        case error.TIMEOUT:
-                            errorMsg = 'Timeout GPS';
-                            break;
-                    }
-
-                    showNotification('error', errorMsg);
-
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path></svg> Obtener Posición GPS';
-                    }
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 60000
+        this.setProcessingState(true);
+        
+        try {
+            const formData = new FormData(event.target);
+            
+            const response = await fetch(event.target.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Accept': 'application/json'
                 }
-            );
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showNotification('MIC/DTA enviado exitosamente', 'success');
+                
+                if (result.data) {
+                    this.showSuccessDetails(result.data);
+                }
+                
+                // Actualizar datos después de 2 segundos
+                setTimeout(() => {
+                    this.refreshStatus();
+                    this.loadActivityLog();
+                }, 2000);
+                
+            } else {
+                this.showNotification(`Error: ${result.error}`, 'error');
+                if (result.details) {
+                    console.error('Detalles del error:', result.details);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error en envío MIC/DTA:', error);
+            this.showNotification('Error de comunicación con el servidor', 'error');
+        } finally {
+            this.setProcessingState(false);
+        }
+    }
+
+    async refreshStatus() {
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/status`, {
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.updateFormState(data);
+            }
+        } catch (error) {
+            console.error('Error actualizando estado:', error);
+        }
+    }
+
+    async validateData() {
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/validate`, {
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.updateValidationStatus(data);
+            }
+        } catch (error) {
+            console.error('Error en validación:', error);
+        }
+    }
+
+    async loadActivityLog() {
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/activity`, {
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.updateActivityLog(data);
+            }
+        } catch (error) {
+            console.error('Error cargando log:', error);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * MÓDULO GPS - GESTIÓN COMPLETA POSICIONAMIENTO
+     * ================================================================================
+     */
+    getCurrentGpsPosition() {
+        if (!navigator.geolocation) {
+            this.showNotification('Su navegador no soporta GPS', 'error');
+            return;
         }
 
-        /**
-         * Enviar posición GPS a AFIP
-         */
-        async function sendGpsToAfip() {
-            if (!currentGpsPosition) {
-                showNotification('warning', 'Debe obtener la posición GPS primero');
-                return;
+        const btn = this.elements.btnGetGps;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = this.getSpinnerHTML() + ' Obteniendo GPS...';
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => this.onGpsSuccess(position, btn),
+            (error) => this.onGpsError(error, btn),
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 60000
             }
+        );
+    }
 
-            if (isGpsUpdating) {
-                return;
-            }
+    onGpsSuccess(position, btn) {
+        this.gpsData.currentPosition = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: new Date()
+        };
 
-            isGpsUpdating = true;
-            const btn = document.getElementById('btn-send-gps');
-            
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle></svg> Enviando a AFIP...';
-            }
+        this.displayCurrentPosition();
+        this.showNotification(
+            `GPS obtenido: ${this.gpsData.currentPosition.lat.toFixed(6)}, ${this.gpsData.currentPosition.lng.toFixed(6)}`, 
+            'success'
+        );
 
-            try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        latitude: currentGpsPosition.lat,
-                        longitude: currentGpsPosition.lng,
-                        source: 'navegador',
-                        notes: 'Actualización GPS desde formulario web'
-                    })
-                });
+        // Verificar punto de control
+        this.checkControlPoint(this.gpsData.currentPosition.lat, this.gpsData.currentPosition.lng);
 
-                const result = await response.json();
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path></svg> Obtener Posición GPS';
+        }
+    }
 
-                if (result.success) {
-                    if (result.skipped) {
-                        showNotification('info', result.message);
-                    } else {
-                        showNotification('success', '✅ Posición enviada exitosamente a AFIP');
+    onGpsError(error, btn) {
+        let errorMsg = 'Error obteniendo GPS';
+        switch (error.code) {
+            case error.PERMISSION_DENIED:
+                errorMsg = 'Permiso GPS denegado';
+                break;
+            case error.POSITION_UNAVAILABLE:
+                errorMsg = 'GPS no disponible';
+                break;
+            case error.TIMEOUT:
+                errorMsg = 'Timeout GPS';
+                break;
+        }
 
-                        // Mostrar información adicional
-                        if (result.control_point_detected) {
-                            showNotification('info', `🎯 Punto de control: ${result.control_point_detected.nombre}`);
-                        }
+        this.showNotification(errorMsg, 'error');
 
-                        if (result.distance_moved_meters) {
-                            showNotification('info', `📍 Movimiento: ${result.distance_moved_meters}m`);
-                        }
-                    }
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path></svg> Obtener Posición GPS';
+        }
+    }
 
-                    // Recargar estado GPS
-                    loadCurrentGpsStatus();
+    async sendGpsToAfip() {
+        if (!this.gpsData.currentPosition) {
+            this.showNotification('Debe obtener la posición GPS primero', 'warning');
+            return;
+        }
 
+        if (this.state.isGpsUpdating) {
+            return;
+        }
+
+        this.state.isGpsUpdating = true;
+        const btn = this.elements.btnSendGps;
+        
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = this.getSpinnerHTML() + ' Enviando a AFIP...';
+        }
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/actualizar-posicion`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    latitude: this.gpsData.currentPosition.lat,
+                    longitude: this.gpsData.currentPosition.lng,
+                    source: 'dispositivo'
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                if (result.skipped) {
+                    this.showNotification(result.message, 'info');
                 } else {
-                    showNotification('error', `❌ Error AFIP: ${result.error}`);
+                    this.showNotification('GPS enviado exitosamente a AFIP', 'success');
+                    
+                    if (result.control_point_detected) {
+                        this.showNotification(`📍 Punto de control: ${result.control_point_detected.nombre}`, 'info');
+                    }
                 }
+                
+                // Actualizar estado GPS
+                this.loadCurrentGpsStatus();
+            } else {
+                this.showNotification(`Error AFIP: ${result.error}`, 'error');
+            }
 
-            } catch (error) {
-                console.error('❌ Error enviando GPS:', error);
-                showNotification('error', 'Error de comunicación con AFIP');
-            } finally {
-                isGpsUpdating = false;
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path></svg> Enviar Posición a AFIP';
-                }
+        } catch (error) {
+            console.error('Error enviando GPS:', error);
+            this.showNotification('Error de comunicación con AFIP', 'error');
+        } finally {
+            this.state.isGpsUpdating = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path></svg> Enviar Posición a AFIP';
             }
         }
+    }
 
-        /**
-         * Mostrar la posición GPS actual en la pantalla
-         */
-        function displayCurrentPosition() {
-            if (!currentGpsPosition) return;
+    toggleAutoGps() {
+        const btn = this.elements.btnAutoGps;
+        
+        if (this.state.gpsAutoInterval) {
+            // Detener GPS automático
+            clearInterval(this.state.gpsAutoInterval);
+            this.state.gpsAutoInterval = null;
+            this.gpsData.autoMode = false;
+            
+            if (btn) {
+                btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293H15"></path></svg> Activar GPS Automático';
+                btn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                btn.classList.add('bg-white', 'hover:bg-gray-50', 'border-gray-300', 'text-gray-700');
+            }
+            
+            this.showNotification('GPS automático desactivado', 'info');
+        } else {
+            // Iniciar GPS automático
+            this.state.gpsAutoInterval = setInterval(() => {
+                this.getCurrentGpsPosition();
+                // Auto-enviar después de 2 segundos si hay posición
+                setTimeout(() => {
+                    if (this.gpsData.currentPosition && !this.state.isGpsUpdating) {
+                        this.sendGpsToAfip();
+                    }
+                }, 2000);
+            }, 15 * 60 * 1000); // Cada 15 minutos
 
-            const positionDiv = document.getElementById('current-position');
-            if (positionDiv) {
-                positionDiv.innerHTML = `
-                    <div class="mt-3 p-3 bg-light border rounded">
-                        <h6><i class="fas fa-crosshairs text-primary"></i> Posición GPS Actual</h6>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <strong>Latitud:</strong> ${currentGpsPosition.lat.toFixed(8)}
-                            </div>
-                            <div class="col-md-6">
-                                <strong>Longitud:</strong> ${currentGpsPosition.lng.toFixed(8)}
-                            </div>
-                        </div>
-                        ${currentGpsPosition.accuracy ? `
-                            <div class="mt-2">
-                                <strong>Precisión:</strong> ±${currentGpsPosition.accuracy.toFixed(0)} metros
-                            </div>
-                        ` : ''}
-                        <div class="mt-2">
-                            <strong>Obtenida:</strong> ${currentGpsPosition.timestamp.toLocaleString()}
-                        </div>
+            this.gpsData.autoMode = true;
+            
+            if (btn) {
+                btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path></svg> Parar GPS Automático';
+                btn.classList.remove('bg-white', 'hover:bg-gray-50', 'border-gray-300', 'text-gray-700');
+                btn.classList.add('bg-red-600', 'hover:bg-red-700');
+            }
+            
+            this.showNotification('GPS automático activado (cada 15 min)', 'success');
+            
+            // Ejecutar una vez inmediatamente
+            this.getCurrentGpsPosition();
+        }
+    }
+
+    async sendManualCoordinates() {
+        const latInput = document.getElementById('manual-latitude');
+        const lngInput = document.getElementById('manual-longitude');
+        
+        if (!latInput || !lngInput) {
+            this.showNotification('Campos de coordenadas manuales no encontrados', 'error');
+            return;
+        }
+
+        const lat = parseFloat(latInput.value);
+        const lng = parseFloat(lngInput.value);
+
+        if (!this.validateCoordinates(lat, lng)) {
+            this.showNotification('Coordenadas inválidas. Verifique los valores.', 'error');
+            return;
+        }
+
+        const btn = this.elements.btnSendManual;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = this.getSpinnerHTML() + ' Enviando Coordenadas...';
+        }
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/actualizar-posicion`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    latitude: lat,
+                    longitude: lng,
+                    source: 'manual'
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showNotification('Coordenadas enviadas exitosamente a AFIP', 'success');
+                
+                if (result.control_point_detected) {
+                    this.showNotification(`📍 Punto de control: ${result.control_point_detected.nombre}`, 'info');
+                }
+                
+                // Limpiar campos
+                latInput.value = '';
+                lngInput.value = '';
+                
+                this.loadCurrentGpsStatus();
+            } else {
+                this.showNotification(`Error: ${result.error}`, 'error');
+            }
+
+        } catch (error) {
+            console.error('Error enviando coordenadas manuales:', error);
+            this.showNotification('Error de comunicación', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z"></path></svg> Enviar Coordenadas Manuales';
+            }
+        }
+    }
+
+    async showGpsHistory() {
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/historial-posiciones?days=7`, {
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.displayGpsHistory(data);
+            } else {
+                this.showNotification('Error cargando historial GPS', 'error');
+            }
+        } catch (error) {
+            console.error('Error en historial GPS:', error);
+            this.showNotification('Error de comunicación', 'error');
+        }
+    }
+
+    async loadCurrentGpsStatus() {
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${this.voyageId}/estado-gps`, {
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.updateGpsStatus(data.estado_gps);
+            }
+        } catch (error) {
+            console.error('Error cargando estado GPS:', error);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * FUNCIONES DE VALIDACIÓN Y UTILIDADES
+     * ================================================================================
+     */
+    validateCoordinates(lat, lng) {
+        // Validar formato
+        if (isNaN(lat) || isNaN(lng)) {
+            return false;
+        }
+        
+        // Validar rangos
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return false;
+        }
+        
+        // Validar hidrovía Paraná (aproximado)
+        if (lat < -35 || lat > -20 || lng < -62 || lng > -54) {
+            this.showNotification('⚠️ Coordenadas fuera de la hidrovía Paraná', 'warning');
+        }
+        
+        return true;
+    }
+
+    async checkControlPoint(lat, lng) {
+        try {
+            const response = await fetch('/company/simple/webservices/micdta/detectar-punto-control', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': this.getCSRFToken(),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ latitude: lat, longitude: lng })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.punto_control) {
+                    this.showNotification(`📍 Cerca del punto de control: ${data.punto_control.nombre}`, 'info');
+                }
+            }
+        } catch (error) {
+            console.error('Error verificando punto de control:', error);
+        }
+    }
+
+    setupManualCoordinatesValidation() {
+        const latInput = document.getElementById('manual-latitude');
+        const lngInput = document.getElementById('manual-longitude');
+        
+        if (latInput && lngInput) {
+            latInput.addEventListener('input', () => this.validateManualInput());
+            lngInput.addEventListener('input', () => this.validateManualInput());
+        }
+    }
+
+    validateManualInput() {
+        const latInput = document.getElementById('manual-latitude');
+        const lngInput = document.getElementById('manual-longitude');
+        
+        if (latInput && lngInput) {
+            const lat = parseFloat(latInput.value);
+            const lng = parseFloat(lngInput.value);
+            
+            const isValid = this.validateCoordinates(lat, lng);
+            
+            latInput.classList.toggle('border-red-300', !isValid && latInput.value !== '');
+            lngInput.classList.toggle('border-red-300', !isValid && lngInput.value !== '');
+            
+            if (this.elements.btnSendManual) {
+                this.elements.btnSendManual.disabled = !isValid || !latInput.value || !lngInput.value;
+            }
+        }
+    }
+
+    /**
+     * ================================================================================
+     * FUNCIONES DE ACTUALIZACIÓN DE UI
+     * ================================================================================
+     */
+    displayCurrentPosition() {
+        if (!this.gpsData.currentPosition || !this.elements.currentPosition) return;
+
+        const pos = this.gpsData.currentPosition;
+        this.elements.currentPosition.innerHTML = `
+            <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                <h6 class="text-sm font-medium text-green-800 mb-2">
+                    <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                    </svg>
+                    Posición GPS Actual
+                </h6>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <strong>Latitud:</strong> ${pos.lat.toFixed(8)}
+                    </div>
+                    <div>
+                        <strong>Longitud:</strong> ${pos.lng.toFixed(8)}
+                    </div>
+                    ${pos.accuracy ? `<div class="col-span-2"><strong>Precisión:</strong> ${Math.round(pos.accuracy)}m</div>` : ''}
+                    <div class="col-span-2 text-xs text-gray-600">
+                        <strong>Obtenido:</strong> ${pos.timestamp.toLocaleString()}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    updateGpsStatus(estadoGps) {
+        if (!this.elements.gpsStatus || !estadoGps) return;
+
+        let html = '<div class="bg-gray-50 rounded-lg p-4"><div class="flex items-center justify-between"><div>';
+        html += '<h4 class="text-sm font-medium text-gray-900">Estado GPS del Voyage</h4>';
+        
+        if (estadoGps.tiene_coordenadas) {
+            html += `<p class="text-sm text-green-600">✅ ${estadoGps.shipments_con_gps}/${estadoGps.total_shipments} shipments con GPS</p>`;
+            
+            if (estadoGps.ultima_actualizacion_afip) {
+                const lastUpdate = new Date(estadoGps.ultima_actualizacion_afip.enviada_at);
+                html += `<p class="text-xs text-gray-500">📡 Última actualización AFIP: ${lastUpdate.toLocaleString()}</p>`;
+            } else {
+                html += `<p class="text-xs text-yellow-600">⚠ Sin actualizaciones enviadas a AFIP</p>`;
+            }
+        } else {
+            html += '<p class="text-sm text-gray-500">⭕ Sin coordenadas GPS</p>';
+        }
+        
+        html += '</div></div></div>';
+        this.elements.gpsStatus.innerHTML = html;
+    }
+
+    displayGpsHistory(data) {
+        let info = `📍 Historial GPS (7 días)\nVoyage: ${data.voyage_number}\nPosiciones: ${data.total_posiciones}\n\n`;
+        
+        if (data.estadisticas) {
+            info += `📊 Estadísticas:\n`;
+            info += `• Distancia: ${data.estadisticas.distancia_total_km} km\n`;
+            info += `• Puntos control: ${data.estadisticas.puntos_control_detectados}\n`;
+            info += `• Tiempo activo: ${data.estadisticas.periodo_activo_horas}h\n`;
+            info += `• Velocidad: ${data.estadisticas.velocidad_promedio_kmh} km/h`;
+        }
+        
+        alert(info);
+    }
+
+    setProcessingState(isProcessing) {
+        this.state.isProcessing = isProcessing;
+        
+        if (this.elements.sendButton) {
+            this.elements.sendButton.disabled = isProcessing;
+            this.elements.sendButton.textContent = isProcessing ? 'Enviando...' : 'Enviar MIC/DTA';
+        }
+    }
+
+    updateFormState(statusData) {
+        if (statusData && statusData.status && this.elements.sendButton) {
+            const canSend = statusData.status.can_send && !this.state.isProcessing;
+            this.elements.sendButton.disabled = !canSend;
+        }
+    }
+
+    updateValidationStatus(data) {
+        // Implementar actualización de estado de validación
+        console.log('Validación actualizada:', data);
+    }
+
+    updateActivityLog(data) {
+        if (!this.elements.activityLog || !data.recent_transactions) return;
+        
+        if (data.recent_transactions.length > 0) {
+            let html = '<div class="space-y-3">';
+            data.recent_transactions.forEach(transaction => {
+                html += `
+                    <div class="border-l-4 ${transaction.status === 'sent' ? 'border-green-400' : 'border-red-400'} pl-3">
+                        <p class="text-sm font-medium">${transaction.transaction_id}</p>
+                        <p class="text-xs text-gray-600">${new Date(transaction.created_at).toLocaleString()}</p>
+                        <p class="text-xs ${transaction.status === 'sent' ? 'text-green-600' : 'text-red-600'}">${transaction.status}</p>
+                        ${transaction.error_message ? `<p class="text-xs text-red-600">${transaction.error_message}</p>` : ''}
                     </div>
                 `;
-            }
-
-            // Actualizar campos manuales también
-            const latInput = document.getElementById('input-latitude');
-            const lngInput = document.getElementById('input-longitude');
-            
-            if (latInput) latInput.value = currentGpsPosition.lat.toFixed(8);
-            if (lngInput) lngInput.value = currentGpsPosition.lng.toFixed(8);
+            });
+            html += '</div>';
+            this.elements.activityLog.innerHTML = html;
+        } else {
+            this.elements.activityLog.innerHTML = '<p class="text-gray-500 text-sm">Sin actividad reciente</p>';
         }
+    }
 
-        /**
-         * Configurar inputs de coordenadas manuales
-         */
-        function setupManualCoordinates() {
-            const latInput = document.getElementById('input-latitude');
-            const lngInput = document.getElementById('input-longitude');
+    showSuccessDetails(data) {
+        let message = 'MIC/DTA enviado exitosamente';
+        if (data.mic_dta_id) message += `\nID MIC/DTA: ${data.mic_dta_id}`;
+        if (data.tracks_generated) message += `\nTRACKs generados: ${data.tracks_generated}`;
+        
+        alert(message);
+    }
 
-            if (latInput) {
-                latInput.addEventListener('input', validateManualCoordinates);
+    /**
+     * ================================================================================
+     * SISTEMA DE POLLING Y LIMPIEZA
+     * ================================================================================
+     */
+    startStatusPolling() {
+        // Actualizar estado cada 30 segundos si está procesando
+        this.state.statusPollingInterval = setInterval(() => {
+            if (this.state.isProcessing) {
+                this.refreshStatus();
             }
+        }, 30000);
+    }
 
-            if (lngInput) {
-                lngInput.addEventListener('input', validateManualCoordinates);
-            }
+    cleanup() {
+        if (this.state.gpsAutoInterval) {
+            clearInterval(this.state.gpsAutoInterval);
         }
-
-        /**
-         * Validar coordenadas manuales en tiempo real
-         */
-        async function validateManualCoordinates() {
-            const latInput = document.getElementById('input-latitude');
-            const lngInput = document.getElementById('input-longitude');
-            const validationDiv = document.getElementById('coordinates-validation');
-
-            if (!latInput || !lngInput || !validationDiv) return;
-
-            const lat = parseFloat(latInput.value);
-            const lng = parseFloat(lngInput.value);
-
-            if (isNaN(lat) || isNaN(lng)) {
-                validationDiv.innerHTML = '<div class="text-gray-500 text-xs">Ingrese coordenadas válidas</div>';
-                return;
-            }
-
-            try {
-                const response = await fetch('/simple/webservices/micdta/validar-coordenadas', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ latitude: lat, longitude: lng })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    let html = '<div class="mt-2 text-xs">';
-                    
-                    // GPS válido
-                    html += `<div class="text-${result.validaciones.gps_valido.valido ? 'green' : 'red'}-600">
-                        ✓ ${result.validaciones.gps_valido.mensaje}
-                    </div>`;
-
-                    // Hidrovía
-                    html += `<div class="text-${result.validaciones.hidrovia_parana.valido ? 'green' : 'yellow'}-600">
-                        ${result.validaciones.hidrovia_parana.valido ? '✓' : '⚠'} ${result.validaciones.hidrovia_parana.mensaje}
-                    </div>`;
-
-                    // Punto control
-                    if (result.validaciones.punto_control.detectado) {
-                        html += `<div class="text-blue-600">
-                            📍 ${result.validaciones.punto_control.mensaje}
-                        </div>`;
-                    }
-
-                    html += '</div>';
-                    validationDiv.innerHTML = html;
-                }
-            } catch (error) {
-                validationDiv.innerHTML = '<div class="text-red-600 text-xs">Error validando</div>';
-            }
+        
+        if (this.state.statusPollingInterval) {
+            clearInterval(this.state.statusPollingInterval);
         }
+        
+        console.log('🧹 Sistema MIC/DTA limpiado');
+    }
 
-        /**
-         * Enviar coordenadas manuales
-         */
-        async function sendManualCoordinates() {
-            const latInput = document.getElementById('input-latitude');
-            const lngInput = document.getElementById('input-longitude');
+    /**
+     * ================================================================================
+     * FUNCIONES AUXILIARES Y UTILIDADES
+     * ================================================================================
+     */
+    getCSRFToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    }
 
-            if (!latInput || !lngInput) return;
+    getSpinnerHTML() {
+        return '<svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+    }
 
-            const lat = parseFloat(latInput.value);
-            const lng = parseFloat(lngInput.value);
-
-            if (isNaN(lat) || isNaN(lng)) {
-                showNotification('error', 'Coordenadas inválidas');
-                return;
-            }
-
-            // Simular posición GPS con coordenadas manuales
-            currentGpsPosition = { 
-                lat, 
-                lng, 
-                timestamp: new Date(), 
-                source: 'manual',
-                accuracy: null 
-            };
-
-            // Enviar a AFIP
-            await sendGpsToAfip();
-        }
-
-        /**
-         * Ver historial GPS
-         */
-        async function showGpsHistory() {
-            try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/historial-posiciones?days=7`, {
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    let info = `📍 Historial GPS (7 días)\nVoyage: ${data.voyage_number}\nPosiciones: ${data.total_posiciones}\n\n`;
-                    
-                    if (data.estadisticas) {
-                        info += `📊 Estadísticas:\n`;
-                        info += `• Distancia: ${data.estadisticas.distancia_total_km} km\n`;
-                        info += `• Puntos control: ${data.estadisticas.puntos_control_detectados}\n`;
-                        info += `• Tiempo activo: ${data.estadisticas.periodo_activo_horas}h\n`;
-                        info += `• Velocidad: ${data.estadisticas.velocidad_promedio_kmh} km/h`;
-                    }
-                    
-                    alert(info); // Puedes reemplazar por un modal más bonito
-                } else {
-                    showNotification('error', 'Error cargando historial');
-                }
-            } catch (error) {
-                showNotification('error', 'Error de comunicación');
-            }
-        }
-
-        /**
-         * Cargar estado GPS actual del voyage
-         */
-        async function loadCurrentGpsStatus() {
-            try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/estado-gps`, {
-                    headers: {
-                        'X-CSRF-TOKEN': getCSRFToken(),
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    updateGpsStatusDisplay(data.estado_gps);
-                }
-            } catch (error) {
-                console.error('❌ Error cargando estado GPS:', error);
-            }
-        }
-
-        /**
-         * Actualizar display del estado GPS
-         */
-        function updateGpsStatusDisplay(estadoGps) {
-            const statusDiv = document.getElementById('gps-status');
-            if (!statusDiv) return;
-
-            let html = '<div class="bg-gray-50 rounded-lg p-4"><div class="flex items-center justify-between"><div>';
-            html += '<h4 class="text-sm font-medium text-gray-900">Estado GPS del Voyage</h4>';
-            
-            if (estadoGps.tiene_coordenadas) {
-                html += `<p class="text-sm text-green-600">✅ ${estadoGps.shipments_con_gps}/${estadoGps.total_shipments} shipments con GPS</p>`;
-                
-                if (estadoGps.ultima_actualizacion_afip) {
-                    const lastUpdate = new Date(estadoGps.ultima_actualizacion_afip.enviada_at);
-                    html += `<p class="text-xs text-gray-500">📡 Última actualización AFIP: ${lastUpdate.toLocaleString()}</p>`;
-                } else {
-                    html += `<p class="text-xs text-yellow-600">⚠ Sin actualizaciones enviadas a AFIP</p>`;
-                }
-            } else {
-                html += '<p class="text-sm text-gray-500">⭕ Sin coordenadas GPS</p>';
-            }
-            
-            html += '</div></div></div>';
-            statusDiv.innerHTML = html;
-        }
-
-        /**
-         * GPS Automático (funcionalidad básica)
-         */
-        let autoGpsInterval = null;
-
-        function toggleAutoGps() {
-            const btn = document.getElementById('btn-auto-gps');
-            
-            if (autoGpsInterval) {
-                // Detener GPS automático
-                clearInterval(autoGpsInterval);
-                autoGpsInterval = null;
-                
-                if (btn) {
-                    btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293H15"></path></svg> Activar GPS Automático';
-                    btn.classList.remove('bg-red-600', 'hover:bg-red-700');
-                    btn.classList.add('bg-white', 'hover:bg-gray-50', 'border-gray-300', 'text-gray-700');
-                }
-                
-                showNotification('info', 'GPS automático desactivado');
-            } else {
-                // Iniciar GPS automático
-                autoGpsInterval = setInterval(() => {
-                    getCurrentGpsPosition();
-                    // Auto-enviar después de 2 segundos si hay posición
-                    setTimeout(() => {
-                        if (currentGpsPosition && !isGpsUpdating) {
-                            sendGpsToAfip();
-                        }
-                    }, 2000);
-                }, 15 * 60 * 1000); // Cada 15 minutos
-
-                if (btn) {
-                    btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9"></path></svg> Parar GPS Automático';
-                    btn.classList.remove('bg-white', 'hover:bg-gray-50', 'border-gray-300', 'text-gray-700');
-                    btn.classList.add('bg-red-600', 'hover:bg-red-700');
-                }
-                
-                showNotification('success', 'GPS automático activado (cada 15 min)');
-                
-                // Ejecutar una vez inmediatamente
-                getCurrentGpsPosition();
-            }
-        }
-
-        /**
-         * Utilidades
-         */
-        function getCSRFToken() {
-            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-        }
-
-        function showNotification(type, message) {
-            // Sistema simple de notificaciones con alert()
-            // Puedes reemplazar por toast notifications más bonitas
-            const icons = {
-                success: '✅',
-                error: '❌', 
-                warning: '⚠️',
-                info: 'ℹ️'
-            };
-            
-            console.log(`${type.toUpperCase()}: ${message}`);
-            
-            // Por ahora usar alert, después puedes hacer toasts
-            if (type === 'error' || type === 'warning') {
+    showNotification(message, type = 'info') {
+        const icons = {
+            success: '✅',
+            error: '❌',
+            warning: '⚠️',
+            info: 'ℹ️'
+        };
+        
+        console.log(`${type.toUpperCase()}: ${message}`);
+        
+        // Usar alert por simplicidad (se puede reemplazar por toast notifications)
+        if (type === 'error' || type === 'warning') {
+            alert(`${icons[type]} ${message}`);
+        } else if (type === 'success') {
+            // Solo mostrar success importantes
+            if (message.includes('exitosamente')) {
                 alert(`${icons[type]} ${message}`);
-            } else {
-                // Solo mostrar en consola los success/info para no molestar
-                console.log(`${icons[type]} ${message}`);
             }
         }
+    }
+}
 
-        // Limpiar interval al salir
-        window.addEventListener('beforeunload', function() {
-            if (autoGpsInterval) {
-                clearInterval(autoGpsInterval);
+/**
+ * ================================================================================
+ * FUNCIONES GLOBALES ADICIONALES (COMPATIBILIDAD)
+ * ================================================================================
+ */
+
+// Función para Preview XML (llamada desde onclick en HTML)
+async function previewXml() {
+    if (!micDtaManager) {
+        alert('❌ Sistema no inicializado');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/company/simple/webservices/micdta/${micDtaManager.voyageId}/preview-xml`, {
+            method: 'GET',
+            headers: {
+                'X-CSRF-TOKEN': micDtaManager.getCSRFToken(),
+                'Accept': 'application/json'
             }
         });
 
-        </script>
+        if (response.ok) {
+            const data = await response.json();
+            showXmlPreviewModal(data.preview);
+        } else {
+            alert('❌ Error generando preview XML');
+        }
+    } catch (error) {
+        console.error('Error en preview XML:', error);
+        alert('❌ Error de comunicación');
+    }
+}
+
+// Función para validar datos (llamada desde onclick en HTML)
+async function validateData() {
+    if (!micDtaManager) {
+        alert('❌ Sistema no inicializado');
+        return;
+    }
+
+    // Llamar al método de validación de la clase
+    await micDtaManager.validateData();
+    micDtaManager.showNotification('Validación completada', 'info');
+}
+
+// Función global para mostrar historial GPS (llamada desde onclick si existe)
+async function showGpsHistory() {
+    if (!micDtaManager) {
+        alert('❌ Sistema no inicializado');
+        return;
+    }
+
+    // Llamar al método de la clase
+    await micDtaManager.showGpsHistory();
+}
+
+// Funciones para XML Preview Modal
+function showXmlPreviewModal(preview) {
+    const content = document.getElementById('xmlPreviewContent');
+    
+    if (content && preview) {
+        content.innerHTML = `
+            <div class="space-y-4">
+                <div class="border-b border-gray-200 pb-2">
+                    <h4 class="text-sm font-medium text-gray-900">RegistrarTitEnvios XML</h4>
+                    <pre class="mt-2 text-xs bg-gray-100 p-3 rounded overflow-x-auto"><code>${escapeHtml(preview.titenvios_xml || 'XML no disponible')}</code></pre>
+                </div>
+                <div>
+                    <h4 class="text-sm font-medium text-gray-900">RegistrarEnvios XML</h4>
+                    <pre class="mt-2 text-xs bg-gray-100 p-3 rounded overflow-x-auto"><code>${escapeHtml(preview.envios_xml || 'XML no disponible')}</code></pre>
+                </div>
+            </div>
+        `;
+    }
+    
+    const modal = document.getElementById('xmlPreviewModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+}
+
+function closeXmlPreview() {
+    const modal = document.getElementById('xmlPreviewModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+function showControlPoints() {
+    fetch('/company/simple/webservices/micdta/puntos-control', {
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            let info = '📍 Puntos de Control AFIP - Hidrovía Paraná\n\n';
+            data.puntos_control.forEach(punto => {
+                info += `🏛️ ${punto.nombre} (${punto.codigo})\n`;
+                info += `   📍 ${punto.coordenadas.lat.toFixed(4)}, ${punto.coordenadas.lng.toFixed(4)}\n`;
+                info += `   📏 Radio: ${punto.radio_km}km\n\n`;
+            });
+            alert(info);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ Error cargando puntos de control');
+    });
+}
+
+// Funciones auxiliares para compatibilidad
+function toggleDetails() {
+    const detailsList = document.getElementById('detailsList');
+    const toggleText = document.getElementById('toggleDetailsText');
+    
+    if (detailsList && toggleText) {
+        if (detailsList.classList.contains('hidden')) {
+            detailsList.classList.remove('hidden');
+            toggleText.textContent = 'Ocultar detalles';
+        } else {
+            detailsList.classList.add('hidden');
+            toggleText.textContent = 'Mostrar detalles';
+        }
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
+/**
+ * ================================================================================
+ * INICIALIZACIÓN AUTOMÁTICA
+ * ================================================================================
+ */
+
+// Variable global para acceso desde el exterior
+let micDtaManager = null;
+
+// Inicialización cuando el DOM esté listo
+document.addEventListener('DOMContentLoaded', function() {
+    // Obtener voyage ID desde múltiples fuentes (compatibilidad total)
+    let voyageId = null;
+    
+    // Método 1: Desde elemento con data-voyage-id
+    const voyageIdElement = document.querySelector('[data-voyage-id]');
+    if (voyageIdElement) {
+        voyageId = voyageIdElement.dataset.voyageId;
+    }
+    
+    // Método 2: Desde variable global window.voyageId
+    if (!voyageId && window.voyageId) {
+        voyageId = window.voyageId;
+    }
+    
+    // Método 3: Desde variable global voyageId (generada por Blade)
+    if (!voyageId && typeof window !== 'undefined' && window.voyageId !== undefined) {
+        voyageId = window.voyageId;
+    }
+    
+    // Método 4: Intentar extraer de script o variable global definida por Blade
+    if (!voyageId) {
+        // Buscar en scripts inline por patrones como "voyageId = 123"
+        const scripts = document.querySelectorAll('script');
+        for (const script of scripts) {
+            const match = script.textContent.match(/voyageId\s*=\s*(\d+)/);
+            if (match) {
+                voyageId = parseInt(match[1]);
+                break;
+            }
+        }
+    }
+    
+    if (voyageId) {
+        console.log('🎯 Voyage ID encontrado:', voyageId);
+        micDtaManager = new MicDtaFormManager(voyageId);
+        
+        // Exponer globalmente para compatibilidad
+        window.micDtaManager = micDtaManager;
+        
+        // También exponer el voyageId globalmente
+        window.voyageId = voyageId;
+    } else {
+        console.error('⚠️ No se pudo obtener voyage ID. Asegúrese de que esté definido en el HTML o como variable global.');
+    }
+});
+</script>
 
 @endpush
 

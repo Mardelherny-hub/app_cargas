@@ -1469,6 +1469,9 @@ class SimpleManifestController extends Controller
                 return $shipment->current_latitude && $shipment->current_longitude;
             });
 
+            // Verificar si puede actualizar GPS (versión segura sin reflection)
+            $puedeActualizar = $this->puedeActualizarGpsSafe($voyage);
+
             $estadoGps = [
                 'tiene_coordenadas' => $shipmentsConGps->isNotEmpty(),
                 'shipments_con_gps' => $shipmentsConGps->count(),
@@ -1487,7 +1490,7 @@ class SimpleManifestController extends Controller
                         'actualizada_at' => $shipment->position_updated_at?->toISOString(),
                     ];
                 })->values(),
-                'puede_actualizar' => $this->puedeActualizarGps($voyage),
+                'puede_actualizar' => $puedeActualizar,
             ];
 
             return response()->json([
@@ -1498,11 +1501,96 @@ class SimpleManifestController extends Controller
             ]);
 
         } catch (Exception $e) {
+            // Log del error para debugging
+            \Log::error('Error en obtenerEstadoGps', [
+                'voyage_id' => $voyageId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'error' => 'Error obteniendo estado GPS: ' . $e->getMessage(),
-                'voyage_id' => $voyageId,
             ], 500);
+        }
+    }
+
+    /**
+     * Verificar si el voyage puede recibir actualizaciones GPS (versión segura)
+     */
+    private function puedeActualizarGpsSafe(Voyage $voyage): array
+    {
+        try {
+            // Verificar si el voyage tiene MIC/DTA enviado exitosamente
+            $micDtaEnviado = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $voyage->company_id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'sent')
+                ->whereNotNull('external_reference')
+                ->exists();
+
+            if (!$micDtaEnviado) {
+                return [
+                    'puede_actualizar' => false,
+                    'razon' => 'MIC/DTA no enviado o no exitoso'
+                ];
+            }
+
+            // Verificar si el voyage tiene shipments
+            if ($voyage->shipments->isEmpty()) {
+                return [
+                    'puede_actualizar' => false,
+                    'razon' => 'Voyage sin shipments'
+                ];
+            }
+
+            // Verificar límites de actualización diarios (máximo 96 por día = cada 15 min)
+            $actualizacionesHoy = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $voyage->company_id)
+                ->where('webservice_type', 'micdta_position')
+                ->whereDate('created_at', today())
+                ->count();
+
+            if ($actualizacionesHoy >= 96) {
+                return [
+                    'puede_actualizar' => false,
+                    'razon' => 'Límite diario de actualizaciones alcanzado (96/día)'
+                ];
+            }
+
+            // Verificar intervalo mínimo (15 minutos)
+            $ultimaActualizacion = WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('company_id', $voyage->company_id)
+                ->where('webservice_type', 'micdta_position')
+                ->latest('created_at')
+                ->first();
+
+            if ($ultimaActualizacion) {
+                $minutosSinceUltima = now()->diffInMinutes($ultimaActualizacion->created_at);
+                if ($minutosSinceUltima < 15) {
+                    return [
+                        'puede_actualizar' => false,
+                        'razon' => "Debe esperar {$minutosSinceUltima} minutos más (mínimo 15 min entre actualizaciones)"
+                    ];
+                }
+            }
+
+            return [
+                'puede_actualizar' => true,
+                'razon' => 'Voyage listo para actualización GPS'
+            ];
+
+        } catch (Exception $e) {
+            \Log::error('Error en puedeActualizarGpsSafe', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+
+            // En caso de error, permitir actualización pero con advertencia
+            return [
+                'puede_actualizar' => true,
+                'razon' => 'Verificación de estado no disponible - permitiendo actualización'
+            ];
         }
     }
 
