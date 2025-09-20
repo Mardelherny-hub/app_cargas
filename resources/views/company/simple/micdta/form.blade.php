@@ -1408,9 +1408,84 @@ class MicDtaFormManager {
     }
 
     updateValidationStatus(data) {
-        // Implementar actualización de estado de validación
-        console.log('Validación actualizada:', data);
+    console.log('Validación actualizada:', data);
+    
+    // Buscar un contenedor o crear notificación
+    let validationContainer = document.getElementById('validation-status');
+    
+    if (!validationContainer) {
+        // Si no existe, buscar el botón de validar y agregar después
+        const validateButton = document.querySelector('[onclick*="validateData"]');
+        if (validateButton) {
+            validationContainer = document.createElement('div');
+            validationContainer.id = 'validation-status';
+            validationContainer.className = 'mt-4';
+            validateButton.parentNode.insertBefore(validationContainer, validateButton.nextSibling);
+        }
     }
+    
+    if (!validationContainer) {
+        // Fallback: mostrar como notificación
+        this.showValidationAsNotification(data);
+        return;
+    }
+    
+    // Construir HTML del estado de validación
+    let html = '<div class="border rounded-lg p-4 ' + 
+        (data.can_process ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50') + '">';
+    
+    // Estado principal
+    html += '<div class="flex items-center mb-3">';
+    html += '<div class="flex-shrink-0">';
+    if (data.can_process) {
+        html += '<svg class="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>';
+    } else {
+        html += '<svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>';
+    }
+    html += '</div>';
+    html += '<div class="ml-3">';
+    html += '<h3 class="text-sm font-medium ' + (data.can_process ? 'text-green-800' : 'text-yellow-800') + '">';
+    html += data.can_process ? '✅ Voyage válido para envío' : '⚠️ Voyage requiere atención';
+    html += '</h3></div></div>';
+    
+    // Errores (si los hay)
+    if (data.errors && data.errors.length > 0) {
+        html += '<div class="mt-3"><h4 class="text-sm font-medium text-red-800">❌ Errores:</h4>';
+        html += '<ul class="mt-2 text-sm text-red-700 list-disc list-inside">';
+        data.errors.forEach(error => {
+            html += `<li>${error}</li>`;
+        });
+        html += '</ul></div>';
+    }
+    
+    // Warnings (si los hay)
+    if (data.warnings && data.warnings.length > 0) {
+        html += '<div class="mt-3"><h4 class="text-sm font-medium text-yellow-800">⚠️ Advertencias:</h4>';
+        html += '<ul class="mt-2 text-sm text-yellow-700 list-disc list-inside">';
+        data.warnings.forEach(warning => {
+            html += `<li>${warning}</li>`;
+        });
+        html += '</ul></div>';
+    }
+    
+    html += '</div>';
+    validationContainer.innerHTML = html;
+}
+
+showValidationAsNotification(data) {
+    let message = data.can_process ? 
+        '✅ Validación OK - Voyage listo para envío' : 
+        '⚠️ Validación con advertencias';
+    
+    if (data.errors && data.errors.length > 0) {
+        message += `\n❌ Errores: ${data.errors.length}`;
+    }
+    if (data.warnings && data.warnings.length > 0) {
+        message += `\n⚠️ Advertencias: ${data.warnings.length}`;
+    }
+    
+    this.showNotification(message, data.can_process ? 'success' : 'warning');
+}
 
     updateActivityLog(data) {
         if (!this.elements.activityLog || !data.recent_transactions) return;
@@ -1701,6 +1776,18 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('⚠️ No se pudo obtener voyage ID. Asegúrese de que esté definido en el HTML o como variable global.');
     }
 });
+
+// Funciones globales para onclick (PUENTE A LA CLASE)
+function refreshStatus() {
+    if (micDtaManager) micDtaManager.refreshStatus();
+}
+
+function getCurrentGPS() {
+    if (micDtaManager) micDtaManager.getCurrentGpsPosition();
+}
+
+
+
 </script>
 
 @endpush

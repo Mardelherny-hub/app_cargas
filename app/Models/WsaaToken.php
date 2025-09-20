@@ -196,9 +196,19 @@ class WsaaToken extends Model
 
     /**
      * Obtener token válido para empresa+servicio+ambiente
+     * Con auto-cleanup de tokens expirados
      */
     public static function getValidToken(int $companyId, string $serviceName, string $environment): ?self
     {
+        // 1. MARCAR automáticamente como expired los tokens que ya expiraron
+        static::where('company_id', $companyId)
+            ->where('service_name', $serviceName)
+            ->where('environment', $environment)
+            ->where('status', 'active')
+            ->where('expires_at', '<=', now())
+            ->update(['status' => 'expired']);
+        
+        // 2. BUSCAR token válido (active + no expirado)
         return static::where('company_id', $companyId)
             ->where('service_name', $serviceName)
             ->where('environment', $environment)
@@ -208,18 +218,76 @@ class WsaaToken extends Model
     }
 
     /**
-     * Crear nuevo token WSAA
+     * Crear nuevo token WSAA con limpieza agresiva
      */
     public static function createToken(array $tokenData): self
     {
-        // Revocar tokens existentes para la misma combinación
-        static::where('company_id', $tokenData['company_id'])
-            ->where('service_name', $tokenData['service_name'])
-            ->where('environment', $tokenData['environment'])
-            ->where('status', 'active')
-            ->update(['status' => 'revoked']);
-
+        $companyId = $tokenData['company_id'];
+        $serviceName = $tokenData['service_name'];
+        $environment = $tokenData['environment'];
+        
+        // 1. LIMPIEZA AGRESIVA - eliminar tokens viejos según política de retención
+        static::cleanupOldTokens($companyId, $serviceName, $environment);
+        
+        // 2. ELIMINAR token active actual (si existe) - HARD DELETE para evitar constraint violation
+        static::where([
+            'company_id' => $companyId,
+            'service_name' => $serviceName,
+            'environment' => $environment,
+            'status' => 'active'
+        ])->delete();
+        
+        // 3. CREAR nuevo token limpio (sin conflictos de constraint)
         return static::create($tokenData);
+    }
+
+    /**
+     * Limpieza agresiva de tokens antiguos según política de retención
+     * 
+     * POLÍTICA:
+     * - Tokens EXPIRED > 7 días: DELETE
+     * - Tokens REVOKED > 24 horas: DELETE  
+     * - Tokens ERROR > 24 horas: DELETE
+     * - Mantiene solo tokens recientes para debugging
+     */
+    private static function cleanupOldTokens(int $companyId, string $serviceName, string $environment): void
+    {
+        try {
+            $deleted = static::where('company_id', $companyId)
+                ->where('service_name', $serviceName)
+                ->where('environment', $environment)
+                ->where(function($query) {
+                    $query->where(function($q) {
+                        // Tokens expirados > 7 días
+                        $q->where('status', 'expired')
+                        ->where('updated_at', '<', now()->subDays(7));
+                    })->orWhere(function($q) {
+                        // Tokens revocados > 24 horas  
+                        $q->where('status', 'revoked')
+                        ->where('updated_at', '<', now()->subHours(24));
+                    })->orWhere(function($q) {
+                        // Tokens con error > 24 horas
+                        $q->where('status', 'error')
+                        ->where('updated_at', '<', now()->subHours(24));
+                    });
+                })
+                ->delete();
+                
+            if ($deleted > 0) {
+                \Log::info("WSAA Cleanup: {$deleted} tokens antiguos eliminados", [
+                    'company_id' => $companyId,
+                    'service_name' => $serviceName,
+                    'environment' => $environment,
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error en limpieza de tokens WSAA', [
+                'company_id' => $companyId,
+                'service_name' => $serviceName,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

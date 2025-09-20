@@ -5,31 +5,24 @@ namespace App\Services\Simple;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\Voyage;
-use App\Models\Shipment;
 use App\Models\WebserviceTransaction;
 use App\Models\WebserviceResponse;
-use App\Models\WebserviceLog;
-use App\Services\Simple\BaseWebserviceService;
-use App\Services\Webservice\SoapClientService;
 use App\Services\Simple\SimpleXmlGenerator;
+use App\Services\Webservice\SoapClientService;
 use Exception;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 /**
- * ACTUALIZACIÓN DE POSICIÓN GPS MIC/DTA Argentina AFIP - VERSIÓN CORREGIDA
+ * SERVICIO GPS SIMPLE - SIN HERENCIA COMPLEJA
  * 
- * CORREGIDO PARA:
- * - Usar sistema WSAA real (no fallback)
- * - Reutilizar tokens existentes del cache
- * - XML con autenticación AFIP correcta
- * - Mismo servicio wgesregsintia2 que MIC/DTA
+ * Reutiliza la infraestructura WSAA existente del MIC/DTA
+ * pero sin las complicaciones de BaseWebserviceService
  */
-class ArgentinaMicDtaPositionService extends BaseWebserviceService
+class ArgentinaMicDtaPositionService
 {
-    private SoapClientService $soapClient;
-    private SimpleXmlGenerator $xmlGenerator;
+    private Company $company;
+    private User $user;
+    private array $config;
 
     /**
      * Puntos de control AFIP para hidrovía Paraná
@@ -61,294 +54,175 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
         ],
     ];
 
-    protected function getWebserviceConfig(): array
+    public function __construct(Company $company, User $user, array $config = [])
     {
-        return [
+        $this->company = $company;
+        $this->user = $user;
+        $this->config = array_merge([
+            'environment' => 'testing',
             'webservice_type' => 'micdta_position',
-            'country' => 'AR',
-            'environment' => 'testing', // Cambiar a 'production' cuando corresponda
-            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ActualizarPosicion',
-            'timeout_seconds' => 30,
-            'require_certificate' => true,
             'min_update_interval_minutes' => 15,
             'max_daily_updates' => 96,
             'position_tolerance_meters' => 50,
-        ];
-    }
-
-    protected function getWebserviceType(): string
-    {
-        return 'micdta_position';
-    }
-
-    protected function getCountry(): string
-    {
-        return 'AR';
-    }
-
-    protected function getWsdlUrl(): string
-    {
-        // ✅ MISMO WSDL que MIC/DTA - CORRECTO
-        $environment = $this->config['environment'] ?? 'testing';
-        $urls = [
-            'testing' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
-            'production' => 'https://wsaduext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
-        ];
-        return $urls[$environment] ?? $urls['testing'];
-    }
-
-    public function __construct(Company $company, User $user, array $config = [])
-    {
-        parent::__construct($company, $user, $config);
-        
-        // ✅ CORRECTO: Reutilizar infraestructura WSAA existente
-        $this->soapClient = new SoapClientService($company);
-        $this->xmlGenerator = new SimpleXmlGenerator($company, $this->config);
+        ], $config);
     }
 
     /**
-     * ✅ MÉTODO PRINCIPAL - SIN CAMBIOS (ya está correcto)
-     */
-    public function actualizarPosicion(Voyage $voyage, float $latitude, float $longitude, array $options = []): array
-    {
-        $this->logOperation('info', 'Iniciando actualización de posición GPS', [
+ * Actualizar posición GPS en AFIP - SIN VALIDACIONES EXCESIVAS
+ */
+public function actualizarPosicion(Voyage $voyage, float $latitude, float $longitude, array $options = []): array
+{
+    try {
+        $this->logInfo('Iniciando actualización GPS', [
             'voyage_id' => $voyage->id,
-            'voyage_number' => $voyage->voyage_number,
-            'latitude' => $latitude,
-            'longitude' => $longitude,
-            'company_id' => $this->company->id,
-            'user_id' => $this->user->id,
+            'coordinates' => ['lat' => $latitude, 'lng' => $longitude]
         ]);
 
-        try {
-            // Validar que el voyage tiene MIC/DTA enviado exitosamente
-            $validacion = $this->validarVoyageParaActualizacion($voyage);
-            if (!$validacion['puede_actualizar']) {
-                return [
-                    'success' => false,
-                    'error' => $validacion['error'],
-                    'voyage_number' => $voyage->voyage_number,
-                ];
-            }
-
-            // Validar coordenadas GPS
-            if (!$this->validarCoordenadas($latitude, $longitude)) {
-                return [
-                    'success' => false,
-                    'error' => 'Coordenadas GPS inválidas',
-                    'latitude' => $latitude,
-                    'longitude' => $longitude,
-                ];
-            }
-
-            // Verificar si es necesario actualizar (evitar spam)
-            $necesitaActualizacion = $this->necesitaActualizacion($voyage, $latitude, $longitude);
-            if (!$necesitaActualizacion['debe_actualizar']) {
-                return [
-                    'success' => true,
-                    'message' => $necesitaActualizacion['razon'],
-                    'skipped' => true,
-                    'voyage_number' => $voyage->voyage_number,
-                ];
-            }
-
-            // Obtener datos del MIC/DTA activo
-            $micDtaData = $this->obtenerDatosMicDta($voyage);
-
-            // Crear transacción de seguimiento
-            $transaction = $this->crearTransaccionPosicion($voyage, $latitude, $longitude, $options);
-
-            // ✅ CORRECCIÓN CRÍTICA: Usar SimpleXmlGenerator para XML con WSAA real
-            $xmlRequest = $this->generarXmlActualizarPosicionReal($micDtaData, $latitude, $longitude);
-
-            // Enviar al webservice AFIP
-            $soapResult = $this->enviarSoapActualizarPosicion($xmlRequest, $transaction);
-
-            if ($soapResult['success']) {
-                $this->procesarRespuestaExitosa($transaction, $voyage, $latitude, $longitude, $soapResult);
-                
-                return [
-                    'success' => true,
-                    'message' => 'Posición actualizada exitosamente en AFIP',
-                    'voyage_number' => $voyage->voyage_number,
-                    'transaction_id' => $transaction->id,
-                    'coordinates' => [
-                        'lat' => $latitude,
-                        'lng' => $longitude,
-                    ],
-                    'control_point_detected' => $this->detectarPuntoControl($latitude, $longitude),
-                    'distance_moved_meters' => $necesitaActualizacion['distance_moved'],
-                    'time_since_last_update' => $necesitaActualizacion['time_since_last'],
-                ];
-            } else {
-                $this->procesarRespuestaError($transaction, $soapResult);
-                
-                return [
-                    'success' => false,
-                    'error' => $soapResult['error_message'] ?? 'Error desconocido en actualización AFIP',
-                    'voyage_number' => $voyage->voyage_number,
-                    'transaction_id' => $transaction->id,
-                ];
-            }
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error en actualización de posición', [
-                'voyage_id' => $voyage->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
+        // 1. BUSCAR cualquier MIC/DTA (sin validaciones estrictas)
+        $micDtaRef = $this->buscarCualquierMicDta($voyage);
+        if (!$micDtaRef) {
+            // Solo falla si NO HAY NINGÚN MIC/DTA, pero sin tanto texto
             return [
                 'success' => false,
-                'error' => 'Error interno: ' . $e->getMessage(),
+                'error' => 'No se encontró ningún MIC/DTA para este voyage',
                 'voyage_number' => $voyage->voyage_number,
             ];
         }
+
+        // 2. Validar coordenadas básicas
+        if (!$this->validarCoordenadas($latitude, $longitude)) {
+            return [
+                'success' => false,
+                'error' => 'Coordenadas GPS inválidas',
+                'voyage_number' => $voyage->voyage_number,
+            ];
+        }
+
+        // 3. DIRECTO A AFIP - sin verificar intervalo ni distancia
+        $transaction = $this->crearTransaccion($voyage, $latitude, $longitude, $micDtaRef, $options);
+        $xml = $this->generarXmlGps($micDtaRef, $latitude, $longitude);
+        $result = $this->enviarSoap($xml, $transaction);
+
+        // 4. QUE AFIP RESPONDA LO QUE QUIERA
+        return $this->procesarResultado($result, $transaction, $voyage, $latitude, $longitude, ['distance_moved' => 0, 'time_since_last' => 0]);
+
+    } catch (Exception $e) {
+        $this->logError('Error en actualización GPS', [
+            'voyage_id' => $voyage->id,
+            'error' => $e->getMessage()
+        ]);
+
+        return [
+            'success' => false,
+            'error' => 'Error interno: ' . $e->getMessage(),
+            'voyage_number' => $voyage->voyage_number,
+        ];
     }
+}
 
-    /**
-     * ✅ NUEVO MÉTODO - GENERA XML CON WSAA REAL
-     * Reemplaza el método fallback anterior
-     */
-    private function generarXmlActualizarPosicionReal(array $micDtaData, float $lat, float $lng): string
-    {
-        try {
-            $this->logOperation('info', 'Generando XML ActualizarPosicion con WSAA real', [
-                'external_reference' => $micDtaData['external_reference'],
-                'coordinates' => ['lat' => $lat, 'lng' => $lng],
+private function buscarCualquierMicDta(Voyage $voyage): ?string
+{
+    // DEBUG: Log de la búsqueda
+    Log::info("DEBUG GPS - Iniciando búsqueda MIC/DTA", [
+        'voyage_id' => $voyage->id,
+        'company_id' => $this->company->id,
+    ]);
+
+    // 1. Buscar DIRECTAMENTE en WebserviceResponse sin relaciones
+    $responses = WebserviceResponse::where('reference_number', '!=', '')
+        ->whereNotNull('reference_number')
+        ->where('response_type', 'success')
+        ->get();
+
+    Log::info("DEBUG GPS - Todas las WebserviceResponse con reference_number", [
+        'total_found' => $responses->count(),
+        'responses' => $responses->map(function($r) {
+            return [
+                'id' => $r->id,
+                'transaction_id' => $r->transaction_id,
+                'reference_number' => $r->reference_number,
+                'response_type' => $r->response_type,
+            ];
+        })->toArray()
+    ]);
+
+    // 2. Buscar transacciones del voyage 11
+    $transactions = WebserviceTransaction::where('voyage_id', $voyage->id)
+        ->where('webservice_type', 'micdta')
+        ->get();
+
+    Log::info("DEBUG GPS - Transacciones MIC/DTA del voyage", [
+        'voyage_id' => $voyage->id,
+        'total_transactions' => $transactions->count(),
+        'transactions' => $transactions->map(function($t) {
+            return [
+                'id' => $t->id,
+                'status' => $t->status,
+                'external_reference' => $t->external_reference,
+                'company_id' => $t->company_id,
+            ];
+        })->toArray()
+    ]);
+
+    // 3. Buscar si hay relación entre alguna response y alguna transaction del voyage
+    foreach ($transactions as $transaction) {
+        $response = WebserviceResponse::where('transaction_id', $transaction->id)
+            ->whereNotNull('reference_number')
+            ->where('reference_number', '!=', '')
+            ->first();
+            
+        if ($response) {
+            Log::info("DEBUG GPS - ¡ENCONTRADA! Relación transaction->response", [
+                'transaction_id' => $transaction->id,
+                'response_id' => $response->id,
+                'reference_number' => $response->reference_number,
             ]);
-
-            // ✅ USAR SimpleXmlGenerator que tiene sistema WSAA completo
-            $xmlContent = $this->xmlGenerator->generateActualizarPosicionXml([
-                'external_reference' => $micDtaData['external_reference'],
-                'latitude' => $lat,
-                'longitude' => $lng,
-                'timestamp' => now()->toISOString(),
-                'observations' => 'Actualización GPS automática - Sistema ' . config('app.name'),
-                'voyage_data' => [
-                    'voyage_number' => $micDtaData['voyage_number'] ?? null,
-                    'vessel_name' => $micDtaData['vessel_name'] ?? null,
-                ],
-            ]);
-
-            $this->logOperation('info', 'XML ActualizarPosicion generado correctamente', [
-                'xml_size_bytes' => strlen($xmlContent),
-                'has_wsaa_auth' => str_contains($xmlContent, '<Auth>'),
-            ]);
-
-            return $xmlContent;
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error generando XML ActualizarPosicion', [
-                'error' => $e->getMessage(),
-                'external_reference' => $micDtaData['external_reference'] ?? null,
-            ]);
-
-            // En caso de error, usar el método fallback (pero esto no debería ocurrir)
-            return $this->generarXmlFallback($micDtaData, $lat, $lng);
+            
+            return $response->reference_number;
         }
     }
 
-    /**
-     * ✅ MÉTODO FALLBACK MEJORADO - Solo para emergencias
-     */
-    private function generarXmlFallback(array $micDtaData, float $lat, float $lng): string
-    {
-        $this->logOperation('warning', 'Usando XML fallback para ActualizarPosicion - verificar SimpleXmlGenerator');
-        
-        // Intentar obtener tokens WSAA directamente
-        try {
-            $wsaaToken = \App\Models\WsaaToken::getValidToken(
-                $this->company->id, 
-                'wgesregsintia2', 
-                $this->config['environment'] ?? 'testing'
-            );
+    Log::error("DEBUG GPS - NO se encontró ninguna referencia válida");
+    // Agregar ANTES del return null:
 
-            if ($wsaaToken) {
-                return $this->generarXmlConTokensReales($micDtaData, $lat, $lng, $wsaaToken);
-            }
-        } catch (Exception $e) {
-            $this->logOperation('error', 'No se pudieron obtener tokens WSAA para fallback');
-        }
-
-        // Último recurso: XML básico (probablemente falle en AFIP)
-        return '<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wges="Ar.Gob.Afip.Dga.wgesregsintia2">
-    <soap:Header>
-        <wges:AuthSoapHd>
-            <wges:ticket>FALLBACK_MODE</wges:ticket>
-            <wges:sign>FALLBACK_MODE</wges:sign>
-            <wges:cuitRepresentado>' . $this->company->tax_id . '</wges:cuitRepresentado>
-        </wges:AuthSoapHd>
-    </soap:Header>
-    <soap:Body>
-        <wges:ActualizarPosicion>
-            <wges:referenciaMicDta>' . htmlspecialchars($micDtaData['external_reference']) . '</wges:referenciaMicDta>
-            <wges:latitud>' . number_format($lat, 8, '.', '') . '</wges:latitud>
-            <wges:longitud>' . number_format($lng, 8, '.', '') . '</wges:longitud>
-            <wges:fechaHoraPosicion>' . now()->toISOString() . '</wges:fechaHoraPosicion>
-            <wges:observaciones>Actualización GPS - Modo Fallback</wges:observaciones>
-        </wges:ActualizarPosicion>
-    </soap:Body>
-</soap:Envelope>';
-    }
-
-    /**
-     * ✅ NUEVO - Generar XML con tokens WSAA reales para fallback
-     */
-    private function generarXmlConTokensReales(array $micDtaData, float $lat, float $lng, $wsaaToken): string
-    {
-        $wsaaToken->markAsUsed();
-        
-        return '<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wges="Ar.Gob.Afip.Dga.wgesregsintia2">
-    <soap:Header>
-        <Auth>
-            <Token>' . $wsaaToken->token . '</Token>
-            <Sign>' . $wsaaToken->sign . '</Sign>
-            <Cuit>' . $this->company->tax_id . '</Cuit>
-        </Auth>
-    </soap:Header>
-    <soap:Body>
-        <wges:ActualizarPosicion>
-            <wges:referenciaMicDta>' . htmlspecialchars($micDtaData['external_reference']) . '</wges:referenciaMicDta>
-            <wges:latitud>' . number_format($lat, 8, '.', '') . '</wges:latitud>
-            <wges:longitud>' . number_format($lng, 8, '.', '') . '</wges:longitud>
-            <wges:fechaHoraPosicion>' . now()->toISOString() . '</wges:fechaHoraPosicion>
-            <wges:observaciones>Actualización GPS automática - Sistema ' . config('app.name') . '</wges:observaciones>
-        </wges:ActualizarPosicion>
-    </soap:Body>
-</soap:Envelope>';
-    }
-
-    /**
-     * ✅ RESTO DE MÉTODOS SIN CAMBIOS - Ya están correctos
-     */
+// 4. Verificar a qué voyage pertenece la response exitosa "SIM_6_280687"
+$responseWithRef = WebserviceResponse::where('reference_number', 'SIM_6_280687')->first();
+if ($responseWithRef) {
+    $relatedTransaction = WebserviceTransaction::find($responseWithRef->transaction_id);
     
-    private function validarVoyageParaActualizacion(Voyage $voyage): array
+    Log::info("DEBUG GPS - Response SIM_6_280687 pertenece a:", [
+        'response_id' => $responseWithRef->id,
+        'transaction_id' => $responseWithRef->transaction_id,
+        'transaction_voyage_id' => $relatedTransaction?->voyage_id,
+        'transaction_company_id' => $relatedTransaction?->company_id,
+        'transaction_status' => $relatedTransaction?->status,
+        'current_voyage_id' => $voyage->id,
+    ]);
+}
+
+return null;
+    return null;
+}
+    /**
+     * Obtener referencia MIC/DTA válida
+     */
+    private function obtenerReferenciaValida(Voyage $voyage): ?string
     {
-        // Verificar que tiene MIC/DTA enviado exitosamente
-        $micDtaTransaction = WebserviceTransaction::where('voyage_id', $voyage->id)
+        $transaction = WebserviceTransaction::where('voyage_id', $voyage->id)
             ->where('company_id', $this->company->id)
             ->where('webservice_type', 'micdta')
             ->where('status', 'sent')
             ->whereNotNull('external_reference')
+            ->where('external_reference', '!=', '')
             ->latest('sent_at')
             ->first();
 
-        if (!$micDtaTransaction) {
-            return [
-                'puede_actualizar' => false,
-                'error' => 'El voyage debe tener MIC/DTA enviado exitosamente antes de actualizar posición GPS',
-            ];
-        }
-
-        return [
-            'puede_actualizar' => true,
-            'micdta_transaction' => $micDtaTransaction,
-        ];
+        return $transaction?->external_reference;
     }
 
+    /**
+     * Validar coordenadas GPS
+     */
     private function validarCoordenadas(float $lat, float $lng): bool
     {
         // Validación básica
@@ -356,21 +230,21 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
             return false;
         }
 
-        // Validación hidrovía Paraná (aproximada)
+        // Validación hidrovía Paraná (aproximada) - solo warning
         if ($lat < -35 || $lat > -20 || $lng < -62 || $lng > -54) {
-            $this->logOperation('warning', 'Coordenadas fuera del rango típico de hidrovía Paraná', [
-                'lat' => $lat,
-                'lng' => $lng,
+            $this->logInfo('Coordenadas fuera del rango típico de hidrovía Paraná', [
+                'lat' => $lat, 'lng' => $lng
             ]);
-            // No rechazar, solo advertir
         }
 
         return true;
     }
 
+    /**
+     * Verificar si necesita actualización
+     */
     private function necesitaActualizacion(Voyage $voyage, float $lat, float $lng): array
     {
-        // Verificar última actualización
         $ultimaActualizacion = WebserviceTransaction::where('voyage_id', $voyage->id)
             ->where('company_id', $this->company->id)
             ->where('webservice_type', 'micdta_position')
@@ -400,13 +274,13 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
             ];
         }
 
-        // Verificar distancia mínima si hay coordenadas previas
+        // Verificar distancia mínima
         if (isset($ultimaActualizacion->additional_metadata['coordinates'])) {
             $coordsPrevias = $ultimaActualizacion->additional_metadata['coordinates'];
             $distanciaMetros = $this->calcularDistanciaHaversine(
                 $coordsPrevias['lat'], $coordsPrevias['lng'],
                 $lat, $lng
-            ) * 1000; // Convertir a metros
+            ) * 1000;
 
             if ($distanciaMetros < $this->config['position_tolerance_meters']) {
                 return [
@@ -416,39 +290,27 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
                     'time_since_last' => $minutosDesdeUltima,
                 ];
             }
+
+            return [
+                'debe_actualizar' => true,
+                'razon' => 'Actualización válida',
+                'distance_moved' => $distanciaMetros,
+                'time_since_last' => $minutosDesdeUltima,
+            ];
         }
 
         return [
             'debe_actualizar' => true,
             'razon' => 'Actualización válida',
-            'distance_moved' => $distanciaMetros ?? 0,
+            'distance_moved' => 0,
             'time_since_last' => $minutosDesdeUltima,
         ];
     }
 
-    private function obtenerDatosMicDta(Voyage $voyage): array
-    {
-        $transaction = WebserviceTransaction::where('voyage_id', $voyage->id)
-            ->where('company_id', $this->company->id)
-            ->where('webservice_type', 'micdta')
-            ->where('status', 'sent')
-            ->whereNotNull('external_reference')
-            ->latest('sent_at')
-            ->first();
-
-        if (!$transaction) {
-            throw new Exception("No se encontró transacción MIC/DTA exitosa para el voyage");
-        }
-
-        return [
-            'external_reference' => $transaction->external_reference,
-            'voyage_number' => $voyage->voyage_number,
-            'vessel_name' => $voyage->leadVessel->name ?? null,
-            'transaction_id' => $transaction->id,
-        ];
-    }
-
-    private function crearTransaccionPosicion(Voyage $voyage, float $lat, float $lng, array $options): WebserviceTransaction
+    /**
+     * Crear transacción
+     */
+    private function crearTransaccion(Voyage $voyage, float $lat, float $lng, string $micDtaRef, array $options): WebserviceTransaction
     {
         return WebserviceTransaction::create([
             'company_id' => $this->company->id,
@@ -459,164 +321,127 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
             'country' => 'AR',
             'status' => 'pending',
             'method_name' => 'ActualizarPosicion',
-            'soap_action' => $this->config['soap_action'],
-            'webservice_url' => $this->getWsdlUrl(),
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ActualizarPosicion',
+            'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
             'environment' => $this->config['environment'],
             'additional_metadata' => [
-                'coordinates' => [
-                    'lat' => $lat,
-                    'lng' => $lng,
-                ],
-                'position_update_type' => 'gps',
+                'coordinates' => ['lat' => $lat, 'lng' => $lng],
+                'micdta_reference' => $micDtaRef,
+                'source' => $options['source'] ?? 'manual',
                 'control_point_detected' => $this->detectarPuntoControl($lat, $lng),
-                'update_source' => $options['source'] ?? 'manual',
             ],
         ]);
     }
 
-    private function enviarSoapActualizarPosicion(string $xmlRequest, WebserviceTransaction $transaction): array
+    /**
+     * Generar XML GPS (reutilizando SimpleXmlGenerator)
+     */
+    private function generarXmlGps(string $micDtaRef, float $lat, float $lng): string
     {
-        $startTime = microtime(true);
+        $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
         
-        try {
-            $this->logOperation('info', 'Iniciando envío ActualizarPosicion SOAP AFIP', [
-                'transaction_id' => $transaction->id,
-                'xml_size_kb' => round(strlen($xmlRequest) / 1024, 2),
-                'webservice_url' => $this->getWsdlUrl(),
-            ]);
+        return $xmlGenerator->generateActualizarPosicionXml([
+            'external_reference' => $micDtaRef,
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'timestamp' => now()->toISOString(),
+            'observations' => 'Actualización GPS automática - Sistema Simple'
+        ]);
+    }
 
+    /**
+     * Enviar SOAP
+     */
+    private function enviarSoap(string $xml, WebserviceTransaction $transaction): array
+    {
+        try {
+            $soapClient = new SoapClientService($this->company);
+            
             $transaction->update([
                 'status' => 'sending',
                 'sent_at' => now(),
-                'request_xml' => $xmlRequest,
+                'request_xml' => $xml
             ]);
 
-            // ✅ USAR SoapClientService real
-            $soapResult = $this->soapClient->sendRequest($transaction, 'ActualizarPosicion', [
-                'xmlParam' => $xmlRequest
+            $result = $soapClient->sendRequest($transaction, 'ActualizarPosicion', [
+                'xmlParam' => $xml
             ]);
-
-            $endTime = microtime(true);
-            $responseTimeMs = round(($endTime - $startTime) * 1000);
 
             $transaction->update([
-                'status' => 'sent',
                 'response_at' => now(),
-                'response_time_ms' => $responseTimeMs,
-                'response_xml' => $soapResult['response_xml'] ?? null,
+                'response_xml' => $result['response_xml'] ?? null
             ]);
 
-            if (isset($soapResult['success']) && $soapResult['success']) {
-                $this->logOperation('info', 'Respuesta AFIP ActualizarPosicion exitosa', [
-                    'transaction_id' => $transaction->id,
-                    'response_time_ms' => $responseTimeMs,
-                    'afip_reference' => $soapResult['afip_reference'] ?? null,
-                ]);
-
-                return [
-                    'success' => true,
-                    'response_code' => $soapResult['response_code'] ?? '200',
-                    'response_message' => $soapResult['response_message'] ?? 'Posición actualizada exitosamente',
-                    'afip_reference' => $soapResult['afip_reference'] ?? 'GPS_' . time(),
-                    'response_time_ms' => $responseTimeMs,
-                ];
-            } else {
-                $errorMsg = $soapResult['error_message'] ?? 'Error desconocido en respuesta AFIP';
-                
-                $this->logOperation('error', 'Error en respuesta AFIP ActualizarPosicion', [
-                    'transaction_id' => $transaction->id,
-                    'error_message' => $errorMsg,
-                    'soap_result' => $soapResult,
-                ]);
-
-                return [
-                    'success' => false,
-                    'error_code' => $soapResult['error_code'] ?? '500',
-                    'error_message' => $errorMsg,
-                    'response_time_ms' => $responseTimeMs,
-                ];
-            }
+            return $result;
 
         } catch (Exception $e) {
-            $endTime = microtime(true);
-            $responseTimeMs = round(($endTime - $startTime) * 1000);
-            
-            $this->logOperation('error', 'Excepción en envío ActualizarPosicion', [
-                'transaction_id' => $transaction->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'response_time_ms' => $responseTimeMs,
-            ]);
-
             $transaction->update([
                 'status' => 'error',
-                'error_count' => ($transaction->error_count ?? 0) + 1,
-                'error_message' => $e->getMessage(),
-                'response_time_ms' => $responseTimeMs,
+                'error_message' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Procesar resultado
+     */
+    private function procesarResultado(array $result, WebserviceTransaction $transaction, Voyage $voyage, float $lat, float $lng, array $updateInfo): array
+    {
+        if ($result['success'] ?? false) {
+            $transaction->update([
+                'status' => 'sent',
+                'completed_at' => now()
+            ]);
+
+            // Crear respuesta exitosa
+            WebserviceResponse::create([
+                'webservice_transaction_id' => $transaction->id,
+                'response_code' => '200',
+                'response_message' => 'Posición actualizada exitosamente',
+                'response_data' => $result,
+                'is_success' => true,
+                'processed_at' => now(),
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Posición GPS actualizada exitosamente en AFIP',
+                'voyage_number' => $voyage->voyage_number,
+                'transaction_id' => $transaction->id,
+                'coordinates' => ['lat' => $lat, 'lng' => $lng],
+                'control_point_detected' => $this->detectarPuntoControl($lat, $lng),
+                'distance_moved_meters' => $updateInfo['distance_moved'],
+                'time_since_last_update' => $updateInfo['time_since_last'],
+            ];
+        } else {
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $result['error_message'] ?? 'Error desconocido'
+            ]);
+
+            // Crear respuesta de error
+            WebserviceResponse::create([
+                'webservice_transaction_id' => $transaction->id,
+                'response_code' => '500',
+                'response_message' => $result['error_message'] ?? 'Error en AFIP',
+                'response_data' => $result,
+                'is_success' => false,
+                'processed_at' => now(),
             ]);
 
             return [
                 'success' => false,
-                'error_code' => '500',
-                'error_message' => 'Error de comunicación SOAP: ' . $e->getMessage(),
-                'response_time_ms' => $responseTimeMs,
+                'error' => $result['error_message'] ?? 'Error en comunicación con AFIP',
+                'voyage_number' => $voyage->voyage_number,
+                'transaction_id' => $transaction->id,
             ];
         }
     }
 
-    // Resto de métodos auxiliares (sin cambios)
-    private function procesarRespuestaExitosa(WebserviceTransaction $transaction, Voyage $voyage, float $lat, float $lng, array $soapResult): void
-    {
-        $transaction->update([
-            'status' => 'sent',
-            'completed_at' => now(),
-            'external_reference' => $soapResult['afip_reference'] ?? null,
-            'response_code' => $soapResult['response_code'],
-            'response_message' => $soapResult['response_message'],
-        ]);
-
-        $voyage->shipments()->update([
-            'current_latitude' => $lat,
-            'current_longitude' => $lng,
-            'position_updated_at' => now(),
-        ]);
-
-        WebserviceResponse::create([
-            'webservice_transaction_id' => $transaction->id,
-            'response_code' => $soapResult['response_code'],
-            'response_message' => $soapResult['response_message'],
-            'response_data' => $soapResult,
-            'is_success' => true,
-            'processed_at' => now(),
-        ]);
-
-        $this->logOperation('info', 'Posición GPS actualizada exitosamente', [
-            'transaction_id' => $transaction->id,
-            'voyage_id' => $voyage->id,
-            'coordinates' => ['lat' => $lat, 'lng' => $lng],
-            'afip_reference' => $soapResult['afip_reference'],
-        ]);
-    }
-
-    private function procesarRespuestaError(WebserviceTransaction $transaction, array $soapResult): void
-    {
-        $transaction->update([
-            'status' => 'error',
-            'completed_at' => now(),
-            'error_count' => ($transaction->error_count ?? 0) + 1,
-            'error_message' => $soapResult['error_message'] ?? 'Error desconocido',
-        ]);
-
-        WebserviceResponse::create([
-            'webservice_transaction_id' => $transaction->id,
-            'response_code' => $soapResult['error_code'] ?? '500',
-            'response_message' => $soapResult['error_message'] ?? 'Error desconocido',
-            'response_data' => $soapResult,
-            'is_success' => false,
-            'processed_at' => now(),
-        ]);
-    }
-
+    /**
+     * Detectar punto de control AFIP
+     */
     private function detectarPuntoControl(float $lat, float $lng): ?array
     {
         foreach (self::CONTROL_POINTS as $codigo => $punto) {
@@ -633,14 +458,15 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
                 ];
             }
         }
-
         return null;
     }
 
+    /**
+     * Calcular distancia Haversine
+     */
     private function calcularDistanciaHaversine(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
         $radioTierra = 6371; // km
-
         $dLat = deg2rad($lat2 - $lat1);
         $dLng = deg2rad($lng2 - $lng1);
 
@@ -649,7 +475,25 @@ class ArgentinaMicDtaPositionService extends BaseWebserviceService
              sin($dLng/2) * sin($dLng/2);
 
         $c = 2 * atan2(sqrt($a), sqrt(1-$a));
-
         return $radioTierra * $c;
+    }
+
+    /**
+     * Logging helpers
+     */
+    private function logInfo(string $message, array $context = []): void
+    {
+        Log::info("[GPS Position Service] {$message}", array_merge($context, [
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+        ]));
+    }
+
+    private function logError(string $message, array $context = []): void
+    {
+        Log::error("[GPS Position Service] {$message}", array_merge($context, [
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+        ]));
     }
 }

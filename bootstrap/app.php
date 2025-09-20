@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Console\Scheduling\Schedule; 
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -27,4 +28,13 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
+    })
+    ->withSchedule(function (Schedule $schedule) {
+        // ✅ AGREGAR ESTA SECCIÓN COMPLETA:
+        // Limpiar tokens WSAA antiguos cada 6 horas
+        $schedule->command('wsaa:cleanup')
+                 ->everySixHours()
+                 ->withoutOverlapping()
+                 ->runInBackground()
+                 ->appendOutputTo(storage_path('logs/wsaa-cleanup.log'));
     })->create();

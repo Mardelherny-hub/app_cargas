@@ -242,7 +242,7 @@
                                             @if(is_bool($value))
                                                 {{ $value ? 'Sí' : 'No' }}
                                             @elseif(is_array($value))
-                                                {{ implode(', ', $value) }}
+                                                {{ json_encode($value) }}
                                             @else
                                                 {{ $value }}
                                             @endif

@@ -1252,8 +1252,119 @@ public function isTestingConfiguration(string $country, array $data): bool
         ];
     }
 
+
+    /**
+     * Obtener webservices disponibles de Argentina según roles de empresa
+     */
+    public function getArgentinaWebservices(): array
+    {
+        $webservices = [];
+        $roles = $this->company_roles ?? [];
+
+        // Verificar que tenga rol ATA CBC para webservices Argentina
+        if (!in_array('ATA CBC', $roles)) {
+            return [];
+        }
+
+        // Webservices básicos disponibles para ATA CBC
+        $webservices[] = 'anticipada';  // Información Anticipada
+        $webservices[] = 'micdta';     // MIC/DTA
+
+        // Webservices adicionales según roles específicos
+        if (in_array('Desconsolidado', $roles)) {
+            $webservices[] = 'desconsolidado';
+        }
+
+        if (in_array('Transbordo', $roles)) {
+            $webservices[] = 'transbordo';
+        }
+
+        return $webservices;
+    }
+
+    /**
+     * Obtener webservices disponibles de Paraguay según roles de empresa
+     */
+    public function getParaguayWebservices(): array
+    {
+        $webservices = [];
+        $roles = $this->company_roles ?? [];
+
+        // Verificar que tenga rol Cargas para webservices Paraguay
+        if (!in_array('Cargas', $roles)) {
+            return [];
+        }
+
+        // Webservices básicos disponibles para Cargas
+        $webservices[] = 'manifiestos';  // Manifiestos de Carga
+        $webservices[] = 'consultas';    // Consultas de Estado
+
+        // Webservices adicionales según configuración
+        if ($this->getParaguayConfig()['courier_authorized'] ?? false) {
+            $webservices[] = 'courier';  // Servicios de Courier
+        }
+
+        return $webservices;
+    }
    
 
-  
+    /**
+     * Obtener estado del certificado digital de la empresa
+     */
+    private function getCertificateStatus(Company $company): array
+    {
+        $status = [
+            'has_certificate' => false,
+            'expired' => false,
+            'expires_soon' => false,
+            'valid' => false,
+            'expires_at' => null,
+            'expires_in_days' => null,
+            'status_text' => 'Sin certificado',
+            'status_class' => 'bg-gray-100 text-gray-800',
+        ];
+
+        // Verificar si tiene certificado
+        if (empty($company->certificate_path)) {
+            return $status;
+        }
+
+        $status['has_certificate'] = true;
+
+        // Verificar si tiene fecha de expiración
+        if (empty($company->certificate_expires_at)) {
+            $status['status_text'] = 'Certificado sin fecha de expiración';
+            $status['status_class'] = 'bg-yellow-100 text-yellow-800';
+            return $status;
+        }
+
+        $expiresAt = \Carbon\Carbon::parse($company->certificate_expires_at);
+        $now = now();
+        $daysUntilExpiry = $now->diffInDays($expiresAt, false);
+
+        $status['expires_at'] = $expiresAt;
+        $status['expires_in_days'] = $daysUntilExpiry;
+
+        // Determinar estado según fecha
+        if ($daysUntilExpiry < 0) {
+            // Expirado
+            $status['expired'] = true;
+            $status['status_text'] = 'Expirado hace ' . abs($daysUntilExpiry) . ' días';
+            $status['status_class'] = 'bg-red-100 text-red-800';
+        } elseif ($daysUntilExpiry <= 30) {
+            // Expira pronto (30 días o menos)
+            $status['expires_soon'] = true;
+            $status['status_text'] = 'Expira en ' . $daysUntilExpiry . ' días';
+            $status['status_class'] = 'bg-yellow-100 text-yellow-800';
+        } else {
+            // Válido
+            $status['valid'] = true;
+            $status['status_text'] = 'Válido (' . $daysUntilExpiry . ' días restantes)';
+            $status['status_class'] = 'bg-green-100 text-green-800';
+        }
+
+        return $status;
+    }
+
 
 }

@@ -132,37 +132,67 @@ class Edit extends Component
     // Campos originales para detectar cambios
     protected array $originalValues = [];
 
-    public function mount(Port $port)
-    {
-        $this->port = $port->load('country');
+    public function mount($portId = null)
+{
+    if ($portId) {
+        // Cargar el puerto desde la base de datos
+        $this->port = Port::with('country')->findOrFail($portId);
         
-        // Cargar datos del puerto en las propiedades
-        $this->loadPortData();
+        // Asignar valores a las propiedades del componente
+        $this->code = $this->port->code;
+        $this->name = $this->port->name;
+        $this->short_name = $this->port->short_name;
+        $this->local_name = $this->port->local_name;
+        $this->country_id = $this->port->country_id;
+        $this->city = $this->port->city;
+        $this->province_state = $this->port->province_state;
+        $this->address = $this->port->address;
+        $this->postal_code = $this->port->postal_code;
+        $this->latitude = $this->port->latitude;
+        $this->longitude = $this->port->longitude;
+        $this->water_depth = $this->port->water_depth;
+        $this->port_type = $this->port->port_type;
+        $this->port_category = $this->port->port_category;
+        $this->handles_containers = $this->port->handles_containers;
+        $this->handles_bulk_cargo = $this->port->handles_bulk_cargo;
+        $this->handles_general_cargo = $this->port->handles_general_cargo;
+        $this->handles_passengers = $this->port->handles_passengers;
+        $this->handles_dangerous_goods = $this->port->handles_dangerous_goods;
+        $this->has_customs_office = $this->port->has_customs_office;
+        $this->max_vessel_length = $this->port->max_vessel_length;
+        $this->max_draft = $this->port->max_draft;
+        $this->berths_count = $this->port->berths_count;
+        $this->storage_area = $this->port->storage_area;
+        $this->has_crane = $this->port->has_crane;
+        $this->has_warehouse = $this->port->has_warehouse;
+        $this->webservice_code = $this->port->webservice_code;
+        $this->supports_anticipada = $this->port->supports_anticipada;
+        $this->supports_micdta = $this->port->supports_micdta;
+        $this->supports_manifest = $this->port->supports_manifest;
+        $this->phone = $this->port->phone;
+        $this->email = $this->port->email;
+        $this->website = $this->port->website;
+        $this->vhf_channel = $this->port->vhf_channel;
+        $this->port_authority = $this->port->port_authority;
+        $this->timezone = $this->port->timezone;
+        $this->active = $this->port->active;
+        $this->accepts_new_vessels = $this->port->accepts_new_vessels;
+        $this->operates_24h = $this->port->operates_24h;
+        $this->display_order = $this->port->display_order;
+        $this->special_notes = $this->port->special_notes;
         
-        // Guardar valores originales
-        $this->saveOriginalValues();
-
-        // Cargar países ordenados
-        $this->countries = Country::orderBy('name')->get(['id', 'name'])->toArray();
-
-        // Definir opciones
-        $this->portTypes = [
-            'river' => 'Fluvial',
-            'maritime' => 'Marítimo',
-            'lake' => 'Lacustre',
-            'canal' => 'Canal',
-            'mixed' => 'Mixto'
-        ];
-
-        $this->portCategories = [
-            'major' => 'Principal',
-            'minor' => 'Menor',
-            'terminal' => 'Terminal',
-            'anchorage' => 'Fondeadero',
-            'private' => 'Privado'
-        ];
+        // También cargar países para el select
+        $this->loadCountries();
     }
+}
 
+private function loadCountries()
+{
+    $this->countries = Country::where('active', true)
+                             ->orderBy('name')
+                             ->get()
+                             ->toArray();
+}
     protected function loadPortData()
     {
         // Identificación básica

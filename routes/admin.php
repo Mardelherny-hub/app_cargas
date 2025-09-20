@@ -78,8 +78,34 @@ Route::prefix('companies')->name('admin.companies.')->group(function () {
     Route::put('/{company}/webservices', [CompanyController::class, 'updateWebservices'])->name('update-webservices');
     Route::post('/{company}/webservices/test', [CompanyController::class, 'testWebservice'])->name('test-webservice');
 
-    // Operadores de la empresa
+    // Operadores de la empresa (ruta existente)
     Route::get('/{company}/operators', [CompanyController::class, 'operators'])->name('operators');
+
+    // NUEVO: CRUD COMPLETO DE OPERADORES DESDE ADMIN
+    Route::prefix('{company}/operators')->name('operators.')->group(function () {
+        
+        // Crear operador
+        Route::get('/create', [CompanyController::class, 'createOperator'])->name('create');
+        Route::post('/', [CompanyController::class, 'storeOperator'])->name('store');
+        
+        // Ver detalles de operador específico
+        Route::get('/{operator}', [CompanyController::class, 'showOperator'])->name('show');
+        
+        // Editar operador
+        Route::get('/{operator}/edit', [CompanyController::class, 'editOperator'])->name('edit');
+        Route::put('/{operator}', [CompanyController::class, 'updateOperator'])->name('update');
+        
+        // Eliminar operador
+        Route::delete('/{operator}', [CompanyController::class, 'destroyOperator'])->name('destroy');
+        
+        // Acciones específicas
+        Route::patch('/{operator}/toggle-status', [CompanyController::class, 'toggleOperatorStatus'])->name('toggle-status');
+        Route::patch('/{operator}/reset-password', [CompanyController::class, 'resetOperatorPassword'])->name('reset-password');
+        
+        // Acciones masivas
+        Route::post('/bulk-toggle-status', [CompanyController::class, 'bulkToggleOperatorStatus'])->name('bulk-toggle-status');
+        Route::post('/bulk-delete', [CompanyController::class, 'bulkDeleteOperators'])->name('bulk-delete');
+    });
 });
 
 // Gestión de Clientes - NUEVO MÓDULO FASE 4

@@ -20,7 +20,7 @@
                 </div>
 
                 {{-- Componente Livewire listado --}}
-                @livewire('admin.ports.edit')
+                @livewire('admin.ports.edit', ['portId' => $port->id])
             </div>
         </div>
     </div>
