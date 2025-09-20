@@ -20,23 +20,53 @@
     <body class="font-sans antialiased">
         <x-banner />
 
+        @php
+            $isCompanyRoute = request()->routeIs('company.*');
+        @endphp
+
         <div class="min-h-screen bg-gray-100">
-            {{-- Usar nuestro componente de navegación personalizado --}}
+            {{-- Navegación superior existente --}}
             <x-navigation />
 
-            <!-- Page Heading -->
-            @if (isset($header))
-                <header class="bg-white shadow">
-                    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                        {{ $header }}
-                    </div>
-                </header>
-            @endif
+            @if($isCompanyRoute)
+                {{-- Layout con Sidebar para rutas company.* --}}
+                <div class="flex">
+                    {{-- Incluir sidebar component --}}
+                    <x-company-sidebar />
 
-            <!-- Page Content -->
-            <main>
-                {{ $slot }}
-            </main>
+                    {{-- Contenido principal con sidebar --}}
+                    <div class="flex-1 lg:ml-64">
+                        {{-- Page Heading --}}
+                        @if (isset($header))
+                            <header class="bg-white shadow">
+                                <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                                    {{ $header }}
+                                </div>
+                            </header>
+                        @endif
+
+                        {{-- Page Content --}}
+                        <main>
+                            {{ $slot }}
+                        </main>
+                    </div>
+                </div>
+            @else
+                {{-- Layout original para todas las demás rutas --}}
+                <!-- Page Heading -->
+                @if (isset($header))
+                    <header class="bg-white shadow">
+                        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                            {{ $header }}
+                        </div>
+                    </header>
+                @endif
+
+                <!-- Page Content -->
+                <main>
+                    {{ $slot }}
+                </main>
+            @endif
         </div>
 
         @stack('modals')

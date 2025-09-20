@@ -22,6 +22,7 @@ use App\Http\Controllers\Company\CaptainController;
 use App\Http\Controllers\Company\DashboardEstadosController;
 use App\Http\Controllers\Company\Manifests\TestingCustomsController;
 use App\Http\Controllers\Company\ManeFileController;
+use App\Http\Controllers\Company\VoyageWizardController;
 
 
 // ImporterController para KLine.DAT
@@ -138,6 +139,17 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
 
 // Gestión de Viajes
 Route::prefix('voyages')->name('company.voyages.')->group(function () {
+    // === WIZARD PARA CREAR VIAJES COMPLETOS ===
+    Route::prefix('wizard')->name('wizard.')->group(function () {
+        Route::get('/', [VoyageWizardController::class, 'index'])->name('index');
+        Route::match(['GET', 'POST'], '/step1', [VoyageWizardController::class, 'step1'])->name('step1');
+        Route::match(['GET', 'POST'], '/step2', [VoyageWizardController::class, 'step2'])->name('step2');
+        Route::match(['GET', 'POST'], '/step3', [VoyageWizardController::class, 'step3'])->name('step3');
+        Route::match(['GET', 'POST'], '/step4', [VoyageWizardController::class, 'step4'])->name('step4');
+        Route::post('/cancel', [VoyageWizardController::class, 'cancel'])->name('cancel');
+    });
+
+    // CRUD básico
     Route::get('/', [VoyageController::class, 'index'])->name('index');
     Route::get('/create', [VoyageController::class, 'create'])->name('create');
     Route::post('/', [VoyageController::class, 'store'])->name('store');
