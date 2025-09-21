@@ -6,432 +6,336 @@ use App\Http\Controllers\Controller;
 use App\Models\Voyage;
 use App\Models\Vessel;
 use App\Models\Captain;
+use App\Models\Country;
 use App\Models\Port;
-use App\Models\Client;
-use App\Models\CargoType;
-use App\Models\PackagingType;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 /**
- * Controlador del Wizard para Crear Viajes Completos
+ * WIZARD DE VIAJES COMPLETOS - AFIP 100%
  * 
- * Guía paso a paso para crear un viaje desde cero:
- * 1. Información básica del viaje (origen, destino, fechas)
- * 2. Configuración de embarcaciones y tripulación
- * 3. Clientes y conocimientos de embarque
- * 4. Revisión y finalización
+ * Controlador multi-paso para crear viajes con todos los campos AFIP obligatorios.
+ * Evita rechazos en webservices mediante captura progresiva de datos.
  * 
- * PERMISOS REQUERIDOS:
- * - Rol empresa: "Cargas"
- * - Permiso: "view_cargas" para acceso
- * - Company admin: CRUD completo
- * - Operadores: Solo sus propios viajes
+ * ESTRUCTURA:
+ * - PASO 1: Datos del Viaje (voyage + vessel + captain)
+ * - PASO 2: Conocimientos de Embarque (bills_of_lading) 
+ * - PASO 3: Mercadería y Contenedores (shipment_items + containers)
+ * 
+ * FLUJO:
+ * - Datos guardados en SESSION entre pasos
+ * - Validación en cada paso
+ * - Solo se persiste en BD al completar todo
+ * - Navegación fluida Anterior/Siguiente
  */
 class VoyageWizardController extends Controller
 {
     use UserHelper;
 
     /**
-     * Mostrar página principal del wizard
+     * PASO 1: Mostrar formulario datos del viaje
      */
-    public function index()
+    public function step1(Request $request)
     {
-        // Verificar permisos básicos
-        if (!$this->canPerform('view_cargas')) {
+        // 1. Verificar permisos
+        if (!$this->canPerform('access_trips')) {
             abort(403, 'No tiene permisos para crear viajes.');
         }
 
         if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas para gestionar viajes.');
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
+        // 2. Obtener empresa del usuario
         $company = $this->getUserCompany();
         if (!$company) {
-            return redirect()->route('company.dashboard')
+            return redirect()->route('company.voyages.index')
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Obtener estadísticas básicas para la vista
-        $stats = $this->getWizardStats($company);
-
-        return view('company.voyages.wizard', compact('company', 'stats'));
-    }
-
-    /**
-     * Paso 1: Información básica del viaje
-     */
-    public function step1(Request $request)
-    {
-        // Verificar permisos
-        if (!$this->canPerform('view_cargas') || !$this->hasCompanyRole('Cargas')) {
-            abort(403, 'No tiene permisos para crear viajes.');
-        }
-
-        $company = $this->getUserCompany();
-
-        if ($request->isMethod('post')) {
-            // Procesar formulario del paso 1
-            $validated = $request->validate([
-                'origin_port_id' => 'required|exists:ports,id',
-                'destination_port_id' => 'required|exists:ports,id|different:origin_port_id',
-                'departure_date' => 'required|date|after_or_equal:today',
-                'arrival_date' => 'required|date|after:departure_date',
-                'voyage_number' => 'nullable|string|max:50|unique:voyages,voyage_number',
-                'internal_reference' => 'nullable|string|max:100',
-                'description' => 'nullable|string|max:500'
-            ]);
-
-            // Generar número de viaje automático si no se proporcionó
-            if (empty($validated['voyage_number'])) {
-                $validated['voyage_number'] = $this->generateVoyageNumber($company);
-            }
-
-            // Guardar datos en sesión y redirigir al paso 2
-            session(['wizard_step1' => $validated]);
-            
-            return redirect()->route('company.voyages.wizard.step2')
-                ->with('success', 'Información básica guardada. Continúe con la configuración de embarcaciones.');
-        }
-
-        // Mostrar formulario del paso 1
+        // 3. Obtener datos para formulario
         $formData = $this->getStep1FormData($company);
-        $step1Data = session('wizard_step1', []);
 
-        return view('company.voyages.wizard-step1', compact('formData', 'step1Data', 'company'));
+        // 4. Recuperar datos guardados en session si existen
+        $savedData = session('voyage_wizard.step1', []);
+
+        // 5. Log para tracking
+        Log::info('VoyageWizard: Iniciando PASO 1', [
+            'user_id' => Auth::id(),
+            'company_id' => $company->id,
+            'has_saved_data' => !empty($savedData),
+        ]);
+
+        return view('company.voyage-wizard.step1', compact('formData', 'savedData'));
     }
 
     /**
-     * Paso 2: Configuración de embarcaciones y tripulación
+     * PASO 1: Guardar datos del viaje y avanzar
+     */
+    public function storeStep1(Request $request)
+    {
+        // 1. Validación específica PASO 1
+        $validated = $request->validate([
+            // Datos básicos del viaje
+            'voyage_number' => [
+                'required',
+                'string',
+                'max:50',
+                Rule::unique('voyages', 'voyage_number')->where(function ($query) {
+                    return $query->where('company_id', $this->getUserCompany()->id);
+                }),
+            ],
+            'internal_reference' => 'nullable|string|max:100',
+            'departure_date' => 'required|date|after_or_equal:today',
+            'estimated_arrival_date' => 'required|date|after:departure_date',
+
+            // Puertos y países
+            'origin_country_id' => 'required|exists:countries,id',
+            'origin_port_id' => 'required|exists:ports,id',
+            'destination_country_id' => 'required|exists:countries,id',
+            'destination_port_id' => 'required|exists:ports,id|different:origin_port_id',
+
+            // Embarcación y capitán
+            'lead_vessel_id' => 'required|exists:vessels,id',
+            'captain_id' => 'required|exists:captains,id',
+
+            // Características del viaje
+            'voyage_type' => 'required|in:single_vessel,convoy,fleet',
+            'cargo_type' => 'required|in:export,import,transit,transshipment,cabotage',
+            'is_convoy' => 'boolean',
+            'vessel_count' => 'required|integer|min:1|max:20',
+
+            // CAMPOS AFIP NUEVOS (opcionales en UI, valores por defecto en backend)
+            'is_empty_transport' => 'boolean',
+            'has_cargo_onboard' => 'boolean',
+
+            // Notas opcionales
+            'special_instructions' => 'nullable|string|max:500',
+            'operational_notes' => 'nullable|string|max:500',
+        ], [
+            // Mensajes personalizados
+            'voyage_number.unique' => 'El número de viaje ya existe en su empresa.',
+            'estimated_arrival_date.after' => 'La fecha de llegada debe ser posterior a la salida.',
+            'destination_port_id.different' => 'El puerto de destino debe ser diferente al de origen.',
+            'vessel_count.max' => 'Máximo 20 embarcaciones por convoy.',
+        ]);
+
+        // 2. Validaciones adicionales de negocio
+        $this->validateStep1Business($validated);
+
+        // 3. Guardar en session
+        session(['voyage_wizard.step1' => $validated]);
+        session(['voyage_wizard.current_step' => 1]);
+        session(['voyage_wizard.completed_steps' => [1]]);
+
+        // 4. Log del progreso
+        Log::info('VoyageWizard: PASO 1 completado', [
+            'user_id' => Auth::id(),
+            'voyage_number' => $validated['voyage_number'],
+            'vessel_id' => $validated['lead_vessel_id'],
+            'captain_id' => $validated['captain_id'],
+        ]);
+
+        // 5. Redirect al PASO 2
+        return redirect()->route('company.voyage-wizard.step2')
+            ->with('success', 'Datos del viaje guardados. Continúe con los conocimientos de embarque.');
+    }
+
+    /**
+     * PASO 2: Placeholder (será implementado después)
      */
     public function step2(Request $request)
     {
-        // Verificar que se completó el paso 1
-        if (!session('wizard_step1')) {
-            return redirect()->route('company.voyages.wizard.step1')
-                ->with('error', 'Debe completar la información básica primero.');
+        // Verificar que PASO 1 esté completado
+        if (!session('voyage_wizard.step1')) {
+            return redirect()->route('company.voyage-wizard.step1')
+                ->with('warning', 'Debe completar el Paso 1 primero.');
         }
 
-        // Verificar permisos
-        if (!$this->canPerform('view_cargas') || !$this->hasCompanyRole('Cargas')) {
-            abort(403, 'No tiene permisos para crear viajes.');
-        }
-
-        $company = $this->getUserCompany();
-
-        if ($request->isMethod('post')) {
-            // Procesar formulario del paso 2
-            $validated = $request->validate([
-                'lead_vessel_id' => 'required|exists:vessels,id',
-                'captain_id' => 'required|exists:captains,id',
-                'additional_vessels' => 'nullable|array',
-                'additional_vessels.*' => 'exists:vessels,id'
-            ]);
-
-            // Guardar datos en sesión
-            session(['wizard_step2' => $validated]);
-            
-            return redirect()->route('company.voyages.wizard.step3')
-                ->with('success', 'Configuración de embarcaciones guardada. Continúe con los conocimientos.');
-        }
-
-        // Mostrar formulario del paso 2
-        $formData = $this->getStep2FormData($company);
-        $step2Data = session('wizard_step2', []);
-
-        return view('company.voyages.wizard-step2', compact('formData', 'step2Data', 'company'));
+        return view('company.voyage-wizard.step2', [
+            'step1Data' => session('voyage_wizard.step1'),
+        ]);
     }
 
     /**
-     * Paso 3: Clientes y conocimientos de embarque
+     * PASO 3: Placeholder (será implementado después)
      */
     public function step3(Request $request)
     {
-        // Verificar pasos anteriores
-        if (!session('wizard_step1') || !session('wizard_step2')) {
-            return redirect()->route('company.voyages.wizard.step1')
-                ->with('error', 'Debe completar los pasos anteriores.');
+        // Verificar que PASO 1 y 2 estén completados
+        if (!session('voyage_wizard.step1') || !session('voyage_wizard.step2')) {
+            return redirect()->route('company.voyage-wizard.step1')
+                ->with('warning', 'Debe completar los pasos anteriores primero.');
         }
 
-        // Verificar permisos
-        if (!$this->canPerform('view_cargas') || !$this->hasCompanyRole('Cargas')) {
-            abort(403, 'No tiene permisos para crear viajes.');
-        }
-
-        $company = $this->getUserCompany();
-
-        if ($request->isMethod('post')) {
-            // Procesar formulario del paso 3
-            $validated = $request->validate([
-                'bl_creation_mode' => 'required|in:basic,complete,import,skip',
-                'shipper_id' => 'nullable|exists:clients,id',
-                'consignee_id' => 'nullable|exists:clients,id',
-                'cargo_type_id' => 'nullable|exists:cargo_types,id',
-                'packaging_type_id' => 'nullable|exists:packaging_types,id'
-            ]);
-
-            // Guardar datos en sesión
-            session(['wizard_step3' => $validated]);
-            
-            return redirect()->route('company.voyages.wizard.step4')
-                ->with('success', 'Configuración de conocimientos guardada. Revise y finalice.');
-        }
-
-        // Mostrar formulario del paso 3
-        $formData = $this->getStep3FormData($company);
-        $step3Data = session('wizard_step3', []);
-
-        return view('company.voyages.wizard-step3', compact('formData', 'step3Data', 'company'));
+        return view('company.voyage-wizard.step3', [
+            'step1Data' => session('voyage_wizard.step1'),
+            'step2Data' => session('voyage_wizard.step2'),
+        ]);
     }
 
     /**
-     * Paso 4: Revisión y finalización
-     */
-    public function step4(Request $request)
-    {
-        // Verificar todos los pasos anteriores
-        if (!session('wizard_step1') || !session('wizard_step2') || !session('wizard_step3')) {
-            return redirect()->route('company.voyages.wizard.step1')
-                ->with('error', 'Debe completar todos los pasos anteriores.');
-        }
-
-        $company = $this->getUserCompany();
-
-        if ($request->isMethod('post')) {
-            // Crear el viaje y datos relacionados
-            $result = $this->createCompleteVoyage();
-            
-            if ($result['success']) {
-                // Limpiar sesión del wizard
-                session()->forget(['wizard_step1', 'wizard_step2', 'wizard_step3']);
-                
-                return redirect()->route('company.voyages.show', $result['voyage'])
-                    ->with('success', 'Viaje creado exitosamente. ' . $result['message']);
-            } else {
-                return back()->with('error', 'Error creando el viaje: ' . $result['message']);
-            }
-        }
-
-        // Mostrar resumen para revisión
-        $summaryData = $this->prepareSummaryData();
-
-        return view('company.voyages.wizard-step4', compact('summaryData', 'company'));
-    }
-
-    /**
-     * Cancelar wizard y limpiar sesión
+     * Cancelar wizard y limpiar session
      */
     public function cancel()
     {
-        session()->forget(['wizard_step1', 'wizard_step2', 'wizard_step3']);
-        
+        // Limpiar datos del wizard
+        session()->forget('voyage_wizard');
+
         return redirect()->route('company.voyages.index')
-            ->with('info', 'Wizard cancelado.');
+            ->with('info', 'Creación de viaje cancelada.');
     }
 
-    // =============================================
-    // MÉTODOS HELPER PRIVADOS
-    // =============================================
+    /**
+     * Página de inicio del wizard
+     */
+    public function start()
+    {
+        // Verificar permisos
+        if (!$this->canPerform('access_trips')) {
+            abort(403, 'No tiene permisos para crear viajes.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
+        // Limpiar session anterior si existe
+        session()->forget('voyage_wizard');
+
+        return view('company.voyage-wizard.start');
+    }
 
     /**
-     * Obtener estadísticas para el wizard
+     * Obtener datos para formulario PASO 1
      */
-    private function getWizardStats($company)
+    private function getStep1FormData($company): array
     {
         return [
-            'voyages_this_month' => Voyage::where('company_id', $company->id)
-                ->whereMonth('created_at', now()->month)
-                ->count(),
-            'active_vessels' => Vessel::where('company_id', $company->id)
-                ->where('active', true)
-                ->count(),
-            'active_captains' => Captain::where('company_id', $company->id)
-                ->where('active', true)
-                ->count(),
-            'recent_clients' => Client::whereHas('companyRelations', function($q) use ($company) {
-                $q->where('company_id', $company->id);
-            })->count()
-        ];
-    }
-
-    /**
-     * Generar número de viaje automático
-     */
-    private function generateVoyageNumber($company)
-    {
-        $prefix = strtoupper(substr($company->name, 0, 3));
-        $year = date('Y');
-        $sequence = Voyage::where('company_id', $company->id)
-            ->whereYear('created_at', $year)
-            ->count() + 1;
-
-        return $prefix . '-' . $year . '-' . str_pad($sequence, 4, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Obtener datos del formulario para paso 1
-     */
-    private function getStep1FormData($company)
-    {
-        return [
-            'ports' => Port::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'code', 'country_id']),
-            'countries' => \App\Models\Country::orderBy('name')->get(['id', 'name', 'iso_code'])
-        ];
-    }
-
-    /**
-     * Obtener datos del formulario para paso 2
-     */
-    private function getStep2FormData($company)
-    {
-        return [
-            'vessels' => Vessel::where('company_id', $company->id)
-                ->where('active', true)
-                ->with('vesselType')
+            // Embarcaciones disponibles de la empresa
+            'vessels' => Vessel::where('active', true)
+                ->where('available_for_charter', true)
+                ->where('operational_status', 'active')
+                ->where('company_id', $company->id)
+                ->with(['vesselType:id,name', 'primaryCaptain:id,full_name'])
+                ->select('id', 'name', 'vessel_type_id', 'primary_captain_id', 'imo_number')
                 ->orderBy('name')
                 ->get(),
-            'captains' => Captain::where('company_id', $company->id)
-                ->where('active', true)
+
+            // Capitanes disponibles
+            'captains' => Captain::where('active', true)
+                ->where('available_for_hire', true)
+                ->where('license_status', 'valid')
+                ->where(function($query) {
+                    $query->whereNull('license_expires_at')
+                        ->orWhere('license_expires_at', '>', now());
+                })
+                ->select('id', 'full_name', 'license_number', 'nationality')
                 ->orderBy('full_name')
-                ->get()
-        ];
-    }
+                ->get(),
 
-    /**
-     * Obtener datos del formulario para paso 3
-     */
-    private function getStep3FormData($company)
-    {
-        return [
-            'clients' => Client::whereHas('companyRelations', function($q) use ($company) {
-                $q->where('company_id', $company->id);
-            })->orderBy('legal_name')->get(),
-            'cargo_types' => CargoType::where('active', true)->orderBy('name')->get(),
-            'packaging_types' => PackagingType::where('active', true)->orderBy('name')->get()
-        ];
-    }
+            // Países activos
+            'countries' => Country::where('active', true)
+                ->where(function($query) {
+                    $query->where('allows_import', true)
+                        ->orWhere('allows_export', true);
+                })
+                ->select('id', 'name', 'iso_code')
+                ->orderBy('display_order')
+                ->orderBy('name')
+                ->get(),
 
-    /**
-     * Preparar datos de resumen para el paso 4
-     */
-    private function prepareSummaryData()
-    {
-        $step1 = session('wizard_step1');
-        $step2 = session('wizard_step2');
-        $step3 = session('wizard_step3');
+            // Puertos por país (será cargado via AJAX)
+            'ports' => Port::where('active', true)
+                ->where('accepts_new_vessels', true)  // ← CAMPO REAL
+                ->with('country:id,name,iso_code')
+                ->select('id', 'name', 'code', 'country_id', 'port_type')
+                ->orderBy('country_id')
+                ->orderBy('name')
+                ->get(),
 
-        return [
-            'voyage_info' => [
-                'origin_port' => Port::find($step1['origin_port_id']),
-                'destination_port' => Port::find($step1['destination_port_id']),
-                'departure_date' => $step1['departure_date'],
-                'arrival_date' => $step1['arrival_date'],
-                'voyage_number' => $step1['voyage_number'],
-                'description' => $step1['description'] ?? null
+            // Opciones para selects
+            'voyageTypes' => [
+                'single_vessel' => 'Embarcación única',
+                'convoy' => 'Convoy (remolcador + barcazas)',
+                'fleet' => 'Flota coordinada',
             ],
-            'vessels_info' => [
-                'lead_vessel' => Vessel::find($step2['lead_vessel_id']),
-                'captain' => Captain::find($step2['captain_id']),
-                'additional_vessels' => isset($step2['additional_vessels']) 
-                    ? Vessel::whereIn('id', $step2['additional_vessels'])->get()
-                    : collect()
+
+            'cargoTypes' => [
+                'export' => 'Exportación',
+                'import' => 'Importación',
+                'transit' => 'Tránsito',
+                'transshipment' => 'Transbordo',
+                'cabotage' => 'Cabotaje',
             ],
-            'bl_info' => [
-                'creation_mode' => $step3['bl_creation_mode'],
-                'shipper' => isset($step3['shipper_id']) ? Client::find($step3['shipper_id']) : null,
-                'consignee' => isset($step3['consignee_id']) ? Client::find($step3['consignee_id']) : null,
-                'cargo_type' => isset($step3['cargo_type_id']) ? CargoType::find($step3['cargo_type_id']) : null,
-                'packaging_type' => isset($step3['packaging_type_id']) ? PackagingType::find($step3['packaging_type_id']) : null
-            ]
+
+            // Valores por defecto
+            'defaults' => [
+                'voyage_type' => 'single_vessel',
+                'cargo_type' => 'export',
+                'vessel_count' => 1,
+                'is_convoy' => false,
+                'is_empty_transport' => false,
+                'has_cargo_onboard' => true,
+            ],
         ];
     }
 
     /**
-     * Crear viaje completo con todos los datos del wizard
+     * Validaciones de negocio específicas PASO 1
      */
-    private function createCompleteVoyage()
+    private function validateStep1Business(array $data): void
     {
-        try {
-            DB::beginTransaction();
+        $company = $this->getUserCompany();
 
-            $step1 = session('wizard_step1');
-            $step2 = session('wizard_step2');
-            $step3 = session('wizard_step3');
-            $company = $this->getUserCompany();
+        // 1. Verificar que vessel pertenece a la empresa
+        $vessel = Vessel::find($data['lead_vessel_id']);
+        if (!$vessel || $vessel->company_id !== $company->id) {
+            throw new \Exception('La embarcación seleccionada no pertenece a su empresa.');
+        }
 
-            // 1. Crear el viaje principal
-            $voyage = Voyage::create([
-                'company_id' => $company->id,
-                'voyage_number' => $step1['voyage_number'],
-                'internal_reference' => $step1['internal_reference'] ?? null,
-                'description' => $step1['description'] ?? null,
-                'origin_port_id' => $step1['origin_port_id'],
-                'destination_port_id' => $step1['destination_port_id'],
-                'departure_date' => $step1['departure_date'],
-                'arrival_date' => $step1['arrival_date'],
-                'lead_vessel_id' => $step2['lead_vessel_id'],
-                'captain_id' => $step2['captain_id'],
-                'status' => 'planning',
-                'created_by_user_id' => Auth::id()
-            ]);
+        // 2. Verificar que el vessel esté disponible
+        if (!$vessel->isAvailable()) {
+            throw new \Exception('La embarcación seleccionada no está disponible.');
+        }
 
-            $createdItems = [];
+        // 3. Verificar que captain existe y está disponible
+        $captain = Captain::find($data['captain_id']);
+        if (!$captain || !$captain->active || !$captain->available_for_hire) {
+            throw new \Exception('El capitán seleccionado no está disponible.');
+        }
 
-            // 2. Crear shipment principal
-            $mainShipment = $voyage->shipments()->create([
-                'company_id' => $company->id,
-                'vessel_id' => $step2['lead_vessel_id'],
-                'captain_id' => $step2['captain_id'],
-                'shipment_number' => $voyage->voyage_number . '-01',
-                'sequence_in_voyage' => 1,
-                'vessel_role' => 'lead',
-                'status' => 'planning',
-                'created_by_user_id' => Auth::id()
-            ]);
+        // 4. Verificar que puertos pertenecen a países correctos
+        $originPort = Port::with('country')->find($data['origin_port_id']);
+        $destPort = Port::with('country')->find($data['destination_port_id']);
 
-            $createdItems[] = 'Shipment principal';
+        if ($originPort->country_id != $data['origin_country_id']) {
+            throw new \Exception('El puerto de origen no pertenece al país seleccionado.');
+        }
 
-            // 3. Crear conocimiento básico si se solicitó
-            if ($step3['bl_creation_mode'] === 'basic' || $step3['bl_creation_mode'] === 'complete') {
-                $billOfLading = $mainShipment->billsOfLading()->create([
-                    'bill_number' => $voyage->voyage_number . '-BL-001',
-                    'shipper_id' => $step3['shipper_id'] ?? $step3['consignee_id'], // Fallback
-                    'consignee_id' => $step3['consignee_id'] ?? $step3['shipper_id'], // Fallback
-                    'loading_port_id' => $step1['origin_port_id'],
-                    'discharge_port_id' => $step1['destination_port_id'],
-                    'primary_cargo_type_id' => $step3['cargo_type_id'] ?? 1, // Default
-                    'primary_packaging_type_id' => $step3['packaging_type_id'] ?? 1, // Default
-                    'bl_date' => now(),
-                    'status' => 'draft'
-                ]);
+        if ($destPort->country_id != $data['destination_country_id']) {
+            throw new \Exception('El puerto de destino no pertenece al país seleccionado.');
+        }
 
-                $createdItems[] = 'Conocimiento de embarque básico';
-            }
+        // 5. Validar fechas lógicas
+        $departure = \Carbon\Carbon::parse($data['departure_date']);
+        $arrival = \Carbon\Carbon::parse($data['estimated_arrival_date']);
 
-            DB::commit();
+        if ($arrival->diffInDays($departure) > 30) {
+            throw new \Exception('El viaje no puede durar más de 30 días.');
+        }
 
-            return [
-                'success' => true,
-                'voyage' => $voyage,
-                'message' => 'Elementos creados: ' . implode(', ', $createdItems)
-            ];
+        // 6. Validar convoy settings
+        if ($data['is_convoy'] && $data['vessel_count'] < 2) {
+            throw new \Exception('Un convoy debe tener al menos 2 embarcaciones.');
+        }
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error creating voyage in wizard', [
-                'error' => $e->getMessage(),
-                'user_id' => Auth::id()
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'Error interno del sistema. Intente nuevamente.'
-            ];
+        if (!$data['is_convoy'] && $data['vessel_count'] > 1) {
+            throw new \Exception('Viaje de embarcación única no puede tener múltiples embarcaciones.');
         }
     }
 }

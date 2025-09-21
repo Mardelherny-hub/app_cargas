@@ -139,16 +139,7 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
 
 // Gestión de Viajes
 Route::prefix('voyages')->name('company.voyages.')->group(function () {
-    // === WIZARD PARA CREAR VIAJES COMPLETOS ===
-    Route::prefix('wizard')->name('wizard.')->group(function () {
-        Route::get('/', [VoyageWizardController::class, 'index'])->name('index');
-        Route::match(['GET', 'POST'], '/step1', [VoyageWizardController::class, 'step1'])->name('step1');
-        Route::match(['GET', 'POST'], '/step2', [VoyageWizardController::class, 'step2'])->name('step2');
-        Route::match(['GET', 'POST'], '/step3', [VoyageWizardController::class, 'step3'])->name('step3');
-        Route::match(['GET', 'POST'], '/step4', [VoyageWizardController::class, 'step4'])->name('step4');
-        Route::post('/cancel', [VoyageWizardController::class, 'cancel'])->name('cancel');
-    });
-
+    
     // CRUD básico
     Route::get('/', [VoyageController::class, 'index'])->name('index');
     Route::get('/create', [VoyageController::class, 'create'])->name('create');
@@ -177,6 +168,31 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
     // Validador
     Route::post('/{voyage}/validate-customs', [VoyageController::class, 'validateForCustoms'])->name('validate-customs');
 });
+
+
+// ========================================
+// WIZARD DE VIAJES COMPLETOS - INDEPENDIENTE
+// ========================================
+Route::prefix('voyage-wizard')->name('voyage-wizard.')->group(function () {
+    // PASO 1: Datos del Viaje
+    Route::get('/step1', [VoyageWizardController::class, 'step1'])->name('step1');
+    Route::post('/step1', [VoyageWizardController::class, 'storeStep1'])->name('store-step1');
+    
+    // PASO 2: Conocimientos de Embarque  
+    Route::get('/step2', [VoyageWizardController::class, 'step2'])->name('step2');
+    Route::post('/step2', [VoyageWizardController::class, 'storeStep2'])->name('store-step2');
+    
+    // PASO 3: Mercadería y Contenedores
+    Route::get('/step3', [VoyageWizardController::class, 'step3'])->name('step3');
+    Route::post('/step3', [VoyageWizardController::class, 'storeStep3'])->name('store-step3');
+    
+    // UTILIDADES
+    Route::get('/cancel', [VoyageWizardController::class, 'cancel'])->name('cancel');
+    Route::get('/summary', [VoyageWizardController::class, 'summary'])->name('summary');
+    Route::get('/', [VoyageWizardController::class, 'start'])->name('start'); // Página de inicio
+});
+
+
 
 // Gestión de Propietarios de Embarcaciones
 Route::prefix('vessel-owners')->name('company.vessel-owners.')->group(function () {
@@ -580,8 +596,8 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
 
 
 // Importación de archivos KLine.DAT
-Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
-Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
+//Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
+//Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
 
 
 
