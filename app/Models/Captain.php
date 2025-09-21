@@ -134,6 +134,7 @@ class Captain extends Model
         'created_by_user_id',
         'last_updated_date',
         'last_updated_by_user_id',
+        'document_country_id',
     ];
 
     /**
@@ -159,6 +160,7 @@ class Captain extends Model
         'additional_certifications' => 'array',
         'created_date' => 'datetime',
         'last_updated_date' => 'datetime',
+        'document_country_id' => 'integer',
     ];
 
     /**
@@ -575,5 +577,22 @@ class Captain extends Model
         }
         
         return $expirations;
+    }
+
+    /**
+     * País del documento del capitán
+     */
+    public function documentCountry()
+    {
+        return $this->belongsTo(Country::class, 'document_country_id');
+    }
+
+    /**
+     * Verificar si tiene documentación completa
+     */
+    public function hasCompleteDocumentation(): bool
+    {
+        return !empty($this->document_number) && 
+            !empty($this->license_number);
     }
 }

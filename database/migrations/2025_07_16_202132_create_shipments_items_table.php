@@ -50,6 +50,14 @@ return new class extends Migration
             $table->text('item_description')->comment('Descripción detallada del ítem');
             $table->string('cargo_marks', 500)->nullable()->comment('Marcas de la mercadería');
             $table->string('commodity_code', 20)->nullable()->comment('Código NCM/HS');
+            $table->string('tariff_position', 16)->nullable()->comment('Posición arancelaria AFIP (obligatorio, 7-15 chars + puntos)');
+            $table->char('is_secure_logistics_operator', 1)->default('N')->comment('Indicador operador logístico seguro AFIP (S/N)');
+            $table->char('is_monitored_transit', 1)->default('N')->comment('Indicador tránsito monitoreado AFIP (S/N)');
+            $table->char('is_renar', 1)->default('N')->comment('Indicador RENAR AFIP (S/N)');
+            $table->string('foreign_forwarder_name', 70)->nullable()->comment('Razón social del forwarder del exterior (obligatorio AFIP)');
+            $table->string('foreign_forwarder_tax_id', 35)->nullable()->comment('Número identificador tributario forwarder exterior (optativo)');
+            $table->string('foreign_forwarder_country', 3)->nullable()->comment('País emisor identificador tributario forwarder (código 3 chars)');
+
             $table->string('commodity_description', 255)->nullable()->comment('Descripción del commodity');
 
             // Commercial information
@@ -116,6 +124,8 @@ return new class extends Migration
             $table->index(['webservice_item_id'], 'idx_shipment_items_webservice');
             $table->index(['has_discrepancies'], 'idx_shipment_items_discrepancies');
             $table->index(['created_date'], 'idx_shipment_items_created_date');
+            $table->index('tariff_position', 'idx_shipment_items_tariff_position');
+            $table->index(['is_secure_logistics_operator', 'is_monitored_transit', 'is_renar'], 'idx_shipment_items_afip_indicators');
 
             // Unique constraints
             $table->unique(['bill_of_lading_id', 'line_number'], 'uk_shipment_items_bill_of_lading_line');

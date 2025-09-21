@@ -33,6 +33,7 @@ return new class extends Migration
             $table->string('document_type', 20)->nullable();
             $table->string('document_number', 50)->nullable();
             $table->date('document_expires')->nullable();
+            $table->unsignedBigInteger('document_country_id')->nullable()->comment('País emisor documento capitán (FK countries - optativo)');
             $table->string('license_number', 100)->unique();
             $table->enum('license_class', ['master', 'chief_officer', 'officer', 'pilot'])->default('officer');
             $table->enum('license_status', ['valid', 'expired', 'suspended', 'revoked', 'pending_renewal'])->default('valid');
@@ -70,6 +71,14 @@ return new class extends Migration
             $table->foreign('country_id')->references('id')->on('countries')->onDelete('set null');
             $table->foreign('license_country_id')->references('id')->on('countries')->onDelete('set null');
             $table->foreign('primary_company_id')->references('id')->on('companies')->onDelete('set null');
+            $table->foreign('document_country_id', 'fk_captains_document_country')
+                ->references('id')->on('countries')
+                ->onDelete('set null')
+                ->onUpdate('cascade');
+
+            // Índice para búsquedas por documento
+            $table->index(['document_type', 'document_country_id'], 'idx_captains_document_info');
+      
         });
     }
 

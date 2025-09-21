@@ -131,6 +131,9 @@ class BillOfLading extends Model
 
         // ✅ NUEVO: Permiso de embarque para webservices Paraguay
         'permiso_embarque',
+
+        'is_consolidated',
+        'is_transit_transshipment',
     ];
 
     /**
@@ -192,6 +195,9 @@ class BillOfLading extends Model
         'delivery_instructions' => 'json',
         'required_documents' => 'json',
         'attached_documents' => 'json',
+
+        'is_consolidated' => 'string',
+        'is_transit_transshipment' => 'string',
     ];
 
     /**
@@ -1232,4 +1238,19 @@ class BillOfLading extends Model
         ];
     }
 
+    /**
+     * Verificar si es consolidado
+     */
+    public function isConsolidated(): bool
+    {
+        return $this->is_consolidated === self::AFIP_YES;
+    }
+
+    /**
+     * Verificar si es tránsito/transbordo
+     */
+    public function isTransitTransshipment(): bool
+    {
+        return $this->is_transit_transshipment === self::AFIP_YES;
+    }
 }

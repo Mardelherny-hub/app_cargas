@@ -17,6 +17,17 @@ class Container extends Model
 {
     use HasFactory;
 
+    /**
+     * Constantes AFIP para condición de contenedor
+     */
+    public const CONDITION_HOUSE_TO_HOUSE = 'H'; // Casa a casa
+    public const CONDITION_PORT_TO_PORT = 'P';   // Muelle a muelle
+
+    public const CONDITION_OPTIONS = [
+        self::CONDITION_HOUSE_TO_HOUSE => 'Casa a Casa',
+        self::CONDITION_PORT_TO_PORT => 'Muelle a Muelle'
+    ];
+
     protected $fillable = [
         // Campos que SÍ existen en la tabla real
         'container_number',
@@ -68,7 +79,8 @@ class Container extends Model
         'created_date',
         'created_by_user_id',
         'last_updated_date',
-        'last_updated_by_user_id'
+        'last_updated_by_user_id',
+        'container_condition',
     ];
 
     protected $casts = [
@@ -77,7 +89,8 @@ class Container extends Model
         'tare_weight' => 'decimal:2',
         'volume' => 'decimal:3',
         'package_count' => 'integer',
-        'hazmat_info' => 'array'
+        'hazmat_info' => 'array',
+        'container_condition' => 'string',
     ];
 
     public function billOfLading(): BelongsTo
@@ -129,5 +142,29 @@ class Container extends Model
     public function containerType(): BelongsTo
     {
         return $this->belongsTo(ContainerType::class, 'container_type_id');
+    }
+
+    /**
+     * Verificar si es casa a casa
+     */
+    public function isHouseToHouse(): bool
+    {
+        return $this->container_condition === self::CONDITION_HOUSE_TO_HOUSE;
+    }
+
+    /**
+     * Verificar si es muelle a muelle
+     */
+    public function isPortToPort(): bool
+    {
+        return $this->container_condition === self::CONDITION_PORT_TO_PORT;
+    }
+
+    /**
+     * Obtener descripción de la condición
+     */
+    public function getConditionDescription(): string
+    {
+        return self::CONDITION_OPTIONS[$this->container_condition] ?? 'No especificado';
     }
 }

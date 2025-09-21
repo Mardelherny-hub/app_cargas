@@ -129,6 +129,7 @@ return new class extends Migration
             $table->boolean('is_master_bill')->default(false)->comment('Es conocimiento madre');
             $table->boolean('is_house_bill')->default(false)->comment('Es conocimiento hijo');
             $table->boolean('requires_surrender')->default(false)->comment('Requiere entrega');
+            $table->char('is_transit_transshipment', 1)->default('N')->comment('Indicador tránsito/transbordo AFIP (S/N)');
 
             // Mercancías peligrosas
             $table->string('un_number', 10)->nullable()->comment('Número UN (mercancías peligrosas)');
@@ -214,6 +215,7 @@ return new class extends Migration
             $table->index(['verified_at'], 'idx_bills_verified');
             // ✅ NUEVO ÍNDICE: Para búsquedas por permiso de embarque
             $table->index(['permiso_embarque'], 'idx_bills_permiso_embarque');
+            $table->index(['is_consolidated', 'is_transit_transshipment'], 'idx_bills_operation_type');
 
             // Constraint único
             $table->unique(['bill_number'], 'uk_bills_number');

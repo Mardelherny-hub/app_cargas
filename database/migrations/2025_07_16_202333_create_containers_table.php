@@ -56,6 +56,7 @@ return new class extends Migration
                 'R'     // Reparación/Repair
             ])->default('V')->comment('Condición del contenedor (para webservices)');
 
+            $table->char('container_condition', 1)->default('P')->comment('Condición contenedor AFIP (H=casa a casa, P=muelle a muelle)');
             $table->text('condition_description')->nullable()->comment('Descripción detallada de la condición');
             $table->json('damages')->nullable()->comment('Daños registrados');
             $table->boolean('requires_repair')->default(false)->comment('Requiere reparación');
@@ -149,6 +150,7 @@ return new class extends Migration
             $table->index(['blocked', 'active'], 'idx_containers_blocked');
             $table->index(['requires_customs_clearance'], 'idx_containers_customs');
             $table->index(['created_date'], 'idx_containers_created_date');
+            $table->index('container_condition', 'idx_containers_afip_condition');
 
             // Unique constraints
             $table->unique(['container_number'], 'uk_containers_number');
@@ -160,6 +162,7 @@ return new class extends Migration
             $table->foreign('operator_client_id')->references('id')->on('clients')->onDelete('set null');
             $table->foreign('current_port_id')->references('id')->on('ports')->onDelete('set null');
             $table->foreign('last_port_id')->references('id')->on('ports')->onDelete('set null');
+
             // $table->foreign('created_by_user_id')->references('id')->on('users')->onDelete('set null');
             // $table->foreign('last_updated_by_user_id')->references('id')->on('users')->onDelete('set null');
         });

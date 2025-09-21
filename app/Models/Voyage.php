@@ -105,7 +105,23 @@ class Voyage extends Model
 {
     use HasFactory;
 
-       /**
+    /**
+     * Constantes para indicadores AFIP
+     */
+    public const AFIP_YES = 'S';
+    public const AFIP_NO = 'N';
+
+    public const TRANSPORT_STATUS_OPTIONS = [
+        self::AFIP_YES => 'Sí - Transporte Vacío',
+        self::AFIP_NO => 'No - Transporte con Carga'
+    ];
+
+    public const CARGO_ONBOARD_OPTIONS = [
+        self::AFIP_YES => 'Sí - Con Mercadería a Bordo',
+        self::AFIP_NO => 'No - Sin Mercadería a Bordo'
+    ];
+
+    /**
      * The table associated with the model.
      */
     protected $table = 'voyages';
@@ -251,6 +267,10 @@ class Voyage extends Model
         'created_by_user_id',
         'last_updated_date',
         'last_updated_by_user_id',
+
+        // NUEVOS CAMPOS AFIP 
+        'is_empty_transport',
+        'has_cargo_onboard',
     ];
 
     /**
@@ -352,6 +372,10 @@ class Voyage extends Model
         'transit_time_hours' => 'integer',
         'created_by_user_id' => 'integer',
         'last_updated_by_user_id' => 'integer',
+
+        // NUEVOS CASTS AFIP
+        'is_empty_transport' => 'string',
+        'has_cargo_onboard' => 'string',
     ];
 
     /**
@@ -1723,5 +1747,21 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
         }
 
         return $summary;
+    }
+
+    /**
+     * Verificar si es transporte vacío
+     */
+    public function isEmptyTransport(): bool
+    {
+        return $this->is_empty_transport === self::AFIP_YES;
+    }
+
+    /**
+     * Verificar si tiene mercadería a bordo
+     */
+    public function hasCargoOnboard(): bool
+    {
+        return $this->has_cargo_onboard === self::AFIP_YES;
     }
 }

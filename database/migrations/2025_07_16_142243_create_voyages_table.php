@@ -70,6 +70,8 @@ return new class extends Migration
 
             $table->boolean('is_consolidated')->default(false)->comment('Viaje consolidado');
             $table->boolean('has_transshipment')->default(false)->comment('Tiene transbordo');
+            $table->char('is_empty_transport', 1)->default('N')->comment('Indicador transporte vacío AFIP (S/N)');
+            $table->char('has_cargo_onboard', 1)->default('S')->comment('Indicador mercadería a bordo AFIP (S/N)');
             $table->boolean('requires_pilot')->default(false)->comment('Requiere piloto');
             $table->boolean('is_convoy')->default(false)->comment('Es convoy');
             $table->integer('vessel_count')->default(1)->comment('Cantidad de embarcaciones');
@@ -216,7 +218,8 @@ return new class extends Migration
             $table->index(['priority_level'], 'idx_voyages_priority');
             $table->index(['has_dangerous_cargo'], 'idx_voyages_dangerous_cargo');
             $table->index(['requires_special_handling'], 'idx_voyages_special_handling');
-
+            $table->index(['is_empty_transport', 'has_cargo_onboard'], 'idx_voyages_cargo_status');
+            
             // Foreign key constraints con nombres explícitos
             $table->foreign('company_id', 'fk_voyages_company')->references('id')->on('companies')->onDelete('cascade');
             $table->foreign('lead_vessel_id', 'fk_voyages_lead_vessel')->references('id')->on('vessels')->onDelete('restrict');

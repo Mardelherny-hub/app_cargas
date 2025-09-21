@@ -30,6 +30,27 @@ class ShipmentItem extends Model
     use HasFactory;
 
     /**
+     * Constantes para campos AFIP
+     */
+    public const AFIP_YES = 'S';
+    public const AFIP_NO = 'N';
+
+    public const SECURE_LOGISTICS_OPTIONS = [
+        self::AFIP_YES => 'Sí - Operador Logístico Seguro',
+        self::AFIP_NO => 'No - Operador Regular'
+    ];
+
+    public const MONITORED_TRANSIT_OPTIONS = [
+        self::AFIP_YES => 'Sí - Tránsito Monitoreado', 
+        self::AFIP_NO => 'No - Tránsito Regular'
+    ];
+
+    public const RENAR_OPTIONS = [
+        self::AFIP_YES => 'Sí - Sujeto a RENAR',
+        self::AFIP_NO => 'No - No sujeto a RENAR'
+    ];
+
+    /**
      * CORREGIDO: Boot events para actualizar estadísticas del shipment y bill of lading
      */
     protected static function boot()
@@ -139,6 +160,15 @@ class ShipmentItem extends Model
         'created_by_user_id',
         'last_updated_date',
         'last_updated_by_user_id',
+
+        // NUEVOS CAMPOS AFIP 
+        'tariff_position',
+        'is_secure_logistics_operator',
+        'is_monitored_transit', 
+        'is_renar',
+        'foreign_forwarder_name',
+        'foreign_forwarder_tax_id',
+        'foreign_forwarder_country',
     ];
 
     /**
@@ -170,6 +200,12 @@ class ShipmentItem extends Model
         // DateTime fields
         'created_date' => 'datetime',
         'last_updated_date' => 'datetime',
+
+        // NUEVOS CASTS AFIP 
+        'is_secure_logistics_operator' => 'string',
+        'is_monitored_transit' => 'string',
+        'is_renar' => 'string',
+        
     ];
 
     //
@@ -309,5 +345,67 @@ class ShipmentItem extends Model
     public function scopeRefrigerated($query)
     {
         return $query->where('requires_refrigeration', true);
+    }
+
+    /**
+     * MÉTODOS HELPER PARA CAMPOS AFIP
+     */
+
+    /**
+     * Verificar si es operador logístico seguro
+     */
+    public function isSecureLogisticsOperator(): bool
+    {
+        return $this->is_secure_logistics_operator === self::AFIP_YES;
+    }
+
+    /**
+     * Verificar si es tránsito monitoreado
+     */
+    public function isMonitoredTransit(): bool
+    {
+        return $this->is_monitored_transit === self::AFIP_YES;
+    }
+
+    /**
+     * Verificar si está sujeto a RENAR
+     */
+    public function isRenar(): bool
+    {
+        return $this->is_renar === self::AFIP_YES;
+    }
+
+    /**
+     * Obtener descripción del operador logístico
+     */
+    public function getSecureLogisticsDescription(): string
+    {
+        return self::SECURE_LOGISTICS_OPTIONS[$this->is_secure_logistics_operator] ?? 'No especificado';
+    }
+
+    /**
+     * Validar posición arancelaria
+     */
+    public function hasValidTariffPosition(): bool
+    {
+        if (empty($this->tariff_position)) {
+            return false;
+        }
+        
+        // AFIP requiere entre 7 y 15 caracteres (incluyendo puntos)
+        $length = strlen($this->tariff_position);
+        return $length >= 7 && $length <= 15;
+    }
+
+    /**
+     * Validar datos completos para AFIP
+     */
+    public function isAfipCompliant(): bool
+    {
+        return !empty($this->tariff_position) &&
+            !empty($this->foreign_forwarder_name) &&
+            in_array($this->is_secure_logistics_operator, [self::AFIP_YES, self::AFIP_NO]) &&
+            in_array($this->is_monitored_transit, [self::AFIP_YES, self::AFIP_NO]) &&
+            in_array($this->is_renar, [self::AFIP_YES, self::AFIP_NO]);
     }
 }
