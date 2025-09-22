@@ -538,8 +538,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     /**
      * PASO 3: Registrar MIC/DTA usando todos los TRACKs
      */
+    // VERSIÓN COMPLETA - Poblar TODOS los campos para reportes/auditorías
+    // REEMPLAZAR registrarMicDta() en app/Services/Simple/ArgentinaMicDtaService.php
+
     private function registrarMicDta(Voyage $voyage, array $allTracks): array
     {
+        $startTime = microtime(true);
+        
         try {
             $this->logOperation('info', 'Iniciando RegistrarMicDta', [
                 'voyage_id' => $voyage->id,
@@ -547,20 +552,75 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'total_tracks' => array_sum(array_map('count', $allTracks)),
             ]);
 
+            // ✅ BUSCAR TRANSACCIÓN EXISTENTE (puede haber sido creada antes)
+            $transactionId = 'MICDTA_' . time() . '_' . $voyage->id;
+            $transaction = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'pending')
+                ->latest()
+                ->first();
+
+            if (!$transaction) {
+                // ✅ CREAR TRANSACCIÓN CON DATOS COMPLETOS PARA REPORTES
+                $transaction = \App\Models\WebserviceTransaction::create([
+                    'company_id' => $this->company->id,
+                    'user_id' => $this->user->id,
+                    'voyage_id' => $voyage->id,
+                    'transaction_id' => $transactionId,
+                    'webservice_type' => 'micdta',
+                    'country' => 'AR',
+                    'webservice_url' => $this->getWsdlUrl(),
+                    'soap_action' => $this->config['soap_action_micdta'],
+                    'status' => 'pending',
+                    'environment' => $this->config['environment'],
+                    'timeout_seconds' => 60,
+                    'max_retries' => 3,
+                    
+                    // ✅ DATOS DE NEGOCIO PARA REPORTES
+                    'total_weight_kg' => $voyage->shipments->sum('total_weight_kg') ?? 0,
+                    'total_value' => $voyage->shipments->sum('declared_value') ?? 0,
+                    'currency_code' => 'USD',
+                    'container_count' => $voyage->shipments->sum('container_count') ?? 0,
+                    'bill_of_lading_count' => $voyage->billsOfLading->count() ?? 0,
+                    
+                    // ✅ DATOS TÉCNICOS PARA AUDITORÍA
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                    'certificate_used' => 'appcargas', // Del log veo que usan este certificado
+                    
+                    // ✅ METADATOS PARA ANÁLISIS
+                    'additional_metadata' => [
+                        'method' => 'RegistrarMicDta',
+                        'tracks_count' => array_sum(array_map('count', $allTracks)),
+                        'shipments_count' => count($allTracks),
+                        'voyage_number' => $voyage->voyage_number,
+                        'company_name' => $this->company->legal_name,
+                    ],
+                    
+                    'sent_at' => now(),
+                ]);
+            }
+
             // Crear cliente SOAP
             $soapClient = $this->createSoapClient();
 
             // Generar XML MIC/DTA
-            $transactionId = 'MICDTA_' . time() . '_' . $voyage->id;
             $xml = $this->xmlSerializer->createRegistrarMicDtaXml($voyage, $allTracks, $transactionId);
 
             $this->logOperation('info', 'Enviando RegistrarMicDta', [
                 'voyage_id' => $voyage->id,
-                'transaction_id' => $transactionId,
+                'transaction_id' => $transaction->id,
                 'xml_length' => strlen($xml),
             ]);
 
-            // Envío SOAP directo
+            // ✅ ACTUALIZAR CON REQUEST XML Y TIMING
+            $transaction->update([
+                'status' => 'sending',
+                'request_xml' => $xml,
+                'sent_at' => now(),
+            ]);
+
+            // Envío SOAP directo (MANTENER SIMPLE)
             $response = $soapClient->__doRequest(
                 $xml,
                 $this->getWsdlUrl(),
@@ -569,25 +629,113 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 false
             );
 
+            $endTime = microtime(true);
+            $responseTime = round(($endTime - $startTime) * 1000); // millisegundos
+
+            // ✅ ACTUALIZAR CON RESPONSE Y TIMING PARA REPORTES DE PERFORMANCE
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+                'response_time_ms' => $responseTime,
+            ]);
+
             // Validar respuesta
             if ($response === null || $response === false) {
                 $lastResponse = $soapClient->__getLastResponse();
-                throw new Exception("SOAP response null para MicDta. Response: " . ($lastResponse ?: 'No response'));
+                
+                // ✅ GUARDAR ERROR ESTRUCTURADO PARA ANÁLISIS
+                $errorMsg = "SOAP response null para MicDta. Response: " . ($lastResponse ?: 'No response');
+                $this->saveStructuredError($transaction, 'network', 'critical', $errorMsg);
+                
+                throw new Exception($errorMsg);
             }
 
             // Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
                 $errorMsg = $this->extractSoapFaultMessage($response);
+                
+                // ✅ GUARDAR ERROR SOAP ESTRUCTURADO
+                $this->saveStructuredError($transaction, 'system', 'high', $errorMsg);
+                $transaction->update([
+                    'status' => 'error',
+                    'error_code' => 'SOAP_FAULT',
+                    'error_message' => $errorMsg,
+                    'completed_at' => now(),
+                ]);
+                
                 throw new Exception("SOAP Fault en MicDta: " . $errorMsg);
             }
 
             // Procesar respuesta exitosa
             $micDtaId = $this->extractMicDtaIdFromResponse($response);
 
+            if ($micDtaId) {
+                // ✅ ACTUALIZAR TRANSACCIÓN CON DATOS COMPLETOS PARA AUDITORÍA
+                $transaction->update([
+                    'status' => 'sent',
+                    'external_reference' => $micDtaId,
+                    'confirmation_number' => $micDtaId,
+                    'completed_at' => now(),
+                    'success_data' => [
+                        'mic_dta_id' => $micDtaId,
+                        'tracks_processed' => array_sum(array_map('count', $allTracks)),
+                        'afip_server' => $this->extractServerFromResponse($response),
+                        'afip_timestamp' => $this->extractTimestampFromResponse($response),
+                    ],
+                ]);
+
+                // ✅ CREAR WEBSERVICE RESPONSE COMPLETA PARA REPORTES
+                \App\Models\WebserviceResponse::create([
+                    'transaction_id' => $transaction->id,
+                    'response_type' => 'success',
+                    'reference_number' => $micDtaId, // ⭐ CRÍTICO para GPS
+                    'confirmation_number' => $micDtaId,
+                    'customs_status' => 'processed',
+                    'customs_processed_at' => now(),
+                    
+                    // ✅ DATOS PARA REPORTES DE COMPLIANCE
+                    'data_validated' => true,
+                    'documents_approved' => true,
+                    'payment_status' => 'not_required',
+                    
+                    // ✅ METADATOS PARA ANÁLISIS FUTURO
+                    'additional_data' => [
+                        'mic_dta_id' => $micDtaId,
+                        'voyage_id' => $voyage->id,
+                        'voyage_number' => $voyage->voyage_number,
+                        'tracks_count' => array_sum(array_map('count', $allTracks)),
+                        'processing_time_ms' => $responseTime,
+                        'environment' => $this->config['environment'],
+                        'company_id' => $this->company->id,
+                        'company_name' => $this->company->legal_name,
+                    ],
+                    
+                    'is_success' => true,
+                    'processed_at' => now(),
+                ]);
+
+                $this->logOperation('info', 'WebserviceResponse creada exitosamente', [
+                    'transaction_id' => $transaction->id,
+                    'mic_dta_id' => $micDtaId,
+                    'response_time_ms' => $responseTime,
+                ]);
+            } else {
+                // ✅ MANEJAR CASO SIN MIC/DTA ID
+                $this->saveValidationWarning($transaction, 'MIC/DTA ID no extraído de respuesta AFIP');
+                
+                $transaction->update([
+                    'status' => 'sent', // Técnicamente enviado
+                    'requires_manual_review' => true,
+                    'validation_errors' => ['No se pudo extraer MIC/DTA ID de la respuesta AFIP'],
+                    'completed_at' => now(),
+                ]);
+            }
+
             $this->logOperation('info', 'MIC/DTA registrado exitosamente', [
                 'voyage_id' => $voyage->id,
                 'mic_dta_id' => $micDtaId,
-                'transaction_id' => $transactionId,
+                'transaction_id' => $transaction->id,
+                'response_time_ms' => $responseTime,
             ]);
 
             // Guardar TRACKs en base de datos
@@ -596,22 +744,98 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             return [
                 'success' => true,
                 'mic_dta_id' => $micDtaId,
-                'transaction_id' => $transactionId,
+                'transaction_id' => $transaction->id,
+                'response_time_ms' => $responseTime,
                 'tracks_saved' => array_sum(array_map('count', $allTracks)),
             ];
 
         } catch (Exception $e) {
+            $endTime = microtime(true);
+            $responseTime = round(($endTime - $startTime) * 1000);
+            
+            // ✅ GUARDAR ERROR COMPLETO PARA ANÁLISIS
+            if (isset($transaction)) {
+                $this->saveStructuredError($transaction, 'system', 'critical', $e->getMessage());
+                $transaction->update([
+                    'status' => 'error',
+                    'error_code' => 'MICDTA_ERROR',
+                    'error_message' => $e->getMessage(),
+                    'response_time_ms' => $responseTime,
+                    'completed_at' => now(),
+                    'error_details' => [
+                        'exception_class' => get_class($e),
+                        'file' => $e->getFile(),
+                        'line' => $e->getLine(),
+                        'trace' => $e->getTraceAsString(),
+                    ],
+                ]);
+            }
+
             $this->logOperation('error', 'Error en RegistrarMicDta', [
                 'voyage_id' => $voyage->id,
                 'error' => $e->getMessage(),
+                'response_time_ms' => $responseTime,
             ]);
 
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
                 'error_code' => 'MICDTA_ERROR',
+                'response_time_ms' => $responseTime,
             ];
         }
+    }
+
+    // ✅ MÉTODOS AUXILIARES PARA DATOS ESTRUCTURADOS
+
+    private function saveStructuredError($transaction, $category, $severity, $message)
+    {
+        \App\Models\WebserviceError::create([
+            'transaction_id' => $transaction->id,
+            'error_code' => 'MICDTA_' . strtoupper($category),
+            'error_title' => 'Error en MIC/DTA',
+            'error_description' => $message,
+            'category' => $category,
+            'severity' => $severity,
+            'is_blocking' => true,
+            'allows_retry' => $severity !== 'critical',
+            'suggested_solution' => $this->getSuggestedSolution($category),
+            'environment' => $this->config['environment'],
+        ]);
+    }
+
+    private function saveValidationWarning($transaction, $message)
+    {
+        $warnings = $transaction->validation_errors ?? [];
+        $warnings[] = $message;
+        $transaction->update(['validation_errors' => $warnings]);
+    }
+
+    private function getSuggestedSolution($category)
+    {
+        $solutions = [
+            'network' => 'Verificar conectividad con AFIP. Reintentar en unos minutos.',
+            'system' => 'Error del sistema AFIP. Contactar soporte técnico.',
+            'validation' => 'Revisar datos del voyage y shipments.',
+        ];
+        
+        return $solutions[$category] ?? 'Contactar administrador del sistema.';
+    }
+
+    private function extractServerFromResponse($response)
+    {
+        if (preg_match('/<Server>([^<]+)<\/Server>/', $response, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+
+    private function extractTimestampFromResponse($response)
+    {
+        if (preg_match('/<TimeStamp>([^<]+)<\/TimeStamp>/', $response, $matches)) {
+            return $matches[1];
+        }
+        return null;
     }
 
     /**

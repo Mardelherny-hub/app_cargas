@@ -173,7 +173,7 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
 // ========================================
 // WIZARD DE VIAJES COMPLETOS - INDEPENDIENTE
 // ========================================
-Route::prefix('voyage-wizard')->name('voyage-wizard.')->group(function () {
+Route::prefix('company.voyage-wizard')->name('voyage-wizard.')->group(function () {
     // PASO 1: Datos del Viaje
     Route::get('/step1', [VoyageWizardController::class, 'step1'])->name('step1');
     Route::post('/step1', [VoyageWizardController::class, 'storeStep1'])->name('store-step1');

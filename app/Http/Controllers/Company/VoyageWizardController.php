@@ -141,7 +141,7 @@ class VoyageWizardController extends Controller
         ]);
 
         // 5. Redirect al PASO 2
-        return redirect()->route('company.voyage-wizard.step2')
+        return redirect()->route('voyage-wizard.step2')
             ->with('success', 'Datos del viaje guardados. Continúe con los conocimientos de embarque.');
     }
 
@@ -150,14 +150,15 @@ class VoyageWizardController extends Controller
      */
     public function step2(Request $request)
     {
-        // Verificar que PASO 1 esté completado
         if (!session('voyage_wizard.step1')) {
-            return redirect()->route('company.voyage-wizard.step1')
+            return redirect()->route('voyage-wizard.step1')
                 ->with('warning', 'Debe completar el Paso 1 primero.');
         }
 
+        $step1Data = session('voyage_wizard.step1');
+        
         return view('company.voyage-wizard.step2', [
-            'step1Data' => session('voyage_wizard.step1'),
+            'step1Data' => $step1Data,
         ]);
     }
 
@@ -168,7 +169,7 @@ class VoyageWizardController extends Controller
     {
         // Verificar que PASO 1 y 2 estén completados
         if (!session('voyage_wizard.step1') || !session('voyage_wizard.step2')) {
-            return redirect()->route('company.voyage-wizard.step1')
+            return redirect()->route('voyage-wizard.step1')
                 ->with('warning', 'Debe completar los pasos anteriores primero.');
         }
 
@@ -215,6 +216,7 @@ class VoyageWizardController extends Controller
      */
     private function getStep1FormData($company): array
     {
+        
         return [
             // Embarcaciones disponibles de la empresa
             'vessels' => Vessel::where('active', true)
@@ -238,25 +240,25 @@ class VoyageWizardController extends Controller
                 ->orderBy('full_name')
                 ->get(),
 
-            // Países activos
-            'countries' => Country::where('active', true)
-                ->where(function($query) {
-                    $query->where('allows_import', true)
-                        ->orWhere('allows_export', true);
-                })
-                ->select('id', 'name', 'iso_code')
-                ->orderBy('display_order')
-                ->orderBy('name')
-                ->get(),
+           // SOLO ARGENTINA Y PARAGUAY:
+'countries' => Country::where('active', true)
+    ->whereIn('alpha2_code', ['AR', 'PY'])
+    ->select('id', 'name', 'iso_code', 'alpha2_code')
+    ->orderBy('display_order')
+    ->orderBy('name')
+    ->get(),
 
-            // Puertos por país (será cargado via AJAX)
-            'ports' => Port::where('active', true)
-                ->where('accepts_new_vessels', true)  // ← CAMPO REAL
-                ->with('country:id,name,iso_code')
-                ->select('id', 'name', 'code', 'country_id', 'port_type')
-                ->orderBy('country_id')
-                ->orderBy('name')
-                ->get(),
+// SOLO PUERTOS DE AR Y PY:
+'ports' => Port::where('active', true)
+    ->where('accepts_new_vessels', true)
+    ->whereHas('country', function($query) {
+        $query->whereIn('alpha2_code', ['AR', 'PY']);
+    })
+    ->with('country:id,name,iso_code,alpha2_code')
+    ->select('id', 'name', 'code', 'country_id')
+    ->orderBy('country_id')
+    ->orderBy('name')
+    ->get(),
 
             // Opciones para selects
             'voyageTypes' => [

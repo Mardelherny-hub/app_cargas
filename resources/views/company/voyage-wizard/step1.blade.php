@@ -1,14 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            {{ __('Nuevo Viaje Completo - Paso 1') }}
-        </h2>
-    </x-slot>
-
-    <div class="py-12">
-        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8" x-data="voyageWizardStep1()">
-            
-            {{-- HEADER DEL WIZARD --}}
+        <div class="flex items-center justify-between">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
                 <div class="p-6 bg-white border-b border-gray-200">
                     <div class="flex items-center justify-between">
@@ -16,18 +8,19 @@
                             <h1 class="text-2xl font-semibold text-gray-900">Nuevo Viaje Completo</h1>
                             <p class="text-sm text-gray-600">Captura todos los datos requeridos por AFIP</p>
                         </div>
-                        <div class="flex items-center space-x-2">
+                        <div class="flex items-center space-x-4 mx-8">
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                 PASO 1 de 3
                             </span>
                         </div>
                     </div>
-                    
-                    {{-- RESTO DEL CONTENIDO IGUAL... --}}
-                    {{-- (mantienes toda la barra de progreso y formulario igual) --}}
                 </div>
             </div>
+        </div>
+    </x-slot>
 
+    <div class="py-12">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
              {{-- BARRA DE PROGRESO --}}
                 <div class="mt-4">
                     <div class="flex items-center">
@@ -77,8 +70,7 @@
             </div>
         </div>
 
-        {{-- FORMULARIO PRINCIPAL --}}
-                <form action="{{ route('voyage-wizard.store-step1') }}" method="POST" class="space-y-6">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">        <form action="{{ route('voyage-wizard.store-step1') }}" method="POST" class="space-y-6">
             @csrf
             
             {{-- DATOS BÁSICOS DEL VIAJE --}}
@@ -181,7 +173,7 @@
                                 <select id="origin_country_id" 
                                         name="origin_country_id" 
                                         class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('origin_country_id') border-red-300 @enderror"
-                                        @change="loadPortsByCountry('origin', $event.target.value)"
+                                        onchange="voyageWizardStep1().loadPortsByCountry('origin', this.value)"
                                         required>
                                     <option value="">Seleccionar país...</option>
                                     @foreach($formData['countries'] as $country)
@@ -229,7 +221,7 @@
                                 <select id="destination_country_id" 
                                         name="destination_country_id" 
                                         class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('destination_country_id') border-red-300 @enderror"
-                                        @change="loadPortsByCountry('destination', $event.target.value)"
+                                        onchange="voyageWizardStep1().loadPortsByCountry('destination', this.value)"
                                         required>
                                     <option value="">Seleccionar país...</option>
                                     @foreach($formData['countries'] as $country)
@@ -279,7 +271,7 @@
                             <select id="lead_vessel_id" 
                                     name="lead_vessel_id" 
                                     class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('lead_vessel_id') border-red-300 @enderror"
-                                    @change="onVesselSelected($event.target.value)"
+                                    onchange="voyageWizardStep1().onVesselSelected(this.value)"
                                     required>
                                 <option value="">Seleccionar embarcación...</option>
                                 @foreach($formData['vessels'] as $vessel)
@@ -340,7 +332,7 @@
                             <select id="voyage_type" 
                                     name="voyage_type" 
                                     class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                    @change="onVoyageTypeChanged($event.target.value)"
+                                    onchange="voyageWizardStep1().onVoyageTypeChanged(this.value)"
                                     required>
                                 @foreach($formData['voyageTypes'] as $value => $label)
                                     <option value="{{ $value }}" 
@@ -381,7 +373,7 @@
                                    min="1" 
                                    max="20"
                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                   @change="onVesselCountChanged($event.target.value)"
+                                   onchange="voyageWizardStep1().onVesselCountChanged(this.value)"
                                    required>
                         </div>
                     </div>
@@ -536,11 +528,7 @@ function voyageWizardStep1() {
                 return;
             }
 
-            // 🔍 DEBUG: Verificar datos
-    console.log('voyageWizardData:', window.voyageWizardData);
-    console.log('ports disponibles:', window.voyageWizardData.ports);
-    console.log('filtrando por country_id:', countryId);
-
+           
             const ports = window.voyageWizardData.ports.filter(port => port.country_id == countryId);
             
             let html = '<option value="">Seleccionar puerto...</option>';
