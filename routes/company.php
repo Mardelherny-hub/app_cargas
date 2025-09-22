@@ -139,7 +139,16 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
 
 // Gestión de Viajes
 Route::prefix('voyages')->name('company.voyages.')->group(function () {
-    
+    // === WIZARD PARA CREAR VIAJES COMPLETOS ===
+    Route::prefix('wizard')->name('wizard.')->group(function () {
+        Route::get('/', [VoyageWizardController::class, 'index'])->name('index');
+        Route::match(['GET', 'POST'], '/step1', [VoyageWizardController::class, 'step1'])->name('step1');
+        Route::match(['GET', 'POST'], '/step2', [VoyageWizardController::class, 'step2'])->name('step2');
+        Route::match(['GET', 'POST'], '/step3', [VoyageWizardController::class, 'step3'])->name('step3');
+        Route::match(['GET', 'POST'], '/step4', [VoyageWizardController::class, 'step4'])->name('step4');
+        Route::post('/cancel', [VoyageWizardController::class, 'cancel'])->name('cancel');
+    });
+
     // CRUD básico
     Route::get('/', [VoyageController::class, 'index'])->name('index');
     Route::get('/create', [VoyageController::class, 'create'])->name('create');
@@ -173,7 +182,7 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
 // ========================================
 // WIZARD DE VIAJES COMPLETOS - INDEPENDIENTE
 // ========================================
-Route::prefix('company.voyage-wizard')->name('voyage-wizard.')->group(function () {
+Route::prefix('voyage-wizard')->name('voyage-wizard.')->group(function () {
     // PASO 1: Datos del Viaje
     Route::get('/step1', [VoyageWizardController::class, 'step1'])->name('step1');
     Route::post('/step1', [VoyageWizardController::class, 'storeStep1'])->name('store-step1');
@@ -596,8 +605,8 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
 
 
 // Importación de archivos KLine.DAT
-//Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
-//Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
+Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
+Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
 
 
 
@@ -763,54 +772,6 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/{voyage}/estado-afip', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerEstadoAfip'])
             ->name('estado-afip')
             ->whereNumber('voyage');
-
-        /**
-         * ================================================================================
-         * ACTUALIZACIÓN DE POSICIÓN GPS MIC/DTA - NUEVAS RUTAS
-         * ================================================================================
-         */
-
-        // Actualizar posición GPS individual de un voyage (AJAX)
-        Route::post('/{voyage}/actualizar-posicion', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'actualizarPosicionIndividual'])
-            ->name('actualizar-posicion')
-            ->whereNumber('voyage');
-
-        // Actualizar posiciones GPS masiva de un voyage (AJAX)
-        Route::post('/{voyage}/actualizar-posiciones-masiva', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'actualizarPosicionMasiva'])
-            ->name('actualizar-posiciones-masiva')
-            ->whereNumber('voyage');
-
-        // Obtener historial de posiciones GPS de un voyage (AJAX)
-        Route::get('/{voyage}/historial-posiciones', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerHistorialPosiciones'])
-            ->name('historial-posiciones')
-            ->whereNumber('voyage');
-
-        // Obtener estado GPS actual de un voyage para la vista (AJAX)
-        Route::get('/{voyage}/estado-gps', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerEstadoGps'])
-            ->name('estado-gps')
-            ->whereNumber('voyage');
-
-        // Obtener puntos de control AFIP disponibles (AJAX)
-        Route::get('/puntos-control', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerPuntosControl'])
-            ->name('puntos-control');
-
-        /**
-         * ================================================================================
-         * RUTAS GPS ADICIONALES PARA FUNCIONALIDADES AVANZADAS
-         * ================================================================================
-         */
-
-        // Validar coordenadas GPS antes del envío (AJAX)
-        Route::post('/validar-coordenadas', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'validarCoordenadas'])
-            ->name('validar-coordenadas');
-
-        // Detectar punto de control por coordenadas (AJAX)
-        Route::post('/detectar-punto-control', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'detectarPuntoControl'])
-            ->name('detectar-punto-control');
-
-        // Obtener configuración GPS AFIP (AJAX)
-        Route::get('/config-gps', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerConfigGps'])
-            ->name('config-gps');
     });
 
     // ====================================

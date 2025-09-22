@@ -961,7 +961,7 @@
         navigator.geolocation.getCurrentPosition(
             async (position) => {
                 try {
-                    const response = await fetch(`/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
+                    const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
                         method: 'POST',
                         headers: {
                             'X-CSRF-TOKEN': getCSRFToken(),
@@ -1006,7 +1006,7 @@
     // Mostrar historial GPS desde la lista
     async function showGpsHistory(voyageId) {
         try {
-            const response = await fetch(`/simple/webservices/micdta/${voyageId}/historial-posiciones?days=7`, {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/historial-posiciones?days=7`, {
                 headers: {
                     'X-CSRF-TOKEN': getCSRFToken(),
                     'Accept': 'application/json'
@@ -1321,7 +1321,7 @@
         navigator.geolocation.getCurrentPosition(
             async (position) => {
                 try {
-                    const response = await fetch(`/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
+                    const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
                         method: 'POST',
                         headers: {
                             'X-CSRF-TOKEN': getCSRFToken(),
@@ -1362,41 +1362,7 @@
             },
             { enableHighAccuracy: true, timeout: 10000 }
         );
-    }
-
-    /**
-     * Mostrar historial GPS desde la lista
-     */
-    async function showGpsHistory(voyageId) {
-        try {
-            const response = await fetch(`/simple/webservices/micdta/${voyageId}/historial-posiciones?days=7`, {
-                headers: {
-                    'X-CSRF-TOKEN': getCSRFToken(),
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                
-                let info = `📍 Historial GPS (7 días)\nVoyage: ${data.voyage_number}\nPosiciones: ${data.total_posiciones}\n\n`;
-                
-                if (data.estadisticas) {
-                    info += `📊 Estadísticas:\n`;
-                    info += `• Distancia: ${data.estadisticas.distancia_total_km} km\n`;
-                    info += `• Puntos control: ${data.estadisticas.puntos_control_detectados}\n`;
-                    info += `• Tiempo activo: ${data.estadisticas.periodo_activo_horas}h\n`;
-                    info += `• Velocidad: ${data.estadisticas.velocidad_promedio_kmh} km/h`;
-                }
-                
-                alert(info);
-            } else {
-                alert('❌ Error cargando historial GPS');
-            }
-        } catch (error) {
-            alert('❌ Error de comunicación');
-        }
-    }
+    }   
 
     /**
      * Funciones del panel de control masivo

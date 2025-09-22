@@ -1459,7 +1459,7 @@ class SimpleManifestController extends Controller
             // Obtener última actualización GPS enviada a AFIP
             $ultimaActualizacion = WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('company_id', $company->id)
-                ->where('webservice_type', 'micdta_position')
+                ->where('webservice_type', micdta)
                 ->where('status', 'sent')
                 ->latest('sent_at')
                 ->first();
@@ -1547,7 +1547,7 @@ class SimpleManifestController extends Controller
             // Verificar límites de actualización diarios (máximo 96 por día = cada 15 min)
             $actualizacionesHoy = WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('company_id', $voyage->company_id)
-                ->where('webservice_type', 'micdta_position')
+                ->where('webservice_type', micdta)
                 ->whereDate('created_at', today())
                 ->count();
 
@@ -1561,7 +1561,7 @@ class SimpleManifestController extends Controller
             // Verificar intervalo mínimo (15 minutos)
             $ultimaActualizacion = WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('company_id', $voyage->company_id)
-                ->where('webservice_type', 'micdta_position')
+                ->where('webservice_type', micdta)
                 ->latest('created_at')
                 ->first();
 

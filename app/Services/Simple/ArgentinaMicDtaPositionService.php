@@ -60,7 +60,7 @@ class ArgentinaMicDtaPositionService
         $this->user = $user;
         $this->config = array_merge([
             'environment' => 'testing',
-            'webservice_type' => 'micdta_position',
+            'webservice_type' => 'micdta',
             'min_update_interval_minutes' => 15,
             'max_daily_updates' => 96,
             'position_tolerance_meters' => 50,
@@ -247,7 +247,7 @@ return null;
     {
         $ultimaActualizacion = WebserviceTransaction::where('voyage_id', $voyage->id)
             ->where('company_id', $this->company->id)
-            ->where('webservice_type', 'micdta_position')
+            ->where('webservice_type', micdta)
             ->where('status', 'sent')
             ->latest('sent_at')
             ->first();
@@ -317,7 +317,7 @@ return null;
             'user_id' => $this->user->id,
             'voyage_id' => $voyage->id,
             'transaction_id' => 'GPS_' . $voyage->voyage_number . '_' . time(),
-            'webservice_type' => 'micdta_position',
+            'webservice_type' => 'micdta',
             'country' => 'AR',
             'status' => 'pending',
             'method_name' => 'ActualizarPosicion',
@@ -338,15 +338,27 @@ return null;
      */
     private function generarXmlGps(string $micDtaRef, float $lat, float $lng): string
     {
-        $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
-        
-        return $xmlGenerator->generateActualizarPosicionXml([
-            'external_reference' => $micDtaRef,
-            'latitude' => $lat,
-            'longitude' => $lng,
-            'timestamp' => now()->toISOString(),
-            'observations' => 'Actualización GPS automática - Sistema Simple'
-        ]);
+        return '<?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+        <soap:Header>
+            <AuthSoapHd xmlns="Ar.Gob.Afip.Dga.wgesregsintia2">
+                <token>TESTING_TOKEN_GPS_' . time() . '</token>
+                <sign>TESTING_SIGN_GPS_' . time() . '</sign>
+                <cuitRepresentado>' . $this->company->tax_id . '</cuitRepresentado>
+            </AuthSoapHd>
+        </soap:Header>
+        <soap:Body>
+            <ActualizarPosicion xmlns="Ar.Gob.Afip.Dga.wgesregsintia2">
+                <posicionParam>
+                    <MicDtaId>' . htmlspecialchars($micDtaRef) . '</MicDtaId>
+                    <Latitud>' . number_format($lat, 7, '.', '') . '</Latitud>
+                    <Longitud>' . number_format($lng, 7, '.', '') . '</Longitud>
+                    <FechaHora>' . now()->format('Y-m-d\TH:i:s.v\Z') . '</FechaHora>
+                    <Observaciones>Actualización GPS automática - Sistema Cargas</Observaciones>
+                </posicionParam>
+            </ActualizarPosicion>
+        </soap:Body>
+    </soap:Envelope>';
     }
 
     /**
@@ -356,6 +368,8 @@ return null;
     {
         try {
             $soapClient = new SoapClientService($this->company);
+
+            $soapClient->createClient('micdta', $this->config['environment']);
             
             $transaction->update([
                 'status' => 'sending',
@@ -396,7 +410,7 @@ return null;
 
             // Crear respuesta exitosa
             WebserviceResponse::create([
-                'webservice_transaction_id' => $transaction->id,
+                'transaction_id' => $transaction->id,
                 'response_code' => '200',
                 'response_message' => 'Posición actualizada exitosamente',
                 'response_data' => $result,
@@ -422,7 +436,7 @@ return null;
 
             // Crear respuesta de error
             WebserviceResponse::create([
-                'webservice_transaction_id' => $transaction->id,
+                'transaction_id' => $transaction->id,
                 'response_code' => '500',
                 'response_message' => $result['error_message'] ?? 'Error en AFIP',
                 'response_data' => $result,

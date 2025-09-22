@@ -725,9 +725,21 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 
                 $transaction->update([
                     'status' => 'sent', // Técnicamente enviado
+                    'external_reference' => $transaction->transaction_id, // Usar transaction ID como fallback
                     'requires_manual_review' => true,
                     'validation_errors' => ['No se pudo extraer MIC/DTA ID de la respuesta AFIP'],
                     'completed_at' => now(),
+                ]);
+                
+                // ✅ CREAR WEBSERVICE RESPONSE AUNQUE NO TENGAMOS MIC/DTA ID
+                \App\Models\WebserviceResponse::create([
+                    'transaction_id' => $transaction->id,
+                    'response_type' => 'success',
+                    'reference_number' => $transaction->transaction_id, // ⭐ CRÍTICO para GPS - usar transaction_id
+                    'confirmation_number' => $transaction->transaction_id,
+                    'customs_status' => 'processed',
+                    'customs_processed_at' => now(),
+                    'processed_at' => now(),
                 ]);
             }
 
@@ -741,12 +753,18 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // Guardar TRACKs en base de datos
             $this->saveTracks($voyage, $allTracks);
 
+            // ✅ CRÍTICO: Guardar datos para GPS y auditorías
+            $this->saveTransactionData($transaction->transaction_id, $xml, $response, $micDtaId);
+            $this->saveResponseRecord($transactionId, $voyage, $micDtaId);
+
             return [
                 'success' => true,
+                'transaction_id' => $transactionId,
                 'mic_dta_id' => $micDtaId,
-                'transaction_id' => $transaction->id,
-                'response_time_ms' => $responseTime,
-                'tracks_saved' => array_sum(array_map('count', $allTracks)),
+                'response' => $response,
+                'execution_time_ms' => $responseTime,
+                'tracks_saved' => count($allTracks),
+                'shipments_processed' => count($allTracks),
             ];
 
         } catch (Exception $e) {
@@ -1163,4 +1181,45 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ->latest()
             ->first();
     }
+
+    /**
+ * Guardar datos de transacción para auditorías
+ */
+private function saveTransactionData(string $transactionId, string $requestXml, string $responseXml, ?string $micDtaId): void
+{
+    try {
+        \App\Models\WebserviceTransaction::where('transaction_id', $transactionId)
+            ->update([
+                'external_reference' => $micDtaId,
+                'request_xml' => $requestXml,
+                'response_xml' => $responseXml,
+                'status' => 'success',
+                'response_at' => now(),
+            ]);
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error guardando datos transacción', ['error' => $e->getMessage()]);
+    }
+}
+
+/**
+ * Guardar registro de respuesta para GPS
+ */
+private function saveResponseRecord(string $transactionId, Voyage $voyage, ?string $micDtaId): void
+{
+    try {
+        $transaction = \App\Models\WebserviceTransaction::where('transaction_id', $transactionId)->first();
+        if ($transaction) {
+            \App\Models\WebserviceResponse::create([
+                'transaction_id' => $transaction->id,
+                'response_type' => 'success',
+                'reference_number' => $micDtaId ?: $transactionId,
+                'voyage_number' => $voyage->voyage_number,
+                'confirmation_number' => $micDtaId,
+                'processed_at' => now(),
+            ]);
+        }
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error guardando respuesta para GPS', ['error' => $e->getMessage()]);
+    }
+}
 }
