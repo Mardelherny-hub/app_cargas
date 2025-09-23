@@ -1319,5 +1319,430 @@ class SimpleXmlGenerator
             throw $e;
         }
     }
+
+    /**
+     * RegistrarTitMicDta - Vincular títulos de transporte a MIC/DTA existente
+     * Genera XML según especificación AFIP para registrar títulos a un MIC/DTA
+     * 
+     * @param array $vinculacionData Datos de vinculación (id_micdta, titulos)
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string|null XML completo o null si error
+     */
+    public function createRegistrarTitMicDtaXml(array $vinculacionData, string $transactionId): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($vinculacionData['id_micdta'])) {
+                throw new Exception('ID MIC/DTA obligatorio');
+            }
+            
+            if (empty($vinculacionData['titulos']) || !is_array($vinculacionData['titulos'])) {
+                throw new Exception('Lista de títulos obligatoria');
+            }
+
+            // Validar longitudes según AFIP
+            if (strlen($vinculacionData['id_micdta']) > 16) {
+                throw new Exception('ID MIC/DTA no puede exceder 16 caracteres');
+            }
+            
+            if (strlen($transactionId) > 15) {
+                throw new Exception('ID Transacción no puede exceder 15 caracteres');
+            }
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Envelope SOAP
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('RegistrarTitMicDta');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio para todos los métodos AFIP)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros específicos del método
+                $w->startElement('argRegistrarTitMicDtaParam');
+                    
+                    // ID Transacción (obligatorio)
+                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+                    
+                    // ID MIC/DTA al cual vincular títulos (obligatorio)
+                    $w->writeElement('idMicDta', htmlspecialchars($vinculacionData['id_micdta']));
+                    
+                    // Lista de títulos de transporte a vincular
+                    $w->startElement('idTitTrans');
+                    foreach ($vinculacionData['titulos'] as $titulo) {
+                        $tituloId = is_array($titulo) ? ($titulo['id'] ?? $titulo['id_titulo'] ?? '') : (string)$titulo;
+                        if (!empty($tituloId)) {
+                            $w->writeElement('string', htmlspecialchars(substr($tituloId, 0, 36)));
+                        }
+                    }
+                    $w->endElement(); // idTitTrans
+                    
+                $w->endElement(); // argRegistrarTitMicDtaParam
+                $w->endElement(); // RegistrarTitMicDta
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createRegistrarTitMicDtaXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * DesvincularTitMicDta - Desvincular títulos de transporte de MIC/DTA
+     * Genera XML según especificación AFIP para desvincular títulos de un MIC/DTA
+     * 
+     * @param array $desvinculacionData Datos de desvinculación (id_micdta, titulos)
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string|null XML completo o null si error
+     */
+    public function createDesvincularTitMicDtaXml(array $desvinculacionData, string $transactionId): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($desvinculacionData['id_micdta'])) {
+                throw new Exception('ID MIC/DTA obligatorio');
+            }
+            
+            if (empty($desvinculacionData['titulos']) || !is_array($desvinculacionData['titulos'])) {
+                throw new Exception('Lista de títulos obligatoria');
+            }
+
+            // Validar longitudes según AFIP
+            if (strlen($desvinculacionData['id_micdta']) > 16) {
+                throw new Exception('ID MIC/DTA no puede exceder 16 caracteres');
+            }
+            
+            if (strlen($transactionId) > 15) {
+                throw new Exception('ID Transacción no puede exceder 15 caracteres');
+            }
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Envelope SOAP
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('DesvincularTitMicDta');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio para todos los métodos AFIP)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros específicos del método
+                $w->startElement('argDesvincularTitMicDtaParam');
+                    
+                    // ID Transacción (obligatorio)
+                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+                    
+                    // ID MIC/DTA del cual desvincular títulos (obligatorio)
+                    $w->writeElement('idMicDta', htmlspecialchars($desvinculacionData['id_micdta']));
+                    
+                    // Lista de títulos de transporte a desvincular
+                    $w->startElement('idTitTrans');
+                    foreach ($desvinculacionData['titulos'] as $titulo) {
+                        $tituloId = is_array($titulo) ? ($titulo['id'] ?? $titulo['id_titulo'] ?? '') : (string)$titulo;
+                        if (!empty($tituloId)) {
+                            $w->writeElement('string', htmlspecialchars(substr($tituloId, 0, 36)));
+                        }
+                    }
+                    $w->endElement(); // idTitTrans
+                    
+                $w->endElement(); // argDesvincularTitMicDtaParam
+                $w->endElement(); // DesvincularTitMicDta
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createDesvincularTitMicDtaXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
     
+    /**
+     * AnularEnvios - Anular conjunto de envíos por IDs de seguimiento
+     * Genera XML según especificación AFIP para anular envíos específicos
+     * 
+     * @param array $anulacionData Datos de anulación (tracks requeridos)
+     * @param string $transactionId ID único de transacción (opcional)
+     * @return string|null XML completo o null si error
+     */
+    public function createAnularEnviosXml(array $anulacionData, string $transactionId = ''): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($anulacionData['tracks']) || !is_array($anulacionData['tracks'])) {
+                throw new Exception('Lista de tracks (IDs de seguimiento) obligatoria');
+            }
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Envelope SOAP
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('AnularEnvios');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Lista de IDs de tracks a anular
+                $w->startElement('argIdTracks');
+                foreach ($anulacionData['tracks'] as $track) {
+                    $trackId = is_array($track) ? ($track['id'] ?? $track['track_id'] ?? '') : (string)$track;
+                    if (!empty($trackId)) {
+                        $w->writeElement('string', htmlspecialchars($trackId));
+                    }
+                }
+                $w->endElement(); // argIdTracks
+
+                $w->endElement(); // AnularEnvios
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createAnularEnviosXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Dummy - Testing de conectividad del webservice AFIP
+     * Genera XML según especificación AFIP para verificar funcionamiento
+     * 
+     * @return string|null XML completo o null si error
+     */
+    public function createDummyXml(): ?string
+    {
+        try {
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Envelope SOAP
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                // Método Dummy sin parámetros específicos (solo namespace)
+                $w->startElement('Dummy');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+                $w->endElement(); // Dummy (self-closing)
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createDummyXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * ConsultarPrecumplido - Consultar valores de precumplido de destinación
+     * Genera XML según especificación AFIP para consultar precumplidos
+     * 
+     * @param array $consultaData Datos de consulta (destinacion_id, etc.)
+     * @param string $transactionId ID único de transacción (opcional)
+     * @return string|null XML completo o null si error
+     */
+    public function createConsultarPrecumplidoXml(array $consultaData, string $transactionId = ''): ?string
+    {
+        try {
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Envelope SOAP
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('ConsultarPrecumplido');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros de consulta (si se especifican)
+                if (!empty($consultaData)) {
+                    $w->startElement('argConsultarPrecumplidoParam');
+                    
+                    // ID Transacción para identificar la consulta (opcional)
+                    if (!empty($transactionId)) {
+                        $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+                    }
+                    
+                    // ID de destinación para consultar precumplido (principal parámetro)
+                    if (!empty($consultaData['destinacion_id'])) {
+                        $w->writeElement('idDestinacion', htmlspecialchars($consultaData['destinacion_id']));
+                    }
+                    
+                    // Otros filtros opcionales
+                    if (!empty($consultaData['codigo_aduana'])) {
+                        $w->writeElement('codAduana', htmlspecialchars($consultaData['codigo_aduana']));
+                    }
+                    
+                    $w->endElement(); // argConsultarPrecumplidoParam
+                }
+
+                $w->endElement(); // ConsultarPrecumplido
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createConsultarPrecumplidoXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * AnularArriboZonaPrimaria - Anular arribo registrado en zona primaria
+     * Genera XML según especificación AFIP para anular arribo
+     * 
+     * @param array $anulacionData Datos de anulación (nro_viaje o referencia_arribo)
+     * @param string $transactionId ID único de transacción (opcional)
+     * @return string|null XML completo o null si error
+     */
+    public function createAnularArriboZonaPrimariaXml(array $anulacionData, string $transactionId = ''): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($anulacionData['nro_viaje']) && empty($anulacionData['referencia_arribo'])) {
+                throw new Exception('Número de viaje o referencia de arribo obligatorio');
+            }
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Envelope SOAP
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('AnularArriboZonaPrimaria');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros de anulación
+                $w->startElement('argAnularArriboZonaPrimariaParam');
+                
+                // ID Transacción (opcional)
+                if (!empty($transactionId)) {
+                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+                }
+                
+                // Número de viaje (parámetro principal)
+                if (!empty($anulacionData['nro_viaje'])) {
+                    $w->writeElement('nroViaje', htmlspecialchars($anulacionData['nro_viaje']));
+                } elseif (!empty($anulacionData['referencia_arribo'])) {
+                    $w->writeElement('referenciaArribo', htmlspecialchars($anulacionData['referencia_arribo']));
+                }
+                
+                // Motivo de anulación (opcional)
+                if (!empty($anulacionData['motivo'])) {
+                    $w->writeElement('motivoAnulacion', htmlspecialchars(substr($anulacionData['motivo'], 0, 50)));
+                }
+                
+                $w->endElement(); // argAnularArriboZonaPrimariaParam
+                $w->endElement(); // AnularArriboZonaPrimaria
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createAnularArriboZonaPrimariaXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
 }
