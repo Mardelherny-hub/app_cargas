@@ -95,6 +95,157 @@ class SimpleManifestController extends Controller
         ],
     ];
 
+        /**
+     * ================================================================================
+     * MÉTODO GENÉRICO AFIP - CORAZÓN DEL SISTEMA
+     * ================================================================================
+     * 
+     * Método genérico que maneja TODOS los 18 métodos AFIP de manera consistente.
+     * Centraliza la lógica: validación → servicio → respuesta → auditoría
+     * 
+     * @param string $method Nombre del método AFIP (ej: 'RegistrarTitEnvios')
+     * @param Request $request Datos de entrada del usuario
+     * @param Voyage $voyage Voyage a procesar
+     * @return array Resultado con success/error/data/transaction_id
+     */
+    private function executeAfipMethod(string $method, Request $request, Voyage $voyage): array
+    {
+        try {
+            // 1. VALIDACIONES BÁSICAS
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return [
+                    'success' => false,
+                    'error' => 'Voyage no pertenece a su empresa',
+                    'error_code' => 'UNAUTHORIZED_VOYAGE'
+                ];
+            }
+
+            // 2. INSTANCIAR SERVICIO MICDTA
+            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
+            
+            // 3. VALIDAR QUE EL VOYAGE PUEDE SER PROCESADO  
+            $validation = $micDtaService->canProcessVoyage($voyage);
+            if (!$validation['can_process']) {
+                return [
+                    'success' => false,
+                    'error' => 'Voyage no válido para ' . $method,
+                    'validation_errors' => $validation['errors'],
+                    'warnings' => $validation['warnings'],
+                    'error_code' => 'VALIDATION_FAILED'
+                ];
+            }
+
+            // 4. PREPARAR DATOS ESPECÍFICOS DEL MÉTODO
+            $methodData = $this->prepareMethodData($method, $request, $voyage);
+            
+            // 5. EJECUTAR MÉTODO EN EL SERVICIO  
+            $result = $micDtaService->executeMethod($method, $voyage, $methodData);
+            
+            // 6. PROCESAR RESULTADO Y RESPONDER
+            if ($result['success']) {
+                return [
+                    'success' => true,
+                    'message' => $method . ' ejecutado exitosamente',
+                    'data' => [
+                        'transaction_id' => $result['transaction_id'] ?? null,
+                        'external_reference' => $result['external_reference'] ?? null,
+                        'method' => $method,
+                        'timestamp' => now()->toISOString(),
+                        'tracks_generated' => $result['tracks_generated'] ?? 0,
+                        'response_data' => $result['response_data'] ?? null
+                    ]
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'error' => 'Error ejecutando ' . $method,
+                    'details' => $result['error_message'] ?? 'Error desconocido',
+                    'error_code' => $result['error_code'] ?? 'METHOD_EXECUTION_FAILED',
+                    'transaction_id' => $result['transaction_id'] ?? null
+                ];
+            }
+
+        } catch (Exception $e) {
+            // LOG CRÍTICO DE ERROR
+            \Log::error('Error crítico en executeAfipMethod', [
+                'method' => $method,
+                'voyage_id' => $voyage->id,
+                'company_id' => $company->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Error interno del servidor',
+                'details' => app()->environment('local') ? $e->getMessage() : 'Contacte al administrador',
+                'error_code' => 'INTERNAL_SERVER_ERROR'
+            ];
+        }
+    }
+
+    /**
+     * Preparar datos específicos según el método AFIP
+     * 
+     * @param string $method Método AFIP
+     * @param Request $request Request con datos
+     * @param Voyage $voyage Voyage a procesar
+     * @return array Datos preparados para el método
+     */
+    private function prepareMethodData(string $method, Request $request, Voyage $voyage): array
+    {
+        $baseData = [
+            'force_send' => $request->boolean('force_send', false),
+            'user_notes' => $request->input('notes', ''),
+            'environment' => $this->getUserCompany()->ws_environment ?? 'testing',
+        ];
+
+        // DATOS ESPECÍFICOS POR MÉTODO
+        switch ($method) {
+            case 'RegistrarTitEnvios':
+            case 'RegistrarEnvios':
+            case 'RegistrarMicDta':
+                // Métodos principales - usar datos base
+                return $baseData;
+                
+            case 'RegistrarConvoy':
+                return array_merge($baseData, [
+                    'convoy_id' => $request->input('convoy_id'),
+                    'convoy_name' => $request->input('convoy_name', 'CONVOY_' . $voyage->voyage_number),
+                    'convoy_sequence' => $request->input('convoy_sequence', 1)
+                ]);
+                
+            case 'AsignarATARemol':
+                return array_merge($baseData, [
+                    'remolcador_id' => $request->input('remolcador_id'),
+                    'ata_remolcador' => $request->input('ata_remolcador')
+                ]);
+                
+            case 'RegistrarTitMicDta':
+                return array_merge($baseData, [
+                    'id_micdta' => $request->input('id_micdta'),
+                    'titulos' => $request->input('titulos', [])
+                ]);
+                
+            case 'DesvincularTitMicDta':
+                return array_merge($baseData, [
+                    'id_micdta' => $request->input('id_micdta'),
+                    'titulos' => $request->input('titulos', [])
+                ]);
+                
+            case 'AnularTitulo':
+                return array_merge($baseData, [
+                    'titulo_id' => $request->input('titulo_id'),
+                    'motivo_anulacion' => $request->input('motivo_anulacion', 'Anulación solicitada')
+                ]);
+                
+            default:
+                // Para métodos de consulta y otros
+                return $baseData;
+        }
+    }
+
     // ====================================
     // DASHBOARD PRINCIPAL
     // ====================================
@@ -967,6 +1118,758 @@ class SimpleManifestController extends Controller
                 'success' => false,
                 'error' => 'Error obteniendo estado: ' . $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * 18 MÉTODOS AFIP - FLUJO PRINCIPAL CONVOY BARCAZAS  
+     * ================================================================================
+     */
+
+    /**
+     * 1. RegistrarTitEnvios - Registra títulos de transporte (genera TRACKs)
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-tit-envios
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarTitEnvios(Request $request, Voyage $voyage)
+    {
+        try {
+            // Validación específica del método
+            $request->validate([
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            // Ejecutar método AFIP usando el método genérico
+            $result = $this->executeAfipMethod('RegistrarTitEnvios', $request, $voyage);
+            
+            // Determinar código de respuesta HTTP
+            $httpCode = $result['success'] ? 200 : 400;
+            if (isset($result['error_code'])) {
+                $httpCode = match($result['error_code']) {
+                    'UNAUTHORIZED_VOYAGE' => 403,
+                    'VALIDATION_FAILED' => 422,
+                    'INTERNAL_SERVER_ERROR' => 500,
+                    default => 400
+                };
+            }
+
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors(),
+                'error_code' => 'VALIDATION_ERROR'
+            ], 422);
+            
+        } catch (Exception $e) {
+            \Log::error('Error en registrarTitEnvios', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno procesando RegistrarTitEnvios',
+                'error_code' => 'INTERNAL_ERROR'
+            ], 500);
+        }
+    }
+
+    /**
+     * 2. RegistrarEnvios - Registra envíos detallados (valida TRACKs)
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-envios
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarEnvios(Request $request, Voyage $voyage)
+    {
+        try {
+            // Validación específica del método
+            $request->validate([
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            // Ejecutar método AFIP
+            $result = $this->executeAfipMethod('RegistrarEnvios', $request, $voyage);
+            
+            // Código de respuesta HTTP
+            $httpCode = $result['success'] ? 200 : 400;
+            if (isset($result['error_code'])) {
+                $httpCode = match($result['error_code']) {
+                    'UNAUTHORIZED_VOYAGE' => 403,
+                    'VALIDATION_FAILED' => 422,
+                    'INTERNAL_SERVER_ERROR' => 500,
+                    default => 400
+                };
+            }
+
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors(),
+                'error_code' => 'VALIDATION_ERROR'
+            ], 422);
+            
+        } catch (Exception $e) {
+            \Log::error('Error en registrarEnvios', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno procesando RegistrarEnvios',
+                'error_code' => 'INTERNAL_ERROR'
+            ], 500);
+        }
+    }
+
+    /**
+     * 3. RegistrarMicDta - Registra MIC/DTA completo (consume TRACKs)
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-micdta
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarMicDta(Request $request, Voyage $voyage)
+    {
+        try {
+            // Validación específica del método
+            $request->validate([
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            // Ejecutar método AFIP
+            $result = $this->executeAfipMethod('RegistrarMicDta', $request, $voyage);
+            
+            // Código de respuesta HTTP
+            $httpCode = $result['success'] ? 200 : 400;
+            if (isset($result['error_code'])) {
+                $httpCode = match($result['error_code']) {
+                    'UNAUTHORIZED_VOYAGE' => 403,
+                    'VALIDATION_FAILED' => 422,
+                    'INTERNAL_SERVER_ERROR' => 500,
+                    default => 400
+                };
+            }
+
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors(),
+                'error_code' => 'VALIDATION_ERROR'
+            ], 422);
+            
+        } catch (Exception $e) {
+            \Log::error('Error en registrarMicDta', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno procesando RegistrarMicDta',
+                'error_code' => 'INTERNAL_ERROR'
+            ], 500);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * GESTIÓN CONVOY
+     * ================================================================================
+     */
+
+    /**
+     * 4. RegistrarConvoy - Agrupa MIC/DTAs en convoy
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-convoy
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarConvoy(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'convoy_id' => 'string|max:20',
+                'convoy_name' => 'string|max:50',
+                'convoy_sequence' => 'integer|min:1|max:99',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('RegistrarConvoy', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en registrarConvoy', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando RegistrarConvoy'], 500);
+        }
+    }
+
+    /**
+     * 5. AsignarATARemol - Asigna remolcador ATA
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/asignar-ata-remol
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function asignarATARemol(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'remolcador_id' => 'required|string|max:20',
+                'ata_remolcador' => 'required|string|max:30',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('AsignarATARemol', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en asignarATARemol', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando AsignarATARemol'], 500);
+        }
+    }
+
+    /**
+     * 6. RectifConvoyMicDta - Rectifica convoy MIC/DTA
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/rectif-convoy-micdta
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function rectifConvoyMicDta(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'convoy_id' => 'required|string|max:20',
+                'rectification_reason' => 'required|string|max:200',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('RectifConvoyMicDta', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en rectifConvoyMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando RectifConvoyMicDta'], 500);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * GESTIÓN TÍTULOS
+     * ================================================================================
+     */
+
+    /**
+     * 7. RegistrarTitMicDta - Registra título MIC/DTA
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-tit-micdta
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarTitMicDta(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'id_micdta' => 'required|string|max:16',
+                'titulos' => 'required|array|min:1',
+                'titulos.*' => 'string|max:36',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('RegistrarTitMicDta', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en registrarTitMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando RegistrarTitMicDta'], 500);
+        }
+    }
+
+    /**
+     * 8. DesvincularTitMicDta - Desvincula título
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/desvincular-tit-micdta
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function desvincularTitMicDta(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'id_micdta' => 'required|string|max:16',
+                'titulos' => 'required|array|min:1',
+                'titulos.*' => 'string|max:36',
+                'motivo_desvinculacion' => 'string|max:200',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('DesvincularTitMicDta', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en desvincularTitMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando DesvincularTitMicDta'], 500);
+        }
+    }
+
+    /**
+     * 9. AnularTitulo - Anula título
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/anular-titulo
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function anularTitulo(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'titulo_id' => 'required|string|max:36',
+                'motivo_anulacion' => 'required|string|max:200',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('AnularTitulo', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en anularTitulo', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando AnularTitulo'], 500);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * ZONA PRIMARIA
+     * ================================================================================
+     */
+
+    /**
+     * 10. RegistrarSalidaZonaPrimaria - Salida zona primaria
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-salida-zona-primaria
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarSalidaZonaPrimaria(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'fecha_salida' => 'required|date',
+                'puerto_salida' => 'required|string|max:10',
+                'aduana_salida' => 'required|string|max:3',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('RegistrarSalidaZonaPrimaria', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en registrarSalidaZonaPrimaria', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando RegistrarSalidaZonaPrimaria'], 500);
+        }
+    }
+
+    /**
+     * 11. RegistrarArriboZonaPrimaria - Arribo zona primaria
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/registrar-arribo-zona-primaria
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function registrarArriboZonaPrimaria(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'fecha_arribo' => 'required|date',
+                'puerto_arribo' => 'required|string|max:10',
+                'aduana_arribo' => 'required|string|max:3',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('RegistrarArriboZonaPrimaria', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en registrarArriboZonaPrimaria', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando RegistrarArriboZonaPrimaria'], 500);
+        }
+    }
+
+    /**
+     * 12. AnularArriboZonaPrimaria - Anular arribo zona primaria
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/anular-arribo-zona-primaria
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function anularArriboZonaPrimaria(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'arribo_id' => 'required|string|max:20',
+                'motivo_anulacion' => 'required|string|max:200',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('AnularArriboZonaPrimaria', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en anularArriboZonaPrimaria', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando AnularArriboZonaPrimaria'], 500);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * CONSULTAS
+     * ================================================================================
+     */
+
+    /**
+     * 13. ConsultarMicDtaAsig - Consultar MIC/DTA asignado
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/consultar-micdta-asig
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function consultarMicDtaAsig(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'external_reference' => 'string|max:50',
+                'micdta_id' => 'string|max:20',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('ConsultarMicDtaAsig', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en consultarMicDtaAsig', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando ConsultarMicDtaAsig'], 500);
+        }
+    }
+
+    /**
+     * 14. ConsultarTitEnviosReg - Consultar títulos envíos registrados
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/consultar-tit-envios-reg
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function consultarTitEnviosReg(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'titulo_id' => 'string|max:36',
+                'fecha_desde' => 'date',
+                'fecha_hasta' => 'date|after_or_equal:fecha_desde',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('ConsultarTitEnviosReg', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en consultarTitEnviosReg', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando ConsultarTitEnviosReg'], 500);
+        }
+    }
+
+    /**
+     * 15. ConsultarPrecumplido - Consultar precumplido
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/consultar-precumplido
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function consultarPrecumplido(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'precumplido_id' => 'string|max:20',
+                'estado' => 'string|in:pendiente,aprobado,rechazado',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('ConsultarPrecumplido', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en consultarPrecumplido', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando ConsultarPrecumplido'], 500);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * ANULACIONES + TESTING
+     * ================================================================================
+     */
+
+    /**
+     * 16. SolicitarAnularMicDta - Solicitar anular MIC/DTA
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/solicitar-anular-micdta
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function solicitarAnularMicDta(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'micdta_id' => 'required|string|max:20',
+                'motivo_anulacion' => 'required|string|max:200',
+                'justificacion' => 'string|max:500',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('SolicitarAnularMicDta', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en solicitarAnularMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando SolicitarAnularMicDta'], 500);
+        }
+    }
+
+    /**
+     * 17. AnularEnvios - Anular envíos
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/anular-envios
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function anularEnvios(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'envios_ids' => 'required|array|min:1',
+                'envios_ids.*' => 'string|max:36',
+                'motivo_anulacion' => 'required|string|max:200',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('AnularEnvios', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en anularEnvios', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando AnularEnvios'], 500);
+        }
+    }
+
+    /**
+     * 18. Dummy - Método de prueba AFIP
+     * 
+     * Ruta: POST /webservices/micdta/{voyage}/dummy
+     * 
+     * @param Request $request
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function dummy(Request $request, Voyage $voyage)
+    {
+        try {
+            $request->validate([
+                'test_parameter' => 'string|max:100',
+                'force_send' => 'boolean',
+                'notes' => 'string|max:500'
+            ]);
+
+            $result = $this->executeAfipMethod('Dummy', $request, $voyage);
+            
+            $httpCode = $result['success'] ? 200 : ($result['error_code'] === 'UNAUTHORIZED_VOYAGE' ? 403 : 400);
+            return response()->json($result, $httpCode);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            \Log::error('Error en dummy', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno procesando Dummy'], 500);
         }
     }
 
