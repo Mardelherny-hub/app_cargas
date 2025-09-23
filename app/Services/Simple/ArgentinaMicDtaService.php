@@ -2283,4 +2283,317 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             return null;
         }
     }
+
+    // ========================================================================
+    // SOLICITAR ANULAR MIC/DTA - MÉTODO OFICIAL AFIP
+    // ========================================================================
+
+    /**
+     * SolicitarAnularMicDta - Solicitar anulación de MIC/DTA
+     * 
+     * @param string $micDtaId ID del MIC/DTA (external_reference)
+     * @param string $motivoAnulacion Motivo de la anulación (máx 50 chars)
+     * @return array Resultado de la operación
+     */
+    public function solicitarAnularMicDta(string $micDtaId, string $motivoAnulacion): array
+    {
+        $result = [
+            'success' => false,
+            'transaction_id' => null,
+            'micdta_id' => $micDtaId,
+            'motivo' => $motivoAnulacion,
+            'solicitud_procesada' => false,
+            'errors' => [],
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            $this->logOperation('info', 'Iniciando SolicitarAnularMicDta', [
+                'micdta_id' => $micDtaId,
+                'motivo' => $motivoAnulacion,
+            ]);
+
+            // 1. Validar parámetros
+            $validation = $this->validateAnularMicDtaParams($micDtaId, $motivoAnulacion);
+            if (!$validation['is_valid']) {
+                $result['errors'] = $validation['errors'];
+                return $result;
+            }
+
+            // 2. Verificar que el MIC/DTA existe y pertenece a la empresa
+            $micDtaTransaction = $this->findMicDtaTransactionByReference($micDtaId);
+            if (!$micDtaTransaction) {
+                $result['errors'][] = 'MIC/DTA no encontrado o no pertenece a esta empresa';
+                return $result;
+            }
+
+            // 3. Crear transacción para SolicitarAnularMicDta
+            $transaction = $this->createAnularMicDtaTransaction($micDtaTransaction, $motivoAnulacion);
+            $result['transaction_id'] = $transaction->id;
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. Generar XML para SolicitarAnularMicDta
+            $anulacionData = [
+                'id_micdta' => $micDtaId,
+                'desc_motivo' => $motivoAnulacion,
+            ];
+
+            $xmlContent = $this->xmlSerializer->createSolicitarAnularMicDtaXml($anulacionData, $transaction->transaction_id);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML SolicitarAnularMicDta');
+            }
+
+            // 5. Enviar a AFIP
+            $soapClient = $this->createSoapClient();
+            $soapResponse = $this->sendSolicitarAnularMicDtaSoapRequest($transaction, $soapClient, $xmlContent);
+
+            // 6. Procesar respuesta
+            if ($soapResponse['success']) {
+                $result = $this->processSolicitarAnularMicDtaResponse($transaction, $soapResponse, $micDtaId, $motivoAnulacion);
+            } else {
+                $result['errors'] = $soapResponse['errors'] ?? ['Error en comunicación con AFIP'];
+            }
+
+            DB::commit();
+            return $result;
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            $this->logOperation('error', 'Error en SolicitarAnularMicDta', [
+                'error' => $e->getMessage(),
+                'micdta_id' => $micDtaId,
+                'motivo' => $motivoAnulacion,
+            ]);
+
+            $result['errors'][] = $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * Validar parámetros para SolicitarAnularMicDta
+     */
+    private function validateAnularMicDtaParams(string $micDtaId, string $motivoAnulacion): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'errors' => [],
+        ];
+
+        // Validar MIC/DTA ID
+        if (empty($micDtaId)) {
+            $validation['errors'][] = 'ID MIC/DTA es obligatorio';
+        } elseif (strlen($micDtaId) > 16) {
+            $validation['errors'][] = 'ID MIC/DTA no puede exceder 16 caracteres';
+        }
+
+        // Validar motivo
+        if (empty($motivoAnulacion)) {
+            $validation['errors'][] = 'Motivo de anulación es obligatorio';
+        } elseif (strlen($motivoAnulacion) > 50) {
+            $validation['errors'][] = 'Motivo de anulación no puede exceder 50 caracteres';
+        }
+
+        $validation['is_valid'] = empty($validation['errors']);
+
+        if (!$validation['is_valid']) {
+            $this->logOperation('warning', 'Validación SolicitarAnularMicDta falló', [
+                'errors' => $validation['errors'],
+                'micdta_id_length' => strlen($micDtaId),
+                'motivo_length' => strlen($motivoAnulacion),
+            ]);
+        }
+
+        return $validation;
+    }
+
+    /**
+     * Buscar transacción MIC/DTA existente por referencia
+     */
+    private function findMicDtaTransactionByReference(string $micDtaId): ?\App\Models\WebserviceTransaction
+    {
+        return \App\Models\WebserviceTransaction::where('external_reference', $micDtaId)
+            ->orWhere('confirmation_number', $micDtaId)
+            ->where('company_id', $this->company->id)
+            ->where('webservice_type', 'micdta')
+            ->where('status', 'success')
+            ->latest('completed_at')
+            ->first();
+    }
+
+    /**
+     * Crear transacción para SolicitarAnularMicDta
+     */
+    private function createAnularMicDtaTransaction(\App\Models\WebserviceTransaction $micDtaTransaction, string $motivoAnulacion): \App\Models\WebserviceTransaction
+    {
+        $transactionId = 'ANULAR_MICDTA_' . time() . '_' . $this->company->id;
+
+        return \App\Models\WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $micDtaTransaction->voyage_id,
+            'shipment_id' => $micDtaTransaction->shipment_id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'anular_micdta',
+            'country' => 'AR',
+            'webservice_url' => $this->getWsdlUrl(),
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/SolicitarAnularMicDta',
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'timeout_seconds' => 60,
+            'max_retries' => 3,
+            'additional_metadata' => [
+                'method' => 'SolicitarAnularMicDta',
+                'original_micdta_transaction_id' => $micDtaTransaction->id,
+                'original_micdta_reference' => $micDtaTransaction->external_reference,
+                'motivo_anulacion' => $motivoAnulacion,
+                'purpose' => 'Solicitar anulación de MIC/DTA',
+            ],
+        ]);
+    }
+
+    /**
+     * Enviar SOAP Request para SolicitarAnularMicDta
+     */
+    private function sendSolicitarAnularMicDtaSoapRequest(\App\Models\WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+    {
+        $result = [
+            'success' => false,
+            'response_data' => null,
+            'errors' => [],
+        ];
+
+        try {
+            $this->logOperation('info', 'Enviando SOAP SolicitarAnularMicDta', [
+                'transaction_id' => $transaction->id,
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+            ]);
+
+            // Actualizar transacción
+            $transaction->update([
+                'status' => 'sending',
+                'request_xml' => $xmlContent,
+                'sent_at' => now(),
+            ]);
+
+            // Llamada SOAP directa
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/SolicitarAnularMicDta',
+                SOAP_1_1,
+                false
+            );
+
+            if ($response) {
+                $result['success'] = true;
+                $result['response_data'] = $response;
+                
+                $this->logOperation('info', 'Respuesta SOAP SolicitarAnularMicDta recibida', [
+                    'transaction_id' => $transaction->id,
+                    'response_length' => strlen($response),
+                ]);
+
+                // Actualizar transacción con respuesta
+                $transaction->update([
+                    'response_xml' => $response,
+                    'response_at' => now(),
+                    'status' => 'sent',
+                ]);
+            } else {
+                $result['errors'][] = 'Respuesta SOAP vacía';
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Respuesta SOAP vacía',
+                    'completed_at' => now(),
+                ]);
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $result['errors'][] = 'Error SOAP SolicitarAnularMicDta: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en SOAP SolicitarAnularMicDta', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            return $result;
+        }
+    }
+
+    /**
+     * Procesar respuesta de SolicitarAnularMicDta
+     */
+    private function processSolicitarAnularMicDtaResponse(\App\Models\WebserviceTransaction $transaction, array $soapResponse, string $micDtaId, string $motivoAnulacion): array
+    {
+        $result = [
+            'success' => false,
+            'micdta_id' => $micDtaId,
+            'motivo' => $motivoAnulacion,
+            'solicitud_procesada' => false,
+        ];
+
+        try {
+            // Verificar si hay errores SOAP
+            if (isset($soapResponse['response_data']) && is_string($soapResponse['response_data'])) {
+                $responseXml = $soapResponse['response_data'];
+                
+                if (strpos($responseXml, 'soap:Fault') !== false) {
+                    $errorMsg = $this->extractSoapFaultMessage($responseXml);
+                    throw new Exception("Error AFIP: " . $errorMsg);
+                }
+            }
+
+            // Actualizar transacción con éxito
+            $transaction->update([
+                'status' => 'success',
+                'external_reference' => $micDtaId . '_ANULAR_' . date('Ymd'),
+                'confirmation_number' => $micDtaId,
+                'completed_at' => now(),
+                'success_data' => [
+                    'micdta_id' => $micDtaId,
+                    'motivo_anulacion' => $motivoAnulacion,
+                    'solicitud_enviada' => true,
+                    'requiere_aprobacion_afip' => true,
+                ],
+            ]);
+            
+            $result['success'] = true;
+            $result['solicitud_procesada'] = true;
+            
+            $this->logOperation('info', 'Solicitud anulación MIC/DTA enviada exitosamente', [
+                'transaction_id' => $transaction->id,
+                'micdta_id' => $micDtaId,
+                'motivo' => $motivoAnulacion,
+                'nota' => 'Solicitud requiere aprobación del servicio aduanero',
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error procesando respuesta SolicitarAnularMicDta', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+            
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            throw $e;
+        }
+    }
 }

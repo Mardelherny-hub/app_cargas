@@ -1173,4 +1173,87 @@ private function generateLoginTicket(): string
             return null;
         }
     }
+
+    /**
+     * SolicitarAnularMicDta - Solicitar anulación de MIC/DTA
+     * Genera XML según especificación exacta AFIP
+     * 
+     * @param array $anulacionData Datos de anulación
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string|null XML completo o null si error
+     */
+    public function createSolicitarAnularMicDtaXml(array $anulacionData, string $transactionId): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($anulacionData['id_micdta'])) {
+                throw new Exception('ID MIC/DTA obligatorio');
+            }
+            
+            if (empty($anulacionData['desc_motivo'])) {
+                throw new Exception('Descripción del motivo de anulación obligatoria');
+            }
+
+            // Validar longitudes según AFIP
+            if (strlen($anulacionData['id_micdta']) > 16) {
+                throw new Exception('ID MIC/DTA no puede exceder 16 caracteres');
+            }
+            
+            if (strlen($anulacionData['desc_motivo']) > 50) {
+                throw new Exception('Descripción del motivo no puede exceder 50 caracteres');
+            }
+
+            // Obtener tokens WSAA
+            $wsaaTokens = $this->getWSAATokens();
+            
+            // Crear documento XML
+            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            
+            // Envelope SOAP con namespaces
+            $xml .= '<soap:Envelope ';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
+            $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
+            $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            
+            // Header con autenticación WSAA
+            $xml .= '<soap:Header>';
+            $xml .= '<Auth>';
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
+            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
+            $xml .= '</Auth>';
+            $xml .= '</soap:Header>';
+            
+            // Body con método SolicitarAnularMicDta
+            $xml .= '<soap:Body>';
+            $xml .= '<SolicitarAnularMicDta xmlns="' . self::AFIP_NAMESPACE . '">';
+            
+            // Autenticación empresa (obligatorio AFIP)
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
+            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '</argWSAutenticacionEmpresa>';
+            
+            // Parámetros específicos SolicitarAnularMicDta
+            $xml .= '<argSolicitarAnularMicDtaParam>';
+            
+            // ID MIC/DTA (máximo 16 caracteres)
+            $xml .= '<idMicDta>' . htmlspecialchars($anulacionData['id_micdta']) . '</idMicDta>';
+            
+            // Descripción del motivo (máximo 50 caracteres)
+            $xml .= '<descMotivo>' . htmlspecialchars($anulacionData['desc_motivo']) . '</descMotivo>';
+            
+            $xml .= '</argSolicitarAnularMicDtaParam>';
+            $xml .= '</SolicitarAnularMicDta>';
+            $xml .= '</soap:Body>';
+            $xml .= '</soap:Envelope>';
+
+            return $xml;
+
+        } catch (Exception $e) {
+            error_log("SimpleXmlGenerator: Error creando XML SolicitarAnularMicDta - " . $e->getMessage());
+            return null;
+        }
+    }
 }
