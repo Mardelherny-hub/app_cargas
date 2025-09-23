@@ -1183,43 +1183,1104 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
- * Guardar datos de transacción para auditorías
- */
-private function saveTransactionData(string $transactionId, string $requestXml, string $responseXml, ?string $micDtaId): void
-{
-    try {
-        \App\Models\WebserviceTransaction::where('transaction_id', $transactionId)
-            ->update([
-                'external_reference' => $micDtaId,
-                'request_xml' => $requestXml,
-                'response_xml' => $responseXml,
-                'status' => 'success',
-                'response_at' => now(),
-            ]);
-    } catch (Exception $e) {
-        $this->logOperation('error', 'Error guardando datos transacción', ['error' => $e->getMessage()]);
+     * Guardar datos de transacción para auditorías
+     */
+    private function saveTransactionData(string $transactionId, string $requestXml, string $responseXml, ?string $micDtaId): void
+    {
+        try {
+            \App\Models\WebserviceTransaction::where('transaction_id', $transactionId)
+                ->update([
+                    'external_reference' => $micDtaId,
+                    'request_xml' => $requestXml,
+                    'response_xml' => $responseXml,
+                    'status' => 'success',
+                    'response_at' => now(),
+                ]);
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error guardando datos transacción', ['error' => $e->getMessage()]);
+        }
     }
-}
 
-/**
- * Guardar registro de respuesta para GPS
- */
-private function saveResponseRecord(string $transactionId, Voyage $voyage, ?string $micDtaId): void
-{
-    try {
-        $transaction = \App\Models\WebserviceTransaction::where('transaction_id', $transactionId)->first();
-        if ($transaction) {
-            \App\Models\WebserviceResponse::create([
+    /**
+     * Guardar registro de respuesta para GPS
+     */
+    private function saveResponseRecord(string $transactionId, Voyage $voyage, ?string $micDtaId): void
+    {
+        try {
+            $transaction = \App\Models\WebserviceTransaction::where('transaction_id', $transactionId)->first();
+            if ($transaction) {
+                \App\Models\WebserviceResponse::create([
+                    'transaction_id' => $transaction->id,
+                    'response_type' => 'success',
+                    'reference_number' => $micDtaId ?: $transactionId,
+                    'voyage_number' => $voyage->voyage_number,
+                    'confirmation_number' => $micDtaId,
+                    'processed_at' => now(),
+                ]);
+            }
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error guardando respuesta para GPS', ['error' => $e->getMessage()]);
+        }
+    }
+
+    // ========================================================================
+    // REGISTRAR CONVOY - PASO 3 AFIP (CRÍTICO PARA BARCAZAS)
+    // ========================================================================
+
+    /**
+     * Registrar convoy (RegistrarConvoy) - PASO 3 AFIP
+     * Agrupa múltiples MIC/DTA bajo un convoy único usando external_reference
+     * 
+     * @param array $shipmentIds Array de IDs de shipments con MIC/DTA registrados
+     * @param string|null $convoyName Nombre opcional del convoy
+     * @return array Resultado de la operación
+     */
+    public function registrarConvoy(array $shipmentIds, string $convoyName = null): array
+    {
+        $result = [
+            'success' => false,
+            'convoy_id' => null,
+            'transaction_id' => null,
+            'nro_viaje' => null,
+            'shipments_included' => [],
+            'errors' => [],
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            $this->logOperation('info', 'Iniciando RegistrarConvoy - Paso 3 AFIP', [
+                'shipment_ids' => $shipmentIds,
+                'convoy_name' => $convoyName,
+                'shipments_count' => count($shipmentIds),
+            ]);
+
+            // 1. ✅ VALIDAR: Obtener external_reference de MIC/DTA exitosos
+            $validation = $this->validateShipmentsForConvoy($shipmentIds);
+            if (!$validation['is_valid']) {
+                $result['errors'] = $validation['errors'];
+                return $result;
+            }
+
+            $shipments = $validation['shipments'];
+            $convoyData = $validation['convoy_data']; // Contiene remolcador_micdta_id y barcazas_micdta_ids
+
+            // 2. Generar nombre de convoy si no se proporciona
+            $convoyId = $convoyName ?? $this->generateConvoyReference($shipments);
+
+            // 3. Crear transacción para convoy
+            $transaction = $this->createConvoyTransaction($shipments, $convoyId);
+            $result['transaction_id'] = $transaction->id;
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. ✅ GENERAR XML usando createRegistrarConvoyXml
+            $xmlContent = $this->xmlSerializer->createRegistrarConvoyXml($convoyData, $transaction->transaction_id);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML RegistrarConvoy');
+            }
+
+            // 5. Enviar a AFIP
+            $soapClient = $this->createSoapClient();
+            $soapResponse = $this->sendConvoySoapRequest($transaction, $soapClient, $xmlContent);
+
+            // 6. Procesar respuesta
+            if ($soapResponse['success']) {
+                $result = $this->processConvoyResponse($transaction, $soapResponse, $shipments, $convoyId);
+                
+                if ($result['success']) {
+                    $result['convoy_id'] = $convoyId;
+                    $result['shipments_included'] = collect($shipments)->pluck('id')->toArray();
+                    
+                    // ✅ Extraer nroViaje de la respuesta AFIP
+                    $result['nro_viaje'] = $this->extractNroViajeFromResponse($soapResponse);
+                }
+            } else {
+                $result['errors'] = $soapResponse['errors'] ?? ['Error en comunicación con AFIP'];
+            }
+
+            DB::commit();
+            return $result;
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            $this->logOperation('error', 'Error en RegistrarConvoy', [
+                'error' => $e->getMessage(),
+                'shipment_ids' => $shipmentIds,
+                'convoy_name' => $convoyName,
+            ]);
+
+            $result['errors'][] = $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * CORREGIDO: Validar shipments para formar convoy - usando external_reference
+     * 
+     * @param array $shipmentIds Array de IDs de shipments
+     * @return array Resultado de validación con external_reference
+     */
+    private function validateShipmentsForConvoy(array $shipmentIds): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'shipments' => [],
+            'convoy_data' => [],
+            'errors' => [],
+        ];
+
+        try {
+            // 1. Obtener shipments válidos
+            $shipments = \App\Models\Shipment::whereIn('id', $shipmentIds)
+                ->where('active', true)
+                ->get();
+
+            if ($shipments->count() !== count($shipmentIds)) {
+                $validation['errors'][] = 'Algunos shipments no existen o están inactivos';
+                return $validation;
+            }
+
+            // 2. Verificar que todos pertenezcan a la misma empresa
+            $companyIds = $shipments->pluck('voyage.company_id')->unique()->filter();
+            if ($companyIds->count() > 1 || !$companyIds->contains($this->company->id)) {
+                $validation['errors'][] = 'Todos los shipments deben pertenecer a la misma empresa';
+                return $validation;
+            }
+
+            // 3. ✅ CRÍTICO: Obtener external_reference de MIC/DTA exitosos
+            $micDtaReferences = [];
+            $remolcadorReference = null;
+            
+            foreach ($shipments as $shipment) {
+                // Buscar MIC/DTA exitoso para este shipment
+                $micDtaTransaction = \App\Models\WebserviceTransaction::where('shipment_id', $shipment->id)
+                    ->where('webservice_type', 'micdta')
+                    ->where('status', 'sent')
+                    ->whereNotNull('external_reference')
+                    ->where('company_id', $this->company->id)
+                    ->latest('completed_at')
+                    ->first();
+
+                if (!$micDtaTransaction) {
+                    $validation['errors'][] = "Shipment {$shipment->shipment_number} no tiene MIC/DTA registrado exitosamente";
+                    continue;
+                }
+
+                // ✅ Determinar remolcador vs barcaza según tipo de embarcación
+                $voyage = $shipment->voyage()->with('leadVessel')->first();
+                $vesselType = $voyage?->leadVessel?->vessel_type ?? 'unknown';
+                
+                if (in_array($vesselType, ['tugboat', 'remolcador', 'empujador'])) {
+                    if ($remolcadorReference) {
+                        $validation['errors'][] = 'Solo puede haber un remolcador por convoy';
+                        continue;
+                    }
+                    $remolcadorReference = $micDtaTransaction->external_reference;
+                } else {
+                    // Es una barcaza
+                    $micDtaReferences[] = $micDtaTransaction->external_reference;
+                }
+            }
+
+            // 4. Validar estructura del convoy
+            if (!$remolcadorReference) {
+                $validation['errors'][] = 'Convoy requiere al menos un remolcador';
+                return $validation;
+            }
+
+            if (empty($micDtaReferences)) {
+                $validation['errors'][] = 'Convoy requiere al menos una barcaza';
+                return $validation;
+            }
+
+            // 5. ✅ Preparar datos para XML RegistrarConvoy
+            $validation['is_valid'] = true;
+            $validation['shipments'] = $shipments;
+            $validation['convoy_data'] = [
+                'remolcador_micdta_id' => $remolcadorReference,
+                'barcazas_micdta_ids' => $micDtaReferences,
+            ];
+
+            $this->logOperation('info', 'Validación convoy exitosa', [
+                'remolcador_ref' => $remolcadorReference,
+                'barcazas_refs' => $micDtaReferences,
+                'shipments_count' => $shipments->count(),
+            ]);
+
+            return $validation;
+
+        } catch (Exception $e) {
+            $validation['errors'][] = 'Error validando shipments para convoy: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en validación convoy', [
+                'error' => $e->getMessage(),
+                'shipment_ids' => $shipmentIds,
+            ]);
+            
+            return $validation;
+        }
+    }
+
+    /**
+     * Generar referencia única para convoy
+     */
+    private function generateConvoyReference($shipments): string
+    {
+        $year = now()->format('Y');
+        $month = now()->format('m');
+        $sequence = str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
+        
+        return "CONVOY_{$year}{$month}_{$sequence}_{$this->company->id}";
+    }
+
+    /**
+     * Crear transacción para convoy
+     */
+    private function createConvoyTransaction($shipments, string $convoyId): \App\Models\WebserviceTransaction
+    {
+        $transactionId = 'CONVOY_' . time() . '_' . $this->company->id;
+
+        return \App\Models\WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $shipments->first()->voyage_id ?? null,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'convoy',
+            'country' => 'AR',
+            'webservice_url' => $this->getWsdlUrl(),
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy',
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'timeout_seconds' => 60,
+            'max_retries' => 3,
+            'retry_intervals' => json_encode([30, 120, 300]),
+            'requires_certificate' => true,
+            'additional_metadata' => [
+                'method' => 'RegistrarConvoy',
+                'step' => 3,
+                'purpose' => 'Agrupar múltiples MIC/DTA en convoy',
+                'convoy_id' => $convoyId,
+                'shipments_count' => $shipments->count(),
+                'shipment_ids' => $shipments->pluck('id')->toArray(),
+            ],
+        ]);
+    }
+
+    /**
+     * Enviar SOAP Request para RegistrarConvoy
+     */
+    private function sendConvoySoapRequest(\App\Models\WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+    {
+        $result = [
+            'success' => false,
+            'response_data' => null,
+            'errors' => [],
+        ];
+
+        try {
+            $this->logOperation('info', 'Enviando SOAP RegistrarConvoy', [
                 'transaction_id' => $transaction->id,
-                'response_type' => 'success',
-                'reference_number' => $micDtaId ?: $transactionId,
-                'voyage_number' => $voyage->voyage_number,
-                'confirmation_number' => $micDtaId,
-                'processed_at' => now(),
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+            ]);
+
+            // Actualizar transacción
+            $transaction->update([
+                'status' => 'sending',
+                'request_xml' => $xmlContent,
+                'sent_at' => now(),
+            ]);
+
+            // Llamada SOAP directa
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy',
+                SOAP_1_1,
+                false
+            );
+
+            if ($response) {
+                $result['success'] = true;
+                $result['response_data'] = $response;
+                
+                $this->logOperation('info', 'Respuesta SOAP RegistrarConvoy recibida', [
+                    'transaction_id' => $transaction->id,
+                    'response_length' => strlen($response),
+                ]);
+
+                // Actualizar transacción con respuesta
+                $transaction->update([
+                    'response_xml' => $response,
+                    'response_at' => now(),
+                    'status' => 'sent',
+                ]);
+            } else {
+                $result['errors'][] = 'Respuesta SOAP vacía';
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Respuesta SOAP vacía',
+                    'completed_at' => now(),
+                ]);
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $result['errors'][] = 'Error SOAP RegistrarConvoy: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en SOAP RegistrarConvoy', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            return $result;
+        }
+    }
+
+    /**
+     * Procesar respuesta de convoy
+     */
+    private function processConvoyResponse(\App\Models\WebserviceTransaction $transaction, array $soapResponse, $shipments, string $convoyId): array
+    {
+        $result = [
+            'success' => false,
+            'convoy_reference' => null,
+            'nro_viaje' => null,
+        ];
+
+        try {
+            // Extraer nroViaje de la respuesta
+            $nroViaje = $this->extractNroViajeFromResponse($soapResponse);
+            
+            // Actualizar transacción con éxito
+            $transaction->update([
+                'status' => 'success',
+                'external_reference' => $nroViaje ?? $convoyId,
+                'confirmation_number' => $nroViaje,
+                'completed_at' => now(),
+                'success_data' => [
+                    'convoy_id' => $convoyId,
+                    'nro_viaje' => $nroViaje,
+                    'shipments_count' => $shipments->count(),
+                ],
+            ]);
+            
+            $result['success'] = true;
+            $result['convoy_reference'] = $nroViaje ?? $convoyId;
+            $result['nro_viaje'] = $nroViaje;
+            
+            $this->logOperation('info', 'Convoy registrado exitosamente', [
+                'transaction_id' => $transaction->id,
+                'convoy_id' => $convoyId,
+                'nro_viaje' => $nroViaje,
+                'shipments_count' => $shipments->count(),
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error procesando respuesta RegistrarConvoy', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+            
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * ✅ NUEVO: Extraer nroViaje de la respuesta AFIP
+     */
+    private function extractNroViajeFromResponse(array $soapResponse): ?string
+    {
+        try {
+            // La respuesta AFIP RegistrarConvoy contiene <nroViaje>
+            if (isset($soapResponse['response_data'])) {
+                $responseData = $soapResponse['response_data'];
+                
+                // Si es string XML, parsear
+                if (is_string($responseData)) {
+                    if (preg_match('/<nroViaje>([^<]+)<\/nroViaje>/', $responseData, $matches)) {
+                        return (string)$matches[1];
+                    }
+                }
+                
+                // Si es array/object
+                if (isset($responseData->nroViaje)) {
+                    return (string)$responseData->nroViaje;
+                }
+                
+                if (is_array($responseData) && isset($responseData['nroViaje'])) {
+                    return (string)$responseData['nroViaje'];
+                }
+            }
+
+            return null;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error extrayendo nroViaje', [
+                'error' => $e->getMessage(),
+                'response_structure' => json_encode($soapResponse, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ]);
+            
+            return null;
+        }
+    }
+
+    // ========================================================================
+    // ASIGNAR ATA REMOLCADOR - MÉTODO COMPLEMENTARIO AFIP
+    // ========================================================================
+
+    /**
+     * AsignarATARemol - Asignar CUIT del ATA Remolcador a MIC/DTA
+     * 
+     * @param string $micDtaId ID del MIC/DTA (external_reference)
+     * @param string $cuitAtaRemolcador CUIT del ATA Remolcador (11 dígitos)
+     * @return array Resultado de la operación
+     */
+    public function asignarATARemolcador(string $micDtaId, string $cuitAtaRemolcador): array
+    {
+        $result = [
+            'success' => false,
+            'transaction_id' => null,
+            'micdta_id' => $micDtaId,
+            'cuit_ata_remolcador' => $cuitAtaRemolcador,
+            'errors' => [],
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            $this->logOperation('info', 'Iniciando AsignarATARemol', [
+                'micdta_id' => $micDtaId,
+                'cuit_ata_remolcador' => $cuitAtaRemolcador,
+            ]);
+
+            // 1. Validar parámetros
+            $validation = $this->validateAsignarATARemolParams($micDtaId, $cuitAtaRemolcador);
+            if (!$validation['is_valid']) {
+                $result['errors'] = $validation['errors'];
+                return $result;
+            }
+
+            // 2. Verificar que el MIC/DTA existe y pertenece a la empresa
+            $micDtaTransaction = $this->findMicDtaTransaction($micDtaId);
+            if (!$micDtaTransaction) {
+                $result['errors'][] = 'MIC/DTA no encontrado o no pertenece a esta empresa';
+                return $result;
+            }
+
+            // 3. Crear transacción para AsignarATARemol
+            $transaction = $this->createAsignarATARemolTransaction($micDtaTransaction, $cuitAtaRemolcador);
+            $result['transaction_id'] = $transaction->id;
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. Generar XML para AsignarATARemol
+            $asignacionData = [
+                'id_micdta' => $micDtaId,
+                'cuit_ata_remolcador' => $cuitAtaRemolcador,
+            ];
+
+            $xmlContent = $this->xmlSerializer->createAsignarATARemolXml($asignacionData, $transaction->transaction_id);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML AsignarATARemol');
+            }
+
+            // 5. Enviar a AFIP
+            $soapClient = $this->createSoapClient();
+            $soapResponse = $this->sendAsignarATARemolSoapRequest($transaction, $soapClient, $xmlContent);
+
+            // 6. Procesar respuesta
+            if ($soapResponse['success']) {
+                $result = $this->processAsignarATARemolResponse($transaction, $soapResponse, $micDtaId, $cuitAtaRemolcador);
+            } else {
+                $result['errors'] = $soapResponse['errors'] ?? ['Error en comunicación con AFIP'];
+            }
+
+            DB::commit();
+            return $result;
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            $this->logOperation('error', 'Error en AsignarATARemol', [
+                'error' => $e->getMessage(),
+                'micdta_id' => $micDtaId,
+                'cuit_ata_remolcador' => $cuitAtaRemolcador,
+            ]);
+
+            $result['errors'][] = $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * Validar parámetros para AsignarATARemol
+     */
+    private function validateAsignarATARemolParams(string $micDtaId, string $cuitAtaRemolcador): array
+    {
+        $validation = [
+            'is_valid' => false,
+            'errors' => [],
+        ];
+
+        // Validar MIC/DTA ID
+        if (empty($micDtaId)) {
+            $validation['errors'][] = 'ID MIC/DTA es obligatorio';
+        } elseif (strlen($micDtaId) > 16) {
+            $validation['errors'][] = 'ID MIC/DTA no puede exceder 16 caracteres';
+        }
+
+        // Validar CUIT
+        $cuitLimpio = preg_replace('/[^0-9]/', '', $cuitAtaRemolcador);
+        if (empty($cuitLimpio)) {
+            $validation['errors'][] = 'CUIT ATA Remolcador es obligatorio';
+        } elseif (strlen($cuitLimpio) !== 11) {
+            $validation['errors'][] = 'CUIT ATA Remolcador debe tener exactamente 11 dígitos';
+        } elseif (!$this->validarCuitChecksum($cuitLimpio)) {
+            $validation['errors'][] = 'CUIT ATA Remolcador tiene formato inválido';
+        }
+
+        $validation['is_valid'] = empty($validation['errors']);
+
+        if (!$validation['is_valid']) {
+            $this->logOperation('warning', 'Validación AsignarATARemol falló', [
+                'errors' => $validation['errors'],
+                'micdta_id_length' => strlen($micDtaId),
+                'cuit_length' => strlen($cuitLimpio),
             ]);
         }
-    } catch (Exception $e) {
-        $this->logOperation('error', 'Error guardando respuesta para GPS', ['error' => $e->getMessage()]);
+
+        return $validation;
     }
-}
+
+    /**
+     * Buscar transacción MIC/DTA existente
+     */
+    private function findMicDtaTransaction(string $micDtaId): ?\App\Models\WebserviceTransaction
+    {
+        return \App\Models\WebserviceTransaction::where('external_reference', $micDtaId)
+            ->where('company_id', $this->company->id)
+            ->where('webservice_type', 'micdta')
+            ->where('status', 'success')
+            ->latest('completed_at')
+            ->first();
+    }
+
+    /**
+     * Crear transacción para AsignarATARemol
+     */
+    private function createAsignarATARemolTransaction(\App\Models\WebserviceTransaction $micDtaTransaction, string $cuitAtaRemolcador): \App\Models\WebserviceTransaction
+    {
+        $transactionId = 'ATA_REMOL_' . time() . '_' . $this->company->id;
+
+        return \App\Models\WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $micDtaTransaction->voyage_id,
+            'shipment_id' => $micDtaTransaction->shipment_id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'ata_remolcador',
+            'country' => 'AR',
+            'webservice_url' => $this->getWsdlUrl(),
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/AsignarATARemol',
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'timeout_seconds' => 60,
+            'max_retries' => 3,
+            'additional_metadata' => [
+                'method' => 'AsignarATARemol',
+                'original_micdta_transaction_id' => $micDtaTransaction->id,
+                'original_micdta_reference' => $micDtaTransaction->external_reference,
+                'cuit_ata_remolcador' => $cuitAtaRemolcador,
+                'purpose' => 'Asignar CUIT ATA Remolcador a MIC/DTA',
+            ],
+        ]);
+    }
+
+    /**
+     * Enviar SOAP Request para AsignarATARemol
+     */
+    private function sendAsignarATARemolSoapRequest(\App\Models\WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+    {
+        $result = [
+            'success' => false,
+            'response_data' => null,
+            'errors' => [],
+        ];
+
+        try {
+            $this->logOperation('info', 'Enviando SOAP AsignarATARemol', [
+                'transaction_id' => $transaction->id,
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+            ]);
+
+            // Actualizar transacción
+            $transaction->update([
+                'status' => 'sending',
+                'request_xml' => $xmlContent,
+                'sent_at' => now(),
+            ]);
+
+            // Llamada SOAP directa
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/AsignarATARemol',
+                SOAP_1_1,
+                false
+            );
+
+            if ($response) {
+                $result['success'] = true;
+                $result['response_data'] = $response;
+                
+                $this->logOperation('info', 'Respuesta SOAP AsignarATARemol recibida', [
+                    'transaction_id' => $transaction->id,
+                    'response_length' => strlen($response),
+                ]);
+
+                // Actualizar transacción con respuesta
+                $transaction->update([
+                    'response_xml' => $response,
+                    'response_at' => now(),
+                    'status' => 'sent',
+                ]);
+            } else {
+                $result['errors'][] = 'Respuesta SOAP vacía';
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Respuesta SOAP vacía',
+                    'completed_at' => now(),
+                ]);
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $result['errors'][] = 'Error SOAP AsignarATARemol: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en SOAP AsignarATARemol', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            return $result;
+        }
+    }
+
+    /**
+     * Procesar respuesta de AsignarATARemol
+     */
+    private function processAsignarATARemolResponse(\App\Models\WebserviceTransaction $transaction, array $soapResponse, string $micDtaId, string $cuitAtaRemolcador): array
+    {
+        $result = [
+            'success' => false,
+            'micdta_id' => $micDtaId,
+            'cuit_ata_remolcador' => $cuitAtaRemolcador,
+        ];
+
+        try {
+            // Verificar si hay errores SOAP
+            if (isset($soapResponse['response_data']) && is_string($soapResponse['response_data'])) {
+                $responseXml = $soapResponse['response_data'];
+                
+                if (strpos($responseXml, 'soap:Fault') !== false) {
+                    $errorMsg = $this->extractSoapFaultMessage($responseXml);
+                    throw new Exception("Error AFIP: " . $errorMsg);
+                }
+            }
+
+            // Actualizar transacción con éxito
+            $transaction->update([
+                'status' => 'success',
+                'external_reference' => $micDtaId . '_ATA_' . $cuitAtaRemolcador,
+                'confirmation_number' => $micDtaId,
+                'completed_at' => now(),
+                'success_data' => [
+                    'micdta_id' => $micDtaId,
+                    'cuit_ata_remolcador' => $cuitAtaRemolcador,
+                    'assignment_completed' => true,
+                ],
+            ]);
+            
+            $result['success'] = true;
+            
+            $this->logOperation('info', 'ATA Remolcador asignado exitosamente', [
+                'transaction_id' => $transaction->id,
+                'micdta_id' => $micDtaId,
+                'cuit_ata_remolcador' => $cuitAtaRemolcador,
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error procesando respuesta AsignarATARemol', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+            
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * Validar checksum de CUIT argentino
+     */
+    private function validarCuitChecksum(string $cuit): bool
+    {
+        if (strlen($cuit) !== 11 || !is_numeric($cuit)) {
+            return false;
+        }
+
+        $multiplicadores = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+        $suma = 0;
+
+        for ($i = 0; $i < 10; $i++) {
+            $suma += intval($cuit[$i]) * $multiplicadores[$i];
+        }
+
+        $resto = $suma % 11;
+        $digitoVerificador = $resto < 2 ? $resto : 11 - $resto;
+
+        return $digitoVerificador == intval($cuit[10]);
+    }
+
+    // ========================================================================
+    // REGISTRAR SALIDA ZONA PRIMARIA - PASO 4 AFIP (FINAL)
+    // ========================================================================
+
+    /**
+     * RegistrarSalidaZonaPrimaria - Registrar salida de zona primaria de convoy
+     * 
+     * @param string $nroViaje Número de viaje obtenido de RegistrarConvoy
+     * @return array Resultado de la operación
+     */
+    public function registrarSalidaZonaPrimaria(string $nroViaje): array
+    {
+        $result = [
+            'success' => false,
+            'transaction_id' => null,
+            'nro_viaje' => $nroViaje,
+            'nro_salida' => null,
+            'errors' => [],
+        ];
+
+        DB::beginTransaction();
+
+        try {
+            $this->logOperation('info', 'Iniciando RegistrarSalidaZonaPrimaria - Paso 4 AFIP (Final)', [
+                'nro_viaje' => $nroViaje,
+            ]);
+
+            // 1. Validar número de viaje
+            if (empty($nroViaje)) {
+                $result['errors'][] = 'Número de viaje es obligatorio';
+                return $result;
+            }
+
+            // 2. Verificar que el convoy existe y fue registrado exitosamente
+            $convoyTransaction = $this->findConvoyTransaction($nroViaje);
+            if (!$convoyTransaction) {
+                $result['errors'][] = 'No se encontró convoy registrado con ese número de viaje';
+                return $result;
+            }
+
+            // 3. Crear transacción para RegistrarSalidaZonaPrimaria
+            $transaction = $this->createSalidaZonaPrimariaTransaction($convoyTransaction, $nroViaje);
+            $result['transaction_id'] = $transaction->id;
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. Generar XML para RegistrarSalidaZonaPrimaria
+            $salidaData = [
+                'nro_viaje' => $nroViaje,
+            ];
+
+            $xmlContent = $this->xmlSerializer->createRegistrarSalidaZonaPrimariaXml($salidaData, $transaction->transaction_id);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML RegistrarSalidaZonaPrimaria');
+            }
+
+            // 5. Enviar a AFIP
+            $soapClient = $this->createSoapClient();
+            $soapResponse = $this->sendSalidaZonaPrimariaSoapRequest($transaction, $soapClient, $xmlContent);
+
+            // 6. Procesar respuesta
+            if ($soapResponse['success']) {
+                $result = $this->processSalidaZonaPrimariaResponse($transaction, $soapResponse, $nroViaje);
+            } else {
+                $result['errors'] = $soapResponse['errors'] ?? ['Error en comunicación con AFIP'];
+            }
+
+            DB::commit();
+            return $result;
+
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            $this->logOperation('error', 'Error en RegistrarSalidaZonaPrimaria', [
+                'error' => $e->getMessage(),
+                'nro_viaje' => $nroViaje,
+            ]);
+
+            $result['errors'][] = $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * Buscar transacción de convoy por número de viaje
+     */
+    private function findConvoyTransaction(string $nroViaje): ?\App\Models\WebserviceTransaction
+    {
+        return \App\Models\WebserviceTransaction::where('confirmation_number', $nroViaje)
+            ->orWhereJsonContains('success_data->nro_viaje', $nroViaje)
+            ->where('company_id', $this->company->id)
+            ->where('webservice_type', 'convoy')
+            ->where('status', 'success')
+            ->latest('completed_at')
+            ->first();
+    }
+
+    /**
+     * Crear transacción para RegistrarSalidaZonaPrimaria
+     */
+    private function createSalidaZonaPrimariaTransaction(\App\Models\WebserviceTransaction $convoyTransaction, string $nroViaje): \App\Models\WebserviceTransaction
+    {
+        $transactionId = 'SALIDA_' . time() . '_' . $this->company->id;
+
+        return \App\Models\WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $convoyTransaction->voyage_id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'salida_zona_primaria',
+            'country' => 'AR',
+            'webservice_url' => $this->getWsdlUrl(),
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'timeout_seconds' => 60,
+            'max_retries' => 3,
+            'additional_metadata' => [
+                'method' => 'RegistrarSalidaZonaPrimaria',
+                'step' => 4,
+                'purpose' => 'Registrar salida de zona primaria',
+                'nro_viaje' => $nroViaje,
+                'convoy_transaction_id' => $convoyTransaction->id,
+                'convoy_reference' => $convoyTransaction->external_reference,
+            ],
+        ]);
+    }
+
+    /**
+     * Enviar SOAP Request para RegistrarSalidaZonaPrimaria
+     */
+    private function sendSalidaZonaPrimariaSoapRequest(\App\Models\WebserviceTransaction $transaction, $soapClient, string $xmlContent): array
+    {
+        $result = [
+            'success' => false,
+            'response_data' => null,
+            'errors' => [],
+        ];
+
+        try {
+            $this->logOperation('info', 'Enviando SOAP RegistrarSalidaZonaPrimaria', [
+                'transaction_id' => $transaction->id,
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+            ]);
+
+            // Actualizar transacción
+            $transaction->update([
+                'status' => 'sending',
+                'request_xml' => $xmlContent,
+                'sent_at' => now(),
+            ]);
+
+            // Llamada SOAP directa
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+                SOAP_1_1,
+                false
+            );
+
+            if ($response) {
+                $result['success'] = true;
+                $result['response_data'] = $response;
+                
+                $this->logOperation('info', 'Respuesta SOAP RegistrarSalidaZonaPrimaria recibida', [
+                    'transaction_id' => $transaction->id,
+                    'response_length' => strlen($response),
+                ]);
+
+                // Actualizar transacción con respuesta
+                $transaction->update([
+                    'response_xml' => $response,
+                    'response_at' => now(),
+                    'status' => 'sent',
+                ]);
+            } else {
+                $result['errors'][] = 'Respuesta SOAP vacía';
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Respuesta SOAP vacía',
+                    'completed_at' => now(),
+                ]);
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $result['errors'][] = 'Error SOAP RegistrarSalidaZonaPrimaria: ' . $e->getMessage();
+            
+            $this->logOperation('error', 'Error en SOAP RegistrarSalidaZonaPrimaria', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            return $result;
+        }
+    }
+
+    /**
+     * Procesar respuesta de RegistrarSalidaZonaPrimaria
+     */
+    private function processSalidaZonaPrimariaResponse(\App\Models\WebserviceTransaction $transaction, array $soapResponse, string $nroViaje): array
+    {
+        $result = [
+            'success' => false,
+            'nro_viaje' => $nroViaje,
+            'nro_salida' => null,
+        ];
+
+        try {
+            // Extraer número de salida de la respuesta
+            $nroSalida = $this->extractNroSalidaFromResponse($soapResponse);
+            
+            // Actualizar transacción con éxito
+            $transaction->update([
+                'status' => 'success',
+                'external_reference' => $nroSalida ?? $nroViaje . '_SALIDA',
+                'confirmation_number' => $nroSalida,
+                'completed_at' => now(),
+                'success_data' => [
+                    'nro_viaje' => $nroViaje,
+                    'nro_salida' => $nroSalida,
+                    'salida_registered' => true,
+                    'final_step_completed' => true,
+                ],
+            ]);
+            
+            $result['success'] = true;
+            $result['nro_salida'] = $nroSalida;
+            
+            $this->logOperation('info', 'Salida de zona primaria registrada exitosamente - PROCESO COMPLETO', [
+                'transaction_id' => $transaction->id,
+                'nro_viaje' => $nroViaje,
+                'nro_salida' => $nroSalida,
+                'final_step' => true,
+            ]);
+            
+            return $result;
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error procesando respuesta RegistrarSalidaZonaPrimaria', [
+                'error' => $e->getMessage(),
+                'transaction_id' => $transaction->id,
+            ]);
+            
+            $transaction->update([
+                'status' => 'error',
+                'error_message' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * Extraer número de salida de la respuesta AFIP
+     */
+    private function extractNroSalidaFromResponse(array $soapResponse): ?string
+    {
+        try {
+            // La respuesta AFIP RegistrarSalidaZonaPrimaria contiene el número de salida
+            if (isset($soapResponse['response_data'])) {
+                $responseData = $soapResponse['response_data'];
+                
+                // Si es string XML, parsear
+                if (is_string($responseData)) {
+                    // Patrones posibles para número de salida
+                    $patterns = [
+                        '/<nroSalida>([^<]+)<\/nroSalida>/',
+                        '/<numeroSalida>([^<]+)<\/numeroSalida>/',
+                        '/<resultado>([^<]+)<\/resultado>/',
+                        '/<confirmacion>([^<]+)<\/confirmacion>/',
+                    ];
+                    
+                    foreach ($patterns as $pattern) {
+                        if (preg_match($pattern, $responseData, $matches)) {
+                            return (string)$matches[1];
+                        }
+                    }
+                }
+                
+                // Si es array/object
+                if (isset($responseData->nroSalida)) {
+                    return (string)$responseData->nroSalida;
+                }
+                
+                if (is_array($responseData) && isset($responseData['nroSalida'])) {
+                    return (string)$responseData['nroSalida'];
+                }
+            }
+
+            return null;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error extrayendo nroSalida', [
+                'error' => $e->getMessage(),
+                'response_structure' => json_encode($soapResponse, JSON_PARTIAL_OUTPUT_ON_ERROR),
+            ]);
+            
+            return null;
+        }
+    }
 }

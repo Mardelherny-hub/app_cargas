@@ -946,4 +946,231 @@ private function generateLoginTicket(): string
         return '<?xml version="1.0" encoding="UTF-8"?>' .
                '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
     }
+
+    /**
+     * PASO 3: RegistrarConvoy - Agrupar múltiples MIC/DTA en convoy
+     * Genera XML según especificación exacta AFIP
+     * 
+     * @param array $convoyData Datos del convoy
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string|null XML completo o null si error
+     */
+    public function createRegistrarConvoyXml(array $convoyData, string $transactionId): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($convoyData['remolcador_micdta_id'])) {
+                throw new Exception('ID MIC/DTA remolcador obligatorio');
+            }
+            
+            if (empty($convoyData['barcazas_micdta_ids']) || !is_array($convoyData['barcazas_micdta_ids'])) {
+                throw new Exception('IDs MIC/DTA barcazas obligatorios');
+            }
+
+            // Obtener tokens WSAA
+            $wsaaTokens = $this->getWSAATokens();
+            
+            // Crear documento XML
+            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            
+            // Envelope SOAP con namespaces
+            $xml .= '<soap:Envelope ';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
+            $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
+            $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            
+            // Header con autenticación WSAA
+            $xml .= '<soap:Header>';
+            $xml .= '<Auth>';
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
+            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
+            $xml .= '</Auth>';
+            $xml .= '</soap:Header>';
+            
+            // Body con método RegistrarConvoy
+            $xml .= '<soap:Body>';
+            $xml .= '<RegistrarConvoy xmlns="' . self::AFIP_NAMESPACE . '">';
+            
+            // Autenticación empresa (obligatorio AFIP)
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
+            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '</argWSAutenticacionEmpresa>';
+            
+            // Parámetros específicos RegistrarConvoy
+            $xml .= '<argRegistrarConvoyParam>';
+            
+            // ID Transacción (máximo 15 caracteres según AFIP)
+            $xml .= '<idTransaccion>' . htmlspecialchars(substr($transactionId, 0, 15)) . '</idTransaccion>';
+            
+            // ID MIC/DTA del remolcador (máximo 16 caracteres)
+            $remolcadorId = substr($convoyData['remolcador_micdta_id'], 0, 16);
+            $xml .= '<idMicDtaRemol>' . htmlspecialchars($remolcadorId) . '</idMicDtaRemol>';
+            
+            // Lista de IDs MIC/DTA de barcazas del convoy
+            $xml .= '<idMicDta>';
+            foreach ($convoyData['barcazas_micdta_ids'] as $barcazaId) {
+                $barcazaIdTrimmed = substr($barcazaId, 0, 16); // Máximo 16 caracteres
+                $xml .= '<idMicDta>' . htmlspecialchars($barcazaIdTrimmed) . '</idMicDta>';
+            }
+            $xml .= '</idMicDta>';
+            
+            $xml .= '</argRegistrarConvoyParam>';
+            $xml .= '</RegistrarConvoy>';
+            $xml .= '</soap:Body>';
+            $xml .= '</soap:Envelope>';
+
+            return $xml;
+
+        } catch (Exception $e) {
+            error_log("SimpleXmlGenerator: Error creando XML RegistrarConvoy - " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * PASO COMPLEMENTARIO: AsignarATARemol - Asignar CUIT del ATA Remolcador
+     * Genera XML según especificación exacta AFIP
+     * 
+     * @param array $asignacionData Datos de asignación
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string|null XML completo o null si error
+     */
+    public function createAsignarATARemolXml(array $asignacionData, string $transactionId): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($asignacionData['id_micdta'])) {
+                throw new Exception('ID MIC/DTA obligatorio');
+            }
+            
+            if (empty($asignacionData['cuit_ata_remolcador'])) {
+                throw new Exception('CUIT ATA Remolcador obligatorio');
+            }
+
+            // Validar formato CUIT (11 dígitos)
+            $cuitRemolcador = preg_replace('/[^0-9]/', '', $asignacionData['cuit_ata_remolcador']);
+            if (strlen($cuitRemolcador) !== 11) {
+                throw new Exception('CUIT ATA Remolcador debe tener 11 dígitos');
+            }
+
+            // Obtener tokens WSAA
+            $wsaaTokens = $this->getWSAATokens();
+            
+            // Crear documento XML
+            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            
+            // Envelope SOAP con namespaces
+            $xml .= '<soap:Envelope ';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
+            $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
+            $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            
+            // Header con autenticación WSAA
+            $xml .= '<soap:Header>';
+            $xml .= '<Auth>';
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
+            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
+            $xml .= '</Auth>';
+            $xml .= '</soap:Header>';
+            
+            // Body con método AsignarATARemol
+            $xml .= '<soap:Body>';
+            $xml .= '<AsignarATARemol xmlns="' . self::AFIP_NAMESPACE . '">';
+            
+            // Autenticación empresa (obligatorio AFIP)
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
+            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '</argWSAutenticacionEmpresa>';
+            
+            // Parámetros específicos AsignarATARemol
+            $xml .= '<argAsignarATARemolParam>';
+            
+            // ID MIC/DTA (máximo 16 caracteres según AFIP)
+            $idMicDta = substr($asignacionData['id_micdta'], 0, 16);
+            $xml .= '<idMicDta>' . htmlspecialchars($idMicDta) . '</idMicDta>';
+            
+            // CUIT ATA Remolcador (máximo 14 caracteres, pero normalmente 11)
+            $xml .= '<idFiscalATARemol>' . htmlspecialchars($cuitRemolcador) . '</idFiscalATARemol>';
+            
+            $xml .= '</argAsignarATARemolParam>';
+            $xml .= '</AsignarATARemol>';
+            $xml .= '</soap:Body>';
+            $xml .= '</soap:Envelope>';
+
+            return $xml;
+
+        } catch (Exception $e) {
+            error_log("SimpleXmlGenerator: Error creando XML AsignarATARemol - " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * PASO 4: RegistrarSalidaZonaPrimaria - Registrar salida de puerto
+     * Genera XML según especificación exacta AFIP
+     * 
+     * @param array $salidaData Datos de salida
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string|null XML completo o null si error
+     */
+    public function createRegistrarSalidaZonaPrimariaXml(array $salidaData, string $transactionId): ?string
+    {
+        try {
+            // Validar datos obligatorios
+            if (empty($salidaData['nro_viaje'])) {
+                throw new Exception('Número de viaje (nroViaje) obligatorio');
+            }
+
+            // Obtener tokens WSAA
+            $wsaaTokens = $this->getWSAATokens();
+            
+            // Crear documento XML
+            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            
+            // Envelope SOAP con namespaces
+            $xml .= '<soap:Envelope ';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
+            $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
+            $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            
+            // Header con autenticación WSAA
+            $xml .= '<soap:Header>';
+            $xml .= '<Auth>';
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
+            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
+            $xml .= '</Auth>';
+            $xml .= '</soap:Header>';
+            
+            // Body con método RegistrarSalidaZonaPrimaria
+            $xml .= '<soap:Body>';
+            $xml .= '<RegistrarSalidaZonaPrimaria xmlns="' . self::AFIP_NAMESPACE . '">';
+            
+            // Autenticación empresa (obligatorio AFIP)
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
+            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '</argWSAutenticacionEmpresa>';
+            
+            // Número de viaje (único parámetro requerido)
+            $xml .= '<argNroViaje>' . htmlspecialchars($salidaData['nro_viaje']) . '</argNroViaje>';
+            
+            $xml .= '</RegistrarSalidaZonaPrimaria>';
+            $xml .= '</soap:Body>';
+            $xml .= '</soap:Envelope>';
+
+            return $xml;
+
+        } catch (Exception $e) {
+            error_log("SimpleXmlGenerator: Error creando XML RegistrarSalidaZonaPrimaria - " . $e->getMessage());
+            return null;
+        }
+    }
 }
