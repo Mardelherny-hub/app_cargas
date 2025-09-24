@@ -1759,6 +1759,27 @@ class SimpleManifestController extends Controller
     }
 
     /**
+     * Mostrar dashboard de métodos AFIP
+     */
+    public function methodsDashboard(Voyage $voyage)
+    {
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            abort(403, 'Voyage no pertenece a su empresa.');
+        }
+
+        // Cargar datos necesarios
+        $voyage->load(['leadVessel', 'originPort', 'destinationPort']);
+        $micdta_status = $this->getMicDtaStatus($voyage);
+
+        return view('company.simple.micdta.methods-dashboard', [
+            'voyage' => $voyage,
+            'company' => $company,
+            'micdta_status' => $micdta_status,
+        ]);
+    }
+
+    /**
      * ================================================================================
      * ANULACIONES + TESTING
      * ================================================================================

@@ -772,6 +772,95 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/{voyage}/estado-afip', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'obtenerEstadoAfip'])
             ->name('estado-afip')
             ->whereNumber('voyage');
+
+        /**
+         * ================================================================================
+         * 18 MÉTODOS AFIP ESPECÍFICOS - RUTAS INDIVIDUALES
+         * ================================================================================
+         */
+
+        // === MÉTODOS PRINCIPALES (1-3) ===
+        Route::post('/{voyage}/registrar-tit-envios', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarTitEnvios'])
+            ->name('registrar-tit-envios')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/registrar-envios', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarEnvios'])
+            ->name('registrar-envios')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/registrar-micdta', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarMicDta'])
+            ->name('registrar-micdta')
+            ->whereNumber('voyage');
+
+        // === GESTIÓN CONVOY (4-6) ===
+        Route::post('/{voyage}/registrar-convoy', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarConvoy'])
+            ->name('registrar-convoy')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/asignar-ata-remol', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'asignarATARemol'])
+            ->name('asignar-ata-remol')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/rectif-convoy-micdta', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'rectifConvoyMicDta'])
+            ->name('rectif-convoy-micdta')
+            ->whereNumber('voyage');
+
+        // === GESTIÓN TÍTULOS (7-9) ===
+        Route::post('/{voyage}/registrar-tit-micdta', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarTitMicDta'])
+            ->name('registrar-tit-micdta')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/desvincular-tit-micdta', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'desvincularTitMicDta'])
+            ->name('desvincular-tit-micdta')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/anular-titulo', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anularTitulo'])
+            ->name('anular-titulo')
+            ->whereNumber('voyage');
+
+        // === ZONA PRIMARIA (10-12) ===
+        Route::post('/{voyage}/registrar-salida-zona-primaria', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarSalidaZonaPrimaria'])
+            ->name('registrar-salida-zona-primaria')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/registrar-arribo-zona-primaria', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'registrarArriboZonaPrimaria'])
+            ->name('registrar-arribo-zona-primaria')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/anular-arribo-zona-primaria', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anularArriboZonaPrimaria'])
+            ->name('anular-arribo-zona-primaria')
+            ->whereNumber('voyage');
+
+        // === CONSULTAS (13-15) ===
+        Route::post('/{voyage}/consultar-micdta-asig', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'consultarMicDtaAsig'])
+            ->name('consultar-micdta-asig')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/consultar-tit-envios-reg', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'consultarTitEnviosReg'])
+            ->name('consultar-tit-envios-reg')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/consultar-precumplido', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'consultarPrecumplido'])
+            ->name('consultar-precumplido')
+            ->whereNumber('voyage');
+
+        // === ANULACIONES + TESTING (16-18) ===
+        Route::post('/{voyage}/solicitar-anular-micdta', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'solicitarAnularMicDta'])
+            ->name('solicitar-anular-micdta')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/anular-envios', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anularEnvios'])
+            ->name('anular-envios')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/dummy', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'dummy'])
+            ->name('dummy')
+            ->whereNumber('voyage');
+
+        // === DASHBOARD MÉTODOS AFIP ===
+        Route::get('/{voyage}/methods-dashboard', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'methodsDashboard'])
+            ->name('methods-dashboard')
+            ->whereNumber('voyage');
     });
 
     // ====================================
