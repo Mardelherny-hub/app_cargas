@@ -34,9 +34,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      * CORREGIR: Configuración específica MIC/DTA Argentina
      * Reemplaza el método getWebserviceConfig() en ArgentinaMicDtaService.php
      */
-    /**
-     * CONFIGURACIÓN COMPLETA CORREGIDA - Reemplaza getWebserviceConfig()
-     */
+   
+    
     protected function getWebserviceConfig(): array
     {
         return [
@@ -62,6 +61,207 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             'max_containers_per_shipment' => 50,
         ];
     }
+
+    /**
+     * MÉTODO PRINCIPAL - EJECUTAR MÉTODO AFIP ESPECÍFICO
+     * 
+     * Método genérico que enruta a los 18 métodos AFIP según el tipo solicitado.
+     * Reutiliza métodos existentes funcionales y prepara implementación de los faltantes.
+     * 
+     * @param string $method Nombre del método AFIP (RegistrarTitEnvios, RegistrarConvoy, etc.)
+     * @param Voyage $voyage Viaje a procesar
+     * @param array $data Datos adicionales para el método
+     * @return array Resultado del procesamiento ['success' => bool, ...]
+     */
+    public function executeMethod(string $method, Voyage $voyage, array $data = []): array
+    {
+        try {
+            $this->logOperation('info', 'Ejecutando método AFIP', [
+                'method' => $method,
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+                'company_id' => $voyage->company_id,
+            ]);
+
+            // Validar que el viaje tenga empresa
+            if (!$voyage->company_id) {
+                return [
+                    'success' => false,
+                    'error_message' => 'El viaje debe tener una empresa asignada',
+                    'error_code' => 'MISSING_COMPANY',
+                ];
+            }
+
+            // Switch con todos los métodos AFIP soportados
+            switch ($method) {
+                
+                // ✅ MÉTODOS EXISTENTES Y FUNCIONALES (NO TOCAR)
+                case 'RegistrarTitEnvios':
+                    return $this->processRegistrarTitEnvios($voyage, $data);
+
+                case 'RegistrarEnvios':
+                    return $this->processRegistrarEnvios($voyage, $data);
+
+                case 'RegistrarMicDta':
+                    return $this->processRegistrarMicDta($voyage, $data);
+
+                // ❌ MÉTODOS PENDIENTES DE IMPLEMENTAR (15 TOTAL)
+                case 'RegistrarConvoy':
+                    return $this->processRegistrarConvoy($voyage, $data);
+
+                case 'AsignarATARemol':
+                    return $this->processAsignarATARemol($voyage, $data);
+
+                case 'RectifConvoyMicDta':
+                    return $this->processRectifConvoyMicDta($voyage, $data);
+
+                case 'RegistrarTitMicDta':
+                    return $this->processRegistrarTitMicDta($voyage, $data);
+
+                case 'DesvincularTitMicDta':
+                    return $this->processDesvincularTitMicDta($voyage, $data);
+
+                case 'AnularTitulo':
+                    return $this->processAnularTitulo($voyage, $data);
+
+                case 'RegistrarSalidaZonaPrimaria':
+                    return $this->processRegistrarSalidaZonaPrimaria($voyage, $data);
+
+                case 'RegistrarArriboZonaPrimaria':
+                    return $this->processRegistrarArriboZonaPrimaria($voyage, $data);
+
+                case 'AnularArriboZonaPrimaria':
+                    return $this->processAnularArriboZonaPrimaria($voyage, $data);
+
+                case 'ConsultarMicDtaAsig':
+                    return $this->processConsultarMicDtaAsig($voyage, $data);
+
+                case 'ConsultarTitEnviosReg':
+                    return $this->processConsultarTitEnviosReg($voyage, $data);
+
+                case 'ConsultarPrecumplido':
+                    return $this->processConsultarPrecumplido($voyage, $data);
+
+                case 'SolicitarAnularMicDta':
+                    return $this->processSolicitarAnularMicDta($voyage, $data);
+
+                case 'AnularEnvios':
+                    return $this->processAnularEnvios($voyage, $data);
+
+                case 'Dummy':
+                    return $this->processDummy($voyage, $data);
+
+                default:
+                    return [
+                        'success' => false,
+                        'error_message' => "Método AFIP no soportado: {$method}",
+                        'error_code' => 'UNSUPPORTED_METHOD',
+                        'available_methods' => [
+                            'RegistrarTitEnvios', 'RegistrarEnvios', 'RegistrarMicDta',
+                            'RegistrarConvoy', 'AsignarATARemol', 'RectifConvoyMicDta',
+                            'RegistrarTitMicDta', 'DesvincularTitMicDta', 'AnularTitulo',
+                            'RegistrarSalidaZonaPrimaria', 'RegistrarArriboZonaPrimaria',
+                            'AnularArriboZonaPrimaria', 'ConsultarMicDtaAsig',
+                            'ConsultarTitEnviosReg', 'ConsultarPrecumplido',
+                            'SolicitarAnularMicDta', 'AnularEnvios', 'Dummy'
+                        ],
+                    ];
+            }
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error ejecutando método AFIP', [
+                'method' => $method,
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'EXECUTION_ERROR',
+            ];
+        }
+    }
+
+    // ================================================================
+    // MÉTODOS PROCESS EXISTENTES (FUNCIONALES - NO MODIFICAR)
+    // ================================================================
+
+    /**
+     * ✅ EXISTENTE - Wrapper para sendTitEnvios() existente
+     */
+    private function processRegistrarTitEnvios(Voyage $voyage, array $data): array
+    {
+        $soapClient = $this->createSoapClient();
+        
+        // Procesar cada shipment del viaje
+        $results = [];
+        foreach ($voyage->shipments as $shipment) {
+            $result = $this->sendTitEnvios($soapClient, $shipment);
+            $results[] = $result;
+            
+            if (!$result['success']) {
+                return $result; // Fallar rápido si hay error
+            }
+        }
+        
+        return [
+            'success' => true,
+            'method' => 'RegistrarTitEnvios',
+            'shipments_processed' => count($results),
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * ✅ EXISTENTE - Wrapper para sendEnvios() existente  
+     */
+    private function processRegistrarEnvios(Voyage $voyage, array $data): array
+    {
+        $soapClient = $this->createSoapClient();
+        
+        // Procesar cada shipment del viaje
+        $results = [];
+        foreach ($voyage->shipments as $shipment) {
+            $result = $this->sendEnvios($soapClient, $shipment);
+            $results[] = $result;
+            
+            if (!$result['success']) {
+                return $result; // Fallar rápido si hay error
+            }
+        }
+        
+        return [
+            'success' => true,
+            'method' => 'RegistrarEnvios',
+            'shipments_processed' => count($results),
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * ✅ EXISTENTE - Wrapper para registrarMicDta() existente
+     */
+    private function processRegistrarMicDta(Voyage $voyage, array $data): array
+    {
+        // Obtener TRACKs de transacciones previas
+        $allTracks = $data['tracks'] ?? $this->getTracksFromPreviousTransactions($voyage);
+        
+        if (empty($allTracks)) {
+            return [
+                'success' => false,
+                'error_message' => 'No se encontraron TRACKs para procesar MIC/DTA. Ejecute RegistrarEnvios primero.',
+                'error_code' => 'MISSING_TRACKS',
+            ];
+        }
+        
+        return $this->registrarMicDta($voyage, $allTracks);
+    }
+
+    // ================================================================  
+    // MÉTODOS PROCESS PENDIENTES (15 POR IMPLEMENTAR)
+    // ================================================================
 
     protected function getWebserviceType(): string
     {
@@ -802,6 +1002,2090 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'response_time_ms' => $responseTime,
             ];
         }
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Registrar convoy de embarcaciones
+     */
+    private function processRegistrarConvoy(Voyage $voyage, array $data): array
+    {
+        try {
+            $this->logOperation('info', 'Iniciando RegistrarConvoy', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // Validar que existan MIC/DTA previos para formar convoy
+            $micDtaIds = $this->getMicDtaIdsFromPreviousTransactions($voyage);
+            
+            if (empty($micDtaIds)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No se encontraron MIC/DTA registrados para formar convoy. Ejecute RegistrarMicDta primero.',
+                    'error_code' => 'MISSING_MICDTA_IDS',
+                ];
+            }
+
+            // Separar remolcador y barcazas (primer ID = remolcador, resto = barcazas)
+            $remolcadorId = array_shift($micDtaIds);
+            $barcazasIds = $micDtaIds;
+
+            // Preparar datos del convoy
+            $convoyData = [
+                'remolcador_micdta_id' => $remolcadorId,
+                'barcazas_micdta_ids' => $barcazasIds,
+            ];
+
+            // Crear ID de transacción único
+            $transactionId = 'CONVOY_' . time() . '_' . $voyage->id;
+
+            // Crear XML usando SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createRegistrarConvoyXml($convoyData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para RegistrarConvoy',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Crear cliente SOAP y enviar
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarConvoy');
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en RegistrarConvoy: " . $errorMsg);
+            }
+
+            // Extraer número de viaje asignado por AFIP
+            $nroViaje = $this->extractVoyageNumberFromResponse($response);
+
+            // Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'RegistrarConvoy',
+                'request_data' => $convoyData,
+                'response_data' => ['nro_viaje' => $nroViaje],
+                'status' => 'success',
+            ]);
+
+            $this->logOperation('info', 'RegistrarConvoy exitoso', [
+                'voyage_id' => $voyage->id,
+                'nro_viaje' => $nroViaje,
+                'remolcador_id' => $remolcadorId,
+                'barcazas_count' => count($barcazasIds),
+            ]);
+
+            return [
+                'success' => true,
+                'method' => 'RegistrarConvoy',
+                'nro_viaje' => $nroViaje,
+                'remolcador_micdta_id' => $remolcadorId,
+                'barcazas_micdta_ids' => $barcazasIds,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error en RegistrarConvoy', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'CONVOY_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Obtener IDs MIC/DTA de transacciones previas del voyage
+     */
+    private function getMicDtaIdsFromPreviousTransactions(Voyage $voyage): array
+    {
+        $micDtaIds = [];
+        
+        // Buscar en WebserviceTransaction las respuestas de RegistrarMicDta
+        $transactions = $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarMicDta')
+            ->where('status', 'success')
+            ->get();
+        
+        foreach ($transactions as $transaction) {
+            $responseData = $transaction->response_data ?? [];
+            if (isset($responseData['micdta_id'])) {
+                $micDtaIds[] = $responseData['micdta_id'];
+            }
+        }
+        
+        return $micDtaIds;
+    }
+
+    /**
+     * Extraer número de viaje de respuesta AFIP
+     */
+    private function extractVoyageNumberFromResponse(string $response): ?string
+    {
+        $patterns = [
+            '/<NroViaje>([^<]+)<\/NroViaje>/',
+            '/<nroViaje>([^<]+)<\/nroViaje>/',
+            '/<NumeroViaje>([^<]+)<\/NumeroViaje>/',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $response, $matches)) {
+                return $matches[1];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Asignar CUIT del ATA Remolcador a MIC/DTA
+     */
+    private function processAsignarATARemol(Voyage $voyage, array $data): array
+    {
+        try {
+            $this->logOperation('info', 'Iniciando AsignarATARemol', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // Validar parámetros requeridos
+            if (empty($data['id_micdta'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro id_micdta es obligatorio',
+                    'error_code' => 'MISSING_MICDTA_ID',
+                ];
+            }
+
+            if (empty($data['cuit_ata_remolcador'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro cuit_ata_remolcador es obligatorio',
+                    'error_code' => 'MISSING_CUIT_REMOLCADOR',
+                ];
+            }
+
+            // Validar formato CUIT (11 dígitos)
+            $cuitRemolcador = preg_replace('/[^0-9]/', '', $data['cuit_ata_remolcador']);
+            if (strlen($cuitRemolcador) !== 11) {
+                return [
+                    'success' => false,
+                    'error_message' => 'CUIT ATA Remolcador debe tener 11 dígitos',
+                    'error_code' => 'INVALID_CUIT_FORMAT',
+                ];
+            }
+
+            // Verificar que el MIC/DTA existe en transacciones previas
+            $micDtaExists = $this->verifyMicDtaExists($voyage, $data['id_micdta']);
+            if (!$micDtaExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'MIC/DTA no encontrado en transacciones previas del viaje',
+                    'error_code' => 'MICDTA_NOT_FOUND',
+                ];
+            }
+
+            // Preparar datos para XML
+            $asignacionData = [
+                'id_micdta' => $data['id_micdta'],
+                'cuit_ata_remolcador' => $cuitRemolcador,
+            ];
+
+            // Crear ID de transacción único
+            $transactionId = 'ATAREMOL_' . time() . '_' . $voyage->id;
+
+            // Crear XML usando SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createAsignarATARemolXml($asignacionData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para AsignarATARemol',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Crear cliente SOAP y enviar
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'AsignarATARemol');
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en AsignarATARemol: " . $errorMsg);
+            }
+
+            // Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'AsignarATARemol',
+                'request_data' => $asignacionData,
+                'response_data' => ['confirmed' => true],
+                'status' => 'success',
+            ]);
+
+            $this->logOperation('info', 'AsignarATARemol exitoso', [
+                'voyage_id' => $voyage->id,
+                'micdta_id' => $data['id_micdta'],
+                'cuit_remolcador' => $cuitRemolcador,
+            ]);
+
+            return [
+                'success' => true,
+                'method' => 'AsignarATARemol',
+                'id_micdta' => $data['id_micdta'],
+                'cuit_ata_remolcador' => $cuitRemolcador,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error en AsignarATARemol', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'ATAREMOL_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Verificar que el MIC/DTA existe en transacciones previas
+     */
+    private function verifyMicDtaExists(Voyage $voyage, string $micDtaId): bool
+    {
+        return $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarMicDta')
+            ->where('status', 'success')
+            ->whereJsonContains('response_data->micdta_id', $micDtaId)
+            ->exists();
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Rectificar convoy y/o MIC/DTA existente
+     */
+    private function processRectifConvoyMicDta(Voyage $voyage, array $data): array
+    {
+        try {
+            $this->logOperation('info', 'Iniciando RectifConvoyMicDta', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // Validar parámetros obligatorios AFIP
+            if (empty($data['nro_viaje'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro nro_viaje es obligatorio',
+                    'error_code' => 'MISSING_NRO_VIAJE',
+                ];
+            }
+
+            if (empty($data['desc_motivo'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro desc_motivo es obligatorio',
+                    'error_code' => 'MISSING_DESC_MOTIVO',
+                ];
+            }
+
+            // Validar que al menos un tipo de rectificación esté presente
+            $tieneRectifConvoy = !empty($data['rectif_convoy']);
+            $tieneRectifMicDta = !empty($data['rectif_micdta']);
+            
+            if (!$tieneRectifConvoy && !$tieneRectifMicDta) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Debe especificar rectif_convoy y/o rectif_micdta',
+                    'error_code' => 'MISSING_RECTIFICATION_TYPE',
+                ];
+            }
+
+            // Validar longitud descripción motivo (máximo 50 caracteres según AFIP)
+            if (strlen($data['desc_motivo']) > 50) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Descripción del motivo no puede exceder 50 caracteres',
+                    'error_code' => 'DESC_MOTIVO_TOO_LONG',
+                ];
+            }
+
+            // Verificar que el número de viaje existe
+            $voyageExists = $this->verifyVoyageNumber($voyage, $data['nro_viaje']);
+            if (!$voyageExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Número de viaje no encontrado en transacciones previas',
+                    'error_code' => 'VOYAGE_NUMBER_NOT_FOUND',
+                ];
+            }
+
+            // Preparar datos de rectificación
+            $rectifData = [
+                'nro_viaje' => $data['nro_viaje'],
+                'desc_motivo' => $data['desc_motivo'],
+            ];
+
+            // Agregar rectificación de convoy si se especifica
+            if ($tieneRectifConvoy) {
+                $rectifData['rectif_convoy'] = $data['rectif_convoy'];
+            }
+
+            // Agregar rectificación de MIC/DTA si se especifica
+            if ($tieneRectifMicDta) {
+                $rectifData['rectif_micdta'] = $data['rectif_micdta'];
+            }
+
+            // Crear ID de transacción único
+            $transactionId = 'RECTIF_' . time() . '_' . $voyage->id;
+
+            // Crear XML usando SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createRectifConvoyMicDtaXml($rectifData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para RectifConvoyMicDta',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Crear cliente SOAP y enviar
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RectifConvoyMicDta');
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en RectifConvoyMicDta: " . $errorMsg);
+            }
+
+            // Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'RectifConvoyMicDta',
+                'request_data' => $rectifData,
+                'response_data' => ['rectificacion_confirmada' => true],
+                'status' => 'success',
+            ]);
+
+            $this->logOperation('info', 'RectifConvoyMicDta exitoso', [
+                'voyage_id' => $voyage->id,
+                'nro_viaje' => $data['nro_viaje'],
+                'rectif_convoy' => $tieneRectifConvoy,
+                'rectif_micdta' => $tieneRectifMicDta,
+            ]);
+
+            return [
+                'success' => true,
+                'method' => 'RectifConvoyMicDta',
+                'nro_viaje' => $data['nro_viaje'],
+                'desc_motivo' => $data['desc_motivo'],
+                'rectif_convoy' => $tieneRectifConvoy,
+                'rectif_micdta' => $tieneRectifMicDta,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error en RectifConvoyMicDta', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'RECTIF_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Verificar que el número de viaje existe en transacciones previas
+     */
+    private function verifyVoyageNumber(Voyage $voyage, string $nroViaje): bool
+    {
+        return $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarConvoy')
+            ->where('status', 'success')
+            ->whereJsonContains('response_data->nro_viaje', $nroViaje)
+            ->exists();
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Vincular títulos de transporte a MIC/DTA existente
+     */
+    private function processRegistrarTitMicDta(Voyage $voyage, array $data): array
+    {
+        try {
+            $this->logOperation('info', 'Iniciando RegistrarTitMicDta', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // Validar parámetros obligatorios
+            if (empty($data['id_micdta'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro id_micdta es obligatorio',
+                    'error_code' => 'MISSING_MICDTA_ID',
+                ];
+            }
+
+            if (empty($data['titulos']) || !is_array($data['titulos'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro titulos (array) es obligatorio',
+                    'error_code' => 'MISSING_TITULOS',
+                ];
+            }
+
+            // Validar longitud ID MIC/DTA (máximo 16 caracteres según AFIP)
+            if (strlen($data['id_micdta']) > 16) {
+                return [
+                    'success' => false,
+                    'error_message' => 'ID MIC/DTA no puede exceder 16 caracteres',
+                    'error_code' => 'MICDTA_ID_TOO_LONG',
+                ];
+            }
+
+            // Verificar que el MIC/DTA existe en transacciones previas
+            $micDtaExists = $this->verifyMicDtaExists($voyage, $data['id_micdta']);
+            if (!$micDtaExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'MIC/DTA no encontrado en transacciones previas del viaje',
+                    'error_code' => 'MICDTA_NOT_FOUND',
+                ];
+            }
+
+            // Validar que los títulos tengan formato correcto
+            $titulosValidados = $this->validateTitulos($data['titulos']);
+            if (!$titulosValidados['valid']) {
+                return [
+                    'success' => false,
+                    'error_message' => $titulosValidados['error'],
+                    'error_code' => 'INVALID_TITULOS',
+                ];
+            }
+
+            // Preparar datos de vinculación
+            $vinculacionData = [
+                'id_micdta' => $data['id_micdta'],
+                'titulos' => $titulosValidados['titulos'],
+            ];
+
+            // Crear ID de transacción único
+            $transactionId = 'TITMICDTA_' . time() . '_' . $voyage->id;
+
+            // Crear XML usando SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createRegistrarTitMicDtaXml($vinculacionData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para RegistrarTitMicDta',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Crear cliente SOAP y enviar
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarTitMicDta');
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en RegistrarTitMicDta: " . $errorMsg);
+            }
+
+            // Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'RegistrarTitMicDta',
+                'request_data' => $vinculacionData,
+                'response_data' => ['titulos_vinculados' => count($titulosValidados['titulos'])],
+                'status' => 'success',
+            ]);
+
+            $this->logOperation('info', 'RegistrarTitMicDta exitoso', [
+                'voyage_id' => $voyage->id,
+                'micdta_id' => $data['id_micdta'],
+                'titulos_count' => count($titulosValidados['titulos']),
+            ]);
+
+            return [
+                'success' => true,
+                'method' => 'RegistrarTitMicDta',
+                'id_micdta' => $data['id_micdta'],
+                'titulos_vinculados' => count($titulosValidados['titulos']),
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error en RegistrarTitMicDta', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'TITMICDTA_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Validar títulos de transporte
+     */
+    private function validateTitulos(array $titulos): array
+    {
+        $result = ['valid' => false, 'titulos' => [], 'error' => ''];
+
+        if (empty($titulos)) {
+            $result['error'] = 'Lista de títulos no puede estar vacía';
+            return $result;
+        }
+
+        if (count($titulos) > 50) {
+            $result['error'] = 'Máximo 50 títulos permitidos por operación';
+            return $result;
+        }
+
+        $titulosValidados = [];
+        foreach ($titulos as $index => $titulo) {
+            $tituloId = is_array($titulo) ? ($titulo['id'] ?? $titulo['id_titulo'] ?? '') : (string)$titulo;
+            
+            if (empty($tituloId)) {
+                $result['error'] = "Título en posición {$index} no tiene ID válido";
+                return $result;
+            }
+
+            if (strlen($tituloId) > 36) {
+                $result['error'] = "ID título en posición {$index} excede 36 caracteres";
+                return $result;
+            }
+
+            $titulosValidados[] = $tituloId;
+        }
+
+        $result['valid'] = true;
+        $result['titulos'] = $titulosValidados;
+        return $result;
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Desvincular títulos de transporte de MIC/DTA existente
+     */
+    private function processDesvincularTitMicDta(Voyage $voyage, array $data): array
+    {
+        try {
+            $this->logOperation('info', 'Iniciando DesvincularTitMicDta', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // Validar parámetros obligatorios
+            if (empty($data['id_micdta'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro id_micdta es obligatorio',
+                    'error_code' => 'MISSING_MICDTA_ID',
+                ];
+            }
+
+            if (empty($data['titulos']) || !is_array($data['titulos'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro titulos (array) es obligatorio',
+                    'error_code' => 'MISSING_TITULOS',
+                ];
+            }
+
+            // Validar longitud ID MIC/DTA (máximo 16 caracteres según AFIP)
+            if (strlen($data['id_micdta']) > 16) {
+                return [
+                    'success' => false,
+                    'error_message' => 'ID MIC/DTA no puede exceder 16 caracteres',
+                    'error_code' => 'MICDTA_ID_TOO_LONG',
+                ];
+            }
+
+            // Verificar que el MIC/DTA existe en transacciones previas
+            $micDtaExists = $this->verifyMicDtaExists($voyage, $data['id_micdta']);
+            if (!$micDtaExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'MIC/DTA no encontrado en transacciones previas del viaje',
+                    'error_code' => 'MICDTA_NOT_FOUND',
+                ];
+            }
+
+            // Validar que los títulos tengan formato correcto
+            $titulosValidados = $this->validateTitulos($data['titulos']);
+            if (!$titulosValidados['valid']) {
+                return [
+                    'success' => false,
+                    'error_message' => $titulosValidados['error'],
+                    'error_code' => 'INVALID_TITULOS',
+                ];
+            }
+
+            // Verificar que los títulos estén vinculados al MIC/DTA
+            $titulosVinculados = $this->verifyTitulosLinkedToMicDta($voyage, $data['id_micdta'], $titulosValidados['titulos']);
+            if (!$titulosVinculados['valid']) {
+                return [
+                    'success' => false,
+                    'error_message' => $titulosVinculados['error'],
+                    'error_code' => 'TITULOS_NOT_LINKED',
+                ];
+            }
+
+            // Preparar datos de desvinculación
+            $desvinculacionData = [
+                'id_micdta' => $data['id_micdta'],
+                'titulos' => $titulosValidados['titulos'],
+            ];
+
+            // Crear ID de transacción único
+            $transactionId = 'DESVTIT_' . time() . '_' . $voyage->id;
+
+            // Crear XML usando SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createDesvincularTitMicDtaXml($desvinculacionData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para DesvincularTitMicDta',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Crear cliente SOAP y enviar
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'DesvincularTitMicDta');
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en DesvincularTitMicDta: " . $errorMsg);
+            }
+
+            // Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'DesvincularTitMicDta',
+                'request_data' => $desvinculacionData,
+                'response_data' => ['titulos_desvinculados' => count($titulosValidados['titulos'])],
+                'status' => 'success',
+            ]);
+
+            $this->logOperation('info', 'DesvincularTitMicDta exitoso', [
+                'voyage_id' => $voyage->id,
+                'micdta_id' => $data['id_micdta'],
+                'titulos_count' => count($titulosValidados['titulos']),
+            ]);
+
+            return [
+                'success' => true,
+                'method' => 'DesvincularTitMicDta',
+                'id_micdta' => $data['id_micdta'],
+                'titulos_desvinculados' => count($titulosValidados['titulos']),
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error en DesvincularTitMicDta', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'DESVTIT_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Verificar que los títulos están vinculados al MIC/DTA
+     */
+    private function verifyTitulosLinkedToMicDta(Voyage $voyage, string $micDtaId, array $titulos): array
+    {
+        $result = ['valid' => true, 'error' => ''];
+
+        // Buscar transacciones de vinculación previas
+        $vinculaciones = $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarTitMicDta')
+            ->where('status', 'success')
+            ->whereJsonContains('request_data->id_micdta', $micDtaId)
+            ->get();
+
+        if ($vinculaciones->isEmpty()) {
+            $result['valid'] = false;
+            $result['error'] = 'No se encontraron vinculaciones previas para este MIC/DTA';
+            return $result;
+        }
+
+        // Obtener todos los títulos vinculados previamente
+        $titulosVinculados = [];
+        foreach ($vinculaciones as $vinculacion) {
+            $requestData = $vinculacion->request_data ?? [];
+            if (isset($requestData['titulos'])) {
+                $titulosVinculados = array_merge($titulosVinculados, $requestData['titulos']);
+            }
+        }
+
+        // Verificar que cada título a desvincular esté en la lista de vinculados
+        foreach ($titulos as $titulo) {
+            if (!in_array($titulo, $titulosVinculados)) {
+                $result['valid'] = false;
+                $result['error'] = "El título '{$titulo}' no está vinculado al MIC/DTA '{$micDtaId}'";
+                return $result;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Anular título de transporte
+     */
+    private function processAnularTitulo(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando AnularTitulo', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. Validaciones parámetros obligatorios
+            if (empty($data['id_titulo'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro id_titulo es obligatorio',
+                    'error_code' => 'MISSING_ID_TITULO',
+                ];
+            }
+
+            // 3. Validaciones específicas AFIP (longitudes, formatos)
+            if (strlen($data['id_titulo']) > 50) {
+                return [
+                    'success' => false,
+                    'error_message' => 'ID del título no puede exceder 50 caracteres',
+                    'error_code' => 'ID_TITULO_TOO_LONG',
+                ];
+            }
+
+            // 4. Verificaciones de dependencias previas
+            // Verificar que el título existe en transacciones previas de la empresa
+            $tituloExists = $this->verifyTituloExists($voyage, $data['id_titulo']);
+            if (!$tituloExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Título de transporte no encontrado en transacciones previas del viaje',
+                    'error_code' => 'TITULO_NOT_FOUND',
+                ];
+            }
+
+            // Verificar que el título no esté afectado a un MIC/DTA activo
+            $tituloAfectado = $this->verifyTituloNotAffectedToMicDta($voyage, $data['id_titulo']);
+            if ($tituloAfectado) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No se puede anular: título está afectado a un MIC/DTA activo',
+                    'error_code' => 'TITULO_AFFECTED_TO_MICDTA',
+                ];
+            }
+
+            // 5. Preparar datos
+            $requestData = [
+                'id_titulo' => $data['id_titulo'],
+            ];
+
+            // 6. Crear transactionId único
+            $transactionId = 'ANULAR_TIT_' . time() . '_' . $voyage->id;
+
+            // 7. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createAnularTituloXml($requestData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para AnularTitulo',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 8. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'AnularTitulo');
+
+            // 9. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en AnularTitulo: " . $errorMsg);
+            }
+
+            // 10. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'AnularTitulo',
+                'request_data' => $requestData,
+                'response_data' => ['titulo_anulado' => true],
+                'status' => 'success',
+            ]);
+
+            // 11. Logging éxito
+            $this->logOperation('info', 'AnularTitulo exitoso', [
+                'voyage_id' => $voyage->id,
+                'id_titulo' => $data['id_titulo'],
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 12. Return success
+            return [
+                'success' => true,
+                'method' => 'AnularTitulo',
+                'id_titulo' => $data['id_titulo'],
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en AnularTitulo', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'id_titulo' => $data['id_titulo'] ?? 'N/A',
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'ANULAR_TITULO_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Verificar que el título existe en transacciones previas
+     */
+    private function verifyTituloExists(Voyage $voyage, string $idTitulo): bool
+    {
+        // Buscar en transacciones RegistrarTitEnvios de este viaje
+        return $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarTitEnvios')
+            ->where('status', 'success')
+            ->whereJsonContains('request_data->id_titulo', $idTitulo)
+            ->exists();
+    }
+
+    /**
+     * Verificar que el título no esté afectado a un MIC/DTA activo
+     */
+    private function verifyTituloNotAffectedToMicDta(Voyage $voyage, string $idTitulo): bool
+    {
+        // Buscar si el título está vinculado a algún MIC/DTA activo
+        return $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarTitMicDta')
+            ->where('status', 'success')
+            ->whereJsonContains('request_data->titulos', $idTitulo)
+            ->exists();
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Registrar salida de zona primaria (paso final del proceso)
+     */
+    private function processRegistrarSalidaZonaPrimaria(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando RegistrarSalidaZonaPrimaria', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. Validaciones parámetros obligatorios
+            if (empty($data['nro_viaje'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro nro_viaje es obligatorio',
+                    'error_code' => 'MISSING_NRO_VIAJE',
+                ];
+            }
+
+            // 3. Validaciones específicas AFIP
+            $nroViaje = trim((string)$data['nro_viaje']);
+            if (strlen($nroViaje) === 0) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Número de viaje no puede estar vacío',
+                    'error_code' => 'EMPTY_NRO_VIAJE',
+                ];
+            }
+
+            if (strlen($nroViaje) > 20) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Número de viaje no puede exceder 20 caracteres',
+                    'error_code' => 'NRO_VIAJE_TOO_LONG',
+                ];
+            }
+
+            // 4. Verificaciones de dependencias previas - convoy debe existir
+            $convoyTransaction = $this->findConvoyTransactionByNroViaje($voyage, $nroViaje);
+            if (!$convoyTransaction) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No se encontró convoy registrado con número de viaje: ' . $nroViaje,
+                    'error_code' => 'CONVOY_NOT_FOUND',
+                ];
+            }
+
+            // Verificar que el convoy no tenga ya una salida registrada
+            $salidaExists = $this->verifySalidaAlreadyRegistered($voyage, $nroViaje);
+            if ($salidaExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Ya existe una salida de zona primaria registrada para este número de viaje',
+                    'error_code' => 'SALIDA_ALREADY_EXISTS',
+                ];
+            }
+
+            // 5. Preparar datos
+            $requestData = [
+                'nro_viaje' => $nroViaje,
+            ];
+
+            // 6. Crear transactionId único
+            $transactionId = 'SALIDA_ZP_' . time() . '_' . $voyage->id;
+
+            // 7. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createRegistrarSalidaZonaPrimariaXml($requestData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para RegistrarSalidaZonaPrimaria',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 8. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarSalidaZonaPrimaria');
+
+            // 9. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en RegistrarSalidaZonaPrimaria: " . $errorMsg);
+            }
+
+            // Extraer número de salida de la respuesta
+            $nroSalida = $this->extractNroSalidaFromSoapResponse($response);
+
+            // 10. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'RegistrarSalidaZonaPrimaria',
+                'request_data' => $requestData,
+                'response_data' => [
+                    'nro_salida' => $nroSalida,
+                    'nro_viaje' => $nroViaje,
+                    'convoy_transaction_id' => $convoyTransaction->id,
+                    'final_step_completed' => true,
+                ],
+                'status' => 'success',
+            ]);
+
+            // 11. Logging éxito
+            $this->logOperation('info', 'RegistrarSalidaZonaPrimaria exitoso - PROCESO AFIP COMPLETO', [
+                'voyage_id' => $voyage->id,
+                'nro_viaje' => $nroViaje,
+                'nro_salida' => $nroSalida,
+                'transaction_id' => $transactionId,
+                'final_step' => true,
+            ]);
+
+            // 12. Return success
+            return [
+                'success' => true,
+                'method' => 'RegistrarSalidaZonaPrimaria',
+                'nro_viaje' => $nroViaje,
+                'nro_salida' => $nroSalida,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+                'process_completed' => true,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en RegistrarSalidaZonaPrimaria', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'nro_viaje' => $data['nro_viaje'] ?? 'N/A',
+                'line' => $e->getLine(),
+                'file' => $e->getFile(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'SALIDA_ZONA_PRIMARIA_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Buscar transacción de convoy por número de viaje
+     */
+    private function findConvoyTransactionByNroViaje(Voyage $voyage, string $nroViaje): ?\App\Models\WebserviceTransaction
+    {
+        return $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarConvoy')
+            ->where('status', 'success')
+            ->where(function($query) use ($nroViaje) {
+                $query->where('confirmation_number', $nroViaje)
+                    ->orWhereJsonContains('response_data->nro_viaje', $nroViaje);
+            })
+            ->latest('completed_at')
+            ->first();
+    }
+
+    /**
+     * Verificar que no existe ya una salida registrada
+     */
+    private function verifySalidaAlreadyRegistered(Voyage $voyage, string $nroViaje): bool
+    {
+        return $voyage->webserviceTransactions()
+            ->where('webservice_method', 'RegistrarSalidaZonaPrimaria')
+            ->where('status', 'success')
+            ->whereJsonContains('request_data->nro_viaje', $nroViaje)
+            ->exists();
+    }
+
+    /**
+     * Extraer número de salida de la respuesta AFIP
+     */
+    private function extractNroSalidaFromSoapResponse(string $response): ?string
+    {
+        // Patrones para extraer número de salida según documentación AFIP
+        $patterns = [
+            '/<nroSalida>([^<]+)<\/nroSalida>/i',
+            '/<numeroSalida>([^<]+)<\/numeroSalida>/i',
+            '/<result>([^<]+)<\/result>/i',
+            '/<SalidaZonaPrimariaResult>([^<]+)<\/SalidaZonaPrimariaResult>/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $response, $matches)) {
+                return trim($matches[1]);
+            }
+        }
+
+        $this->logOperation('warning', 'No se pudo extraer número de salida de respuesta AFIP', [
+            'response_preview' => substr($response, 0, 500),
+        ]);
+
+        return null;
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Registrar arribo a zona primaria
+     */
+    private function processRegistrarArriboZonaPrimaria(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando RegistrarArriboZonaPrimaria', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. Validación parámetro básico
+            if (empty($data['nro_viaje'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro nro_viaje es obligatorio',
+                    'error_code' => 'MISSING_NRO_VIAJE',
+                ];
+            }
+
+            // 3. Preparar datos
+            $requestData = [
+                'nro_viaje' => $data['nro_viaje'],
+            ];
+
+            // 4. Crear transactionId único
+            $transactionId = 'ARRIBO_ZP_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator (ya existe)
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createRegistrarArriboZonaPrimariaXml($requestData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para RegistrarArriboZonaPrimaria',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarArriboZonaPrimaria');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en RegistrarArriboZonaPrimaria: " . $errorMsg);
+            }
+
+            // 8. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'RegistrarArriboZonaPrimaria',
+                'request_data' => $requestData,
+                'response_data' => ['arribo_registrado' => true],
+                'status' => 'success',
+            ]);
+
+            // 9. Logging éxito
+            $this->logOperation('info', 'RegistrarArriboZonaPrimaria exitoso', [
+                'voyage_id' => $voyage->id,
+                'nro_viaje' => $data['nro_viaje'],
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 10. Return success
+            return [
+                'success' => true,
+                'method' => 'RegistrarArriboZonaPrimaria',
+                'nro_viaje' => $data['nro_viaje'],
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en RegistrarArriboZonaPrimaria', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'nro_viaje' => $data['nro_viaje'] ?? 'N/A',
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'ARRIBO_ZONA_PRIMARIA_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Anular arribo de zona primaria registrado
+     */
+    private function processAnularArriboZonaPrimaria(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando AnularArriboZonaPrimaria', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. Validación parámetros básicos
+            if (empty($data['arribo_id']) && empty($data['nro_viaje'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro arribo_id o nro_viaje es obligatorio',
+                    'error_code' => 'MISSING_ARRIBO_REFERENCE',
+                ];
+            }
+
+            // 3. Preparar datos
+            $requestData = [];
+            if (!empty($data['arribo_id'])) {
+                $requestData['referencia_arribo'] = $data['arribo_id'];
+            }
+            if (!empty($data['nro_viaje'])) {
+                $requestData['nro_viaje'] = $data['nro_viaje'];
+            }
+
+            // 4. Crear transactionId único
+            $transactionId = 'ANULAR_ARRIBO_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator (ya existe)
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createAnularArriboZonaPrimariaXml($requestData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para AnularArriboZonaPrimaria',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'AnularArriboZonaPrimaria');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en AnularArriboZonaPrimaria: " . $errorMsg);
+            }
+
+            // 8. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'AnularArriboZonaPrimaria',
+                'request_data' => $requestData,
+                'response_data' => ['arribo_anulado' => true],
+                'status' => 'success',
+            ]);
+
+            // 9. Logging éxito
+            $this->logOperation('info', 'AnularArriboZonaPrimaria exitoso', [
+                'voyage_id' => $voyage->id,
+                'arribo_reference' => $data['arribo_id'] ?? $data['nro_viaje'] ?? 'N/A',
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 10. Return success
+            return [
+                'success' => true,
+                'method' => 'AnularArriboZonaPrimaria',
+                'arribo_reference' => $data['arribo_id'] ?? $data['nro_viaje'] ?? null,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en AnularArriboZonaPrimaria', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'arribo_data' => $data,
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'ANULAR_ARRIBO_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Consultar MIC/DTA asignados al ATA remolcador/empujador
+     */
+    private function processConsultarMicDtaAsig(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando ConsultarMicDtaAsig', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+                'filtros_aplicados' => !empty($data),
+            ]);
+
+            // 2. Validaciones parámetros (TODOS opcionales para consultas)
+            $consultaData = [];
+            
+            // Validar fecha_desde si se proporciona
+            if (!empty($data['fecha_desde'])) {
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['fecha_desde'])) {
+                    return [
+                        'success' => false,
+                        'error_message' => 'Formato fecha_desde inválido. Usar YYYY-MM-DD',
+                        'error_code' => 'INVALID_FECHA_DESDE_FORMAT',
+                    ];
+                }
+                $consultaData['fecha_desde'] = $data['fecha_desde'];
+            }
+
+            // Validar fecha_hasta si se proporciona
+            if (!empty($data['fecha_hasta'])) {
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['fecha_hasta'])) {
+                    return [
+                        'success' => false,
+                        'error_message' => 'Formato fecha_hasta inválido. Usar YYYY-MM-DD',
+                        'error_code' => 'INVALID_FECHA_HASTA_FORMAT',
+                    ];
+                }
+                $consultaData['fecha_hasta'] = $data['fecha_hasta'];
+            }
+
+            // Validar cuit_ata_remolcador si se proporciona
+            if (!empty($data['cuit_ata_remolcador'])) {
+                $cuit = preg_replace('/[^0-9]/', '', $data['cuit_ata_remolcador']);
+                if (strlen($cuit) !== 11) {
+                    return [
+                        'success' => false,
+                        'error_message' => 'CUIT ATA Remolcador debe tener 11 dígitos',
+                        'error_code' => 'INVALID_CUIT_LENGTH',
+                    ];
+                }
+                $consultaData['cuit_ata_remolcador'] = $cuit;
+            }
+
+            // Validar nro_viaje si se proporciona
+            if (!empty($data['nro_viaje'])) {
+                if (strlen($data['nro_viaje']) > 20) {
+                    return [
+                        'success' => false,
+                        'error_message' => 'Número de viaje no puede exceder 20 caracteres',
+                        'error_code' => 'NRO_VIAJE_TOO_LONG',
+                    ];
+                }
+                $consultaData['nro_viaje'] = $data['nro_viaje'];
+            }
+
+            // 3. Preparar datos (opcional para consultas)
+            $requestData = $consultaData;
+
+            // 4. Crear transactionId único
+            $transactionId = 'CONSULTA_MICDTA_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createConsultarMicDtaAsigXml($consultaData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para ConsultarMicDtaAsig',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'ConsultarMicDtaAsig');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en ConsultarMicDtaAsig: " . $errorMsg);
+            }
+
+            // Extraer datos de la consulta de la respuesta
+            $micDtaList = $this->extractMicDtaListFromResponse($response);
+
+            // 8. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'ConsultarMicDtaAsig',
+                'request_data' => $requestData,
+                'response_data' => [
+                    'micdta_count' => count($micDtaList),
+                    'micdta_list' => $micDtaList,
+                ],
+                'status' => 'success',
+            ]);
+
+            // 9. Logging éxito
+            $this->logOperation('info', 'ConsultarMicDtaAsig exitoso', [
+                'voyage_id' => $voyage->id,
+                'micdta_encontrados' => count($micDtaList),
+                'filtros_aplicados' => $consultaData,
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 10. Return success
+            return [
+                'success' => true,
+                'method' => 'ConsultarMicDtaAsig',
+                'micdta_count' => count($micDtaList),
+                'micdta_list' => $micDtaList,
+                'filtros_aplicados' => $consultaData,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en ConsultarMicDtaAsig', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'filtros' => $data,
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'CONSULTAR_MICDTA_ASIG_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Extraer lista de MIC/DTA de la respuesta AFIP
+     */
+    private function extractMicDtaListFromResponse(string $response): array
+    {
+        $micDtaList = [];
+        
+        try {
+            // Patrones para extraer MIC/DTA de respuesta ConsultarMicDtaAsig
+            $patterns = [
+                '/<MicDta>(.*?)<\/MicDta>/s',
+                '/<idMicDta>([^<]+)<\/idMicDta>/',
+                '/<MicDtaAsignado>(.*?)<\/MicDtaAsignado>/s',
+            ];
+
+            foreach ($patterns as $pattern) {
+                if (preg_match_all($pattern, $response, $matches)) {
+                    foreach ($matches[1] as $match) {
+                        // Extraer datos básicos del MIC/DTA
+                        $micDta = [];
+                        
+                        if (preg_match('/<id>([^<]+)<\/id>/', $match, $idMatch)) {
+                            $micDta['id'] = $idMatch[1];
+                        }
+                        
+                        if (preg_match('/<fecha>([^<]+)<\/fecha>/', $match, $fechaMatch)) {
+                            $micDta['fecha'] = $fechaMatch[1];
+                        }
+                        
+                        if (preg_match('/<estado>([^<]+)<\/estado>/', $match, $estadoMatch)) {
+                            $micDta['estado'] = $estadoMatch[1];
+                        }
+                        
+                        if (!empty($micDta)) {
+                            $micDtaList[] = $micDta;
+                        }
+                    }
+                    break; // Usar el primer patrón que funcione
+                }
+            }
+
+            $this->logOperation('debug', 'MIC/DTA extraídos de respuesta', [
+                'count' => count($micDtaList),
+                'items' => $micDtaList,
+            ]);
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error extrayendo MIC/DTA de respuesta', [
+                'error' => $e->getMessage(),
+                'response_preview' => substr($response, 0, 500),
+            ]);
+        }
+        
+        return $micDtaList;
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Consultar títulos y envíos registrados
+     */
+    private function processConsultarTitEnviosReg(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando ConsultarTitEnviosReg', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. No hay parámetros obligatorios para consultas generales
+
+            // 3. Preparar datos (vacío para consulta general)
+            $requestData = [];
+
+            // 4. Crear transactionId único
+            $transactionId = 'CONSULTA_TITENVIOS_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createConsultarTitEnviosRegXml($transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para ConsultarTitEnviosReg',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'ConsultarTitEnviosReg');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en ConsultarTitEnviosReg: " . $errorMsg);
+            }
+
+            // Extraer títulos de la respuesta
+            $titulos = $this->extractTitulosFromResponse($response);
+
+            // 8. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'ConsultarTitEnviosReg',
+                'request_data' => $requestData,
+                'response_data' => [
+                    'titulos_count' => count($titulos),
+                    'titulos_list' => $titulos,
+                ],
+                'status' => 'success',
+            ]);
+
+            // 9. Logging éxito
+            $this->logOperation('info', 'ConsultarTitEnviosReg exitoso', [
+                'voyage_id' => $voyage->id,
+                'titulos_encontrados' => count($titulos),
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 10. Return success
+            return [
+                'success' => true,
+                'method' => 'ConsultarTitEnviosReg',
+                'titulos_count' => count($titulos),
+                'titulos_list' => $titulos,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'CONSULTAR_TITENVIOS_REG_ERROR',
+            ];
+        }
+    }
+
+    private function extractTitulosFromResponse(string $response): array
+    {
+        $titulos = [];
+        try {
+            // Extraer títulos de respuesta AFIP
+            if (preg_match_all('/<titTransEnviosReg>(.*?)<\/titTransEnviosReg>/s', $response, $matches)) {
+                foreach ($matches[1] as $match) {
+                    $titulo = [];
+                if (preg_match('/<idTitTrans>([^<]+)<\/idTitTrans>/', $match, $idMatch)) {
+                    $titulo['id'] = $idMatch[1];
+                }
+                if (!empty($titulo)) {
+                    $titulos[] = $titulo;
+                }
+            }
+        }
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error extrayendo títulos', ['error' => $e->getMessage()]);
+    }
+    return $titulos;
+}
+
+    /**
+     * ❌ IMPLEMENTAR - Solicitar anulación de MIC/DTA
+     */
+    private function processSolicitarAnularMicDta(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando SolicitarAnularMicDta', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. Validaciones parámetros obligatorios
+            if (empty($data['id_micdta'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro id_micdta es obligatorio',
+                    'error_code' => 'MISSING_ID_MICDTA',
+                ];
+            }
+
+            if (empty($data['desc_motivo'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro desc_motivo es obligatorio',
+                    'error_code' => 'MISSING_DESC_MOTIVO',
+                ];
+            }
+
+            // Validaciones específicas AFIP (longitudes, formatos)
+            if (strlen($data['id_micdta']) > 16) {
+                return [
+                    'success' => false,
+                    'error_message' => 'ID MIC/DTA no puede exceder 16 caracteres',
+                    'error_code' => 'ID_MICDTA_TOO_LONG',
+                ];
+            }
+
+            if (strlen($data['desc_motivo']) > 50) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Descripción del motivo no puede exceder 50 caracteres',
+                    'error_code' => 'DESC_MOTIVO_TOO_LONG',
+                ];
+            }
+
+            // Verificar que el MIC/DTA existe en transacciones previas
+            $micDtaExists = $this->verifyMicDtaExists($voyage, $data['id_micdta']);
+            if (!$micDtaExists) {
+                return [
+                    'success' => false,
+                    'error_message' => 'MIC/DTA no encontrado en transacciones previas del viaje',
+                    'error_code' => 'MICDTA_NOT_FOUND',
+                ];
+            }
+
+            // 3. Preparar datos
+            $requestData = [
+                'id_micdta' => $data['id_micdta'],
+                'desc_motivo' => $data['desc_motivo'],
+            ];
+
+            // 4. Crear transactionId único
+            $transactionId = 'SOLICITAR_ANULAR_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createSolicitarAnularMicDtaXml($requestData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para SolicitarAnularMicDta',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'SolicitarAnularMicDta');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en SolicitarAnularMicDta: " . $errorMsg);
+            }
+
+            // 8. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'SolicitarAnularMicDta',
+                'request_data' => $requestData,
+                'response_data' => [
+                    'solicitud_enviada' => true,
+                    'requiere_aprobacion_afip' => true,
+                ],
+                'status' => 'success',
+            ]);
+
+            // 9. Logging éxito
+            $this->logOperation('info', 'SolicitarAnularMicDta exitoso', [
+                'voyage_id' => $voyage->id,
+                'id_micdta' => $data['id_micdta'],
+                'desc_motivo' => $data['desc_motivo'],
+                'transaction_id' => $transactionId,
+                'nota' => 'Solicitud enviada - requiere aprobación AFIP',
+            ]);
+
+            // 10. Return success
+            return [
+                'success' => true,
+                'method' => 'SolicitarAnularMicDta',
+                'id_micdta' => $data['id_micdta'],
+                'desc_motivo' => $data['desc_motivo'],
+                'solicitud_enviada' => true,
+                'requiere_aprobacion_afip' => true,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en SolicitarAnularMicDta', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'id_micdta' => $data['id_micdta'] ?? 'N/A',
+                'desc_motivo' => $data['desc_motivo'] ?? 'N/A',
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'SOLICITAR_ANULAR_MICDTA_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Anular envíos por TRACKs
+     */
+    private function processAnularEnvios(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando AnularEnvios', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            // 2. Validaciones parámetros obligatorios
+            if (empty($data['tracks']) || !is_array($data['tracks'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro tracks (array) es obligatorio',
+                    'error_code' => 'MISSING_TRACKS',
+                ];
+            }
+
+            // Validar que los tracks no estén vacíos
+            $tracks = array_filter($data['tracks'], function($track) {
+                return !empty(trim($track));
+            });
+
+            if (empty($tracks)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Lista de tracks no puede estar vacía',
+                    'error_code' => 'EMPTY_TRACKS_LIST',
+                ];
+            }
+
+            // Validar máximo de tracks (límite razonable)
+            if (count($tracks) > 100) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Máximo 100 tracks permitidos por operación',
+                    'error_code' => 'TOO_MANY_TRACKS',
+                ];
+            }
+
+            // Verificar que los tracks existen en la base de datos y pertenecen a la empresa
+            $validTracks = $this->validateTracksExist($voyage, $tracks);
+            if (!$validTracks['valid']) {
+                return [
+                    'success' => false,
+                    'error_message' => $validTracks['error'],
+                    'error_code' => 'INVALID_TRACKS',
+                ];
+            }
+
+            // 3. Preparar datos
+            $requestData = [
+                'tracks' => $tracks,
+            ];
+
+            // 4. Crear transactionId único
+            $transactionId = 'ANULAR_ENV_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createAnularEnviosXml($requestData, $transactionId);
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para AnularEnvios',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'AnularEnvios');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en AnularEnvios: " . $errorMsg);
+            }
+
+            // 8. Marcar tracks como anulados en base de datos
+            $this->markTracksAsAnnulled($tracks);
+
+            // 9. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'AnularEnvios',
+                'request_data' => $requestData,
+                'response_data' => [
+                    'tracks_anulados' => count($tracks),
+                    'tracks_list' => $tracks,
+                ],
+                'status' => 'success',
+            ]);
+
+            // 10. Logging éxito
+            $this->logOperation('info', 'AnularEnvios exitoso', [
+                'voyage_id' => $voyage->id,
+                'tracks_anulados' => count($tracks),
+                'tracks_list' => $tracks,
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 11. Return success
+            return [
+                'success' => true,
+                'method' => 'AnularEnvios',
+                'tracks_anulados' => count($tracks),
+                'tracks_list' => $tracks,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en AnularEnvios', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'tracks' => $data['tracks'] ?? 'N/A',
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'ANULAR_ENVIOS_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Validar que los tracks existen en base de datos
+     */
+    private function validateTracksExist(Voyage $voyage, array $tracks): array
+    {
+        $result = ['valid' => false, 'error' => ''];
+        
+        try {
+            // Buscar tracks en webservice_tracks que pertenezcan a transacciones de esta empresa
+            $existingTracks = \App\Models\WebserviceTrack::whereIn('track_number', $tracks)
+                ->whereHas('webserviceTransaction', function($query) use ($voyage) {
+                    $query->where('company_id', $voyage->company_id);
+                })
+                ->where('status', '!=', 'anulado')
+                ->pluck('track_number')
+                ->toArray();
+
+            $missingTracks = array_diff($tracks, $existingTracks);
+            
+            if (!empty($missingTracks)) {
+                $result['error'] = 'Tracks no encontrados o ya anulados: ' . implode(', ', $missingTracks);
+                return $result;
+            }
+            
+            $result['valid'] = true;
+            return $result;
+            
+        } catch (Exception $e) {
+            $result['error'] = 'Error validando tracks: ' . $e->getMessage();
+            return $result;
+        }
+    }
+
+    /**
+     * Marcar tracks como anulados en base de datos
+     */
+    private function markTracksAsAnnulled(array $tracks): void
+    {
+        try {
+            \App\Models\WebserviceTrack::whereIn('track_number', $tracks)
+                ->update([
+                    'status' => 'anulado',
+                    'completed_at' => now(),
+                    'notes' => 'TRACK anulado via AnularEnvios - ' . now()->format('Y-m-d H:i:s'),
+                ]);
+                
+            $this->logOperation('info', 'Tracks marcados como anulados', [
+                'tracks_count' => count($tracks),
+                'tracks' => $tracks,
+            ]);
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error marcando tracks como anulados', [
+                'error' => $e->getMessage(),
+                'tracks' => $tracks,
+            ]);
+            // No fallar el proceso principal
+        }
+    }
+
+    /**
+     * ❌ IMPLEMENTAR - Verificación funcionamiento webservice AFIP
+     */
+    private function processDummy(Voyage $voyage, array $data): array
+    {
+        try {
+            // 1. Logging inicio
+            $this->logOperation('info', 'Iniciando Dummy', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+                'purpose' => 'Verificación funcionamiento infraestructura AFIP',
+            ]);
+
+            // 2. Validaciones parámetros obligatorios (NO hay para Dummy)
+            // El método Dummy no requiere parámetros específicos
+
+            // 3. Preparar datos (vacío para Dummy)
+            $requestData = [
+                'test_type' => 'connectivity',
+                'verification_servers' => ['appserver', 'dbserver', 'authserver'],
+            ];
+
+            // 4. Crear transactionId único
+            $transactionId = 'DUMMY_' . time() . '_' . $voyage->id;
+
+            // 5. Generar XML con SimpleXmlGenerator
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createDummyXml();
+
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para Dummy',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 6. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'Dummy');
+
+            // 7. Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en Dummy: " . $errorMsg);
+            }
+
+            // Extraer estado de servidores AFIP
+            $serverStatus = $this->extractServerStatusFromResponse($response);
+
+            // 8. Guardar transacción exitosa
+            $this->createWebserviceTransaction($voyage, [
+                'transaction_id' => $transactionId,
+                'webservice_method' => 'Dummy',
+                'request_data' => $requestData,
+                'response_data' => [
+                    'connectivity_test' => true,
+                    'server_status' => $serverStatus,
+                    'all_servers_ok' => $this->allServersOk($serverStatus),
+                ],
+                'status' => 'success',
+            ]);
+
+            // 9. Logging éxito
+            $this->logOperation('info', 'Dummy exitoso - Conectividad AFIP verificada', [
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+                'appserver' => $serverStatus['appserver'] ?? 'UNKNOWN',
+                'dbserver' => $serverStatus['dbserver'] ?? 'UNKNOWN', 
+                'authserver' => $serverStatus['authserver'] ?? 'UNKNOWN',
+                'all_ok' => $this->allServersOk($serverStatus),
+            ]);
+
+            // 10. Return success
+            return [
+                'success' => true,
+                'method' => 'Dummy',
+                'connectivity_verified' => true,
+                'server_status' => $serverStatus,
+                'all_servers_ok' => $this->allServersOk($serverStatus),
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            // Error handling
+            $this->logOperation('error', 'Error en Dummy', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'connectivity_issue' => true,
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'DUMMY_ERROR',
+                'connectivity_verified' => false,
+            ];
+        }
+    }
+
+    /**
+     * Extraer estado de servidores de respuesta Dummy
+     */
+    private function extractServerStatusFromResponse(string $response): array
+    {
+        $serverStatus = [
+            'appserver' => 'UNKNOWN',
+            'dbserver' => 'UNKNOWN', 
+            'authserver' => 'UNKNOWN',
+        ];
+
+        try {
+            // Patrones para extraer estado de cada servidor
+            if (preg_match('/<AppServer>([^<]+)<\/AppServer>/i', $response, $matches)) {
+                $serverStatus['appserver'] = strtoupper(trim($matches[1]));
+            }
+
+            if (preg_match('/<DbServer>([^<]+)<\/DbServer>/i', $response, $matches)) {
+                $serverStatus['dbserver'] = strtoupper(trim($matches[1]));
+            }
+
+            if (preg_match('/<AuthServer>([^<]+)<\/AuthServer>/i', $response, $matches)) {
+                $serverStatus['authserver'] = strtoupper(trim($matches[1]));
+            }
+
+            $this->logOperation('debug', 'Estado servidores extraído', [
+                'server_status' => $serverStatus,
+            ]);
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error extrayendo estado servidores', [
+                'error' => $e->getMessage(),
+                'response_preview' => substr($response, 0, 300),
+            ]);
+        }
+
+        return $serverStatus;
+    }
+
+    /**
+     * Verificar que todos los servidores estén OK
+     */
+    private function allServersOk(array $serverStatus): bool
+    {
+        return ($serverStatus['appserver'] ?? '') === 'OK' &&
+            ($serverStatus['dbserver'] ?? '') === 'OK' && 
+            ($serverStatus['authserver'] ?? '') === 'OK';
     }
 
     // ✅ MÉTODOS AUXILIARES PARA DATOS ESTRUCTURADOS
