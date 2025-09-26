@@ -104,32 +104,79 @@
                     </div>
 
                     {{-- GRUPO 2: GESTIÓN CONVOY (4-6) --}}
+                    @php
+                        $isConvoyVoyage = $voyage->shipments->count() > 1;
+                        $convoyButtonClass = $isConvoyVoyage 
+                            ? 'bg-white border-2 border-green-300 hover:bg-green-100 hover:border-green-400 transition-colors'
+                            : 'bg-gray-100 border-2 border-gray-300 cursor-not-allowed opacity-60';
+                        $convoyOnClick = $isConvoyVoyage ? 'onclick="executeAfipMethod(\'RegistrarConvoy\')"' : 'onclick="showConvoyNotApplicable()"';
+                    @endphp
                     <div class="border border-purple-200 rounded-lg p-4 bg-purple-50">
                         <h4 class="text-md font-semibold text-purple-900 mb-3">
                             🚛 Gestión de Convoy
+                            @if(!$isConvoyVoyage)
+                                <span class="text-xs font-normal">(No aplicable para Viaje individual)</span>
+                            @endif
                         </h4>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            
-                            <button onclick="executeAfipMethod('RegistrarConvoy')"
-                                    class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
-                                <span class="text-2xl mb-2">🚢</span>
-                                <span class="text-sm font-medium text-center">4. RegistrarConvoy</span>
-                                <span class="text-xs text-gray-600 text-center mt-1">Agrupa MIC/DTAs en convoy</span>
-                            </button>
+                            @if($isConvoyVoyage)
+                            {{-- CONVOY APLICABLE --}}
+                                <button onclick="executeAfipMethod('RegistrarConvoy')"
+                                        class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
+                                    <span class="text-2xl mb-2">🚢</span>
+                                    <span class="text-sm font-medium text-center">4. RegistrarConvoy</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Agrupa MIC/DTAs en convoy</span>
+                                </button>
+                            @else
+                                {{-- CONVOY NO APLICABLE --}}
+                                <button onclick="showConvoyNotApplicable()"
+                                        disabled
+                                        class="flex flex-col items-center justify-center p-4 bg-gray-100 border-2 border-gray-300 rounded-lg cursor-not-allowed opacity-60">
+                                    <span class="text-2xl mb-2">🔗</span>
+                                    <span class="text-sm font-medium text-center">4. RegistrarConvoy</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Solo para múltiples embarcaciones</span>
+                                </button>
+                            @endif
 
-                            <button onclick="executeAfipMethod('AsignarATARemol')"
-                                    class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
-                                <span class="text-2xl mb-2">⚓</span>
-                                <span class="text-sm font-medium text-center">5. AsignarATARemol</span>
-                                <span class="text-xs text-gray-600 text-center mt-1">Asigna remolcador ATA</span>
-                            </button>
-
-                            <button onclick="executeAfipMethod('RectifConvoyMicDta')"
-                                    class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
-                                <span class="text-2xl mb-2">✏️</span>
-                                <span class="text-sm font-medium text-center">6. RectifConvoyMicDta</span>
-                                <span class="text-xs text-gray-600 text-center mt-1">Rectifica convoy/MIC-DTA</span>
-                            </button>
+                            @if ($isConvoyVoyage)        
+                            {{-- aplicable --}}                    
+                                <button onclick="executeAfipMethod('AsignarATARemol')"
+                                        class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
+                                    <span class="text-2xl mb-2">⚓</span>
+                                    <span class="text-sm font-medium text-center">5. AsignarATARemol</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Asigna remolcador ATA</span>
+                                </button>
+                            @else
+                            {{-- no aplicable   --}}
+                                <button onclick="showConvoyNotApplicable('AsignarATARemol')"
+                                        disabled
+                                        class="flex flex-col items-center justify-center p-4 bg-gray-100 border-2 border-gray-300 rounded-lg cursor-not-allowed opacity-60">
+                                    <span class="text-2xl mb-2">⚓</span>
+                                    <span class="text-sm font-medium text-center">5. AsignarATARemol</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Asigna remolcador ATA</span>
+                                </button>
+                            @endif    
+                                
+                            @if ($isConvoyVoyage)
+                            {{-- aplicable --}}    
+                                <button onclick="executeAfipMethod('RectifConvoyMicDta')"
+                                        class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
+                                    <span class="text-2xl mb-2">✏️</span>
+                                    <span class="text-sm font-medium text-center">6. RectifConvoyMicDta</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Rectifica convoy/MIC-DTA</span>
+                                </button>
+                            @else
+                            {{-- no aplicable   --}}
+                                <button onclick="showConvoyNotApplicable('RectifConvoyMicDta')"
+                                        disabled
+                                        class="flex flex-col items-center justify-center p-4 bg-gray-100 border-2 border-gray-300 rounded-lg cursor-not-allowed opacity-60">
+                                    <span class="text-2xl mb-2">✏️</span>
+                                    <span class="text-sm font-medium text-center">6. RectifConvoyMicDta</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Rectifica convoy/MIC-DTA</span>
+                                </button>
+                                
+                            @endif
+                                
                         </div>
                     </div>
 
@@ -296,7 +343,34 @@
             </svg>`;
 
             try {
-                const url = `/company/simple/webservices/micdta/${voyageId}/${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').substring(1)}`;
+                // CORREGIR: Mapeo directo methodName → ruta
+                const routeMap = {
+                    'RegistrarTitEnvios': 'registrar-tit-envios',
+                    'RegistrarEnvios': 'registrar-envios',
+                    'RegistrarMicDta': 'registrar-micdta',
+                    'RegistrarConvoy': 'registrar-convoy',
+                    'AsignarATARemol': 'asignar-ata-remol',
+                    'RectifConvoyMicDta': 'rectif-convoy-micdta',
+                    'RegistrarTitMicDta': 'registrar-tit-micdta',
+                    'DesvincularTitMicDta': 'desvincular-tit-micdta',
+                    'AnularTitulo': 'anular-titulo',
+                    'RegistrarSalidaZonaPrimaria': 'registrar-salida-zona-primaria',
+                    'RegistrarArriboZonaPrimaria': 'registrar-arribo-zona-primaria',
+                    'AnularArriboZonaPrimaria': 'anular-arribo-zona-primaria',
+                    'ConsultarMicDtaAsig': 'consultar-micdta-asig',
+                    'ConsultarTitEnviosReg': 'consultar-tit-envios-reg',
+                    'ConsultarPrecumplido': 'consultar-precumplido',
+                    'SolicitarAnularMicDta': 'solicitar-anular-micdta',
+                    'AnularEnvios': 'anular-envios',
+                    'Dummy': 'dummy'
+                };
+                
+                const route = routeMap[methodName];
+                if (!route) {
+                    throw new Error(`Método ${methodName} no encontrado`);
+                }
+                
+                const url = `/company/simple/webservices/micdta/${voyageId}/${route}`;
                 
                 const response = await fetch(url, {
                     method: 'POST',
@@ -365,5 +439,11 @@
      */
     function closeResultModal() {
         document.getElementById('resultModal').classList.add('hidden');
+    }
+
+    function showConvoyNotApplicable() {
+        showResultModal('Convoy', {
+            error: 'Los métodos de convoy solo aplican para voyages con múltiples embarcaciones (remolcador + barcazas). Su voyage actual tiene una sola embarcación.'
+        }, false);
     }
 </script>

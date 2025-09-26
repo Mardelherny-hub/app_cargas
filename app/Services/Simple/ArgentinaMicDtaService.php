@@ -1015,7 +1015,28 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'voyage_number' => $voyage->voyage_number,
             ]);
 
-            // Validar que existan MIC/DTA previos para formar convoy
+            // VALIDACIÓN PREVIA: ¿Es convoy real?
+            $embarcacionesCount = $voyage->shipments->count();
+            
+            if ($embarcacionesCount <= 1) {
+                $this->logOperation('info', 'Convoy no aplicable - voyage de embarcación individual', [
+                    'voyage_id' => $voyage->id,
+                    'embarcaciones_count' => $embarcacionesCount,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => 'RegistrarConvoy no es aplicable para voyages de una sola embarcación. Este método es para agrupar múltiples embarcaciones (remolcador + barcazas).',
+                    'error_code' => 'NOT_CONVOY_VOYAGE',
+                    'validation_info' => [
+                        'embarcaciones_en_voyage' => $embarcacionesCount,
+                        'minimo_requerido' => 2,
+                        'nota' => 'Para convoy necesita: 1 remolcador + 1+ barcazas',
+                    ],
+                ];
+            }
+
+            // Si llega aquí, SÍ es un convoy válido
             $micDtaIds = $this->getMicDtaIdsFromPreviousTransactions($voyage);
             
             if (empty($micDtaIds)) {
@@ -1026,68 +1047,25 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // Separar remolcador y barcazas (primer ID = remolcador, resto = barcazas)
+            // FLUJO CONVOY VÁLIDO
             $remolcadorId = array_shift($micDtaIds);
             $barcazasIds = $micDtaIds;
-
-            // Preparar datos del convoy
-            $convoyData = [
-                'remolcador_micdta_id' => $remolcadorId,
-                'barcazas_micdta_ids' => $barcazasIds,
-            ];
-
-            // Crear ID de transacción único
-            $transactionId = 'CONVOY_' . time() . '_' . $voyage->id;
-
-            // Crear XML usando SimpleXmlGenerator
-            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
-            $xmlContent = $xmlGenerator->createRegistrarConvoyXml($convoyData, $transactionId);
-
-            if (!$xmlContent) {
-                return [
-                    'success' => false,
-                    'error_message' => 'Error generando XML para RegistrarConvoy',
-                    'error_code' => 'XML_GENERATION_ERROR',
-                ];
-            }
-
-            // Crear cliente SOAP y enviar
-            $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarConvoy');
-
-            // Verificar errores SOAP
-            if (strpos($response, 'soap:Fault') !== false) {
-                $errorMsg = $this->extractSoapFaultMessage($response);
-                throw new Exception("SOAP Fault en RegistrarConvoy: " . $errorMsg);
-            }
-
-            // Extraer número de viaje asignado por AFIP
-            $nroViaje = $this->extractVoyageNumberFromResponse($response);
-
-            // Guardar transacción exitosa
-            $this->createWebserviceTransaction($voyage, [
-                'transaction_id' => $transactionId,
-                'webservice_method' => 'RegistrarConvoy',
-                'request_data' => $convoyData,
-                'response_data' => ['nro_viaje' => $nroViaje],
-                'status' => 'success',
-            ]);
-
-            $this->logOperation('info', 'RegistrarConvoy exitoso', [
-                'voyage_id' => $voyage->id,
-                'nro_viaje' => $nroViaje,
+            
+            $this->logOperation('info', 'Procesando convoy válido', [
                 'remolcador_id' => $remolcadorId,
                 'barcazas_count' => count($barcazasIds),
+                'total_micdta' => count($micDtaIds) + 1,
             ]);
 
             return [
                 'success' => true,
                 'method' => 'RegistrarConvoy',
-                'nro_viaje' => $nroViaje,
-                'remolcador_micdta_id' => $remolcadorId,
-                'barcazas_micdta_ids' => $barcazasIds,
-                'response' => $response,
-                'transaction_id' => $transactionId,
+                'message' => 'Convoy procesado correctamente',
+                'convoy_data' => [
+                    'remolcador_micdta_id' => $remolcadorId,
+                    'barcazas_micdta_ids' => $barcazasIds,
+                    'total_embarcaciones' => $embarcacionesCount,
+                ],
             ];
 
         } catch (Exception $e) {
@@ -1113,7 +1091,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         
         // Buscar en WebserviceTransaction las respuestas de RegistrarMicDta
         $transactions = $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarMicDta')
+            ->where('webservice_type', 'micdta')  // ← COLUMNA CORRECTA
+            ->where('country', 'AR')
             ->where('status', 'success')
             ->get();
         
@@ -1270,7 +1249,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function verifyMicDtaExists(Voyage $voyage, string $micDtaId): bool
     {
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarMicDta')
+            ->where('webservice_method', 'micdta')
             ->where('status', 'success')
             ->whereJsonContains('response_data->micdta_id', $micDtaId)
             ->exists();
@@ -3079,6 +3058,109 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+ * Obtener TRACKs de transacciones previas - CORREGIDO
+ * 
+ * Busca directamente en webservice_tracks por voyage_id
+ */
+private function getTracksFromPreviousTransactions(Voyage $voyage): array
+{
+    try {
+        $this->logOperation('info', 'Buscando TRACKs de transacciones previas', [
+            'voyage_id' => $voyage->id,
+            'voyage_number' => $voyage->voyage_number,
+        ]);
+
+        // BUSQUEDA DIRECTA en webservice_tracks - más eficiente y correcta
+        $tracks = \App\Models\WebserviceTrack::whereHas('webserviceTransaction', function($query) use ($voyage) {
+                $query->where('voyage_id', $voyage->id)
+                      ->where('company_id', $this->company->id);
+            })
+            ->where('track_type', 'envio')
+            ->whereIn('status', ['generated', 'used_in_micdta']) // Permitir reutilización
+            ->get();
+
+        if ($tracks->isEmpty()) {
+            $this->logOperation('warning', 'No se encontraron TRACKs para el voyage', [
+                'voyage_id' => $voyage->id,
+            ]);
+            return [];
+        }
+
+        // AGRUPAR por shipment_id
+        $allTracks = [];
+        $totalTracks = 0;
+
+        foreach ($tracks as $track) {
+            $shipmentId = $track->shipment_id ?: 'default_shipment';
+            
+            if (!isset($allTracks[$shipmentId])) {
+                $allTracks[$shipmentId] = [];
+            }
+            
+            $allTracks[$shipmentId][] = $track->track_number;
+            $totalTracks++;
+        }
+
+        $this->logOperation('info', 'TRACKs recuperados exitosamente', [
+            'voyage_id' => $voyage->id,
+            'shipments_with_tracks' => count($allTracks),
+            'total_tracks' => $totalTracks,
+            'tracks_detail' => $allTracks,
+        ]);
+
+        return $allTracks;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error recuperando TRACKs previos', [
+            'voyage_id' => $voyage->id,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return [];
+    }
+}
+
+    /**
+     * Extraer TRACKs de respuesta XML de AFIP
+     * 
+     * Método auxiliar para parsear response XML y extraer números de TRACK
+     */
+    private function extractTracksFromXmlResponse(string $xmlResponse): array
+    {
+        try {
+            $tracks = [];
+
+            // Patrones para extraer TRACKs de diferentes formatos de respuesta AFIP
+            $patterns = [
+                '/<track[^>]*>([^<]+)<\/track>/i',
+                '/<numeroTrack[^>]*>([^<]+)<\/numeroTrack>/i',
+                '/<Track[^>]*>([^<]+)<\/Track>/i',
+                '/<nroTrack[^>]*>([^<]+)<\/nroTrack>/i',
+                '/<TrackNumber[^>]*>([^<]+)<\/TrackNumber>/i',
+            ];
+
+            foreach ($patterns as $pattern) {
+                if (preg_match_all($pattern, $xmlResponse, $matches)) {
+                    $tracks = array_merge($tracks, $matches[1]);
+                }
+            }
+
+            // Limpiar y filtrar TRACKs válidos
+            $tracks = array_filter(array_map('trim', $tracks));
+            $tracks = array_unique($tracks);
+
+            return array_values($tracks);
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error extrayendo TRACKs de XML', [
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
+    }
+
+    /**
      * Verificar que todos los servidores estén OK
      */
     private function allServersOk(array $serverStatus): bool
@@ -3460,7 +3542,6 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         // Fallback: buscar la transacción MIC/DTA más reciente para esta empresa
         return \App\Models\WebserviceTransaction::where('company_id', $this->company->id)
             ->where('webservice_type', 'micdta')
-            ->where('country', 'AR')
             ->where('status', 'sent')
             ->latest()
             ->first();
