@@ -317,15 +317,25 @@ abstract class BaseWebserviceService
         } catch (Exception $e) {
             DB::rollBack();
             
+            // Extraer detalles de error AFIP si existen
+            $soapResponse = $this->soapClient?->__getLastResponse() ?? '';
+            $afipErrors = $this->extractAfipErrorDetails($soapResponse);
+            
             $this->logOperation('error', 'Error enviando webservice', [
                 'error' => $e->getMessage(),
                 'voyage_id' => $voyage->id,
+                'afip_error_codes' => $afipErrors['has_afip_errors'] ? array_column($afipErrors['afip_errors'], 'codigo') : null,
+                'afip_error_details' => $afipErrors['afip_errors'],
+                'afip_error_summary' => $afipErrors['error_summary'],
+                'soap_response_excerpt' => substr($soapResponse, 0, 500),
             ]);
 
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
                 'transaction_id' => $this->currentTransactionId,
+                'afip_error_details' => $afipErrors['afip_errors'],
+                'afip_error_summary' => $afipErrors['error_summary'],
             ];
         }
     }
@@ -431,6 +441,90 @@ abstract class BaseWebserviceService
     }
 
     /**
+     * Extraer códigos de error específicos de AFIP
+     */
+    protected function extractAfipErrorDetails(string $responseXml): array
+    {
+        $errorDetails = [
+            'has_afip_errors' => false,
+            'afip_errors' => [],
+            'error_summary' => ''
+        ];
+
+        if (empty($responseXml)) {
+            return $errorDetails;
+        }
+
+        // Buscar errores en respuesta de información anticipada
+        if (preg_match_all('/<DetalleError>.*?<Codigo>(\d+)<\/Codigo>.*?<Descripcion>([^<]+)<\/Descripcion>.*?(?:<DescripcionAdicional>([^<]*)<\/DescripcionAdicional>)?.*?<\/DetalleError>/s', $responseXml, $matches, PREG_SET_ORDER)) {
+            
+            $errorDetails['has_afip_errors'] = true;
+            
+            foreach ($matches as $match) {
+                $codigo = $match[1];
+                $descripcion = $match[2];
+                $descripcionAdicional = $match[3] ?? '';
+                
+                $error = [
+                    'codigo' => $codigo,
+                    'descripcion' => $descripcion,
+                    'descripcion_adicional' => $descripcionAdicional,
+                    'categoria' => $this->categorizeAfipError($codigo)
+                ];
+                
+                $errorDetails['afip_errors'][] = $error;
+            }
+            
+            // Crear resumen legible
+            $errorCodes = array_column($errorDetails['afip_errors'], 'codigo');
+            $errorDetails['error_summary'] = 'Códigos AFIP: ' . implode(', ', $errorCodes);
+        }
+        
+        // Si no hay errores específicos pero hay fault, extraer fault
+        if (!$errorDetails['has_afip_errors'] && strpos($responseXml, 'soap:Fault') !== false) {
+            if (preg_match('/<faultstring>([^<]+)<\/faultstring>/', $responseXml, $matches)) {
+                $errorDetails['error_summary'] = 'SOAP Fault: ' . $matches[1];
+            }
+        }
+
+        return $errorDetails;
+    }
+
+    /**
+     * Categorizar error AFIP para mejor handling
+     */
+    private function categorizeAfipError(string $codigo): string
+    {
+        $categories = [
+            // Errores de estructura/campos obligatorios
+            '42034' => 'campo_obligatorio_faltante',
+            '31353' => 'formato_erroneo',
+            
+            // Errores de códigos
+            '30163' => 'codigo_aduana_invalido',
+            '10021' => 'codigo_pais_invalido',
+            '27149' => 'codigo_via_transporte_inexistente',
+            
+            // Errores de fechas
+            '11421' => 'error_fechas',
+            '11424' => 'error_fechas',
+            
+            // Errores de puertos/ubicaciones
+            '11416' => 'puerto_invalido',
+            '12353' => 'lugar_operativo_incorrecto',
+            
+            // Errores de permisos/habilitación
+            '11402' => 'sin_permisos_comercio_exterior',
+            
+            // Errores de contenedores
+            '11384' => 'contenedor_duplicado',
+            '11387' => 'contenedores_vs_transporte_vacio',
+        ];
+        
+        return $categories[$codigo] ?? 'error_general';
+    }
+
+    /**
      * Actualizar estado de webservice
      */
     protected function updateWebserviceStatus(Voyage $voyage, string $status, array $data = []): void
@@ -449,4 +543,5 @@ abstract class BaseWebserviceService
             ]);
         }
     }
+    
 }

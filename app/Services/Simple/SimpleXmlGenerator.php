@@ -25,6 +25,7 @@ class SimpleXmlGenerator
 {
     private Company $company;
     private const AFIP_NAMESPACE = 'Ar.Gob.Afip.Dga.wgesregsintia2';
+    private const AFIP_ANTICIPADA_NAMESPACE = 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada';
     private const WSDL_URL = 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl';
     private array $config;
 
@@ -1785,7 +1786,7 @@ class SimpleXmlGenerator
             // SOAP Body
             $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
                 $w->startElement('RegistrarViaje');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+                $w->writeAttribute('xmlns', self::AFIP_ANTICIPADA_NAMESPACE);
 
                 // Autenticación empresa (obligatorio)
                 $w->startElement('argWSAutenticacionEmpresa');
@@ -1858,7 +1859,7 @@ class SimpleXmlGenerator
             // SOAP Body
             $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
                 $w->startElement('RectificarViaje');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+                $w->writeAttribute('xmlns', self::AFIP_ANTICIPADA_NAMESPACE);
 
                 // Autenticación empresa (obligatorio)
                 $w->startElement('argWSAutenticacionEmpresa');
@@ -1929,7 +1930,7 @@ class SimpleXmlGenerator
             // SOAP Body
             $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
                 $w->startElement('RegistrarTitulosCbc');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+                $w->writeAttribute('xmlns', self::AFIP_ANTICIPADA_NAMESPACE);
 
                 // Autenticación empresa (obligatorio)
                 $w->startElement('argWSAutenticacionEmpresa');
@@ -1986,6 +1987,36 @@ class SimpleXmlGenerator
         $destinationPortCode = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT');
         
         $w->writeElement('CodigoPuertoOrigen', $originPortCode);
+        // CAMPOS OBLIGATORIOS FALTANTES PARA AFIP
+        // FechaArribo (obligatorio) - usar estimated_arrival_date o departure_date
+        if ($voyage->estimated_arrival_date) {
+            $w->writeElement('FechaArribo', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
+        } elseif ($voyage->departure_date) {
+            // Fallback: agregar 24 horas a departure_date
+            $w->writeElement('FechaArribo', $voyage->departure_date->addDay()->format('Y-m-d\TH:i:s'));
+        } else {
+            // Fallback mínimo
+            $w->writeElement('FechaArribo', now()->addDay()->format('Y-m-d\TH:i:s'));
+        }
+
+        // IndicadorTransporteVacio (S/N) - basado en si hay contenedores cargados
+        $hasLoadedContainers = $voyage->shipments()->whereHas('billsOfLading')->exists();
+        $w->writeElement('IndicadorTransporteVacio', $hasLoadedContainers ? 'N' : 'S');
+
+        // IndicadorMercaderiaAbordo (S/N) - mismo criterio que arriba  
+        $w->writeElement('IndicadorMercaderiaAbordo', $hasLoadedContainers ? 'S' : 'N');
+
+        // DesignacionTransportista (string 35) - nombre de la empresa o capitán
+        $transportistName = $voyage->captain_name ?? $this->company->name ?? 'ATA TRANSPORTISTA';
+        $w->writeElement('DesignacionTransportista', substr($transportistName, 0, 35));
+
+        // CodigoPaisTransportista - país de la empresa
+        $transportistCountry = $this->getCountryCode($this->company->country ?? 'AR');
+        $w->writeElement('CodigoPaisTransportista', $transportistCountry);
+
+        // CodigoNacionalidadMedioTransporte - bandera de la embarcación
+        $vesselNationality = $this->getCountryCode($voyage->leadVessel?->flag_country ?? 'AR');
+        $w->writeElement('CodigoNacionalidadMedioTransporte', $vesselNationality);
         $w->writeElement('CodigoPuertoDestino', $destinationPortCode);
 
         // Fechas (formato ISO requerido por AFIP)
@@ -2102,20 +2133,55 @@ class SimpleXmlGenerator
         }
     }
 
-    /**
-     * Obtener código de país AFIP
-     */
-    private function getCountryCode(string $alpha2Code): string
-    {
-        return self::COUNTRY_CODES[strtoupper($alpha2Code)] ?? self::COUNTRY_CODES['AR'];
+   private function getCountryCode(string $alpha2Code): string
+{
+    // Usar datos reales del modelo Country
+    $country = \App\Models\Country::where('alpha2_code', strtoupper($alpha2Code))->first();
+    
+    if ($country) {
+        // Si tiene customs_code específico, usarlo
+        if ($country->customs_code) {
+            return $country->customs_code;
+        }
+        
+        // Si tiene numeric_code, usarlo
+        if ($country->numeric_code) {
+            return str_pad($country->numeric_code, 3, '0', STR_PAD_LEFT);
+        }
     }
+    
+    // Fallbacks seguros basados en códigos ISO estándar
+    return match(strtoupper($alpha2Code)) {
+        'AR' => '032', // Argentina
+        'PY' => '600', // Paraguay
+        'BR' => '076', // Brasil
+        'UY' => '858', // Uruguay
+        default => '032' // Argentina por defecto
+    };
+}
 
-    /**
-     * Obtener código de aduana del puerto
-     */
-    private function getPortCustomsCode(string $portCode): string
-    {
-        return self::PORT_CUSTOMS_CODES[strtoupper($portCode)] ?? '019';
+private function getPortCustomsCode(string $portCode): string
+{
+    // Usar datos reales del modelo Port
+    $port = \App\Models\Port::where('code', strtoupper($portCode))->first();
+    
+    if ($port && $port->customs_code) {
+        return $port->customs_code;
     }
+    
+    // Fallbacks seguros para puertos conocidos de la hidrovía
+    return match(strtoupper($portCode)) {
+        'ARBUE' => '019', // Buenos Aires
+        'ARPAR' => '013', // Paraná
+        'ARSFE' => '014', // Santa Fe
+        'ARROS' => '016', // Rosario
+        'ARSLA' => '016', // San Lorenzo (usa código Rosario)
+        'PYASU' => '001', // Asunción
+        'PYTVT' => '051', // Villeta
+        'PYCON' => '002', // Concepción
+        'PYPIL' => '003', // Pilar
+        default => '019'  // Buenos Aires por defecto
+    };
+}
 
 }
