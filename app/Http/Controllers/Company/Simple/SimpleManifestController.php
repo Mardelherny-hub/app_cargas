@@ -370,20 +370,34 @@ class SimpleManifestController extends Controller
         }
 
         $company = $this->getUserCompany();
+        if (!$company) {
+            return redirect()->route('company.simple.dashboard')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
 
-        $voyages = Voyage::where('company_id', $company->id)
+        $voyagesQuery = Voyage::where('company_id', $company->id)
             ->with([
                 'originPort', 'destinationPort', 'leadVessel',
                 'webserviceStatuses' => function($q) {
                     $q->where('webservice_type', 'anticipada');
                 }
             ])
-            ->whereHas('shipments')
-            ->orderBy('departure_date', 'desc')
-            ->paginate(15);
+            ->whereHas('shipments');
+
+        // Filtro por estado si se proporciona
+        if ($request->filled('status')) {
+            $voyagesQuery->whereHas('webserviceStatuses', function($query) use ($request) {
+                $query->where('webservice_type', 'anticipada')
+                    ->where('status', $request->status);
+            });
+        }
+
+        $voyages = $voyagesQuery->orderBy('departure_date', 'desc')->paginate(15);
 
         return view('company.simple.anticipada.index', [
             'voyages' => $voyages,
+            'company' => $company,
+            'status_filter' => $request->status,
             'webservice_type' => 'anticipada',
             'webservice_config' => self::WEBSERVICE_TYPES['anticipada'],
         ]);
