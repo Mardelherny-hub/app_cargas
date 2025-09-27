@@ -5,13 +5,14 @@ namespace App\Services\Parsers;
 use App\Contracts\ManifestParserInterface;
 use App\Services\Parsers\KlineDataParser;
 use App\Services\Parsers\ParanaExcelParser;
-// TODO: Agregar otros parsers cuando estén implementados
 use App\Services\Parsers\GuaranExcelParser;
 use App\Services\Parsers\LoginXmlParser;
 // use App\Services\Parsers\TfpTextParser;
 // use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\NavsurTextParser;
 use App\Services\Parsers\CmspEdiParser;
+use App\Services\Parsers\G2OceanXmlParser;
+
 
 use Exception;
 use Illuminate\Support\Facades\Log;
@@ -41,6 +42,7 @@ class ManifestParserFactory
         // TfpTextParser::class,
         CmspEdiParser::class,
         NavsurTextParser::class,
+        G2OceanXmlParser::class,
     ];
 
     /**
@@ -51,7 +53,7 @@ class ManifestParserFactory
         'txt' => [KlineDataParser::class, NavsurTextParser::class],
         'xlsx' => [ParanaExcelParser::class, GuaranExcelParser::class],
         'xls' => [ParanaExcelParser::class, GuaranExcelParser::class],
-        'xml' => [LoginXmlParser::class], // LoginXmlParser::class
+        'xml' => [LoginXmlParser::class, G2OceanXmlParser::class], // LoginXmlParser::class
         'edi' => [CmspEdiParser::class],
     ];
 

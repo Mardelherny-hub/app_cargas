@@ -48,7 +48,7 @@ class KlineDataParser implements ManifestParserInterface
     protected bool $autoCreateMissingPorts = true;
 
     // Solo aceptamos UN/LOCODE cuyo prefijo (país) esté habilitado
-    protected array $allowedCountryAlpha2 = ['AR', 'PY', 'BR', 'UY'];
+    //protected array $allowedCountryAlpha2 = ['AR', 'PY', 'BR', 'UY'];
 
 
     /**
@@ -100,9 +100,16 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     }
 
     // 2) Prefijo de país habilitado (lista blanca)
+    //$alpha2 = substr($code, 0, 2);
+    //if (!in_array($alpha2, $this->allowedCountryAlpha2, true)) {
+    //    throw new \DomainException("Código de puerto {$code} rechazado: país {$alpha2} no habilitado.");
+    //}
+
+    // 2) Verificar que el país existe en BD
     $alpha2 = substr($code, 0, 2);
-    if (!in_array($alpha2, $this->allowedCountryAlpha2, true)) {
-        throw new \DomainException("Código de puerto {$code} rechazado: país {$alpha2} no habilitado.");
+    $countryExists = Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->exists();
+    if (!$countryExists) {
+        throw new \DomainException("Código de puerto {$code} rechazado: país {$alpha2} no existe en base de datos.");
     }
 
     // 3) Si ya existe, usarlo
