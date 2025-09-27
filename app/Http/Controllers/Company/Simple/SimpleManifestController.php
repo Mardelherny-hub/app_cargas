@@ -11,6 +11,7 @@ use App\Models\WebserviceResponse;
 use App\Services\Simple\ArgentinaMicDtaService;
 use App\Services\Simple\ArgentinaMicDtaStatusService;
 use App\Services\Simple\ArgentinaMicDtaPositionService;
+use App\Services\Simple\ArgentinaAnticipatedService;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -66,8 +67,8 @@ class SimpleManifestController extends Controller
             'country' => 'AR', 
             'description' => 'Envío anticipado de información de viaje a AFIP',
             'icon' => 'clock',
-            'status' => 'coming_soon', // FASE 2
-            'service_class' => null, // TODO: ArgentinaAnticipatedService::class,
+            'status' => 'active', // FASE 2
+            'service_class' => ArgentinaAnticipatedService::class, // TODO: ArgentinaAnticipatedService::class,
         ],
         'manifiesto' => [
             'name' => 'Manifiestos Paraguay',
@@ -355,12 +356,155 @@ class SimpleManifestController extends Controller
     // MÉTODOS PREPARADOS PARA OTRAS FASES
     // ====================================
 
+    // ====================================
+    // INFORMACIÓN ANTICIPADA ARGENTINA
+    // ====================================
+
     /**
-     * TODO FASE 2: Información Anticipada Argentina
+     * Lista de voyages para Información Anticipada Argentina
      */
     public function anticipadaIndex(Request $request)
     {
-        return $this->renderComingSoon('anticipada', 'Información Anticipada Argentina');
+        if (!$this->canPerform('manage_webservices')) {
+            abort(403, 'No tiene permisos para gestionar webservices.');
+        }
+
+        $company = $this->getUserCompany();
+
+        $voyages = Voyage::where('company_id', $company->id)
+            ->with([
+                'originPort', 'destinationPort', 'leadVessel',
+                'webserviceStatuses' => function($q) {
+                    $q->where('webservice_type', 'anticipada');
+                }
+            ])
+            ->whereHas('shipments')
+            ->orderBy('departure_date', 'desc')
+            ->paginate(15);
+
+        return view('company.simple.anticipada.index', [
+            'voyages' => $voyages,
+            'webservice_type' => 'anticipada',
+            'webservice_config' => self::WEBSERVICE_TYPES['anticipada'],
+        ]);
+    }
+
+    /**
+     * Vista detallada para envío de Información Anticipada
+     */
+    public function anticipadaShow(Voyage $voyage)
+    {
+        if (!$this->canPerform('manage_webservices')) {
+            abort(403, 'No tiene permisos para gestionar webservices.');
+        }
+
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para este voyage.');
+        }
+
+        // Cargar relaciones necesarias
+        $voyage->load([
+            'company', 'leadVessel', 'captain',
+            'originPort.country', 'destinationPort.country',
+            'shipments.vessel', 'shipments.captain',
+            'shipments.billsOfLading.shipmentItems.containers',
+            'webserviceStatuses' => function($q) {
+                $q->where('webservice_type', 'anticipada');
+            }
+        ]);
+
+        // Validar con el servicio
+        $service = new ArgentinaAnticipatedService($company, auth()->user());
+        $validation = $service->canProcessVoyage($voyage);
+
+        // Obtener historial de transacciones
+        $transactions = $voyage->webserviceTransactions()
+            ->where('webservice_type', 'anticipada')
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        return view('company.simple.anticipada.show', [
+            'voyage' => $voyage,
+            'validation' => $validation,
+            'transactions' => $transactions,
+            'webservice_config' => self::WEBSERVICE_TYPES['anticipada'],
+        ]);
+    }
+
+    /**
+     * Procesar envío de Información Anticipada (AJAX)
+     */
+    public function anticipadaSend(Request $request, Voyage $voyage)
+    {
+        try {
+            if (!$this->canPerform('manage_webservices')) {
+                return response()->json(['success' => false, 'message' => 'Sin permisos'], 403);
+            }
+
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json(['success' => false, 'message' => 'Voyage no pertenece a su empresa'], 403);
+            }
+
+            // Obtener método solicitado
+            $method = $request->input('method', 'RegistrarViaje');
+            $validMethods = ['RegistrarViaje', 'RectificarViaje', 'RegistrarTitulosCbc'];
+            
+            if (!in_array($method, $validMethods)) {
+                return response()->json(['success' => false, 'message' => 'Método no válido'], 400);
+            }
+
+            // Crear servicio y procesar
+            $service = new ArgentinaAnticipatedService($company, auth()->user());
+            
+            $options = [
+                'method' => $method,
+                'user_notes' => $request->input('notes', ''),
+                'environment' => $request->input('environment', 'testing'),
+            ];
+
+            // Si es rectificación, agregar datos adicionales
+            if ($method === 'RectificarViaje') {
+                $options['rectification_reason'] = $request->input('rectification_reason', '');
+            }
+
+            $result = $service->sendWebservice($voyage, $options);
+
+            if ($result['success']) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "{$method} enviado exitosamente a AFIP",
+                    'data' => [
+                        'transaction_id' => $result['transaction_id'],
+                        'external_reference' => $result['external_reference'] ?? null,
+                        'method' => $method,
+                    ]
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['error_message'] ?? 'Error en envío a AFIP',
+                    'data' => [
+                        'transaction_id' => $result['transaction_id'] ?? null,
+                        'method' => $method,
+                    ]
+                ]);
+            }
+
+        } catch (Exception $e) {
+            Log::error('Error en anticipadaSend: ' . $e->getMessage(), [
+                'voyage_id' => $voyage->id,
+                'user_id' => auth()->id(),
+                'method' => $request->input('method'),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error interno del servidor: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

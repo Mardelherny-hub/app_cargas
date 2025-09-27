@@ -1745,4 +1745,377 @@ class SimpleXmlGenerator
         }
     }
 
+
+    /**
+     * ============================================
+     * MÉTODOS INFORMACIÓN ANTICIPADA ARGENTINA
+     * ============================================
+     */
+
+   /**
+     * MÉTODO PRINCIPAL: RegistrarViaje - Información Anticipada del viaje
+     * 
+     * Genera XML para registro de información anticipada marítima según especificación AFIP.
+     * Incluye datos de cabecera del viaje, embarcación, capitán y contenedores vacíos/correo.
+     * 
+     * @param Voyage $voyage Viaje con relaciones cargadas
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string XML completo según especificación AFIP
+     * @throws Exception Si faltan datos obligatorios o error en generación
+     */
+    public function createRegistrarViajeXml(Voyage $voyage, string $transactionId): string
+    {
+        try {
+            // Validar datos obligatorios
+            $this->validateVoyageData($voyage);
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // SOAP Envelope
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+
+            // SOAP Body
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('RegistrarViaje');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros RegistrarViaje
+                $w->startElement('argRegistrarViaje');
+                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
+
+                    // Información Anticipada Marítima (estructura principal)
+                    $w->startElement('InformacionAnticipadaMaritimaDoc');
+                        $this->addVoyageInformation($w, $voyage);
+                        $this->addContainersInformation($w, $voyage);
+                    $w->endElement(); // InformacionAnticipadaMaritimaDoc
+
+                $w->endElement(); // argRegistrarViaje
+                $w->endElement(); // RegistrarViaje
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createRegistrarViajeXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * RectificarViaje - Rectificación de viaje ATA MT
+     * 
+     * Genera XML para modificar un viaje previamente registrado.
+     * Requiere el IdentificadorViaje obtenido del registro original.
+     * 
+     * @param Voyage $voyage Viaje con relaciones cargadas
+     * @param array $rectificationData Datos de rectificación incluyendo original_external_reference
+     * @param string $transactionId ID único de transacción
+     * @return string XML completo según especificación AFIP
+     * @throws Exception Si faltan datos obligatorios
+     */
+    public function createRectificarViajeXml(Voyage $voyage, array $rectificationData, string $transactionId): string
+    {
+        try {
+            // Validar datos obligatorios
+            $this->validateVoyageData($voyage);
+            
+            if (empty($rectificationData['original_external_reference'])) {
+                throw new Exception('Se requiere original_external_reference para rectificación');
+            }
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // SOAP Envelope
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+
+            // SOAP Body
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('RectificarViaje');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros RectificarViaje
+                $w->startElement('argRectificarViaje');
+                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
+
+                    // Información Anticipada Marítima (estructura principal)
+                    $w->startElement('InformacionAnticipadaMaritimaDoc');
+                        // Identificador del viaje original (obligatorio para rectificación)
+                        $w->writeElement('IdentificadorViaje', $rectificationData['original_external_reference']);
+                        
+                        $this->addVoyageInformation($w, $voyage);
+                        $this->addContainersInformation($w, $voyage);
+                    $w->endElement(); // InformacionAnticipadaMaritimaDoc
+
+                $w->endElement(); // argRectificarViaje
+                $w->endElement(); // RectificarViaje
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createRectificarViajeXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * RegistrarTitulosCbc - Registro de títulos ATA CBC
+     * 
+     * Genera XML para registro de títulos ATA CBC según especificación AFIP.
+     * 
+     * @param Voyage $voyage Viaje con relaciones cargadas
+     * @param array $titulosData Datos específicos de títulos CBC
+     * @param string $transactionId ID único de transacción
+     * @return string XML completo según especificación AFIP
+     * @throws Exception Si faltan datos obligatorios
+     */
+    public function createRegistrarTitulosCbcXml(Voyage $voyage, array $titulosData, string $transactionId): string
+    {
+        try {
+            // Validar datos obligatorios
+            $this->validateVoyageData($voyage);
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Crear XMLWriter
+            $w = new \XMLWriter();
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // SOAP Envelope
+            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+
+            // SOAP Body
+            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+                $w->startElement('RegistrarTitulosCbc');
+                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+
+                // Autenticación empresa (obligatorio)
+                $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('Rol', 'TRSP');
+                $w->endElement();
+
+                // Parámetros RegistrarTitulosCbc
+                $w->startElement('argRegistrarTitulosCBC');
+                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
+                    
+                    // TODO: Implementar estructura específica de títulos CBC
+                    // Estructura básica por ahora
+                    $w->startElement('TitulosCbc');
+                        $w->writeElement('VoyageId', (string)$voyage->id);
+                        $w->writeElement('VoyageNumber', $voyage->voyage_number);
+                    $w->endElement();
+
+                $w->endElement(); // argRegistrarTitulosCBC
+                $w->endElement(); // RegistrarTitulosCbc
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
+
+            $w->endDocument();
+            return $w->outputMemory();
+
+        } catch (Exception $e) {
+            error_log('Error en createRegistrarTitulosCbcXml: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Agregar información del viaje al XML
+     */
+    private function addVoyageInformation(\XMLWriter $w, Voyage $voyage): void
+    {
+        // Identificador del medio de transporte (número de embarcación)
+        $vesselNumber = $voyage->leadVessel?->registration_number ?? $voyage->leadVessel?->name ?? 'SIN_REGISTRO';
+        $w->writeElement('IdentificadorMedioTransporte', $vesselNumber);
+
+        // Códigos de país (origen y destino)
+        $originCountryCode = $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR');
+        $destinationCountryCode = $this->getCountryCode($voyage->destinationPort?->country?->alpha2_code ?? 'PY');
+        
+        $w->writeElement('CodigoPaisProcedencia', $originCountryCode);
+        $w->writeElement('CodigoPaisFinViaje', $destinationCountryCode);
+
+        // Códigos de puerto (origen y destino)
+        $originPortCode = $this->getPortCustomsCode($voyage->originPort?->code ?? 'ARBUE');
+        $destinationPortCode = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT');
+        
+        $w->writeElement('CodigoPuertoOrigen', $originPortCode);
+        $w->writeElement('CodigoPuertoDestino', $destinationPortCode);
+
+        // Fechas (formato ISO requerido por AFIP)
+        if ($voyage->departure_date) {
+            $w->writeElement('FechaEmbarque', $voyage->departure_date->format('Y-m-d\TH:i:s'));
+        }
+
+        if ($voyage->estimated_arrival_date) {
+            $w->writeElement('FechaDescarga', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
+        }
+
+        // Campos adicionales opcionales
+        $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
+        $w->writeElement('CodigoPaisLugarOrigen', $originCountryCode);
+        $w->writeElement('CodigoPuertoDescarga', $destinationPortCode);
+        
+        // Comentarios o instrucciones especiales
+        if ($voyage->special_instructions) {
+            $w->writeElement('Comentario', substr($voyage->special_instructions, 0, 100));
+        }
+
+        // Código de aduana
+        $w->writeElement('CodigoAduana', $destinationPortCode);
+        
+        // Lugar operativo de descarga
+        $w->writeElement('CodigoLugarOperativoDescarga', $voyage->destinationPort?->code ?? 'PYTVT');
+    }
+
+    /**
+     * Agregar información de contenedores vacíos y de correo
+     */
+    private function addContainersInformation(\XMLWriter $w, Voyage $voyage): void
+    {
+        $w->startElement('ContenedoresVaciosCorreo');
+        
+        // Obtener contenedores de todos los shipments del voyage
+        $containers = collect();
+        foreach ($voyage->shipments as $shipment) {
+            foreach ($shipment->billsOfLading as $bol) {
+                foreach ($bol->shipmentItems as $item) {
+                    $containers = $containers->merge($item->containers);
+                }
+            }
+        }
+
+        // Procesar cada contenedor
+        foreach ($containers as $container) {
+            $w->startElement('Contenedor');
+                
+                // Identificador del contenedor (obligatorio)
+                $w->writeElement('IdentificadorContenedor', $container->container_number ?? 'CONT' . $container->id);
+                
+                // CUIT del operador de contenedores (opcional)
+                if ($container->operator_tax_id) {
+                    $w->writeElement('CuitOperadorContenedores', $container->operator_tax_id);
+                }
+                
+                // Condición del contenedor (H/P - Casa a casa / Muelle a muelle)
+                $condition = $container->condition ?? 'H'; // Por defecto Casa a casa
+                $w->writeElement('CondicionContenedor', $condition);
+                
+                // Características del contenedor (tipo/tamaño)
+                $characteristics = $container->containerType?->code ?? '40HC';
+                $w->writeElement('CaracteristicasContenedor', $characteristics);
+                
+                // Fechas opcionales
+                if ($container->loading_date) {
+                    $w->writeElement('FechaCargaLugarOrigen', $container->loading_date->format('Y-m-d\TH:i:s'));
+                }
+                
+                if ($container->discharge_date) {
+                    $w->writeElement('FechaDescarga', $container->discharge_date->format('Y-m-d\TH:i:s'));
+                }
+                
+                // Códigos de lugar (opcionales)
+                $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
+                $w->writeElement('CodigoPaisLugarOrigen', $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR'));
+                $w->writeElement('CodigoPuertoDescarga', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
+                
+                // Comentarios del contenedor
+                if ($container->notes) {
+                    $w->writeElement('Comentario', substr($container->notes, 0, 100));
+                }
+
+            $w->endElement(); // Contenedor
+        }
+
+        $w->endElement(); // ContenedoresVaciosCorreo
+    }
+
+    /**
+     * Validar datos obligatorios del voyage
+     */
+    private function validateVoyageData(Voyage $voyage): void
+    {
+        if (!$voyage->voyage_number) {
+            throw new Exception('Voyage debe tener número de viaje definido');
+        }
+
+        if (!$voyage->lead_vessel_id || !$voyage->leadVessel) {
+            throw new Exception('Voyage debe tener embarcación líder definida');
+        }
+
+        if (!$voyage->origin_port_id || !$voyage->originPort) {
+            throw new Exception('Voyage debe tener puerto de origen definido');
+        }
+
+        if (!$voyage->destination_port_id || !$voyage->destinationPort) {
+            throw new Exception('Voyage debe tener puerto de destino definido');
+        }
+
+        if (!$voyage->departure_date) {
+            throw new Exception('Voyage debe tener fecha de salida definida');
+        }
+    }
+
+    /**
+     * Obtener código de país AFIP
+     */
+    private function getCountryCode(string $alpha2Code): string
+    {
+        return self::COUNTRY_CODES[strtoupper($alpha2Code)] ?? self::COUNTRY_CODES['AR'];
+    }
+
+    /**
+     * Obtener código de aduana del puerto
+     */
+    private function getPortCustomsCode(string $portCode): string
+    {
+        return self::PORT_CUSTOMS_CODES[strtoupper($portCode)] ?? '019';
+    }
+
 }

@@ -876,9 +876,13 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anticipadaIndex'])
             ->name('index');
             
-        // TODO FASE 2: Rutas específicas anticipada
-        // Route::get('/{voyage}', [SimpleManifestController::class, 'anticipadaShow'])->name('show');
-        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'anticipadaSend'])->name('send');
+        Route::get('/{voyage}', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anticipadaShow'])
+            ->name('show')
+            ->whereNumber('voyage');
+
+        Route::post('/{voyage}/send', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anticipadaSend'])
+            ->name('send')
+            ->whereNumber('voyage');
     });
 
     // ====================================
