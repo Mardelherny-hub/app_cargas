@@ -6,7 +6,7 @@
                     {{ __('Detalle del Item') }} #{{ $shipmentItem->line_number }}
                 </h2>
                 <p class="mt-1 text-sm text-gray-600">
-                    Shipment: <a href="{{ route('company.shipments.show', $shipmentItem->shipment) }}" class="font-medium text-blue-600 hover:text-blue-500">{{ $shipmentItem->shipment->shipment_number }}</a> - 
+                    Carga: <a href="{{ route('company.shipments.show', $shipmentItem->shipment) }}" class="font-medium text-blue-600 hover:text-blue-500">{{ $shipmentItem->shipment->shipment_number }}</a> - 
                     Viaje: <span class="font-medium">{{ $shipmentItem->shipment->voyage->voyage_number }}</span>
                     @if($shipmentItem->item_reference)
                         - Ref: <span class="font-medium">{{ $shipmentItem->item_reference }}</span>
@@ -149,7 +149,7 @@
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                 </svg>
-                                Ver Bill of Lading
+                                Ver Conocimiento 
                             </a>
                             
                             <a href="{{ route('company.shipments.show', $shipmentItem->billOfLading->shipment) }}" 
@@ -157,7 +157,7 @@
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                                 </svg>
-                                Volver al Shipment
+                                Volver a Carga
                             </a>
                         </div>
                     </div>
