@@ -151,7 +151,7 @@
                 </div>
             </div>
 
-            {{-- Información adicional si hay voyage o shipment --}}
+            {{-- Información adicional si hay Viaje o shipment --}}
             @if($webservice->voyage)
                 <div class="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
                     <div class="px-4 py-5 sm:px-6">

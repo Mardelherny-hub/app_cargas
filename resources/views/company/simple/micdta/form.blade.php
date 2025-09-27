@@ -46,7 +46,7 @@
                 </div>
             </div>
 
-            {{-- Resumen del Voyage MEJORADO --}}
+            {{-- Resumen del Viaje MEJORADO --}}
             <div class="bg-white shadow rounded-lg mb-6">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">Información del Viaje</h3>
@@ -54,7 +54,7 @@
                 <div class="px-6 py-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
-                            <dt class="text-sm font-medium text-gray-500">Voyage</dt>
+                            <dt class="text-sm font-medium text-gray-500">Viaje</dt>
                             <dd class="mt-1 text-sm text-gray-900 font-mono">{{ $voyage->voyage_number }}</dd>
                         </div>
                         <div>
@@ -469,7 +469,7 @@ class MicDtaFormManager {
         this.loadInitialData();
         this.startStatusPolling();
         
-        console.log('🚀 Sistema MIC/DTA + GPS inicializado para voyage:', this.voyageId);
+        console.log('🚀 Sistema MIC/DTA + GPS inicializado para Viaje:', this.voyageId);
 
         // Hacer disponible globalmente para onclick
         window.micDtaManager = this;
@@ -685,7 +685,7 @@ class MicDtaFormManager {
         if (!this.elements.gpsStatus || !estadoGps) return;
 
         let html = '<div class="bg-gray-50 rounded-lg p-4"><div class="flex items-center justify-between"><div>';
-        html += '<h4 class="text-sm font-medium text-gray-900">Estado GPS del Voyage</h4>';
+        html += '<h4 class="text-sm font-medium text-gray-900">Estado GPS del Viaje</h4>';
         
         if (estadoGps.tiene_coordenadas) {
             html += `<p class="text-sm text-green-600">✅ ${estadoGps.shipments_con_gps}/${estadoGps.total_shipments} shipments con GPS</p>`;
@@ -772,7 +772,7 @@ class MicDtaFormManager {
     html += '</div>';
     html += '<div class="ml-3">';
     html += '<h3 class="text-sm font-medium ' + (data.can_process ? 'text-green-800' : 'text-yellow-800') + '">';
-    html += data.can_process ? '✅ Voyage válido para envío' : '⚠️ Voyage requiere atención';
+    html += data.can_process ? '✅ Viaje válido para envío' : '⚠️ Viaje requiere atención';
     html += '</h3></div></div>';
     
     // Errores (si los hay)
@@ -801,7 +801,7 @@ class MicDtaFormManager {
 
 showValidationAsNotification(data) {
     let message = data.can_process ? 
-        '✅ Validación OK - Voyage listo para envío' : 
+        '✅ Validación OK - Viaje listo para envío' : 
         '⚠️ Validación con advertencias';
     
     if (data.errors && data.errors.length > 0) {
@@ -1091,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     if (voyageId) {
-        console.log('🎯 Voyage ID encontrado:', voyageId);
+        console.log('🎯 Viaje ID encontrado:', voyageId);
         micDtaManager = new MicDtaFormManager(voyageId);
         
         // Exponer globalmente para compatibilidad
@@ -1100,7 +1100,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // También exponer el voyageId globalmente
         window.voyageId = voyageId;
     } else {
-        console.error('⚠️ No se pudo obtener voyage ID. Asegúrese de que esté definido en el HTML o como variable global.');
+        console.error('⚠️ No se pudo obtener Viaje ID. Asegúrese de que esté definido en el HTML o como variable global.');
     }
 });
 

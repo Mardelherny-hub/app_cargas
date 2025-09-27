@@ -251,7 +251,7 @@
                             </svg>
                             <h3 class="mt-2 text-sm font-medium text-gray-900">No hay voyages disponibles</h3>
                             <p class="mt-1 text-sm text-gray-500">
-                                Crea un nuevo voyage para comenzar a usar los webservices aduaneros.
+                                Crea un nuevo Viaje para comenzar a usar los webservices aduaneros.
                             </p>
                             <div class="mt-6">
                                 <a href="{{ route('company.voyages.create') }}" 

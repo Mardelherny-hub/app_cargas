@@ -157,7 +157,7 @@ class ManifestImport extends Model
     }
 
     /**
-     * El voyage principal creado (si existe)
+     * El Viaje principal creado (si existe)
      */
     public function voyage(): BelongsTo
     {

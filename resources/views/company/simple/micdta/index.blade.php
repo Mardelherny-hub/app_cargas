@@ -360,7 +360,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2M4 13h2m13-8-4 4-4-4m4 4-4 4-4-4"/>
                         </svg>
                         <h3 class="mt-2 text-sm font-medium text-gray-900">No hay voyages disponibles</h3>
-                        <p class="mt-1 text-sm text-gray-500">No se encontraron voyages que cumplan con los criterios de búsqueda.</p>
+                        <p class="mt-1 text-sm text-gray-500">No se encontraron Viajes que cumplan con los criterios de búsqueda.</p>
                     </div>
                 @endif
             </div>
@@ -419,7 +419,7 @@
                 <h3 class="text-lg font-medium text-gray-900">Confirmar Envío MIC/DTA</h3>
                 <div class="mt-2 px-7 py-3">
                     <p class="text-sm text-gray-500" id="sendModalMessage">
-                        ¿Está seguro que desea enviar el MIC/DTA para el voyage <span id="voyageNumber" class="font-mono font-semibold"></span>?
+                        ¿Está seguro que desea enviar el MIC/DTA para el Viaje <span id="voyageNumber" class="font-mono font-semibold"></span>?
                     </p>
                     <p class="text-xs text-gray-400 mt-2">
                         Se ejecutará el flujo secuencial: RegistrarTitEnvios → RegistrarMicDta
@@ -850,7 +850,7 @@
         updateGeneralGpsStatus();
     }
 
-    // Cargar estado GPS de un voyage específico
+    // Cargar estado GPS de un Viaje específico
     async function loadVoyageGpsStatus(voyageId) {
         const statusElement = document.getElementById(`gps-status-${voyageId}`);
         
@@ -1162,7 +1162,7 @@
     }
 
     /**
-     * Cargar estado GPS de un voyage específico
+     * Cargar estado GPS de un Viaje específico
      */
     async function loadSingleVoyageGpsState(voyageId) {
         const statusElement = document.getElementById(`gps-status-${voyageId}`);
@@ -1207,7 +1207,7 @@
     }
 
     /**
-     * Actualizar display GPS de un voyage en la lista
+     * Actualizar display GPS de un Viaje en la lista
      */
     function updateSingleVoyageGpsDisplay(voyageId, estadoGps) {
         const statusElement = document.getElementById(`gps-status-${voyageId}`);

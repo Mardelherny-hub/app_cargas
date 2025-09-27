@@ -162,12 +162,12 @@ class ParanaExcelParser implements ManifestParserInterface
             $highestRow = $worksheet->getHighestRow();
             Log::info('PARANA file loaded', ['rows' => $highestRow]);
 
-            // Extraer información del voyage de la primera fila
+            // Extraer información del Viaje de la primera fila
             $voyageData = $this->extractVoyageData($worksheet);
             $vesselData = $this->extractVesselDataFromExcel($worksheet);
             $voyageData = array_merge($voyageData, $vesselData);
                         
-            // Crear voyage
+            // Crear Viaje
             $voyage = $this->createVoyage($voyageData, $options);
             
             // Crear shipment principal
@@ -343,7 +343,7 @@ class ParanaExcelParser implements ManifestParserInterface
 
         $voyageNumber = 'PARANA-' . now()->format('YmdHis') . '-' . uniqid();
 
-        // VALIDACIÓN: Verificar si ya existe voyage con este número
+        // VALIDACIÓN: Verificar si ya existe Viaje con este número
         $existingVoyage = Voyage::where('voyage_number', $voyageNumber)->first();
         if ($existingVoyage) {
             throw new \Exception("Ya existe un viaje con número: {$voyageNumber}.");

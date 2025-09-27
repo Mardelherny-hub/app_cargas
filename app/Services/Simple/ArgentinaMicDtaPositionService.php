@@ -185,7 +185,7 @@ private function buscarCualquierMicDta(Voyage $voyage): ?string
     Log::error("DEBUG GPS - NO se encontró ninguna referencia válida");
     // Agregar ANTES del return null:
 
-// 4. Verificar a qué voyage pertenece la response exitosa "SIM_6_280687"
+// 4. Verificar a qué Viaje pertenece la response exitosa "SIM_6_280687"
 $responseWithRef = WebserviceResponse::where('reference_number', 'SIM_6_280687')->first();
 if ($responseWithRef) {
     $relatedTransaction = WebserviceTransaction::find($responseWithRef->transaction_id);

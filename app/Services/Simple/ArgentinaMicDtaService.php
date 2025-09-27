@@ -320,15 +320,15 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $validation['errors'][] = 'Error validando certificado: ' . $e->getMessage();
             }
 
-            // 2. VALIDACIÓN VOYAGE BÁSICO
+            // 2. VALIDACIÓN Viaje BÁSICO
             if (!$voyage->voyage_number) {
-                $validation['errors'][] = 'Voyage sin número de viaje';
+                $validation['errors'][] = 'Viaje sin número de viaje';
             } else {
-                $validation['details'][] = "Voyage: {$voyage->voyage_number} ✓";
+                $validation['details'][] = "Viaje: {$voyage->voyage_number} ✓";
             }
 
             if (!$voyage->lead_vessel_id) {
-                $validation['errors'][] = 'Voyage sin embarcación líder asignada';
+                $validation['errors'][] = 'Viaje sin embarcación líder asignada';
             } else {
                 $vessel = $voyage->leadVessel;
                 if (!$vessel) {
@@ -350,7 +350,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 3. VALIDACIÓN PUERTOS
             if (!$voyage->origin_port_id) {
-                $validation['errors'][] = 'Voyage sin puerto de origen';
+                $validation['errors'][] = 'Viaje sin puerto de origen';
             } else {
                 $originPort = $voyage->originPort;
                 if (!$originPort) {
@@ -365,7 +365,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             }
 
             if (!$voyage->destination_port_id) {
-                $validation['errors'][] = 'Voyage sin puerto de destino';
+                $validation['errors'][] = 'Viaje sin puerto de destino';
             } else {
                 $destPort = $voyage->destinationPort;
                 if (!$destPort) {
@@ -383,7 +383,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $shipments = $voyage->shipments()->with('billsOfLading.shipmentItems')->get();
             
             if ($shipments->isEmpty()) {
-                $validation['errors'][] = 'Voyage sin shipments asociados';
+                $validation['errors'][] = 'Viaje sin Cargas asociadas';
             } else {
                 $validation['details'][] = "Shipments encontrados: {$shipments->count()} ✓";
                 
@@ -463,14 +463,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             }
 
             if ($totalContainers === 0) {
-                $validation['warnings'][] = 'Voyage sin contenedores identificados';
+                $validation['warnings'][] = 'Viaje sin contenedores identificados';
             } else {
                 $validation['details'][] = "Contenedores encontrados: {$totalContainers} ✓";
             }
 
             // 6. VALIDACIÓN FECHAS
             if (!$voyage->departure_date) {
-                $validation['warnings'][] = 'Voyage sin fecha de salida configurada';
+                $validation['warnings'][] = 'Viaje sin fecha de salida configurada';
             } else {
                 $validation['details'][] = "Fecha salida: {$voyage->departure_date->format('Y-m-d')} ✓";
             }
@@ -1019,14 +1019,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $embarcacionesCount = $voyage->shipments->count();
             
             if ($embarcacionesCount <= 1) {
-                $this->logOperation('info', 'Convoy no aplicable - voyage de embarcación individual', [
+                $this->logOperation('info', 'Convoy no aplicable - Viaje de embarcación individual', [
                     'voyage_id' => $voyage->id,
                     'embarcaciones_count' => $embarcacionesCount,
                 ]);
                 
                 return [
                     'success' => false,
-                    'error_message' => 'RegistrarConvoy no es aplicable para voyages de una sola embarcación. Este método es para agrupar múltiples embarcaciones (remolcador + barcazas).',
+                    'error_message' => 'RegistrarConvoy no es aplicable para Viajes de una sola embarcación. Este método es para agrupar múltiples embarcaciones (remolcador + barcazas).',
                     'error_code' => 'NOT_CONVOY_VOYAGE',
                     'validation_info' => [
                         'embarcaciones_en_voyage' => $embarcacionesCount,

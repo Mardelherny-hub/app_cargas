@@ -294,7 +294,7 @@ class XmlSerializerService
 
             // Validar voyage asociado
             if (!$shipment->voyage) {
-                $validation['errors'][] = "Shipment {$shipment->shipment_number} no tiene voyage asociado";
+                $validation['errors'][] = "Shipment {$shipment->shipment_number} no tiene Viaje asociado";
             }
 
             // Validar vessel
@@ -991,9 +991,9 @@ class XmlSerializerService
             return $validation;
         }
 
-        // Validar voyage asociado
+        // Validar Viaje asociado
         if (!$shipment->voyage) {
-            $validation['errors'][] = 'Shipment debe tener un voyage asociado';
+            $validation['errors'][] = 'Shipment debe tener un Viaje asociado';
         }
 
         // Validar vessel

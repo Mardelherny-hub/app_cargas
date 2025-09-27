@@ -18,7 +18,7 @@
             <div class="flex items-center space-x-3">
                 <a href="{{ route('company.simple.micdta.show', $voyage) }}" 
                    class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    Volver al Voyage
+                    Volver al Viaje
                 </a>
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     {{ $company->legal_name }}
@@ -30,11 +30,11 @@
     <div class="py-6">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
-            {{-- Información del Voyage --}}
+            {{-- Información del Viaje--}}
             <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
-                        <p class="text-sm text-gray-500">Voyage</p>
+                        <p class="text-sm text-gray-500">Viaje</p>
                         <p class="font-medium">{{ $voyage->voyage_number }}</p>
                     </div>
                     <div>
@@ -67,7 +67,7 @@
                         Métodos AFIP Disponibles (18 Total)
                     </h3>
                     <p class="mt-1 text-sm text-gray-600">
-                        Ejecute métodos específicos según el estado del voyage y requisitos AFIP
+                        Ejecute métodos específicos según el estado del Viaje y requisitos AFIP
                     </p>
                 </div>
 
@@ -443,7 +443,7 @@
 
     function showConvoyNotApplicable() {
         showResultModal('Convoy', {
-            error: 'Los métodos de convoy solo aplican para voyages con múltiples embarcaciones (remolcador + barcazas). Su voyage actual tiene una sola embarcación.'
+            error: 'Los métodos de convoy solo aplican para Viajes con múltiples embarcaciones (remolcador + barcazas). Su Viajeactual tiene una sola embarcación.'
         }, false);
     }
 </script>

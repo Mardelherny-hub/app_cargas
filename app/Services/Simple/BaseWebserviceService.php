@@ -170,7 +170,7 @@ abstract class BaseWebserviceService
     // ====================================
 
     /**
-     * Validar si un voyage puede usar este webservice
+     * Validar si un Viaje puede usar este webservice
      */
     public function canProcessVoyage(Voyage $voyage): array
     {
@@ -208,7 +208,7 @@ abstract class BaseWebserviceService
 
             $this->logOperation(
                 $validation['can_process'] ? 'info' : 'warning',
-                'Validación de voyage completada',
+                'Validación de Viaje completada',
                 [
                     'can_process' => $validation['can_process'],
                     'errors_count' => count($validation['errors']),
@@ -221,7 +221,7 @@ abstract class BaseWebserviceService
         } catch (Exception $e) {
             $validation['errors'][] = 'Error interno en validación: ' . $e->getMessage();
             
-            $this->logOperation('error', 'Error en validación de voyage', [
+            $this->logOperation('error', 'Error en validación de Viaje', [
                 'error' => $e->getMessage(),
                 'voyage_id' => $voyage->id,
             ]);
@@ -270,7 +270,7 @@ abstract class BaseWebserviceService
             // 1. Validar que se puede procesar
             $validation = $this->canProcessVoyage($voyage);
             if (!$validation['can_process']) {
-                throw new Exception('Voyage no válido para webservice: ' . implode(', ', $validation['errors']));
+                throw new Exception('Viaje no válido para webservice: ' . implode(', ', $validation['errors']));
             }
 
             // 2. Obtener/crear estado de webservice
@@ -351,29 +351,29 @@ abstract class BaseWebserviceService
     {
         $validation = ['errors' => [], 'warnings' => []];
 
-        // Verificar voyage básico
+        // Verificar Viaje básico
         if (!$voyage->voyage_number) {
-            $validation['errors'][] = 'Voyage sin número de viaje';
+            $validation['errors'][] = 'Viaje sin número de viaje';
         }
 
         if (!$voyage->lead_vessel_id) {
-            $validation['errors'][] = 'Voyage sin embarcación líder asignada';
+            $validation['errors'][] = 'Viaje sin embarcación líder asignada';
         }
 
         if (!$voyage->origin_port_id || !$voyage->destination_port_id) {
-            $validation['errors'][] = 'Voyage sin puertos de origen/destino';
+            $validation['errors'][] = 'Viaje sin puertos de origen/destino';
         }
 
         // Verificar shipments
         $shipmentsCount = $voyage->shipments()->count();
         if ($shipmentsCount === 0) {
-            $validation['errors'][] = 'Voyage sin shipments asociados';
+            $validation['errors'][] = 'Viaje sin shipments asociados';
         }
 
         // Verificar bills of lading
         $bolCount = $voyage->billsOfLading()->count();
         if ($bolCount === 0) {
-            $validation['errors'][] = 'Voyage sin conocimientos de embarque';
+            $validation['errors'][] = 'Viaje sin conocimientos de embarque';
         }
 
         return $validation;

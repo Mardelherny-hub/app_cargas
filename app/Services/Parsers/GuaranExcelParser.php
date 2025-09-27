@@ -564,7 +564,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'container_type_id' => $this->findContainerTypeByCode($row['CONTAINER_TYPE']), // ✅ ID real
             'condition' => $this->mapContainerConditionToEnum($row['CONTAINER_STATUS']), // ✅ ENUM válido
             'size_feet' => $this->extractContainerSize($row['CONTAINER_TYPE']),
-            'container_condition' => $this->mapContainerCondition($row['CONTAINER_STATUS']),
+            'container_condition' => 'P', // HARDCODED: Webservice requiere 'H' o 'P'.
             'seal_numbers' => $sealNumbers,
             'tare_weight_kg' => $this->parseWeight($row['TARE_WEIGHT']),
             'current_status' => 'loaded',

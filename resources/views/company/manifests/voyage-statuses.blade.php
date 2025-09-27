@@ -3,7 +3,7 @@
         <div class="flex justify-between items-center">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    📊 Estados de Webservices - Voyage {{ $voyage->voyage_number }}
+                    📊 Estados de Webservices - Viaje {{ $voyage->voyage_number }}
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
                     Estados detallados de todos los envíos a aduana
@@ -87,7 +87,7 @@
                         </svg>
                         <h3 class="mt-2 text-sm font-medium text-gray-900">Sin envíos registrados</h3>
                         <p class="mt-1 text-sm text-gray-500">
-                            Este voyage aún no tiene envíos a aduana registrados.
+                            Este Viaje aún no tiene envíos a aduana registrados.
                         </p>
                     </div>
                 </div>

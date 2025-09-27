@@ -117,7 +117,7 @@ class SimpleManifestController extends Controller
             if ($voyage->company_id !== $company->id) {
                 return [
                     'success' => false,
-                    'error' => 'Voyage no pertenece a su empresa',
+                    'error' => 'Viaje no pertenece a su empresa',
                     'error_code' => 'UNAUTHORIZED_VOYAGE'
                 ];
             }
@@ -125,12 +125,12 @@ class SimpleManifestController extends Controller
             // 2. INSTANCIAR SERVICIO MICDTA
             $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
             
-            // 3. VALIDAR QUE EL VOYAGE PUEDE SER PROCESADO  
+            // 3. VALIDAR QUE EL Viaje PUEDE SER PROCESADO  
             $validation = $micDtaService->canProcessVoyage($voyage);
             if (!$validation['can_process']) {
                 return [
                     'success' => false,
-                    'error' => 'Voyage no válido para ' . $method,
+                    'error' => 'Viaje no válido para ' . $method,
                     'validation_errors' => $validation['errors'],
                     'warnings' => $validation['warnings'],
                     'error_code' => 'VALIDATION_FAILED'
@@ -459,7 +459,7 @@ class SimpleManifestController extends Controller
 
             $company = $this->getUserCompany();
             if ($voyage->company_id !== $company->id) {
-                return response()->json(['success' => false, 'message' => 'Voyage no pertenece a su empresa'], 403);
+                return response()->json(['success' => false, 'message' => 'Viaje no pertenece a su empresa'], 403);
             }
 
             // Obtener método solicitado
@@ -594,18 +594,18 @@ class SimpleManifestController extends Controller
             if ($voyage->company_id !== $company->id) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Voyage no pertenece a su empresa.',
+                    'error' => 'Viaje no pertenece a su empresa.',
                 ], 403);
             }
 
-            // Validar que el voyage puede ser procesado
+            // Validar que el Viaje puede ser procesado
             $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
             $validation = $micDtaService->canProcessVoyage($voyage);
             
             if (!$validation['can_process']) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Voyage no válido para MIC/DTA',
+                    'error' => 'Viaje no válido para MIC/DTA',
                     'validation_errors' => $validation['errors'],
                     'warnings' => $validation['warnings'],
                 ], 400);
@@ -905,7 +905,7 @@ class SimpleManifestController extends Controller
     {
         $company = $this->getUserCompany();
         if ($voyage->company_id !== $company->id) {
-            abort(403, 'Voyage no pertenece a su empresa.');
+            abort(403, 'Viaje no pertenece a su empresa.');
         }
 
         // Cargar relaciones necesarias
@@ -1017,7 +1017,7 @@ class SimpleManifestController extends Controller
      */
 
     /**
-     * Consultar estado AFIP de un voyage específico (AJAX)
+     * Consultar estado AFIP de un Viaje específico (AJAX)
      * 
      * Ruta: GET /simple/webservices/micdta/{voyage}/consultar-estado
      * 
@@ -1046,7 +1046,7 @@ class SimpleManifestController extends Controller
             if (!$voyage) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Voyage no encontrado'
+                    'error' => 'Viaje no encontrado'
                 ], 404);
             }
 
@@ -1155,7 +1155,7 @@ class SimpleManifestController extends Controller
             if (!$voyage) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Voyage no encontrado'
+                    'error' => 'Viaje no encontrado'
                 ], 404);
             }
 
@@ -1198,7 +1198,7 @@ class SimpleManifestController extends Controller
     }
 
     /**
-     * Obtener estado AFIP actual de un voyage para la vista (AJAX)
+     * Obtener estado AFIP actual de un Viaje para la vista (AJAX)
      * 
      * Ruta: GET /simple/webservices/micdta/{voyage}/estado-afip
      * 
@@ -1224,7 +1224,7 @@ class SimpleManifestController extends Controller
             if (!$voyage) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Voyage no encontrado'
+                    'error' => 'Viaje no encontrado'
                 ], 404);
             }
 

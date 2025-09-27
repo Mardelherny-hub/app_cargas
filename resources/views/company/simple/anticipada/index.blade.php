@@ -12,7 +12,7 @@
   - $webservice_type ('anticipada')
   - $webservice_config (array de configuración)
   
-  CAMPOS VOYAGE VERIFICADOS:
+  CAMPOS Viaje VERIFICADOS:
   - voyage_number, departure_date
   - leadVessel->name, leadVessel->registration_number
   - originPort->code, destinationPort->code
@@ -113,14 +113,14 @@
                 </div>
             </div>
 
-            {{-- Lista de Voyages --}}
+            {{-- Lista de Viajes --}}
             <div class="bg-white shadow overflow-hidden sm:rounded-md">
                 @if($voyages->count() > 0)
                     {{-- Header con información --}}
                     <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                         <div class="flex items-center space-x-4">
                             <h3 class="text-sm font-medium text-gray-900">
-                                {{ $voyages->total() }} voyage{{ $voyages->total() != 1 ? 's' : '' }} encontrado{{ $voyages->total() != 1 ? 's' : '' }}
+                                {{ $voyages->total() }} viaje{{ $voyages->total() != 1 ? 's' : '' }} encontrado{{ $voyages->total() != 1 ? 's' : '' }}
                             </h3>
                             @if($status_filter)
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -136,7 +136,7 @@
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Voyage
+                                        Viaje
                                     </th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Embarcación
@@ -255,19 +255,19 @@
                         <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                         </svg>
-                        <h3 class="mt-2 text-sm font-medium text-gray-900">No hay voyages</h3>
+                        <h3 class="mt-2 text-sm font-medium text-gray-900">No hay Viajes</h3>
                         <p class="mt-1 text-sm text-gray-500">
                             @if($status_filter)
-                                No se encontraron voyages con el filtro aplicado.
+                                No se encontraron Viajes con el filtro aplicado.
                             @else
-                                Aún no tienes voyages para enviar información anticipada.
+                                Aún no tienes Viajes para enviar información anticipada.
                             @endif
                         </p>
                         @if($status_filter)
                             <div class="mt-6">
                                 <a href="{{ route('company.simple.anticipada.index') }}" 
                                    class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                                    Ver todos los voyages
+                                    Ver todos los Viajes
                                 </a>
                             </div>
                         @endif
@@ -280,8 +280,8 @@
     {{-- JavaScript para funcionalidad AJAX --}}
     <script>
         // Función para enviar información anticipada
-        function sendAnticipada(voyageId, method = 'RegistrarViaje') {
-            if (!confirm(`¿Está seguro de enviar ${method} para este voyage?`)) {
+        function sendAnticipada(voyageId, method = 'Registrar Viaje') {
+            if (!confirm(`¿Está seguro de enviar ${method} para este Viaje?`)) {
                 return;
             }
 

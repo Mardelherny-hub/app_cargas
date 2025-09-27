@@ -333,7 +333,7 @@ class ArgentinaAnticipatedService
             'environment' => $this->config['environment'],
             'certificate_used' => $this->company->certificate_alias,
             
-            // Datos específicos del voyage para referencia
+            // Datos específicos del Viaje para referencia
             'total_weight_kg' => $totalWeight,
             'container_count' => $totalContainers,
             'currency_code' => 'USD', // Por defecto

@@ -477,11 +477,11 @@ class ManifestImportController extends Controller
 
     /**
      * Revertir una importación específica
-     * Solo permite revertir si el voyage está en estado 'planning'
+     * Solo permite revertir si el Viaje está en estado 'planning'
      */
     /**
      * Revertir una importación específica
-     * Solo permite revertir si el voyage está en estado 'planning'
+     * Solo permite revertir si el Viaje está en estado 'planning'
      */
     public function revert(Request $request, ManifestImport $import)
     {
@@ -501,7 +501,7 @@ class ManifestImportController extends Controller
             return back()->with('error', 'Esta importación no puede ser revertida: ' . $import->revert_blocked_reason);
         }
 
-        // Verificar que el voyage esté en planning
+        // Verificar que el Viaje esté en planning
         if ($import->voyage && $import->voyage->status !== 'planning') {
             return back()->with('error', 'Solo se pueden revertir importaciones con viajes en estado de planificación.');
         }
@@ -561,7 +561,7 @@ class ManifestImportController extends Controller
                 }
             }
 
-            // 5. Eliminar voyage principal
+            // 5. Eliminar Viaje principal
             if (!empty($createdObjects['voyages'])) {
                 Log::info('REVERT - Eliminando voyages', ['ids' => $createdObjects['voyages']]);
                 $deletedCount = \App\Models\Voyage::whereIn('id', $createdObjects['voyages'])->delete();

@@ -4,6 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\ValueObjects\ManifestParseResult;
+use App\Models\ManifestImport;
 use App\Models\Voyage;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
@@ -15,6 +16,10 @@ use App\Models\Country;
 use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\ContainerType;
+use App\Models\Vessel;
+use App\Models\VesselType;
+use App\Models\Company;
+use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -155,12 +160,23 @@ class LoginXmlParser implements ManifestParserInterface
             throw new Exception('Usuario no autenticado para importación');
         }
 
-        if (!$user->company_id) {
+        // Obtener company_id según el tipo de usuario
+        $companyId = null;
+
+        if ($user->userable_type === 'App\\Models\\Company') {
+            // Company admin: la empresa está directamente en userable_id
+            $companyId = $user->userable_id;
+        } elseif ($user->userable_type === 'App\\Models\\Operator' && $user->userable) {
+            // User operador: la empresa está en userable->company_id
+            $companyId = $user->userable->company_id;
+        }
+
+        if (!$companyId) {
             throw new Exception('Usuario sin empresa asignada para importación');
         }
 
         return [
-            'company_id' => $user->company_id,
+            'company_id' => $companyId,
             'user_id' => $user->id
         ];
     }
@@ -178,6 +194,11 @@ class LoginXmlParser implements ManifestParserInterface
 
         try {
             DB::beginTransaction();
+
+            $startTime = microtime(true);
+            
+            // Crear registro de importación
+            $importRecord = $this->createImportRecord($filePath, $context);
 
             // 1. Leer y parsear XML
             $xmlContent = file_get_contents($filePath);
@@ -210,13 +231,15 @@ class LoginXmlParser implements ManifestParserInterface
                 'items_created' => count($shipmentItems)
             ]);
 
-            return new ManifestParseResult(
-                success: true,
+            // Completar registro de importación
+            $this->completeImportRecord($importRecord, $voyage, [$shipment], [$billOfLading], $shipmentItems, $startTime);
+
+            return ManifestParseResult::success(
                 voyage: $voyage,
-                shipments: collect([$shipment]),
-                billsOfLading: collect([$billOfLading]),
-                shipmentItems: collect($shipmentItems),
-                summary: [
+                shipments: [$shipment],
+                billsOfLading: [$billOfLading],
+                containers: [], // Los contenedores se crean dentro de shipmentItems
+                statistics: [
                     'format' => 'Login XML',
                     'bills_of_lading' => 1,
                     'containers' => count($transformedData['containers']),
@@ -228,16 +251,31 @@ class LoginXmlParser implements ManifestParserInterface
 
         } catch (Exception $e) {
             DB::rollBack();
+            
+            // Detectar voyage duplicado
+            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
+                $voyageNumber = $data['voyage']['voyage_number'] ?? 'desconocido';
+                Log::warning('Intento de importar voyage duplicado', [
+                    'voyage_number' => $voyageNumber,
+                    'file_path' => $filePath,
+                    'user_id' => $context['user_id']
+                ]);
+                
+                return ManifestParseResult::failure([
+                    "Este archivo ya fue importado anteriormente."
+                ]);
+            }
+            
+            // Otros errores
             Log::error('Error parseando Login XML', [
                 'file_path' => $filePath,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return new ManifestParseResult(
-                success: false,
-                errors: [$e->getMessage()]
-            );
+            return ManifestParseResult::failure([
+                $e->getMessage()
+            ]);
         }
     }
 
@@ -272,7 +310,11 @@ class LoginXmlParser implements ManifestParserInterface
                 'discharge_port' => (string)$header->PortOfDischarge ?? null,
                 'gross_weight' => (string)$header->GrossWeight ?? null,
                 'measurement' => (string)$header->Measurement ?? null,
-                'cargo_description' => (string)$header->DescriptionOfPackagesAndGoods ?? null
+                'cargo_description' => (string)$header->DescriptionOfPackagesAndGoods ?? null,
+                // CAMPOS AGREGADOS PARA EVITAR ERROR:
+                'loading_date' => null, // XML Login no parece tener fecha de carga específica
+                'bill_date' => null,    // XML Login no parece tener fecha de bill específica
+                'voyage_number' => (string)$header->BookingNumber ?? null // Usar booking como voyage
             ];
         }
 
@@ -328,6 +370,24 @@ class LoginXmlParser implements ManifestParserInterface
         $cleaned = preg_replace('/[^0-9.-]/', '', $normalized);
         
         return (float)$cleaned;
+    }
+
+    /**
+     * Extraer tax_id (CNPJ/CUIT) del texto
+     */
+    protected function extractTaxIdFromText(string $text): ?string
+    {
+        // Buscar CNPJ pattern: XX.XXX.XXX/XXXX-XX
+        if (preg_match('/CNPJ:\s*([0-9]{2}\.?[0-9]{3}\.?[0-9]{3}\/[0-9]{4}-[0-9]{2})/', $text, $matches)) {
+            return preg_replace('/[^0-9]/', '', $matches[1]);
+        }
+        
+        // Buscar CUIT pattern: XX-XXXXXXXX-X
+        if (preg_match('/CUIT:\s*([0-9]{2}-?[0-9]{8}-?[0-9])/', $text, $matches)) {
+            return preg_replace('/[^0-9]/', '', $matches[1]);
+        }
+        
+        return null;
     }
 
     /**
@@ -398,8 +458,8 @@ class LoginXmlParser implements ManifestParserInterface
                 'vessel_name' => $data['header']['vessel_name'] ?? 'Login Vessel',
                 'origin_port' => $data['header']['loading_port'] ?? 'Unknown',
                 'destination_port' => $data['header']['discharge_port'] ?? 'Unknown',
-                'departure_date' => $this->parseDate($data['header']['loading_date']),
-                'estimated_arrival_date' => $this->parseDate($data['header']['loading_date'], '+3 days')
+                'departure_date' => $this->parseDate($data['header']['loading_date'] ?? null),
+                'estimated_arrival_date' => $this->parseDate($data['header']['loading_date'] ?? null, '+3 days')
             ],
             'shipment' => [
                 'shipment_number' => 'LGN-' . date('Ymd') . '-001',
@@ -410,8 +470,8 @@ class LoginXmlParser implements ManifestParserInterface
                 'shipper_name' => $data['header']['shipper_name'],
                 'consignee_name' => $data['header']['consignee_name'],
                 'notify_party_name' => $data['header']['notify_party_name'],
-                'bill_date' => $this->parseDate($data['header']['bill_date']),
-                'loading_date' => $this->parseDate($data['header']['loading_date']),
+                'bill_date' => $this->parseDate($data['header']['bill_date'] ?? null),
+                'loading_date' => $this->parseDate($data['header']['loading_date'] ?? null),
                 'cargo_description' => 'Login XML Import - Multiple containers',
                 'total_containers' => count($data['containers']),
                 'total_weight_kg' => array_sum(array_column($data['containers'], 'gross_weight_kg'))
@@ -499,17 +559,22 @@ class LoginXmlParser implements ManifestParserInterface
             throw new Exception("Puerto de destino '{$data['voyage']['destination_port']}' no encontrado en el sistema");
         }
 
+        // Crear o encontrar embarcación líder
+        $vesselName = $data['voyage']['vessel_name'] ?? 'Login Vessel';
+        $leadVessel = $this->findOrCreateVessel($vesselName, $company->id);
+
         return Voyage::create([
             'voyage_number' => $data['voyage']['voyage_number'],
             'company_id' => $company->id,
+            'lead_vessel_id' => $leadVessel->id,
             'origin_country_id' => $originPort->country_id,
             'destination_country_id' => $destinationPort->country_id,
             'origin_port_id' => $originPort->id,
             'destination_port_id' => $destinationPort->id,
             'departure_date' => $data['voyage']['departure_date'],
             'estimated_arrival_date' => $data['voyage']['estimated_arrival_date'],
-            'voyage_type' => 'import',
-            'cargo_type' => 'containerized',
+            'voyage_type' => $this->determineVoyageType($data),
+            'cargo_type' => $this->determineCargoType($data),
             'status' => 'planning',
             'is_convoy' => false,
             'vessel_count' => 1,
@@ -521,53 +586,7 @@ class LoginXmlParser implements ManifestParserInterface
         ]);
     }
 
-    /**
-     * Buscar puerto por nombre
-     */
-    protected function findPortByName(?string $portName): ?\App\Models\Port
-    {
-        if (empty($portName)) {
-            return null;
-        }
-
-        // Normalizaciones conocidas de puertos
-        $portMappings = [
-            'BUENOS AIRES' => ['Buenos Aires', 'ARBUE', 'BA'],
-            'SALVADOR' => ['Salvador', 'BRSAL', 'Salvador de Bahía'],
-            'SANTOS' => ['Santos', 'BRSTS'],
-            'ASUNCION' => ['Asunción', 'PYASU', 'Asunción'],
-            'VILLETA' => ['Villeta', 'PYTVT']
-        ];
-
-        $normalizedName = strtoupper(trim($portName));
-        
-        // Buscar primero por coincidencia exacta
-        $port = Port::whereRaw('UPPER(name) = ?', [$normalizedName])->first();
-        if ($port) {
-            return $port;
-        }
-
-        // Buscar por código de puerto
-        $port = Port::whereRaw('UPPER(code) = ?', [$normalizedName])->first();
-        if ($port) {
-            return $port;
-        }
-
-        // Buscar en mapeos conocidos
-        foreach ($portMappings as $xmlName => $variations) {
-            if ($normalizedName === $xmlName) {
-                foreach ($variations as $variation) {
-                    $port = Port::whereRaw('UPPER(name) LIKE ?', ['%' . strtoupper($variation) . '%'])->first();
-                    if ($port) {
-                        return $port;
-                    }
-                }
-            }
-        }
-
-        // Buscar por coincidencia parcial
-        return Port::whereRaw('UPPER(name) LIKE ?', ['%' . $normalizedName . '%'])->first();
-    }
+    
 
     /**
      * Crear Shipment
@@ -577,6 +596,7 @@ class LoginXmlParser implements ManifestParserInterface
         return Shipment::create([
             'shipment_number' => $data['shipment']['shipment_number'],
             'voyage_id' => $voyage->id,
+            'vessel_id' => $voyage->lead_vessel_id,
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
             'is_lead_vessel' => true,
@@ -605,7 +625,8 @@ class LoginXmlParser implements ManifestParserInterface
         $consignee = $this->findOrCreateClient(
             $data['bill_of_lading']['consignee_name'], 
             'consignee',
-            $context
+            $context,
+            $data['bill_of_lading']['consignee_tax_id'] ?? null
         );
         
         $notifyParty = null;
@@ -617,6 +638,11 @@ class LoginXmlParser implements ManifestParserInterface
             );
         }
 
+        // Obtener cargo type por defecto
+        $cargoType = CargoType::where('active', true)->first();
+        $packagingType = PackagingType::where('active', true)->first();
+
+
         return BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['bill_of_lading']['bill_number'],
@@ -625,6 +651,8 @@ class LoginXmlParser implements ManifestParserInterface
             'notify_party_id' => $notifyParty?->id,
             'loading_port_id' => $shipment->voyage->origin_port_id,
             'discharge_port_id' => $shipment->voyage->destination_port_id,
+            'primary_cargo_type_id' => $cargoType?->id ?? 1,        
+            'primary_packaging_type_id' => $packagingType?->id ?? 1,
             'bill_date' => $data['bill_of_lading']['bill_date'] ?? now(),
             'loading_date' => $data['bill_of_lading']['loading_date'] ?? now(),
             'cargo_description' => $data['bill_of_lading']['cargo_description'],
@@ -716,15 +744,15 @@ class LoginXmlParser implements ManifestParserInterface
 
         // Limpiar el nombre
         $cleanName = $this->cleanClientName($name);
-        
-        // Buscar cliente existente por nombre
-        $client = Client::where('name', 'LIKE', '%' . $cleanName . '%')->first();
-        
-        if ($client) {
-            return $client;
-        }
 
-        // Si tiene CUIT/CNPJ, buscar por tax_id
+        Log::debug('findOrCreateClient - Búsqueda', [
+            'name' => $name,
+            'type' => $type,
+            'taxId_original' => $taxId,
+            'cleanName' => $cleanName
+        ]);
+        
+        // 1. Si tiene tax_id, buscar primero por tax_id (más específico)
         if ($taxId) {
             $cleanTaxId = preg_replace('/[^0-9]/', '', $taxId);
             $client = Client::where('tax_id', $cleanTaxId)->first();
@@ -733,17 +761,31 @@ class LoginXmlParser implements ManifestParserInterface
                 return $client;
             }
         }
+        
+        // 2. Si no se encontró por tax_id, buscar por nombre
+        $client = Client::where('legal_name', 'LIKE', '%' . $cleanName . '%')->first();
+        
+        if ($client) {
+            return $client;
+        }
+
+        $company = \App\Models\Company::find($context['company_id']);
 
         // Crear nuevo cliente con datos del XML
-        return Client::create([
-            'name' => $cleanName,
-            'client_type' => $type,
-            'tax_id' => $taxId ? preg_replace('/[^0-9]/', '', $taxId) : null,
-            'email' => $this->generateClientEmail($cleanName, $type),
-            'active' => true,
-            'created_date' => now(),
-            'created_by_user_id' => $context['user_id']
-        ]);
+        return Client::firstOrCreate(
+            [
+                'tax_id' => $taxId ? preg_replace('/[^0-9]/', '', $taxId) : $company->tax_id,
+                'country_id' => 1,
+            ],
+            [
+                'legal_name' => $cleanName,
+                'document_type_id' => 1, 
+                'status' => 'active',
+                'created_by_company_id' => $context['company_id'],
+                'verified_at' => now(),
+                'created_by_user_id' => $context['user_id']
+            ]
+        );
     }
 
     /**
@@ -760,6 +802,45 @@ class LoginXmlParser implements ManifestParserInterface
         $mainName = preg_replace('/\s*CNPJ:\s*[0-9\/-]+/i', '', $mainName);
         
         return trim($mainName);
+    }
+
+    /**
+     * Encontrar o crear embarcación con datos del XML
+     */
+    protected function findOrCreateVessel(string $vesselName, int $companyId): Vessel
+    {
+        if (empty($vesselName) || $vesselName === 'Login Vessel') {
+            $vesselName = 'LGN-' . date('Ymd') . '-' . uniqid();
+        }
+
+        // Buscar embarcación existente
+        $vessel = Vessel::where('name', 'LIKE', '%' . $vesselName . '%')
+                       ->where('company_id', $companyId)
+                       ->first();
+
+        if ($vessel) {
+            return $vessel;
+        }
+
+        // Crear nueva embarcación
+        $vesselType = VesselType::where('category', 'barge')->first() 
+                     ?? VesselType::first();
+
+        return Vessel::create([
+            'name' => $vesselName,
+            'registration_number' => 'LGN-' . uniqid(),
+            'company_id' => $companyId,
+            'vessel_type_id' => $vesselType->id,
+            'flag_country_id' => 1, // Argentina por defecto
+            'operational_status' => 'active',
+            'active' => true,
+            'length_meters' => 80.0,
+            'beam_meters' => 12.0,
+            'draft_meters' => 2.5,
+            'gross_tonnage' => 500,
+            'net_tonnage' => 350,
+            'cargo_capacity_tons' => 1000,
+        ]);
     }
 
     /**
@@ -806,5 +887,183 @@ class LoginXmlParser implements ManifestParserInterface
             'default_freight_terms' => 'prepaid',
             'default_country' => 'ARG'
         ];
+    }
+
+    /**
+     * Buscar puerto por nombre (método auxiliar)
+     */
+    protected function findPortByName(string $portName): ?Port
+    {
+        if (empty($portName) || $portName === 'Unknown') {
+            return null;
+        }
+        
+        // Buscar por código UN/LOCODE primero
+        $port = Port::where('code', strtoupper($portName))->first();
+        if ($port) return $port;
+        
+        // Buscar por nombre exacto
+        $port = Port::where('name', 'LIKE', "%{$portName}%")->first();
+        if ($port) return $port;
+        
+        // Mapeos específicos para Login XML
+        $mappings = [
+            'BUENOS AIRES' => 'ARBUE',
+            'ASUNCION' => 'PYASU', 
+            'ROSARIO' => 'ARROS',
+            'SANTA FE' => 'ARSFE',
+            'VILLETA' => 'PYVIL'
+        ];
+        
+        $portCode = $mappings[strtoupper($portName)] ?? null;
+        if ($portCode) {
+            return Port::where('code', $portCode)->first();
+        }
+        
+        return null;
+    }
+
+    /**
+     * Determinar voyage_type basándose en datos del XML
+     */
+    protected function determineVoyageType(array $data): string
+    {
+        // Para Login XML típicamente es embarcación única
+        $vesselName = $data['voyage']['vessel_name'] ?? '';
+        
+        // Detectar convoy por nombres comunes
+        if (stripos($vesselName, 'convoy') !== false || 
+            stripos($vesselName, 'remolcador') !== false ||
+            stripos($vesselName, 'barcaza') !== false) {
+            return 'convoy';
+        }
+        
+        // Detectar flota por múltiples contenedores o gran capacidad
+        $totalContainers = count($data['containers'] ?? []);
+        if ($totalContainers > 50) {
+            return 'fleet';
+        }
+        
+        return 'single_vessel'; // Default más común para Login
+    }
+
+    /**
+     * Determinar cargo_type basándose en puertos de origen y destino
+     */
+    protected function determineCargoType(array $data): string
+    {
+        try {
+            $originPortName = $data['voyage']['origin_port'] ?? '';
+            $destPortName = $data['voyage']['destination_port'] ?? '';
+            
+            // Usar el método existente findPortByName()
+            $loadingPort = $this->findPortByName($originPortName);
+            $dischargePort = $this->findPortByName($destPortName);
+            
+            if ($loadingPort && $dischargePort) {
+                $originCountry = $loadingPort->country_id;
+                $destCountry = $dischargePort->country_id;
+                
+                // Argentina (1) -> Paraguay (2) = Export
+                if ($originCountry == 1 && $destCountry == 2) {
+                    return 'export';
+                }
+                
+                // Paraguay (2) -> Argentina (1) = Import  
+                if ($originCountry == 2 && $destCountry == 1) {
+                    return 'import';
+                }
+                
+                // Mismo país = Cabotaje
+                if ($originCountry == $destCountry) {
+                    return 'cabotage';
+                }
+                
+                // Brasil/Uruguay/otros = Tránsito
+                if (in_array($originCountry, [3, 4]) || in_array($destCountry, [3, 4])) {
+                    return 'transit';
+                }
+            }
+            
+            // Análisis por nombres si no encontramos en BD
+            $originUpper = strtoupper($originPortName);
+            $destUpper = strtoupper($destPortName);
+            
+            $argentinePorts = ['BUENOS AIRES', 'ROSARIO', 'SANTA FE', 'CONCEPCION'];
+            $paraguayPorts = ['ASUNCION', 'VILLETA'];
+            
+            $isOriginArgentina = collect($argentinePorts)->contains(fn($port) => stripos($originUpper, $port) !== false);
+            $isDestArgentina = collect($argentinePorts)->contains(fn($port) => stripos($destUpper, $port) !== false);
+            $isOriginParaguay = collect($paraguayPorts)->contains(fn($port) => stripos($originUpper, $port) !== false);
+            $isDestParaguay = collect($paraguayPorts)->contains(fn($port) => stripos($destUpper, $port) !== false);
+            
+            if ($isOriginArgentina && $isDestParaguay) return 'export';
+            if ($isOriginParaguay && $isDestArgentina) return 'import';
+            
+        } catch (Exception $e) {
+            Log::warning('Error determinando cargo_type', [
+                'error' => $e->getMessage(),
+                'origin_port' => $data['voyage']['origin_port'] ?? 'N/A',
+                'dest_port' => $data['voyage']['destination_port'] ?? 'N/A'
+            ]);
+        }
+        
+        return 'import'; // Default para Login (mayormente importaciones)
+    }
+
+    /**
+     * Crear registro de importación
+     */
+    protected function createImportRecord(string $filePath, array $context): ManifestImport
+    {
+        $fileName = basename($filePath);
+        $fileSize = filesize($filePath);
+        $fileHash = ManifestImport::generateFileHash($filePath);
+        
+        return ManifestImport::createForImport([
+            'company_id' => $context['company_id'],
+            'user_id' => $context['user_id'],
+            'file_name' => $fileName,
+            'file_format' => 'login_xml',
+            'file_size_bytes' => $fileSize,
+            'file_hash' => $fileHash,
+            'parser_config' => [
+                'parser_class' => self::class,
+                'format' => 'Login XML'
+            ]
+        ]);
+    }
+
+    /**
+     * Completar registro de importación
+     */
+    protected function completeImportRecord(
+        ManifestImport $importRecord,
+        Voyage $voyage,
+        array $shipments,
+        array $billsOfLading,
+        array $shipmentItems,
+        float $startTime
+    ): void {
+        $processingTime = microtime(true) - $startTime;
+        
+        $createdObjects = [
+            'voyages' => [$voyage->id],
+            'shipments' => array_map(fn($s) => $s->id, $shipments),
+            'bills' => array_map(fn($b) => $b->id, $billsOfLading),
+            'items' => array_map(fn($i) => $i->id, $shipmentItems)
+        ];
+        
+        $importRecord->recordCreatedObjects($createdObjects);
+        $importRecord->markAsCompleted([
+            'voyage_id' => $voyage->id,
+            'processing_time_seconds' => round($processingTime, 2),
+            'notes' => 'Importación Login XML completada exitosamente'
+        ]);
+        
+        Log::info('Login XML import record completed', [
+            'import_id' => $importRecord->id,
+            'processing_time' => round($processingTime, 2) . 's'
+        ]);
     }
 }

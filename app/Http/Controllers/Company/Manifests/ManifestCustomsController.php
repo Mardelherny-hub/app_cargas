@@ -260,7 +260,7 @@ class ManifestCustomsController extends Controller
             try {
                 $voyage = $this->getVoyageForCustoms($voyageId);
 
-                Log::info('DEBUG - Voyage obtenido correctamente', [
+                Log::info('DEBUG - Viaje obtenido correctamente', [
                     'voyage_id' => $voyage->id,
                     'voyage_number' => $voyage->voyage_number,
                     'shipments_count' => $voyage->shipments()->count()
@@ -392,11 +392,11 @@ class ManifestCustomsController extends Controller
     // ========================================
 
     /**
-     * Obtener voyage validado para envío a aduana - CORREGIDO
+     * Obtener Viaje validado para envío a aduana - CORREGIDO
      */
     private function getVoyageForCustoms($voyageId)
     {
-        Log::info('DEBUG - Voyage encontrado exitosamente', [
+        Log::info('DEBUG - Viaje encontrado exitosamente', [
             'voyage_id' => $voyageId,
             'company_id' => auth()->user()->company_id
         ]);
@@ -413,13 +413,13 @@ class ManifestCustomsController extends Controller
         ->where('company_id', $companyId)
         ->findOrFail($voyageId);
         
-        Log::info('DEBUG - Voyage encontrado exitosamente', [
+        Log::info('DEBUG - Viaje encontrado exitosamente', [
             'voyage_id' => $voyage->id,
             'voyage_number' => $voyage->voyage_number,
             'shipments_count' => $voyage->shipments()->count()
         ]);
         
-        // Validar que el voyage tiene datos necesarios
+        // Validar que el Viaje tiene datos necesarios
         if (!$voyage->shipments()->count()) {
             throw new \Exception('El viaje no tiene shipments para enviar.');
         }
@@ -1101,7 +1101,7 @@ class ManifestCustomsController extends Controller
     {
         $bargeData = [];
         
-        // Obtener TODOS los ShipmentItems del voyage (contenedores reales)
+        // Obtener TODOS los ShipmentItems del Viaje (contenedores reales)
         $allItems = collect();
         foreach ($voyage->shipments as $shipment) {
             $items = $shipment->shipmentItems;
@@ -1351,8 +1351,8 @@ class ManifestCustomsController extends Controller
     }
 
     /**
-     * ✅ NUEVO: Inicializar estados de webservice para voyage
-     * Se llama automáticamente cuando se carga un voyage en la vista
+     * ✅ NUEVO: Inicializar estados de webservice para Viaje
+     * Se llama automáticamente cuando se carga un Viaje en la vista
      */
     private function ensureWebserviceStatusesExist(Voyage $voyage): void
     {
@@ -1384,7 +1384,7 @@ public function voyageStatuses($voyageId)
         abort(403, 'No se encontró la empresa asociada.');
     }
     
-    // Obtener el voyage con todas sus relaciones
+    // Obtener el Viaje con todas sus relaciones
     $voyage = Voyage::with([
         'webserviceStatuses',
         'webserviceTransactions' => function($query) {
@@ -1397,13 +1397,13 @@ public function voyageStatuses($voyageId)
     ->where('company_id', $company->id)
     ->findOrFail($voyageId);
 
-    // Obtener todos los estados de webservice del voyage
+    // Obtener todos los estados de webservice del Viaje
     $webserviceStatuses = $voyage->webserviceStatuses()
         ->orderBy('country')
         ->orderBy('webservice_type')
         ->get();
 
-    // Obtener todas las transacciones del voyage agrupadas por tipo
+    // Obtener todas las transacciones del Viaje agrupadas por tipo
     $transactionsByType = $voyage->webserviceTransactions()
         ->orderBy('created_at', 'desc')
         ->get()
@@ -1897,7 +1897,7 @@ private function buildErrorMessage(array $response): string
             if (!$shipment) {
                 return response()->json([
                     'success' => false,
-                    'error_message' => "El voyage {$voyage->voyage_number} no tiene shipments asociados",
+                    'error_message' => "El Viaje {$voyage->voyage_number} no tiene shipments asociados",
                 ]);
             }
 
@@ -1985,7 +1985,7 @@ private function buildErrorMessage(array $response): string
             if (!$shipment) {
                 return response()->json([
                     'success' => false,
-                    'error_message' => "El voyage {$voyage->voyage_number} no tiene shipments asociados",
+                    'error_message' => "El Viaje {$voyage->voyage_number} no tiene shipments asociados",
                 ]);
             }
 

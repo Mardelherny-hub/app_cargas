@@ -2,7 +2,7 @@
   SISTEMA MODULAR WEBSERVICES - Vista Show Información Anticipada Argentina
   Ubicación: resources/views/company/simple/anticipada/show.blade.php
   
-  Vista detallada para un voyage específico con opciones de envío de métodos AFIP.
+  Vista detallada para un Viajeespecífico con opciones de envío de métodos AFIP.
   Integra con ArgentinaAnticipatedService para envío real.
   
   DATOS VERIFICADOS DEL CONTROLADOR:
@@ -11,7 +11,7 @@
   - $transactions (collection de WebserviceTransaction)
   - $webservice_config (array configuración del webservice)
   
-  CAMPOS VOYAGE VERIFICADOS:
+  CAMPOS Viaje VERIFICADOS:
   - voyage_number, departure_date, estimated_arrival_date
   - leadVessel->name, leadVessel->registration_number
   - originPort->code, destinationPort->code
@@ -24,7 +24,7 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    Información Anticipada - Voyage {{ $voyage->voyage_number }}
+                    Información Anticipada - Viaje{{ $voyage->voyage_number }}
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
                     Gestión de envío anticipado de información a AFIP Argentina
@@ -60,10 +60,10 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
-                {{-- Columna Principal: Información del Voyage --}}
+                {{-- Columna Principal: Información del Viaje--}}
                 <div class="lg:col-span-2 space-y-6">
                     
-                    {{-- Información General del Voyage --}}
+                    {{-- Información General del Viaje--}}
                     <div class="bg-white overflow-hidden shadow rounded-lg">
                         <div class="px-4 py-5 sm:p-6">
                             <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
@@ -140,10 +140,10 @@
                                         </div>
                                         <div class="ml-3">
                                             <h3 class="text-sm font-medium text-green-800">
-                                                Voyage válido para envío
+                                                Viaje válido para envío
                                             </h3>
                                             <div class="mt-2 text-sm text-green-700">
-                                                <p>El voyage cumple con todos los requisitos para enviar información anticipada a AFIP.</p>
+                                                <p>El Viajecumple con todos los requisitos para enviar información anticipada a AFIP.</p>
                                             </div>
                                         </div>
                                     </div>
@@ -413,7 +413,7 @@
         function sendMethod(method) {
             currentMethod = method;
             document.getElementById('modalTitle').textContent = `Enviar ${method}`;
-            document.getElementById('modalMessage').textContent = `¿Está seguro de enviar ${method} para el voyage {{ $voyage->voyage_number }}?`;
+            document.getElementById('modalMessage').textContent = `¿Está seguro de enviar ${method} para el Viaje{{ $voyage->voyage_number }}?`;
             document.getElementById('sendModal').classList.remove('hidden');
         }
         
