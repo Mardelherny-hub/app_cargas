@@ -39,6 +39,8 @@ class ArgentinaAnticipatedService extends BaseWebserviceService
      */
     protected function getWebserviceConfig(): array
     {
+        $environment = $this->config['environment'] ?? 'testing';
+        
         return [
             'webservice_type' => 'anticipada',
             'country' => 'AR',
@@ -62,6 +64,15 @@ class ArgentinaAnticipatedService extends BaseWebserviceService
             'validate_xml_structure' => true,
             'requires_tracks' => false, // Diferencia clave con MIC/DTA
             'max_containers_per_voyage' => 100,
+            // CAMPOS REQUERIDOS POR BaseWebserviceService
+            'webservice_url' => $environment === 'testing' 
+                ? 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx'
+                : 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+            'soap_action' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje', // Default action
+            'currency_code' => 'USD',
+            'wsdl_url' => $environment === 'testing'
+                ? 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx?wsdl'
+                : 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx?wsdl',
         ];
     }
 
