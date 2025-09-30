@@ -112,7 +112,7 @@ class ManifestImportController extends Controller
             'full_path' => $fullPath,
             'file_size' => filesize($fullPath),
             'user_id' => auth()->id(),
-            'company_id' => auth()->user()->company_id
+            'company_id' => $company->id
         ]);
 
         try {
