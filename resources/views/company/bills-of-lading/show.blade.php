@@ -93,6 +93,7 @@ if ($user) {
                     <span class="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">⚠️ Peligroso</span>
                 @endif
             </div>
+
         </div>
 
         {{-- GRID PRINCIPAL --}}
@@ -166,175 +167,173 @@ if ($user) {
 
                 {{-- PARTES INVOLUCRADAS --}}
                 {{-- ============================================================ --}}
-{{-- REEMPLAZAR la sección "Partes Involucradas" existente por esta nueva --}}
-{{-- Busca: <div class="bg-white shadow-sm rounded-lg p-6"> que contenga "Partes Involucradas" --}}
-{{-- ============================================================ --}}
 
-{{-- Partes Involucradas (CON DIRECCIONES ESPECÍFICAS) --}}
-<div class="bg-white shadow-sm rounded-lg p-6">
-    <div class="flex items-center justify-between mb-6">
-        <h3 class="text-lg font-medium text-gray-900">Partes Involucradas</h3>
-        
-        {{-- Indicador de direcciones específicas --}}
-        @if($billOfLading->hasSpecificAddresses())
-            <span class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
-                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h12a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1V8z" clip-rule="evenodd"/>
-                </svg>
-                Direcciones Específicas
-            </span>
-        @endif
-    </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {{-- Cargador/Exportador --}}
-        <div class="border-l-4 border-green-500 pl-4">
-            <div class="flex justify-between items-start">
-                <div class="flex-1">
-                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Cargador/Exportador</h4>
-                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getShipperDisplayName() }}</p>
-                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->shipper->tax_id ?? '-' }}</p>
-                    
-                    {{-- Dirección específica o genérica --}}
-                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
-                        <p class="text-gray-700 font-medium">Dirección:</p>
-                        <p class="text-gray-600">{{ $billOfLading->getShipperDisplayAddress() }}</p>
+                {{-- Partes Involucradas (CON DIRECCIONES ESPECÍFICAS) --}}
+                <div class="bg-white shadow-sm rounded-lg p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-lg font-medium text-gray-900">Partes Involucradas</h3>
                         
-                        {{-- Indicador si es específica --}}
-                        @if($billOfLading->shipperContact && $billOfLading->shipperContact->use_specific_data)
-                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                        {{-- Indicador de direcciones específicas --}}
+                        @if($billOfLading->hasSpecificAddresses())
+                            <span class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
                                 <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h12a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1V8z" clip-rule="evenodd"/>
                                 </svg>
-                                Dirección específica
+                                Direcciones Específicas
                             </span>
                         @endif
                     </div>
-                    
-                    @if($billOfLading->shipper->country)
-                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->shipper->country->name }}</p>
-                    @endif
-                </div>
-                <a href="{{ route('company.clients.show', $billOfLading->shipper) }}" 
-                   class="text-blue-600 hover:text-blue-900 text-xs">
-                    Ver →
-                </a>
-            </div>
-        </div>
 
-        {{-- Consignatario/Importador --}}
-        @if($billOfLading->consignee)
-        <div class="border-l-4 border-blue-500 pl-4">
-            <div class="flex justify-between items-start">
-                <div class="flex-1">
-                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Consignatario/Importador</h4>
-                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getConsigneeDisplayName() }}</p>
-                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->consignee->tax_id ?? '-' }}</p>
-                    
-                    {{-- Dirección específica o genérica --}}
-                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
-                        <p class="text-gray-700 font-medium">Dirección:</p>
-                        <p class="text-gray-600">{{ $billOfLading->getConsigneeDisplayAddress() }}</p>
-                        
-                        {{-- Indicador si es específica --}}
-                        @if($billOfLading->consigneeContact && $billOfLading->consigneeContact->use_specific_data)
-                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
-                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Dirección específica
-                            </span>
-                        @endif
-                    </div>
-                    
-                    @if($billOfLading->consignee->country)
-                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->consignee->country->name }}</p>
-                    @endif
-                </div>
-                <a href="{{ route('company.clients.show', $billOfLading->consignee) }}" 
-                   class="text-blue-600 hover:text-blue-900 text-xs">
-                    Ver →
-                </a>
-            </div>
-        </div>
-        @endif
-
-        {{-- Parte a Notificar --}}
-        @if($billOfLading->notifyParty)
-        <div class="border-l-4 border-yellow-500 pl-4">
-            <div class="flex justify-between items-start">
-                <div class="flex-1">
-                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Parte a Notificar</h4>
-                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getNotifyPartyDisplayName() }}</p>
-                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->notifyParty->tax_id ?? '-' }}</p>
-                    
-                    {{-- Dirección específica o genérica --}}
-                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
-                        <p class="text-gray-700 font-medium">Dirección:</p>
-                        <p class="text-gray-600">{{ $billOfLading->getNotifyPartyDisplayAddress() }}</p>
-                        
-                        {{-- Indicador si es específica --}}
-                        @php
-                            $notifySpecificContact = $billOfLading->specificContacts()->where('role', 'notify_party')->first();
-                        @endphp
-                        @if($notifySpecificContact && $notifySpecificContact->use_specific_data)
-                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
-                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                Dirección específica
-                            </span>
-                        @endif
-                    </div>
-                </div>
-                <a href="{{ route('company.clients.show', $billOfLading->notifyParty) }}" 
-                   class="text-blue-600 hover:text-blue-900 text-xs">
-                    Ver →
-                </a>
-            </div>
-        </div>
-        @endif
-
-        {{-- Propietario de Carga --}}
-        @if($billOfLading->cargoOwner)
-        <div class="border-l-4 border-purple-500 pl-4">
-            <div class="flex justify-between items-start">
-                <div class="flex-1">
-                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Propietario de Carga</h4>
-                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->cargoOwner->legal_name }}</p>
-                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->cargoOwner->tax_id ?? '-' }}</p>
-                    
-                    {{-- Dirección genérica (cargo owner no tiene específicas por ahora) --}}
-                    @if($billOfLading->cargoOwner->contactData->first())
-                        @php
-                            $cargoContact = $billOfLading->cargoOwner->contactData->first();
-                            $cargoAddress = collect([
-                                $cargoContact->address_line_1,
-                                $cargoContact->address_line_2,
-                                $cargoContact->city,
-                                $cargoContact->state_province,
-                                $cargoContact->postal_code
-                            ])->filter()->implode(', ');
-                        @endphp
-                        <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
-                            <p class="text-gray-700 font-medium">Dirección:</p>
-                            <p class="text-gray-600">{{ $cargoAddress ?: 'Dirección no disponible' }}</p>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {{-- Cargador/Exportador --}}
+                        <div class="border-l-4 border-green-500 pl-4">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Cargador/Exportador</h4>
+                                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getShipperDisplayName() }}</p>
+                                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->shipper->tax_id ?? '-' }}</p>
+                                    
+                                    {{-- Dirección específica o genérica --}}
+                                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                        <p class="text-gray-700 font-medium">Dirección:</p>
+                                        <p class="text-gray-600">{{ $billOfLading->getShipperDisplayAddress() }}</p>
+                                        
+                                        {{-- Indicador si es específica --}}
+                                        @if($billOfLading->shipperContact && $billOfLading->shipperContact->use_specific_data)
+                                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                                Dirección específica
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    @if($billOfLading->shipper->country)
+                                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->shipper->country->name }}</p>
+                                    @endif
+                                </div>
+                                <a href="{{ route('company.clients.show', $billOfLading->shipper) }}" 
+                                class="text-blue-600 hover:text-blue-900 text-xs">
+                                    Ver →
+                                </a>
+                            </div>
                         </div>
-                    @endif
-                    
-                    @if($billOfLading->cargoOwner->country)
-                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->cargoOwner->country->name }}</p>
-                    @endif
+
+                        {{-- Consignatario/Importador --}}
+                        @if($billOfLading->consignee)
+                        <div class="border-l-4 border-blue-500 pl-4">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Consignatario/Importador</h4>
+                                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getConsigneeDisplayName() }}</p>
+                                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->consignee->tax_id ?? '-' }}</p>
+                                    
+                                    {{-- Dirección específica o genérica --}}
+                                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                        <p class="text-gray-700 font-medium">Dirección:</p>
+                                        <p class="text-gray-600">{{ $billOfLading->getConsigneeDisplayAddress() }}</p>
+                                        
+                                        {{-- Indicador si es específica --}}
+                                        @if($billOfLading->consigneeContact && $billOfLading->consigneeContact->use_specific_data)
+                                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                                Dirección específica
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    @if($billOfLading->consignee->country)
+                                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->consignee->country->name }}</p>
+                                    @endif
+                                </div>
+                                <a href="{{ route('company.clients.show', $billOfLading->consignee) }}" 
+                                class="text-blue-600 hover:text-blue-900 text-xs">
+                                    Ver →
+                                </a>
+                            </div>
+                        </div>
+                        @endif
+
+                        {{-- Parte a Notificar --}}
+                        @if($billOfLading->notifyParty)
+                        <div class="border-l-4 border-yellow-500 pl-4">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Parte a Notificar</h4>
+                                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->getNotifyPartyDisplayName() }}</p>
+                                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->notifyParty->tax_id ?? '-' }}</p>
+                                    
+                                    {{-- Dirección específica o genérica --}}
+                                    <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                        <p class="text-gray-700 font-medium">Dirección:</p>
+                                        <p class="text-gray-600">{{ $billOfLading->getNotifyPartyDisplayAddress() }}</p>
+                                        
+                                        {{-- Indicador si es específica --}}
+                                        @php
+                                            $notifySpecificContact = $billOfLading->specificContacts()->where('role', 'notify_party')->first();
+                                        @endphp
+                                        @if($notifySpecificContact && $notifySpecificContact->use_specific_data)
+                                            <span class="inline-flex items-center mt-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded">
+                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                                Dirección específica
+                                            </span>
+                                        @endif
+                                    </div>
+                                </div>
+                                <a href="{{ route('company.clients.show', $billOfLading->notifyParty) }}" 
+                                class="text-blue-600 hover:text-blue-900 text-xs">
+                                    Ver →
+                                </a>
+                            </div>
+                        </div>
+                        @endif
+
+                        {{-- Propietario de Carga --}}
+                        @if($billOfLading->cargoOwner)
+                        <div class="border-l-4 border-purple-500 pl-4">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Propietario de Carga</h4>
+                                    <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->cargoOwner->legal_name }}</p>
+                                    <p class="text-sm text-gray-600">Tax ID: {{ $billOfLading->cargoOwner->tax_id ?? '-' }}</p>
+                                    
+                                    {{-- Dirección genérica (cargo owner no tiene específicas por ahora) --}}
+                                    @if($billOfLading->cargoOwner->contactData->first())
+                                        @php
+                                            $cargoContact = $billOfLading->cargoOwner->contactData->first();
+                                            $cargoAddress = collect([
+                                                $cargoContact->address_line_1,
+                                                $cargoContact->address_line_2,
+                                                $cargoContact->city,
+                                                $cargoContact->state_province,
+                                                $cargoContact->postal_code
+                                            ])->filter()->implode(', ');
+                                        @endphp
+                                        <div class="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                            <p class="text-gray-700 font-medium">Dirección:</p>
+                                            <p class="text-gray-600">{{ $cargoAddress ?: 'Dirección no disponible' }}</p>
+                                        </div>
+                                    @endif
+                                    
+                                    @if($billOfLading->cargoOwner->country)
+                                        <p class="text-sm text-gray-500 mt-1">País: {{ $billOfLading->cargoOwner->country->name }}</p>
+                                    @endif
+                                </div>
+                                <a href="{{ route('company.clients.show', $billOfLading->cargoOwner) }}" 
+                                class="text-blue-600 hover:text-blue-900 text-xs">
+                                    Ver →
+                                </a>
+                            </div>
+                        </div>
+                        @endif
+                    </div>
                 </div>
-                <a href="{{ route('company.clients.show', $billOfLading->cargoOwner) }}" 
-                   class="text-blue-600 hover:text-blue-900 text-xs">
-                    Ver →
-                </a>
-            </div>
-        </div>
-        @endif
-    </div>
-</div>
 
                 {{-- RUTAS Y PUERTOS --}}
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
@@ -639,6 +638,66 @@ if ($user) {
                         </dl>
                     </div>
                 </div>
+
+
+{{-- DATOS AFIP ORIGEN/DESTINO --}}
+@if($billOfLading->origin_location || $billOfLading->origin_country_code || $billOfLading->origin_loading_date || $billOfLading->destination_country_code || $billOfLading->discharge_customs_code || $billOfLading->operational_discharge_code)
+<div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900 flex items-center">
+            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Datos AFIP
+        </h3>
+    </div>
+    <div class="px-6 py-4">
+        <dl class="space-y-2">
+            @if($billOfLading->origin_location)
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">Lugar Origen</dt>
+                <dd class="text-sm text-gray-900">{{ $billOfLading->origin_location }}</dd>
+            </div>
+            @endif
+            
+            @if($billOfLading->origin_country_code)
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">País Origen</dt>
+                <dd><span class="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">{{ $billOfLading->origin_country_code }}</span></dd>
+            </div>
+            @endif
+            
+            @if($billOfLading->origin_loading_date)
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">Fecha Carga Origen</dt>
+                <dd class="text-sm text-gray-900">{{ \Carbon\Carbon::parse($billOfLading->origin_loading_date)->format('d/m/Y H:i') }}</dd>
+            </div>
+            @endif
+            
+            @if($billOfLading->destination_country_code)
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">País Destino</dt>
+                <dd><span class="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">{{ $billOfLading->destination_country_code }}</span></dd>
+            </div>
+            @endif
+            
+            @if($billOfLading->discharge_customs_code)
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">Aduana Descarga</dt>
+                <dd><span class="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">{{ $billOfLading->discharge_customs_code }}</span></dd>
+            </div>
+            @endif
+            
+            @if($billOfLading->operational_discharge_code)
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">Lugar Operativo</dt>
+                <dd><span class="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-xs font-medium">{{ $billOfLading->operational_discharge_code }}</span></dd>
+            </div>
+            @endif
+        </dl>
+    </div>
+</div>
+@endif
 
                 {{-- FECHAS IMPORTANTES --}}
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">

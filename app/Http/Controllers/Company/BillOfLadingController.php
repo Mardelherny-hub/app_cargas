@@ -1178,8 +1178,9 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
         }
     }
 
+    
     /**
-     * Generar PDF del conocimiento (CORREGIDO)
+     * Generar PDF del conocimiento (ACTUALIZADO CON DOMPDF)
      */
     public function generatePdf(BillOfLading $billOfLading)
     {
@@ -1193,7 +1194,7 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
             abort(403, 'No tiene permisos para generar PDF de este conocimiento.');
         }
 
-        // ✅ CORRECCIÓN: Cargar relaciones a través de la jerarquía correcta
+        // Cargar relaciones necesarias
         $billOfLading->load([
             'shipment.voyage.vessel',
             'shipment.voyage.company',
@@ -1209,18 +1210,28 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
             'dischargeCustoms',
             'primaryCargoType',
             'primaryPackagingType',
-            
-            // ✅ CORRECCIÓN: Acceder a shipmentItems a través del shipment
             'shipment.shipmentItems.cargoType',
             'shipment.shipmentItems.packagingType',
-            
             'createdByUser',
             'verifiedByUser'
         ]);
 
-        // TODO: Implementar generación de PDF
-        // Por ahora retornamos una vista que puede ser convertida a PDF
-        return view('company.bills-of-lading.pdf', compact('billOfLading'));
+        // Generar PDF usando DomPDF
+        $pdf = \PDF::loadView('company.bills-of-lading.pdf', compact('billOfLading'));
+        
+        // Configurar PDF
+        $pdf->setPaper('A4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont' => 'Arial',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled' => true
+        ]);
+        
+        // Nombre del archivo
+        $filename = "BL-{$billOfLading->bill_number}-" . date('Y-m-d') . ".pdf";
+        
+        // Descargar PDF
+        return $pdf->download($filename);
     }
 
     /**
