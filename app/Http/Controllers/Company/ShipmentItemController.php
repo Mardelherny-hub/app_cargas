@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Company;
 use App\Http\Controllers\Controller;
 use App\Models\ShipmentItem;
 use App\Models\Shipment;
+use App\Models\BillOfLading;
 use App\Models\Client;
 use App\Models\Country;
 use App\Models\CargoType;

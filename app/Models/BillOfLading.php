@@ -83,6 +83,13 @@ class BillOfLading extends Model
         'delivery_date',
         'cargo_ready_date',
         'free_time_expires_at',
+        // ✅ NUEVOS: Campos AFIP origen y destino
+        'origin_location',
+        'origin_country_code',
+        'origin_loading_date',
+        'destination_country_code',
+        'discharge_customs_code',
+        'operational_discharge_code',
         
         // Términos comerciales
         'freight_terms',
@@ -134,6 +141,8 @@ class BillOfLading extends Model
 
         'is_consolidated',
         'is_transit_transshipment',
+
+
     ];
 
     /**

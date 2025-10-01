@@ -183,152 +183,153 @@ class VoyageController extends Controller
             ]);
         }
     /**
- * Almacenar nuevo viaje - MÉTODO CORREGIDO
- */
-public function store(Request $request)
-{
-    // 1. Verificar permisos
-    if (!$this->canPerform('access_trips')) {
-        abort(403, 'No tiene permisos para acceder a viajes.');
-    }
-
-    if (!$this->hasCompanyRole('Cargas')) {
-        abort(403, 'Su empresa no tiene el rol de Cargas.');
-    }
-
-    // 2. Obtener empresa
-    $company = $this->getUserCompany();
-
-    if (!$company) {
-        return redirect()->route('company.voyages.index')
-            ->with('error', 'No se encontró la empresa asociada.');
-    }
-
-    // 3. Mapeo de valores del formulario a ENUM de BD
-    $voyageTypeMapping = [
-        'regular' => 'single_vessel',
-        'charter' => 'convoy',
-        'emergency' => 'fleet'
-    ];
-
-    $cargoTypeMapping = [
-        'containers' => 'export',
-        'bulk' => 'import', 
-        'general' => 'transit',
-        'liquid' => 'transshipment'
-    ];
-
-    // 4. Validar datos con valores ENUM correctos
-    $request->validate([
-        'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number',
-        'internal_reference' => 'nullable|string|max:100',
-        'lead_vessel_id' => 'required|exists:vessels,id',
-        'captain_id' => 'nullable|exists:captains,id',
-        'origin_country_id' => 'required|exists:countries,id',
-        'origin_port_id' => 'required|exists:ports,id',
-        'destination_country_id' => 'required|exists:countries,id',
-        'destination_port_id' => 'required|exists:ports,id',
-        'departure_date' => 'required|date|after:now',
-        'estimated_arrival_date' => 'required|date|after:departure_date',
-        'voyage_type' => 'required|in:regular,charter,emergency',
-        'cargo_type' => 'required|in:containers,bulk,general,liquid',
-    ], [
-        // Mensajes personalizados
-        'voyage_number.unique' => 'Ya existe un viaje con este número.',
-        'lead_vessel_id.exists' => 'La embarcación seleccionada no existe.',
-        'captain_id.exists' => 'El capitán seleccionado no existe.',
-        'origin_port_id.exists' => 'El puerto de origen seleccionado no existe.',
-        'destination_port_id.exists' => 'El puerto de destino seleccionado no existe.',
-        'departure_date.after' => 'La fecha de salida debe ser posterior a la fecha actual.',
-        'estimated_arrival_date.after' => 'La fecha de llegada debe ser posterior a la fecha de salida.',
-    ]);
-
-    // 5. Validaciones de ownership y coherencia
-    try {
-        DB::beginTransaction();
-
-        // Verificar que la embarcación pertenece a la empresa
-        $vessel = Vessel::where('id', $request->lead_vessel_id)
-                       ->where('company_id', $company->id)
-                       ->where('active', true)
-                       ->first();
-
-        if (!$vessel) {
-            throw new \Exception('La embarcación seleccionada no pertenece a su empresa o no está disponible.');
+     * Almacenar nuevo viaje - MÉTODO CORREGIDO
+     */
+    public function store(Request $request)
+    {
+        // 1. Verificar permisos
+        if (!$this->canPerform('access_trips')) {
+            abort(403, 'No tiene permisos para acceder a viajes.');
         }
 
-        // Verificar capitán disponible (si se seleccionó)
-        if ($request->captain_id) {
-            $captain = Captain::where('id', $request->captain_id)
-                             ->where('active', true)
-                             ->where('available_for_hire', true)
-                             ->where('license_status', 'valid')
-                             ->first();
-
-            if (!$captain) {
-                throw new \Exception('El capitán seleccionado no está disponible o no tiene licencia válida.');
-            }
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
-        // Verificar coherencia puerto-país (origen)
-        $originPort = Port::where('id', $request->origin_port_id)
-                         ->where('country_id', $request->origin_country_id)
-                         ->where('active', true)
-                         ->first();
+        // 2. Obtener empresa
+        $company = $this->getUserCompany();
 
-        if (!$originPort) {
-            throw new \Exception('El puerto de origen no corresponde al país seleccionado.');
+        if (!$company) {
+            return redirect()->route('company.voyages.index')
+                ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Verificar coherencia puerto-país (destino)
-        $destinationPort = Port::where('id', $request->destination_port_id)
-                              ->where('country_id', $request->destination_country_id)
-                              ->where('active', true)
-                              ->first();
+        // 3. Mapeo de valores del formulario a ENUM de BD
+        $voyageTypeMapping = [
+            'regular' => 'single_vessel',
+            'charter' => 'convoy',
+            'emergency' => 'fleet'
+        ];
 
-        if (!$destinationPort) {
-            throw new \Exception('El puerto de destino no corresponde al país seleccionado.');
-        }
+        $cargoTypeMapping = [
+            'containers' => 'export',
+            'bulk' => 'import', 
+            'general' => 'transit',
+            'liquid' => 'transshipment'
+        ];
 
-        // Verificar que origen y destino sean diferentes
-        if ($request->origin_port_id == $request->destination_port_id) {
-            throw new \Exception('El puerto de origen y destino no pueden ser el mismo.');
-        }
-
-        // 6. Crear el viaje con valores correctos
-        $voyage = Voyage::create([
-            'company_id' => $company->id,
-            'voyage_number' => $request->voyage_number,
-            'internal_reference' => $request->internal_reference,
-            'lead_vessel_id' => $request->lead_vessel_id,
-            'captain_id' => $request->captain_id,
-            'origin_country_id' => $request->origin_country_id,
-            'origin_port_id' => $request->origin_port_id,
-            'destination_country_id' => $request->destination_country_id,
-            'destination_port_id' => $request->destination_port_id,
-            'departure_date' => $request->departure_date,
-            'estimated_arrival_date' => $request->estimated_arrival_date,
-            // Mapear valores del formulario a ENUM de BD
-            'voyage_type' => $voyageTypeMapping[$request->voyage_type],
-            'cargo_type' => $cargoTypeMapping[$request->cargo_type],
-            'status' => 'planning',
-            'created_by_user_id' => Auth::id(),
-            // REMOVIDO 'created_date' - Laravel maneja created_at automáticamente
+        // 4. Validar datos con valores ENUM correctos
+        $request->validate([
+            'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number',
+            'internal_reference' => 'nullable|string|max:100',
+            'lead_vessel_id' => 'required|exists:vessels,id',
+            'captain_id' => 'nullable|exists:captains,id',
+            'origin_country_id' => 'required|exists:countries,id',
+            'origin_port_id' => 'required|exists:ports,id',
+            'destination_country_id' => 'required|exists:countries,id',
+            'destination_port_id' => 'required|exists:ports,id',
+            'departure_date' => 'required|date|after:now',
+            'estimated_arrival_date' => 'required|date|after:departure_date',
+            'voyage_type' => 'required|in:regular,charter,emergency',
+            'cargo_type' => 'required|in:containers,bulk,general,liquid',
+        ], [
+            // Mensajes personalizados
+            'voyage_number.unique' => 'Ya existe un viaje con este número.',
+            'lead_vessel_id.exists' => 'La embarcación seleccionada no existe.',
+            'captain_id.exists' => 'El capitán seleccionado no existe.',
+            'origin_port_id.exists' => 'El puerto de origen seleccionado no existe.',
+            'destination_port_id.exists' => 'El puerto de destino seleccionado no existe.',
+            'departure_date.after' => 'La fecha de salida debe ser posterior a la fecha actual.',
+            'estimated_arrival_date.after' => 'La fecha de llegada debe ser posterior a la fecha de salida.',
         ]);
 
-        DB::commit();
+        // 5. Validaciones de ownership y coherencia
+        try {
+            DB::beginTransaction();
 
-        return redirect()->route('company.voyages.show', $voyage)
-            ->with('success', 'Viaje creado exitosamente.');
+            // Verificar que la embarcación pertenece a la empresa
+            $vessel = Vessel::where('id', $request->lead_vessel_id)
+                        ->where('company_id', $company->id)
+                        ->where('active', true)
+                        ->first();
 
-    } catch (\Exception $e) {
-        DB::rollback();
-        
-        return redirect()->back()
-            ->withInput()
-            ->with('error', 'Error al crear el viaje: ' . $e->getMessage());
+            if (!$vessel) {
+                throw new \Exception('La embarcación seleccionada no pertenece a su empresa o no está disponible.');
+            }
+
+            // Verificar capitán disponible (si se seleccionó)
+            if ($request->captain_id) {
+                $captain = Captain::where('id', $request->captain_id)
+                                ->where('active', true)
+                                ->where('available_for_hire', true)
+                                ->where('license_status', 'valid')
+                                ->first();
+
+                if (!$captain) {
+                    throw new \Exception('El capitán seleccionado no está disponible o no tiene licencia válida.');
+                }
+            }
+
+            // Verificar coherencia puerto-país (origen)
+            $originPort = Port::where('id', $request->origin_port_id)
+                            ->where('country_id', $request->origin_country_id)
+                            ->where('active', true)
+                            ->first();
+
+            if (!$originPort) {
+                throw new \Exception('El puerto de origen no corresponde al país seleccionado.');
+            }
+
+            // Verificar coherencia puerto-país (destino)
+            $destinationPort = Port::where('id', $request->destination_port_id)
+                                ->where('country_id', $request->destination_country_id)
+                                ->where('active', true)
+                                ->first();
+
+            if (!$destinationPort) {
+                throw new \Exception('El puerto de destino no corresponde al país seleccionado.');
+            }
+
+            // Verificar que origen y destino sean diferentes
+            if ($request->origin_port_id == $request->destination_port_id) {
+                throw new \Exception('El puerto de origen y destino no pueden ser el mismo.');
+            }
+
+            // 6. Crear el viaje con valores correctos
+            $voyage = Voyage::create([
+                'company_id' => $company->id,
+                'voyage_number' => $request->voyage_number,
+                'internal_reference' => $request->internal_reference,
+                'lead_vessel_id' => $request->lead_vessel_id,
+                'captain_id' => $request->captain_id,
+                'origin_country_id' => $request->origin_country_id,
+                'origin_port_id' => $request->origin_port_id,
+                'destination_country_id' => $request->destination_country_id,
+                'destination_port_id' => $request->destination_port_id,
+                'departure_date' => $request->departure_date,
+                'estimated_arrival_date' => $request->estimated_arrival_date,
+                // Mapear valores del formulario a ENUM de BD
+                'voyage_type' => $voyageTypeMapping[$request->voyage_type],
+                'is_convoy' => ($voyageTypeMapping[$request->voyage_type] === 'convoy'),
+                'cargo_type' => $cargoTypeMapping[$request->cargo_type],
+                'status' => 'planning',
+                'created_by_user_id' => Auth::id(),
+                // REMOVIDO 'created_date' - Laravel maneja created_at automáticamente
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('company.voyages.show', $voyage)
+                ->with('success', 'Viaje creado exitosamente.');
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error al crear el viaje: ' . $e->getMessage());
+        }
     }
-}
 
     /**
      * Mostrar detalles del viaje.

@@ -30,6 +30,13 @@ class BillOfLadingEditForm extends Component
     public $bill_date = '';
     public $loading_date = '';
     public $discharge_date = '';
+    // === CAMPOS AFIP ORIGEN/DESTINO ===
+    public $origin_location = '';
+    public $origin_country_code = '';
+    public $origin_loading_date = '';
+    public $destination_country_code = '';
+    public $discharge_customs_code = '';
+    public $operational_discharge_code = '';
     public $freight_terms = 'prepaid';
     public $payment_terms = 'cash';
     public $currency_code = 'USD';
@@ -148,6 +155,13 @@ class BillOfLadingEditForm extends Component
         'bill_date' => 'required|date',
         'loading_date' => 'required|date',
         'discharge_date' => 'nullable|date|after_or_equal:loading_date',
+        // Campos AFIP origen/destino
+        'origin_location' => ['nullable','string','max:50'],
+        'origin_country_code' => ['nullable','string','size:3'],
+        'origin_loading_date' => ['nullable','date'],
+        'destination_country_code' => ['nullable','string','size:3'],
+        'discharge_customs_code' => ['nullable','string','max:3'],
+        'operational_discharge_code' => ['nullable','string','max:5'],
         'freight_terms' => 'required|in:prepaid,collect,third_party',
         'payment_terms' => 'required|in:cash,credit,letter_of_credit,other',
         'currency_code' => 'required|in:USD,ARS,EUR,BRL',
@@ -379,6 +393,13 @@ class BillOfLadingEditForm extends Component
         $this->bill_date = $bl->bill_date ? $bl->bill_date->format('Y-m-d') : '';
         $this->loading_date = $bl->loading_date ? $bl->loading_date->format('Y-m-d') : '';
         $this->discharge_date = $bl->discharge_date ? $bl->discharge_date->format('Y-m-d') : '';
+        // Campos AFIP origen/destino
+        $this->origin_location = $bl->origin_location ?? '';
+        $this->origin_country_code = $bl->origin_country_code ?? '';
+        $this->origin_loading_date = $bl->origin_loading_date ? $bl->origin_loading_date->format('Y-m-d\TH:i') : '';
+        $this->destination_country_code = $bl->destination_country_code ?? '';
+        $this->discharge_customs_code = $bl->discharge_customs_code ?? '';
+        $this->operational_discharge_code = $bl->operational_discharge_code ?? '';
         $this->freight_terms = $bl->freight_terms ?? 'prepaid';
         $this->payment_terms = $bl->payment_terms ?? 'cash';
         $this->currency_code = $bl->currency_code ?? 'USD';
@@ -693,6 +714,13 @@ class BillOfLadingEditForm extends Component
                 'bill_date' => $this->bill_date ? \Carbon\Carbon::parse($this->bill_date) : null,
                 'loading_date' => $this->loading_date ? \Carbon\Carbon::parse($this->loading_date) : null,
                 'discharge_date' => $this->discharge_date ? \Carbon\Carbon::parse($this->discharge_date) : null,
+                // Campos AFIP origen/destino
+                'origin_location' => $this->origin_location ?: null,
+                'origin_country_code' => $this->origin_country_code ?: null,
+                'origin_loading_date' => $this->origin_loading_date ? \Carbon\Carbon::parse($this->origin_loading_date) : null,
+                'destination_country_code' => $this->destination_country_code ?: null,
+                'discharge_customs_code' => $this->discharge_customs_code ?: null,
+                'operational_discharge_code' => $this->operational_discharge_code ?: null,
                 'freight_terms' => $this->freight_terms,
                 'payment_terms' => $this->payment_terms,
                 'currency_code' => $this->currency_code,

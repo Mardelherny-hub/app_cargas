@@ -212,6 +212,54 @@ class ShipmentItemCreateForm extends Component
     #[Validate('nullable|string|max:20')]
     public $inspection_type = '';
 
+    // CAMPOS AFIP
+    #[Validate('required|string|min:7|max:15')]
+    public $tariff_position = '';
+
+    #[Validate('required|in:S,N')]
+    public $is_secure_logistics_operator = 'N';
+
+    #[Validate('required|in:S,N')]
+    public $is_monitored_transit = 'N';
+
+    #[Validate('required|in:S,N')]
+    public $is_renar = 'N';
+
+    #[Validate('required|string|max:70')]
+    public $foreign_forwarder_name = '';
+
+    #[Validate('nullable|string|max:35')]
+    public $foreign_forwarder_tax_id = '';
+
+    #[Validate('nullable|string|size:3')]
+    public $foreign_forwarder_country = '';
+
+    // CAMPOS AFIP ADICIONALES
+    #[Validate('nullable|in:H,P')]
+    public $container_condition = '';
+
+    #[Validate('nullable|string|max:100')]
+    public $package_numbers = '';
+
+    #[Validate('nullable|string|max:1')]
+    public $packaging_type_code = '';
+
+    // CAMPOS AFIP - CÓDIGOS ADUANEROS Y DESTINATARIO
+    #[Validate('required|string|size:3')]
+    public $discharge_customs_code = '';
+
+    #[Validate('required|string|max:5')]
+    public $operational_discharge_code = '';
+
+    #[Validate('nullable|string|max:60')]
+    public $comments = '';
+
+    #[Validate('nullable|string|max:4')]
+    public $consignee_document_type = '';
+
+    #[Validate('nullable|string|max:11')]
+    public $consignee_tax_id = '';
+
     // MODIFICADO: Campos de contenedor - Ahora para múltiples contenedores
     public $showContainerFields = false;
     public $containers = []; // Array para múltiples contenedores
@@ -475,6 +523,22 @@ class ShipmentItemCreateForm extends Component
             $this->bl_currency_code = $this->defaultBLData['currency_code'] ?? 'USD';
             $this->bl_primary_cargo_type_id = $this->defaultBLData['primary_cargo_type_id'] ?? null;
             $this->bl_primary_packaging_type_id = $this->defaultBLData['primary_packaging_type_id'] ?? null;
+            // Inicializar campos AFIP con valores por defecto
+            $this->tariff_position = '';
+            $this->is_secure_logistics_operator = 'N';
+            $this->is_monitored_transit = 'N';
+            $this->is_renar = 'N';
+            $this->foreign_forwarder_name = '';
+            $this->foreign_forwarder_tax_id = '';
+            $this->foreign_forwarder_country = '';
+            $this->container_condition = '';
+            $this->package_numbers = '';
+            $this->packaging_type_code = '';
+            $this->discharge_customs_code = '';
+            $this->operational_discharge_code = '';
+            $this->comments = '';
+            $this->consignee_document_type = '';
+            $this->consignee_tax_id = '';
         }
 
         if (!$this->needsToCreateBL) {
@@ -530,6 +594,7 @@ class ShipmentItemCreateForm extends Component
             'id' => uniqid(), // ID temporal para el frontend
             'container_number' => '',
             'container_type_id' => null,
+             'container_condition' => '',
             'seal_number' => '',
             'tare_weight' => 0,
             'package_quantity' => 0,
@@ -783,8 +848,24 @@ class ShipmentItemCreateForm extends Component
                 'special_instructions' => $this->special_instructions,
                 'expiry_date' => $this->expiry_date,
                 'inspection_type' => $this->inspection_type,
+                // Campos AFIP
+                'tariff_position' => $this->tariff_position,
+                'is_secure_logistics_operator' => $this->is_secure_logistics_operator,
+                'is_monitored_transit' => $this->is_monitored_transit,
+                'is_renar' => $this->is_renar,
+                'foreign_forwarder_name' => $this->foreign_forwarder_name,
+                'foreign_forwarder_tax_id' => $this->foreign_forwarder_tax_id,
+                'foreign_forwarder_country' => $this->foreign_forwarder_country,
                 'created_date' => now(),
                 'created_by_user_id' => Auth::id(),
+                'container_condition' => $this->container_condition,
+                'package_numbers' => $this->package_numbers,
+                'packaging_type_code' => $this->packaging_type_code,
+                'discharge_customs_code' => $this->discharge_customs_code,
+                'operational_discharge_code' => $this->operational_discharge_code,
+                'comments' => $this->comments,
+                'consignee_document_type' => $this->consignee_document_type,
+                'consignee_tax_id' => $this->consignee_tax_id,
             ];
 
             $shipmentItem = ShipmentItem::create($itemData);
@@ -798,6 +879,7 @@ class ShipmentItemCreateForm extends Component
                     $container = \App\Models\Container::create([
                         'container_number' => $containerData['container_number'],
                         'container_type_id' => $containerData['container_type_id'],
+                        'container_condition' => $containerData['container_condition'] ?? 'P',
                         'tare_weight_kg' => $containerData['tare_weight'] ?: 2200,
                         'max_gross_weight_kg' => 30000,
                         'current_gross_weight_kg' => $containerData['gross_weight_kg'],
@@ -906,6 +988,23 @@ class ShipmentItemCreateForm extends Component
         // Reset contenedores
         $this->containers = [];
         $this->showContainerFields = false;
+
+        // Reset campos AFIP
+        $this->tariff_position = '';
+        $this->is_secure_logistics_operator = 'N';
+        $this->is_monitored_transit = 'N';
+        $this->is_renar = 'N';
+        $this->foreign_forwarder_name = '';
+        $this->foreign_forwarder_tax_id = '';
+        $this->foreign_forwarder_country = '';
+        $this->container_condition = '';
+        $this->package_numbers = '';
+        $this->packaging_type_code = '';
+        $this->discharge_customs_code = '';
+        $this->operational_discharge_code = '';
+        $this->comments = '';
+        $this->consignee_document_type = '';
+        $this->consignee_tax_id = '';
     }
 
     // MÉTODOS ORIGINALES (sin modificar)

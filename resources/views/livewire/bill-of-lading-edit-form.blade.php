@@ -547,6 +547,125 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
+
+                    {{-- Datos AFIP Origen/Destino --}}
+                    <div class="mt-6 border-t pt-6 col-span-2">
+                        <h4 class="text-md font-medium text-gray-900 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Datos AFIP Origen/Destino
+                        </h4>
+                        <p class="text-xs text-gray-500 mb-4">Campos opcionales requeridos por AFIP para webservice RegistrarTitulosCbc</p>
+                        
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            {{-- Lugar de Origen --}}
+                            <div>
+                                <label for="origin_location" class="block text-sm font-medium text-gray-700">
+                                    Lugar de Origen
+                                    <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
+                                </label>
+                                <input wire:model="origin_location" type="text" id="origin_location" 
+                                    maxlength="50"
+                                    placeholder="Ej: Depósito Central Buenos Aires"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('origin_location') border-red-300 @enderror">
+                                @error('origin_location')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">AFIP: LugarOrigen (máx. 50 caracteres)</p>
+                            </div>
+
+                            {{-- País Lugar de Origen --}}
+                            <div>
+                                <label for="origin_country_code" class="block text-sm font-medium text-gray-700">
+                                    País Lugar de Origen
+                                    <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
+                                </label>
+                                <select wire:model="origin_country_code" id="origin_country_code"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('origin_country_code') border-red-300 @enderror">
+                                    <option value="">Seleccionar país (opcional)</option>
+                                    <option value="ARG">🇦🇷 Argentina</option>
+                                    <option value="PRY">🇵🇾 Paraguay</option>
+                                    <option value="BRA">🇧🇷 Brasil</option>
+                                    <option value="URY">🇺🇾 Uruguay</option>
+                                    <option value="CHL">🇨🇱 Chile</option>
+                                    <option value="BOL">🇧🇴 Bolivia</option>
+                                </select>
+                                @error('origin_country_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">AFIP: CodigoPaisLugarOrigen (código 3 letras)</p>
+                            </div>
+
+                            {{-- Fecha Carga en Lugar de Origen --}}
+                            <div>
+                                <label for="origin_loading_date" class="block text-sm font-medium text-gray-700">
+                                    Fecha Carga en Lugar de Origen
+                                    <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
+                                </label>
+                                <input wire:model="origin_loading_date" type="datetime-local" id="origin_loading_date"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('origin_loading_date') border-red-300 @enderror">
+                                @error('origin_loading_date')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">AFIP: FechaCargaLugarOrigen</p>
+                            </div>
+
+                            {{-- País de Destino --}}
+                            <div>
+                                <label for="destination_country_code" class="block text-sm font-medium text-gray-700">
+                                    País de Destino
+                                    <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
+                                </label>
+                                <select wire:model="destination_country_code" id="destination_country_code"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('destination_country_code') border-red-300 @enderror">
+                                    <option value="">Seleccionar país (opcional)</option>
+                                    <option value="ARG">🇦🇷 Argentina</option>
+                                    <option value="PRY">🇵🇾 Paraguay</option>
+                                    <option value="BRA">🇧🇷 Brasil</option>
+                                    <option value="URY">🇺🇾 Uruguay</option>
+                                    <option value="CHL">🇨🇱 Chile</option>
+                                    <option value="BOL">🇧🇴 Bolivia</option>
+                                </select>
+                                @error('destination_country_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">AFIP: CodigoPaisDestino (código 3 letras)</p>
+                            </div>
+
+                            {{-- Código Aduana de Descarga --}}
+                            <div>
+                                <label for="discharge_customs_code" class="block text-sm font-medium text-gray-700">
+                                    Código Aduana de Descarga
+                                    <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
+                                </label>
+                                <input wire:model="discharge_customs_code" type="text" id="discharge_customs_code" 
+                                    maxlength="3"
+                                    placeholder="Ej: 001"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('discharge_customs_code') border-red-300 @enderror">
+                                @error('discharge_customs_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">AFIP: CodigoAduanaDescarga (BUR_DESC, 3 caracteres)</p>
+                            </div>
+
+                            {{-- Código Lugar Operativo de Descarga --}}
+                            <div>
+                                <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
+                                    Código Lugar Operativo Descarga
+                                    <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
+                                </label>
+                                <input wire:model="operational_discharge_code" type="text" id="operational_discharge_code" 
+                                    maxlength="5"
+                                    placeholder="Ej: PYTVT"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('operational_discharge_code') border-red-300 @enderror">
+                                @error('operational_discharge_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-xs text-gray-500">AFIP: CodigoLugarOperativoDescarga (LOT_ADUA, máx. 5 caracteres)</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

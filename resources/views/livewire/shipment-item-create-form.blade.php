@@ -676,6 +676,22 @@
                                 </select>
                             </div>
 
+                            {{-- Condición del Contenedor (AFIP) --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Condición <span class="text-red-500">*</span>
+                                </label>
+                                <select 
+                                    wire:model="containers.{{ $index }}.container_condition" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">Seleccionar</option>
+                                    <option value="H">H - Casa a Casa</option>
+                                    <option value="P">P - Muelle a Muelle</option>
+                                </select>
+                                <p class="mt-1 text-xs text-gray-500">Campo AFIP obligatorio</p>
+                            </div>
+
                            {{-- Números de Precinto --}}
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">
@@ -969,6 +985,343 @@
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
+                        </div>
+                    </div>
+
+                    {{-- Datos AFIP / Aduaneros --}}
+                    <div>
+                        <h4 class="text-lg font-medium text-gray-900 mb-4">Datos AFIP / Aduaneros</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {{-- Posición Arancelaria --}}
+                            <div>
+                                <label for="tariff_position" class="block text-sm font-medium text-gray-700">
+                                    Posición Arancelaria <span class="text-red-500">*</span>
+                                </label>
+                                <input 
+                                    wire:model="tariff_position" 
+                                    type="text" 
+                                    id="tariff_position" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="1234.56.78.90"
+                                    maxlength="15"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Mínimo 7 caracteres, máximo 15 (incluye puntos)</p>
+                                @error('tariff_position')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Razón Social Forwarder --}}
+                            <div>
+                                <label for="foreign_forwarder_name" class="block text-sm font-medium text-gray-700">
+                                    Razón Social Forwarder Exterior <span class="text-red-500">*</span>
+                                </label>
+                                <input 
+                                    wire:model="foreign_forwarder_name" 
+                                    type="text" 
+                                    id="foreign_forwarder_name" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="FORWARDING COMPANY SA"
+                                    maxlength="70"
+                                >
+                                @error('foreign_forwarder_name')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Número Tributario Forwarder --}}
+                            <div>
+                                <label for="foreign_forwarder_tax_id" class="block text-sm font-medium text-gray-700">
+                                    Número Tributario Forwarder
+                                </label>
+                                <input 
+                                    wire:model="foreign_forwarder_tax_id" 
+                                    type="text" 
+                                    id="foreign_forwarder_tax_id" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="12345678901234567890"
+                                    maxlength="35"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Opcional - Máximo 35 caracteres</p>
+                                @error('foreign_forwarder_tax_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- País Forwarder --}}
+                            <div>
+                                <label for="foreign_forwarder_country" class="block text-sm font-medium text-gray-700">
+                                    País Emisor ID Tributario Forwarder
+                                </label>
+                                <select 
+                                    wire:model="foreign_forwarder_country" 
+                                    id="foreign_forwarder_country" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="">Seleccionar país</option>
+                                    @foreach($countries as $country)
+                                        <option value="{{ $country->iso_code }}">{{ $country->name }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-xs text-gray-500">Código ISO de 3 caracteres</p>
+                                @error('foreign_forwarder_country')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+                        </div>
+
+                        {{-- Campos adicionales AFIP (generales) --}}
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {{-- Números de Bultos --}}
+                            <div>
+                                <label for="package_numbers" class="block text-sm font-medium text-gray-700">
+                                    Números de los Bultos
+                                </label>
+                                <input 
+                                    wire:model="package_numbers" 
+                                    type="text" 
+                                    id="package_numbers" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="1-100, 101-200"
+                                    maxlength="100"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">Números individuales de bultos (máx 100 caracteres)</p>
+                                @error('package_numbers')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Tipo de Embalaje (Código AFIP) --}}
+                            <div>
+                                <label for="packaging_type_code" class="block text-sm font-medium text-gray-700">
+                                    Tipo de Embalaje (Código)
+                                </label>
+                                <input 
+                                    wire:model="packaging_type_code" 
+                                    type="text" 
+                                    id="packaging_type_code" 
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                    placeholder="1"
+                                    maxlength="1"
+                                >
+                                <p class="mt-1 text-xs text-gray-500">No informar si código de embalaje es 05 (contenedor)</p>
+                                @error('packaging_type_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+                        {{-- Códigos Aduaneros AFIP --}}
+                        <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                            <h5 class="text-sm font-medium text-gray-900 mb-3">Códigos Aduaneros</h5>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {{-- Código Aduana de Descarga --}}
+                                <div>
+                                    <label for="discharge_customs_code" class="block text-sm font-medium text-gray-700">
+                                        Código Aduana Descarga <span class="text-red-500">*</span>
+                                    </label>
+                                    <input 
+                                        wire:model="discharge_customs_code" 
+                                        type="text" 
+                                        id="discharge_customs_code" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="001"
+                                        maxlength="3"
+                                    >
+                                    <p class="mt-1 text-xs text-gray-500">Código AFIP de 3 caracteres</p>
+                                    @error('discharge_customs_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                {{-- Código Lugar Operativo --}}
+                                <div>
+                                    <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
+                                        Código Lugar Operativo <span class="text-red-500">*</span>
+                                    </label>
+                                    <input 
+                                        wire:model="operational_discharge_code" 
+                                        type="text" 
+                                        id="operational_discharge_code" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="USAHU"
+                                        maxlength="5"
+                                    >
+                                    <p class="mt-1 text-xs text-gray-500">Código de lugar operativo de descarga</p>
+                                    @error('operational_discharge_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Destinatario de Mercadería (Opcional) --}}
+                        <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                            <h5 class="text-sm font-medium text-gray-900 mb-3">Destinatario de Mercadería (Opcional)</h5>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {{-- Tipo de Documento --}}
+                                <div>
+                                    <label for="consignee_document_type" class="block text-sm font-medium text-gray-700">
+                                        Tipo de Documento
+                                    </label>
+                                    <select 
+                                        wire:model="consignee_document_type" 
+                                        id="consignee_document_type" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="">Seleccionar</option>
+                                        <option value="CUIL">CUIL</option>
+                                        <option value="CDI">CDI</option>
+                                        <option value="DNI">DNI</option>
+                                        <option value="PASS">Pasaporte</option>
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">Máximo 4 caracteres</p>
+                                    @error('consignee_document_type')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                {{-- Identificador Tributario --}}
+                                <div>
+                                    <label for="consignee_tax_id" class="block text-sm font-medium text-gray-700">
+                                        Identificador Tributario
+                                    </label>
+                                    <input 
+                                        wire:model="consignee_tax_id" 
+                                        type="text" 
+                                        id="consignee_tax_id" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                        placeholder="20123456789"
+                                        maxlength="11"
+                                    >
+                                    <p class="mt-1 text-xs text-gray-500">CUIL/CDI del destinatario (11 caracteres)</p>
+                                    @error('consignee_tax_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Comentarios Adicionales --}}
+                        <div class="mt-4">
+                            <label for="comments" class="block text-sm font-medium text-gray-700">
+                                Comentarios Adicionales
+                            </label>
+                            <textarea 
+                                wire:model="comments" 
+                                id="comments" 
+                                rows="2" 
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
+                                placeholder="Comentarios adicionales sobre la mercadería..."
+                                maxlength="60"
+                            ></textarea>
+                            <p class="mt-1 text-xs text-gray-500">Máximo 60 caracteres</p>
+                            @error('comments')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        {{-- Indicadores AFIP en una fila --}}
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {{-- Operador Logístico Seguro --}}
+                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Operador Logístico Seguro <span class="text-red-500">*</span>
+                                </label>
+                                <div class="space-y-2">
+                                    <label class="inline-flex items-center">
+                                        <input 
+                                            wire:model="is_secure_logistics_operator" 
+                                            type="radio" 
+                                            value="S" 
+                                            class="form-radio text-blue-600"
+                                        >
+                                        <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                    </label>
+                                    <label class="inline-flex items-center ml-4">
+                                        <input 
+                                            wire:model="is_secure_logistics_operator" 
+                                            type="radio" 
+                                            value="N" 
+                                            class="form-radio text-blue-600"
+                                        >
+                                        <span class="ml-2 text-sm text-gray-700">No</span>
+                                    </label>
+                                </div>
+                                @error('is_secure_logistics_operator')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Tránsito Monitoreado --}}
+                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Tránsito Monitoreado <span class="text-red-500">*</span>
+                                </label>
+                                <div class="space-y-2">
+                                    <label class="inline-flex items-center">
+                                        <input 
+                                            wire:model="is_monitored_transit" 
+                                            type="radio" 
+                                            value="S" 
+                                            class="form-radio text-blue-600"
+                                        >
+                                        <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                    </label>
+                                    <label class="inline-flex items-center ml-4">
+                                        <input 
+                                            wire:model="is_monitored_transit" 
+                                            type="radio" 
+                                            value="N" 
+                                            class="form-radio text-blue-600"
+                                        >
+                                        <span class="ml-2 text-sm text-gray-700">No</span>
+                                    </label>
+                                </div>
+                                @error('is_monitored_transit')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- RENAR --}}
+                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Sujeto a RENAR <span class="text-red-500">*</span>
+                                </label>
+                                <div class="space-y-2">
+                                    <label class="inline-flex items-center">
+                                        <input 
+                                            wire:model="is_renar" 
+                                            type="radio" 
+                                            value="S" 
+                                            class="form-radio text-blue-600"
+                                        >
+                                        <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                    </label>
+                                    <label class="inline-flex items-center ml-4">
+                                        <input 
+                                            wire:model="is_renar" 
+                                            type="radio" 
+                                            value="N" 
+                                            class="form-radio text-blue-600"
+                                        >
+                                        <span class="ml-2 text-sm text-gray-700">No</span>
+                                    </label>
+                                </div>
+                                @error('is_renar')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+
+
+                        {{-- Información explicativa --}}
+                        <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                            <p class="text-xs text-blue-800">
+                                <strong>Campos obligatorios AFIP:</strong> Estos datos son requeridos para declaraciones aduaneras electrónicas.
+                            </p>
                         </div>
                     </div>
 

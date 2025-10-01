@@ -22,6 +22,12 @@ class BillOfLadingCreateForm extends Component
     public $bill_number = '';
     public $bill_date = '';
     public $loading_date = '';
+    public $origin_location;
+    public $origin_country_code;
+    public $origin_loading_date;
+    public $destination_country_code;
+    public $discharge_customs_code;
+    public $operational_discharge_code;
     public $discharge_date = '';
     public $freight_terms = 'prepaid';
     public $payment_terms = 'cash';
@@ -250,6 +256,12 @@ class BillOfLadingCreateForm extends Component
         'bill_date' => 'required|date|before_or_equal:today',
         'loading_date' => 'required|date|after_or_equal:bill_date',
         'discharge_date' => 'nullable|date|after_or_equal:loading_date',
+        'origin_location' => 'nullable|string|max:50',
+        'origin_country_code' => 'nullable|string|size:3',
+        'origin_loading_date' => 'nullable|date',
+        'destination_country_code' => 'nullable|string|size:3',
+        'discharge_customs_code' => 'nullable|string|max:3',
+        'operational_discharge_code' => 'nullable|string|max:5',
         'freight_terms' => 'required|in:prepaid,collect',
         'payment_terms' => 'required|in:cash,credit,advance',
         'currency_code' => 'required|in:USD,ARS,EUR,BRL',
@@ -280,8 +292,8 @@ class BillOfLadingCreateForm extends Component
     public function mount($shipmentId = null, $preselectedLoadingPortId = null, $preselectedDischargePortId = null)
     {
         \Log::info('=== MOUNT DEBUG ===');
-    \Log::info('shipmentId parameter: ' . ($shipmentId ?: 'NULL'));
-    \Log::info('URL parameters: ', request()->all());
+        \Log::info('shipmentId parameter: ' . ($shipmentId ?: 'NULL'));
+        \Log::info('URL parameters: ', request()->all());
         // Cargar datos del formulario primero
         $this->loadFormData();
         
@@ -372,6 +384,12 @@ class BillOfLadingCreateForm extends Component
     {
         $this->bill_date = now()->format('Y-m-d');
         $this->loading_date = now()->format('Y-m-d');
+        $this->origin_location = null;
+        $this->origin_country_code = null;
+        $this->origin_loading_date = null;
+        $this->destination_country_code = null;
+        $this->discharge_customs_code = null;
+        $this->operational_discharge_code = null;
         $this->generateBillNumber();
     }
 
@@ -495,6 +513,20 @@ class BillOfLadingCreateForm extends Component
                 'bill_number' => $this->bill_number,
                 'bill_date' => $this->bill_date,
                 'loading_date' => $this->loading_date,
+                'origin_location' => $this->origin_location ?: null,
+                'origin_country_code' => $this->origin_country_code ?: null,
+                'origin_loading_date' => $this->origin_loading_date ?: null,
+                'discharge_date' => $this->discharge_date ?: null,
+                // Campos AFIP origen/destino
+                'origin_location' => $this->origin_location ?: null,
+                'origin_country_code' => $this->origin_country_code ?: null,
+                'origin_loading_date' => $this->origin_loading_date ?: null,
+                'destination_country_code' => $this->destination_country_code ?: null,
+                'discharge_customs_code' => $this->discharge_customs_code ?: null,
+                'operational_discharge_code' => $this->operational_discharge_code ?: null,
+                'destination_country_code' => $this->destination_country_code ?: null,
+                'discharge_customs_code' => $this->discharge_customs_code ?: null,
+                'operational_discharge_code' => $this->operational_discharge_code ?: null,
                 'discharge_date' => $this->discharge_date ?: null,
                 'freight_terms' => $this->freight_terms,
                 'payment_terms' => $this->payment_terms,
