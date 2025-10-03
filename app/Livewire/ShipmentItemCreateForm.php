@@ -512,6 +512,7 @@ class ShipmentItemCreateForm extends Component
     // MÉTODOS ORIGINALES para BL (sin modificar)
     public function mount()
     {
+         $this->resetAfipFields();
         if ($this->defaultBLData) {
             $this->bl_bill_number = $this->defaultBLData['bill_number'] ?? '';
             $this->bl_loading_port_id = $this->defaultBLData['loading_port_id'] ?? null;
@@ -557,6 +558,54 @@ class ShipmentItemCreateForm extends Component
             'shipment_id' => $this->shipment->id,
             'bill_of_lading_id' => $this->billOfLading?->id
         ]);
+    }
+
+    private function resetAfipFields()
+    {
+        // Reset campos AFIP
+        $this->tariff_position = '';
+        $this->is_secure_logistics_operator = 'N';
+        $this->is_monitored_transit = 'N';
+        $this->is_renar = 'N';
+        $this->foreign_forwarder_name = '';
+        $this->foreign_forwarder_tax_id = '';
+        $this->foreign_forwarder_country = null; // ← CAMBIO CRÍTICO: null en lugar de ''
+        $this->container_condition = '';
+        $this->package_numbers = '';
+        $this->packaging_type_code = '';
+        $this->discharge_customs_code = '';
+        $this->operational_discharge_code = '';
+        $this->comments = '';
+        $this->consignee_document_type = '';
+        $this->consignee_tax_id = '';
+        
+        // Reset otros campos del item
+        $this->item_reference = '';
+        $this->item_description = '';
+        $this->cargo_type_id = null;
+        $this->packaging_type_id = null;
+        $this->package_quantity = 1;
+        $this->gross_weight_kg = '';
+        $this->net_weight_kg = '';
+        $this->volume_m3 = '';
+        $this->declared_value = '';
+        $this->country_of_origin = '';
+        $this->hs_code = '';
+        $this->commodity_code = '';
+        $this->brand_model = '';
+        $this->cargo_marks = '';
+        $this->package_description = '';
+        $this->lot_number = '';
+        $this->is_dangerous_goods = false;
+        $this->is_perishable = false;
+        $this->requires_refrigeration = false;
+        $this->special_instructions = '';
+        $this->expiry_date = '';
+        $this->inspection_type = '';
+        
+        // Reset contenedores
+        $this->containers = [];
+        $this->showContainerFields = false;
     }
 
     // MODIFICADO: Propiedad computada para detectar si es carga contenedorizada

@@ -54,45 +54,58 @@ class SimpleManifestController extends Controller
      * Tipos de webservices disponibles (se expande por fases)
      */
     private const WEBSERVICE_TYPES = [
+        // 🇦🇷 ARGENTINA - ORDEN OBLIGATORIO DE ENVÍO
+        'anticipada' => [
+            'name' => 'Información Anticipada',
+            'country' => 'AR', 
+            'description' => 'PASO 1 OBLIGATORIO - Envío anticipado de información de viaje a AFIP',
+            'icon' => 'clock',
+            'status' => 'active',
+            'priority' => 1, // ← NUEVO
+            'requires' => null, // ← NUEVO: no requiere nada previo
+            'service_class' => ArgentinaAnticipatedService::class,
+        ],
         'micdta' => [
-            'name' => 'MIC/DTA Argentina',
+            'name' => 'MIC/DTA',
             'country' => 'AR',
             'description' => 'Manifiesto Internacional de Carga / Documento de Transporte Aduanero',
             'icon' => 'truck',
-            'status' => 'active', // FASE 1
+            'status' => 'active',
+            'priority' => 2, // ← NUEVO
+            'requires' => 'anticipada', // ← NUEVO: requiere anticipada enviada
             'service_class' => ArgentinaMicDtaService::class,
         ],
-        'anticipada' => [
-            'name' => 'Información Anticipada Argentina',
-            'country' => 'AR', 
-            'description' => 'Envío anticipado de información de viaje a AFIP',
-            'icon' => 'clock',
-            'status' => 'active', // FASE 2
-            'service_class' => ArgentinaAnticipatedService::class, // TODO: ArgentinaAnticipatedService::class,
-        ],
-        'manifiesto' => [
-            'name' => 'Manifiestos Paraguay',
-            'country' => 'PY',
-            'description' => 'Manifiestos de carga para DNA Paraguay',
-            'icon' => 'ship',
-            'status' => 'coming_soon', // FASE 3
-            'service_class' => null, // TODO: ParaguayManifestService::class,
-        ],
         'desconsolidado' => [
-            'name' => 'Desconsolidados Argentina',
+            'name' => 'Desconsolidados',
             'country' => 'AR',
             'description' => 'Registro de desconsolidación de contenedores',
             'icon' => 'boxes',
-            'status' => 'coming_soon', // FASE 4
-            'service_class' => null, // TODO: ArgentinaDeconsolidationService::class,
+            'status' => 'coming_soon',
+            'priority' => 3, // ← NUEVO
+            'requires' => 'anticipada', // ← NUEVO
+            'service_class' => null,
         ],
         'transbordo' => [
-            'name' => 'Transbordos Argentina/Paraguay',
+            'name' => 'Transbordos',
             'country' => 'AR',
             'description' => 'Registro de transbordos y cambios de embarcación',
             'icon' => 'exchange-alt',
-            'status' => 'coming_soon', // FASE 5
-            'service_class' => null, // TODO: ArgentinaTransshipmentService::class,
+            'status' => 'coming_soon',
+            'priority' => 4, // ← NUEVO
+            'requires' => 'anticipada', // ← NUEVO
+            'service_class' => null,
+        ],
+        
+        // 🇵🇾 PARAGUAY - INDEPENDIENTE
+        'manifiesto' => [
+            'name' => 'Manifiestos',
+            'country' => 'PY',
+            'description' => 'Manifiestos de carga para DNA Paraguay',
+            'icon' => 'ship',
+            'status' => 'coming_soon',
+            'priority' => 1, // ← NUEVO
+            'requires' => null, // ← NUEVO: independiente
+            'service_class' => null,
         ],
     ];
 

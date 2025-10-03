@@ -192,27 +192,48 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      * ✅ EXISTENTE - Wrapper para sendTitEnvios() existente
      */
     private function processRegistrarTitEnvios(Voyage $voyage, array $data): array
-    {
-        $soapClient = $this->createSoapClient();
+{
+    $soapClient = $this->createSoapClient();
+    
+    $results = [];
+    $allTracks = []; // ← LÍNEA NUEVA
+    
+    foreach ($voyage->shipments as $shipment) {
+        $result = $this->sendTitEnvios($soapClient, $shipment);
+        $results[] = $result;
         
-        // Procesar cada shipment del viaje
-        $results = [];
-        foreach ($voyage->shipments as $shipment) {
-            $result = $this->sendTitEnvios($soapClient, $shipment);
-            $results[] = $result;
-            
-            if (!$result['success']) {
-                return $result; // Fallar rápido si hay error
-            }
+        if (!$result['success']) {
+            return $result;
         }
         
-        return [
-            'success' => true,
-            'method' => 'RegistrarTitEnvios',
-            'shipments_processed' => count($results),
-            'results' => $results,
-        ];
+        // ← LÍNEAS NUEVAS
+        if (!empty($result['tracks'])) {
+            $allTracks[$shipment->id] = $result['tracks'];
+        }
+        
+        $this->logOperation('info', 'Resultado sendTitEnvios procesado', [
+            'shipment_id' => $shipment->id,
+            'tracks_count' => !empty($result['tracks']) ? count($result['tracks']) : 0,
+            'tracks' => $result['tracks'] ?? [],
+        ]);
     }
+    
+    $this->logOperation('info', 'Todos los tracks acumulados', [
+        'allTracks' => $allTracks,
+        'count' => count($allTracks),
+    ]);
+    
+    if (!empty($allTracks)) {
+        $this->saveTracks($voyage, $allTracks);
+    }
+    
+    return [
+        'success' => true,
+        'method' => 'RegistrarTitEnvios',
+        'shipments_processed' => count($results),
+        'results' => $results,
+    ];
+}
 
     /**
      * ✅ EXISTENTE - Wrapper para sendEnvios() existente  
@@ -620,6 +641,10 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // Usar XML corregido
             $xml = $this->xmlSerializer->createRegistrarTitEnviosXml($shipment, $transactionId);
             
+            $this->logOperation('info', 'XML RegistrarTitEnvios completo', [
+                'xml' => $xml,
+            ]);
+
             $this->logOperation('info', 'Enviando RegistrarTitEnvios', [
                 'shipment_id' => $shipment->id,
                 'transaction_id' => $transactionId,
@@ -652,6 +677,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'response_length' => strlen($response),
             ]);
 
+            $tracks = $this->extractTracksFromResponse($response);
+            
+
             return [
                 'success' => true,
                 'response' => $response,
@@ -679,6 +707,21 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     {
         try {
             $transactionId = 'ENV_' . time() . '_' . $shipment->id;
+
+            // NUEVO: Crear transacción en BD ANTES de enviar
+            $transaction = \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'shipment_id' => $shipment->id,
+                'voyage_id' => $shipment->voyage_id,
+                'transaction_id' => $transactionId,
+                'webservice_type' => 'micdta',
+                'country' => 'AR',
+                'soap_action' => $this->config['soap_action_envios'],
+                'status' => 'pending',
+                'environment' => $this->config['environment'],
+                'webservice_url' => $this->getWsdlUrl(),
+            ]);
             
             // Usar XML corregido
             $xml = $this->xmlSerializer->createRegistrarEnviosXml($shipment, $transactionId);
@@ -715,10 +758,29 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'response_length' => strlen($response),
             ]);
 
+            // NUEVO: Guardar response_xml en la BD
+            $transaction->update([
+                'response_xml' => $response,
+                'request_xml' => $xml,
+                'response_at' => now(),
+                'status' => 'sent',
+            ]);
+
+            // NUEVO: Extraer y guardar TRACKs
+            $tracks = $this->extractAndSaveTracksFromEnvios($response, $transaction, $shipment);
+
+            $this->logOperation('info', 'TRACKs extraídos de RegistrarEnvios', [
+                'shipment_id' => $shipment->id,
+                'tracks_count' => count($tracks),
+                'tracks' => $tracks,
+            ]);
+
             return [
                 'success' => true,
                 'response' => $response,
                 'transaction_id' => $transactionId,
+                'transaction_record_id' => $transaction->id,
+                'tracks' => $tracks,
             ];
 
         } catch (Exception $e) {
@@ -727,10 +789,20 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'error' => $e->getMessage(),
             ]);
 
+            // NUEVO: Actualizar transacción con error
+            if (isset($transaction)) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'completed_at' => now(),
+                ]);
+            }
+
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
                 'error_code' => 'ENVIOS_ERROR',
+                'transaction_record_id' => $transaction->id ?? null,
             ];
         }
     }
@@ -3230,156 +3302,66 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
      * Reemplaza el método extractTracksFromResponse() en ArgentinaMicDtaService.php
      */
     private function extractTracksFromResponse(string $response): array
-    {
-        if (!$response) {
-            $this->logOperation('warning', 'Respuesta AFIP vacía para extracción TRACKs');
-            return [];
-        }
-
-        // Log detallado de la respuesta para debug
-        $this->logOperation('debug', 'Respuesta AFIP completa para análisis TRACKs', [
-            'response_content' => $response,
-            'response_length' => strlen($response),
-            'contains_soap_fault' => strpos($response, 'soap:Fault') !== false,
-            'contains_track_keywords' => [
-                'Track' => strpos($response, 'Track') !== false,
-                'track' => strpos($response, 'track') !== false,
-                'TRACK' => strpos($response, 'TRACK') !== false,
-                'TracksEnv' => strpos($response, 'TracksEnv') !== false,
-                'NumeroTrack' => strpos($response, 'NumeroTrack') !== false,
-            ]
-        ]);
-
-        // Verificar errores SOAP primero
-        if (strpos($response, 'soap:Fault') !== false) {
-            if (preg_match('/<faultstring>([^<]+)<\/faultstring>/', $response, $matches)) {
-                $errorMsg = $matches[1];
-                $this->logOperation('error', 'SOAP Fault en respuesta AFIP', [
-                    'fault_string' => $errorMsg,
-                    'response_excerpt' => substr($response, 0, 500)
-                ]);
-                throw new Exception("Error SOAP de AFIP: " . $errorMsg);
-            }
-        }
-
-        $tracks = [];
-
-        // PATRONES EXPANDIDOS para diferentes formatos AFIP
-        $patterns = [
-            // Patrones estándar
-            '/<TracksEnv>([^<]+)<\/TracksEnv>/i',
-            '/<Track>([^<]+)<\/Track>/i', 
-            '/<trackId>([^<]+)<\/trackId>/i',
-            '/<NumeroTrack>([^<]+)<\/NumeroTrack>/i',
-            '/<IdTrack>([^<]+)<\/IdTrack>/i',
-            
-            // Patrones específicos AFIP wgesregsintia2
-            '/<trackTransporte>([^<]+)<\/trackTransporte>/i',
-            '/<idTrackTransporte>([^<]+)<\/idTrackTransporte>/i',
-            '/<numeroSeguimiento>([^<]+)<\/numeroSeguimiento>/i',
-            '/<codigoSeguimiento>([^<]+)<\/codigoSeguimiento>/i',
-            
-            // Patrones genéricos para códigos numéricos
-            '/<resultado>([0-9A-Z\-]{8,20})<\/resultado>/i',
-            '/<respuesta>([0-9A-Z\-]{8,20})<\/respuesta>/i',
-            '/<codigo>([0-9A-Z\-]{8,20})<\/codigo>/i',
-            
-            // Patrones con atributos
-            '/track[^>]*>([0-9A-Z\-]{8,20})</i',
-            '/id[^>]*>([0-9A-Z\-]{8,20})</i',
-        ];
-
-        foreach ($patterns as $pattern) {
-            if (preg_match_all($pattern, $response, $matches)) {
-                $foundTracks = $matches[1];
-                
-                $this->logOperation('info', 'TRACKs encontrados con patrón', [
-                    'pattern' => $pattern,
-                    'tracks_found' => count($foundTracks),
-                    'tracks' => $foundTracks
-                ]);
-                
-                $tracks = array_merge($tracks, $foundTracks);
-            }
-        }
-
-        // Si no encuentra TRACKs con patrones, buscar números que parezcan TRACKs
-        if (empty($tracks)) {
-            $this->logOperation('warning', 'No se encontraron TRACKs con patrones, intentando extracción alternativa');
-            
-            // Buscar códigos alfanuméricos que podrían ser TRACKs
-            if (preg_match_all('/([A-Z0-9\-]{10,20})/', $response, $matches)) {
-                $potentialTracks = array_filter($matches[1], function($code) {
-                    // Filtrar códigos que no son fechas ni otros valores comunes
-                    return !preg_match('/^\d{4}-\d{2}-\d{2}/', $code) && 
-                           !in_array($code, ['UTF-8', 'SOAP-ENV', 'XMLNS']);
-                });
-                
-                if (!empty($potentialTracks)) {
-                    $this->logOperation('info', 'TRACKs potenciales encontrados por extracción alternativa', [
-                        'potential_tracks' => array_values($potentialTracks)
-                    ]);
-                    $tracks = array_values($potentialTracks);
-                }
-            }
-        }
-
-        // Si aún no hay TRACKs, analizar estructura XML completa
-        if (empty($tracks)) {
-            $this->logOperation('warning', 'No se encontraron TRACKs, analizando estructura XML completa');
-            
-            try {
-                $dom = new \DOMDocument();
-                if (@$dom->loadXML($response)) {
-                    $xpath = new \DOMXPath($dom);
-                    
-                    // Buscar todos los elementos que contengan valores alfanuméricos
-                    $nodes = $xpath->query('//*[string-length(normalize-space(.)) > 5 and string-length(normalize-space(.)) < 25]');
-                    
-                    foreach ($nodes as $node) {
-                        $value = trim($node->textContent);
-                        // Si parece un código de seguimiento
-                        if (preg_match('/^[A-Z0-9\-]{8,20}$/', $value) && 
-                            !preg_match('/^\d{4}-\d{2}-\d{2}/', $value)) {
-                            $tracks[] = $value;
-                            
-                            $this->logOperation('info', 'TRACK encontrado por análisis XML', [
-                                'element_name' => $node->nodeName,
-                                'track_value' => $value,
-                                'parent_element' => $node->parentNode ? $node->parentNode->nodeName : null
-                            ]);
-                        }
-                    }
-                }
-            } catch (Exception $e) {
-                $this->logOperation('error', 'Error analizando XML para TRACKs', [
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        // Limpiar y validar TRACKs encontrados
-        $tracks = array_unique(array_filter($tracks, function($track) {
-            $track = trim($track);
-            return !empty($track) && 
-                   strlen($track) >= 6 && 
-                   strlen($track) <= 25 &&
-                   !preg_match('/^\d{4}-\d{2}-\d{2}/', $track) && // No fechas
-                   !in_array(strtoupper($track), ['TRUE', 'FALSE', 'SUCCESS', 'ERROR']); // No booleanos
-        }));
-
-        $finalTracks = array_values($tracks);
-
-        $this->logOperation('info', 'Extracción de TRACKs completada', [
-            'tracks_found' => count($finalTracks),
-            'tracks' => $finalTracks,
-            'response_analyzed' => strlen($response) . ' caracteres',
-            'extraction_method' => empty($finalTracks) ? 'ninguno_exitoso' : 'patron_matching'
-        ]);
-
-        return $finalTracks;
+{
+    if (!$response) {
+        $this->logOperation('warning', 'Respuesta AFIP vacía');
+        return [];
     }
 
+    try {
+        // Parsear XML con DOMDocument
+        $dom = new \DOMDocument();
+        @$dom->loadXML($response);
+        
+        $xpath = new \DOMXPath($dom);
+        $xpath->registerNamespace('ns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+        
+        $tracks = [];
+        
+        // Extraer tracks de títulos (envíos)
+        $titTracksNodes = $xpath->query('//ns:RegistrarTitEnviosResult/ns:titTracksEnv/ns:TitTrackEnv');
+        foreach ($titTracksNodes as $node) {
+            $idTitTrans = $xpath->query('ns:idTitTrans', $node)->item(0)?->nodeValue;
+            $track = $xpath->query('ns:trackEnv', $node)->item(0)?->nodeValue;
+            
+            if ($track) {
+                $tracks[] = $track;
+                $this->logOperation('info', 'TRACK título extraído', [
+                    'id_titulo' => $idTitTrans,
+                    'track' => $track
+                ]);
+            }
+        }
+        
+        // Extraer tracks de contenedores vacíos
+        $contVacioNodes = $xpath->query('//ns:RegistrarTitEnviosResult/ns:titTracksContVacio/ns:TitTrackContVacio');
+        foreach ($contVacioNodes as $node) {
+            $idTitTrans = $xpath->query('ns:idTitTrans', $node)->item(0)?->nodeValue;
+            $track = $xpath->query('ns:trackContVacio', $node)->item(0)?->nodeValue;
+            
+            if ($track) {
+                $tracks[] = $track;
+                $this->logOperation('info', 'TRACK contenedor vacío extraído', [
+                    'id_titulo' => $idTitTrans,
+                    'track' => $track
+                ]);
+            }
+        }
+        
+        $this->logOperation('info', 'Extracción TRACKs con XPath completada', [
+            'tracks_encontrados' => count($tracks),
+            'tracks' => $tracks
+        ]);
+        
+        return $tracks;
+        
+    } catch (\Exception $e) {
+        $this->logOperation('error', 'Error XPath extrayendo TRACKs', [
+            'error' => $e->getMessage()
+        ]);
+        return [];
+    }
+}
     /**
      * MÉTODO ADICIONAL: Generar TRACKs simulados para testing (solo desarrollo)
      */
@@ -4960,5 +4942,138 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             
             throw $e;
         }
+    }
+
+    /**
+     * Extraer y guardar TRACKs desde respuesta de RegistrarEnvios
+     */
+    private function extractAndSaveTracksFromEnvios(string $response, $transaction, $shipment): array
+    {
+        $tracks = [];
+        
+        try {
+            // Loguear respuesta completa para debug
+            $this->logOperation('debug', 'Respuesta XML completa de RegistrarEnvios', [
+                'response' => $response,
+                'response_length' => strlen($response),
+            ]);
+            
+            // Parsear XML
+            $xml = simplexml_load_string($response);
+            if (!$xml) {
+                $this->logOperation('error', 'No se pudo parsear XML de respuesta');
+                return [];
+            }
+            
+            // Registrar namespaces del XML
+            $namespaces = $xml->getNamespaces(true);
+            $this->logOperation('debug', 'Namespaces encontrados en XML', [
+                'namespaces' => $namespaces,
+            ]);
+            
+            // Buscar TRACKs en diferentes estructuras posibles según AFIP
+            // Estructura 1: <tracksEnv><TrackEnv>
+            if (isset($xml->Body)) {
+                $body = $xml->children('soap', true)->Body;
+                $response_node = $body->children();
+                
+                // Buscar tracksEnv
+                foreach ($response_node->children() as $child) {
+                    if ($child->getName() == 'tracksEnv') {
+                        foreach ($child->children() as $trackEnv) {
+                            $idTrack = (string)$trackEnv->idTrack;
+                            $idEnvio = (string)$trackEnv->idEnvio;
+                            
+                            if (!empty($idTrack)) {
+                                $tracks[] = $idTrack;
+                                
+                                // Crear registro en webservice_tracks
+                                \App\Models\WebserviceTrack::create([
+                                    'webservice_transaction_id' => $transaction->id,
+                                    'shipment_id' => $shipment->id,
+                                    'container_id' => null,
+                                    'bill_of_lading_id' => null,
+                                    'track_number' => $idTrack,
+                                    'track_type' => 'envio',
+                                    'webservice_method' => 'RegistrarEnvios',
+                                    'reference_type' => 'shipment',
+                                    'reference_number' => $shipment->shipment_number,
+                                    'description' => "TRACK generado para shipment {$shipment->shipment_number}",
+                                    'afip_metadata' => [
+                                        'id_envio' => $idEnvio,
+                                        'response_date' => now()->toIso8601String(),
+                                    ],
+                                    'generated_at' => now(),
+                                    'status' => 'generated',
+                                    'created_by_user_id' => $this->user->id,
+                                    'created_from_ip' => request()->ip(),
+                                    'process_chain' => ['RegistrarEnvios'],
+                                ]);
+                                
+                                $this->logOperation('info', 'TRACK creado en BD', [
+                                    'track_number' => $idTrack,
+                                    'id_envio' => $idEnvio,
+                                    'shipment_id' => $shipment->id,
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Si no encontró TRACKs, intentar búsqueda con regex como fallback
+            if (empty($tracks)) {
+                $this->logOperation('warning', 'No se encontraron TRACKs con parser XML, intentando regex');
+                
+                // Patrón para encontrar <idTrack>valor</idTrack>
+                if (preg_match_all('/<idTrack>([^<]+)<\/idTrack>/', $response, $matches)) {
+                    foreach ($matches[1] as $index => $trackNumber) {
+                        $tracks[] = $trackNumber;
+                        
+                        // Crear registro en webservice_tracks
+                        \App\Models\WebserviceTrack::create([
+                            'webservice_transaction_id' => $transaction->id,
+                            'shipment_id' => $shipment->id,
+                            'container_id' => null,
+                            'bill_of_lading_id' => null,
+                            'track_number' => $trackNumber,
+                            'track_type' => 'envio',
+                            'webservice_method' => 'RegistrarEnvios',
+                            'reference_type' => 'shipment',
+                            'reference_number' => $shipment->shipment_number,
+                            'description' => "TRACK generado para shipment {$shipment->shipment_number}",
+                            'afip_metadata' => [
+                                'extraction_method' => 'regex',
+                                'response_date' => now()->toIso8601String(),
+                            ],
+                            'generated_at' => now(),
+                            'status' => 'generated',
+                            'created_by_user_id' => $this->user->id,
+                            'created_from_ip' => request()->ip(),
+                            'process_chain' => ['RegistrarEnvios'],
+                        ]);
+                        
+                        $this->logOperation('info', 'TRACK creado en BD (regex)', [
+                            'track_number' => $trackNumber,
+                            'shipment_id' => $shipment->id,
+                        ]);
+                    }
+                }
+            }
+            
+            if (empty($tracks)) {
+                $this->logOperation('warning', 'No se pudieron extraer TRACKs de la respuesta AFIP', [
+                    'response_preview' => substr($response, 0, 500),
+                ]);
+            }
+            
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error extrayendo TRACKs', [
+                'error' => $e->getMessage(),
+                'shipment_id' => $shipment->id,
+            ]);
+        }
+        
+        return $tracks;
     }
 }

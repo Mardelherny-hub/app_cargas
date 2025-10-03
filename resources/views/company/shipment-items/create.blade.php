@@ -31,7 +31,7 @@
                 'countries' => $countries,
                 'containerTypes' => $containerTypes,
                 'nextLineNumber' => $nextLineNumber
-            ])
+            ], key('shipment-item-form-' . $shipment->id . '-' . ($billOfLading ? $billOfLading->id : 'new') . '-' . uniqid()))
         </div>
     </div>
 </x-app-layout>

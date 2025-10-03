@@ -39,139 +39,147 @@ class SimpleXmlGenerator
      * PASO 1: RegistrarTitEnvios - SOLO registra el título del transporte
      * NO incluye envíos detallados - esos van en RegistrarEnvios
      */
-    public function createRegistrarTitEnviosXml(Shipment $shipment, string $transactionId): string
-    {
-        try {
-            $voyage = $shipment->voyage()->with(['originPort', 'destinationPort', 'originPort.country', 'destinationPort.country'])->first();
-            $wsaa = $this->getWSAATokens();
+   public function createRegistrarTitEnviosXml(Shipment $shipment, string $transactionId): string
+{
+    try {
+        $voyage = $shipment->voyage()->with(['originPort', 'destinationPort', 'originPort.country', 'destinationPort.country'])->first();
+        $wsaa = $this->getWSAATokens();
 
-            // Códigos AFIP obligatorios
-            $portCustomsCodes = [
-                'ARBUE' => '019', // Buenos Aires
-                'PYTVT' => '051', // Villeta
-                'ARSFE' => '014', // Santa Fe
-                'ARPAR' => '013', // Paraná
-            ];
+        $originPortCode = $voyage->originPort?->code ?? '';
+        $destPortCode = $voyage->destinationPort?->code ?? '';
+        
+        $codAduOrigen = $voyage->originPort?->customs_code ?? '019';
+        $codAduDest = $voyage->destinationPort?->customs_code ?? '051';
+        $codPaisOrigen = $voyage->originPort?->country?->numeric_code ?? '032'; // Argentina
+        $codPaisDest = $voyage->destinationPort?->country?->numeric_code ?? '600'; // Paraguay
 
-            $originPortCode = $voyage->originPort?->code ?? '';
-            $destPortCode = $voyage->destinationPort?->code ?? '';
-            
-            $codAduOrigen = $voyage->originPort?->customs_code ?? ($portCustomsCodes[$originPortCode] ?? '019');
-            $codAduDest = $voyage->destinationPort?->customs_code ?? ($portCustomsCodes[$destPortCode] ?? '051');
-            $codPaisOrigen = $voyage->originPort?->country?->numeric_code ?? '032'; // Argentina
-            $codPaisDest = $voyage->destinationPort?->country?->numeric_code ?? '600'; // Paraguay
+        // Contenedores del shipment
+        $containers = $shipment->shipmentItems()
+            ->with(['containers.containerType'])
+            ->get()
+            ->flatMap(fn($item) => $item->containers);
 
-            // Contenedores del shipment
-            $containers = $shipment->shipmentItems()
-                ->with(['containers.containerType'])
-                ->get()
-                ->flatMap(fn($item) => $item->containers);
+        // Bills of Lading
+        $billsOfLading = $shipment->billsOfLading()->get();
 
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
+        $w = new \XMLWriter();
+        $w->openMemory();
+        $w->startDocument('1.0', 'UTF-8');
 
-            // SOAP Envelope
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+        // SOAP Envelope
+        $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+        $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+        $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
 
-            // SOAP Body
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                $w->startElement('RegistrarTitEnvios');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+        // SOAP Body
+        $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->startElement('RegistrarTitEnvios');
+            $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
-                // Autenticación empresa
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
-                    $w->writeElement('Rol', 'TRSP');
-                $w->endElement();
+            // Autenticación empresa
+            $w->startElement('argWSAutenticacionEmpresa');
+                $w->writeElement('Token', $wsaa['token']);
+                $w->writeElement('Sign', $wsaa['sign']);
+                $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                $w->writeElement('TipoAgente', 'ATA');
+                $w->writeElement('Rol', 'TRSP');
+            $w->endElement();
 
-                // Parámetros RegistrarTitEnvios
-                $w->startElement('argRegistrarTitEnviosParam');
-                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+            // Parámetros RegistrarTitEnvios
+            $w->startElement('argRegistrarTitEnviosParam');
+                $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
 
-                    // Títulos de transporte (SOLO el título, sin envíos)
-                    $w->startElement('titulosTransEnvios');
-                    $w->startElement('TitTransEnvio');
-                        $w->writeElement('codViaTrans', '8'); // Hidrovía
-                        $w->writeElement('idTitTrans', (string)$shipment->shipment_number);
-                        $w->writeElement('indFinCom', 'S');
-                        $w->writeElement('indFraccTransp', 'N');
-                        $w->writeElement('indConsol', 'N');
-                        
-                        // IDs documentos
-                        $w->writeElement('idManiCargaArrPaisPart', $shipment->origin_manifest_id ?? 'SIN_MANIFIESTO');
-                        $w->writeElement('idDocTranspArrPaisPart', $shipment->origin_transport_doc ?? 'SIN_DOC');
+                // Títulos de transporte
+                $w->startElement('titulosTransEnvios');
+                $w->startElement('TitTransEnvio');
+                    $w->writeElement('codViaTrans', '8'); // Hidrovía
+                    $w->writeElement('idTitTrans', (string)$shipment->shipment_number);
+                    $w->writeElement('indFinCom', 'S');
+                    $w->writeElement('indFraccTransp', 'N');
+                    $w->writeElement('indConsol', 'N');
+                    
+                    // IDs documentos
+                    $w->writeElement('idManiCargaArrPaisPart', $shipment->origin_manifest_id ?? 'SIN_MANIFIESTO');
+                    $w->writeElement('idDocTranspArrPaisPart', $shipment->origin_transport_doc ?? 'SIN_DOC');
 
-                        // Origen obligatorio
-                        $w->startElement('origen');
-                            $w->writeElement('codPais', $codPaisOrigen);
-                            $w->writeElement('codAdu', $codAduOrigen);
-                        $w->endElement();
-
-                        // Destino obligatorio
-                        $w->startElement('destino');
-                            $w->writeElement('codPais', $codPaisDest);
-                            $w->writeElement('codAdu', $codAduDest);
-                        $w->endElement();
-
-                    $w->endElement(); // TitTransEnvio
-                    $w->endElement(); // titulosTransEnvios
-
-                    // Títulos contenedores vacíos (puede estar vacío)
-                    $w->startElement('titulosTransContVacios');
+                    // Origen obligatorio
+                    $w->startElement('origen');
+                        $w->writeElement('codPais', $codPaisOrigen);
+                        $w->writeElement('codAdu', $codAduOrigen);
                     $w->endElement();
 
-                    // Contenedores (registro básico para el título)
-                    if ($containers->isNotEmpty()) {
-                        $w->startElement('contenedores');
-                        foreach ($containers as $c) {
-                            $w->startElement('Contenedor');
-                                $w->writeElement('id', (string)$c->container_number);
-                                
-                                // Mapeo códigos AFIP
-                                $containerCode = $c->containerType?->argentina_ws_code ?? '42G1';
-                                if ($containerCode === '40GP') $containerCode = '42G1';
-                                if ($containerCode === '20GP') $containerCode = '22G1';
-                                $w->writeElement('codMedida', $containerCode);
-                                
-                                // Condición contenedor
-                                $conditionMap = ['L' => 'P', 'V' => 'V', 'full' => 'P', 'empty' => 'V', 'loaded' => 'P'];
-                                $condition = $conditionMap[$c->condition] ?? 'P';
-                                $w->writeElement('condicion', $condition);
-                                
-                                // Precintos si existen
-                                $seals = $c->customsSeals ?? collect();
-                                if ($seals->isNotEmpty()) {
-                                    $w->startElement('precintos');
-                                    foreach ($seals as $seal) {
-                                        $w->writeElement('precinto', (string)$seal->seal_number);
-                                    }
-                                    $w->endElement();
-                                }
+                    // Destino obligatorio
+                    $w->startElement('destino');
+                        $w->writeElement('codPais', $codPaisDest);
+                        $w->writeElement('codAdu', $codAduDest);
+                    $w->endElement();
+
+                    // Envíos (OBLIGATORIO para generar TRACKs)
+                    if ($billsOfLading->isNotEmpty()) {
+                        $w->startElement('envios');
+                        foreach ($billsOfLading as $index => $bol) {
+                            $w->startElement('Envio');
+                                $w->writeElement('idEnvio', (string)($index + 1));
+                                $w->writeElement('fechaEmb', $voyage->departure_date ? $voyage->departure_date->format('Y-m-d') : now()->format('Y-m-d'));
+                                $w->writeElement('codPuertoEmb', $voyage->originPort?->code ?? 'ARBUE');
+                                $w->writeElement('codPuertoDesc', $voyage->destinationPort?->code ?? 'PYASU');
                             $w->endElement();
                         }
                         $w->endElement();
                     }
 
-                $w->endElement(); // argRegistrarTitEnviosParam
-                $w->endElement(); // RegistrarTitEnvios
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
+                $w->endElement(); // TitTransEnvio
+                $w->endElement(); // titulosTransEnvios
 
-            $w->endDocument();
-            return $w->outputMemory();
+                // Títulos contenedores vacíos (puede estar vacío)
+                $w->startElement('titulosTransContVacios');
+                $w->endElement();
 
-        } catch (Exception $e) {
-            error_log('Error en createRegistrarTitEnviosXml: ' . $e->getMessage());
-            throw $e;
-        }
+                // Contenedores (registro básico para el título)
+                if ($containers->isNotEmpty()) {
+                    $w->startElement('contenedores');
+                    foreach ($containers as $c) {
+                        $w->startElement('Contenedor');
+                            $w->writeElement('id', (string)$c->container_number);
+                            
+                            // Mapeo códigos AFIP
+                            $containerCode = $c->containerType?->argentina_ws_code ?? '42G1';
+                            if ($containerCode === '40GP') $containerCode = '42G1';
+                            if ($containerCode === '20GP') $containerCode = '22G1';
+                            $w->writeElement('codMedida', $containerCode);
+                            
+                            // Condición contenedor
+                            $conditionMap = ['L' => 'P', 'V' => 'V', 'full' => 'P', 'empty' => 'V', 'loaded' => 'P'];
+                            $condition = $conditionMap[$c->condition] ?? 'P';
+                            $w->writeElement('condicion', $condition);
+                            
+                            // Precintos si existen
+                            $seals = $c->customsSeals ?? collect();
+                            if ($seals->isNotEmpty()) {
+                                $w->startElement('precintos');
+                                foreach ($seals as $seal) {
+                                    $w->writeElement('precinto', (string)$seal->seal_number);
+                                }
+                                $w->endElement();
+                            }
+                        $w->endElement();
+                    }
+                    $w->endElement();
+                }
+
+            $w->endElement(); // argRegistrarTitEnviosParam
+            $w->endElement(); // RegistrarTitEnvios
+        $w->endElement(); // Body
+        $w->endElement(); // Envelope
+
+        $w->endDocument();
+        return $w->outputMemory();
+
+    } catch (Exception $e) {
+        \Log::info('Error en createRegistrarTitEnviosXml: ' . $e->getMessage());
+        throw $e;
     }
-
+}
     /**
      * PASO 2: RegistrarEnvios - Envíos detallados para generar TRACKs
      * CORREGIDO con todos los campos obligatorios AFIP
@@ -183,6 +191,10 @@ class SimpleXmlGenerator
     public function createRegistrarEnviosXml(Shipment $shipment, string $transactionId): string
     {
         try {
+            // LOG DE VERIFICACIÓN CRÍTICO
+            \Log::info("=== EJECUTANDO SimpleXmlGenerator::createRegistrarEnviosXml ===");
+            \Log::info("Shipment ID: " . $shipment->id);
+            \Log::info("Transaction ID: " . $transactionId);
             $voyage = $shipment->voyage()->with(['originPort', 'destinationPort'])->first();
             $wsaa = $this->getWSAATokens();
             
@@ -215,29 +227,50 @@ class SimpleXmlGenerator
                     // Envíos individuales
                     $w->startElement('envios');
                     foreach ($billsOfLading as $index => $bol) {
-                        // CÁLCULO CORREGIDO DE PESOS
-                        $shipmentItemsQuery = $bol->shipmentItems();
-                        $shipmentItemsCount = $shipmentItemsQuery->count();
-                        
-                        // LOG PARA DEBUG
-                        error_log("BL {$bol->id}: ShipmentItems count = {$shipmentItemsCount}");
-                        
-                        if ($shipmentItemsCount > 0) {
-                            // Usar query directa para asegurar datos
-                            $weightSum = $shipmentItemsQuery->sum('gross_weight_kg');
-                            $packageSum = $shipmentItemsQuery->sum('package_quantity');
-                        } else {
-                            // Fallback: usar datos del BL si no hay shipmentItems
-                            $weightSum = $bol->gross_weight_kg ?? 0;
-                            $packageSum = $bol->total_packages ?? 0;
+                        // CÁLCULO CORREGIDO DE PESOS - VERSIÓN SIMPLIFICADA
+                        // Prioridad: BL -> Shipment
+                        $weightSum = 0;
+                        $packageSum = 0;
+
+                        // Opción 1: Intentar desde BL (más confiable para carga a granel)
+                        if (!empty($bol->gross_weight_kg) && $bol->gross_weight_kg > 0) {
+                            $weightSum = $bol->gross_weight_kg;
+                            $packageSum = $bol->total_packages ?? 1;
+                            
+                            \Log::info("BL {$bol->id}: Usando peso desde BL = {$weightSum} kg, bultos = {$packageSum}");
                         }
-                        
-                        // VALIDAR que los valores sean > 0 ANTES de enviar a AFIP
-                        $totalWeight = max(1.0, (float)$weightSum);
-                        $totalPackages = max(1, (int)$packageSum);
+                        // Opción 2: Fallback a shipment
+                        elseif (!empty($shipment->cargo_weight_loaded) && $shipment->cargo_weight_loaded > 0) {
+                            $weightSum = $shipment->cargo_weight_loaded;
+                            $packageSum = 1; // Carga a granel = 1 bulto
+                            
+                            \Log::info("BL {$bol->id}: Usando peso desde Shipment = {$weightSum} kg");
+                        }
+                        // Opción 3: Intentar desde shipmentItems (si existen)
+                        else {
+                            try {
+                                $shipmentItemsQuery = $bol->shipmentItems();
+                                $shipmentItemsCount = $shipmentItemsQuery->count();
+                                
+                                if ($shipmentItemsCount > 0) {
+                                    $weightSum = $shipmentItemsQuery->sum('gross_weight_kg') ?? 0;
+                                    $packageSum = $shipmentItemsQuery->sum('package_quantity') ?? 1;
+                                    
+                                    \Log::info("BL {$bol->id}: Usando peso desde Items = {$weightSum} kg");
+                                }
+                            } catch (Exception $e) {
+                                \Log::info("Error leyendo shipmentItems: " . $e->getMessage());
+                            }
+                        }
+
+                        // Aplicar mínimos AFIP (peso mínimo 1kg, bultos mínimo 1)
+                        $totalWeight = max(1, $weightSum);
+                        $totalPackages = max(1, $packageSum);
+
+                        \Log::info("BL {$bol->id}: FINAL - Peso = {$totalWeight} kg, Bultos = {$totalPackages}");
                         
                         // LOG DETALLADO PARA DEBUG
-                        error_log("BL {$bol->bill_of_lading_number}: weight_sum={$weightSum}, package_sum={$packageSum}, final_weight={$totalWeight}, final_packages={$totalPackages}");
+                        \Log::info("BL {$bol->bill_of_lading_number}: weight_sum={$weightSum}, package_sum={$packageSum}, final_weight={$totalWeight}, final_packages={$totalPackages}");
                         
                         $w->startElement('Envio');
                             $w->writeElement('idEnvio', (string)($index + 1));
@@ -287,6 +320,7 @@ class SimpleXmlGenerator
                                 $w->startElement('items');
                                 $w->startElement('Item');
                                     $w->writeElement('nroItem', (string)($index + 1));
+                                    $w->writeElement('peso', number_format($totalWeight, 4, '.', ''));
                                     $w->writeElement('descripcion', $bol->cargo_description ?? 'MERCADERIA GENERAL');
                                 $w->endElement();
                                 $w->endElement();
@@ -319,12 +353,14 @@ class SimpleXmlGenerator
             $xmlContent = $w->outputMemory();
             
             // LOG FINAL PARA VERIFICAR
-            error_log("XML RegistrarEnvios generado - BLs: " . $billsOfLading->count() . ", XML length: " . strlen($xmlContent));
-            
+            \Log::info("XML RegistrarEnvios generado - BLs: " . $billsOfLading->count() . ", XML length: " . strlen($xmlContent));
+            // LOG DEL XML COMPLETO PARA DEBUG
+            \Log::info("=== XML COMPLETO QUE SE ENVÍA ===");
+            \Log::info($xmlContent);
             return $xmlContent;
 
         } catch (Exception $e) {
-            error_log('Error en createRegistrarEnviosXml: ' . $e->getMessage());
+            \Log::info('Error en createRegistrarEnviosXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -411,7 +447,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRegistrarMicDtaXml: ' . $e->getMessage());
+            \Log::info('Error en createRegistrarMicDtaXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -475,7 +511,7 @@ class SimpleXmlGenerator
             ];
             
         } catch (Exception $e) {
-            error_log("WSAA ERROR: " . $e->getMessage());
+            \Log::info("WSAA ERROR: " . $e->getMessage());
             throw $e;
         }
     }
@@ -675,7 +711,7 @@ class SimpleXmlGenerator
             return $xml;
 
         } catch (Exception $e) {
-            error_log("SimpleXmlGenerator: Error creando XML RegistrarConvoy - " . $e->getMessage());
+            \Log::info("SimpleXmlGenerator: Error creando XML RegistrarConvoy - " . $e->getMessage());
             return null;
         }
     }
@@ -756,7 +792,7 @@ class SimpleXmlGenerator
             return $xml;
 
         } catch (Exception $e) {
-            error_log("SimpleXmlGenerator: Error creando XML AsignarATARemol - " . $e->getMessage());
+            \Log::info("SimpleXmlGenerator: Error creando XML AsignarATARemol - " . $e->getMessage());
             return null;
         }
     }
@@ -819,7 +855,7 @@ class SimpleXmlGenerator
             return $xml;
 
         } catch (Exception $e) {
-            error_log("SimpleXmlGenerator: Error creando XML RegistrarSalidaZonaPrimaria - " . $e->getMessage());
+            \Log::info("SimpleXmlGenerator: Error creando XML RegistrarSalidaZonaPrimaria - " . $e->getMessage());
             return null;
         }
     }
@@ -902,7 +938,7 @@ class SimpleXmlGenerator
             return $xml;
 
         } catch (Exception $e) {
-            error_log("SimpleXmlGenerator: Error creando XML SolicitarAnularMicDta - " . $e->getMessage());
+            \Log::info("SimpleXmlGenerator: Error creando XML SolicitarAnularMicDta - " . $e->getMessage());
             return null;
         }
     }
@@ -1067,7 +1103,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRectifConvoyMicDtaXml: ' . $e->getMessage());
+            \Log::info('Error en createRectifConvoyMicDtaXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1146,7 +1182,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createConsultarMicDtaAsigXml: ' . $e->getMessage());
+            \Log::info('Error en createConsultarMicDtaAsigXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1195,7 +1231,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createConsultarTitEnviosRegXml: ' . $e->getMessage());
+            \Log::info('Error en createConsultarTitEnviosRegXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1253,7 +1289,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRegistrarArriboZonaPrimariaXml: ' . $e->getMessage());
+            \Log::info('Error en createRegistrarArriboZonaPrimariaXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1316,7 +1352,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createAnularTituloXml: ' . $e->getMessage());
+            \Log::info('Error en createAnularTituloXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1404,7 +1440,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRegistrarTitMicDtaXml: ' . $e->getMessage());
+            \Log::info('Error en createRegistrarTitMicDtaXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1492,7 +1528,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createDesvincularTitMicDtaXml: ' . $e->getMessage());
+            \Log::info('Error en createDesvincularTitMicDtaXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1557,7 +1593,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createAnularEnviosXml: ' . $e->getMessage());
+            \Log::info('Error en createAnularEnviosXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1593,7 +1629,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createDummyXml: ' . $e->getMessage());
+            \Log::info('Error en createDummyXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1665,7 +1701,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createConsultarPrecumplidoXml: ' . $e->getMessage());
+            \Log::info('Error en createConsultarPrecumplidoXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1741,7 +1777,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createAnularArriboZonaPrimariaXml: ' . $e->getMessage());
+            \Log::info('Error en createAnularArriboZonaPrimariaXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1816,7 +1852,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRegistrarViajeXml: ' . $e->getMessage());
+            \Log::info('Error en createRegistrarViajeXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1892,7 +1928,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRectificarViajeXml: ' . $e->getMessage());
+            \Log::info('Error en createRectificarViajeXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -1961,7 +1997,7 @@ class SimpleXmlGenerator
             return $w->outputMemory();
 
         } catch (Exception $e) {
-            error_log('Error en createRegistrarTitulosCbcXml: ' . $e->getMessage());
+            \Log::info('Error en createRegistrarTitulosCbcXml: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -2074,7 +2110,7 @@ class SimpleXmlGenerator
                 }
             }
         } catch (Exception $e) {
-            error_log('Error obteniendo contenedores: ' . $e->getMessage());
+            \Log::info('Error obteniendo contenedores: ' . $e->getMessage());
         }
 
         // Si no hay contenedores reales, crear uno básico para cumplir con AFIP
