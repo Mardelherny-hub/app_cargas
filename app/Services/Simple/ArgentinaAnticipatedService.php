@@ -89,6 +89,83 @@ class ArgentinaAnticipatedService
     }
 
     /**
+     * Validar si el voyage puede ser procesado para Información Anticipada
+     * 
+     * @param Voyage $voyage
+     * @return array ['can_process' => bool, 'errors' => [], 'warnings' => []]
+     */
+    public function canProcessVoyage(Voyage $voyage): array
+    {
+        $validation = [
+            'can_process' => false,
+            'errors' => [],
+            'warnings' => [],
+        ];
+
+        // 1. Validar voyage básico
+        if (!$voyage || !$voyage->id) {
+            $validation['errors'][] = 'Viaje no válido o no encontrado';
+            return $validation;
+        }
+
+        // 2. Validar datos obligatorios del viaje
+        if (!$voyage->voyage_number) {
+            $validation['errors'][] = 'Número de viaje requerido';
+        }
+
+        if (!$voyage->lead_vessel_id) {
+            $validation['errors'][] = 'Embarcación líder requerida';
+        }
+
+        if (!$voyage->origin_port_id || !$voyage->destination_port_id) {
+            $validation['errors'][] = 'Puertos de origen y destino requeridos';
+        }
+
+        if (!$voyage->departure_date) {
+            $validation['errors'][] = 'Fecha de salida requerida';
+        }
+
+        // 3. Validar empresa
+        if ($voyage->company_id !== $this->company->id) {
+            $validation['errors'][] = 'Viaje no pertenece a la empresa';
+        }
+
+        // 4. Warnings (no bloquean envío)
+        if (!$voyage->captain_id) {
+            $validation['warnings'][] = 'Recomendado: Asignar capitán al viaje';
+        }
+
+        if (!$voyage->estimated_arrival_date) {
+            $validation['warnings'][] = 'Recomendado: Fecha estimada de llegada';
+        }
+
+        // 5. Determinar si puede procesar
+        $validation['can_process'] = empty($validation['errors']);
+
+        return $validation;
+    }
+
+    /**
+     * Registrar operación en logs
+     */
+    private function logOperation(string $level, string $message, array $context = []): void
+    {
+        $context = array_merge([
+            'service' => 'ArgentinaAnticipatedService',
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+        ], $context);
+
+        match($level) {
+            'debug' => \Log::debug($message, $context),
+            'info' => \Log::info($message, $context),
+            'warning' => \Log::warning($message, $context),
+            'error' => \Log::error($message, $context),
+            default => \Log::info($message, $context),
+        };
+    }
+
+    /**
      * MÉTODO PRINCIPAL: RegistrarViaje - Registro de viaje ATA MT
      * 
      * Registra información anticipada del viaje completo con datos de cabecera,
@@ -142,27 +219,44 @@ class ArgentinaAnticipatedService
             $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent, 'RegistrarViaje');
 
             // Procesar respuesta
+            // Extraer IdentificadorViaje de la respuesta XML
+            // Extraer IdentificadorViaje de la respuesta (AFIP devuelve HTML)
+            $voyageIdentifier = null;
+            if (isset($soapResult['response_data'])) {
+                $response = $soapResult['response_data'];
+                
+                // AFIP devuelve: <title></title>NUMERO_IDENTIFICADOR</head>
+                if (preg_match('/<\/title>(\d+)<\/head>/', $response, $matches)) {
+                    $voyageIdentifier = $matches[1];
+                    \Log::info("IdentificadorViaje extraído de HTML", ['identificador' => $voyageIdentifier]);
+                } else {
+                    \Log::warning("No se encontró IdentificadorViaje en respuesta", ['response' => substr($response, 0, 200)]);
+                }
+            }
+
             if ($soapResult['success']) {
                 $transaction->update([
                     'status' => 'success',
-                    'external_reference' => $soapResult['external_reference'] ?? null,
+                    'external_reference' => $voyageIdentifier,
                     'response_data' => $soapResult['response_data'] ?? null,
                     'completed_at' => now(),
                 ]);
-
-                // TODO: Implementar updateWebserviceStatus
-                //$this->updateWebserviceStatus($voyage, 'sent', [
-                //    'last_sent_at' => now(),
-                //    'external_reference' => $soapResult['external_reference'],
-                //]);
+                
+                // ✅ PERSISTIR ESTADO DEL WEBSERVICE
+                $this->updateWebserviceStatus($voyage, 'sent', [
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => $voyageIdentifier,
+                ]);
 
                 Log::info('WebserviceSimple [anticipada]: RegistrarViaje enviado exitosamente', [
                     'voyage_id' => $voyage->id,
                     'transaction_id' => $transaction->id,
-                    'external_reference' => $soapResult['external_reference'],
+                    'external_reference' => $voyageIdentifier,
                 ]);
-
+                
+                $soapResult['external_reference'] = $voyageIdentifier;
                 DB::commit();
+                $soapResult['transaction_id'] = $transaction->id;
                 return $soapResult;
 
             } else {
@@ -177,6 +271,7 @@ class ArgentinaAnticipatedService
                 ]);
 
                 DB::commit();
+                $soapResult['transaction_id'] = $transaction->id;
                 return $soapResult;
             }
 
@@ -413,6 +508,13 @@ class ArgentinaAnticipatedService
             'response_xml' => $response,
         ];
 
+        \Log::info("SOAP Response RAW", [
+            'response_length' => strlen($response),
+            'first_500_chars' => substr($response, 0, 500),
+            'contains_soap' => strpos($response, 'soap:') !== false,
+            'contains_html' => strpos($response, '<html') !== false,
+        ]);
+
         // Actualizar transacción con XMLs
         $transaction->update([
             'request_xml' => $soapResult['request_xml'] ?? $xmlContent,
@@ -573,4 +675,69 @@ public function debugSoapResponse(Voyage $voyage): array
         ];
     }
 }
+
+/**
+     * Actualizar estado del webservice en VoyageWebserviceStatus
+     */
+    private function updateWebserviceStatus(Voyage $voyage, string $status, array $data = []): void
+    {
+        // Obtener o crear el estado del webservice
+        $webserviceStatus = \App\Models\VoyageWebserviceStatus::firstOrCreate(
+            [
+                'voyage_id' => $voyage->id,
+                'country' => 'AR',
+                'webservice_type' => 'anticipada',
+            ],
+            [
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'status' => 'pending',
+                'can_send' => true,
+                'is_required' => true,
+                'retry_count' => 0,
+                'max_retries' => 3,
+            ]
+        );
+
+        // Actualizar según el estado
+        switch ($status) {
+            case 'sent':
+                $webserviceStatus->markAsSent(
+                    $data['transaction_id'] ?? null,
+                    $this->user->id
+                );
+                
+                // Si tenemos external_reference, guardarlo también
+                if (isset($data['external_reference'])) {
+                    $webserviceStatus->update([
+                        'external_voyage_number' => $data['external_reference'],
+                    ]);
+                }
+                break;
+
+            case 'approved':
+                $webserviceStatus->markAsApproved(
+                    $data['confirmation_number'] ?? null,
+                    $data['external_reference'] ?? null,
+                    $this->user->id
+                );
+                break;
+
+            case 'error':
+                $webserviceStatus->markAsError(
+                    $data['error_code'] ?? null,
+                    $data['error_message'] ?? null,
+                    $this->user->id
+                );
+                break;
+        }
+
+        $this->logOperation('info', 'Estado de webservice actualizado', [
+            'voyage_id' => $voyage->id,
+            'status' => $status,
+            'webservice_status_id' => $webserviceStatus->id,
+        ]);
+    }
+
+    
 }
