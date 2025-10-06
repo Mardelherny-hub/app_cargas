@@ -14,29 +14,12 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <div>
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    MIC/DTA Argentina
-                </h2>
-                <p class="text-sm text-gray-600 mt-1">
-                    Manifiesto Internacional de Carga / Documento de Transporte Aduanero - AFIP
-                </p>
-            </div>
-            <div class="flex items-center space-x-4">
-                <a href="{{ route('company.simple.dashboard') }}" 
-                   class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    <svg class="-ml-0.5 mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/>
-                    </svg>
-                    Volver al Dashboard
-                </a>
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    {{ $company->legal_name }}
-                </span>
-            </div>
-        </div>
-    </x-slot>
+    @include('company.simple.partials.afip-header', [
+        'voyage'  => $voyage,
+        'company' => $company ?? null,
+        'active'  => 'micdta',
+    ])
+</x-slot>
 
     <div class="py-6">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

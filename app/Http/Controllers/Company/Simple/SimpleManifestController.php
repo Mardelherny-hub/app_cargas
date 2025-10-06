@@ -918,6 +918,8 @@ class SimpleManifestController extends Controller
      */
     public function micDtaShow(Voyage $voyage)
     {
+        $canRegisterMicDta = $this->canSendMicDta($voyage);
+
         $company = $this->getUserCompany();
         if ($voyage->company_id !== $company->id) {
             abort(403, 'Viaje no pertenece a su empresa.');
@@ -940,13 +942,14 @@ class SimpleManifestController extends Controller
         $certificateManager = new \App\Services\Webservice\CertificateManagerService($company);
         $certificateValidation = $certificateManager->validateCompanyCertificate();
 
-        return view('company.simple.micdta.form', [
+        return view('company.simple.micdta.methods-dashboard', [
             'voyage' => $voyage,
             'company' => $company,
             'micdta_status' => $micdta_status,
             'validation' => $validation,
             'certificate_valid' => $certificateValidation['is_valid'],
             'certificate_errors' => $certificateValidation['errors'] ?? [],
+            'canRegisterMicDta' => $canRegisterMicDta,
         ]);
     }
 

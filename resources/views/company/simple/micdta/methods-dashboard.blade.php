@@ -6,25 +6,12 @@
 
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <div>
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    Panel de Métodos AFIP - {{ $voyage->voyage_number }}
-                </h2>
-                <p class="text-sm text-gray-600 mt-1">
-                    Ejecutar métodos específicos del webservice AFIP MIC/DTA Argentina
-                </p>
-            </div>
-            <div class="flex items-center space-x-3">
-                <a href="{{ route('company.simple.micdta.show', $voyage) }}" 
-                   class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                    Volver al Viaje
-                </a>
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {{ $company->legal_name }}
-                </span>
-            </div>
-        </div>
+   <x-slot name="header">
+        @include('company.simple.partials.afip-header', [
+            'voyage'  => $voyage,
+            'company' => $company ?? null,
+            'active'  => 'micdta',
+        ])
     </x-slot>
 
     <div class="py-6">

@@ -1935,18 +1935,7 @@ class SimpleXmlGenerator
         }
     }
 
-    /**
-     * RegistrarTitulosCbc - Registro de títulos ATA CBC
-     * 
-     * Genera XML para registro de títulos ATA CBC según especificación AFIP.
-     * 
-     * @param Voyage $voyage Viaje con relaciones cargadas
-     * @param array $titulosData Datos específicos de títulos CBC
-     * @param string $transactionId ID único de transacción
-     * @return string XML completo según especificación AFIP
-     * @throws Exception Si faltan datos obligatorios
-     */
-    /**
+     /**
      * RegistrarTitulosCbc - Registro de títulos ATA CBC
      * 
      * Genera XML para registro de títulos ATA CBC según especificación AFIP.
