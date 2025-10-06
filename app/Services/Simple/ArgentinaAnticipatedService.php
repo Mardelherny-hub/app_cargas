@@ -8,6 +8,9 @@ use App\Models\User;
 use App\Services\Webservice\SoapClientService;
 use App\Services\Simple\SimpleXmlGenerator;
 use App\Services\Simple\BaseWebserviceService;
+use App\Models\WebserviceResponse;
+use App\Models\WebserviceLog;
+use App\Models\WebserviceError;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -349,20 +352,30 @@ class ArgentinaAnticipatedService
             $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent, 'RectificarViaje');
 
             // Procesar respuesta
+            // Procesar respuesta
+            $voyageIdentifier = $soapResult['external_reference'] ?? null;
+
             if ($soapResult['success']) {
                 $transaction->update([
                     'status' => 'success',
-                    'external_reference' => $soapResult['external_reference'] ?? null,
-                    'response_data' => $soapResult['response_data'] ?? null,
+                    'external_reference' => $voyageIdentifier,
                     'completed_at' => now(),
                 ]);
+                
+                // Actualizar estado del webservice
+                $this->updateWebserviceStatus($voyage, 'sent', [
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => $voyageIdentifier,
+                ]);
 
-                //$this->updateWebserviceStatus($voyage, 'sent', [
-                //    'last_sent_at' => now(),
-                //    'external_reference' => $soapResult['external_reference'],
-                //]);
-
+                Log::info('RectificarViaje enviado exitosamente', [
+                    'voyage_id' => $voyage->id,
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => $voyageIdentifier,
+                ]);
+                
                 DB::commit();
+                $soapResult['transaction_id'] = $transaction->id;
                 return $soapResult;
             } else {
                 $transaction->update([
@@ -370,9 +383,15 @@ class ArgentinaAnticipatedService
                     'error_message' => $soapResult['error_message'] ?? 'Error desconocido',
                 ]);
 
+                $this->updateWebserviceStatus($voyage, 'error', [
+                    'last_error_at' => now(),
+                    'last_error_message' => $soapResult['error_message'] ?? 'Error desconocido',
+                ]);
+
                 DB::commit();
+                $soapResult['transaction_id'] = $transaction->id;
                 return $soapResult;
-            }
+            } 
 
         } catch (Exception $e) {
             DB::rollBack();
@@ -432,20 +451,44 @@ class ArgentinaAnticipatedService
             $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent, 'RegistrarTitulosCbc');
 
             // Procesar respuesta
+            $voyageIdentifier = $soapResult['external_reference'] ?? null;
+
             if ($soapResult['success']) {
                 $transaction->update([
                     'status' => 'success',
-                    'external_reference' => $soapResult['external_reference'] ?? null,
-                    'response_data' => $soapResult['response_data'] ?? null,
+                    'external_reference' => $voyageIdentifier,
                     'completed_at' => now(),
                 ]);
 
-                //$this->updateWebserviceStatus($voyage, 'sent', [
-                //    'last_sent_at' => now(),
-                //    'external_reference' => $soapResult['external_reference'],
-                //]);
+                // Parsear y guardar TRACKs
+                $tracks = $this->parseAndSaveTracks(
+                    $soapResult['response_xml'] ?? $soapResult['response_data'] ?? '',
+                    $transaction->id,
+                    $voyage
+                );
+                
+                if (!empty($tracks)) {
+                    \Log::info('TRACKs guardados para RegistrarTitulosCbc', [
+                        'voyage_id' => $voyage->id,
+                        'tracks_count' => count($tracks),
+                        'tracks' => $tracks,
+                    ]);
+                }
+                
+                // Actualizar estado del webservice
+                $this->updateWebserviceStatus($voyage, 'sent', [
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => $voyageIdentifier,
+                ]);
 
+                Log::info('RectificarViaje enviado exitosamente', [
+                    'voyage_id' => $voyage->id,
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => $voyageIdentifier,
+                ]);
+                
                 DB::commit();
+                $soapResult['transaction_id'] = $transaction->id;
                 return $soapResult;
             } else {
                 $transaction->update([
@@ -453,7 +496,13 @@ class ArgentinaAnticipatedService
                     'error_message' => $soapResult['error_message'] ?? 'Error desconocido',
                 ]);
 
+                $this->updateWebserviceStatus($voyage, 'error', [
+                    'last_error_at' => now(),
+                    'last_error_message' => $soapResult['error_message'] ?? 'Error desconocido',
+                ]);
+
                 DB::commit();
+                $soapResult['transaction_id'] = $transaction->id;
                 return $soapResult;
             }
 
@@ -479,18 +528,22 @@ class ArgentinaAnticipatedService
     private function sendSoapRequest($transaction, $soapClient, string $xmlContent, string $method): array
 {
     try {
-        Log::info("WebserviceSimple [anticipada]: Iniciando request SOAP {$method}", [
-            'transaction_id' => $transaction->id,
-            'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
-        ]);
+        // 📝 LOG: Inicio de envío
+        $this->createWebserviceLog(
+            $transaction->id,
+            'info',
+            'soap_request',
+            "Iniciando envío SOAP {$method}",
+            [
+                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+                'method' => $method,
+            ]
+        );
 
         // Actualizar estado a 'sending'
         $transaction->update(['status' => 'sending', 'sent_at' => now()]);
 
-        // Extraer parámetros estructurados del XML
-        $parameters = $this->extractSoapParameters($xmlContent, $method);
-
-        // Enviar usando SoapClientService - CAMBIAR SOLO EL MÉTODO
+        // Enviar usando __doRequest directo (ORIGINAL)
         $startTime = microtime(true);
         $response = $soapClient->__doRequest(
             $xmlContent,
@@ -500,57 +553,111 @@ class ArgentinaAnticipatedService
         );
         $responseTime = round((microtime(true) - $startTime) * 1000);
 
+        // 📝 LOG: Respuesta recibida
+        $this->createWebserviceLog(
+            $transaction->id,
+            'info',
+            'soap_response',
+            "Respuesta SOAP recibida en {$responseTime}ms",
+            [
+                'response_time_ms' => $responseTime,
+                'response_size_kb' => round(strlen($response) / 1024, 2),
+            ]
+        );
+
+        // Verificar si hay error SOAP
+        $hasError = strpos($response, 'soap:Fault') !== false;
+        
+        if ($hasError) {
+            // 📝 LOG: Error SOAP detectado
+            $this->createWebserviceLog(
+                $transaction->id,
+                'error',
+                'soap_fault',
+                'Error SOAP detectado en respuesta',
+                ['response_snippet' => substr($response, 0, 500)]
+            );
+            
+            // 📊 ERROR: Registrar en catálogo
+            $this->registerWebserviceError('SOAP_FAULT', 'Error en respuesta SOAP');
+        }
+
+        // Parsear respuesta HTML de AFIP para extraer IdentificadorViaje
+        $externalReference = $this->parseAfipHtmlResponse($response);
+        
+        if ($externalReference) {
+            // 📝 LOG: IdentificadorViaje extraído
+            $this->createWebserviceLog(
+                $transaction->id,
+                'info',
+                'data_extraction',
+                "IdentificadorViaje extraído: {$externalReference}"
+            );
+        }
+
         $soapResult = [
-            'success' => strpos($response, 'soap:Fault') === false,
+            'success' => !$hasError && $externalReference !== null,
             'response_data' => $response,
             'response_time_ms' => $responseTime,
             'request_xml' => $xmlContent,
             'response_xml' => $response,
+            'external_reference' => $externalReference,
         ];
-
-        \Log::info("SOAP Response RAW", [
-            'response_length' => strlen($response),
-            'first_500_chars' => substr($response, 0, 500),
-            'contains_soap' => strpos($response, 'soap:') !== false,
-            'contains_html' => strpos($response, '<html') !== false,
-        ]);
 
         // Actualizar transacción con XMLs
         $transaction->update([
-            'request_xml' => $soapResult['request_xml'] ?? $xmlContent,
-            'response_xml' => $soapResult['response_xml'] ?? null,
-            'response_time_ms' => $soapResult['response_time_ms'] ?? null,
+            'request_xml' => $xmlContent,
+            'response_xml' => $response,
+            'response_time_ms' => $responseTime,
+            'response_at' => now(),
+            'external_reference' => $externalReference,
         ]);
+
+        // 📄 RESPONSE: Crear respuesta estructurada
+        $this->createWebserviceResponse(
+            $transaction->id,
+            $soapResult['success'],
+            [
+                'external_reference' => $externalReference,
+                'response_time_ms' => $responseTime,
+                'method' => $method,
+            ]
+        );
+
+        // 📝 LOG: Finalización
+        $this->createWebserviceLog(
+            $transaction->id,
+            $soapResult['success'] ? 'info' : 'error',
+            'completion',
+            $soapResult['success'] 
+                ? "Proceso completado exitosamente" 
+                : "Proceso completado con errores",
+            ['final_status' => $soapResult['success'] ? 'success' : 'error']
+        );
 
         return $soapResult;
 
     } catch (Exception $e) {
-        // Capturar respuesta SOAP completa para análisis
-        $lastResponse = $soapClient->__getLastResponse() ?? '';
-        $lastRequest = $soapClient->__getLastRequest() ?? '';
+        // 📝 LOG: Excepción capturada
+        $this->createWebserviceLog(
+            $transaction->id,
+            'critical',
+            'exception',
+            "Excepción durante envío SOAP: {$e->getMessage()}",
+            [
+                'exception_class' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]
+        );
         
-        // Extraer errores AFIP específicos
-        $afipErrors = $this->extractAfipErrorDetails($lastResponse);
-        
-        // Logging detallado del error
-        Log::error("WebserviceSimple [anticipada]: Error en request SOAP {$method}", [
-            'error' => $e->getMessage(),
-            'transaction_id' => $transaction->id,
-            'has_afip_errors' => $afipErrors['has_afip_errors'],
-            'afip_error_codes' => $afipErrors['has_afip_errors'] ? array_column($afipErrors['afip_errors'], 'codigo') : null,
-            'afip_error_details' => $afipErrors['afip_errors'],
-            'afip_error_summary' => $afipErrors['error_summary'],
-            'soap_request_size' => strlen($lastRequest),
-            'soap_response_size' => strlen($lastResponse),
-            'soap_response_excerpt' => substr($lastResponse, 0, 1000),
-        ]);
+        // 📊 ERROR: Registrar excepción
+        $this->registerWebserviceError('EXCEPTION', $e->getMessage());
 
         return [
             'success' => false,
             'error_message' => $e->getMessage(),
-            'response_time_ms' => isset($responseTime) ? $responseTime : null,
-            'afip_error_details' => $afipErrors['afip_errors'],
-            'afip_error_summary' => $afipErrors['error_summary'],
+            'response_time_ms' => null,
         ];
     }
 }
@@ -595,21 +702,32 @@ class ArgentinaAnticipatedService
     /**
      * Crear transacción webservice
      */
-    private function createWebserviceTransaction(Voyage $voyage, array $options = []): object
-    {
-        return new class {
-            public $id;
-            
-            public function __construct() {
-                $this->id = time();
-            }
-            
-            public function update($data) {
-                // Mock update - no hace nada por ahora
-                return true;
-            }
-        };
-    }
+    private function createWebserviceTransaction(Voyage $voyage, array $options = []): \App\Models\WebserviceTransaction
+{
+    $transactionId = 'ANT-' . $this->company->id . '-' . now()->format('YmdHis') . '-' . rand(10, 99);
+    $method = $options['method'] ?? 'RegistrarViaje';
+    
+    return \App\Models\WebserviceTransaction::create([
+        'company_id' => $this->company->id,
+        'user_id' => $this->user->id,
+        'voyage_id' => $voyage->id,
+        'transaction_id' => $transactionId,
+        'webservice_type' => 'anticipada',
+        'country' => 'AR',
+        'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+        'soap_action' => $options['soap_action'] ?? 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
+        'additional_metadata' => ['method' => $method],
+        'status' => 'pending',
+        'retry_count' => 0,
+        'max_retries' => 3,
+        'environment' => $this->config['environment'],
+        'currency_code' => 'USD',
+        'container_count' => 0,
+        'bill_of_lading_count' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
 
     /**
      * Método público principal para envío
@@ -739,5 +857,181 @@ public function debugSoapResponse(Voyage $voyage): array
         ]);
     }
 
+    /**
+     * Crear log de webservice
+     */
+    private function createWebserviceLog(
+        int $transactionId, 
+        string $level, 
+        string $category,
+        string $message, 
+        array $context = []
+    ): void
+    {
+        try {
+            WebserviceLog::create([
+                'transaction_id' => $transactionId,
+                'user_id' => $this->user->id,
+                'level' => $level,
+                'category' => $category,
+                'message' => $message,
+                'context' => !empty($context) ? $context : null,
+                'environment' => $this->config['environment'],
+                'webservice_operation' => 'RegistrarViaje',
+                'created_at' => now(),
+            ]);
+        } catch (Exception $e) {
+            Log::error('Error creando WebserviceLog: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Crear respuesta estructurada
+     */
+    private function createWebserviceResponse(
+        int $transactionId,
+        bool $isSuccess,
+        array $responseData
+    ): void
+    {
+        try {
+            $responseType = $isSuccess ? 'success' : 'business_error';
+            
+            // Extraer IdentificadorViaje si existe
+            $voyageNumber = null;
+            if (isset($responseData['external_reference'])) {
+                $voyageNumber = $responseData['external_reference'];
+            }
+            
+            WebserviceResponse::create([
+                'transaction_id' => $transactionId,
+                'response_type' => $responseType,
+                'processing_status' => $isSuccess ? 'completed' : 'requires_manual',
+                'requires_action' => !$isSuccess,
+                'voyage_number' => $voyageNumber,
+                'customs_metadata' => $responseData,
+                'customs_status' => $isSuccess ? 'approved' : 'rejected',
+                'customs_processed_at' => now(),
+                'processed_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (Exception $e) {
+            Log::error('Error creando WebserviceResponse: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Registrar error en catálogo (si no existe)
+     */
+    private function registerWebserviceError(string $errorCode, string $errorMessage): void
+    {
+        try {
+            // Buscar si el error ya existe
+            $existingError = WebserviceError::where('country', 'AR')
+                ->where('webservice_type', 'anticipada')
+                ->where('error_code', $errorCode)
+                ->first();
+                
+            if (!$existingError) {
+                // Crear nuevo error en catálogo
+                WebserviceError::create([
+                    'country' => 'AR',
+                    'webservice_type' => 'anticipada',
+                    'error_code' => $errorCode,
+                    'error_title' => 'Error AFIP ' . $errorCode,
+                    'error_description' => $errorMessage,
+                    'category' => 'business_logic',
+                    'severity' => 'high',
+                    'is_blocking' => true,
+                    'allows_retry' => false,
+                    'suggested_solution' => 'Verificar datos según documentación AFIP',
+                    'frequency_count' => 1,
+                    'first_occurrence' => now(),
+                    'last_occurrence' => now(),
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } else {
+                // Actualizar contador de frecuencia
+                $existingError->increment('frequency_count');
+                $existingError->update(['last_occurrence' => now()]);
+            }
+        } catch (Exception $e) {
+            Log::error('Error registrando WebserviceError: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Parsear respuesta HTML de AFIP para extraer IdentificadorViaje
+     */
+    private function parseAfipHtmlResponse(string $response): ?string
+    {
+        // AFIP devuelve: <title></title>NUMERO_IDENTIFICADOR</head>
+        if (preg_match('/<\/title>(\d+)<\/head>/', $response, $matches)) {
+            Log::info("IdentificadorViaje extraído de HTML", ['identificador' => $matches[1]]);
+            return $matches[1];
+        }
+        
+        Log::warning("No se encontró IdentificadorViaje en respuesta", [
+            'response_snippet' => substr($response, 0, 200)
+        ]);
+        
+        return null;
+    }
+
+    /**
+ * Parsear y guardar TRACKs de la respuesta RegistrarTitulosCbc
+ */
+private function parseAndSaveTracks(string $response, int $transactionId, Voyage $voyage): array
+{
+    $tracks = [];
+    
+    try {
+        // AFIP devuelve HTML, no XML - buscar TRACKs con regex
+        // Patrón ejemplo: TRACK001, TRACK002, etc.
+        if (preg_match_all('/TRACK\d+/i', $response, $matches)) {
+            
+            $billsOfLading = collect();
+            foreach ($voyage->shipments as $shipment) {
+                $billsOfLading = $billsOfLading->merge($shipment->billsOfLading);
+            }
+            
+            foreach ($matches[0] as $index => $trackNumber) {
+                $bol = $billsOfLading->get($index);
+                
+                if ($trackNumber && $bol) {
+                    // Guardar en webservice_tracks
+                    \App\Models\WebserviceTrack::create([
+                        'webservice_transaction_id' => $transactionId,
+                        'bill_of_lading_id' => $bol->id,
+                        'track_number' => $trackNumber,
+                        'track_type' => 'envio',
+                        'webservice_method' => 'RegistrarTitulosCbc',
+                        'status' => 'active',
+                        'afip_response_data' => ['track' => $trackNumber],
+                    ]);
+                    
+                    $tracks[] = $trackNumber;
+                    
+                    \Log::info("TRACK guardado", [
+                        'track_number' => $trackNumber,
+                        'bill_id' => $bol->id,
+                    ]);
+                }
+            }
+        } else {
+            \Log::warning('No se encontraron TRACKs en respuesta HTML', [
+                'response_snippet' => substr($response, 0, 200)
+            ]);
+        }
+        
+    } catch (Exception $e) {
+        \Log::error('Error parseando TRACKs: ' . $e->getMessage());
+    }
+    
+    return $tracks;
+}
     
 }

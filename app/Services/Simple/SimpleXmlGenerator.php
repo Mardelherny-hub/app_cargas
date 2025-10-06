@@ -1946,14 +1946,40 @@ class SimpleXmlGenerator
      * @return string XML completo según especificación AFIP
      * @throws Exception Si faltan datos obligatorios
      */
+    /**
+     * RegistrarTitulosCbc - Registro de títulos ATA CBC
+     * 
+     * Genera XML para registro de títulos ATA CBC según especificación AFIP.
+     * Busca automáticamente el IdentificadorViaje del último RegistrarViaje exitoso.
+     * 
+     * @param Voyage $voyage Viaje con relaciones cargadas
+     * @param array $titulosData Datos específicos de títulos CBC (no usado por ahora)
+     * @param string $transactionId ID único de transacción
+     * @return string XML completo según especificación AFIP
+     * @throws Exception Si faltan datos obligatorios
+     */
     public function createRegistrarTitulosCbcXml(Voyage $voyage, array $titulosData, string $transactionId): string
     {
         try {
             // Validar datos obligatorios
             $this->validateVoyageData($voyage);
 
+            // Buscar IdentificadorViaje del último RegistrarViaje exitoso
+            $previousTransaction = $voyage->webserviceTransactions()
+                ->where('webservice_type', 'anticipada')
+                ->where('status', 'success')
+                ->whereNotNull('external_reference')
+                ->latest()
+                ->first();
+
+            if (!$previousTransaction) {
+                throw new Exception('Debe registrar el viaje con RegistrarViaje antes de enviar títulos CBC');
+            }
+
+            $identificadorViaje = $previousTransaction->external_reference;
+
             // Obtener tokens WSAA
-            $wsaa = $this->getWSAATokens();
+            $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
 
             // Crear XMLWriter
             $w = new \XMLWriter();
@@ -1961,45 +1987,148 @@ class SimpleXmlGenerator
             $w->startDocument('1.0', 'UTF-8');
 
             // SOAP Envelope
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            $w->startElementNs('soapenv', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:ar', self::AFIP_ANTICIPADA_NAMESPACE);
 
             // SOAP Body
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                $w->startElement('RegistrarTitulosCbc');
-                $w->writeAttribute('xmlns', self::AFIP_ANTICIPADA_NAMESPACE);
+            $w->startElementNs('soapenv', 'Body', null);
+                $w->startElement('ar:RegistrarTitulosCbc');
 
-                // Autenticación empresa (obligatorio)
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
-                    $w->writeElement('Rol', 'TRSP');
-                $w->endElement();
-
-                // Parámetros RegistrarTitulosCbc
-                $w->startElement('argRegistrarTitulosCBC');
-                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
-                    
-                    // TODO: Implementar estructura específica de títulos CBC
-                    // Estructura básica por ahora
-                    $w->startElement('TitulosCbc');
-                        $w->writeElement('VoyageId', (string)$voyage->id);
-                        $w->writeElement('VoyageNumber', $voyage->voyage_number);
+                    // Autenticación empresa
+                    $w->startElement('ar:argWSAutenticacionEmpresa');
+                        $w->writeElement('ar:Token', $wsaa['token']);
+                        $w->writeElement('ar:Sign', $wsaa['sign']);
+                        $w->writeElement('ar:CuitEmpresaConectada', (string)$this->company->tax_id);
+                        $w->writeElement('ar:TipoAgente', 'ATA');
+                        $w->writeElement('ar:Rol', 'TRSP');
                     $w->endElement();
 
-                $w->endElement(); // argRegistrarTitulosCBC
+                    // Parámetros RegistrarTitulosCBC
+                    $w->startElement('ar:argRegistrarTitulosCBC');
+                        $w->writeElement('ar:IdTransaccion', substr($transactionId, 0, 15));
+                        
+                        // Información de Títulos
+                        $w->startElement('ar:InformacionTitulosDoc');
+                            $w->writeElement('ar:IdentificadorViaje', $identificadorViaje);
+                            
+                            // Obtener conocimientos (BillsOfLading) del viaje
+                            $billsOfLading = collect();
+                            foreach ($voyage->shipments as $shipment) {
+                                $billsOfLading = $billsOfLading->merge($shipment->billsOfLading);
+                            }
+
+                            if ($billsOfLading->isEmpty()) {
+                                throw new Exception('No hay conocimientos de embarque para registrar');
+                            }
+
+                            // Títulos (array de conocimientos)
+                            $w->startElement('ar:Titulos');
+                            
+                            foreach ($billsOfLading as $bol) {
+                                $w->startElement('ar:Titulo');
+                                    
+                                    // 1. FechaEmbarque (obligatorio)
+                                    $embarqueDate = $bol->issue_date ?? $voyage->departure_date ?? now();
+                                    $w->writeElement('ar:FechaEmbarque', $embarqueDate->format('Y-m-d\TH:i:s'));
+                                    
+                                    // 2. CodigoPuertoEmbarque (obligatorio)
+                                    $loadingPortCode = $this->getPortCustomsCode($bol->loadingPort?->code ?? $voyage->originPort?->code ?? 'ARBUE');
+                                    $w->writeElement('ar:CodigoPuertoEmbarque', $loadingPortCode);
+                                    
+                                    // 3. NumeroConocimiento (obligatorio - máx 18 chars)
+                                    $bolNumber = substr($bol->bill_number ?? 'BL' . $bol->id, 0, 18);
+                                    $w->writeElement('ar:NumeroConocimiento', $bolNumber);
+                                    
+                                    // 4. Líneas de Mercadería (obligatorio)
+                                    $w->startElement('ar:LineasMercaderia');
+                                    
+                                    $items = $bol->shipmentItems;
+                                    if ($items->isEmpty()) {
+                                        // Si no hay items, crear uno genérico
+                                        $w->startElement('ar:LineaMercaderia');
+                                            $w->writeElement('ar:NumeroLinea', '1');
+                                            $w->writeElement('ar:Descripcion', $bol->cargo_description ?? 'MERCADERIA GENERAL');
+                                            $w->writeElement('ar:Peso', number_format($bol->total_weight ?? 1000, 2, '.', ''));
+                                            $w->writeElement('ar:Cantidad', (string)($bol->total_packages ?? 1));
+                                        $w->endElement();
+                                    } else {
+                                        foreach ($items as $index => $item) {
+                                            $w->startElement('ar:LineaMercaderia');
+                                                $w->writeElement('ar:NumeroLinea', (string)($index + 1));
+                                                $w->writeElement('ar:Descripcion', substr($item->description ?? 'MERCADERIA', 0, 100));
+                                                $w->writeElement('ar:Peso', number_format($item->weight ?? 100, 2, '.', ''));
+                                                $w->writeElement('ar:Cantidad', (string)($item->quantity ?? 1));
+                                            $w->endElement();
+                                        }
+                                    }
+                                    
+                                    $w->endElement(); // LineasMercaderia
+                                    
+                                    // 5. Contenedores (opcional pero recomendado)
+                                    $containers = collect();
+                                    foreach ($items as $item) {
+                                        $containers = $containers->merge($item->containers);
+                                    }
+                                    
+                                    if ($containers->isNotEmpty()) {
+                                        $w->startElement('ar:Contenedores');
+                                        
+                                        foreach ($containers as $container) {
+                                            $w->startElement('ar:Contenedor');
+                                                
+                                                // ID contenedor (obligatorio)
+                                                $containerId = substr($container->container_number ?? 'CONT' . $container->id, 0, 20);
+                                                $w->writeElement('ar:Id', $containerId);
+                                                
+                                                // Código medida (obligatorio)
+                                                $containerType = $container->containerType?->iso_code ?? '42G1';
+                                                $w->writeElement('ar:codMedida', $containerType);
+                                                
+                                                // Condición (obligatorio: P=pleno, V=vacío)
+                                                $condition = ($container->condition === 'empty' || $container->condition === 'V') ? 'V' : 'P';
+                                                $w->writeElement('ar:condicion', $condition);
+                                                
+                                                // Precintos (opcional)
+                                                $seals = $container->customsSeals ?? collect();
+                                                if ($seals->isNotEmpty()) {
+                                                    $w->startElement('ar:precintos');
+                                                    foreach ($seals as $seal) {
+                                                        $w->writeElement('ar:precinto', (string)$seal->seal_number);
+                                                    }
+                                                    $w->endElement();
+                                                }
+                                                
+                                            $w->endElement(); // Contenedor
+                                        }
+                                        
+                                        $w->endElement(); // Contenedores
+                                    }
+                                    
+                                $w->endElement(); // Titulo
+                            }
+                            
+                            $w->endElement(); // Titulos
+                        $w->endElement(); // InformacionTitulosDoc
+
+                    $w->endElement(); // argRegistrarTitulosCBC
                 $w->endElement(); // RegistrarTitulosCbc
             $w->endElement(); // Body
             $w->endElement(); // Envelope
 
             $w->endDocument();
-            return $w->outputMemory();
+            
+            $xmlContent = $w->outputMemory();
+            
+            \Log::info('XML RegistrarTitulosCbc generado', [
+                'identificador_viaje' => $identificadorViaje,
+                'bills_count' => $billsOfLading->count(),
+                'xml_size' => strlen($xmlContent)
+            ]);
+            
+            return $xmlContent;
 
         } catch (Exception $e) {
-            \Log::info('Error en createRegistrarTitulosCbcXml: ' . $e->getMessage());
+            \Log::error('Error en createRegistrarTitulosCbcXml: ' . $e->getMessage());
             throw $e;
         }
     }

@@ -302,9 +302,28 @@
                                 Métodos Disponibles
                             </h3>
                             
+                            @php
+                                // Filtrar transacciones por método
+                                $registrarViajeTransactions = $transactions->filter(function($t) {
+                                    return isset($t->additional_metadata['method']) && $t->additional_metadata['method'] === 'RegistrarViaje';
+                                });
+
+                                $rectificarViajeTransactions = $transactions->filter(function($t) {
+                                    return isset($t->additional_metadata['method']) && $t->additional_metadata['method'] === 'RectificarViaje';
+                                });
+
+                                $registrarTitulosCbcTransactions = $transactions->filter(function($t) {
+                                    return isset($t->additional_metadata['method']) && $t->additional_metadata['method'] === 'RegistrarTitulosCbc';
+                                });
+                                // Obtener la última de cada método
+                                $lastRegistrarViaje = $registrarViajeTransactions->sortByDesc('created_at')->first();
+                                $lastRectificarViaje = $rectificarViajeTransactions->sortByDesc('created_at')->first();
+                                $lastRegistrarTitulosCbc = $registrarTitulosCbcTransactions->sortByDesc('created_at')->first();
+                            @endphp
+                            
                             <div class="space-y-3">
                                 {{-- RegistrarViaje --}}
-                                <div class="border rounded-lg p-4">
+                                <div class="border rounded-lg p-4 @if($lastRegistrarViaje && $lastRegistrarViaje->status === 'success') border-green-300 bg-green-50 @endif">
                                     <div class="flex items-center justify-between mb-2">
                                         <h4 class="text-sm font-medium text-gray-900">RegistrarViaje</h4>
                                         @if(!$anticipadaStatus || $anticipadaStatus->canSend())
@@ -314,14 +333,44 @@
                                                 Enviar
                                             </button>
                                         @else
-                                            <span class="text-xs text-gray-500">Ya enviado</span>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                ✓ Enviado
+                                            </span>
                                         @endif
                                     </div>
-                                    <p class="text-xs text-gray-600">Registro inicial del viaje con información anticipada</p>
+                                    <p class="text-xs text-gray-600 mb-2">Registro inicial del viaje con información anticipada</p>
+                                    
+                                    @if($lastRegistrarViaje)
+                                        <div class="mt-3 pt-3 border-t border-gray-200">
+                                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span class="text-gray-500">Último envío:</span>
+                                                    <span class="text-gray-900 font-medium">{{ $lastRegistrarViaje->created_at->format('d/m/Y H:i') }}</span>
+                                                </div>
+                                                <div>
+                                                    <span class="text-gray-500">Estado:</span>
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                        @if($lastRegistrarViaje->status === 'success') bg-green-100 text-green-800
+                                                        @elseif($lastRegistrarViaje->status === 'error') bg-red-100 text-red-800
+                                                        @else bg-yellow-100 text-yellow-800 @endif">
+                                                        {{ ucfirst($lastRegistrarViaje->status) }}
+                                                    </span>
+                                                </div>
+                                                @if($lastRegistrarViaje->external_reference)
+                                                    <div class="col-span-2">
+                                                        <span class="text-gray-500">IdentificadorViaje:</span>
+                                                        <span class="text-green-600 font-mono text-xs">{{ $lastRegistrarViaje->external_reference }}</span>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @else
+                                        <p class="text-xs text-gray-400 mt-2">No se ha enviado aún</p>
+                                    @endif
                                 </div>
 
                                 {{-- RectificarViaje --}}
-                                <div class="border rounded-lg p-4">
+                                <div class="border rounded-lg p-4 @if($lastRectificarViaje && $lastRectificarViaje->status === 'success') border-orange-300 bg-orange-50 @endif">
                                     <div class="flex items-center justify-between mb-2">
                                         <h4 class="text-sm font-medium text-gray-900">RectificarViaje</h4>
                                         @if($anticipadaStatus && in_array($anticipadaStatus->status, ['sent', 'approved']))
@@ -333,11 +382,42 @@
                                             <span class="text-xs text-gray-500">Requiere envío previo</span>
                                         @endif
                                     </div>
-                                    <p class="text-xs text-gray-600">Rectificación de viaje ya registrado</p>
+                                    <p class="text-xs text-gray-600 mb-2">Rectificación de viaje ya registrado</p>
+                                    
+                                    @if($lastRectificarViaje)
+                                        <div class="mt-3 pt-3 border-t border-gray-200">
+                                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span class="text-gray-500">Último envío:</span>
+                                                    <span class="text-gray-900 font-medium">{{ $lastRectificarViaje->created_at->format('d/m/Y H:i') }}</span>
+                                                </div>
+                                                <div>
+                                                    <span class="text-gray-500">Estado:</span>
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                        @if($lastRectificarViaje->status === 'success') bg-green-100 text-green-800
+                                                        @elseif($lastRectificarViaje->status === 'error') bg-red-100 text-red-800
+                                                        @else bg-yellow-100 text-yellow-800 @endif">
+                                                        {{ ucfirst($lastRectificarViaje->status) }}
+                                                    </span>
+                                                </div>
+                                                @if($lastRectificarViaje->external_reference)
+                                                    <div class="col-span-2">
+                                                        <span class="text-gray-500">IdentificadorViaje:</span>
+                                                        <span class="text-orange-600 font-mono text-xs">{{ $lastRectificarViaje->external_reference }}</span>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                            @if($rectificarViajeTransactions->count() > 1)
+                                                <p class="text-xs text-gray-500 mt-2">Total de rectificaciones: {{ $rectificarViajeTransactions->count() }}</p>
+                                            @endif
+                                        </div>
+                                    @else
+                                        <p class="text-xs text-gray-400 mt-2">No se han realizado rectificaciones</p>
+                                    @endif
                                 </div>
 
                                 {{-- RegistrarTitulosCbc --}}
-                                <div class="border rounded-lg p-4">
+                                <div class="border rounded-lg p-4 @if($lastRegistrarTitulosCbc && $lastRegistrarTitulosCbc->status === 'success') border-green-300 bg-green-50 @endif">
                                     <div class="flex items-center justify-between mb-2">
                                         <h4 class="text-sm font-medium text-gray-900">RegistrarTitulosCbc</h4>
                                         @if($anticipadaStatus && in_array($anticipadaStatus->status, ['sent', 'approved']))
@@ -349,7 +429,38 @@
                                             <span class="text-xs text-gray-500">Requiere envío previo</span>
                                         @endif
                                     </div>
-                                    <p class="text-xs text-gray-600">Registro de títulos ATA CBC</p>
+                                    <p class="text-xs text-gray-600 mb-2">Registro de títulos ATA CBC</p>
+                                    
+                                    @if($lastRegistrarTitulosCbc)
+                                        <div class="mt-3 pt-3 border-t border-gray-200">
+                                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span class="text-gray-500">Último envío:</span>
+                                                    <span class="text-gray-900 font-medium">{{ $lastRegistrarTitulosCbc->created_at->format('d/m/Y H:i') }}</span>
+                                                </div>
+                                                <div>
+                                                    <span class="text-gray-500">Estado:</span>
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                        @if($lastRegistrarTitulosCbc->status === 'success') bg-green-100 text-green-800
+                                                        @elseif($lastRegistrarTitulosCbc->status === 'error') bg-red-100 text-red-800
+                                                        @else bg-yellow-100 text-yellow-800 @endif">
+                                                        {{ ucfirst($lastRegistrarTitulosCbc->status) }}
+                                                    </span>
+                                                </div>
+                                                @if($lastRegistrarTitulosCbc->external_reference)
+                                                    <div class="col-span-2">
+                                                        <span class="text-gray-500">Referencia:</span>
+                                                        <span class="text-green-600 font-mono text-xs">{{ $lastRegistrarTitulosCbc->external_reference }}</span>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                            @if($registrarTitulosCbcTransactions->count() > 1)
+                                                <p class="text-xs text-gray-500 mt-2">Total de registros: {{ $registrarTitulosCbcTransactions->count() }}</p>
+                                            @endif
+                                        </div>
+                                    @else
+                                        <p class="text-xs text-gray-400 mt-2">No se han registrado títulos CBC</p>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -406,6 +517,40 @@
         </div>
     </div>
 
+    {{-- Modal de Feedback --}}
+    <div id="feedbackModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <div id="feedbackIcon" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full">
+                    <!-- El icono se insertará dinámicamente -->
+                </div>
+                <h3 id="feedbackTitle" class="text-lg leading-6 font-medium text-gray-900 mt-4"></h3>
+                <div class="mt-2 px-7 py-3">
+                    <p id="feedbackMessage" class="text-sm text-gray-500"></p>
+                    <div id="feedbackDetails" class="mt-3 hidden">
+                        <div class="bg-gray-50 p-3 rounded text-left">
+                            <p class="text-xs text-gray-600"><strong>ID Transacción:</strong> <span id="transactionId"></span></p>
+                            <p class="text-xs text-gray-600 mt-1"><strong>IdentificadorViaje AFIP:</strong> <span id="externalReference" class="font-mono text-green-600"></span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="items-center px-4 py-3">
+                    <button id="feedbackCloseBtn" class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Spinner de carga --}}
+    <div id="loadingSpinner" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-1/2 mx-auto text-center">
+            <div class="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+            <p class="text-white mt-4 text-lg">Enviando a AFIP...</p>
+        </div>
+    </div>
+
     {{-- JavaScript para funcionalidad --}}
     <script>
         let currentMethod = '';
@@ -427,7 +572,11 @@
             const button = this;
             const originalText = button.textContent;
             
-            button.textContent = 'Enviando...';
+            // Cerrar modal de confirmación
+            closeModal();
+            
+            // Mostrar spinner
+            document.getElementById('loadingSpinner').classList.remove('hidden');
             button.disabled = true;
 
             fetch(`{{ route('company.simple.anticipada.send', $voyage) }}`, {
@@ -445,23 +594,79 @@
             })
             .then(response => response.json())
             .then(data => {
+                // Ocultar spinner
+                document.getElementById('loadingSpinner').classList.add('hidden');
+                
+                // Mostrar modal de feedback
+                showFeedbackModal(data);
+                
+                // Si fue exitoso, recargar después de cerrar modal
                 if (data.success) {
-                    alert(`${currentMethod} enviado exitosamente`);
-                    location.reload();
-                } else {
-                    alert(`Error: ${data.message || 'Error desconocido'}`);
+                    document.getElementById('feedbackCloseBtn').onclick = function() {
+                        location.reload();
+                    };
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error de conexión');
+                document.getElementById('loadingSpinner').classList.add('hidden');
+                
+                showFeedbackModal({
+                    success: false,
+                    message: 'Error de conexión con el servidor'
+                });
             })
             .finally(() => {
                 button.textContent = originalText;
                 button.disabled = false;
-                closeModal();
             });
         });
+
+        function showFeedbackModal(data) {
+            const modal = document.getElementById('feedbackModal');
+            const icon = document.getElementById('feedbackIcon');
+            const title = document.getElementById('feedbackTitle');
+            const message = document.getElementById('feedbackMessage');
+            const details = document.getElementById('feedbackDetails');
+            
+            if (data.success) {
+                // Configurar para ÉXITO
+                icon.innerHTML = '<svg class="h-12 w-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+                icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100';
+                title.textContent = '¡Envío Exitoso!';
+                title.className = 'text-lg leading-6 font-medium text-green-900 mt-4';
+                message.textContent = data.message || 'El método fue enviado correctamente a AFIP';
+                
+                // Mostrar detalles si existen
+                if (data.data) {
+                    document.getElementById('transactionId').textContent = data.data.transaction_id || 'N/A';
+                    document.getElementById('externalReference').textContent = data.data.external_reference || 'Pendiente';
+                    details.classList.remove('hidden');
+                }
+            } else {
+                // Configurar para ERROR
+                icon.innerHTML = '<svg class="h-12 w-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+                icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100';
+                title.textContent = 'Error en el Envío';
+                title.className = 'text-lg leading-6 font-medium text-red-900 mt-4';
+                message.textContent = data.message || 'Ocurrió un error al procesar la solicitud';
+                details.classList.add('hidden');
+            }
+            
+            modal.classList.remove('hidden');
+            
+            // Cerrar modal al hacer clic en el botón
+            document.getElementById('feedbackCloseBtn').onclick = function() {
+                modal.classList.add('hidden');
+            };
+            
+            // Cerrar modal al hacer clic fuera
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                }
+            };
+        }
 
         // Cerrar modal al hacer clic fuera
         document.getElementById('sendModal').addEventListener('click', function(e) {
