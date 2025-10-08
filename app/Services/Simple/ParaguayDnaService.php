@@ -2,283 +2,600 @@
 
 namespace App\Services\Simple;
 
+use App\Models\Company;
+use App\Models\User;
 use App\Models\Voyage;
+use App\Models\WebserviceTransaction;
+use App\Services\Simple\BaseWebserviceService;
+use App\Services\Simple\SimpleXmlGeneratorParaguay;
 use Exception;
 use SoapClient;
 use SoapFault;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Sistema Simple – Paraguay DNA (GDSF)
- *
- * EnviarMensajeFluvial(codigo, version, viaje, xml, Autenticacion)
- * y, opcionalmente, DocumentoIMG(...) si en $options['docimg'] se provee el adjunto PDF.
- *
- * NOTAS IMPORTANTES:
- * - No se inventan tags XML del mensaje GDSF: el XML debe venir en $options['xml'].
- * - Autenticación (idUsuario, ticket, firma) debe venir en $options['auth'].
- * - Para DocumentoIMG, el payload se arma de forma flexible; si necesitás un shape exacto,
- *   podés pasar $options['docimg']['soap_params'] y se usa tal cual.
+ * SISTEMA MODULAR WEBSERVICES - ParaguayDnaService
+ * 
+ * Servicio para Manifiestos Fluviales DNA Paraguay (GDSF)
+ * Extiende BaseWebserviceService siguiendo el patrón exitoso de Argentina
+ * 
+ * MÉTODOS GDSF SOPORTADOS:
+ * 1. XFFM - Carátula/Manifiesto (OBLIGATORIO PRIMERO)
+ * 2. XFBL - Conocimientos/BLs (requiere XFFM)
+ * 3. XFBT - Hoja de Ruta/Contenedores (requiere XFFM)
+ * 4. XISP - Incluir Embarcación (opcional)
+ * 5. XRSP - Desvincular Embarcación (opcional)
+ * 6. XFCT - Cerrar Viaje (último paso)
+ * 
+ * FLUJO OBLIGATORIO:
+ * XFFM → retorna nroViaje → XFBL/XFBT (usan nroViaje) → XFCT
+ * 
+ * INTEGRACIÓN:
+ * - Genera XML automático desde BD vía SimpleXmlGeneratorParaguay
+ * - Valida dependencias (no permite XFBL sin XFFM)
+ * - Persiste en WebserviceTransaction/Response/Log automáticamente
+ * - Retorna estados estructurados para UI
  */
 class ParaguayDnaService extends BaseWebserviceService
 {
-    /** Identificador del tipo de servicio (para auditoría/estados) */
-    protected string $webserviceType = 'paraguay_gdsf';
+    private SimpleXmlGeneratorParaguay $paraguayXmlGenerator;
 
-    /** País */
-    protected string $country = 'PY';
-
-    /**
-     * Config específica (se mezcla con BASE_CONFIG si la clase base la usa).
-     *
-     * Espera en config/services.php, p.ej.:
-     * 'paraguay' => [
-     *   'environment'         => 'testing', // 'production'
-     *   'wsdl'                => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf',
-     *   'soap_method'         => 'EnviarMensajeFluvial',
-     *   'soap_docimg_method'  => 'DocumentoIMG',
-     *   'require_certificate' => true,
-     *   'auth' => [
-     *       'idUsuario' => env('DNA_ID_USUARIO'),
-     *       'ticket'    => env('DNA_TICKET'),
-     *       'firma'     => env('DNA_FIRMA'),
-     *   ],
-     * ]
-     */
-    protected function getWebserviceConfig(): array
+    public function __construct(Company $company, User $user, array $config = [])
     {
-        return array_merge(self::BASE_CONFIG, [
-            'webservice_type'      => $this->webserviceType,
-            'country'              => $this->country,
-            'environment'          => config('services.paraguay.environment', 'testing'),
-            'webservice_url'       => config('services.paraguay.wsdl'),
-            'soap_method'          => config('services.paraguay.soap_method', 'EnviarMensajeFluvial'),
-            'soap_docimg_method'   => config('services.paraguay.soap_docimg_method', 'DocumentoIMG'),
-            'require_certificate'  => config('services.paraguay.require_certificate', true),
-            'auth'                 => config('services.paraguay.auth', []),
-        ]);
+        parent::__construct($company, $user, $config);
+        
+        // Inicializar generador XML específico de Paraguay
+        $this->paraguayXmlGenerator = new SimpleXmlGeneratorParaguay($company, $this->config);
     }
 
-    /** URL/WSDL de GDSF */
+    // ====================================
+    // MÉTODOS ABSTRACTOS OBLIGATORIOS
+    // ====================================
+
+    /**
+     * Tipo de webservice
+     */
+    protected function getWebserviceType(): string
+    {
+        return 'manifiesto';
+    }
+
+    /**
+     * País del webservice
+     */
+    protected function getCountry(): string
+    {
+        return 'PY';
+    }
+
+    /**
+     * URL del WSDL
+     */
     protected function getWsdlUrl(): string
     {
-        $url = $this->config['webservice_url'] ?? '';
+        $url = config('services.paraguay.wsdl');
         if (!$url) {
             throw new Exception('Config faltante: services.paraguay.wsdl');
         }
         return $url;
     }
 
-    /** Validaciones mínimas (no inventamos negocio) */
+    /**
+     * Configuración específica de Paraguay
+     */
+    protected function getWebserviceConfig(): array
+    {
+        return array_merge(parent::BASE_CONFIG, [
+            'environment' => config('services.paraguay.environment', 'testing'),
+            'webservice_url' => config('services.paraguay.wsdl'),
+            'soap_method' => 'EnviarMensajeFluvial',
+            'require_certificate' => config('services.paraguay.require_certificate', true),
+            'auth' => [
+                'idUsuario' => config('services.paraguay.auth.idUsuario'),
+                'ticket' => config('services.paraguay.auth.ticket'),
+                'firma' => config('services.paraguay.auth.firma'),
+            ],
+        ]);
+    }
+
+    /**
+     * Validaciones específicas de Paraguay
+     */
     protected function validateSpecificData(Voyage $voyage): array
     {
         $errors = [];
         $warnings = [];
 
+        // Validar datos básicos
         if (!$voyage->voyage_number) {
-            $errors[] = 'Voyage sin número (voyage_number).';
+            $errors[] = 'Viaje sin número de viaje';
         }
 
-        if (($this->config['require_certificate'] ?? false) && empty($this->company->certificate_path)) {
-            $errors[] = 'Falta certificado digital (.p12) de la empresa para Paraguay.';
+        if (!$voyage->leadVessel) {
+            $errors[] = 'Viaje sin embarcación principal asignada';
         }
 
-        return compact('errors', 'warnings');
+        if (!$voyage->originPort || !$voyage->destinationPort) {
+            $errors[] = 'Viaje sin puertos de origen/destino';
+        }
+
+        // Validar certificados Paraguay si es requerido
+        if ($this->config['require_certificate']) {
+            if (!$this->company->tax_id) {
+                $errors[] = 'Empresa sin RUC/Tax ID configurado';
+            }
+        }
+
+        // Validar autenticación DNA
+        $auth = $this->config['auth'];
+        if (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma'])) {
+            $errors[] = 'Credenciales DNA Paraguay incompletas';
+            $warnings[] = 'Verificar config/services.php: services.paraguay.auth';
+        }
+
+        return [
+            'errors' => $errors,
+            'warnings' => $warnings,
+        ];
     }
 
     /**
-     * Envío específico:
-     * 1) EnviarMensajeFluvial (obligatorio).
-     * 2) Si llega $options['docimg'], enviar DocumentoIMG (adjunto PDF) luego del punto 1.
-     *
-     * $options requeridos:
-     *  - 'codigo'  => string (XFFM/XFBL/XFBT/XISP/XRSP/XFCT)
-     *  - 'version' => string (ej: '1.0' / el que corresponda)
-     *  - 'xml'     => string (XML ya construido)
-     *  - 'viaje'   => string|null
-     *  - 'auth'    => ['idUsuario','ticket','firma']
-     *
-     * $options opcionales:
-     *  - 'docimg'  => [
-     *        'enabled'      => bool,
-     *        'nroDocumento' => string,                // requerido si enabled=true
-     *        'file'         => [
-     *             'filename'   => string,             // ej. adjunto.pdf
-     *             'mimetype'   => 'application/pdf',
-     *             'size'       => int,
-     *             'base64'     => string,             // contenido en base64
-     *        ],
-     *        // Si se necesita control total del payload SOAP, se puede pasar:
-     *        // 'soap_params' => array                 // se usará tal cual
-     *    ]
+     * Envío específico del webservice (no implementado aquí directamente)
+     * Cada método GDSF tiene su propia implementación
      */
     protected function sendSpecificWebservice(Voyage $voyage, array $options = []): array
     {
-        $codigo  = $options['codigo']  ?? null;
-        $version = $options['version'] ?? null;
-        $xml     = $options['xml']     ?? null;
-        $viaje   = $options['viaje']   ?? null;
+        throw new Exception('Use métodos específicos: sendXffm(), sendXfbl(), sendXfbt(), etc.');
+    }
 
-        // auth
-        $auth = $options['auth'] ?? $this->config['auth'] ?? [];
-        $idUsuario = $auth['idUsuario'] ?? null;
-        $ticket    = $auth['ticket']    ?? null;
-        $firma     = $auth['firma']     ?? null;
+    // ====================================
+    // MÉTODOS PÚBLICOS ESPECÍFICOS GDSF
+    // ====================================
 
-        // chequear requeridos
-        foreach (['codigo','version','xml'] as $k) {
-            if (empty($$k)) {
-                throw new Exception("Falta parámetro requerido: {$k}");
-            }
-        }
-        foreach (['idUsuario','ticket','firma'] as $k) {
-            if (empty($$k)) {
-                throw new Exception("Falta credencial DNA: {$k}");
-            }
-        }
+    /**
+     * 1. XFFM - Carátula/Manifiesto Fluvial
+     * PRIMER envío obligatorio - Registra el viaje en DNA Paraguay
+     * Retorna nroViaje necesario para envíos posteriores
+     * 
+     * @param Voyage $voyage
+     * @param array $options
+     * @return array ['success' => bool, 'nroViaje' => string|null, ...]
+     */
+    public function sendXffm(Voyage $voyage, array $options = []): array
+    {
+        $this->logOperation('info', 'Iniciando envío XFFM (Carátula)', [
+            'voyage_id' => $voyage->id,
+            'voyage_number' => $voyage->voyage_number,
+        ]);
 
-        // 1) Cliente SOAP
-        $client = $this->createSoapClient($this->getWsdlUrl(), ['trace' => 1]);
-
-        // 2) EnviarMensajeFluvial
-        $soapMethod = $this->config['soap_method'] ?? 'EnviarMensajeFluvial';
-        $payload = [[
-            'codigo'        => $codigo,
-            'version'       => $version,
-            'viaje'         => $viaje,
-            'xml'           => $xml,
-            'Autenticacion' => [
-                'idUsuario' => (string)$idUsuario,
-                'ticket'    => (string)$ticket,
-                'firma'     => (string)$firma,
-            ],
-        ]];
+        DB::beginTransaction();
 
         try {
-            $resultMain = $client->__soapCall($soapMethod, $payload);
-        } catch (SoapFault $sf) {
-            // falló el envío principal → devolvemos error
-            return [
-                'success'       => false,
-                'error_message' => $sf->faultstring ?? $sf->getMessage(),
-                'error_code'    => $sf->faultcode ?? 'SOAP_FAULT',
-                'raw_response'  => method_exists($client, '__getLastResponse') ? $client->__getLastResponse() : null,
-            ];
+            // 1. Validar viaje
+            $validation = $this->canProcessVoyage($voyage);
+            if (!$validation['can_process']) {
+                throw new Exception('Viaje no válido: ' . implode(', ', $validation['errors']));
+            }
+
+            // 2. Verificar si ya fue enviado
+            $existingXffm = $this->getExistingTransaction($voyage, 'XFFM');
+            if ($existingXffm && !($options['force_resend'] ?? false)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'XFFM ya fue enviado. Use force_resend=true para reenviar.',
+                    'existing_nroViaje' => $existingXffm->external_reference,
+                ];
+            }
+
+            // 3. Generar XML automáticamente
+            $transactionId = $this->generateTransactionId('XFFM');
+            $xml = $this->paraguayXmlGenerator->createXffmXml($voyage, $transactionId);
+
+            // 4. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XFFM',
+                'transaction_id' => $transactionId,
+            ]);
+            $this->currentTransactionId = $transaction->id;
+
+            // 5. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XFFM',
+                'version' => '1.0',
+                'viaje' => null, // NULL en primer envío XFFM
+                'xml' => $xml,
+            ]);
+
+            // 6. Procesar respuesta
+            if ($soapResult['success']) {
+                // Extraer nroViaje de la respuesta
+                $nroViaje = $this->extractNroViajeFromResponse($soapResult['response_data']);
+
+                $transaction->update([
+                    'status' => 'sent',
+                    'external_reference' => $nroViaje,
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                ]);
+
+                // Actualizar estado del voyage
+                $this->updateWebserviceStatus($voyage, 'XFFM', 'sent', [
+                    'nro_viaje' => $nroViaje,
+                ]);
+
+                DB::commit();
+
+                $this->logOperation('info', 'XFFM enviado exitosamente', [
+                    'voyage_id' => $voyage->id,
+                    'nroViaje' => $nroViaje,
+                    'transaction_id' => $transactionId,
+                ]);
+
+                return [
+                    'success' => true,
+                    'nroViaje' => $nroViaje,
+                    'transaction_id' => $transactionId,
+                    'message' => 'XFFM enviado exitosamente',
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP desconocido');
+            }
+
         } catch (Exception $e) {
+            DB::rollBack();
+
+            $this->logOperation('error', 'Error enviando XFFM', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return [
-                'success'       => false,
+                'success' => false,
                 'error_message' => $e->getMessage(),
-                'error_code'    => 'GENERAL_ERROR',
-                'raw_response'  => method_exists($client, '__getLastResponse') ? $client->__getLastResponse() : null,
             ];
         }
-
-        $rawResponseMain = method_exists($client, '__getLastResponse') ? $client->__getLastResponse() : null;
-        $parsedMain = ['xml' => null];
-        // si la respuesta trae un 'xml' en el objeto, lo exponemos (defensivo)
-        if (is_object($resultMain)) {
-            $container = property_exists($resultMain, 'EnviarMensajeFluvialResult') ? $resultMain->EnviarMensajeFluvialResult : $resultMain;
-            if (is_object($container) && property_exists($container, 'xml')) {
-                $parsedMain['xml'] = $container->xml;
-            }
-        }
-
-        // 3) Si corresponde, mandar DocumentoIMG
-        $docimgResult = null;
-        $docimgSent   = false;
-
-        if (!empty($options['docimg']) && !empty($options['docimg']['enabled'])) {
-            $docimg = $options['docimg'];
-            $docMethod = $this->config['soap_docimg_method'] ?? 'DocumentoIMG';
-
-            try {
-                $docParams = $this->buildDocumentoImgParams($docimg, $idUsuario, $ticket, $firma);
-
-                // Si se pasó un shape "soap_params" explícito, se usa tal cual.
-                $paramsToSend = [$docParams];
-
-                $resultDoc = $client->__soapCall($docMethod, $paramsToSend);
-
-                $rawResponseDoc = method_exists($client, '__getLastResponse') ? $client->__getLastResponse() : null;
-
-                $docimgResult = [
-                    'success'      => true,
-                    'raw_response' => $rawResponseDoc,
-                ];
-                $docimgSent = true;
-
-            } catch (SoapFault $sf) {
-                $docimgResult = [
-                    'success'       => false,
-                    'error_message' => $sf->faultstring ?? $sf->getMessage(),
-                    'error_code'    => $sf->faultcode ?? 'SOAP_FAULT',
-                    'raw_response'  => method_exists($client, '__getLastResponse') ? $client->__getLastResponse() : null,
-                ];
-            } catch (Exception $e) {
-                $docimgResult = [
-                    'success'       => false,
-                    'error_message' => $e->getMessage(),
-                    'error_code'    => 'GENERAL_ERROR',
-                    'raw_response'  => method_exists($client, '__getLastResponse') ? $client->__getLastResponse() : null,
-                ];
-            }
-        }
-
-        // 4) Resultado consolidado
-        return [
-            'success' => true,
-            'response_data' => [
-                'main' => [
-                    'raw_response' => $rawResponseMain,
-                    'parsed'       => $parsedMain,
-                ],
-                'docimg' => $docimgResult,
-            ],
-            'docimg_sent' => $docimgSent,
-        ];
     }
 
     /**
-     * Construye el payload para DocumentoIMG de forma flexible.
-     * - Si viene $docimg['soap_params'], se devuelve exactamente eso.
-     * - Si no, se arma un payload común con base64 + metadatos.
-     *
-     * @throws Exception si faltan campos esenciales.
+     * 2. XFBL - Conocimientos/BLs
+     * Requiere XFFM enviado previamente
+     * 
+     * @param Voyage $voyage
+     * @param array $options
+     * @return array
      */
-    protected function buildDocumentoImgParams(array $docimg, string $idUsuario, string $ticket, string $firma): array
+    public function sendXfbl(Voyage $voyage, array $options = []): array
     {
-        // Si te pasan el shape exacto, respetalo sin tocarlo
-        if (!empty($docimg['soap_params']) && is_array($docimg['soap_params'])) {
-            return $docimg['soap_params'];
+        $this->logOperation('info', 'Iniciando envío XFBL (Conocimientos)', [
+            'voyage_id' => $voyage->id,
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // 1. Verificar que XFFM fue enviado
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+                throw new Exception('Debe enviar XFFM primero');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+            if (!$nroViaje) {
+                throw new Exception('No se encontró nroViaje de XFFM');
+            }
+
+            // 2. Validar que hay BLs
+            $blCount = $voyage->shipments->flatMap->billsOfLading->count();
+            if ($blCount === 0) {
+                throw new Exception('No hay Bills of Lading para enviar');
+            }
+
+            // 3. Generar XML
+            $transactionId = $this->generateTransactionId('XFBL');
+            $xml = $this->paraguayXmlGenerator->createXfblXml($voyage, $transactionId, $nroViaje);
+
+            // 4. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XFBL',
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 5. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XFBL',
+                'version' => '1.0',
+                'viaje' => $nroViaje,
+                'xml' => $xml,
+            ]);
+
+            // 6. Procesar respuesta
+            if ($soapResult['success']) {
+                $transaction->update([
+                    'status' => 'sent',
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XFBL', 'sent');
+
+                DB::commit();
+
+                return [
+                    'success' => true,
+                    'transaction_id' => $transactionId,
+                    'message' => 'XFBL enviado exitosamente',
+                    'bl_count' => $blCount,
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
+            }
+
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            $this->logOperation('error', 'Error enviando XFBL', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
         }
-
-        // Campos mínimos que sí controlamos
-        $nroDocumento = $docimg['nroDocumento'] ?? null;
-        $file         = $docimg['file'] ?? null;
-
-        if (!$nroDocumento) {
-            throw new Exception('DocumentoIMG: falta nroDocumento.');
-        }
-        if (!$file || empty($file['base64'])) {
-            throw new Exception('DocumentoIMG: falta contenido base64 del archivo.');
-        }
-
-        // Metadata básica (defensiva)
-        $filename = $file['filename'] ?? 'adjunto.pdf';
-        $mimetype = $file['mimetype'] ?? 'application/pdf';
-
-        // Payload genérico: muchos servicios aceptan el binario en base64 con claves documentales.
-        // Si el WSDL requiere un shape distinto, podés pasar 'soap_params' desde el controlador.
-        return [
-            'nroDocumento'  => $nroDocumento,
-            // variantes usuales — si el WSDL no acepta, usar 'soap_params' desde el caller
-            'archivo'       => $file['base64'],     // contenido base64
-            'nombreArchivo' => $filename,
-            'tipo'          => $mimetype,
-            'Autenticacion' => [
-                'idUsuario' => (string)$idUsuario,
-                'ticket'    => (string)$ticket,
-                'firma'     => (string)$firma,
-            ],
-        ];
     }
+
+    /**
+     * 3. XFBT - Hoja de Ruta (Contenedores)
+     * Requiere XFFM enviado previamente
+     * 
+     * @param Voyage $voyage
+     * @param array $options
+     * @return array
+     */
+    public function sendXfbt(Voyage $voyage, array $options = []): array
+    {
+        $this->logOperation('info', 'Iniciando envío XFBT (Contenedores)', [
+            'voyage_id' => $voyage->id,
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // 1. Verificar XFFM
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+                throw new Exception('Debe enviar XFFM primero');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+
+            // 2. Validar contenedores (a través de shipmentItems)
+            $containers = $voyage->shipments
+                ->flatMap->billsOfLading
+                ->flatMap->shipmentItems
+                ->flatMap->containers
+                ->unique('id');
+
+            if ($containers->isEmpty()) {
+                throw new Exception('No hay contenedores para enviar');
+            }
+
+            // 3. Generar XML
+            $transactionId = $this->generateTransactionId('XFBT');
+            $xml = $this->paraguayXmlGenerator->createXfbtXml($voyage, $transactionId, $nroViaje);
+
+            // 4. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XFBT',
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 5. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XFBT',
+                'version' => '1.0',
+                'viaje' => $nroViaje,
+                'xml' => $xml,
+            ]);
+
+            // 6. Procesar respuesta
+            if ($soapResult['success']) {
+                $transaction->update([
+                    'status' => 'sent',
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XFBT', 'sent');
+
+                DB::commit();
+
+                return [
+                    'success' => true,
+                    'transaction_id' => $transactionId,
+                    'message' => 'XFBT enviado exitosamente',
+                    'container_count' => $containers->count(),
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
+            }
+
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            $this->logOperation('error', 'Error enviando XFBT', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * 4. XFCT - Cerrar Viaje
+     * Último paso - Cierra el nroViaje cuando todo está completo
+     * 
+     * @param Voyage $voyage
+     * @param array $options
+     * @return array
+     */
+    public function sendXfct(Voyage $voyage, array $options = []): array
+    {
+        $this->logOperation('info', 'Iniciando envío XFCT (Cerrar Viaje)', [
+            'voyage_id' => $voyage->id,
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // 1. Verificar XFFM
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+                throw new Exception('Debe enviar XFFM primero');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+
+            // 2. Generar XML
+            $transactionId = $this->generateTransactionId('XFCT');
+            $xml = $this->paraguayXmlGenerator->createXfctXml($nroViaje, $transactionId);
+
+            // 3. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XFCT',
+                'transaction_id' => $transactionId,
+            ]);
+
+            // 4. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XFCT',
+                'version' => '1.0',
+                'viaje' => $nroViaje,
+                'xml' => $xml,
+            ]);
+
+            // 5. Procesar respuesta
+            if ($soapResult['success']) {
+                $transaction->update([
+                    'status' => 'sent',
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XFCT', 'approved');
+
+                DB::commit();
+
+                return [
+                    'success' => true,
+                    'transaction_id' => $transactionId,
+                    'message' => 'Viaje cerrado exitosamente',
+                    'nroViaje' => $nroViaje,
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
+            }
+
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            $this->logOperation('error', 'Error enviando XFCT', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    // ====================================
+    // MÉTODOS HELPERS PRIVADOS
+    // ====================================
+
+    /**
+     * Enviar mensaje SOAP a DNA Paraguay
+     */
+    protected function sendSoapMessage(array $params): array
+    {
+        try {
+            $client = $this->createSoapClient();
+            $auth = $this->config['auth'];
+
+            // Parámetros GDSF
+            $soapParams = [
+                'codigo' => $params['codigo'],
+                'version' => $params['version'],
+                'viaje' => $params['viaje'],
+                'xml' => $params['xml'],
+                'Autenticacion' => [
+                    'idUsuario' => $auth['idUsuario'],
+                    'ticket' => $auth['ticket'],
+                    'firma' => $auth['firma'],
+                ],
+            ];
+
+            // Enviar
+            $result = $client->__soapCall('EnviarMensajeFluvial', [$soapParams]);
+            $rawResponse = $client->__getLastResponse();
+
+            return [
+                'success' => true,
+                'response_data' => $result,
+                'raw_response' => $rawResponse,
+            ];
+
+        } catch (SoapFault $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->faultstring ?? $e->getMessage(),
+                'error_code' => $e->faultcode ?? 'SOAP_FAULT',
+            ];
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'GENERAL_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Extraer nroViaje de la respuesta GDSF
+     */
+    protected function extractNroViajeFromResponse($responseData): ?string
+    {
+        try {
+            // DNA Paraguay retorna XML con nroViaje
+            if (is_object($responseData) && isset($responseData->xml)) {
+                $xml = simplexml_load_string($responseData->xml);
+                if ($xml && isset($xml->nroViaje)) {
+                    return (string)$xml->nroViaje;
+                }
+            }
+            return null;
+        } catch (Exception $e) {
+            Log::warning('Error extrayendo nroViaje', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /**
+     * Obtener transacción existente por tipo de mensaje
+     */
+    protected function getExistingTransaction(Voyage $voyage, string $tipoMensaje): ?WebserviceTransaction
+    {
+        return WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'manifiesto')
+            ->where('country', 'PY')
+            ->whereJsonContains('request_data->tipo_mensaje', $tipoMensaje)
+            ->orderBy('created_at', 'desc')
+            ->first();
+    }
+
+    
 }

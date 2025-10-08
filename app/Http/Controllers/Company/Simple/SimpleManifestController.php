@@ -604,83 +604,176 @@ class SimpleManifestController extends Controller
         return $this->renderComingSoon('transbordo', 'Transbordos Argentina/Paraguay');
     }
 
-    
+    /**
+     * ========================================================================
+     * PARAGUAY - MANIFIESTO FLUVIAL DNA (GDSF)
+     * ========================================================================
+     */
 
     /**
-     * Pantalla simple para Manifiesto DNA Paraguay.
-     * Mantengo la firma con $voyage (int) como en el resto del sistema simple.
+     * Show - Vista detallada para envío GDSF Paraguay
      */
-    public function manifiestoShow(int $voyage)
+    public function manifiestoShow(Voyage $voyage)
     {
-        // Pasamos lo mínimo indispensable a una vista genérica;
-        // si ya tenés 'company.simple.show' la reutilizamos.
-        // En el próximo paso ajustamos la vista para que use estos datos.
-        return view('company.simple.manifiesto.show', [
-            'voyage'        => $voyage,
-            'service_key'   => 'paraguay_manifiesto',
-            'service_label' => 'Manifiesto - DNA Paraguay',
-            'send_route'    => route('company.simple.manifiesto.send', $voyage),
-            // Opcional: banderas para la UI
-            'supportsPreviewXml' => false, // la preview la hacemos luego desde el service si querés
-            'supportsValidation' => false,
+        // Verificar permisos
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para acceder a manifiestos Paraguay');
+        }
+
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No puede acceder a este viaje');
+        }
+
+        // Cargar relaciones necesarias
+        $voyage->load([
+            'leadVessel',
+            'originPort.country',
+            'destinationPort.country',
+            'captain',
+            'company',
+            'shipments.billsOfLading.shipper',
+            'shipments.billsOfLading.consignee',
         ]);
+
+        // Inicializar service
+        $service = new \App\Services\Simple\ParaguayDnaService(
+            $voyage->company,
+            auth()->user()
+        );
+
+        // Validar voyage
+        $validation = $service->canProcessVoyage($voyage);
+
+        // Obtener transacciones existentes
+        $transactions = WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'manifiesto')
+            ->where('country', 'PY')
+            ->with('user')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // Obtener transacciones específicas por método
+        $xffmTransaction = $transactions->first(function($t) {
+            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFFM';
+        });
+
+        $xfblTransaction = $transactions->first(function($t) {
+            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFBL';
+        });
+
+        $xfbtTransaction = $transactions->first(function($t) {
+            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFBT';
+        });
+
+        $xfctTransaction = $transactions->first(function($t) {
+            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFCT';
+        });
+
+        // Estados de cada método
+        $xffmStatus = $xffmTransaction && $xffmTransaction->status === 'sent' ? 'sent' : 'pending';
+        $xfblStatus = $xfblTransaction && $xfblTransaction->status === 'sent' ? 'sent' : 'pending';
+        $xfbtStatus = $xfbtTransaction && $xfbtTransaction->status === 'sent' ? 'sent' : 'pending';
+        $xfctStatus = $xfctTransaction && $xfctTransaction->status === 'sent' ? 'sent' : 'pending';
+
+        // Contar BLs y contenedores
+        $blCount = $voyage->shipments->flatMap->billsOfLading->count();
+        // Contar BLs y contenedores
+        $blCount = $voyage->shipments->flatMap->billsOfLading->count();
+
+        // Contar contenedores a través de shipmentItems
+        $containerCount = $voyage->shipments
+            ->flatMap->billsOfLading
+            ->flatMap->shipmentItems
+            ->flatMap->containers
+            ->unique('id')
+            ->count();
+
+        $send_route = route('company.simple.manifiesto.send', $voyage);
+
+        return view('company.simple.manifiesto.show', compact(
+            'voyage',
+            'validation',
+            'transactions',
+            'xffmTransaction',
+            'xfblTransaction',
+            'xfbtTransaction',
+            'xfctTransaction',
+            'xffmStatus',
+            'xfblStatus',
+            'xfbtStatus',
+            'xfctStatus',
+            'blCount',
+            'containerCount',
+            'send_route'
+        ));
     }
 
     /**
-     * Dispara el envío del Manifiesto a DNA Paraguay usando el Service del sistema simple.
-     * No asume modelos ni repos; usa la Company del usuario autenticado (como el resto).
+     * Send - Procesar envío AJAX de métodos GDSF
      */
     public function manifiestoSend(Request $request, Voyage $voyage)
     {
-        $data = $request->validate([
-            'codigo'       => 'required|string|in:XFFM,XFBL,XFBT,XISP,XRSP,XFCT',
-            'version'      => 'required|string',
-            'xml'          => 'required|string',
-            'viaje'        => 'nullable|string',
-            'idUsuario'    => 'required|string',
-            'ticket'       => 'required|string',
-            'firma'        => 'required|string',
-            // ⬇️ Envío de PDF a DNA (NO se guarda)
-            'enviarAdjunto'=> 'sometimes|boolean',
-            'nroDocumento' => 'required_if:enviarAdjunto,1|nullable|string',
-            'attachment'   => 'nullable|file|mimes:pdf|max:10240',
-        ]);
-
-        $company = auth()->user()->company;
-        $service = new \App\Services\Simple\ParaguayDnaService($company, auth()->user());
-
-        // Preparar adjunto (en memoria → base64) si corresponde
-        $docimg = null;
-        if ($request->boolean('enviarAdjunto') && $request->hasFile('attachment')) {
-            $file = $request->file('attachment');
-            $content = file_get_contents($file->getRealPath());
-            $docimg = [
-                'enabled'      => true,
-                'nroDocumento' => $data['nroDocumento'],
-                'file'         => [
-                    'filename'      => $file->getClientOriginalName(),
-                    'mimetype'      => $file->getMimeType() ?: 'application/pdf',
-                    'size'          => $file->getSize(),
-                    'base64'        => base64_encode($content),
-                ],
-            ];
+        // Verificar permisos
+        if (!$this->hasCompanyRole('Cargas')) {
+            return response()->json([
+                'success' => false,
+                'error_message' => 'No tiene permisos para enviar manifiestos'
+            ], 403);
         }
 
-        // Llamar al servicio: envía el mensaje GDSF y (si $docimg) envía también el PDF por DocumentoIMG
-        $result = $service->send($voyage, [
-            'codigo'  => $data['codigo'],
-            'version' => $data['version'],
-            'xml'     => $data['xml'],
-            'viaje'   => $data['viaje'] ?? null,
-            'auth'    => [
-                'idUsuario' => $data['idUsuario'],
-                'ticket'    => $data['ticket'],
-                'firma'     => $data['firma'],
-            ],
-            'docimg'  => $docimg, // ← el servicio lo toma y lo envía; no se persiste en disco
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            return response()->json([
+                'success' => false,
+                'error_message' => 'No puede acceder a este viaje'
+            ], 403);
+        }
+
+        // Validar método
+        $request->validate([
+            'method' => 'required|in:XFFM,XFBL,XFBT,XFCT'
         ]);
 
-        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
+        $method = $request->input('method');
+
+        try {
+            // Inicializar service
+            $service = new \App\Services\Simple\ParaguayDnaService(
+                $voyage->company,
+                auth()->user()
+            );
+
+            // Ejecutar método correspondiente
+            $result = match($method) {
+                'XFFM' => $service->sendXffm($voyage),
+                'XFBL' => $service->sendXfbl($voyage),
+                'XFBT' => $service->sendXfbt($voyage),
+                'XFCT' => $service->sendXfct($voyage),
+                default => ['success' => false, 'error_message' => 'Método no válido']
+            };
+
+            // Log de auditoría
+            Log::info('Método GDSF ejecutado', [
+                'voyage_id' => $voyage->id,
+                'method' => $method,
+                'success' => $result['success'],
+                'user_id' => auth()->id()
+            ]);
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('Error ejecutando método GDSF', [
+                'voyage_id' => $voyage->id,
+                'method' => $method,
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_message' => 'Error interno: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
 

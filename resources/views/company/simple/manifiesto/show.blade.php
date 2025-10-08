@@ -3,32 +3,34 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ $page_title ?? 'Manifiesto – DNA Paraguay' }} — {{ is_object($voyage) ? ($voyage->voyage_number ?? $voyage->id) : $voyage }}
+                    🇵🇾 Paraguay - Manifiesto Fluvial DNA
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    Envío de mensajes <span class="font-medium">GDSF</span>: XFFM, XFBL, XFBT, XISP, XRSP, XFCT.
+                    Viaje: <span class="font-medium">{{ $voyage->voyage_number }}</span>
+                    @if($voyage->leadVessel)
+                        • Embarcación: <span class="font-medium">{{ $voyage->leadVessel->name }}</span>
+                    @endif
                 </p>
             </div>
 
             <div class="flex items-center space-x-2">
-                @if(Route::has('company.simple.anticipada.show') && is_object($voyage))
+                @if(Route::has('company.simple.anticipada.show'))
                     <a href="{{ route('company.simple.anticipada.show', $voyage) }}"
-                       class="px-3 py-1.5 text-xs rounded border text-gray-700 hover:bg-gray-50">Anticipada</a>
-                @else
-                    <span class="px-3 py-1.5 text-xs rounded border text-gray-400 bg-gray-50 cursor-not-allowed">Anticipada</span>
+                       class="px-3 py-1.5 text-xs rounded border text-gray-700 hover:bg-gray-50">
+                        🇦🇷 Anticipada
+                    </a>
                 @endif
 
-                @if(Route::has('company.simple.micdta.show') && is_object($voyage))
+                @if(Route::has('company.simple.micdta.show'))
                     <a href="{{ route('company.simple.micdta.show', $voyage) }}"
-                       class="px-3 py-1.5 text-xs rounded border text-gray-700 hover:bg-gray-50">MIC/DTA</a>
-                @else
-                    <span class="px-3 py-1.5 text-xs rounded border text-gray-400 bg-gray-50 cursor-not-allowed">MIC/DTA</span>
+                       class="px-3 py-1.5 text-xs rounded border text-gray-700 hover:bg-gray-50">
+                        🇦🇷 MIC/DTA
+                    </a>
                 @endif
 
-                <span class="px-3 py-1.5 text-xs rounded border text-gray-400 bg-gray-50 cursor-not-allowed">Desconsolidado</span>
-                <span class="px-3 py-1.5 text-xs rounded border text-gray-400 bg-gray-50 cursor-not-allowed">Transbordo</span>
-
-                <span class="px-3 py-1.5 text-xs rounded border border-emerald-500 text-emerald-700 bg-emerald-50">Paraguay</span>
+                <span class="px-3 py-1.5 text-xs rounded border border-emerald-600 text-emerald-700 bg-emerald-50 font-medium">
+                    🇵🇾 Paraguay DNA
+                </span>
             </div>
         </div>
     </x-slot>
@@ -36,300 +38,282 @@
     <div class="py-6">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
-            {{-- Formulario de Envío --}}
-            <div class="bg-white shadow-sm sm:rounded-lg">
+            {{-- Validación del Voyage --}}
+            @if(isset($validation))
+                {{-- Errores --}}
+                @if(count($validation['errors']) > 0)
+                    <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded">
+                        <div class="flex">
+                            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                            </svg>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800">Errores de Validación</h3>
+                                <ul class="mt-2 text-sm text-red-700 list-disc pl-5 space-y-1">
+                                    @foreach($validation['errors'] as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Advertencias --}}
+                @if(count($validation['warnings']) > 0)
+                    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                        <div class="flex">
+                            <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-yellow-800">Advertencias</h3>
+                                <ul class="mt-2 text-sm text-yellow-700 list-disc pl-5 space-y-1">
+                                    @foreach($validation['warnings'] as $warning)
+                                        <li>{{ $warning }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+            @endif
+
+            {{-- Botones de Envío GDSF --}}
+            <div class="bg-white shadow rounded-lg overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-emerald-50 to-white">
+                    <h3 class="text-lg font-semibold text-gray-900">Métodos GDSF Disponibles</h3>
+                    <p class="text-sm text-gray-600 mt-1">Envíe cada mensaje según el flujo obligatorio de DNA Paraguay</p>
+                </div>
+
                 <div class="p-6">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-1">Enviar a DNA Paraguay</h3>
-                    <p class="text-sm text-gray-600 mb-5">
-                        Completá los datos y pegá el XML del mensaje GDSF correspondiente. Podés adjuntar un PDF (opcional) para auditoría/documentación.
-                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                    <form id="dnaForm" class="space-y-5" enctype="multipart/form-data">
-                        @csrf
-
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label for="codigo" class="block text-sm font-medium text-gray-700">Código</label>
-                                <select id="codigo" name="codigo" required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                                    <option value="" disabled selected>Seleccioná…</option>
-                                    <option value="XFFM">XFFM – Carátula</option>
-                                    <option value="XFBL">XFBL – Conocimientos</option>
-                                    <option value="XFBT">XFBT – Hoja de ruta</option>
-                                    <option value="XISP">XISP – Incluir embarcación</option>
-                                    <option value="XRSP">XRSP – Retirar embarcación</option>
-                                    <option value="XFCT">XFCT – Cerrar viaje</option>
-                                </select>
+                        {{-- 1. XFFM - Carátula/Manifiesto --}}
+                        <div class="border-2 rounded-lg p-5 {{ $xffmStatus === 'sent' ? 'border-green-400 bg-green-50' : 'border-blue-400 bg-blue-50' }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFFM</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Carátula/Manifiesto Fluvial</p>
+                                    <p class="text-xs text-gray-600 mt-1">Primer envío obligatorio. Registra el viaje en DNA.</p>
+                                </div>
+                                @if($xffmStatus === 'sent')
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ ENVIADO
+                                    </span>
+                                @endif
                             </div>
 
-                            <div>
-                                <label for="version" class="block text-sm font-medium text-gray-700">Versión</label>
-                                <input id="version" name="version" type="text" required placeholder="1.0"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                            </div>
-
-                            <div>
-                                <label for="viaje" class="block text-sm font-medium text-gray-700">Nro. Viaje (opcional)</label>
-                                <input id="viaje" name="viaje" type="text" placeholder="p. ej. 15000TEMF000001C"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label for="idUsuario" class="block text-sm font-medium text-gray-700">idUsuario</label>
-                                <input id="idUsuario" name="idUsuario" type="text" required
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                            </div>
-                            <div>
-                                <label for="ticket" class="block text-sm font-medium text-gray-700">Ticket</label>
-                                <input id="ticket" name="ticket" type="text" required
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                            </div>
-                            <div>
-                                <label for="firma" class="block text-sm font-medium text-gray-700">Firma</label>
-                                <input id="firma" name="firma" type="text" required
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                            </div>
-                        </div>
-
-                        <div>
-                            <label for="xml" class="block text-sm font-medium text-gray-700">XML</label>
-                            <textarea id="xml" name="xml" rows="10" required
-                                      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 font-mono text-xs"
-                                      placeholder="Pegá aquí el XML completo del mensaje (XFFM/XFBL/XFBT/XISP/XRSP/XFCT)"></textarea>
-                        </div>
-
-                        {{-- ⬇️ NUEVO: Adjunto PDF opcional --}}
-                        <div>
-                            <label for="attachment" class="block text-sm font-medium text-gray-700">Adjuntar PDF (opcional)</label>
-                            <input id="attachment" name="attachment" type="file" accept="application/pdf"
-                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm">
-                            <p class="mt-1 text-xs text-gray-500">Formato permitido: PDF. Tamaño máx. 10 MB.</p>
-                            <p id="attachmentInfo" class="mt-1 text-xs text-gray-600 hidden"></p>
-                        </div>
-
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center space-x-3">
-                                <button id="btnSend" type="submit"
-                                        class="inline-flex items-center px-4 py-2 bg-emerald-600 border border-transparent rounded-md font-semibold text-xs text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500">
-                                    <svg id="spinner" class="hidden animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                                    </svg>
-                                    Enviar a DNA
-                                </button>
-                                <button type="button" id="btnClear"
-                                        class="px-4 py-2 border rounded-md text-xs text-gray-700 hover:bg-gray-50">
-                                    Limpiar
-                                </button>
-                            </div>
-
-                            @if(url()->previous())
-                                <a href="{{ url()->previous() }}" class="text-xs text-gray-500 hover:text-gray-700">← Volver</a>
+                            @if($xffmTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs space-y-1">
+                                    <div><span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xffmTransaction->created_at->format('d/m/Y H:i') }}</span></div>
+                                    <div><span class="text-gray-500">Nro. Viaje DNA:</span> <span class="font-mono font-bold text-emerald-700">{{ $xffmTransaction->external_reference ?? 'N/A' }}</span></div>
+                                </div>
                             @endif
+
+                            <button 
+                                onclick="enviarMetodo('XFFM')" 
+                                {{ ($xffmStatus === 'sent' || !$validation['can_process']) ? 'disabled' : '' }}
+                                class="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                                {{ $xffmStatus === 'sent' ? 'Ya Enviado' : 'Enviar XFFM' }}
+                            </button>
                         </div>
-                    </form>
-                </div>
-            </div>
 
-            {{-- Resultado del envío --}}
-            <div id="resultPanel" class="hidden bg-white shadow-sm sm:rounded-lg">
-                <div class="p-6">
-                    <div class="flex items-center justify-between">
-                        <h3 class="text-lg font-semibold text-gray-900">Resultado</h3>
-                        <div class="flex items-center space-x-2">
-                            <span id="pillStatus" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">—</span>
-                            <button id="btnCopy" type="button" class="text-xs px-2 py-1 border rounded hover:bg-gray-50">Copiar XML</button>
+                        {{-- 2. XFBL - Conocimientos/BLs --}}
+                        <div class="border-2 rounded-lg p-5 {{ $xfblStatus === 'sent' ? 'border-green-400 bg-green-50' : ($xffmStatus === 'sent' ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmStatus === 'sent' ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">2</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFBL</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Conocimientos/BLs</p>
+                                    <p class="text-xs text-gray-600 mt-1">Declara los Bills of Lading ({{ $blCount }} BLs detectados)</p>
+                                </div>
+                                @if($xfblStatus === 'sent')
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ ENVIADO
+                                    </span>
+                                @endif
+                            </div>
+
+                            @if($xfblTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs">
+                                    <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfblTransaction->created_at->format('d/m/Y H:i') }}</span>
+                                </div>
+                            @endif
+
+                            <button 
+                                onclick="enviarMetodo('XFBL')" 
+                                {{ ($xfblStatus === 'sent' || $xffmStatus !== 'sent') ? 'disabled' : '' }}
+                                class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                                {{ $xfblStatus === 'sent' ? 'Ya Enviado' : ($xffmStatus === 'sent' ? 'Enviar XFBL' : 'Requiere XFFM') }}
+                            </button>
                         </div>
-                    </div>
 
-                    <div class="mt-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">XML de Respuesta (si el servidor lo devuelve)</label>
-                        <pre id="responseXml" class="p-3 bg-gray-50 rounded overflow-x-auto text-xs font-mono whitespace-pre-wrap">—</pre>
-                    </div>
+                        {{-- 3. XFBT - Contenedores --}}
+                        <div class="border-2 rounded-lg p-5 {{ $xfbtStatus === 'sent' ? 'border-green-400 bg-green-50' : ($xffmStatus === 'sent' ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmStatus === 'sent' ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">3</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFBT</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Hoja de Ruta/Contenedores</p>
+                                    <p class="text-xs text-gray-600 mt-1">Declara los contenedores ({{ $containerCount }} detectados)</p>
+                                </div>
+                                @if($xfbtStatus === 'sent')
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ ENVIADO
+                                    </span>
+                                @endif
+                            </div>
 
-                    <div class="mt-4">
-                        <details class="text-sm">
-                            <summary class="cursor-pointer text-gray-700">Ver respuesta SOAP cruda</summary>
-                            <pre id="rawResponse" class="mt-2 p-3 bg-gray-50 rounded overflow-x-auto text-xs font-mono whitespace-pre-wrap">—</pre>
-                        </details>
+                            @if($xfbtTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs">
+                                    <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfbtTransaction->created_at->format('d/m/Y H:i') }}</span>
+                                </div>
+                            @endif
+
+                            <button 
+                                onclick="enviarMetodo('XFBT')" 
+                                {{ ($xfbtStatus === 'sent' || $xffmStatus !== 'sent') ? 'disabled' : '' }}
+                                class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                                {{ $xfbtStatus === 'sent' ? 'Ya Enviado' : ($xffmStatus === 'sent' ? 'Enviar XFBT' : 'Requiere XFFM') }}
+                            </button>
+                        </div>
+
+                        {{-- 4. XFCT - Cerrar Viaje --}}
+                        <div class="border-2 rounded-lg p-5 {{ $xfctStatus === 'sent' ? 'border-green-400 bg-green-50' : (($xffmStatus === 'sent' && $xfblStatus === 'sent') ? 'border-purple-400 bg-purple-50' : 'border-gray-300 bg-gray-100') }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full {{ ($xffmStatus === 'sent' && $xfblStatus === 'sent') ? 'bg-purple-600' : 'bg-gray-400' }} text-white text-sm font-bold">4</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFCT</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Cerrar Viaje</p>
+                                    <p class="text-xs text-gray-600 mt-1">Último paso. Cierra el nroViaje en DNA.</p>
+                                </div>
+                                @if($xfctStatus === 'sent')
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ CERRADO
+                                    </span>
+                                @endif
+                            </div>
+
+                            @if($xfctTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs">
+                                    <span class="text-gray-500">Cerrado:</span> <span class="font-medium">{{ $xfctTransaction->created_at->format('d/m/Y H:i') }}</span>
+                                </div>
+                            @endif
+
+                            <button 
+                                onclick="enviarMetodo('XFCT')" 
+                                {{ ($xfctStatus === 'sent' || $xffmStatus !== 'sent' || $xfblStatus !== 'sent') ? 'disabled' : '' }}
+                                class="w-full px-4 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                                {{ $xfctStatus === 'sent' ? 'Ya Cerrado' : (($xffmStatus === 'sent' && $xfblStatus === 'sent') ? 'Cerrar Viaje' : 'Requiere XFFM + XFBL') }}
+                            </button>
+                        </div>
+
                     </div>
                 </div>
             </div>
 
-            {{-- Ayuda rápida --}}
-            <div class="bg-white shadow-sm sm:rounded-lg">
-                <div class="p-6">
-                    <h4 class="font-semibold text-gray-900 mb-2">Ayuda rápida</h4>
-                    <ul class="text-sm text-gray-600 list-disc pl-5 space-y-1">
-                        <li><span class="font-medium">Código</span> define el tipo de mensaje.</li>
-                        <li><span class="font-medium">Versión</span> según el formulario.</li>
-                        <li><span class="font-medium">Viaje</span> solo si aplica (rectificación, etc.).</li>
-                        <li>Pegá el <span class="font-medium">XML</span> completo.</li>
-                        <li>Completá <span class="font-medium">idUsuario</span>, <span class="font-medium">ticket</span> y <span class="font-medium">firma</span> de DNA.</li>
-                        <li>Podés adjuntar un <span class="font-medium">PDF</span> (opcional) para documentación.</li>
-                    </ul>
+            {{-- Historial de Transacciones --}}
+            @if(isset($transactions) && $transactions->count() > 0)
+                <div class="bg-white shadow rounded-lg overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-semibold text-gray-900">Historial de Envíos</h3>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Método</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Referencia</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                @foreach($transactions as $transaction)
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {{ $transaction->created_at->format('d/m/Y H:i') }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-800">
+                                                {{ $transaction->request_data['tipo_mensaje'] ?? 'N/A' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                                @if($transaction->status === 'sent') bg-green-100 text-green-800
+                                                @elseif($transaction->status === 'error') bg-red-100 text-red-800
+                                                @else bg-yellow-100 text-yellow-800 @endif">
+                                                {{ ucfirst($transaction->status) }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-700">
+                                            {{ $transaction->external_reference ?? '-' }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            {{ $transaction->user->name ?? 'N/A' }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            @endif
+
         </div>
     </div>
 
-    {{-- Scripts --}}
+    {{-- JavaScript --}}
     <script>
-        (function () {
-            const form = document.getElementById('dnaForm');
-            const btnSend = document.getElementById('btnSend');
-            const btnClear = document.getElementById('btnClear');
-            const spinner = document.getElementById('spinner');
-            const resultPanel = document.getElementById('resultPanel');
-            const pillStatus = document.getElementById('pillStatus');
-            const responseXml = document.getElementById('responseXml');
-            const rawResponse = document.getElementById('rawResponse');
-            const btnCopy = document.getElementById('btnCopy');
-            const attachment = document.getElementById('attachment');
-            const attachmentInfo = document.getElementById('attachmentInfo');
+        function enviarMetodo(metodo) {
+            if (!confirm(`¿Confirma enviar ${metodo} a DNA Paraguay?`)) {
+                return;
+            }
 
-            const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
-            const sendUrl = "{{ $send_route }}";
+            // Deshabilitar botón
+            const button = event.target;
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.innerHTML = '<svg class="animate-spin h-4 w-4 inline mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg> Enviando...';
 
-            function setLoading(state) {
-                if (state) {
-                    spinner.classList.remove('hidden');
-                    btnSend.setAttribute('disabled', 'disabled');
-                    btnSend.classList.add('opacity-75', 'cursor-not-allowed');
+            fetch("{{ $send_route }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ method: metodo })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`✓ ${metodo} enviado exitosamente`);
+                    window.location.reload();
                 } else {
-                    spinner.classList.add('hidden');
-                    btnSend.removeAttribute('disabled');
-                    btnSend.classList.remove('opacity-75', 'cursor-not-allowed');
+                    alert(`✗ Error: ${data.error_message || 'Error desconocido'}`);
+                    button.disabled = false;
+                    button.textContent = originalText;
                 }
-            }
-
-            function setResult(statusText, xml, raw) {
-                resultPanel.classList.remove('hidden');
-                pillStatus.textContent = statusText;
-                pillStatus.className = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ' +
-                    (statusText === 'success'
-                        ? 'bg-green-100 text-green-800'
-                        : statusText === 'error'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800');
-
-                responseXml.textContent = xml || '—';
-                rawResponse.textContent = raw || '—';
-            }
-
-            function bytesToSize(bytes) {
-                if (bytes === 0) return '0 B';
-                const k = 1024, sizes = ['B','KB','MB','GB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-            }
-
-            attachment?.addEventListener('change', function () {
-                const f = attachment.files?.[0];
-                if (!f) {
-                    attachmentInfo.classList.add('hidden');
-                    attachmentInfo.textContent = '';
-                    return;
-                }
-                if (f.type !== 'application/pdf') {
-                    alert('Solo se permite PDF.');
-                    attachment.value = '';
-                    attachmentInfo.classList.add('hidden');
-                    attachmentInfo.textContent = '';
-                    return;
-                }
-                if (f.size > 10 * 1024 * 1024) { // 10 MB
-                    alert('El PDF supera el tamaño máximo permitido (10 MB).');
-                    attachment.value = '';
-                    attachmentInfo.classList.add('hidden');
-                    attachmentInfo.textContent = '';
-                    return;
-                }
-                attachmentInfo.textContent = `Adjunto: ${f.name} (${bytesToSize(f.size)})`;
-                attachmentInfo.classList.remove('hidden');
+            })
+            .catch(error => {
+                alert(`✗ Error de conexión: ${error.message}`);
+                button.disabled = false;
+                button.textContent = originalText;
             });
-
-            form.addEventListener('submit', async function (e) {
-                e.preventDefault();
-
-                const payload = {
-                    codigo: document.getElementById('codigo').value.trim(),
-                    version: document.getElementById('version').value.trim(),
-                    xml: document.getElementById('xml').value,
-                    viaje: document.getElementById('viaje').value.trim() || null,
-                    idUsuario: document.getElementById('idUsuario').value.trim(),
-                    ticket: document.getElementById('ticket').value.trim(),
-                    firma: document.getElementById('firma').value.trim(),
-                };
-
-                if (!payload.codigo || !payload.version || !payload.xml || !payload.idUsuario || !payload.ticket || !payload.firma) {
-                    alert('Completá los campos obligatorios.');
-                    return;
-                }
-
-                // Usamos FormData para permitir multipart (PDF)
-                const fd = new FormData();
-                fd.append('_token', csrf);
-                for (const [k, v] of Object.entries(payload)) {
-                    if (v !== null && v !== undefined) fd.append(k, v);
-                }
-                const f = attachment?.files?.[0];
-                if (f) fd.append('attachment', f);
-
-                setLoading(true);
-                try {
-                    const resp = await fetch(sendUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-CSRF-TOKEN': csrf,
-                            // NO seteamos Content-Type: el navegador lo define con boundary
-                        },
-                        body: fd
-                    });
-
-                    const data = await resp.json().catch(() => ({}));
-
-                    const ok = !!(data && data.success);
-                    const xml = data?.response_data?.parsed?.xml || data?.response_xml || null;
-                    const raw = data?.response_data?.raw_response || data?.raw_response || null;
-
-                    setResult(ok ? 'success' : 'error', xml, raw);
-                    if (!ok && data?.error_message) {
-                        alert('Error: ' + data.error_message);
-                    }
-                } catch (err) {
-                    setResult('error', null, String(err));
-                    alert('Error de comunicación.');
-                } finally {
-                    setLoading(false);
-                }
-            });
-
-            btnClear.addEventListener('click', function () {
-                form.reset();
-                attachmentInfo.classList.add('hidden');
-                attachmentInfo.textContent = '';
-                resultPanel.classList.add('hidden');
-                responseXml.textContent = '—';
-                rawResponse.textContent = '—';
-                pillStatus.textContent = '—';
-                pillStatus.className = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800';
-            });
-
-            btnCopy.addEventListener('click', function () {
-                const text = responseXml.textContent || '';
-                if (!text || text === '—') {
-                    alert('No hay XML para copiar.');
-                    return;
-                }
-                navigator.clipboard.writeText(text).then(() => {
-                    btnCopy.textContent = 'Copiado ✓';
-                    setTimeout(() => btnCopy.textContent = 'Copiar XML', 1200);
-                });
-            });
-        })();
+        }
     </script>
 </x-app-layout>
