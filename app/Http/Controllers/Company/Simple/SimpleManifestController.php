@@ -12,9 +12,14 @@ use App\Services\Simple\ArgentinaMicDtaService;
 use App\Services\Simple\ArgentinaMicDtaStatusService;
 use App\Services\Simple\ArgentinaMicDtaPositionService;
 use App\Services\Simple\ArgentinaAnticipatedService;
-use App\Traits\UserHelper;
-use Illuminate\Http\Request;
+// ⬇️ NUEVO: import del servicio PY (lo implemento en el siguiente paso)
+use App\Services\Simple\ParaguayDnaService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use App\Services\Simple\ArgentinaDeconsolidatedService;
+
+use App\Traits\UserHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -98,16 +103,16 @@ class SimpleManifestController extends Controller
             'service_class' => null,
         ],
         
-        // 🇵🇾 PARAGUAY - INDEPENDIENTE
+        // 🇵🇾 PARAGUAY - MANIFIESTO FLUVIAL (GDSF)
         'manifiesto' => [
-            'name' => 'Manifiestos',
+            'name' => 'Manifiesto Fluvial (DNA)',
             'country' => 'PY',
-            'description' => 'Manifiestos de carga para DNA Paraguay',
+            'description' => 'XFFM/XFBL/XFBT/XISP/XRSP/XFCT vía DNA GDSF',
             'icon' => 'ship',
-            'status' => 'coming_soon',
-            'priority' => 1, // ← NUEVO
-            'requires' => null, // ← NUEVO: independiente
-            'service_class' => null,
+            'status' => 'active',              
+            'priority' => 3,
+            'requires' => null,
+            'service_class' => ParaguayDnaService::class, 
         ],
     ];
 
@@ -366,12 +371,7 @@ class SimpleManifestController extends Controller
         ]);
     }
   
-
-    // ====================================
-    // MÉTODOS PREPARADOS PARA OTRAS FASES
-    // ====================================
-
-    // ====================================
+   // ====================================
     // INFORMACIÓN ANTICIPADA ARGENTINA
     // ====================================
 
@@ -547,9 +547,53 @@ class SimpleManifestController extends Controller
     /**
      * TODO FASE 4: Desconsolidados Argentina
      */
-    public function desconsolidadoIndex(Request $request)
+    // =============================
+    // DESCONSOLIDADO (AFIP) – SHOW
+    // =============================
+    public function desconsolidadoShow(Voyage $voyage)
     {
-        return $this->renderComingSoon('desconsolidado', 'Desconsolidados Argentina');
+        // Misma convención que Argentina (Anticipada/MICDTA):
+        // vista específica y ruta de envío nombrada.
+        return view('company.simple.desconsolidado.show', [
+            'voyage'     => $voyage,
+            'page_title' => 'Desconsolidado – AFIP',
+            'send_route' => route('company.simple.desconsolidado.send', $voyage),
+        ]);
+    }
+
+    // =============================
+    // DESCONSOLIDADO (AFIP) – SEND
+    // =============================
+    public function desconsolidadoSend(Request $request, Voyage $voyage)
+    {
+        // Sin inputs de XML: el service arma el XML desde BBDD con SimpleXmlGenerator
+        $user    = auth()->user();
+        $company = $user?->company;
+
+        if (!$company) {
+            return response()->json([
+                'success' => false,
+                'error_message' => 'Empresa no encontrada para el usuario autenticado.',
+            ], 403);
+        }
+
+        // Opcional: acciones avanzadas (dejamos default registrar_cbc)
+        $action = $request->input('action', 'registrar_cbc'); // 'registrar_cbc' | 'desvincular'
+        $payload = [];
+
+        if ($action === 'desvincular') {
+            // Si alguna vez querés exponer esta opción, se arma con datos concretos:
+            // $payload['desvinculacion'] = [ 'idTitTrans' => '...', 'nroMicDta' => '...' ];
+            $payload['action'] = 'desvincular';
+            $payload['desvinculacion'] = $request->input('desvinculacion', []);
+        }
+
+        $service = new ArgentinaDeconsolidatedService($company, $user);
+
+        // ⬇️ Este método arma el XML desde BBDD con SimpleXmlGenerator y hace el __soapCall
+        $result = $service->send($voyage, $payload);
+
+        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
     }
 
     /**
@@ -559,6 +603,87 @@ class SimpleManifestController extends Controller
     {
         return $this->renderComingSoon('transbordo', 'Transbordos Argentina/Paraguay');
     }
+
+    
+
+    /**
+     * Pantalla simple para Manifiesto DNA Paraguay.
+     * Mantengo la firma con $voyage (int) como en el resto del sistema simple.
+     */
+    public function manifiestoShow(int $voyage)
+    {
+        // Pasamos lo mínimo indispensable a una vista genérica;
+        // si ya tenés 'company.simple.show' la reutilizamos.
+        // En el próximo paso ajustamos la vista para que use estos datos.
+        return view('company.simple.manifiesto.show', [
+            'voyage'        => $voyage,
+            'service_key'   => 'paraguay_manifiesto',
+            'service_label' => 'Manifiesto - DNA Paraguay',
+            'send_route'    => route('company.simple.manifiesto.send', $voyage),
+            // Opcional: banderas para la UI
+            'supportsPreviewXml' => false, // la preview la hacemos luego desde el service si querés
+            'supportsValidation' => false,
+        ]);
+    }
+
+    /**
+     * Dispara el envío del Manifiesto a DNA Paraguay usando el Service del sistema simple.
+     * No asume modelos ni repos; usa la Company del usuario autenticado (como el resto).
+     */
+    public function manifiestoSend(Request $request, Voyage $voyage)
+    {
+        $data = $request->validate([
+            'codigo'       => 'required|string|in:XFFM,XFBL,XFBT,XISP,XRSP,XFCT',
+            'version'      => 'required|string',
+            'xml'          => 'required|string',
+            'viaje'        => 'nullable|string',
+            'idUsuario'    => 'required|string',
+            'ticket'       => 'required|string',
+            'firma'        => 'required|string',
+            // ⬇️ Envío de PDF a DNA (NO se guarda)
+            'enviarAdjunto'=> 'sometimes|boolean',
+            'nroDocumento' => 'required_if:enviarAdjunto,1|nullable|string',
+            'attachment'   => 'nullable|file|mimes:pdf|max:10240',
+        ]);
+
+        $company = auth()->user()->company;
+        $service = new \App\Services\Simple\ParaguayDnaService($company, auth()->user());
+
+        // Preparar adjunto (en memoria → base64) si corresponde
+        $docimg = null;
+        if ($request->boolean('enviarAdjunto') && $request->hasFile('attachment')) {
+            $file = $request->file('attachment');
+            $content = file_get_contents($file->getRealPath());
+            $docimg = [
+                'enabled'      => true,
+                'nroDocumento' => $data['nroDocumento'],
+                'file'         => [
+                    'filename'      => $file->getClientOriginalName(),
+                    'mimetype'      => $file->getMimeType() ?: 'application/pdf',
+                    'size'          => $file->getSize(),
+                    'base64'        => base64_encode($content),
+                ],
+            ];
+        }
+
+        // Llamar al servicio: envía el mensaje GDSF y (si $docimg) envía también el PDF por DocumentoIMG
+        $result = $service->send($voyage, [
+            'codigo'  => $data['codigo'],
+            'version' => $data['version'],
+            'xml'     => $data['xml'],
+            'viaje'   => $data['viaje'] ?? null,
+            'auth'    => [
+                'idUsuario' => $data['idUsuario'],
+                'ticket'    => $data['ticket'],
+                'firma'     => $data['firma'],
+            ],
+            'docimg'  => $docimg, // ← el servicio lo toma y lo envía; no se persiste en disco
+        ]);
+
+        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
+    }
+
+
 
     // ====================================
     // MÉTODOS AUXILIARES

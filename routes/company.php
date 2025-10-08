@@ -23,7 +23,7 @@ use App\Http\Controllers\Company\DashboardEstadosController;
 use App\Http\Controllers\Company\Manifests\TestingCustomsController;
 use App\Http\Controllers\Company\ManeFileController;
 use App\Http\Controllers\Company\VoyageWizardController;
-
+use App\Http\Controllers\Company\Simple\SimpleManifestController;
 
 // ImporterController para KLine.DAT
 use App\Http\Controllers\Company\ImporterController;
@@ -885,41 +885,42 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
             ->whereNumber('voyage');
     });
 
-    // ====================================
-    // MANIFIESTOS PARAGUAY (FASE 3 - PRÓXIMAMENTE)
-    // ====================================
-    
+    // ============================
+    // Paraguay – Manifiesto (DNA)
+    // ============================
     Route::prefix('manifiesto')->name('manifiesto.')->group(function () {
-        
-        /**
-         * Lista de voyages para Manifiestos Paraguay
-         * FASE 3: Implementar ParaguayManifestService
-         */
-        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoIndex'])
+        Route::get('/', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoIndex'])
             ->name('index');
-            
-        // TODO FASE 3: Rutas específicas Paraguay
-        // Route::get('/{voyage}', [SimpleManifestController::class, 'manifiestoShow'])->name('show');
-        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'manifiestoSend'])->name('send');
+
+        Route::get('/{voyage}', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoShow'])
+            ->whereNumber('voyage')
+            ->name('show');
+
+        Route::post('/{voyage}/send', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoSend'])
+            ->whereNumber('voyage')
+            ->name('send');
     });
 
-    // ====================================
-    // DESCONSOLIDADOS ARGENTINA (FASE 4 - PRÓXIMAMENTE)
-    // ====================================
-    
+
+    // ============================
+    // Argentina – Desconsolidado
+    // ============================
     Route::prefix('desconsolidado')->name('desconsolidado.')->group(function () {
-        
-        /**
-         * Lista de voyages para Desconsolidados Argentina
-         * FASE 4: Implementar ArgentinaDeconsolidationService
-         */
-        Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'desconsolidadoIndex'])
-            ->name('index');
-            
-        // TODO FASE 4: Rutas específicas desconsolidado
-        // Route::get('/{voyage}', [SimpleManifestController::class, 'desconsolidadoShow'])->name('show');
-        // Route::post('/{voyage}/send', [SimpleManifestController::class, 'desconsolidadoSend'])->name('send');
+        // (opcional) listado, si después querés un index:
+        // Route::get('/', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'desconsolidadoIndex'])
+        //     ->name('index');
+
+        // Form / pantalla por viaje
+        Route::get('/{voyage}', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'desconsolidadoShow'])
+            ->whereNumber('voyage')
+            ->name('show');
+
+        // Envío a AFIP (POST)
+        Route::post('/{voyage}/send', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'desconsolidadoSend'])
+            ->whereNumber('voyage')
+            ->name('send');
     });
+
 
     // ====================================
     // TRANSBORDOS ARGENTINA/PARAGUAY (FASE 5 - PRÓXIMAMENTE)

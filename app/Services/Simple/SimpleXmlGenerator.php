@@ -2371,54 +2371,154 @@ class SimpleXmlGenerator
     }
 
    private function getCountryCode(string $alpha2Code): string
-{
-    // Usar datos reales del modelo Country
-    $country = \App\Models\Country::where('alpha2_code', strtoupper($alpha2Code))->first();
-    
-    if ($country) {
-        // Si tiene customs_code específico, usarlo
-        if ($country->customs_code) {
-            return $country->customs_code;
+    {
+        // Usar datos reales del modelo Country
+        $country = \App\Models\Country::where('alpha2_code', strtoupper($alpha2Code))->first();
+        
+        if ($country) {
+            // Si tiene customs_code específico, usarlo
+            if ($country->customs_code) {
+                return $country->customs_code;
+            }
+            
+            // Si tiene numeric_code, usarlo
+            if ($country->numeric_code) {
+                return str_pad($country->numeric_code, 3, '0', STR_PAD_LEFT);
+            }
         }
         
-        // Si tiene numeric_code, usarlo
-        if ($country->numeric_code) {
-            return str_pad($country->numeric_code, 3, '0', STR_PAD_LEFT);
-        }
+        // Fallbacks seguros basados en códigos ISO estándar
+        return match(strtoupper($alpha2Code)) {
+            'AR' => '032', // Argentina
+            'PY' => '600', // Paraguay
+            'BR' => '076', // Brasil
+            'UY' => '858', // Uruguay
+            default => '032' // Argentina por defecto
+        };
     }
-    
-    // Fallbacks seguros basados en códigos ISO estándar
-    return match(strtoupper($alpha2Code)) {
-        'AR' => '032', // Argentina
-        'PY' => '600', // Paraguay
-        'BR' => '076', // Brasil
-        'UY' => '858', // Uruguay
-        default => '032' // Argentina por defecto
-    };
+
+    private function getPortCustomsCode(string $portCode): string
+    {
+        // Usar datos reales del modelo Port
+        $port = \App\Models\Port::where('code', strtoupper($portCode))->first();
+        
+        if ($port && $port->customs_code) {
+            return $port->customs_code;
+        }
+        
+        // Fallbacks seguros para puertos conocidos de la hidrovía
+        return match(strtoupper($portCode)) {
+            'ARBUE' => '019', // Buenos Aires
+            'ARPAR' => '013', // Paraná
+            'ARSFE' => '014', // Santa Fe
+            'ARROS' => '016', // Rosario
+            'ARSLA' => '016', // San Lorenzo (usa código Rosario)
+            'PYASU' => '001', // Asunción
+            'PYTVT' => '051', // Villeta
+            'PYCON' => '002', // Concepción
+            'PYPIL' => '003', // Pilar
+            default => '019'  // Buenos Aires por defecto
+        };
+    }
+
+    /**
+ * Genera el XML del método RegistrarDesconsolidado (AFIP)
+ * usando BillOfLading madre/hijos del Voyage.
+ */
+public function generateDeconsolidatedXml(Voyage $voyage): string
+{
+    try {
+        // Master BL del viaje
+        $master = $voyage->billsOfLading()
+            ->where('is_master_bill', true)
+            ->first();
+
+        if (!$master) {
+            throw new \Exception('No se encontró Conocimiento Madre (is_master_bill = true).');
+        }
+
+        // House BLs del master
+        $houses = $voyage->billsOfLading()
+            ->where('is_house_bill', true)
+            ->where('master_bill_number', $master->bill_number)
+            ->get();
+
+        if ($houses->isEmpty()) {
+            throw new \Exception('No se encontraron Conocimientos Hijo asociados al master BL.');
+        }
+
+        // Crear raíz
+        $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><Desconsolidado></Desconsolidado>');
+
+        // Cabecera — tomar identificador de AFIP si existe, sino id local
+        $cabecera = $xml->addChild('Cabecera');
+        $cabecera->addChild('IdentificadorViaje', htmlspecialchars((string)($voyage->argentina_voyage_id ?? $voyage->id)));
+        // Para AFIP: identificador del título madre; usamos bill_number del master
+        $cabecera->addChild('IdentificadorTituloMadre', htmlspecialchars((string)$master->bill_number));
+        // Fecha operación (hoy) y puerto (usamos destino del viaje si está)
+        $cabecera->addChild('FechaOperacion', now()->format('Y-m-d'));
+
+        // Puerto: preferimos destinationPort->code si está cargado; fallback a nombre
+        $puerto = $voyage->destinationPort?->code
+            ?? $voyage->destinationPort?->name
+            ?? $master->dischargePort?->code
+            ?? $master->dischargePort?->name
+            ?? '';
+        $cabecera->addChild('Puerto', htmlspecialchars((string)$puerto));
+
+        // Titulos hijos
+        $lista = $xml->addChild('TitulosHijos');
+
+        foreach ($houses as $h) {
+            $titulo = $lista->addChild('TituloHijo');
+
+            // Identificador del hijo: usamos su bill_number
+            $titulo->addChild('IdentificadorTituloHijo', htmlspecialchars((string)$h->bill_number));
+
+            // BL (house BL si existe, sino el mismo bill_number)
+            $bl = $h->house_bill_number ?: $h->bill_number;
+            $titulo->addChild('BL', htmlspecialchars((string)$bl));
+
+            // Pesos y bultos — campos reales de tu migración
+            // gross_weight_kg (decimal), total_packages (int)
+            $peso   = number_format((float)($h->gross_weight_kg ?? 0), 2, '.', '');
+            $bultos = (int)($h->total_packages ?? 0);
+            $titulo->addChild('PesoBruto', $peso);
+            $titulo->addChild('CantidadBultos', $bultos);
+
+            // Tipo de bulto — intentar desde relación de embalaje principal, si no, unidad
+            $tipoBulto =
+                $h->primaryPackagingType?->code
+                ?? $h->primaryPackagingType?->name
+                ?? $h->measurement_unit
+                ?? '';
+            $titulo->addChild('TipoBulto', htmlspecialchars((string)$tipoBulto));
+
+            // Consignatario — desde relación consignee (Client->name)
+            $consignatario = $h->consignee?->name ?? '';
+            $titulo->addChild('Consignatario', htmlspecialchars((string)$consignatario));
+
+            // País destino — intentar por dischargePort->country->code o finalDestinationPort
+            $paisDestino =
+                $h->dischargePort?->country?->code
+                ?? $h->finalDestinationPort?->country?->code
+                ?? '';
+            $titulo->addChild('PaisDestino', htmlspecialchars((string)$paisDestino));
+        }
+
+        // Formatear bonito
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $dom->preserveWhiteSpace = false;
+        $dom->formatOutput = true;
+        $dom->loadXML($xml->asXML());
+
+        return $dom->saveXML();
+
+    } catch (\Exception $e) {
+        Log::error('Error al generar XML de Desconsolidado: '.$e->getMessage());
+        throw $e;
+    }
 }
 
-private function getPortCustomsCode(string $portCode): string
-{
-    // Usar datos reales del modelo Port
-    $port = \App\Models\Port::where('code', strtoupper($portCode))->first();
-    
-    if ($port && $port->customs_code) {
-        return $port->customs_code;
-    }
-    
-    // Fallbacks seguros para puertos conocidos de la hidrovía
-    return match(strtoupper($portCode)) {
-        'ARBUE' => '019', // Buenos Aires
-        'ARPAR' => '013', // Paraná
-        'ARSFE' => '014', // Santa Fe
-        'ARROS' => '016', // Rosario
-        'ARSLA' => '016', // San Lorenzo (usa código Rosario)
-        'PYASU' => '001', // Asunción
-        'PYTVT' => '051', // Villeta
-        'PYCON' => '002', // Concepción
-        'PYPIL' => '003', // Pilar
-        default => '019'  // Buenos Aires por defecto
-    };
-}
 
 }
