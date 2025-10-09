@@ -23,7 +23,9 @@
         [
             'key'   => 'desconsolidado',
             'label' => 'Desconsolidado',
-            'href'  => '#', // pendiente de desarrollo
+            'href'  => Route::has('company.simple.desconsolidado.show')
+                        ? route('company.simple.desconsolidado.show', $voyage)
+                        : '#',
         ],
         [
             'key'   => 'trasbordo',

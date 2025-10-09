@@ -1,21 +1,10 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
-            <div>
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ __('Desconsolidados AFIP - Argentina') }}
-                </h2>
-                <p class="mt-1 text-sm text-gray-600">
-                    Viaje: <span class="font-medium">{{ $voyage->voyage_number }}</span> | 
-                    {{ $voyage->leadVessel->name ?? 'Sin embarcación' }} | 
-                    {{ $voyage->originPort->name ?? '' }} → {{ $voyage->destinationPort->name ?? '' }}
-                </p>
-            </div>
-            <a href="{{-- route('company.manifests.simple.manifiesto.show', $voyage) --}}" 
-               class="inline-flex items-center px-4 py-2 bg-gray-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700">
-                ← Volver al Manifiesto
-            </a>
-        </div>
+    @include('company.simple.partials.afip-header', [
+        'voyage'  => $voyage,
+        'company' => $company ?? null,
+        'active'  => 'desconsolidado',
+    ])
     </x-slot>
 
     <div class="py-8">
@@ -147,8 +136,7 @@
                                         </span>
                                     @endif
                                     
-                                    <form method="POST" action="{{ route('company.manifests.simple.desconsolidado.send', $voyage) }}" 
-                                        onsubmit="return confirm('¿Confirmar registro de títulos desconsolidados en AFIP?');">
+                                    <form method="POST" action="{{ route('company.simple.desconsolidado.send', $voyage) }}">
                                         @csrf
                                         <input type="hidden" name="action" value="registrar">
                                         <button type="submit" 
@@ -187,8 +175,7 @@
                                         </span>
                                     @endif
                                     
-                                    <form method="POST" action="{{ route('company.manifests.simple.desconsolidado.send', $voyage) }}" 
-                                        onsubmit="return confirm('¿Confirmar rectificación de títulos desconsolidados en AFIP?');">
+                                    <form method="POST" action="{{ route('company.simple.desconsolidado.send', $voyage) }}">
                                         @csrf
                                         <input type="hidden" name="action" value="rectificar">
                                         <button type="submit" 
@@ -230,7 +217,7 @@
                                         </span>
                                     @endif
                                     
-                                    <form method="POST" action="{{ route('company.manifests.simple.desconsolidado.send', $voyage) }}" 
+                                    <form method="POST" action="{{ route('company.simple.desconsolidado.send', $voyage) }}"
                                         onsubmit="return confirm('⚠️ ATENCIÓN: Esta acción eliminará los títulos de AFIP. ¿Está seguro?');">
                                         @csrf
                                         <input type="hidden" name="action" value="eliminar">
