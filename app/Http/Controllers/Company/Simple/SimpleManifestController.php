@@ -549,52 +549,185 @@ class SimpleManifestController extends Controller
      */
     // =============================
     // DESCONSOLIDADO (AFIP) – SHOW
-    // =============================
-    public function desconsolidadoShow(Voyage $voyage)
+    // =============================    
+    /**
+     * DESCONSOLIDADO - ENVIAR (REGISTRAR/RECTIFICAR/ELIMINAR)
+     * Maneja las 3 operaciones según el parámetro 'action'
+     */
+    public function desconsolidadoSend(Request $request, $voyageId)
     {
-        // Misma convención que Argentina (Anticipada/MICDTA):
-        // vista específica y ruta de envío nombrada.
+        $voyage = Voyage::findOrFail($voyageId);
+        
+        // Verificar acceso
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            return redirect()->back()->with('error', 'No tiene permisos para este viaje.');
+        }
+
+        // Obtener acción (registrar, rectificar, eliminar)
+        $action = $request->input('action', 'registrar');
+        
+        try {
+            $user = $this->getCurrentUser();
+            $service = new ArgentinaDeconsolidatedService($company, $user);
+
+            // Ejecutar según la acción
+            switch ($action) {
+                case 'registrar':
+                    $result = $service->registrarTitulos($voyage);
+                    $successMessage = 'Títulos desconsolidados registrados exitosamente en AFIP.';
+                    break;
+                    
+                case 'rectificar':
+                    $result = $service->rectificarTitulos($voyage);
+                    $successMessage = 'Títulos desconsolidados rectificados exitosamente en AFIP.';
+                    break;
+                    
+                case 'eliminar':
+                    $result = $service->eliminarTitulos($voyage);
+                    $successMessage = 'Títulos desconsolidados eliminados exitosamente en AFIP.';
+                    break;
+                    
+                default:
+                    return redirect()->back()->with('error', 'Acción no válida.');
+            }
+
+            // Procesar resultado
+            if ($result['success']) {
+                return redirect()
+                    ->route('company.manifests.simple.desconsolidado.show', $voyage)
+                    ->with('success', $successMessage);
+            } else {
+                return redirect()
+                    ->route('company.manifests.simple.desconsolidado.show', $voyage)
+                    ->with('error', 'Error: ' . ($result['error'] ?? 'Error desconocido'));
+            }
+
+        } catch (Exception $e) {
+            Log::error('Error en desconsolidadoSend', [
+                'voyage_id' => $voyage->id,
+                'action' => $action,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->route('company.manifests.simple.desconsolidado.show', $voyage)
+                ->with('error', 'Error procesando solicitud: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * DESCONSOLIDADO - MOSTRAR VISTA
+     * Prepara todas las variables necesarias para la vista de desconsolidados
+     */
+    public function desconsolidadoShow($voyageId)
+    {
+        // 1. Cargar voyage con relaciones
+        $voyage = Voyage::with([
+            'leadVessel',
+            'originPort',
+            'destinationPort',
+            'company',
+            'billsOfLading.shipmentItems',
+            'billsOfLading.loadingPort',
+            'billsOfLading.dischargePort'
+        ])->findOrFail($voyageId);
+
+        // 2. Verificar acceso de empresa
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para ver este viaje.');
+        }
+
+        // 3. Contar BLs desconsolidados (con master_bill_number)
+        $desconsolidatedBillsCount = $voyage->billsOfLading()
+            ->whereNotNull('master_bill_number')
+            ->count();
+
+        // 4. Contar contenedores (usando la relación correcta)
+        $containersCount = \DB::table('container_shipment_item')
+            ->join('shipment_items', 'container_shipment_item.shipment_item_id', '=', 'shipment_items.id')
+            ->join('bills_of_lading', 'shipment_items.bill_of_lading_id', '=', 'bills_of_lading.id')
+            ->join('shipments', 'bills_of_lading.shipment_id', '=', 'shipments.id')
+            ->where('shipments.voyage_id', $voyage->id)
+            ->distinct('container_shipment_item.container_id')
+            ->count('container_shipment_item.container_id');
+
+        // 5. Validar con el servicio
+        $user = $this->getCurrentUser();
+        $service = new ArgentinaDeconsolidatedService($company, $user);
+        $validation = $service->canProcessVoyage($voyage);
+
+        // 6. Obtener estados de las operaciones
+        $estados = $this->obtenerEstadosDesconsolidado($voyage);
+
+        // 7. Obtener historial de transacciones
+        $transactions = WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'desconsolidados')
+            ->with('user')
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
+
+        // 8. Retornar vista con todas las variables
         return view('company.simple.desconsolidado.show', [
-            'voyage'     => $voyage,
-            'page_title' => 'Desconsolidado – AFIP',
-            'send_route' => route('company.simple.desconsolidado.send', $voyage),
+            'voyage' => $voyage,
+            'desconsolidatedBillsCount' => $desconsolidatedBillsCount,
+            'containersCount' => $containersCount,
+            'validation' => $validation,
+            'estados' => $estados,
+            'transactions' => $transactions,
         ]);
     }
 
-    // =============================
-    // DESCONSOLIDADO (AFIP) – SEND
-    // =============================
-    public function desconsolidadoSend(Request $request, Voyage $voyage)
+    /**
+     * HELPER: Obtener estados de operaciones desconsolidado
+     */
+    private function obtenerEstadosDesconsolidado(Voyage $voyage): array
     {
-        // Sin inputs de XML: el service arma el XML desde BBDD con SimpleXmlGenerator
-        $user    = auth()->user();
-        $company = $user?->company;
+        $estados = [
+            'registrar' => 'pending',
+            'rectificar' => 'pending',
+            'eliminar' => 'pending',
+        ];
 
-        if (!$company) {
-            return response()->json([
-                'success' => false,
-                'error_message' => 'Empresa no encontrada para el usuario autenticado.',
-            ], 403);
+        // Verificar si hay transacciones exitosas por cada método
+        $registrarSuccess = WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'desconsolidados')
+            ->where('status', 'success')
+            ->whereJsonContains('additional_metadata->method', 'registrar')
+            ->exists();
+
+        $rectificarSuccess = WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'desconsolidados')
+            ->where('status', 'success')
+            ->whereJsonContains('additional_metadata->method', 'rectificar')
+            ->exists();
+
+        $eliminarSuccess = WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'desconsolidados')
+            ->where('status', 'success')
+            ->whereJsonContains('additional_metadata->method', 'eliminar')
+            ->exists();
+
+        if ($registrarSuccess) {
+            $estados['registrar'] = 'success';
         }
 
-        // Opcional: acciones avanzadas (dejamos default registrar_cbc)
-        $action = $request->input('action', 'registrar_cbc'); // 'registrar_cbc' | 'desvincular'
-        $payload = [];
-
-        if ($action === 'desvincular') {
-            // Si alguna vez querés exponer esta opción, se arma con datos concretos:
-            // $payload['desvinculacion'] = [ 'idTitTrans' => '...', 'nroMicDta' => '...' ];
-            $payload['action'] = 'desvincular';
-            $payload['desvinculacion'] = $request->input('desvinculacion', []);
+        if ($rectificarSuccess) {
+            $estados['rectificar'] = 'success';
         }
 
-        $service = new ArgentinaDeconsolidatedService($company, $user);
+        if ($eliminarSuccess) {
+            $estados['eliminar'] = 'success';
+        }
 
-        // ⬇️ Este método arma el XML desde BBDD con SimpleXmlGenerator y hace el __soapCall
-        $result = $service->send($voyage, $payload);
-
-        return response()->json($result, ($result['success'] ?? false) ? 200 : 422);
+        return $estados;
     }
+
+   
+
+    
 
     /**
      * TODO FASE 5: Transbordos Argentina/Paraguay
