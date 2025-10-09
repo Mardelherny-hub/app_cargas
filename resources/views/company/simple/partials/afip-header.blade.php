@@ -27,11 +27,7 @@
                         ? route('company.simple.desconsolidado.show', $voyage)
                         : '#',
         ],
-        [
-            'key'   => 'trasbordo',
-            'label' => 'Trasbordo',
-            'href'  => '#', // pendiente de desarrollo
-        ],
+        
     ];
 @endphp
 

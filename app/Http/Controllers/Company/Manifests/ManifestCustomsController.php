@@ -713,9 +713,7 @@ class ManifestCustomsController extends Controller
             case 'micdta':
                 return new ArgentinaMicDtaService($company, $user);
             case 'desconsolidado':
-                return new ArgentinaDeconsolidationService($company, $user);
-            case 'transbordo':
-                return new ArgentinaTransshipmentService($company, $user);
+                return new ArgentinaDeconsolidationService($company, $user);            
             case 'paraguay_customs':
                 return new ParaguayCustomsService($company); // Solo company
              case 'mane':  // NUEVO: Agregar MANE
@@ -818,52 +816,6 @@ class ManifestCustomsController extends Controller
                     }
                     
                 return $service->registerDeconsolidation($tituloMadre, $contenedores, $titulosHijos);
-
-                case 'transbordo':
-
-                    // ✅ NUEVO: Validar que existan Bills of Lading con datos de consolidación
-                    $this->validateTransbordo($voyage);
-                    // Para testing/bypass, usar datos mínimos de barcazas
-                    $bargeData = [];
-                    
-                    // Intentar obtener datos reales de barcazas si existen
-                    if (method_exists($this, 'prepareBargeDateForTransshipment')) {
-                        $bargeData = $this->prepareBargeDateForTransshipment($voyage);
-                    }
-                    
-                    // Si no hay datos reales, crear datos mínimos para testing/bypass
-                    if (empty($bargeData)) {
-                        $shipments = $voyage->shipments;
-                        if ($shipments->count() > 0) {
-                            // Crear una barcaza ficticia por cada shipment
-                            foreach ($shipments as $index => $shipment) {
-                                $bargeData[] = [
-                                    'barge_id' => "BARGE-" . ($index + 1),
-                                    'vessel_name' => ($voyage->leadVessel?->name ?? 'VESSEL') . ' Barge ' . ($index + 1),
-                                    'containers' => [],
-                                    'containers_count' => $shipment->containers_loaded ?? 0,
-                                    'route' => [
-                                        'origin' => $voyage->originPort?->code ?? 'ORIGEN',
-                                        'destination' => $voyage->destinationPort?->code ?? 'DESTINO'
-                                    ]
-                                ];
-                            }
-                        } else {
-                            // Si no hay shipments, crear al menos una barcaza ficticia
-                            $bargeData[] = [
-                                'barge_id' => 'BARGE-001',
-                                'vessel_name' => ($voyage->leadVessel?->name ?? 'VESSEL') . ' Barge 1',
-                                'containers' => [],
-                                'containers_count' => 0,
-                                'route' => [
-                                    'origin' => $voyage->originPort?->code ?? 'ORIGEN',
-                                    'destination' => $voyage->destinationPort?->code ?? 'DESTINO'
-                                ]
-                            ];
-                        }
-                    }
-                    
-                return $service->registerTransshipment($bargeData, $voyage);
 
                 case 'paraguay_customs':
                 return $service->sendImportManifest($voyage, auth()->id());
@@ -1471,7 +1423,7 @@ public function voyageStatuses($voyageId)
      */
     private function getCountryFromWebserviceType(string $type): string
     {
-        $argentineTypes = ['anticipada', 'micdta', 'desconsolidado', 'transbordo', 'mane'];
+        $argentineTypes = ['anticipada', 'micdta', 'desconsolidado', 'mane'];
         $paraguayTypes = ['paraguay_customs', 'manifiesto'];
         
         if (in_array($type, $argentineTypes)) {

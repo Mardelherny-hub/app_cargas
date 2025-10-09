@@ -27,6 +27,13 @@ class Shipment extends Model
     use HasFactory;
 
     /**
+     * Shipment Model
+     * 
+     * @property string|null $origin_manifest_id ID Manifiesto arribo país partida (trasbordo AFIP)
+     * @property string|null $origin_transport_doc ID Título Transporte arribo país partida (trasbordo AFIP)
+     */
+
+    /**
      * The table associated with the model.
      */ 
     protected $table = 'shipments';
@@ -58,6 +65,9 @@ class Shipment extends Model
         
         // Shipment status
         'status',
+        // Campos de trasbordo AFIP MIC/DTA
+        'origin_manifest_id',
+        'origin_transport_doc',
         
         // Operational times
         'departure_time',
