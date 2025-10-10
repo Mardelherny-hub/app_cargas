@@ -446,6 +446,77 @@
                         </div>
                     </div>
 
+                    {{-- ✅ NUEVO: Información de Trasbordo (Opcional) --}}
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <div class="flex items-center mb-4">
+                            <h3 class="text-lg leading-6 font-medium text-gray-900">
+                                Información de Trasbordo
+                            </h3>
+                            <span class="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                Opcional - Solo para trasbordos
+                            </span>
+                        </div>
+
+                        <div class="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
+                            <div class="flex">
+                                <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                                </svg>
+                                <div class="ml-3">
+                                    <p class="text-sm text-blue-700">
+                                        Complete estos campos <strong>únicamente si este shipment corresponde a un trasbordo</strong> 
+                                        (carga que viene de otro medio de transporte). Estos datos serán utilizados para 
+                                        la declaración MIC/DTA ante AFIP.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            {{-- ID del Manifiesto de Origen --}}
+                            <div>
+                                <label for="origin_manifest_id" class="block text-sm font-medium text-gray-700">
+                                    ID Manifiesto de Origen
+                                </label>
+                                <input type="text" 
+                                       name="origin_manifest_id" 
+                                       id="origin_manifest_id" 
+                                       maxlength="20"
+                                       value="{{ old('origin_manifest_id', $shipment->origin_manifest_id) }}"
+                                       placeholder="Ej: MAN-2024-001234"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('origin_manifest_id') border-red-300 @enderror">
+                                @error('origin_manifest_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-sm text-gray-500">
+                                    Identificador del manifiesto del transporte anterior (máx. 20 caracteres)
+                                </p>
+                            </div>
+
+                            {{-- Documento de Transporte de Origen --}}
+                            <div>
+                                <label for="origin_transport_doc" class="block text-sm font-medium text-gray-700">
+                                    Documento de Transporte de Origen
+                                </label>
+                                <input type="text" 
+                                       name="origin_transport_doc" 
+                                       id="origin_transport_doc" 
+                                       maxlength="39"
+                                       value="{{ old('origin_transport_doc', $shipment->origin_transport_doc) }}"
+                                       placeholder="Ej: BL-ARG-2024-987654"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('origin_transport_doc') border-red-300 @enderror">
+                                @error('origin_transport_doc')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                                <p class="mt-1 text-sm text-gray-500">
+                                    Número del documento de transporte anterior (BL, CRT, AWB, etc. - máx. 39 caracteres)
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                     {{-- Botones de Acción --}}
                     <div class="flex justify-end space-x-3">
                         <a href="{{ route('company.shipments.show', $shipment) }}" 

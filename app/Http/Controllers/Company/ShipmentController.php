@@ -257,6 +257,9 @@ class ShipmentController extends Controller
                 'arrival_at' => 'nullable|date|after_or_equal:departure_at',
                 'discharge_starts_at' => 'nullable|date|after_or_equal:arrival_at',
                 'discharge_completed_at' => 'nullable|date|after_or_equal:discharge_starts_at',
+                // ✅ NUEVO: Campos de trasbordo AFIP (opcionales)
+                'origin_manifest_id' => 'nullable|string|max:20',
+                'origin_transport_doc' => 'nullable|string|max:39',
             ]);
 
             // NUEVO: Cargar voyage con sus datos
@@ -930,6 +933,9 @@ public function update(Request $request, Shipment $shipment)
         'cargo_capacity_tons' => 'required|numeric|min:0|max:99999.99',
         'container_capacity' => 'nullable|integer|min:0|max:9999',
         'status' => 'required|in:planning,loading,loaded,in_transit,arrived,discharging,completed,delayed',
+        // ✅ NUEVO: Campos de trasbordo AFIP (opcionales)
+        'origin_manifest_id' => 'nullable|string|max:20',
+        'origin_transport_doc' => 'nullable|string|max:39',
     ]);
 
     // Si cambió vessel_id (de placeholder a embarcación real), quitar requires_attention
