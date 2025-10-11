@@ -20,7 +20,7 @@ use App\Models\Port;
 use App\Models\Client;
 use App\Services\Reports\ManifestReportService;
 use App\Services\Reports\BillsOfLadingReportService;
-use App\Services\Reports\MicdtaReportService;
+use App\Services\Reports\MicDtaReportService;
 use App\Services\Reports\ArrivalNoticeReportService;
 use App\Services\Reports\CustomsReportService;
 use App\Services\Reports\ShipmentReportService;
@@ -30,6 +30,7 @@ use App\Services\Reports\ExportService;
 use App\Exports\ManifestExport;
 use Maatwebsite\Excel\Facades\Excel; 
 use App\Services\Reports\ArrivalNoticeService;
+
 use Illuminate\Support\Facades\Storage;
 use ZipArchive;
 
@@ -190,135 +191,122 @@ class ReportController extends Controller
      * @return \Illuminate\View\View
      */
     /**
- * Vista para generar cartas de aviso de llegada
- */
-public function arrivalNotices(Request $request)
-{
-    // 1. Validar permisos
-   /*  if (!$this->hasCompanyRole('Cargas')) {
-        abort(403, 'Su empresa no tiene el rol de Cargas.');
-    } */
+     * Vista para generar cartas de aviso de llegada
+     */
+    public function arrivalNotices(Request $request)
+    {
+        // 1. Validar permisos
+        /*  if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        } */
 
-    /* if (!$this->canPerform('reports.arrival_notices')) {
-        abort(403, 'No tiene permisos para generar cartas de aviso.');
-    } */
+        /* if (!$this->canPerform('reports.arrival_notices')) {
+            abort(403, 'No tiene permisos para generar cartas de aviso.');
+        } */
 
-    // 2. Obtener empresa actual
-    $company = $this->getUserCompany();
+        // 2. Obtener empresa actual
+        $company = $this->getUserCompany();
 
-    // 3. Obtener viajes disponibles con cargas completadas
-    $voyages = Voyage::with([
-        'leadVessel:id,name',
-        'originPort:id,name',
-        'destinationPort:id,name',
-        'billsOfLading.consignee:id,legal_name',
-    ])
-    ->where('company_id', $company->id)
-    ->whereHas('billsOfLading') // Solo viajes con BLs
-    ->whereIn('status', ['completed', 'in_progress', 'arrived'])
-    ->orderBy('departure_date', 'desc')
-    ->limit(50)
-    ->get();
-
-    // 4. Retornar vista
-    return view('company.reports.arrival-notices', compact('voyages'));
-}
-
-/**
- * API: Obtener consignatarios de un viaje (para AJAX)
- */
-public function getVoyageConsignees(Request $request)
-{
-    // Validar permisos
-    /* if (!$this->hasCompanyRole('Cargas')) {
-        return response()->json(['error' => 'Sin permisos'], 403);
-    } */
-
-    // Validar parámetros
-    $request->validate([
-        'voyage_id' => 'required|integer|exists:voyages,id'
-    ]);
-
-    $company = $this->getUserCompany();
-    $voyageId = $request->input('voyage_id');
-
-    // Obtener viaje y verificar pertenencia
-    $voyage = Voyage::where('id', $voyageId)
+        // 3. Obtener viajes disponibles con cargas completadas
+        $voyages = Voyage::with([
+            'leadVessel:id,name',
+            'originPort:id,name',
+            'destinationPort:id,name',
+            'billsOfLading.consignee:id,legal_name',
+        ])
         ->where('company_id', $company->id)
-        ->first();
-
-    if (!$voyage) {
-        return response()->json(['error' => 'Viaje no encontrado'], 404);
-    }
-
-    // Obtener consignatarios únicos con cantidad de BLs
-    $consignees = \DB::table('bills_of_lading')
-        ->join('clients', 'bills_of_lading.consignee_id', '=', 'clients.id')
-        ->join('shipments', 'bills_of_lading.shipment_id', '=', 'shipments.id')
-        ->where('shipments.voyage_id', $voyageId)
-        ->whereNotNull('bills_of_lading.consignee_id')
-        ->select(
-            'clients.id',
-            'clients.legal_name',
-            \DB::raw('COUNT(bills_of_lading.id) as bills_count')
-        )
-        ->groupBy('clients.id', 'clients.legal_name')
-        ->orderBy('clients.legal_name')
+        ->whereHas('billsOfLading') // Solo viajes con BLs
+        ->whereIn('status', ['completed', 'in_progress', 'arrived'])
+        ->orderBy('departure_date', 'desc')
+        ->limit(50)
         ->get();
 
-    return response()->json($consignees);
-}
+        // 4. Retornar vista
+        return view('company.reports.arrival-notices', compact('voyages'));
+    }
+
+    /**
+     * API: Obtener consignatarios de un viaje (para AJAX)
+     */
+    public function getVoyageConsignees(Request $request)
+    {
+        // Validar permisos
+        /* if (!$this->hasCompanyRole('Cargas')) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        } */
+
+        // Validar parámetros
+        $request->validate([
+            'voyage_id' => 'required|integer|exists:voyages,id'
+        ]);
+
+        $company = $this->getUserCompany();
+        $voyageId = $request->input('voyage_id');
+
+        // Obtener viaje y verificar pertenencia
+        $voyage = Voyage::where('id', $voyageId)
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$voyage) {
+            return response()->json(['error' => 'Viaje no encontrado'], 404);
+        }
+
+        // Obtener consignatarios únicos con cantidad de BLs
+        $consignees = \DB::table('bills_of_lading')
+            ->join('clients', 'bills_of_lading.consignee_id', '=', 'clients.id')
+            ->join('shipments', 'bills_of_lading.shipment_id', '=', 'shipments.id')
+            ->where('shipments.voyage_id', $voyageId)
+            ->whereNotNull('bills_of_lading.consignee_id')
+            ->select(
+                'clients.id',
+                'clients.legal_name',
+                \DB::raw('COUNT(bills_of_lading.id) as bills_count')
+            )
+            ->groupBy('clients.id', 'clients.legal_name')
+            ->orderBy('clients.legal_name')
+            ->get();
+
+        return response()->json($consignees);
+    }
 
     /**
      * Reporte MIC/DTA.
      * Solo disponible para empresas con rol "Cargas" y webservices activos.
      */
+    /**
+     * Vista para generar reportes MIC/DTA
+     */
     public function micdta(Request $request)
     {
-        // 1. Verificar permisos básicos
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
         if (!$this->canPerform('reports.micdta')) {
-            abort(403, 'No tiene permisos para ver reportes MIC/DTA.');
+            abort(403, 'No tiene permisos para generar reportes MIC/DTA.');
         }
 
         $company = $this->getUserCompany();
 
-        // 2. Verificar empresa y acceso
-        if (!$company || !$this->canAccessCompany($company->id)) {
-            abort(403, 'No tiene permisos para acceder a esta empresa.');
-        }
+        // Obtener viajes con MIC/DTA exitoso
+        $voyages = Voyage::with([
+            'leadVessel:id,name',
+            'originPort:id,name',
+            'destinationPort:id,name',
+            'shipments',
+            'billsOfLading',
+        ])
+        ->where('company_id', $company->id)
+        ->whereHas('webserviceTransactions', function($query) {
+            $query->where('webservice_type', 'micdta')
+                ->where('status', 'success');
+        })
+        ->orderBy('departure_date', 'desc')
+        ->limit(50)
+        ->get();
 
-        // 3. Verificar que la empresa tenga rol "Cargas"
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene permisos para reportes MIC/DTA. Se requiere rol "Cargas".');
-        }
-
-        // 4. Verificar que tenga webservices activos
-        if (!$company->ws_active) {
-            return redirect()->route('company.reports.index')
-                ->with('error', 'Los reportes MIC/DTA requieren webservices activos.');
-        }
-
-        // Aplicar filtros de ownership
-        $micdtaQuery = $this->buildMicdtaQuery($company);
-
-        // Si es usuario regular, filtrar solo sus propios registros
-        if ($this->isUser()) {
-            // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $micdtaQuery->where('created_by', $this->getCurrentUser()->id);
-        }
-
-        // TODO: Implementar cuando esté el módulo de webservices
-        $micdtaReports = collect();
-
-        $stats = $this->getMicdtaStats($company);
-        $filters = $this->getMicdtaFilters();
-
-        return view('company.reports.micdta', compact(
-            'micdtaReports',
-            'stats',
-            'filters',
-            'company'
-        ));
+        return view('company.reports.micdta', compact('voyages'));
     }
 
     
@@ -1185,6 +1173,9 @@ private function buildBillsOfLadingQuery($company)
                 
                 case 'arrival-notices':
                     return $this->generateArrivalNotices($format, $filters, $company);
+
+                case 'micdta':
+                    return $this->generateMicDta($format, $filters, $company);
                 
                 default:
                     return back()->with('error', 'Tipo de reporte no implementado.');
@@ -1887,4 +1878,50 @@ private function buildBillsOfLadingQuery($company)
             });
         }
     }
+
+    /**
+ * Generar reporte MIC/DTA
+ */
+private function generateMicDta(string $format, array $filters, $company)
+{
+    if (empty($filters['voyage_id'])) {
+        return back()->with('error', 'Debe especificar un viaje');
+    }
+
+    if ($format !== 'pdf') {
+        return back()->with('error', 'Solo formato PDF disponible para MIC/DTA');
+    }
+
+    $voyage = Voyage::with([
+        'company',
+        'leadVessel',
+        'originPort',
+        'destinationPort',
+        'transshipmentPort',        
+        'shipments.vessel',
+        'shipments.billsOfLading',
+    ])->findOrFail($filters['voyage_id']);
+
+    if ($voyage->company_id !== $company->id) {
+        abort(403, 'No tiene permisos para generar este reporte');
+    }
+
+    $service = new MicDtaReportService($voyage, $filters, auth()->user()->name ?? 'Sistema');
+
+    if (!$service->validate()) {
+        return back()->with('error', 'El viaje no tiene datos suficientes');
+    }
+
+    $data = $service->prepareData();
+
+    $pdf = \PDF::loadView('company.reports.pdf.micdta', $data);
+    $pdf->setPaper('A4', 'landscape');
+    $pdf->setOptions([
+        'defaultFont' => 'Arial',
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled' => true
+    ]);
+
+    return $pdf->download($service->getSuggestedFilename('pdf'));
+}
 }

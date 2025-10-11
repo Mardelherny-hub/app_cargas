@@ -1,126 +1,142 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <div>
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    {{ __('Reporte MIC/DTA') }}
-                </h2>
-                <p class="text-sm text-gray-600 mt-1">
-                    Consulta y exporta los Manifiestos Internacionales de Carga y Declaraciones de Tránsito Aduanero.
-                </p>
-            </div>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                {{ __('Reportes MIC/DTA - AFIP') }}
+            </h2>
+            <a href="{{ route('company.reports.index') }}" 
+               class="text-sm text-blue-600 hover:text-blue-800">
+                ← Volver a Reportes
+            </a>
         </div>
     </x-slot>
 
-    <div class="py-12">
+    <div class="py-8">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-
-            <!-- Filtros -->
-            <div class="bg-white shadow rounded-lg mb-6">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900">Filtros de Búsqueda</h3>
-                </div>
-                <div class="px-6 py-4">
-                    <form method="GET" action="{{ route('company.reports.micdta') }}">
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                                <label for="search" class="block text-sm font-medium text-gray-700">Buscar</label>
-                                <input type="text" 
-                                       name="search" 
-                                       id="search" 
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                       placeholder="ID de Transacción, Viaje..."
-                                       value="{{ request('search') }}">
-                            </div>
-                            <div>
-                                <label for="start_date" class="block text-sm font-medium text-gray-700">Fecha de Inicio</label>
-                                <input type="date" 
-                                       name="start_date" 
-                                       id="start_date" 
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                       value="{{ request('start_date') }}">
-                            </div>
-                            <div>
-                                <label for="end_date" class="block text-sm font-medium text-gray-700">Fecha de Fin</label>
-                                <input type="date" 
-                                       name="end_date" 
-                                       id="end_date" 
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                                       value="{{ request('end_date') }}">
-                            </div>
-                            <div class="flex items-end">
-                                <button type="submit" 
-                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium w-full">
-                                    <svg class="w-4 h-4 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                                    </svg>
-                                    Buscar
-                                </button>
-                            </div>
-                        </div>
-                    </form>
+            
+            {{-- Descripción --}}
+            <div class="bg-purple-50 border-l-4 border-purple-500 p-4 mb-6 rounded-r-lg">
+                <div class="flex items-start">
+                    <svg class="w-6 h-6 text-purple-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div>
+                        <h3 class="text-sm font-medium text-purple-800 mb-1">Formato oficial AFIP</h3>
+                        <p class="text-sm text-purple-700">
+                            Lista de viajes con envíos MIC/DTA registrados ante AFIP. 
+                            Genera el PDF oficial con todos los datos declarados.
+                        </p>
+                    </div>
                 </div>
             </div>
 
-            <!-- Listado de Reportes MIC/DTA -->
-            <div class="bg-white shadow rounded-lg">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900">
-                        Reportes MIC/DTA Encontrados
+            {{-- Listado de Viajes --}}
+            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-600">
+                    <h3 class="text-lg font-semibold text-white">
+                        Viajes con MIC/DTA Registrado
                     </h3>
                 </div>
-                <div class="overflow-hidden">
-                    @if(isset($micdtaReports) && $micdtaReports->count() > 0)
+
+                <div class="overflow-x-auto">
+                    @if($voyages->count() > 0)
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Transacción</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Viaje</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                                    <th scope="col" class="relative px-6 py-3">
-                                        <span class="sr-only">Acciones</span>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Viaje
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Embarcación
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Ruta
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Fecha Salida
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center">
+                                        Envíos
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center">
+                                        Conocimientos
+                                    </th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Acciones
                                     </th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($micdtaReports as $report)
-                                    <tr>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            {{ $report->transaction_id }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ strtoupper($report->webservice_type) }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $report->voyage->voyage_number ?? 'N/A' }}
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $report->created_at->format('d/m/Y H:i') }}
+                                @foreach($voyages as $voyage)
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="text-sm font-medium text-gray-900">
+                                                {{ $voyage->voyage_number }}
+                                            </div>
+                                            <div class="text-xs text-gray-500">
+                                                ID: {{ $voyage->id }}
+                                            </div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="px-2 py-1 text-xs font-semibold rounded-full 
-                                                {{ $report->status === 'success' ? 'bg-green-100 text-green-800' : 
-                                                ($report->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800') }}">
-                                                {{ ucfirst($report->status) }}
+                                            <div class="text-sm text-gray-900">
+                                                {{ $voyage->leadVessel->name ?? 'N/A' }}
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <div class="text-sm text-gray-900">
+                                                {{ $voyage->originPort->name ?? 'N/A' }}
+                                                <svg class="w-4 h-4 inline text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+                                                </svg>
+                                                {{ $voyage->destinationPort->name ?? 'N/A' }}
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {{ $voyage->departure_date ? $voyage->departure_date->format('d/m/Y') : 'N/A' }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                {{ $voyage->shipments->count() }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                {{ $voyage->billsOfLading->count() }}
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <a href="#" class="text-indigo-600 hover:text-indigo-900">Ver</a>
+                                            <form method="POST" action="{{ route('company.reports.export', 'micdta') }}" class="inline">
+                                                @csrf
+                                                <input type="hidden" name="format" value="pdf">
+                                                <input type="hidden" name="filters[voyage_id]" value="{{ $voyage->id }}">
+                                                <button type="submit"
+                                                        class="inline-flex items-center px-3 py-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-sm font-medium rounded-md transition-all duration-200">
+                                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                    </svg>
+                                                    Descargar PDF
+                                                </button>
+                                            </form>
                                         </td>
                                     </tr>
-                                @endforeach                            </tbody>
+                                @endforeach
+                            </tbody>
                         </table>
                     @else
-                        <div class="text-center py-12">
+                        <div class="text-center py-12 px-6">
                             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m-7 10h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                             </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">No se encontraron reportes MIC/DTA</h3>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900">No hay viajes con MIC/DTA registrado</h3>
                             <p class="mt-1 text-sm text-gray-500">
-                               Intenta ajustar los filtros de búsqueda.
+                                Primero debe enviar un MIC/DTA a AFIP desde el módulo de Webservices.
                             </p>
+                            <div class="mt-6">
+                                <a href="{{ route('company.webservices.index') }}" 
+                                   class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-md">
+                                    Ir a Webservices
+                                </a>
+                            </div>
                         </div>
                     @endif
                 </div>

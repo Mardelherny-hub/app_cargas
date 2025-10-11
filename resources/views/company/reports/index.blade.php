@@ -184,7 +184,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     
                     {{-- MIC/DTA --}}
-                    <div class="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200 opacity-60">
+                    <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden border border-gray-200">
                         <div class="bg-gradient-to-r from-purple-500 to-purple-600 p-4">
                             <div class="flex items-center justify-between text-white">
                                 <h4 class="text-lg font-bold">Reportes MIC/DTA</h4>
@@ -199,10 +199,16 @@
                             <p class="text-gray-600 text-sm mb-4">
                                 Formato oficial AFIP para manifiestos internacionales y declaraciones de tránsito.
                             </p>
-                            <button disabled
-                                    class="block w-full bg-gray-300 text-gray-500 text-center py-2 px-4 rounded-lg font-medium cursor-not-allowed">
-                                En Desarrollo
-                            </button>
+                            <ul class="text-xs text-gray-500 space-y-1 mb-4">
+                                <li>✅ Formato AFIP oficial</li>
+                                <li>✅ Códigos aduaneros incluidos</li>
+                                <li>✅ Datos de transbordo si aplican</li>
+                                <li>✅ Exportar PDF landscape</li>
+                            </ul>
+                            <a href="{{ route('company.reports.micdta') }}"
+                            class="block w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-center py-2 px-4 rounded-lg font-medium transition-all duration-300 shadow-sm hover:shadow-md">
+                                Generar MIC/DTA
+                            </a>
                         </div>
                     </div>
 
