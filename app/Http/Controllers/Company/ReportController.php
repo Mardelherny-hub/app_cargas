@@ -29,6 +29,9 @@ use App\Services\Reports\OperatorReportService;
 use App\Services\Reports\ExportService;
 use App\Exports\ManifestExport;
 use Maatwebsite\Excel\Facades\Excel; 
+use App\Services\Reports\ArrivalNoticeService;
+use Illuminate\Support\Facades\Storage;
+use ZipArchive;
 
 
 class ReportController extends Controller
@@ -179,6 +182,93 @@ class ReportController extends Controller
         ));
     }
 
+
+    /**
+     * Vista para generar cartas de aviso de llegada
+     * 
+     * @param Request $request
+     * @return \Illuminate\View\View
+     */
+    /**
+ * Vista para generar cartas de aviso de llegada
+ */
+public function arrivalNotices(Request $request)
+{
+    // 1. Validar permisos
+   /*  if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'Su empresa no tiene el rol de Cargas.');
+    } */
+
+    /* if (!$this->canPerform('reports.arrival_notices')) {
+        abort(403, 'No tiene permisos para generar cartas de aviso.');
+    } */
+
+    // 2. Obtener empresa actual
+    $company = $this->getUserCompany();
+
+    // 3. Obtener viajes disponibles con cargas completadas
+    $voyages = Voyage::with([
+        'leadVessel:id,name',
+        'originPort:id,name',
+        'destinationPort:id,name',
+        'billsOfLading.consignee:id,legal_name',
+    ])
+    ->where('company_id', $company->id)
+    ->whereHas('billsOfLading') // Solo viajes con BLs
+    ->whereIn('status', ['completed', 'in_progress', 'arrived'])
+    ->orderBy('departure_date', 'desc')
+    ->limit(50)
+    ->get();
+
+    // 4. Retornar vista
+    return view('company.reports.arrival-notices', compact('voyages'));
+}
+
+/**
+ * API: Obtener consignatarios de un viaje (para AJAX)
+ */
+public function getVoyageConsignees(Request $request)
+{
+    // Validar permisos
+    /* if (!$this->hasCompanyRole('Cargas')) {
+        return response()->json(['error' => 'Sin permisos'], 403);
+    } */
+
+    // Validar parámetros
+    $request->validate([
+        'voyage_id' => 'required|integer|exists:voyages,id'
+    ]);
+
+    $company = $this->getUserCompany();
+    $voyageId = $request->input('voyage_id');
+
+    // Obtener viaje y verificar pertenencia
+    $voyage = Voyage::where('id', $voyageId)
+        ->where('company_id', $company->id)
+        ->first();
+
+    if (!$voyage) {
+        return response()->json(['error' => 'Viaje no encontrado'], 404);
+    }
+
+    // Obtener consignatarios únicos con cantidad de BLs
+    $consignees = \DB::table('bills_of_lading')
+        ->join('clients', 'bills_of_lading.consignee_id', '=', 'clients.id')
+        ->join('shipments', 'bills_of_lading.shipment_id', '=', 'shipments.id')
+        ->where('shipments.voyage_id', $voyageId)
+        ->whereNotNull('bills_of_lading.consignee_id')
+        ->select(
+            'clients.id',
+            'clients.legal_name',
+            \DB::raw('COUNT(bills_of_lading.id) as bills_count')
+        )
+        ->groupBy('clients.id', 'clients.legal_name')
+        ->orderBy('clients.legal_name')
+        ->get();
+
+    return response()->json($consignees);
+}
+
     /**
      * Reporte MIC/DTA.
      * Solo disponible para empresas con rol "Cargas" y webservices activos.
@@ -231,51 +321,7 @@ class ReportController extends Controller
         ));
     }
 
-    /**
-     * Reporte de cartas de aviso.
-     * Solo disponible para empresas con rol "Cargas".
-     */
-    public function arrivalNotices(Request $request)
-    {
-        // 1. Verificar permisos básicos
-        if (!$this->canPerform('reports.arrival_notices')) {
-            abort(403, 'No tiene permisos para ver reportes de cartas de aviso.');
-        }
-
-        $company = $this->getUserCompany();
-
-        // 2. Verificar empresa y acceso
-        if (!$company || !$this->canAccessCompany($company->id)) {
-            abort(403, 'No tiene permisos para acceder a esta empresa.');
-        }
-
-        // 3. Verificar que la empresa tenga rol "Cargas"
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene permisos para cartas de aviso. Se requiere rol "Cargas".');
-        }
-
-        // Aplicar filtros de ownership
-        $noticesQuery = $this->buildArrivalNoticesQuery($company);
-
-        // Si es usuario regular, filtrar solo sus propios registros
-        if ($this->isUser()) {
-            // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $noticesQuery->where('created_by', $this->getCurrentUser()->id);
-        }
-
-        // TODO: Implementar cuando esté el módulo de cargas
-        $notices = collect();
-
-        $stats = $this->getArrivalNoticesStats($company);
-        $filters = $this->getArrivalNoticesFilters();
-
-        return view('company.reports.arrival-notices', compact(
-            'notices',
-            'stats',
-            'filters',
-            'company'
-        ));
-    }
+    
 
     /**
      * Reportes aduaneros.
@@ -1138,8 +1184,7 @@ private function buildBillsOfLadingQuery($company)
                     return $this->generateBillsOfLadingReport($format, $filters, $company);
                 
                 case 'arrival-notices':
-                    // TODO: Implementar cuando esté el service
-                    return back()->with('info', 'Cartas de Aviso en desarrollo.');
+                    return $this->generateArrivalNotices($format, $filters, $company);
                 
                 default:
                     return back()->with('error', 'Tipo de reporte no implementado.');
@@ -1318,354 +1363,528 @@ private function buildBillsOfLadingQuery($company)
     }
 
     /**
- * Reporte de desconsolidación.
- * Solo disponible para empresas con rol "Desconsolidador".
- */
-public function deconsolidation(Request $request)
-{
-    // 1. Verificar permisos básicos
-    if (!$this->canPerform('reports.deconsolidation')) {
-        abort(403, 'No tiene permisos para ver reportes de desconsolidación.');
+     * Reporte de desconsolidación.
+     * Solo disponible para empresas con rol "Desconsolidador".
+     */
+    public function deconsolidation(Request $request)
+    {
+        // 1. Verificar permisos básicos
+        if (!$this->canPerform('reports.deconsolidation')) {
+            abort(403, 'No tiene permisos para ver reportes de desconsolidación.');
+        }
+
+        $company = $this->getUserCompany();
+
+        // 2. Verificar empresa y acceso
+        if (!$company || !$this->canAccessCompany($company->id)) {
+            abort(403, 'No tiene permisos para acceder a esta empresa.');
+        }
+
+        // 3. Verificar que la empresa tenga rol "Desconsolidador"
+        if (!$this->hasCompanyRole('Desconsolidador')) {
+            abort(403, 'Su empresa no tiene permisos para ver reportes de desconsolidación. Se requiere rol "Desconsolidador".');
+        }
+
+        // Aplicar filtros de ownership si es usuario regular
+        $deconsolidationQuery = $this->buildDeconsolidationQuery($company);
+
+        // Si es usuario regular, filtrar solo sus propios registros
+        if ($this->isUser()) {
+            // TODO: Aplicar filtros de ownership cuando estén los módulos
+            $deconsolidationQuery->where('created_by', $this->getCurrentUser()->id);
+        }
+
+        // Aplicar filtros de búsqueda
+        $this->applyDeconsolidationFilters($deconsolidationQuery, $request);
+
+        // TODO: Implementar cuando esté el módulo de desconsolidación
+        $deconsolidations = collect(); // Colección vacía por ahora
+
+        // Obtener estadísticas filtradas
+        $stats = $this->getDeconsolidationStats($company);
+
+        // Filtros disponibles
+        $filters = $this->getDeconsolidationFilters();
+
+        return view('company.reports.deconsolidation', compact(
+            'deconsolidations',
+            'stats',
+            'filters',
+            'company'
+        ));
     }
 
-    $company = $this->getUserCompany();
+    /**
+     * Reporte de transbordos.
+     * Solo disponible para empresas con rol "Transbordos".
+     */
+    public function transshipment(Request $request)
+    {
+        // 1. Verificar permisos básicos
+        if (!$this->canPerform('reports.transshipment')) {
+            abort(403, 'No tiene permisos para ver reportes de transbordos.');
+        }
 
-    // 2. Verificar empresa y acceso
-    if (!$company || !$this->canAccessCompany($company->id)) {
-        abort(403, 'No tiene permisos para acceder a esta empresa.');
+        $company = $this->getUserCompany();
+
+        // 2. Verificar empresa y acceso
+        if (!$company || !$this->canAccessCompany($company->id)) {
+            abort(403, 'No tiene permisos para acceder a esta empresa.');
+        }
+
+        // 3. Verificar que la empresa tenga rol "Transbordos"
+        if (!$this->hasCompanyRole('Transbordos')) {
+            abort(403, 'Su empresa no tiene permisos para ver reportes de transbordos. Se requiere rol "Transbordos".');
+        }
+
+        // Aplicar filtros de ownership si es usuario regular
+        $transshipmentQuery = $this->buildTransshipmentQuery($company);
+
+        // Si es usuario regular, filtrar solo sus propios registros
+        if ($this->isUser()) {
+            // TODO: Aplicar filtros de ownership cuando estén los módulos
+            $transshipmentQuery->where('created_by', $this->getCurrentUser()->id);
+        }
+
+        // Aplicar filtros de búsqueda
+        $this->applyTransshipmentFilters($transshipmentQuery, $request);
+
+        // TODO: Implementar cuando esté el módulo de transbordos
+        $transshipments = collect(); // Colección vacía por ahora
+
+        // Obtener estadísticas filtradas
+        $stats = $this->getTransshipmentStats($company);
+
+        // Filtros disponibles
+        $filters = $this->getTransshipmentFilters();
+
+        return view('company.reports.transshipment', compact(
+            'transshipments',
+            'stats',
+            'filters',
+            'company'
+        ));
     }
 
-    // 3. Verificar que la empresa tenga rol "Desconsolidador"
-    if (!$this->hasCompanyRole('Desconsolidador')) {
-        abort(403, 'Su empresa no tiene permisos para ver reportes de desconsolidación. Se requiere rol "Desconsolidador".');
+    // =========================================================================
+    // MÉTODOS AUXILIARES A AGREGAR
+    // =========================================================================
+
+    /**
+     * Construir query base para desconsolidación.
+     */
+    private function buildDeconsolidationQuery($company)
+    {
+        return WebserviceTransaction::with(['voyage', 'shipment'])
+            ->where('company_id', $company->id)
+            ->where('webservice_type', 'desconsolidados')
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('created_at', 'desc');
     }
 
-    // Aplicar filtros de ownership si es usuario regular
-    $deconsolidationQuery = $this->buildDeconsolidationQuery($company);
-
-    // Si es usuario regular, filtrar solo sus propios registros
-    if ($this->isUser()) {
-        // TODO: Aplicar filtros de ownership cuando estén los módulos
-        $deconsolidationQuery->where('created_by', $this->getCurrentUser()->id);
+    /**
+     * Construir query base para transbordos.
+     */
+    private function buildTransshipmentQuery($company)
+    {
+        return WebserviceTransaction::with(['voyage', 'shipment'])
+            ->where('company_id', $company->id)
+            ->where('webservice_type', 'transbordos')
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('created_at', 'desc');
     }
 
-    // Aplicar filtros de búsqueda
-    $this->applyDeconsolidationFilters($deconsolidationQuery, $request);
+    /**
+     * Aplicar filtros de desconsolidación.
+     */
+    private function applyDeconsolidationFilters($query, Request $request)
+    {
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
 
-    // TODO: Implementar cuando esté el módulo de desconsolidación
-    $deconsolidations = collect(); // Colección vacía por ahora
+        if ($request->filled('period')) {
+            $this->applyPeriodFilter($query, $request->period);
+        }
 
-    // Obtener estadísticas filtradas
-    $stats = $this->getDeconsolidationStats($company);
+        if ($request->filled('date_from')) {
+            $query->where('created_at', '>=', $request->date_from);
+        }
 
-    // Filtros disponibles
-    $filters = $this->getDeconsolidationFilters();
+        if ($request->filled('date_to')) {
+            $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+        }
 
-    return view('company.reports.deconsolidation', compact(
-        'deconsolidations',
-        'stats',
-        'filters',
-        'company'
-    ));
-}
-
-/**
- * Reporte de transbordos.
- * Solo disponible para empresas con rol "Transbordos".
- */
-public function transshipment(Request $request)
-{
-    // 1. Verificar permisos básicos
-    if (!$this->canPerform('reports.transshipment')) {
-        abort(403, 'No tiene permisos para ver reportes de transbordos.');
-    }
-
-    $company = $this->getUserCompany();
-
-    // 2. Verificar empresa y acceso
-    if (!$company || !$this->canAccessCompany($company->id)) {
-        abort(403, 'No tiene permisos para acceder a esta empresa.');
-    }
-
-    // 3. Verificar que la empresa tenga rol "Transbordos"
-    if (!$this->hasCompanyRole('Transbordos')) {
-        abort(403, 'Su empresa no tiene permisos para ver reportes de transbordos. Se requiere rol "Transbordos".');
-    }
-
-    // Aplicar filtros de ownership si es usuario regular
-    $transshipmentQuery = $this->buildTransshipmentQuery($company);
-
-    // Si es usuario regular, filtrar solo sus propios registros
-    if ($this->isUser()) {
-        // TODO: Aplicar filtros de ownership cuando estén los módulos
-        $transshipmentQuery->where('created_by', $this->getCurrentUser()->id);
-    }
-
-    // Aplicar filtros de búsqueda
-    $this->applyTransshipmentFilters($transshipmentQuery, $request);
-
-    // TODO: Implementar cuando esté el módulo de transbordos
-    $transshipments = collect(); // Colección vacía por ahora
-
-    // Obtener estadísticas filtradas
-    $stats = $this->getTransshipmentStats($company);
-
-    // Filtros disponibles
-    $filters = $this->getTransshipmentFilters();
-
-    return view('company.reports.transshipment', compact(
-        'transshipments',
-        'stats',
-        'filters',
-        'company'
-    ));
-}
-
-// =========================================================================
-// MÉTODOS AUXILIARES A AGREGAR
-// =========================================================================
-
-/**
- * Construir query base para desconsolidación.
- */
-private function buildDeconsolidationQuery($company)
-{
-    return WebserviceTransaction::with(['voyage', 'shipment'])
-        ->where('company_id', $company->id)
-        ->where('webservice_type', 'desconsolidados')
-        ->where('status', '!=', 'cancelled')
-        ->orderBy('created_at', 'desc');
-}
-
-/**
- * Construir query base para transbordos.
- */
-private function buildTransshipmentQuery($company)
-{
-     return WebserviceTransaction::with(['voyage', 'shipment'])
-        ->where('company_id', $company->id)
-        ->where('webservice_type', 'transbordos')
-        ->where('status', '!=', 'cancelled')
-        ->orderBy('created_at', 'desc');
-}
-
-/**
- * Aplicar filtros de desconsolidación.
- */
-private function applyDeconsolidationFilters($query, Request $request)
-{
-    if ($request->filled('status')) {
-        $query->where('status', $request->status);
-    }
-
-    if ($request->filled('period')) {
-        $this->applyPeriodFilter($query, $request->period);
-    }
-
-    if ($request->filled('date_from')) {
-        $query->where('created_at', '>=', $request->date_from);
-    }
-
-    if ($request->filled('date_to')) {
-        $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
-    }
-
-    if ($request->filled('search')) {
-        $search = $request->search;
-        $query->where(function($q) use ($search) {
-            $q->where('transaction_id', 'like', "%{$search}%")
-              ->orWhereHas('voyage', function($voyage) use ($search) {
-                  $voyage->where('voyage_number', 'like', "%{$search}%");
-              });
-        });
-    }
-}
-
-/**
- * Aplicar filtros de transbordos.
- */
-private function applyTransshipmentFilters($query, Request $request)
-{
-    if ($request->filled('status')) {
-        $query->where('status', $request->status);
-    }
-
-    if ($request->filled('period')) {
-        $this->applyPeriodFilter($query, $request->period);
-    }
-
-    if ($request->filled('date_from')) {
-        $query->where('created_at', '>=', $request->date_from);
-    }
-
-    if ($request->filled('date_to')) {
-        $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
-    }
-
-    if ($request->filled('route')) {
-        $query->whereHas('voyage', function($voyage) use ($request) {
-            $voyage->whereHas('originPort', function($port) use ($request) {
-                $port->where('code', 'like', "%{$request->route}%");
-            })->orWhereHas('destinationPort', function($port) use ($request) {
-                $port->where('code', 'like', "%{$request->route}%");
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('transaction_id', 'like', "%{$search}%")
+                ->orWhereHas('voyage', function($voyage) use ($search) {
+                    $voyage->where('voyage_number', 'like', "%{$search}%");
+                });
             });
-        });
-    }
-
-    if ($request->filled('search')) {
-        $search = $request->search;
-        $query->where(function($q) use ($search) {
-            $q->where('transaction_id', 'like', "%{$search}%")
-              ->orWhereHas('voyage', function($voyage) use ($search) {
-                  $voyage->where('voyage_number', 'like', "%{$search}%");
-              });
-        });
-    }
-}
-/**
- * Obtener estadísticas de desconsolidación.
- */
-private function getDeconsolidationStats($company): array
-{
-    $transactions = WebserviceTransaction::where('company_id', $company->id)
-        ->where('webservice_type', 'desconsolidados');
-
-    return [
-        'total' => $transactions->count(),
-        'this_month' => $transactions->whereMonth('created_at', now()->month)->count(),
-        'pending' => $transactions->where('status', 'pending')->count(),
-        'completed' => $transactions->where('status', 'success')->count(),
-    ];
-}
-
-/**
- * Obtener estadísticas de transbordos.
- */
-private function getTransshipmentStats($company): array
-{
-    $transactions = WebserviceTransaction::where('company_id', $company->id)
-        ->where('webservice_type', 'transbordos');
-
-    return [
-        'total' => $transactions->count(),
-        'this_month' => $transactions->whereMonth('created_at', now()->month)->count(),
-        'pending' => $transactions->where('status', 'pending')->count(),
-        'completed' => $transactions->where('status', 'success')->count(),
-    ];
-}
-/**
- * Obtener filtros para desconsolidación.
- */
-private function getDeconsolidationFilters(): array
-{
-    return [
-        'status' => [
-            'pending' => 'Pendiente',
-            'processing' => 'Procesando', 
-            'success' => 'Completado',
-            'error' => 'Error'
-        ],
-        'period' => [
-            'today' => 'Hoy',
-            'week' => 'Esta semana',
-            'month' => 'Este mes',
-            'quarter' => 'Este trimestre'
-        ],
-        'container_type' => $this->getAvailableContainerTypes(),
-    ];
-}
-
-/**
- * Obtener filtros para transbordos.
- */
-private function getTransshipmentFilters(): array
-{
-    return [
-        'status' => [
-            'pending' => 'Pendiente',
-            'in_transit' => 'En tránsito',
-            'success' => 'Completado',
-            'error' => 'Error'
-        ],
-        'period' => [
-            'today' => 'Hoy',
-            'week' => 'Esta semana', 
-            'month' => 'Este mes',
-            'quarter' => 'Este trimestre'
-        ],
-        'route' => $this->getAvailableRoutes(),
-    ];
-}
-
-/**
- * Aplicar filtro de período.
- */
-private function applyPeriodFilter($query, $period)
-{
-    switch ($period) {
-        case 'today':
-            $query->whereDate('created_at', now()->toDateString());
-            break;
-        case 'week':
-            $query->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]);
-            break;
-        case 'month':
-            $query->whereMonth('created_at', now()->month)
-                  ->whereYear('created_at', now()->year);
-            break;
-        case 'quarter':
-            $query->whereBetween('created_at', [now()->startOfQuarter(), now()->endOfQuarter()]);
-            break;
-    }
-}
-
-/**
- * Obtener tipos de contenedor disponibles.
- */
-private function getAvailableContainerTypes(): array
-{
-    try {
-        if (class_exists(\App\Models\ContainerType::class)) {
-            return \App\Models\ContainerType::where('active', true)
-                ->pluck('name', 'code')
-                ->toArray();
         }
-    } catch (\Exception $e) {
-        // Si no existe el modelo, devolver tipos comunes
     }
-    
-    return [
-        '20GP' => 'Contenedor 20\' General',
-        '40GP' => 'Contenedor 40\' General', 
-        '40HC' => 'Contenedor 40\' High Cube',
-        '20RF' => 'Contenedor 20\' Refrigerado',
-        '40RF' => 'Contenedor 40\' Refrigerado',
-    ];
-}
 
-/**
- * Obtener rutas disponibles.
- */
-private function getAvailableRoutes(): array
-{
-    try {
-        if (class_exists(\App\Models\Port::class)) {
-            $ports = \App\Models\Port::where('active', true)
-                ->orderBy('code')
-                ->pluck('code', 'code')
-                ->toArray();
-            
-            return $ports;
+    /**
+     * Aplicar filtros de transbordos.
+     */
+    private function applyTransshipmentFilters($query, Request $request)
+    {
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
         }
-    } catch (\Exception $e) {
-        // Si no existe el modelo, devolver rutas comunes
+
+        if ($request->filled('period')) {
+            $this->applyPeriodFilter($query, $request->period);
+        }
+
+        if ($request->filled('date_from')) {
+            $query->where('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+        }
+
+        if ($request->filled('route')) {
+            $query->whereHas('voyage', function($voyage) use ($request) {
+                $voyage->whereHas('originPort', function($port) use ($request) {
+                    $port->where('code', 'like', "%{$request->route}%");
+                })->orWhereHas('destinationPort', function($port) use ($request) {
+                    $port->where('code', 'like', "%{$request->route}%");
+                });
+            });
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('transaction_id', 'like', "%{$search}%")
+                ->orWhereHas('voyage', function($voyage) use ($search) {
+                    $voyage->where('voyage_number', 'like', "%{$search}%");
+                });
+            });
+        }
     }
-    
-    return [
-        'ARBUE' => 'Buenos Aires, AR',
-        'PYASU' => 'Asunción, PY',
-        'PYTVT' => 'Villeta, PY',
-        'PYCON' => 'Concepción, PY',
-    ];
-}
+    /**
+     * Obtener estadísticas de desconsolidación.
+     */
+    private function getDeconsolidationStats($company): array
+    {
+        $transactions = WebserviceTransaction::where('company_id', $company->id)
+            ->where('webservice_type', 'desconsolidados');
+
+        return [
+            'total' => $transactions->count(),
+            'this_month' => $transactions->whereMonth('created_at', now()->month)->count(),
+            'pending' => $transactions->where('status', 'pending')->count(),
+            'completed' => $transactions->where('status', 'success')->count(),
+        ];
+    }
+
+    /**
+     * Obtener estadísticas de transbordos.
+     */
+    private function getTransshipmentStats($company): array
+    {
+        $transactions = WebserviceTransaction::where('company_id', $company->id)
+            ->where('webservice_type', 'transbordos');
+
+        return [
+            'total' => $transactions->count(),
+            'this_month' => $transactions->whereMonth('created_at', now()->month)->count(),
+            'pending' => $transactions->where('status', 'pending')->count(),
+            'completed' => $transactions->where('status', 'success')->count(),
+        ];
+    }
+    /**
+     * Obtener filtros para desconsolidación.
+     */
+    private function getDeconsolidationFilters(): array
+    {
+        return [
+            'status' => [
+                'pending' => 'Pendiente',
+                'processing' => 'Procesando', 
+                'success' => 'Completado',
+                'error' => 'Error'
+            ],
+            'period' => [
+                'today' => 'Hoy',
+                'week' => 'Esta semana',
+                'month' => 'Este mes',
+                'quarter' => 'Este trimestre'
+            ],
+            'container_type' => $this->getAvailableContainerTypes(),
+        ];
+    }
+
+    /**
+     * Obtener filtros para transbordos.
+     */
+    private function getTransshipmentFilters(): array
+    {
+        return [
+            'status' => [
+                'pending' => 'Pendiente',
+                'in_transit' => 'En tránsito',
+                'success' => 'Completado',
+                'error' => 'Error'
+            ],
+            'period' => [
+                'today' => 'Hoy',
+                'week' => 'Esta semana', 
+                'month' => 'Este mes',
+                'quarter' => 'Este trimestre'
+            ],
+            'route' => $this->getAvailableRoutes(),
+        ];
+    }
+
+    /**
+     * Aplicar filtro de período.
+     */
+    private function applyPeriodFilter($query, $period)
+    {
+        switch ($period) {
+            case 'today':
+                $query->whereDate('created_at', now()->toDateString());
+                break;
+            case 'week':
+                $query->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()]);
+                break;
+            case 'month':
+                $query->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year);
+                break;
+            case 'quarter':
+                $query->whereBetween('created_at', [now()->startOfQuarter(), now()->endOfQuarter()]);
+                break;
+        }
+    }
+
+    /**
+     * Obtener tipos de contenedor disponibles.
+     */
+    private function getAvailableContainerTypes(): array
+    {
+        try {
+            if (class_exists(\App\Models\ContainerType::class)) {
+                return \App\Models\ContainerType::where('active', true)
+                    ->pluck('name', 'code')
+                    ->toArray();
+            }
+        } catch (\Exception $e) {
+            // Si no existe el modelo, devolver tipos comunes
+        }
+        
+        return [
+            '20GP' => 'Contenedor 20\' General',
+            '40GP' => 'Contenedor 40\' General', 
+            '40HC' => 'Contenedor 40\' High Cube',
+            '20RF' => 'Contenedor 20\' Refrigerado',
+            '40RF' => 'Contenedor 40\' Refrigerado',
+        ];
+    }
+
+    /**
+     * Obtener rutas disponibles.
+     */
+    private function getAvailableRoutes(): array
+    {
+        try {
+            if (class_exists(\App\Models\Port::class)) {
+                $ports = \App\Models\Port::where('active', true)
+                    ->orderBy('code')
+                    ->pluck('code', 'code')
+                    ->toArray();
+                
+                return $ports;
+            }
+        } catch (\Exception $e) {
+            // Si no existe el modelo, devolver rutas comunes
+        }
+        
+        return [
+            'ARBUE' => 'Buenos Aires, AR',
+            'PYASU' => 'Asunción, PY',
+            'PYTVT' => 'Villeta, PY',
+            'PYCON' => 'Concepción, PY',
+        ];
+    }
+
+    /**
+     * Generar cartas de aviso de llegada
+     * Puede generar un PDF individual o múltiples PDFs en ZIP
+     * 
+     * @param string $format Formato (solo 'pdf')
+     * @param array $filters Filtros ['voyage_id', 'consignee_id' (opcional)]
+     * @param Company $company Empresa actual
+     * @return \Illuminate\Http\Response
+     */
+    /**
+     * Generar cartas de aviso de llegada
+     */
+    private function generateArrivalNotices(string $format, array $filters, $company)
+    {
+        // Validar voyage_id
+        if (empty($filters['voyage_id'])) {
+            return back()->with('error', 'Debe especificar un viaje (voyage_id)');
+        }
+
+        // Solo PDF disponible
+        if ($format !== 'pdf') {
+            return back()->with('error', 'Solo formato PDF disponible para cartas de aviso');
+        }
+
+        // Obtener viaje
+        $voyage = Voyage::with([
+            'company',
+            'leadVessel',
+            'destinationPort',
+            'billsOfLading.consignee.primaryContact',
+            'billsOfLading.shipper',
+        ])->findOrFail($filters['voyage_id']);
+
+        // Verificar pertenencia
+        if ($voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para generar este reporte');
+        }
+
+        // Crear servicio
+        $service = new ArrivalNoticeService(
+            $voyage,
+            $filters,
+            auth()->user()->name ?? 'Sistema'
+        );
+
+        // Validar datos
+        if (!$service->validate()) {
+            return back()->with('error', 'El viaje no tiene datos suficientes para generar cartas de aviso');
+        }
+
+        // Generar individual o múltiple
+        if (!empty($filters['consignee_id'])) {
+            return $this->generateSingleArrivalNoticePDF($service, $filters['consignee_id'], $company);
+        }
+
+        return $this->generateMultipleArrivalNoticesPDF($service, $company);
+    }
+
+    /**
+     * Generar carta individual para un consignatario
+     */
+    private function generateSingleArrivalNoticePDF(ArrivalNoticeService $service, int $consigneeId, $company)
+    {
+        // Preparar datos
+        $data = $service->prepareDataForConsignee($consigneeId);
+
+        if (!$data) {
+            return back()->with('error', 'No se encontraron conocimientos para este consignatario');
+        }
+
+        // Generar PDF usando patrón existente
+        $pdf = \PDF::loadView('company.reports.pdf.arrival-notice', $data);
+        
+        $pdf->setPaper('A4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont' => 'Arial',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled' => true
+        ]);
+
+        $filename = $service->getSuggestedFilename('pdf', $consigneeId);
+
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Generar múltiples cartas en ZIP
+     */
+    private function generateMultipleArrivalNoticesPDF(ArrivalNoticeService $service, $company)
+    {
+        // Preparar datos
+        $data = $service->prepareData();
+
+        if (empty($data['consignee_groups'])) {
+            return back()->with('error', 'No se encontraron consignatarios en este viaje');
+        }
+
+        // Directorio temporal
+        $tempPath = storage_path('app/temp/arrival_notices_' . uniqid());
+        if (!file_exists($tempPath)) {
+            mkdir($tempPath, 0755, true);
+        }
+
+        $generatedFiles = [];
+
+        try {
+            // Generar PDF por cada consignee
+            foreach ($data['consignee_groups'] as $group) {
+                $consigneeData = [
+                    'voyage' => $data['voyage'],
+                    'company' => $data['company'],
+                    'consignee' => $group['consignee'],
+                    'bills' => $group['bills'],
+                    'totals' => $group['totals'],
+                    'metadata' => $data['metadata'],
+                ];
+
+                // Generar PDF
+                $pdf = \PDF::loadView('company.reports.pdf.arrival-notice', $consigneeData);
+                $pdf->setPaper('A4', 'portrait');
+                $pdf->setOptions([
+                    'defaultFont' => 'Arial',
+                    'isHtml5ParserEnabled' => true,
+                    'isRemoteEnabled' => true
+                ]);
+
+                // Guardar PDF temporal
+                $filename = $service->getSuggestedFilename('pdf', $group['consignee_id']);
+                $filePath = $tempPath . '/' . $filename;
+                $pdf->save($filePath);
+                
+                $generatedFiles[] = [
+                    'path' => $filePath,
+                    'name' => $filename,
+                ];
+            }
+
+            // Crear ZIP
+            $zipFilename = $service->getSuggestedFilename('zip');
+            $zipPath = $tempPath . '/' . $zipFilename;
+
+            $zip = new ZipArchive();
+            if ($zip->open($zipPath, ZipArchive::CREATE) === true) {
+                foreach ($generatedFiles as $file) {
+                    $zip->addFile($file['path'], $file['name']);
+                }
+                $zip->close();
+
+                // Retornar descarga
+                return response()->download($zipPath, $zipFilename)->deleteFileAfterSend(true);
+            } else {
+                throw new \Exception('No se pudo crear el archivo ZIP');
+            }
+
+        } catch (\Exception $e) {
+            // Limpiar en caso de error
+            if (file_exists($tempPath)) {
+                array_map('unlink', glob("$tempPath/*"));
+                rmdir($tempPath);
+            }
+
+            return back()->with('error', 'Error generando cartas de aviso: ' . $e->getMessage());
+        } finally {
+            // Limpieza en segundo plano
+            register_shutdown_function(function() use ($tempPath) {
+                sleep(2);
+                if (file_exists($tempPath)) {
+                    array_map('unlink', glob("$tempPath/*"));
+                    rmdir($tempPath);
+                }
+            });
+        }
+    }
 }

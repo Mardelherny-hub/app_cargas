@@ -147,8 +147,8 @@
                         </div>
                     </div>
 
-                    {{-- CARTAS DE AVISO --}}
-                    <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden border border-gray-200 opacity-60">
+                    {{-- CARTAS DE AVISO - ACTUALIZADO: AHORA FUNCIONAL --}}
+                    <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden border border-gray-200">
                         <div class="bg-gradient-to-r from-yellow-500 to-yellow-600 p-4">
                             <div class="flex items-center justify-between text-white">
                                 <h4 class="text-lg font-bold">Cartas de Aviso</h4>
@@ -164,15 +164,15 @@
                                 Notificaciones de llegada por consignatario con membrete profesional.
                             </p>
                             <ul class="text-xs text-gray-500 space-y-1 mb-4">
-                                <li>⏳ Una carta por consignatario</li>
-                                <li>⏳ Membrete personalizado</li>
-                                <li>⏳ Detalle de mercadería</li>
-                                <li>⏳ Próximamente disponible</li>
+                                <li>✅ Una carta por consignatario</li>
+                                <li>✅ Membrete personalizado</li>
+                                <li>✅ Detalle de mercadería</li>
+                                <li>✅ Exportar PDF individual o múltiple</li>
                             </ul>
-                            <button disabled
-                                    class="block w-full bg-gray-300 text-gray-500 text-center py-2 px-4 rounded-lg font-medium cursor-not-allowed">
-                                En Desarrollo
-                            </button>
+                            <a href="{{ route('company.reports.arrival-notices') }}"
+                            class="block w-full bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white text-center py-2 px-4 rounded-lg font-medium transition-all duration-300 shadow-sm hover:shadow-md">
+                                Generar Cartas
+                            </a>
                         </div>
                     </div>
                 </div>
