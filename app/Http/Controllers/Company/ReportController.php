@@ -18,6 +18,18 @@ use App\Models\BillOfLading;
 use App\Models\WebserviceTransaction;
 use App\Models\Port;
 use App\Models\Client;
+use App\Services\Reports\ManifestReportService;
+use App\Services\Reports\BillsOfLadingReportService;
+use App\Services\Reports\MicdtaReportService;
+use App\Services\Reports\ArrivalNoticeReportService;
+use App\Services\Reports\CustomsReportService;
+use App\Services\Reports\ShipmentReportService;
+use App\Services\Reports\VoyageReportService;
+use App\Services\Reports\OperatorReportService;
+use App\Services\Reports\ExportService;
+use App\Exports\ManifestExport;
+use Maatwebsite\Excel\Facades\Excel; 
+
 
 class ReportController extends Controller
 {
@@ -1111,21 +1123,187 @@ private function buildBillsOfLadingQuery($company)
      */
     private function generateExport($reportType, $format, $filters, $company)
     {
-        // TODO: Implementar generación real de reportes
-        // Por ahora retornar un archivo de ejemplo
+        try {
+            // Validar formato
+            if (!in_array($format, ['pdf', 'excel'])) {
+                return back()->with('error', 'Formato no soportado. Use PDF o Excel.');
+            }
 
-        $filename = "{$reportType}_" . now()->format('Y-m-d_H-i-s') . ".{$format}";
-
-        if ($format === 'pdf') {
-            // TODO: Generar PDF real
-            return response()->json(['message' => 'Generación de PDF en desarrollo']);
-        } elseif ($format === 'excel') {
-            // TODO: Generar Excel real
-            return response()->json(['message' => 'Generación de Excel en desarrollo']);
-        } else {
-            return response()->json(['error' => 'Formato no soportado'], 400);
+            // Delegar según tipo de reporte
+            switch ($reportType) {
+                case 'manifests':
+                    return $this->generateManifestReport($format, $filters, $company);
+                
+                case 'bills-of-lading':
+                    return $this->generateBillsOfLadingReport($format, $filters, $company);
+                
+                case 'arrival-notices':
+                    // TODO: Implementar cuando esté el service
+                    return back()->with('info', 'Cartas de Aviso en desarrollo.');
+                
+                default:
+                    return back()->with('error', 'Tipo de reporte no implementado.');
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('Error generando reporte', [
+                'type' => $reportType,
+                'format' => $format,
+                'error' => $e->getMessage(),
+                'company_id' => $company->id
+            ]);
+            
+            return back()->with('error', 'Error al generar el reporte: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Generar reporte de Manifiesto de Carga
+     * 
+     * @param string $format 'pdf' o 'excel'
+     * @param array $filters Filtros aplicados
+     * @param Company $company Empresa actual
+     * @return \Illuminate\Http\Response
+     */
+    private function generateManifestReport(string $format, array $filters, $company)
+    {
+        // 1. Validar que existe voyage_id en filtros
+        if (empty($filters['voyage_id'])) {
+            return back()->with('error', 'Debe seleccionar un viaje para generar el manifiesto.');
+        }
+
+        // 2. Buscar el viaje
+        $voyage = Voyage::where('id', $filters['voyage_id'])
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$voyage) {
+            return back()->with('error', 'Viaje no encontrado o no pertenece a su empresa.');
+        }
+
+        // 3. Crear instancia del Service
+        $userName = $this->getCurrentUser()->name ?? 'Sistema';
+        $service = new ManifestReportService($voyage, $filters, $userName);
+
+        // 4. Validar que el viaje tenga datos suficientes
+        try {
+            $service->validate();
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        // 5. Preparar datos
+        $data = $service->prepareData();
+
+        // 6. Generar según formato solicitado
+        if ($format === 'pdf') {
+            return $this->generateManifestPDF($data, $service, $company);
+        } else {
+            return $this->generateManifestExcel($data, $service, $company);
+        }
+    }
+
+    /**
+     * Generar Manifiesto en PDF
+     * 
+     * @param array $data Datos preparados por el Service
+     * @param ManifestReportService $service Instancia del service
+     * @param Company $company Empresa actual
+     * @return \Illuminate\Http\Response
+     */
+    private function generateManifestPDF(array $data, ManifestReportService $service, $company)
+    {
+        // Preparar logo de la empresa si existe
+        $companyLogo = null;
+        if ($company->logo_path && file_exists(storage_path('app/public/' . $company->logo_path))) {
+            $companyLogo = storage_path('app/public/' . $company->logo_path);
+        }
+
+        // Agregar logo a los datos
+        $data['company_logo'] = $companyLogo;
+
+        // Generar PDF con DomPDF
+        $pdf = Pdf::loadView('company.reports.pdf.manifest', $data);
+        
+        // Configurar página landscape
+        $pdf->setPaper('a4', 'landscape');
+        
+        // Nombre de archivo sugerido
+        $filename = $service->getSuggestedFilename('pdf');
+        
+        // Retornar para descarga
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Generar Manifiesto en Excel
+     * TODO: Implementar cuando esté ManifestExport
+     * 
+     * @param array $data Datos preparados por el Service
+     * @param ManifestReportService $service Instancia del service
+     * @param Company $company Empresa actual
+     * @return \Illuminate\Http\Response
+     */
+    private function generateManifestExcel(array $data, ManifestReportService $service, $company)
+    {
+        $filename = $service->getSuggestedFilename('excel');
+    
+        return Excel::download(new ManifestExport($data), $filename);
+    }
+
+    /**
+     * Generar reporte de Listado de Conocimientos
+     */
+    private function generateBillsOfLadingReport(string $format, array $filters, $company)
+    {
+        $userName = $this->getCurrentUser()->name ?? 'Sistema';
+        $service = new BillsOfLadingReportService($company, $filters, $userName);
+        
+        try {
+            $service->validate();
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+        
+        $data = $service->prepareData();
+        
+        if ($format === 'pdf') {
+            return $this->generateBillsOfLadingPDF($data, $service, $company);
+        } else {
+            return $this->generateBillsOfLadingExcel($data, $service, $company);
+        }
+    }
+
+    /**
+     * Generar Listado de Conocimientos en PDF
+     */
+    private function generateBillsOfLadingPDF(array $data, BillsOfLadingReportService $service, $company)
+    {
+        $companyLogo = null;
+        if ($company->logo_path && file_exists(storage_path('app/public/' . $company->logo_path))) {
+            $companyLogo = storage_path('app/public/' . $company->logo_path);
+        }
+        
+        $data['company_logo'] = $companyLogo;
+        
+        $pdf = Pdf::loadView('company.reports.pdf.bills-of-lading', $data);
+        $pdf->setPaper('a4', 'portrait');
+        
+        $filename = $service->getSuggestedFilename('pdf');
+        
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Generar Listado de Conocimientos en Excel
+     */
+    private function generateBillsOfLadingExcel(array $data, BillsOfLadingReportService $service, $company)
+    {
+        $filename = $service->getSuggestedFilename('excel');
+        
+        return Excel::download(new BillsOfLadingExport($data), $filename);
+    }
+
 
     // =========================================================================
     // MÉTODOS AUXILIARES - APLICAR FILTROS

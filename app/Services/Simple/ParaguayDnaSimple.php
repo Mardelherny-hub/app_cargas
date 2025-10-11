@@ -48,24 +48,42 @@ class ParaguayDnaService extends BaseWebserviceService
      */
     protected function getWebserviceConfig(): array
     {
-        return array_merge(self::BASE_CONFIG, [
-            'webservice_type'      => $this->webserviceType,
-            'country'              => $this->country,
-            'environment'          => config('services.paraguay.environment', 'testing'),
-            'webservice_url'       => config('services.paraguay.wsdl'),
-            'soap_method'          => config('services.paraguay.soap_method', 'EnviarMensajeFluvial'),
-            'require_certificate'  => config('services.paraguay.require_certificate', true),
-            'auth'                 => config('services.paraguay.auth', []),
+        // Obtener environment de la empresa (testing/production)
+        $environment = $this->company->ws_environment ?? 'testing';
+        
+        // Obtener configuración Paraguay de la empresa
+        $paraguayConfig = $this->company->getParaguayConfig();
+        
+        return array_merge(parent::BASE_CONFIG, [
+            'environment' => $environment,
+            'webservice_url' => $this->getWsdlUrl(),
+            'soap_method' => 'EnviarMensajeFluvial',
+            'require_certificate' => true,
+            'auth' => [
+                'idUsuario' => $paraguayConfig['dna_credentials']['id_usuario'] ?? null,
+                'ticket'    => $paraguayConfig['dna_credentials']['ticket'] ?? null,
+                'firma'     => $paraguayConfig['dna_credentials']['firma'] ?? null,
+            ],
         ]);
     }
 
     /** URL/WSDL del servicio GDSF */
     protected function getWsdlUrl(): string
     {
-        $url = $this->config['webservice_url'] ?? '';
+        $environment = $this->company->ws_environment ?? 'testing';
+        
+        // URLs del webservice DNA Paraguay GDSF
+        $urls = [
+            'testing' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
+            'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
+        ];
+        
+        $url = $urls[$environment] ?? $urls['testing'];
+        
         if (!$url) {
-            throw new Exception('Config faltante: services.paraguay.wsdl');
+            throw new Exception('URL del webservice DNA no configurada para ambiente: ' . $environment);
         }
+        
         return $url;
     }
 

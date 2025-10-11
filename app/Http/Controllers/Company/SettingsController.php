@@ -561,6 +561,9 @@ class SettingsController extends Controller
             'paraguay_company_name' => 'required|string|max:255',
             'paraguay_domicilio_fiscal' => 'required|string|max:500',
             'paraguay_bypass_testing' => 'boolean',
+            'paraguay_dna_id_usuario' => 'nullable|string|max:100',
+            'paraguay_dna_ticket' => 'nullable|string|max:500',
+            'paraguay_dna_firma' => 'nullable|string|max:500',
         ]);
 
         try {
@@ -589,6 +592,11 @@ class SettingsController extends Controller
                 'domicilio_fiscal' => $request->paraguay_domicilio_fiscal,
                 'dna_enabled' => true,
                 'bypass_testing' => $request->boolean('paraguay_bypass_testing'),
+                'dna_credentials' => [
+                    'id_usuario' => $request->paraguay_dna_id_usuario,
+                    'ticket' => $request->paraguay_dna_ticket,
+                    'firma' => $request->paraguay_dna_firma,
+                ],
             ];
 
             $company->update(['ws_config' => $wsConfig]);

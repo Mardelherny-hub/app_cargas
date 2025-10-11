@@ -128,10 +128,11 @@ class ParaguayDnaService extends BaseWebserviceService
         }
 
         // Validar autenticación DNA
+        // Validar autenticación DNA
         $auth = $this->config['auth'];
         if (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma'])) {
             $errors[] = 'Credenciales DNA Paraguay incompletas';
-            $warnings[] = 'Verificar config/services.php: services.paraguay.auth';
+            $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
         }
 
         return [

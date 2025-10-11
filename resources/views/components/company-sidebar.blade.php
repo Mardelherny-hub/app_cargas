@@ -159,6 +159,53 @@
                 </div>
             </div>
             @endif
+
+            {{-- REPORTES --}}
+            @if($company)
+            <div class="pt-4" x-data="{ open: false }">
+                <button @click="open = !open" class="flex items-center w-full px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700">
+                    <span>📊 Reportes</span>
+                    <svg class="w-4 h-4 ml-auto transition-transform" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" x-transition class="mt-2 space-y-1">
+                    {{-- Dashboard Reportes --}}
+                    <a href="{{ route('company.reports.index') }}" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.reports.index') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
+                        🏠 Dashboard Reportes
+                    </a>
+                    
+                    {{-- Manifiesto de Carga --}}
+                    <a href="{{ route('company.reports.manifests') }}" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.reports.manifests') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
+                        📄 Manifiesto de Carga
+                    </a>
+                    
+                    {{-- Listado de Conocimientos --}}
+                    <a href="{{ route('company.reports.bills-of-lading') }}" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.reports.bills-of-lading') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
+                        📋 Listado de Conocimientos
+                    </a>
+                    
+                    {{-- Cartas de Aviso (próximamente) --}}
+                    <a href="#" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md text-gray-400 cursor-not-allowed"
+                    title="Próximamente">
+                        📧 Cartas de Aviso
+                        <span class="ml-auto text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Pronto</span>
+                    </a>
+                    
+                    {{-- MIC/DTA (próximamente) --}}
+                    <a href="#" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md text-gray-400 cursor-not-allowed"
+                    title="Próximamente">
+                        🛂 MIC/DTA
+                        <span class="ml-auto text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Pronto</span>
+                    </a>
+                </div>
+            </div>
+            @endif
         </nav>
     </div>
 
