@@ -25,6 +25,41 @@
                     <form method="POST" action="{{ route('company.certificates.process-upload') }}" enctype="multipart/form-data" id="certificateForm">
                         @csrf
 
+                        <!-- Selector de País -->
+                        <div class="mb-6">
+                            <label for="country" class="block text-sm font-medium text-gray-700">
+                                País del Certificado *
+                            </label>
+                            <select name="country" 
+                                    id="country" 
+                                    required
+                                    onchange="updateCountryInfo(this.value)"
+                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('country') border-red-300 @enderror">
+                                <option value="">Seleccione un país...</option>
+                                @foreach($countries as $key => $country)
+                                    <option value="{{ $key }}" 
+                                            {{ old('country', request('country')) == $key ? 'selected' : '' }}
+                                            data-issuer="{{ $country['issuer'] }}"
+                                            data-has-cert="{{ $country['has_certificate'] ? '1' : '0' }}">
+                                        {{ $country['label'] }}
+                                        @if($country['has_certificate'])
+                                            (Ya tiene certificado - Renovar)
+                                        @endif
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('country')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                            
+                            <!-- Info dinámica del país seleccionado -->
+                            <div id="countryInfo" class="mt-2 hidden">
+                                <div class="p-3 rounded-lg" id="countryInfoBox">
+                                    <p class="text-sm font-medium" id="countryInfoText"></p>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Zona de Subida de Archivo -->
                         <div class="mb-6">
                             <label for="certificate" class="block text-sm font-medium text-gray-700 mb-2">
@@ -285,6 +320,48 @@
 
     @push('scripts')
     <script>
+        // Información dinámica por país
+        function updateCountryInfo(country) {
+            const countryInfo = document.getElementById('countryInfo');
+            const countryInfoBox = document.getElementById('countryInfoBox');
+            const countryInfoText = document.getElementById('countryInfoText');
+            const aliasInput = document.getElementById('alias');
+            
+            if (!country) {
+                countryInfo.classList.add('hidden');
+                return;
+            }
+            
+            const option = document.querySelector(`option[value="${country}"]`);
+            const hasCert = option.dataset.hasCert === '1';
+            const issuer = option.dataset.issuer;
+            
+            // Mostrar información
+            countryInfo.classList.remove('hidden');
+            
+            if (hasCert) {
+                countryInfoBox.className = 'p-3 rounded-lg bg-yellow-50 border border-yellow-200';
+                countryInfoText.className = 'text-sm font-medium text-yellow-800';
+                countryInfoText.innerHTML = `⚠️ Ya existe un certificado de ${issuer}. Al subir uno nuevo, se reemplazará el anterior.`;
+            } else {
+                countryInfoBox.className = 'p-3 rounded-lg bg-blue-50 border border-blue-200';
+                countryInfoText.className = 'text-sm font-medium text-blue-800';
+                countryInfoText.innerHTML = `ℹ️ Subirá un certificado nuevo para ${issuer}.`;
+            }
+            
+            // Auto-completar alias si está vacío
+            if (!aliasInput.value) {
+                aliasInput.value = `${issuer}_CERT_${new Date().getFullYear()}`;
+            }
+        }
+
+        // Ejecutar al cargar si ya hay país seleccionado
+        document.addEventListener('DOMContentLoaded', function() {
+            const countrySelect = document.getElementById('country');
+            if (countrySelect.value) {
+                updateCountryInfo(countrySelect.value);
+            }
+        });
         function showFileName(input) {
             const fileNameDiv = document.getElementById('fileName');
             if (input.files && input.files[0]) {
@@ -313,6 +390,15 @@
             const certificateInput = document.getElementById('certificate');
             const passwordInput = document.getElementById('password');
             const expiresInput = document.getElementById('expires_at');
+            
+            // Validar país seleccionado
+            const countrySelect = document.getElementById('country');
+            if (!countrySelect.value) {
+                e.preventDefault();
+                alert('Debe seleccionar el país del certificado.');
+                countrySelect.focus();
+                return;
+            }
 
             // Validar que se haya seleccionado un archivo
             if (!certificateInput.files || certificateInput.files.length === 0) {
@@ -367,8 +453,9 @@
                 return;
             }
 
-            // Confirmación final
-            if (!confirm('¿Está seguro de subir este certificado? Los webservices se configurarán inmediatamente.')) {
+            // Confirmación final con información del país
+            const countryName = countrySelect.options[countrySelect.selectedIndex].text;
+            if (!confirm(`¿Está seguro de subir el certificado para ${countryName}?\n\nLos webservices se configurarán inmediatamente.`)) {
                 e.preventDefault();
                 return;
             }

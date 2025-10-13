@@ -35,10 +35,11 @@ class Company extends Model
         'company_roles',        // NUEVO: Roles de empresa
         'roles_config',         // NUEVO: Configuración por roles
         'id_maria',             //NUEVO: para generar archivos MANE/Malvina 
-        'certificate_path',
-        'certificate_password',
-        'certificate_alias',
-        'certificate_expires_at',
+        'certificates',              // ← NUEVA ESTRUCTURA JSON
+        'certificate_path',          // ← LEGACY
+        'certificate_password',      // ← LEGACY
+        'certificate_alias',         // ← LEGACY
+        'certificate_expires_at',    // ← LEGACY
         'ws_config',
         'ws_active',
         'ws_environment',
@@ -56,6 +57,7 @@ class Company extends Model
         'certificate_expires_at' => 'datetime',
         'created_date' => 'datetime',
         'last_access' => 'datetime',
+        'certificates' => 'array',
     ];
 
     protected $hidden = [
@@ -460,18 +462,227 @@ class Company extends Model
     // MÉTODOS DE CERTIFICADOS (mantener existentes)
     // ========================================
 
-    public function deleteCertificate()
-    {
-        if ($this->certificate_path && Storage::exists($this->certificate_path)) {
-            Storage::delete($this->certificate_path);
-        }
+    /**
+ * Eliminar certificado
+ * ACTUALIZADO: Elimina tanto de nueva estructura como legacy
+ */
+public function deleteCertificate(?string $country = null)
+{
+    // Si se especifica país, solo eliminar ese
+    if ($country) {
+        return $this->deleteCertificateForCountry($country);
+    }
+    
+    // Eliminar todos los certificados de la nueva estructura
+    $certificates = $this->certificates ?? [];
+    foreach (array_keys($certificates) as $countryKey) {
+        $this->deleteCertificateForCountry($countryKey);
+    }
+    
+    // Eliminar legacy
+    if ($this->certificate_path && Storage::exists($this->certificate_path)) {
+        Storage::delete($this->certificate_path);
+    }
 
-        $this->update([
-            'certificate_path' => null,
-            'certificate_password' => null,
-            'certificate_alias' => null,
-            'certificate_expires_at' => null,
-        ]);
+    $this->update([
+        'certificate_path' => null,
+        'certificate_password' => null,
+        'certificate_alias' => null,
+        'certificate_expires_at' => null,
+        'certificates' => null,
+    ]);
+}
+
+    // ========================================
+    // MÉTODOS DE CERTIFICADOS POR PAÍS
+    // ========================================
+
+    /**
+     * Obtener certificado de un país específico
+     */
+    public function getCertificate(string $country): ?array
+    {
+        $certificates = $this->certificates ?? [];
+        $countryKey = strtolower($country);
+        
+        return $certificates[$countryKey] ?? null;
+    }
+
+    /**
+     * Guardar certificado para un país
+     */
+    public function setCertificate(string $country, array $certificateData): bool
+    {
+        $certificates = $this->certificates ?? [];
+        $countryKey = strtolower($country);
+        
+        // Agregar timestamp de subida
+        $certificateData['uploaded_at'] = now()->toISOString();
+        $certificateData['country'] = strtoupper($country);
+        
+        // Encriptar password si viene
+        if (isset($certificateData['password']) && !empty($certificateData['password'])) {
+            $certificateData['password'] = encrypt($certificateData['password']);
+        }
+        
+        $certificates[$countryKey] = $certificateData;
+        
+        return $this->update(['certificates' => $certificates]);
+    }
+
+    /**
+     * Verificar si tiene certificado para un país
+     */
+    public function hasCertificateForCountry(string $country): bool
+    {
+        $cert = $this->getCertificate($country);
+        
+        if (!$cert) {
+            return false;
+        }
+        
+        // Verificar que no esté vencido
+        if (isset($cert['expires_at'])) {
+            $expiresAt = Carbon::parse($cert['expires_at']);
+            if ($expiresAt->isPast()) {
+                return false;
+            }
+        }
+        
+        // Verificar que el archivo exista
+        if (isset($cert['path']) && !Storage::exists($cert['path'])) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /**
+     * Eliminar certificado de un país
+     */
+    public function deleteCertificateForCountry(string $country): bool
+    {
+        $certificates = $this->certificates ?? [];
+        $countryKey = strtolower($country);
+        
+        // Eliminar archivo físico si existe
+        if (isset($certificates[$countryKey]['path'])) {
+            $path = $certificates[$countryKey]['path'];
+            if (Storage::exists($path)) {
+                Storage::delete($path);
+            }
+        }
+        
+        // Eliminar del array
+        unset($certificates[$countryKey]);
+        
+        return $this->update(['certificates' => $certificates]);
+    }
+
+    /**
+     * Obtener path del certificado para un país
+     */
+    public function getCertificatePathForCountry(string $country): ?string
+    {
+        $cert = $this->getCertificate($country);
+        return $cert['path'] ?? null;
+    }
+
+    /**
+     * Obtener password del certificado para un país
+     */
+    public function getCertificatePasswordForCountry(string $country): ?string
+    {
+        $cert = $this->getCertificate($country);
+        
+        if (!isset($cert['password'])) {
+            return null;
+        }
+        
+        try {
+            return decrypt($cert['password']);
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Verificar si el certificado de un país está vencido
+     */
+    public function isCertificateExpiredForCountry(string $country): bool
+    {
+        $cert = $this->getCertificate($country);
+        
+        if (!$cert || !isset($cert['expires_at'])) {
+            return true;
+        }
+        
+        $expiresAt = Carbon::parse($cert['expires_at']);
+        return $expiresAt->isPast();
+    }
+
+    /**
+     * Obtener días hasta vencimiento del certificado de un país
+     */
+    public function getCertificateDaysToExpiryForCountry(string $country): ?int
+    {
+        $cert = $this->getCertificate($country);
+        
+        if (!$cert || !isset($cert['expires_at'])) {
+            return null;
+        }
+        
+        $expiresAt = Carbon::parse($cert['expires_at']);
+        return now()->diffInDays($expiresAt, false);
+    }
+
+    /**
+     * Obtener todos los certificados válidos
+     */
+    public function getValidCertificates(): array
+    {
+        $certificates = $this->certificates ?? [];
+        $valid = [];
+        
+        foreach ($certificates as $country => $cert) {
+            if ($this->hasCertificateForCountry($country)) {
+                $valid[$country] = $cert;
+            }
+        }
+        
+        return $valid;
+    }
+
+    /**
+     * Migrar certificado legacy a estructura por país
+     */
+    public function migrateLegacyCertificate(): bool
+    {
+        // Si no hay certificado legacy, no hacer nada
+        if (empty($this->certificate_path)) {
+            return false;
+        }
+        
+        // Determinar país basado en el país de la empresa
+        $country = strtolower($this->country ?? 'ar');
+        
+        // Si ya existe en la nueva estructura, no migrar
+        if ($this->hasCertificateForCountry($country)) {
+            return false;
+        }
+        
+        // Migrar a nueva estructura
+        $certificateData = [
+            'path' => $this->certificate_path,
+            'password' => $this->certificate_password, // Ya está encriptado
+            'alias' => $this->certificate_alias,
+            'expires_at' => $this->certificate_expires_at?->toISOString(),
+            'issuer' => $country === 'ar' ? 'AFIP' : 'DNA',
+            'migrated_from_legacy' => true,
+            'migrated_at' => now()->toISOString(),
+        ];
+        
+        return $this->setCertificate($country, $certificateData);
     }
 
     public function updateLastAccess()
@@ -962,9 +1173,17 @@ public function getCertificateDebugInfo(): array
 
 /**
  * Verificar si la empresa tiene certificado configurado
+ * ACTUALIZADO: Soporta tanto legacy como nueva estructura
  */
 public function hasCertificate(): bool
 {
+    // Verificar nueva estructura primero
+    $validCerts = $this->getValidCertificates();
+    if (!empty($validCerts)) {
+        return true;
+    }
+    
+    // Fallback a legacy
     return $this->has_certificate && 
            !empty($this->certificate_path) && 
            ($this->certificate_expires_at === null || $this->certificate_expires_at > now());
@@ -972,17 +1191,37 @@ public function hasCertificate(): bool
 
 /**
  * Obtener ruta del certificado
+ * ACTUALIZADO: Intenta país de la empresa primero, luego legacy
  */
 public function getCertificatePath(): ?string
 {
+    // Intentar obtener del país de la empresa
+    if ($this->country) {
+        $path = $this->getCertificatePathForCountry($this->country);
+        if ($path) {
+            return $path;
+        }
+    }
+    
+    // Fallback a legacy
     return $this->certificate_path;
 }
 
 /**
  * Obtener contraseña del certificado
+ * ACTUALIZADO: Intenta país de la empresa primero, luego legacy
  */
 public function getCertificatePassword(): ?string
 {
+    // Intentar obtener del país de la empresa
+    if ($this->country) {
+        $password = $this->getCertificatePasswordForCountry($this->country);
+        if ($password) {
+            return $password;
+        }
+    }
+    
+    // Fallback a legacy
     return $this->certificate_password;
 }
 

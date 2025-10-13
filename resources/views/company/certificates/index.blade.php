@@ -11,15 +11,13 @@
                     🔒 Gestión de Certificados Digitales
                 </h2>
             </div>
-            @if(!$certificateStatus['has_certificate'])
-                <a href="{{ route('company.certificates.upload') }}" 
-                   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    Subir Certificado
-                </a>
-            @endif
+            <a href="{{ route('company.certificates.upload') }}" 
+                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+                <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Subir/Gestionar Certificados
+            </a>
         </div>
     </x-slot>
 
@@ -27,165 +25,142 @@
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             <!-- Estado Actual del Certificado -->
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
-                <div class="p-6">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Estado Actual del Certificado</h3>
+            <div class="p-6 bg-gray-50 rounded-lg overflow-hidden shadow-sm sm:rounded-lg">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">📋 Certificados por País</h3>
 
-                    @if($certificateStatus['has_certificate'])
-                        <!-- Certificado Configurado -->
-                        <div class="@if($certificateStatus['is_expired']) bg-red-50 @elseif($certificateStatus['is_expiring_soon']) bg-yellow-50 @else bg-green-50 @endif rounded-lg p-6">
-                            <div class="flex items-start">
-                                @if($certificateStatus['is_expired'])
-                                    <svg class="w-8 h-8 text-red-500 mt-1 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/>
-                                    </svg>
-                                @elseif($certificateStatus['is_expiring_soon'])
-                                    <svg class="w-8 h-8 text-yellow-500 mt-1 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                    </svg>
-                                @else
-                                    <svg class="w-8 h-8 text-green-500 mt-1 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-                                    </svg>
-                                @endif
-                                
-                                <div class="flex-1">
-                                    <h4 class="text-lg font-medium @if($certificateStatus['is_expired']) text-red-800 @elseif($certificateStatus['is_expiring_soon']) text-yellow-800 @else text-green-800 @endif mb-3">
-                                        {{ $certificateStatus['status'] }}
-                                    </h4>
+            <div class="space-y-4 p-6">
+                <!-- Argentina -->
+                <div class="border @if($certificates['argentina']['exists']) border-blue-200 bg-blue-50 @else border-gray-200 bg-gray-50 @endif rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-3xl">🇦🇷</span>
+                            <div>
+                                <h4 class="text-md font-semibold text-gray-900">Argentina (AFIP)</h4>
+                                <p class="text-sm text-gray-600">Certificado para webservices MIC/DTA</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            @if($certificates['argentina']['exists'])
+                                <span class="px-3 py-1 rounded-full text-xs font-medium {{ $certificates['argentina']['status']['class'] }}">
+                                    {{ $certificates['argentina']['status']['icon'] }} {{ $certificates['argentina']['status']['message'] }}
+                                </span>
+                            @else
+                                <span class="px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                                    Sin certificado
+                                </span>
+                            @endif
+                        </div>
+                    </div>
 
-                                    <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        @if($certificateStatus['alias'])
-                                            <div>
-                                                <dt class="text-sm font-medium @if($certificateStatus['is_expired']) text-red-700 @elseif($certificateStatus['is_expiring_soon']) text-yellow-700 @else text-green-700 @endif">Alias del Certificado</dt>
-                                                <dd class="text-sm @if($certificateStatus['is_expired']) text-red-900 @elseif($certificateStatus['is_expiring_soon']) text-yellow-900 @else text-green-900 @endif">{{ $certificateStatus['alias'] }}</dd>
-                                            </div>
-                                        @endif
-
-                                        @if($certificateStatus['expires_at'])
-                                            <div>
-                                                <dt class="text-sm font-medium @if($certificateStatus['is_expired']) text-red-700 @elseif($certificateStatus['is_expiring_soon']) text-yellow-700 @else text-green-700 @endif">Fecha de Vencimiento</dt>
-                                                <dd class="text-sm @if($certificateStatus['is_expired']) text-red-900 @elseif($certificateStatus['is_expiring_soon']) text-yellow-900 @else text-green-900 @endif">
-                                                    {{ $certificateStatus['expires_at']->format('d/m/Y') }}
-                                                    @if($certificateStatus['days_to_expiry'] !== null)
-                                                        <span class="ml-2 text-xs">
-                                                            @if($certificateStatus['is_expired'])
-                                                                (Vencido hace {{ abs($certificateStatus['days_to_expiry']) }} días)
-                                                            @else
-                                                                ({{ $certificateStatus['days_to_expiry'] }} días restantes)
-                                                            @endif
-                                                        </span>
-                                                    @endif
-                                                </dd>
-                                            </div>
-                                        @endif
-
-                                        <div>
-                                            <dt class="text-sm font-medium @if($certificateStatus['is_expired']) text-red-700 @elseif($certificateStatus['is_expiring_soon']) text-yellow-700 @else text-green-700 @endif">Estado de Webservices</dt>
-                                            <dd class="text-sm @if($certificateStatus['is_expired']) text-red-900 @elseif($certificateStatus['is_expiring_soon']) text-yellow-900 @else text-green-900 @endif">
-                                                @if($webserviceStatus['enabled'])
-                                                    ✅ Habilitados ({{ $webserviceStatus['environment'] }})
-                                                @else
-                                                    ❌ Deshabilitados
-                                                    @if($webserviceStatus['disabled_reason'])
-                                                        <br><span class="text-xs">Razón: {{ $webserviceStatus['disabled_reason'] }}</span>
-                                                    @endif
-                                                @endif
-                                            </dd>
-                                        </div>
-
-                                        <div>
-                                            <dt class="text-sm font-medium @if($certificateStatus['is_expired']) text-red-700 @elseif($certificateStatus['is_expiring_soon']) text-yellow-700 @else text-green-700 @endif">Roles que Requieren Certificado</dt>
-                                            <dd class="text-sm @if($certificateStatus['is_expired']) text-red-900 @elseif($certificateStatus['is_expiring_soon']) text-yellow-900 @else text-green-900 @endif">
-                                                @if(count($rolesRequiringCertificate) > 0)
-                                                    {{ implode(', ', $rolesRequiringCertificate) }}
-                                                @else
-                                                    No aplica
-                                                @endif
-                                            </dd>
-                                        </div>
-                                    </dl>
-
-                                    <!-- Acciones disponibles -->
-                                    <div class="mt-4 flex flex-wrap gap-3">
-                                        @if($certificateStatus['is_expired'] || $certificateStatus['is_expiring_soon'])
-                                            <a href="{{ route('company.certificates.renew') }}" 
-                                               class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                                🔄 Renovar Certificado
-                                            </a>
-                                        @endif
-                                        
-                                        @if($certificateStatus['has_certificate'])
-                                            <a href="{{ route('company.certificates.show', 'certificate') }}" 
-                                               class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                                👁️ Ver Detalles
-                                            </a>
-                                        @endif
-
-                                        <button onclick="testCertificate()" 
-                                                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                            🧪 Probar Certificado
-                                        </button>
-
-                                        <form method="POST" action="{{ route('company.certificates.destroy', 'certificate') }}" class="inline-block"
-                                              onsubmit="return confirm('¿Está seguro? Esto deshabilitará todos los webservices.')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                                🗑️ Eliminar
-                                            </button>
-                                        </form>
-                                    </div>
+                    @if($certificates['argentina']['exists'])
+                        <div class="mt-3 pt-3 border-t border-blue-200">
+                            <dl class="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <dt class="font-medium text-gray-600">Alias:</dt>
+                                    <dd class="text-gray-900">{{ $certificates['argentina']['data']['alias'] ?? 'N/A' }}</dd>
                                 </div>
+                                <div>
+                                    <dt class="font-medium text-gray-600">Vencimiento:</dt>
+                                    <dd class="text-gray-900">
+                                        {{ isset($certificates['argentina']['data']['expires_at']) ? \Carbon\Carbon::parse($certificates['argentina']['data']['expires_at'])->format('d/m/Y') : 'N/A' }}
+                                    </dd>
+                                </div>
+                            </dl>
+                            <div class="mt-3 flex space-x-2">
+                                <a href="{{ route('company.certificates.upload') }}?country=argentina" 
+                                class="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                                    Renovar
+                                </a>
+                                <form action="{{ route('company.certificates.destroy') }}" method="POST" class="inline"
+                                    onsubmit="return confirm('¿Está seguro de eliminar el certificado de Argentina?')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <input type="hidden" name="country" value="argentina">
+                                    <button type="submit" class="text-sm text-red-600 hover:text-red-800 font-medium">
+                                        Eliminar
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     @else
-                        <!-- Sin Certificado -->
-                        <div class="bg-red-50 rounded-lg p-6">
-                            <div class="flex items-start">
-                                <svg class="w-8 h-8 text-red-500 mt-1 mr-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        <div class="mt-3">
+                            <a href="{{ route('company.certificates.upload') }}?country=argentina" 
+                            class="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                 </svg>
-                                <div class="flex-1">
-                                    <h4 class="text-lg font-medium text-red-800 mb-3">Certificado Digital Requerido</h4>
-                                    <p class="text-sm text-red-700 mb-4">
-                                        Para utilizar los webservices aduaneros, su empresa debe configurar un certificado digital .p12 válido.
-                                        Los webservices están actualmente deshabilitados.
-                                    </p>
-
-                                    @if(count($rolesRequiringCertificate) > 0)
-                                        <div class="mb-4">
-                                            <h5 class="text-sm font-medium text-red-800 mb-2">Roles que requieren certificado:</h5>
-                                            <ul class="text-sm text-red-700">
-                                                @foreach($rolesRequiringCertificate as $role)
-                                                    <li>• {{ $role }}</li>
-                                                @endforeach
-                                            </ul>
-                                        </div>
-                                    @endif
-
-                                    <div class="flex gap-3">
-                                        <a href="{{ route('company.certificates.upload') }}" 
-                                           class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                            📤 Subir Certificado Ahora
-                                        </a>
-
-                                       
-                                            <form method="POST" action="{{ route('company.certificates.generate-test') }}" class="inline">
-                                                @csrf
-                                                <button type="submit" 
-                                                        onclick="return confirm('¿Generar un certificado de testing?\n\nEsto es solo para desarrollo y pruebas.')"
-                                                        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                                    🧪 Generar Certificado de Testing
-                                                </button>
-                                            </form>
-                                        
-                                    </div>
-                                </div>
-                            </div>
+                                Subir Certificado AFIP
+                            </a>
                         </div>
                     @endif
                 </div>
+
+                <!-- Paraguay -->
+                <div class="border @if($certificates['paraguay']['exists']) border-green-200 bg-green-50 @else border-gray-200 bg-gray-50 @endif rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-3xl">🇵🇾</span>
+                            <div>
+                                <h4 class="text-md font-semibold text-gray-900">Paraguay (DNA)</h4>
+                                <p class="text-sm text-gray-600">Certificado para manifiestos GDSF</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            @if($certificates['paraguay']['exists'])
+                                <span class="px-3 py-1 rounded-full text-xs font-medium {{ $certificates['paraguay']['status']['class'] }}">
+                                    {{ $certificates['paraguay']['status']['icon'] }} {{ $certificates['paraguay']['status']['message'] }}
+                                </span>
+                            @else
+                                <span class="px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                                    Sin certificado
+                                </span>
+                            @endif
+                        </div>
+                    </div>
+
+                    @if($certificates['paraguay']['exists'])
+                        <div class="mt-3 pt-3 border-t border-green-200">
+                            <dl class="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <dt class="font-medium text-gray-600">Alias:</dt>
+                                    <dd class="text-gray-900">{{ $certificates['paraguay']['data']['alias'] ?? 'N/A' }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="font-medium text-gray-600">Vencimiento:</dt>
+                                    <dd class="text-gray-900">
+                                        {{ isset($certificates['paraguay']['data']['expires_at']) ? \Carbon\Carbon::parse($certificates['paraguay']['data']['expires_at'])->format('d/m/Y') : 'N/A' }}
+                                    </dd>
+                                </div>
+                            </dl>
+                            <div class="mt-3 flex space-x-2">
+                                <a href="{{ route('company.certificates.upload') }}?country=paraguay" 
+                                class="text-sm text-green-600 hover:text-green-800 font-medium">
+                                    Renovar
+                                </a>
+                                <form action="{{ route('company.certificates.destroy') }}" method="POST" class="inline"
+                                    onsubmit="return confirm('¿Está seguro de eliminar el certificado de Paraguay?')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <input type="hidden" name="country" value="paraguay">
+                                    <button type="submit" class="text-sm text-red-600 hover:text-red-800 font-medium">
+                                        Eliminar
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    @else
+                        <div class="mt-3">
+                            <a href="{{ route('company.certificates.upload') }}?country=paraguay" 
+                            class="inline-flex items-center text-sm text-green-600 hover:text-green-800 font-medium">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                </svg>
+                                Subir Certificado DNA
+                            </a>
+                        </div>
+                    @endif
+                </div>
+            </div>
             </div>
 
             <!-- Información sobre Certificados -->

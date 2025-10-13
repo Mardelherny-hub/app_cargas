@@ -24,11 +24,14 @@ return new class extends Migration
             $table->json('company_roles')->nullable(); // ["Cargas", "Transbordos", "Desconsolidador"]
             $table->json('roles_config')->nullable(); // configuración específica por rol
 
-            // Digital certificates for webservices
-            $table->string('certificate_path')->nullable(); // .p12 file path
-            $table->text('certificate_password')->nullable()->comment('Password del certificado'); // encrypted
-            $table->string('certificate_alias')->nullable();
-            $table->timestamp('certificate_expires_at')->nullable();
+            // Certificates - SOPORTE MULTI-PAÍS
+            $table->json('certificates')->nullable()->comment('Certificados por país: {argentina: {...}, paraguay: {...}}');
+                        
+            // Certificado legacy (mantener compatibilidad)
+            $table->string('certificate_path')->nullable()->comment('DEPRECATED: Usar certificates JSON');
+            $table->text('certificate_password')->nullable()->comment('DEPRECATED: Usar certificates JSON');
+            $table->string('certificate_alias')->nullable()->comment('DEPRECATED: Usar certificates JSON');
+            $table->timestamp('certificate_expires_at')->nullable()->comment('DEPRECATED: Usar certificates JSON');
 
             // Webservice configuration
             $table->json('ws_config')->nullable(); // URLs, specific endpoints

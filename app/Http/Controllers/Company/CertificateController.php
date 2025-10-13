@@ -44,9 +44,22 @@ class CertificateController extends Controller
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        // Obtener estado actual del certificado
-        $certificateStatus = $this->getCertificateStatus($company);
+        // Obtener estado de certificados POR PAÍS
+        $certificates = [
+            'argentina' => [
+                'exists' => $company->hasCertificateForCountry('argentina'),
+                'data' => $company->getCertificate('argentina'),
+                'status' => $this->getCertificateStatusForCountry($company, 'argentina'),
+            ],
+            'paraguay' => [
+                'exists' => $company->hasCertificateForCountry('paraguay'),
+                'data' => $company->getCertificate('paraguay'),
+                'status' => $this->getCertificateStatusForCountry($company, 'paraguay'),
+            ],
+        ];
 
+        // Legacy para compatibilidad
+        $certificateStatus = $this->getCertificateStatus($company);
         // Verificar configuración de webservices
         $webserviceStatus = $this->getWebserviceStatus($company);
 
@@ -55,7 +68,8 @@ class CertificateController extends Controller
 
         return view('company.certificates.index', compact(
             'company',
-            'certificateStatus',
+            'certificates',              // ← NUEVO
+            'certificateStatus',         // ← LEGACY
             'webserviceStatus',
             'rolesRequiringCertificate'
         ));
@@ -89,7 +103,25 @@ class CertificateController extends Controller
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        return view('company.certificates.upload', compact('company'));
+        // Países disponibles para subir certificados
+        $countries = [
+            'argentina' => [
+                'code' => 'AR',
+                'name' => 'Argentina',
+                'label' => 'Argentina (AFIP)',
+                'issuer' => 'AFIP',
+                'has_certificate' => $company->hasCertificateForCountry('argentina'),
+            ],
+            'paraguay' => [
+                'code' => 'PY',
+                'name' => 'Paraguay',
+                'label' => 'Paraguay (DNA)',
+                'issuer' => 'DNA',
+                'has_certificate' => $company->hasCertificateForCountry('paraguay'),
+            ],
+        ];
+
+        return view('company.certificates.upload', compact('company', 'countries'));
     }
 
     /**
@@ -97,13 +129,11 @@ class CertificateController extends Controller
      */
     public function processUpload(Request $request)
     {
-        // 1. Verificar permisos básicos
-        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
+        // Validaciones y permisos...
         if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
-        // 2. Solo company-admin
         if (!$this->isCompanyAdmin()) {
             abort(403, 'Solo los administradores de empresa pueden gestionar certificados.');
         }
@@ -115,30 +145,21 @@ class CertificateController extends Controller
                 ->with('error', 'No se encontró la empresa asociada a su usuario.');
         }
 
-        // 3. Verificar acceso a empresa
         if (!$this->canAccessCompany($company->id)) {
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        // 4. Validación
+        // NUEVA VALIDACIÓN: incluir country
         $request->validate([
+            'country' => 'required|in:argentina,paraguay',  // ← NUEVO
             'certificate' => [
                 'required',
                 'file',
-                'max:2048', // 2MB máximo
+                'max:2048',
                 function ($attribute, $value, $fail) {
-                    if ($value) {
-                        $extension = strtolower($value->getClientOriginalExtension());
-                        $allowedExtensions = ['p12', 'pfx'];
-                        
-                        if (!in_array($extension, $allowedExtensions)) {
-                            $fail('El archivo debe tener extensión .p12 o .pfx');
-                        }
-                        
-                        // Verificar que sea un archivo binario válido
-                        if ($value->getSize() < 100) {
-                            $fail('El archivo es demasiado pequeño para ser un certificado válido');
-                        }
+                    $extension = strtolower($value->getClientOriginalExtension());
+                    if (!in_array($extension, ['p12', 'pfx'])) {
+                        $fail('El certificado debe ser un archivo .p12 o .pfx');
                     }
                 }
             ],
@@ -146,7 +167,9 @@ class CertificateController extends Controller
             'alias' => 'nullable|string|max:255',
             'expires_at' => 'required|date|after:today',
         ], [
-            'certificate.required' => 'Debe seleccionar un archivo de certificado.',
+            'country.required' => 'Debe seleccionar el país del certificado.',
+            'certificate.required' => 'Debe seleccionar el archivo del certificado.',
+            'certificate.mimes' => 'El certificado debe ser un archivo .p12 o .pfx.',
             'certificate.max' => 'El archivo no puede ser mayor a 2MB.',
             'password.required' => 'La contraseña del certificado es obligatoria.',
             'expires_at.required' => 'La fecha de vencimiento es obligatoria.',
@@ -154,24 +177,35 @@ class CertificateController extends Controller
         ]);
 
         try {
-            // Eliminar certificado anterior si existe
-            if ($company->certificate_path && Storage::exists($company->certificate_path)) {
-                Storage::delete($company->certificate_path);
+            $country = $request->country;
+            
+            // Eliminar certificado anterior de este país si existe
+            $existingCert = $company->getCertificate($country);
+            if ($existingCert && isset($existingCert['path'])) {
+                if (Storage::exists($existingCert['path'])) {
+                    Storage::delete($existingCert['path']);
+                }
             }
 
-            // Guardar nuevo certificado
-            $path = $request->file('certificate')->store('certificates');
+            // Guardar nuevo certificado en carpeta específica por país
+            $path = $request->file('certificate')->store("certificates/{$company->id}/{$country}");
 
-            // Actualizar datos de la empresa
-            $company->update([
-                'certificate_path' => $path,
-                'certificate_password' => $request->password, // Se encripta automáticamente por el mutator
-                'certificate_alias' => $request->alias,
-                'certificate_expires_at' => $request->expires_at,
-            ]);
+            // Preparar datos del certificado
+            $certificateData = [
+                'path' => $path,
+                'password' => $request->password, // Se encriptará en setCertificate()
+                'alias' => $request->alias ?? strtoupper($country) . '_CERT',
+                'expires_at' => $request->expires_at,
+                'issuer' => $country === 'argentina' ? 'AFIP' : 'DNA',
+            ];
 
+            // Guardar usando el nuevo método
+            $company->setCertificate($country, $certificateData);
+
+            $countryName = $country === 'argentina' ? 'Argentina (AFIP)' : 'Paraguay (DNA)';
+            
             return redirect()->route('company.certificates.index')
-                ->with('success', 'Certificado subido correctamente. Los webservices ya están operativos.');
+                ->with('success', "Certificado de {$countryName} subido correctamente. Los webservices están operativos.");
 
         } catch (\Exception $e) {
             return back()
@@ -225,17 +259,14 @@ class CertificateController extends Controller
     }
 
     /**
-     * Eliminar certificado actual.
+     * Eliminar certificado de un país específico.
      */
-    public function destroy($certificateId = null)
+    public function destroy(Request $request)
     {
-        // 1. Verificar permisos básicos
-        // ✅ CORRECCIÓN: Cambiar 'certificate_management' por 'manage_certificates'
         if (!$this->canPerform('manage_certificates')) {
             abort(403, 'No tiene permisos para gestionar certificados.');
         }
 
-        // 2. Solo company-admin
         if (!$this->isCompanyAdmin()) {
             abort(403, 'Solo los administradores de empresa pueden gestionar certificados.');
         }
@@ -247,23 +278,28 @@ class CertificateController extends Controller
                 ->with('error', 'No se encontró la empresa asociada a su usuario.');
         }
 
-        // 3. Verificar acceso a empresa
         if (!$this->canAccessCompany($company->id)) {
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        // 4. Verificar que la empresa tenga certificado
-        if (!$company->certificate_path) {
-            return redirect()->route('company.certificates.index')
-                ->with('error', 'No hay certificado para eliminar.');
+        // Obtener país del request
+        $country = $request->input('country');
+
+        if (!$country) {
+            return back()->with('error', 'Debe especificar el país del certificado a eliminar.');
+        }
+
+        if (!$company->hasCertificateForCountry($country)) {
+            return back()->with('error', 'No hay certificado de ' . $country . ' para eliminar.');
         }
 
         try {
-            // Usar el método del modelo para eliminar certificado
-            $company->deleteCertificate();
+            $company->deleteCertificateForCountry($country);
 
+            $countryName = $country === 'argentina' ? 'Argentina (AFIP)' : 'Paraguay (DNA)';
+            
             return redirect()->route('company.certificates.index')
-                ->with('success', 'Certificado eliminado correctamente. Los webservices han sido deshabilitados.');
+                ->with('success', "Certificado de {$countryName} eliminado correctamente.");
 
         } catch (\Exception $e) {
             return back()->with('error', 'Error al eliminar el certificado: ' . $e->getMessage());
@@ -388,6 +424,64 @@ class CertificateController extends Controller
     // ========================================
     // MÉTODOS HELPER PRIVADOS
     // ========================================
+
+    /**
+     * Obtener estado del certificado para un país específico.
+     */
+    private function getCertificateStatusForCountry(Company $company, string $country): array
+    {
+        $cert = $company->getCertificate($country);
+        
+        if (!$cert) {
+            return [
+                'status' => 'none',
+                'message' => 'Sin certificado',
+                'class' => 'text-gray-500',
+                'icon' => '⚠️',
+            ];
+        }
+        
+        // Verificar vencimiento
+        if (isset($cert['expires_at'])) {
+            $expiresAt = Carbon::parse($cert['expires_at']);
+            $daysToExpiry = now()->diffInDays($expiresAt, false);
+            
+            if ($daysToExpiry < 0) {
+                return [
+                    'status' => 'expired',
+                    'message' => 'Vencido',
+                    'class' => 'text-red-600',
+                    'icon' => '❌',
+                    'days' => abs($daysToExpiry),
+                ];
+            }
+            
+            if ($daysToExpiry <= 30) {
+                return [
+                    'status' => 'expiring',
+                    'message' => "Vence en {$daysToExpiry} días",
+                    'class' => 'text-yellow-600',
+                    'icon' => '⚠️',
+                    'days' => $daysToExpiry,
+                ];
+            }
+            
+            return [
+                'status' => 'valid',
+                'message' => "Válido ({$daysToExpiry} días)",
+                'class' => 'text-green-600',
+                'icon' => '✅',
+                'days' => $daysToExpiry,
+            ];
+        }
+        
+        return [
+            'status' => 'unknown',
+            'message' => 'Estado desconocido',
+            'class' => 'text-gray-500',
+            'icon' => '❓',
+        ];
+    }
 
     /**
      * Obtener estado del certificado.

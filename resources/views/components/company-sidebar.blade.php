@@ -189,23 +189,25 @@
                     </a>
                     
                     {{-- Cartas de Aviso (próximamente) --}}
-                    <a href="#" 
-                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md text-gray-400 cursor-not-allowed"
-                    title="Próximamente">
+                    <a href="{{ route('company.reports.arrival-notices') }}"
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.reports.arrival-notices') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         📧 Cartas de Aviso
-                        <span class="ml-auto text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Pronto</span>
                     </a>
                     
                     {{-- MIC/DTA (próximamente) --}}
-                    <a href="#" 
-                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md text-gray-400 cursor-not-allowed"
-                    title="Próximamente">
+                    <a href="{{ route('company.reports.micdta') }}" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.reports.micdta') }} ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         🛂 MIC/DTA
-                        <span class="ml-auto text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Pronto</span>
+                    </a>
+
+                    {{-- Manifiesto aduanero pendiente de envio (próximamente) --}}
+                    <a href="#" 
+                    class="flex items-center px-6 py-2 text-sm font-medium rounded-md text-gray-400 cursor-not-allowed">
+                        🏛️ Manifiesto Aduanero (próximamente)
                     </a>
                 </div>
             </div>
-            @endif
+            @endif            
         </nav>
     </div>
 
