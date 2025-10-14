@@ -74,11 +74,14 @@ class ParaguayDnaService extends BaseWebserviceService
      */
     protected function getWsdlUrl(): string
     {
-        $url = config('services.paraguay.wsdl');
-        if (!$url) {
-            throw new Exception('Config faltante: services.paraguay.wsdl');
-        }
-        return $url;
+        $environment = $this->company->ws_environment ?? 'testing';
+        
+        $urls = [
+            'testing' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
+            'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
+        ];
+        
+        return $urls[$environment] ?? $urls['testing'];
     }
 
     /**
@@ -100,46 +103,140 @@ class ParaguayDnaService extends BaseWebserviceService
     }
 
     /**
-     * Validaciones específicas de Paraguay
-     */
+ * Validaciones específicas de Paraguay - VERSIÓN CON BYPASS
+ */
     protected function validateSpecificData(Voyage $voyage): array
-    {
-        $errors = [];
-        $warnings = [];
+{
+    $errors = [];
+    $warnings = [];
 
-        // Validar datos básicos
-        if (!$voyage->voyage_number) {
-            $errors[] = 'Viaje sin número de viaje';
-        }
+    // Validar datos básicos del viaje
+    if (!$voyage->voyage_number) {
+        $errors[] = 'Viaje sin número de viaje';
+    }
 
-        if (!$voyage->leadVessel) {
-            $errors[] = 'Viaje sin embarcación principal asignada';
-        }
+    if (!$voyage->leadVessel) {
+        $errors[] = 'Viaje sin embarcación principal asignada';
+    }
 
-        if (!$voyage->originPort || !$voyage->destinationPort) {
-            $errors[] = 'Viaje sin puertos de origen/destino';
-        }
+    if (!$voyage->originPort || !$voyage->destinationPort) {
+        $errors[] = 'Viaje sin puertos de origen/destino';
+    }
 
-        // Validar certificados Paraguay si es requerido
-        if ($this->config['require_certificate']) {
-            if (!$this->company->tax_id) {
-                $errors[] = 'Empresa sin RUC/Tax ID configurado';
+    // ========================================
+    // VALIDACIÓN DE CERTIFICADO CON BYPASS
+    // ========================================
+    
+    $shouldBypass = $this->company->shouldBypassTesting('paraguay');
+    $hasCertificate = $this->company->hasCertificateForCountry('paraguay');
+    
+    if ($this->config['require_certificate']) {
+        if (!$hasCertificate) {
+            if ($shouldBypass) {
+                // Con bypass, certificado faltante es solo advertencia
+                $warnings[] = 'Certificado Paraguay no configurado (usando modo bypass)';
+            } else {
+                // Sin bypass, certificado es obligatorio
+                $errors[] = 'Certificado digital Paraguay requerido';
+            }
+        } else {
+            // Verificar que el certificado sea válido (existe el archivo)
+            $certificate = $this->company->getCertificate('paraguay');
+            $certPath = $certificate['path'] ?? null;
+            
+            if ($certPath && !\Illuminate\Support\Facades\Storage::exists($certPath)) {
+                if ($shouldBypass) {
+                    $warnings[] = 'Archivo de certificado no encontrado (usando modo bypass)';
+                } else {
+                    $errors[] = 'Archivo de certificado no encontrado';
+                }
             }
         }
+        
+        // Validar RUC
+        if (!$this->company->tax_id) {
+            $errors[] = 'Empresa sin RUC/Tax ID configurado';
+        }
+    }
 
-        // Validar autenticación DNA
-        // Validar autenticación DNA
-        $auth = $this->config['auth'];
-        if (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma'])) {
+    // ========================================
+    // VALIDACIÓN DE CREDENCIALES DNA CON BYPASS
+    // ========================================
+    
+    $auth = $this->config['auth'];
+    $hasCredentials = !empty($auth['idUsuario']) && !empty($auth['ticket']) && !empty($auth['firma']);
+    
+    if (!$hasCredentials) {
+        if ($shouldBypass) {
+            // Con bypass, credenciales faltantes son solo advertencia
+            $warnings[] = 'Credenciales DNA no configuradas (usando modo bypass)';
+            $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
+        } else {
+            // Sin bypass, credenciales son obligatorias
             $errors[] = 'Credenciales DNA Paraguay incompletas';
             $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
         }
-
-        return [
-            'errors' => $errors,
-            'warnings' => $warnings,
-        ];
     }
+
+    return [
+        'errors' => $errors,
+        'warnings' => $warnings,
+    ];
+}
+
+/**
+ * Override del método canProcessVoyage para manejar bypass
+ * Sobreescribe la validación de certificado de BaseWebserviceService
+ */
+public function canProcessVoyage(Voyage $voyage): array
+{
+    $validation = [
+        'can_process' => false,
+        'errors' => [],
+        'warnings' => [],
+    ];
+
+    try {
+        // 1. Validaciones básicas comunes (del padre)
+        $baseValidation = $this->validateBaseData($voyage);
+        $validation['errors'] = array_merge($validation['errors'], $baseValidation['errors']);
+        $validation['warnings'] = array_merge($validation['warnings'], $baseValidation['warnings']);
+
+        // 2. Validaciones específicas de Paraguay (con bypass integrado)
+        $specificValidation = $this->validateSpecificData($voyage);
+        $validation['errors'] = array_merge($validation['errors'], $specificValidation['errors']);
+        $validation['warnings'] = array_merge($validation['warnings'], $specificValidation['warnings']);
+
+        // 3. NO validar certificado con CertificateManagerService
+        //    Ya lo manejamos en validateSpecificData() con soporte de bypass
+
+        // 4. Determinar si puede procesar
+        $validation['can_process'] = empty($validation['errors']);
+
+        $this->logOperation(
+            $validation['can_process'] ? 'info' : 'warning',
+            'Validación de Viaje Paraguay completada',
+            [
+                'can_process' => $validation['can_process'],
+                'errors_count' => count($validation['errors']),
+                'warnings_count' => count($validation['warnings']),
+                'bypass_enabled' => $this->company->shouldBypassTesting('paraguay'),
+            ]
+        );
+
+        return $validation;
+
+    } catch (Exception $e) {
+        $validation['errors'][] = 'Error interno en validación: ' . $e->getMessage();
+        $validation['can_process'] = false;
+        
+        $this->logOperation('error', 'Error en canProcessVoyage', [
+            'error' => $e->getMessage(),
+        ]);
+        
+        return $validation;
+    }
+}
 
     /**
      * Envío específico del webservice (no implementado aquí directamente)
@@ -220,7 +317,8 @@ class ParaguayDnaService extends BaseWebserviceService
                 ]);
 
                 // Actualizar estado del voyage
-                $this->updateWebserviceStatus($voyage, 'XFFM', 'sent', [
+                $this->updateWebserviceStatus($voyage, 'XFFM', [
+                    'status' => 'sent',
                     'nro_viaje' => $nroViaje,
                 ]);
 
@@ -316,7 +414,10 @@ class ParaguayDnaService extends BaseWebserviceService
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XFBL', 'sent');
+                $this->updateWebserviceStatus($voyage, 'XFBL', [
+                    'status' => 'sent',
+                    'nro_viaje' => $nroViaje,
+                ]);
 
                 DB::commit();
 
@@ -406,7 +507,10 @@ class ParaguayDnaService extends BaseWebserviceService
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XFBT', 'sent');
+                $this->updateWebserviceStatus($voyage, 'XFBT', [
+                    'status' => 'sent',
+                    'nro_viaje' => $nroViaje,
+                ]);
 
                 DB::commit();
 
@@ -485,7 +589,10 @@ class ParaguayDnaService extends BaseWebserviceService
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XFCT', 'approved');
+                $this->updateWebserviceStatus($voyage, 'XFCT', [
+                    'status' => 'sent',
+                    'nro_viaje' => $nroViaje,
+                ]);
 
                 DB::commit();
 
@@ -519,51 +626,256 @@ class ParaguayDnaService extends BaseWebserviceService
     // ====================================
 
     /**
-     * Enviar mensaje SOAP a DNA Paraguay
-     */
-    protected function sendSoapMessage(array $params): array
-    {
-        try {
-            $client = $this->createSoapClient();
-            $auth = $this->config['auth'];
-
-            // Parámetros GDSF
-            $soapParams = [
-                'codigo' => $params['codigo'],
-                'version' => $params['version'],
-                'viaje' => $params['viaje'],
-                'xml' => $params['xml'],
-                'Autenticacion' => [
-                    'idUsuario' => $auth['idUsuario'],
-                    'ticket' => $auth['ticket'],
-                    'firma' => $auth['firma'],
-                ],
-            ];
-
-            // Enviar
-            $result = $client->__soapCall('EnviarMensajeFluvial', [$soapParams]);
-            $rawResponse = $client->__getLastResponse();
-
-            return [
-                'success' => true,
-                'response_data' => $result,
-                'raw_response' => $rawResponse,
-            ];
-
-        } catch (SoapFault $e) {
-            return [
-                'success' => false,
-                'error_message' => $e->faultstring ?? $e->getMessage(),
-                'error_code' => $e->faultcode ?? 'SOAP_FAULT',
-            ];
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'error_message' => $e->getMessage(),
-                'error_code' => 'GENERAL_ERROR',
-            ];
-        }
+ * Enviar mensaje SOAP a DNA Paraguay CON BYPASS INTELIGENTE
+ */
+protected function sendSoapMessage(array $params): array
+{
+    // ========================================
+    // BYPASS INTELIGENTE PARAGUAY
+    // ========================================
+    
+    $shouldBypass = $this->company->shouldBypassTesting('paraguay');
+    $environment = $this->config['environment'] ?? 'testing';
+    $auth = $this->config['auth'];
+    
+    // Verificar si debe usar bypass
+    $useBypass = false;
+    
+    // Razón 1: Bypass activado explícitamente en configuración
+    if ($shouldBypass) {
+        $useBypass = true;
+        $bypassReason = 'Bypass activado en configuración de empresa';
     }
+    
+    // Razón 2: Ambiente testing sin credenciales DNA completas
+    if ($environment === 'testing' && (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma']))) {
+        $useBypass = true;
+        $bypassReason = 'Ambiente testing sin credenciales DNA';
+    }
+    
+    // Razón 3: Certificado es de testing (verificar si existe y es fake)
+    $certificate = $this->company->getCertificate('paraguay');
+    if ($certificate && isset($certificate['alias']) && str_contains(strtoupper($certificate['alias']), 'TEST')) {
+        $useBypass = true;
+        $bypassReason = 'Certificado de testing detectado';
+    }
+    
+    // ========================================
+    // SI DEBE USAR BYPASS: GENERAR RESPUESTA SIMULADA
+    // ========================================
+    
+    if ($useBypass) {
+        $this->logOperation('info', '🔄 BYPASS ACTIVADO - Simulando respuesta Paraguay', [
+            'codigo' => $params['codigo'],
+            'viaje' => $params['viaje'],
+            'reason' => $bypassReason,
+            'environment' => $environment,
+        ]);
+        
+        return $this->generateBypassResponse($params);
+    }
+    
+    // ========================================
+    // CONEXIÓN REAL A DNA PARAGUAY
+    // ========================================
+    
+    try {
+        $this->logOperation('info', '🌐 Conectando a DNA Paraguay REAL', [
+            'codigo' => $params['codigo'],
+            'viaje' => $params['viaje'],
+            'environment' => $environment,
+        ]);
+        
+        $client = $this->createSoapClient();
+        
+        // Parámetros GDSF
+        $soapParams = [
+            'codigo' => $params['codigo'],
+            'version' => $params['version'],
+            'viaje' => $params['viaje'],
+            'xml' => $params['xml'],
+            'Autenticacion' => [
+                'idUsuario' => $auth['idUsuario'],
+                'ticket' => $auth['ticket'],
+                'firma' => $auth['firma'],
+            ],
+        ];
+
+        // Enviar
+        $result = $client->__soapCall('EnviarMensajeFluvial', [$soapParams]);
+        $rawResponse = $client->__getLastResponse();
+
+        return [
+            'success' => true,
+            'response_data' => $result,
+            'raw_response' => $rawResponse,
+        ];
+
+    } catch (SoapFault $e) {
+        return [
+            'success' => false,
+            'error_message' => $e->faultstring ?? $e->getMessage(),
+            'error_code' => $e->faultcode ?? 'SOAP_ERROR',
+        ];
+    } catch (Exception $e) {
+        return [
+            'success' => false,
+            'error_message' => $e->getMessage(),
+            'error_code' => 'UNKNOWN_ERROR',
+        ];
+    }
+}
+
+/**
+ * Generar respuesta simulada (BYPASS)
+ */
+private function generateBypassResponse(array $params): array
+{
+    $codigo = $params['codigo'];
+    $viaje = $params['viaje'];
+    
+    // Generar nroViaje simulado si es XFFM
+    $nroViaje = $viaje ?? 'PY' . date('Y') . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+    
+    $this->logOperation('info', '✅ BYPASS: Respuesta simulada generada', [
+        'codigo' => $codigo,
+        'nroViaje' => $nroViaje,
+        'timestamp' => now()->toISOString(),
+    ]);
+    
+    // Respuesta simulada según el tipo de mensaje
+    switch ($codigo) {
+        case 'XFFM':
+            $responseXml = $this->generateXffmBypassXml($nroViaje);
+            break;
+            
+        case 'XFBL':
+            $responseXml = $this->generateXfblBypassXml($viaje);
+            break;
+            
+        case 'XFBT':
+            $responseXml = $this->generateXfbtBypassXml($viaje);
+            break;
+            
+        case 'XFCT':
+            $responseXml = $this->generateXfctBypassXml($viaje);
+            break;
+            
+        default:
+            $responseXml = '<response><status>OK</status><message>BYPASS SUCCESS</message></response>';
+    }
+    
+    return [
+        'success' => true,
+        'response_data' => (object)[
+            'nroViaje' => $nroViaje,
+            'estado' => 'ACEPTADO',
+            'mensaje' => 'Mensaje recibido correctamente (SIMULADO)',
+            'bypass_mode' => true,
+        ],
+        'raw_response' => $responseXml,
+    ];
+}
+
+/**
+ * Generar XML de respuesta XFFM simulada
+ */
+private function generateXffmBypassXml(string $nroViaje): string
+{
+    $timestamp = now()->format('Y-m-d\TH:i:s');
+    
+    return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <EnviarMensajeFluvialResponse xmlns="http://gdsf.aduana.gov.py/">
+            <resultado>
+                <codigo>0</codigo>
+                <mensaje>Mensaje XFFM recibido correctamente (BYPASS)</mensaje>
+                <nroViaje>{$nroViaje}</nroViaje>
+                <estado>ACEPTADO</estado>
+                <fechaProceso>{$timestamp}</fechaProceso>
+            </resultado>
+        </EnviarMensajeFluvialResponse>
+    </soap:Body>
+</soap:Envelope>
+XML;
+}
+
+/**
+ * Generar XML de respuesta XFBL simulada
+ */
+private function generateXfblBypassXml(string $viaje): string
+{
+    $timestamp = now()->format('Y-m-d\TH:i:s');
+    
+    return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <EnviarMensajeFluvialResponse xmlns="http://gdsf.aduana.gov.py/">
+            <resultado>
+                <codigo>0</codigo>
+                <mensaje>Conocimientos recibidos correctamente (BYPASS)</mensaje>
+                <nroViaje>{$viaje}</nroViaje>
+                <estado>ACEPTADO</estado>
+                <fechaProceso>{$timestamp}</fechaProceso>
+            </resultado>
+        </EnviarMensajeFluvialResponse>
+    </soap:Body>
+</soap:Envelope>
+XML;
+}
+
+/**
+ * Generar XML de respuesta XFBT simulada
+ */
+private function generateXfbtBypassXml(string $viaje): string
+{
+    $timestamp = now()->format('Y-m-d\TH:i:s');
+    
+    return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <EnviarMensajeFluvialResponse xmlns="http://gdsf.aduana.gov.py/">
+            <resultado>
+                <codigo>0</codigo>
+                <mensaje>Contenedores recibidos correctamente (BYPASS)</mensaje>
+                <nroViaje>{$viaje}</nroViaje>
+                <estado>ACEPTADO</estado>
+                <fechaProceso>{$timestamp}</fechaProceso>
+            </resultado>
+        </EnviarMensajeFluvialResponse>
+    </soap:Body>
+</soap:Envelope>
+XML;
+}
+
+/**
+ * Generar XML de respuesta XFCT simulada
+ */
+private function generateXfctBypassXml(string $viaje): string
+{
+    $timestamp = now()->format('Y-m-d\TH:i:s');
+    
+    return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+        <EnviarMensajeFluvialResponse xmlns="http://gdsf.aduana.gov.py/">
+            <resultado>
+                <codigo>0</codigo>
+                <mensaje>Viaje cerrado exitosamente (BYPASS)</mensaje>
+                <nroViaje>{$viaje}</nroViaje>
+                <estado>CERRADO</estado>
+                <fechaProceso>{$timestamp}</fechaProceso>
+            </resultado>
+        </EnviarMensajeFluvialResponse>
+    </soap:Body>
+</soap:Envelope>
+XML;
+}
 
     /**
      * Extraer nroViaje de la respuesta GDSF
@@ -588,15 +900,44 @@ class ParaguayDnaService extends BaseWebserviceService
     /**
      * Obtener transacción existente por tipo de mensaje
      */
-    protected function getExistingTransaction(Voyage $voyage, string $tipoMensaje): ?WebserviceTransaction
-    {
-        return WebserviceTransaction::where('voyage_id', $voyage->id)
-            ->where('webservice_type', 'manifiesto')
-            ->where('country', 'PY')
-            ->whereJsonContains('request_data->tipo_mensaje', $tipoMensaje)
-            ->orderBy('created_at', 'desc')
-            ->first();
-    }
+    /**
+ * Obtener transacción existente por tipo de mensaje
+ */
+protected function getExistingTransaction(Voyage $voyage, string $tipoMensaje): ?WebserviceTransaction
+{
+    return WebserviceTransaction::where('voyage_id', $voyage->id)
+        ->where('webservice_type', 'manifiesto')
+        ->where('country', 'PY')
+        ->whereJsonContains('additional_metadata->tipo_mensaje', $tipoMensaje)
+        ->orderBy('created_at', 'desc')
+        ->first();
+}
+
+/**
+ * Crear transacción con datos específicos de Paraguay
+ */
+protected function createTransaction(Voyage $voyage, array $additionalData = []): WebserviceTransaction
+{
+    return WebserviceTransaction::create([
+        'company_id' => $this->company->id,
+        'user_id' => $this->user->id,
+        'voyage_id' => $voyage->id,
+        'transaction_id' => $additionalData['transaction_id'] ?? $this->generateTransactionId('PY'),
+        'webservice_type' => 'manifiesto',
+        'country' => 'PY',
+        'webservice_url' => $this->getWsdlUrl(), // ← FIX
+        'soap_action' => 'EnviarMensajeFluvial',
+        'environment' => $this->config['environment'] ?? 'testing',
+        'status' => 'pending',
+        'retry_count' => 0,
+        'max_retries' => 3,
+        'currency_code' => 'USD',
+        'container_count' => 0,
+        'bill_of_lading_count' => 0,
+        'certificate_used' => $this->company->getCertificatePathForCountry('paraguay'),
+        'additional_metadata' => $additionalData,
+    ]);
+}
 
     
 }
