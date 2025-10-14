@@ -1764,4 +1764,28 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
     {
         return $this->has_cargo_onboard === self::AFIP_YES;
     }
+
+    /**
+     * Aduana de origen
+     */
+    public function originCustoms(): BelongsTo
+    {
+        return $this->belongsTo(CustomOffice::class, 'origin_customs_id');
+    }
+
+    /**
+     * Aduana de destino
+     */
+    public function destinationCustoms(): BelongsTo
+    {
+        return $this->belongsTo(CustomOffice::class, 'destination_customs_id');
+    }
+
+    /**
+     * Aduana de transbordo
+     */
+    public function transshipmentCustoms(): BelongsTo
+    {
+        return $this->belongsTo(CustomOffice::class, 'transshipment_customs_id');
+    }
 }

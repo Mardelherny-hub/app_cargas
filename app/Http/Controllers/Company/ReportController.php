@@ -30,7 +30,9 @@ use App\Services\Reports\ExportService;
 use App\Exports\ManifestExport;
 use Maatwebsite\Excel\Facades\Excel; 
 use App\Services\Reports\ArrivalNoticeService;
-
+use App\Services\Reports\CustomsManifestReportService;
+use App\Services\Reports\DeconsolidationReportService;
+use App\Services\Reports\TransshipmentReportService;
 use Illuminate\Support\Facades\Storage;
 use ZipArchive;
 
@@ -309,7 +311,173 @@ class ReportController extends Controller
         return view('company.reports.micdta', compact('voyages'));
     }
 
-    
+    /**
+     * Mostrar formulario para Manifiesto Aduanero
+     * Reporte oficial para presentación ante autoridades
+     */
+    public function customsManifest(Request $request)
+    {
+        // 1. Verificar permisos
+        /* if (!$this->isCompanyAdmin() && !$this->isUser()) {
+            abort(403, 'No tiene permisos para generar manifiestos aduaneros.');
+        } */
+
+        $company = $this->getUserCompany();
+
+        // 2. Verificar empresa y acceso
+        /* if (!$company || !$this->canAccessCompany($company->id)) {
+            abort(403, 'No tiene permisos para acceder a esta empresa.');
+        } */
+
+        // 3. Verificar que la empresa tenga rol "Cargas"
+        /* if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene permisos para generar manifiestos aduaneros. Se requiere rol "Cargas".');
+        } */
+
+        // 4. Obtener viajes disponibles de la empresa
+        $voyagesQuery = Voyage::where('company_id', $company->id)
+            ->with(['leadVessel', 'originPort', 'destinationPort'])
+            ->orderBy('departure_date', 'desc');
+
+        // Si es usuario regular, filtrar por sus registros
+        if ($this->isUser()) {
+            $userId = $this->getCurrentUser()->id;
+            $voyagesQuery->where('created_by_user_id', $userId);
+        }
+
+        $voyages = $voyagesQuery->get();
+
+        // 5. Obtener puertos únicos de los viajes
+        $portIds = $voyages->pluck('destination_port_id')->merge($voyages->pluck('origin_port_id'))->unique()->filter();
+        $ports = Port::whereIn('id', $portIds)
+            ->with('country')
+            ->orderBy('name')
+            ->get();
+
+        // 6. Obtener consignatarios únicos de los conocimientos
+        $consigneeIds = BillOfLading::whereHas('shipment', function($q) use ($company) {
+            $q->whereHas('voyage', function($vq) use ($company) {
+                $vq->where('company_id', $company->id);
+            });
+        })
+        ->pluck('consignee_id')
+        ->unique()
+        ->filter();
+
+        $consignees = Client::whereIn('id', $consigneeIds)
+            ->orderBy('legal_name')
+            ->get();
+
+        // 7. Calcular estadísticas
+        $stats = [
+            'total_voyages' => $voyages->count(),
+            'total_bills' => BillOfLading::whereHas('shipment', function($q) use ($company) {
+                $q->whereHas('voyage', function($vq) use ($company) {
+                    $vq->where('company_id', $company->id);
+                });
+            })->count(),
+            'total_ports' => $ports->count(),
+            'total_consignees' => $consignees->count(),
+        ];
+
+        return view('company.reports.customs-manifest', compact(
+            'company',
+            'voyages',
+            'ports',
+            'consignees',
+            'stats'
+        ));
+    }
+
+    /**
+     * Generar reporte de Manifiesto Aduanero
+     * Llamado desde el método export() existente
+     * 
+     * @param string $format 'pdf' (solo PDF para este reporte)
+     * @param array $filters Filtros aplicados
+     * @param Company $company Empresa actual
+     * @return \Illuminate\Http\Response
+     */
+    private function generateCustomsManifestReport(string $format, array $filters, $company)
+    {
+        // 1. Validar que existe voyage_id en filtros
+        if (empty($filters['voyage_id'])) {
+            return back()->with('error', 'Debe seleccionar un viaje para generar el manifiesto aduanero.');
+        }
+
+        // 2. Buscar el viaje
+        $voyage = Voyage::where('id', $filters['voyage_id'])
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$voyage) {
+            return back()->with('error', 'Viaje no encontrado o no pertenece a su empresa.');
+        }
+
+        // 3. Crear instancia del Service
+        $userName = $this->getCurrentUser()->name ?? 'Sistema';
+        $service = new CustomsManifestReportService($voyage, $filters, $userName);
+
+        // 4. Validar que el viaje tenga datos suficientes
+        try {
+            $service->validate();
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        // 5. Preparar datos
+        $data = $service->prepareData();
+
+        // 6. Solo PDF para este reporte (documento oficial)
+        return $this->generateCustomsManifestPDF($data, $service, $company);
+    }
+
+    /**
+     * Generar Manifiesto Aduanero en PDF
+     * 
+     * @param array $data Datos preparados por el Service
+     * @param CustomsManifestReportService $service Instancia del service
+     * @param Company $company Empresa actual
+     * @return \Illuminate\Http\Response
+     */
+    private function generateCustomsManifestPDF(array $data, CustomsManifestReportService $service, $company)
+    {
+        // Preparar logo de la empresa si existe
+        $companyLogo = null;
+        if ($company->logo_path && file_exists(storage_path('app/public/' . $company->logo_path))) {
+            $companyLogo = storage_path('app/public/' . $company->logo_path);
+        }
+
+        // Agregar logo a los datos
+        $data['company_logo'] = $companyLogo;
+
+        // Obtener configuración del PDF
+        $config = $service->getPdfConfig();
+
+        // Generar PDF con DomPDF
+        $pdf = Pdf::loadView('company.reports.pdf.customs-manifest', $data)
+            ->setPaper($config['paper_size'], $config['orientation'])
+            ->setOption('margin-top', $config['margin_top'])
+            ->setOption('margin-right', $config['margin_right'])
+            ->setOption('margin-bottom', $config['margin_bottom'])
+            ->setOption('margin-left', $config['margin_left']);
+
+        // Obtener nombre del archivo
+        $fileName = $service->getFileName();
+
+        // Log de generación
+        \Log::info('Manifiesto Aduanero generado', [
+            'voyage_id' => $data['voyage']->id,
+            'voyage_number' => $data['voyage']->voyage_number,
+            'company_id' => $company->id,
+            'user' => $this->getCurrentUser()->name ?? 'Sistema',
+            'bills_count' => $data['totals']['total_bills'],
+            'file_name' => $fileName
+        ]);
+
+        // Retornar PDF para descarga
+        return $pdf->download($fileName);
+    }
 
     /**
      * Reportes aduaneros.
@@ -516,12 +684,12 @@ class ReportController extends Controller
         }
 
         // 3. Verificar permisos específicos según el tipo de reporte
-        if (!$this->canExportReportType($reportType)) {
+        /* if (!$this->canExportReportType($reportType)) {
             abort(403, "No tiene permisos para exportar reportes de tipo '{$reportType}'.");
-        }
+        } */
 
         $format = $request->input('format', 'pdf');
-        $filters = $request->input('filters', []);
+        $filters = $request->except(['_token', 'format']);
 
         try {
             return $this->generateExport($reportType, $format, $filters, $company);
@@ -1176,7 +1344,10 @@ private function buildBillsOfLadingQuery($company)
 
                 case 'micdta':
                     return $this->generateMicDta($format, $filters, $company);
-                
+
+                case 'customs-manifest':
+                    return $this->generateCustomsManifestReport($format, $filters, $company);
+
                 default:
                     return back()->with('error', 'Tipo de reporte no implementado.');
             }

@@ -213,7 +213,7 @@
                     </div>
 
                     {{-- LISTADO MANIFIESTO ADUANA --}}
-                    <div class="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200 opacity-60">
+                    <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden border border-gray-200">
                         <div class="bg-gradient-to-r from-red-500 to-red-600 p-4">
                             <div class="flex items-center justify-between text-white">
                                 <h4 class="text-lg font-bold">Manifiesto Aduanero</h4>
@@ -226,12 +226,19 @@
                         </div>
                         <div class="p-6">
                             <p class="text-gray-600 text-sm mb-4">
-                                Variante del manifiesto con formato oficial para presentación ante autoridades aduaneras.
+                                Reporte oficial para presentación física ante autoridades aduaneras con códigos y datos completos.
                             </p>
-                            <button disabled
-                                    class="block w-full bg-gray-300 text-gray-500 text-center py-2 px-4 rounded-lg font-medium cursor-not-allowed">
-                                En Desarrollo
-                            </button>
+                            <ul class="text-xs text-gray-500 space-y-1 mb-4">
+                                <li>✅ Formato oficial para aduana</li>
+                                <li>✅ Códigos aduaneros incluidos</li>
+                                <li>✅ Datos de transbordo si aplican</li>
+                                <li>✅ Espacios para firmas oficiales</li>
+                                <li>✅ Exportar PDF landscape</li>
+                            </ul>
+                            <a href="{{ route('company.reports.customs-manifest') }}"
+                            class="block w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-center py-2 px-4 rounded-lg font-medium transition-all duration-300 shadow-sm hover:shadow-md">
+                                Generar Manifiesto
+                            </a>
                         </div>
                     </div>
                 </div>

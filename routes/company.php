@@ -371,7 +371,7 @@ Route::prefix('reports')->name('company.reports.')->group(function () {
     Route::get('/manifests', [ReportController::class, 'manifests'])->name('manifests');
     Route::get('/bills-of-lading', [ReportController::class, 'billsOfLading'])->name('bills-of-lading');
     Route::get('/micdta', [ReportController::class, 'micdta'])->name('micdta');
-    
+    Route::get('/customs-manifest', [ReportController::class, 'customsManifest'])->name('customs-manifest');
     Route::get('/arrival-notices', [ReportController::class, 'arrivalNotices'])->name('arrival-notices');
     // ⭐ NUEVA RUTA AJAX: Obtener consignatarios de un viaje
     Route::get('/arrival-notices/consignees', [ReportController::class, 'getVoyageConsignees'])->name('arrival-notices.consignees');
