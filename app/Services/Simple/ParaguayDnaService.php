@@ -310,6 +310,29 @@ public function canProcessVoyage(Voyage $voyage): array
                 // Extraer nroViaje de la respuesta
                 $nroViaje = $this->extractNroViajeFromResponse($soapResult['response_data']);
 
+                // 🔍 LOG para verificar extracción
+                $this->logOperation('info', 'Extrayendo nroViaje de respuesta XFFM', [
+                    'nroViaje_extracted' => $nroViaje,
+                    'response_data_type' => gettype($soapResult['response_data']),
+                    'has_response_data' => isset($soapResult['response_data']),
+                ]);
+
+                // Si no se extrajo el nroViaje, intentar del raw_response XML
+                if (!$nroViaje && isset($soapResult['raw_response'])) {
+                    $nroViaje = $this->extractNroViajeFromRawXml($soapResult['raw_response']);
+                    $this->logOperation('info', 'nroViaje extraído de raw_response', [
+                        'nroViaje' => $nroViaje,
+                    ]);
+                }
+
+                // Validar que tenemos nroViaje antes de actualizar
+                if (!$nroViaje) {
+                    $this->logOperation('warning', 'No se pudo extraer nroViaje de la respuesta XFFM', [
+                        'transaction_id' => $transaction->id,
+                        'raw_response_length' => strlen($soapResult['raw_response'] ?? ''),
+                    ]);
+                }
+
                 $transaction->update([
                     'status' => 'sent',
                     'external_reference' => $nroViaje,
@@ -378,28 +401,58 @@ public function canProcessVoyage(Voyage $voyage): array
                 throw new Exception('Debe enviar XFFM primero');
             }
 
+            // 2. Obtener nroViaje con fallback a response_xml
             $nroViaje = $xffmTransaction->external_reference;
+            if (!$nroViaje && $xffmTransaction->response_xml) {
+                $nroViaje = $this->extractNroViajeFromRawXml($xffmTransaction->response_xml);
+                if ($nroViaje) {
+                    $xffmTransaction->update(['external_reference' => $nroViaje]);
+                }
+            }
+            
+            $this->logOperation('info', '🔍 Verificando nroViaje para XFBL', [
+                'external_reference' => $nroViaje,
+                'has_response_xml' => !empty($xffmTransaction->response_xml),
+            ]);
+            
+            // Si external_reference está vacío, extraer del response_xml
+            if (!$nroViaje && $xffmTransaction->response_xml) {
+                $this->logOperation('info', '🔄 Extrayendo nroViaje de response_xml', [
+                    'xffm_transaction_id' => $xffmTransaction->id,
+                ]);
+                
+                $nroViaje = $this->extractNroViajeFromRawXml($xffmTransaction->response_xml);
+                
+                // Actualizar el external_reference para la próxima vez
+                if ($nroViaje) {
+                    $xffmTransaction->update(['external_reference' => $nroViaje]);
+                    $this->logOperation('info', '✅ nroViaje recuperado y guardado', [
+                        'nroViaje' => $nroViaje,
+                    ]);
+                }
+            }
+            
             if (!$nroViaje) {
                 throw new Exception('No se encontró nroViaje de XFFM');
             }
 
-            // 2. Validar que hay BLs
+            // 3. Validar que hay BLs
             $blCount = $voyage->shipments->flatMap->billsOfLading->count();
             if ($blCount === 0) {
                 throw new Exception('No hay Bills of Lading para enviar');
             }
 
-            // 3. Generar XML
+            // 4. Generar XML
             $transactionId = $this->generateTransactionId('XFBL');
             $xml = $this->paraguayXmlGenerator->createXfblXml($voyage, $transactionId, $nroViaje);
 
-            // 4. Crear transacción
+            // 5. Crear transacción
             $transaction = $this->createTransaction($voyage, [
                 'tipo_mensaje' => 'XFBL',
                 'transaction_id' => $transactionId,
             ]);
 
-            // 5. Enviar SOAP
+            // 6. Enviar SOAP
             $soapResult = $this->sendSoapMessage([
                 'codigo' => 'XFBL',
                 'version' => '1.0',
@@ -407,7 +460,7 @@ public function canProcessVoyage(Voyage $voyage): array
                 'xml' => $xml,
             ]);
 
-            // 6. Procesar respuesta
+            // 7. Procesar respuesta
             if ($soapResult['success']) {
                 $transaction->update([
                     'status' => 'sent',
@@ -479,7 +532,16 @@ public function canProcessVoyage(Voyage $voyage): array
                 ->unique('id');
 
             if ($containers->isEmpty()) {
-                throw new Exception('No hay contenedores para enviar');
+                $this->logOperation('warning', 'Viaje sin contenedores, saltando XFBT', [
+                    'voyage_id' => $voyage->id,
+                ]);
+                
+                return [
+                    'success' => true,
+                    'skipped' => true,
+                    'message' => 'XFBT omitido: viaje sin contenedores',
+                    'container_count' => 0,
+                ];
             }
 
             // 3. Generar XML
@@ -883,16 +945,51 @@ XML;
     protected function extractNroViajeFromResponse($responseData): ?string
     {
         try {
-            // DNA Paraguay retorna XML con nroViaje
+            // CASO 1: Response es un objeto con nroViaje directo (BYPASS)
+            if (is_object($responseData) && isset($responseData->nroViaje)) {
+                return (string)$responseData->nroViaje;
+            }
+
+            // CASO 2: Response tiene XML string
             if (is_object($responseData) && isset($responseData->xml)) {
                 $xml = simplexml_load_string($responseData->xml);
                 if ($xml && isset($xml->nroViaje)) {
                     return (string)$xml->nroViaje;
                 }
             }
+
+            // CASO 3: Response es array con nroViaje
+            if (is_array($responseData) && isset($responseData['nroViaje'])) {
+                return (string)$responseData['nroViaje'];
+            }
+
+            // CASO 4: raw_response tiene XML con nroViaje
+            if (isset($responseData['raw_response'])) {
+                $xml = simplexml_load_string($responseData['raw_response']);
+                if ($xml) {
+                    $namespaces = $xml->getNamespaces(true);
+                    $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
+                    $xml->registerXPathNamespace('gdsf', 'http://gdsf.aduana.gov.py/');
+                    
+                    $nroViaje = $xml->xpath('//nroViaje');
+                    if (!empty($nroViaje)) {
+                        return (string)$nroViaje[0];
+                    }
+                }
+            }
+
+            \Log::warning('No se pudo extraer nroViaje', [
+                'response_type' => gettype($responseData),
+                'response_keys' => is_object($responseData) ? get_object_vars($responseData) : (is_array($responseData) ? array_keys($responseData) : 'not_object_or_array'),
+            ]);
+
             return null;
+
         } catch (Exception $e) {
-            Log::warning('Error extrayendo nroViaje', ['error' => $e->getMessage()]);
+            \Log::error('Error extrayendo nroViaje', [
+                'error' => $e->getMessage(),
+                'response' => json_encode($responseData),
+            ]);
             return null;
         }
     }
@@ -940,4 +1037,88 @@ protected function createTransaction(Voyage $voyage, array $additionalData = [])
 }
 
     
+    /**
+ * Extraer nroViaje directamente del XML raw de respuesta
+ */
+private function extractNroViajeFromRawXml(string $xmlString): ?string
+{
+    try {
+        // Limpiar el XML
+        $xmlString = trim($xmlString);
+        
+        // Remover BOM si existe
+        if (substr($xmlString, 0, 3) === "\xEF\xBB\xBF") {
+            $xmlString = substr($xmlString, 3);
+        }
+
+        $this->logOperation('info', '🔍 Parseando XML', [
+            'xml_length' => strlen($xmlString),
+            'xml_preview' => substr($xmlString, 0, 200),
+        ]);
+
+        // Intentar parsear con SimpleXML
+        libxml_use_internal_errors(true);
+        libxml_clear_errors();
+        
+        $xml = @simplexml_load_string($xmlString, 'SimpleXMLElement', LIBXML_NOCDATA);
+        
+        if ($xml === false) {
+            $errors = libxml_get_errors();
+            $this->logOperation('warning', 'SimpleXML falló, intentando regex', [
+                'errors' => array_map(fn($e) => $e->message, $errors),
+            ]);
+            libxml_clear_errors();
+            
+            // FALLBACK: Usar expresión regular
+            if (preg_match('/<nroViaje>([^<]+)<\/nroViaje>/i', $xmlString, $matches)) {
+                $nroViaje = trim($matches[1]);
+                $this->logOperation('info', '✅ nroViaje extraído con regex', [
+                    'nroViaje' => $nroViaje,
+                ]);
+                return $nroViaje;
+            }
+            
+            return null;
+        }
+
+        // Si SimpleXML funciona, usar XPath
+        $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
+        $xml->registerXPathNamespace('gdsf', 'http://gdsf.aduana.gov.py/');
+
+        // Intentar múltiples paths
+        $paths = [
+            '//nroViaje',
+            '//gdsf:nroViaje',
+            '//*[local-name()="nroViaje"]',
+        ];
+
+        foreach ($paths as $path) {
+            $result = $xml->xpath($path);
+            if (!empty($result) && !empty((string)$result[0])) {
+                $nroViaje = trim((string)$result[0]);
+                $this->logOperation('info', '✅ nroViaje extraído con XPath', [
+                    'nroViaje' => $nroViaje,
+                    'xpath' => $path,
+                ]);
+                return $nroViaje;
+            }
+        }
+
+        $this->logOperation('warning', '❌ No se encontró nroViaje en el XML', [
+            'paths_tried' => $paths,
+        ]);
+
+        return null;
+
+    } catch (Exception $e) {
+        $this->logOperation('error', 'Error crítico parseando XML', [
+            'error' => $e->getMessage(),
+            'line' => $e->getLine(),
+        ]);
+        return null;
+    } finally {
+        libxml_use_internal_errors(false);
+    }
+}
+
 }

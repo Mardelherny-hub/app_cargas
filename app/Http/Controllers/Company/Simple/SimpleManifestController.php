@@ -786,20 +786,21 @@ class SimpleManifestController extends Controller
             ->get();
 
         // Obtener transacciones específicas por método
+        // ✅ CORRECTO - Usar additional_metadata
         $xffmTransaction = $transactions->first(function($t) {
-            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFFM';
+            return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XFFM';
         });
 
         $xfblTransaction = $transactions->first(function($t) {
-            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFBL';
+            return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XFBL';
         });
 
         $xfbtTransaction = $transactions->first(function($t) {
-            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFBT';
+            return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XFBT';
         });
 
         $xfctTransaction = $transactions->first(function($t) {
-            return ($t->request_data['tipo_mensaje'] ?? null) === 'XFCT';
+            return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XFCT';
         });
 
         // Estados de cada método

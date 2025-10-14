@@ -168,8 +168,8 @@
                                 Contraseña del Certificado *
                             </label>
                             <input type="password"
-                                   name="certificate_password"
-                                   id="certificate_password"
+                                   name="password"
+                                   id="password"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('certificate_password') border-red-300 @enderror"
                                    {{ !$company->certificate_path ? 'required' : '' }}
                                    placeholder="Ingresa la contraseña del archivo .p12/.pfx">
@@ -187,12 +187,12 @@
                                 Alias del Certificado
                             </label>
                             <input type="text"
-                                   name="certificate_alias"
-                                   id="certificate_alias"
-                                   value="{{ old('certificate_alias', $company->certificate_alias) }}"
+                                   name="alias"
+                                   id="alias"
+                                   value="{{ old('alias', $company->certificate_alias) }}"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('certificate_alias') border-red-300 @enderror"
                                    placeholder="Nombre identificativo del certificado">
-                            @error('certificate_alias')
+                            @error('alias')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                             <p class="mt-1 text-xs text-gray-500">
@@ -206,11 +206,11 @@
                                 Fecha de Vencimiento
                             </label>
                             <input type="datetime-local"
-                                   name="certificate_expires_at"
-                                   id="certificate_expires_at"
-                                   value="{{ old('certificate_expires_at', $company->certificate_expires_at ? $company->certificate_expires_at->format('Y-m-d\TH:i') : '') }}"
+                                   name="expires_at"
+                                   id="expires_at"
+                                   value="{{ old('expires_at', $company->certificate_expires_at ? $company->certificate_expires_at->format('Y-m-d\TH:i') : '') }}"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('certificate_expires_at') border-red-300 @enderror">
-                            @error('certificate_expires_at')
+                            @error('expires_at')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                             <p class="mt-1 text-xs text-gray-500">
@@ -357,7 +357,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.querySelector('form');
             const certificateInput = document.getElementById('certificate');
-            const passwordInput = document.getElementById('certificate_password');
+            const passwordInput = document.getElementById('password');
 
             form.addEventListener('submit', function(e) {
                 // Validar archivo
