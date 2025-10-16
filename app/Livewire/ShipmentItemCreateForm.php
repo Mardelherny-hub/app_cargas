@@ -773,21 +773,26 @@ class ShipmentItemCreateForm extends Component
     public function createBillOfLading()
     {
         // Conservar lógica original completa
-        $this->validate([
-            'bl_shipper_id' => 'required|exists:clients,id,status,active',
-            'bl_consignee_id' => 'required|exists:clients,id,status,active|different:bl_shipper_id',
-            'bl_notify_party_id' => 'nullable|exists:clients,id,status,active',
-            'bl_loading_port_id' => 'required|exists:ports,id,active,1',
-            'bl_discharge_port_id' => 'required|exists:ports,id,active,1|different:bl_loading_port_id',
-            'bl_primary_cargo_type_id' => 'required|exists:cargo_types,id,active,1',
-            'bl_primary_packaging_type_id' => 'required|exists:packaging_types,id,active,1',
-            'bl_bill_number' => 'required|string|max:100',
-            'bl_bill_date' => 'required|date',
-            'bl_loading_date' => 'required|date',
-            'bl_freight_terms' => 'required|in:prepaid,collect',
-            'bl_payment_terms' => 'required|in:cash,credit,advance',
-            'bl_currency_code' => 'required|in:USD,ARS,EUR',
-        ]);
+        try {
+            $this->validate([
+                'bl_shipper_id' => 'required|exists:clients,id,status,active',
+                'bl_consignee_id' => 'required|exists:clients,id,status,active|different:bl_shipper_id',
+                'bl_notify_party_id' => 'nullable|exists:clients,id,status,active',
+                'bl_loading_port_id' => 'required|exists:ports,id,active,1',
+                'bl_discharge_port_id' => 'required|exists:ports,id,active,1|different:bl_loading_port_id',
+                'bl_primary_cargo_type_id' => 'required|exists:cargo_types,id,active,1',
+                'bl_primary_packaging_type_id' => 'required|exists:packaging_types,id,active,1',
+                'bl_bill_number' => 'required|string|max:100',
+                'bl_bill_date' => 'required|date',
+                'bl_loading_date' => 'required|date',
+                'bl_freight_terms' => 'required|in:prepaid,collect',
+                'bl_payment_terms' => 'required|in:cash,credit,advance',
+                'bl_currency_code' => 'required|in:USD,ARS,EUR',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->dispatch('scroll-to-error');
+            throw $e;
+        }
 
         try {
             DB::beginTransaction();
@@ -846,18 +851,29 @@ class ShipmentItemCreateForm extends Component
     public function createShipmentItem()
     {
         // Validar campos del item
-        $this->validate([
-            'item_reference' => 'required|string|max:100',
-            'item_description' => 'required|string|max:2000',
-            'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
-            'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
-            'package_quantity' => 'required|integer|min:1',
-            'gross_weight_kg' => 'required|numeric|min:0.01',
-            'net_weight_kg' => 'nullable|numeric|min:0',
-            'volume_m3' => 'nullable|numeric|min:0',
-            'declared_value' => 'nullable|numeric|min:0',
-            'country_of_origin' => 'required|string|size:2',
-        ]);
+        try {
+            $this->validate([
+                'item_reference' => 'required|string|max:100',
+                'item_description' => 'required|string|max:2000',
+                'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
+                'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
+                'package_quantity' => 'required|integer|min:1',
+                'gross_weight_kg' => 'required|numeric|min:0.01',
+                'net_weight_kg' => 'nullable|numeric|min:0',
+                'volume_m3' => 'nullable|numeric|min:0',
+                'declared_value' => 'nullable|numeric|min:0',
+                'country_of_origin' => 'required|string|size:2',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->dispatch('scroll-to-error');
+            throw $e;
+        }
+
+        // Validar contenedores si es carga contenedorizada
+        if ($this->showContainerFields && !$this->validateContainers()) {
+            $this->dispatch('scroll-to-error');
+            return;
+        }
 
         // Validar contenedores si es carga contenedorizada
         if ($this->showContainerFields && !$this->validateContainers()) {
@@ -985,6 +1001,9 @@ class ShipmentItemCreateForm extends Component
             }
 
             session()->flash('message', $message);
+
+            // ✅ NUEVO: Dispatch para scroll al tope
+            $this->dispatch('item-created');
 
             if ($this->continueAdding) {
                 $this->resetItemForm();

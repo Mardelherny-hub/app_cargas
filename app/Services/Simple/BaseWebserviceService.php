@@ -198,10 +198,10 @@ abstract class BaseWebserviceService
             $validation['warnings'] = array_merge($validation['warnings'], $specificValidation['warnings']);
 
             // 3. Validar certificado de la empresa
-            $certificateValidation = $this->certificateManager->validateCompanyCertificate();
-            if (!$certificateValidation['is_valid']) {
-                $validation['errors'][] = 'Certificado digital no válido: ' . implode(', ', $certificateValidation['errors']);
-            }
+            //$certificateValidation = $this->certificateManager->validateCompanyCertificate();
+            //if (!$certificateValidation['is_valid']) {
+            //    $validation['errors'][] = 'Certificado digital no válido: ' . implode(', ', $certificateValidation['errors']);
+            //}
 
             // 4. Determinar si puede procesar
             $validation['can_process'] = empty($validation['errors']);

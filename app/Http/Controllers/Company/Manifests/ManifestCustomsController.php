@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
-use App\Services\Webservice\ArgentinaMicDtaService;
-use App\Services\Webservice\ArgentinaAnticipatedService;
+use App\Services\Simple\ArgentinaMicDtaService;
+use App\Services\Simple\ArgentinaAnticipatedService;
 use App\Services\Webservice\ParaguayCustomsService;
 use App\Services\Webservice\ArgentinaDeconsolidationService;
 use App\Services\Webservice\ArgentinaTransshipmentService;
@@ -709,9 +709,9 @@ class ManifestCustomsController extends Controller
         
         switch ($webserviceType) {
             case 'anticipada':
-                return new ArgentinaAnticipatedService($company, $user);
+                return new \App\Services\Simple\ArgentinaAnticipatedService($company, $user);
             case 'micdta':
-                return new ArgentinaMicDtaService($company, $user);
+                return new \App\Services\Simple\ArgentinaMicDtaService($company, $user);
             case 'desconsolidado':
                 return new ArgentinaDeconsolidationService($company, $user);            
             case 'paraguay_customs':
@@ -1857,10 +1857,10 @@ private function buildErrorMessage(array $response): string
             $company = auth()->user()->getUserCompany();
             $user = auth()->user();
             $config = ['environment' => $request->environment];
-            $service = new \App\Services\Webservice\ArgentinaMicDtaService($company, $user, $config);
+            $service = new \App\Services\Simple\ArgentinaMicDtaService($company, $user, $config);
 
             // Ejecutar SOLO RegistrarTitEnvios
-            $result = $service->registrarTitEnvios($shipment);
+            $result = $service->processRegistrarTitEnvios($voyage, []);
 
             Log::info('🔥 RESULTADO PASO 1', [
                 'success' => $result['success'],
@@ -1944,7 +1944,7 @@ private function buildErrorMessage(array $response): string
             // Crear servicio MIC/DTA
             $company = auth()->user()->getUserCompany();
             $user = auth()->user();
-            $service = new \App\Services\Webservice\ArgentinaMicDtaService($company, $user);
+            $service = new \App\Services\Simple\ArgentinaMicDtaService($company, $user);
 
             // Ejecutar MIC/DTA usando TRACKs específicos
             $result = $service->sendMicDtaWithTracks($shipment, $trackNumbers);

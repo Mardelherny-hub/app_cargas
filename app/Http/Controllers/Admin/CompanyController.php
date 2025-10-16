@@ -565,7 +565,17 @@ class CompanyController extends Controller
     public function uploadCertificate(Request $request, Company $company)
     {
         $request->validate([
-            'certificate' => 'required|file|mimes:p12,pfx|max:2048',
+            'certificate' => [
+                'required',
+                'file',
+                'max:2048',
+                function ($attribute, $value, $fail) {
+                    $extension = strtolower($value->getClientOriginalExtension());
+                    if (!in_array($extension, ['p12', 'pfx'])) {
+                        $fail('El certificado debe ser un archivo .p12 o .pfx');
+                    }
+                }
+            ],
             'password' => 'required|string',
             'alias' => 'nullable|string|max:255',
             'expires_at' => 'required|date|after:today',

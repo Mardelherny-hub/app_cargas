@@ -1197,7 +1197,9 @@ public function getCertificatePath(): ?string
 {
     // Intentar obtener del país de la empresa
     if ($this->country) {
-        $path = $this->getCertificatePathForCountry($this->country);
+        // Normalizar código de país a nombre completo
+        $countryName = $this->normalizeCountryCode($this->country);
+        $path = $this->getCertificatePathForCountry($countryName);
         if ($path) {
             return $path;
         }
@@ -1215,7 +1217,9 @@ public function getCertificatePassword(): ?string
 {
     // Intentar obtener del país de la empresa
     if ($this->country) {
-        $password = $this->getCertificatePasswordForCountry($this->country);
+        // Normalizar código de país a nombre completo
+        $countryName = $this->normalizeCountryCode($this->country);
+        $password = $this->getCertificatePasswordForCountry($countryName);
         if ($password) {
             return $password;
         }
@@ -1223,6 +1227,26 @@ public function getCertificatePassword(): ?string
     
     // Fallback a legacy
     return $this->certificate_password;
+}
+
+/**
+ * Normalizar código de país a nombre completo para búsqueda de certificados
+ * 
+ * @param string $countryCode Código del país ('AR', 'PY', 'argentina', 'paraguay')
+ * @return string Nombre normalizado ('argentina', 'paraguay')
+ */
+private function normalizeCountryCode(string $countryCode): string
+{
+    $normalized = strtolower(trim($countryCode));
+    
+    $map = [
+        'ar' => 'argentina',
+        'argentina' => 'argentina',
+        'py' => 'paraguay',
+        'paraguay' => 'paraguay',
+    ];
+    
+    return $map[$normalized] ?? $normalized;
 }
 
 /**

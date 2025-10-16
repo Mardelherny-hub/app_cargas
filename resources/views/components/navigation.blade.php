@@ -386,7 +386,7 @@
                                     </a>
 
                                     <!-- Envíos a Aduanas -->
-                                    <a href="{{ route('company.manifests.customs.index') }}" 
+                                    <a href="{{ route('company.simple.dashboard') }}" 
                                     class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.manifests.customs.*') ? 'bg-green-50 text-green-700 font-medium' : '' }}">
                                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -620,7 +620,7 @@
                 <x-responsive-nav-link :href="route('company.manifests.export.index')" :active="request()->routeIs('company.manifests.export.*')" class="pl-6">
                     📤 {{ __('Exportar Manifiestos') }}
                 </x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('company.manifests.customs.index')" :active="request()->routeIs('company.manifests.customs.*')" class="pl-6">
+                <x-responsive-nav-link :href="route('company.simple.dashboard')" :active="request()->routeIs('company.manifests.customs.*')" class="pl-6">
                     🏛️ {{ __('Enviar a AFIP/DNA') }}
                 </x-responsive-nav-link>
                 @endif

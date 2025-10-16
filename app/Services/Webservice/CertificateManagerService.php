@@ -179,28 +179,66 @@ class CertificateManagerService
 
     /**
      * Leer certificado desde storage
+     * ACTUALIZADO: Soporta nueva estructura por país y legacy
      */
     public function readCertificate(): ?array
     {
         try {
-            if (!$this->company->certificate_path || !Storage::exists($this->company->certificate_path)) {
+            // ===== DEBUG INFO =====
+            \Log::info('=== DEBUG readCertificate ===', [
+                'company_id' => $this->company->id,
+                'company_country' => $this->company->country,
+                'certificate_path_legacy' => $this->company->certificate_path,
+                'certificates_json' => $this->company->certificates,
+                'getCertificatePath_result' => $this->company->getCertificatePath(),
+                'getCertificatePassword_result' => $this->company->getCertificatePassword() ? '***EXISTS***' : 'NULL',
+            ]);
+            
+            // CAMBIO 1: Usar método getCertificatePath() que soporta ambas estructuras
+            $certificatePath = $this->company->getCertificatePath();
+            
+            if (!$certificatePath) {
+                $this->logOperation('error', 'No hay ruta de certificado configurada', [
+                    'company_id' => $this->company->id,
+                    'has_legacy_path' => !empty($this->company->certificate_path),
+                    'company_country' => $this->company->country,
+                ]);
+                return null;
+            }
+            
+            if (!Storage::exists($certificatePath)) {
+                $this->logOperation('error', 'Archivo de certificado no encontrado', [
+                    'certificate_path' => $certificatePath,
+                    'storage_disk' => config('filesystems.default'),
+                ]);
                 return null;
             }
 
-            $certificateContent = Storage::get($this->company->certificate_path);
-            $password = $this->company->certificate_password;
+            $certificateContent = Storage::get($certificatePath);
+            
+            // CAMBIO 2: Usar método getCertificatePassword() que soporta ambas estructuras
+            $password = $this->company->getCertificatePassword();
+            
+            if (!$password) {
+                $this->logOperation('error', 'No hay contraseña de certificado configurada', [
+                    'certificate_path' => $certificatePath,
+                ]);
+                return null;
+            }
 
             // Leer certificado PKCS#12
             $certificates = [];
             if (!openssl_pkcs12_read($certificateContent, $certificates, $password)) {
                 $this->logOperation('error', 'Error leyendo certificado PKCS#12', [
                     'openssl_error' => openssl_error_string(),
-                    'certificate_path' => $this->company->certificate_path,
+                    'certificate_path' => $certificatePath,
+                    'password_length' => strlen($password),
                 ]);
                 return null;
             }
 
             $this->logOperation('info', 'Certificado leído exitosamente', [
+                'certificate_path' => $certificatePath,
                 'has_cert' => isset($certificates['cert']),
                 'has_pkey' => isset($certificates['pkey']),
                 'has_extracerts' => isset($certificates['extracerts']),
@@ -211,11 +249,14 @@ class CertificateManagerService
         } catch (Exception $e) {
             $this->logOperation('error', 'Excepción leyendo certificado', [
                 'error' => $e->getMessage(),
-                'certificate_path' => $this->company->certificate_path ?? 'null',
+                'certificate_path' => $certificatePath ?? 'null',
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
             return null;
         }
     }
+    
 
     /**
      * Extraer información detallada del certificado

@@ -393,7 +393,7 @@
         const icon = document.getElementById('resultIcon');
         const title = document.getElementById('resultTitle');
         const message = document.getElementById('resultMessage');
-
+        
         if (isSuccess && result.success) {
             icon.innerHTML = '✅';
             icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100';
@@ -410,14 +410,43 @@
             icon.innerHTML = '❌';
             icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100';
             title.textContent = `${methodName} - Error`;
-            message.innerHTML = `
+            
+            // ✅ CONSTRUIR MENSAJE DE ERROR CON DETALLES
+            let errorHtml = `
                 <p class="text-sm text-gray-700">
                     <strong>Error:</strong> ${result.error || result.details || 'Error desconocido'}<br>
-                    ${result.error_code ? `<strong>Código:</strong> ${result.error_code}` : ''}
+                    ${result.error_code ? `<strong>Código:</strong> ${result.error_code}<br>` : ''}
                 </p>
             `;
+            
+            // ✅ AGREGAR: Lista de errores de validación
+            if (result.validation_errors && result.validation_errors.length > 0) {
+                errorHtml += `
+                    <div class="mt-4 p-3 bg-red-50 rounded-md">
+                        <p class="text-sm font-semibold text-red-800 mb-2">Errores encontrados:</p>
+                        <ul class="text-sm text-red-700 space-y-1 list-disc list-inside">
+                            ${result.validation_errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                        <p class="text-xs text-red-600 mt-2 italic">Por favor corrija estos datos antes de continuar.</p>
+                    </div>
+                `;
+            }
+            
+            // ✅ AGREGAR: Lista de advertencias (warnings)
+            if (result.warnings && result.warnings.length > 0) {
+                errorHtml += `
+                    <div class="mt-3 p-3 bg-yellow-50 rounded-md">
+                        <p class="text-sm font-semibold text-yellow-800 mb-2">Advertencias:</p>
+                        <ul class="text-sm text-yellow-700 space-y-1 list-disc list-inside">
+                            ${result.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            message.innerHTML = errorHtml;
         }
-
+        
         modal.classList.remove('hidden');
     }
 

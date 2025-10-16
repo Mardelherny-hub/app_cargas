@@ -784,7 +784,8 @@
                 {{-- Botones de acción MEJORADOS --}}
                 <div class="flex justify-between">
                     <a href="{{ route('company.shipments.show', $shipment) }}" 
-                       class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                    onclick="confirmFinish(event, {{ $shipment->id }})"
+                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
                         <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                         </svg>
@@ -802,7 +803,8 @@
 
                         {{-- Botón: Terminar (NO submit, link directo) --}}
                         <a href="{{ route('company.shipments.show', $shipment) }}"
-                           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                        onclick="confirmFinish(event, {{ $shipment->id }})"
+                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
                             <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
@@ -813,4 +815,75 @@
             </form>
         </div>
     @endif
+    {{-- Scripts para UX mejorada --}}
+    @push('scripts')
+    <script>
+        document.addEventListener('livewire:initialized', () => {
+            // ✅ 1. Scroll al tope cuando se crea un item exitosamente
+            Livewire.on('item-created', () => {
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+
+            // ✅ 2. Scroll al primer error de validación
+            Livewire.on('scroll-to-error', () => {
+                setTimeout(() => {
+                    const firstError = document.querySelector('.text-red-600, .border-red-300');
+                    if (firstError) {
+                        const fieldContainer = firstError.closest('div');
+                        if (fieldContainer) {
+                            fieldContainer.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center'
+                            });
+                        }
+                    }
+                }, 100);
+            });
+        });
+
+        // ✅ 3. Confirmación al hacer clic en "Terminar" con datos sin guardar
+        function confirmFinish(event, shipmentId) {
+            // Verificar si hay datos en el formulario
+            const hasData = checkFormHasData();
+            
+            if (hasData) {
+                event.preventDefault();
+                
+                if (confirm('⚠️ Tiene datos sin guardar en el formulario.\n\n¿Está seguro que desea salir? Los datos se perderán.')) {
+                    window.location.href = `/company/shipments/${shipmentId}`;
+                }
+            }
+            // Si no hay datos, dejar que el enlace funcione normalmente
+        }
+
+        function checkFormHasData() {
+            // Verificar campos de texto con contenido
+            const textInputs = document.querySelectorAll('input[type="text"]:not([disabled]), input[type="number"]:not([disabled]), textarea:not([disabled])');
+            for (let input of textInputs) {
+                if (input.value.trim() !== '' && input.value.trim() !== '1') {
+                    return true;
+                }
+            }
+
+            // Verificar selects con valor seleccionado (excepto vacíos)
+            const selects = document.querySelectorAll('select:not([disabled])');
+            for (let select of selects) {
+                if (select.value !== '' && select.value !== null) {
+                    return true;
+                }
+            }
+
+            // Verificar checkboxes marcados
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked:not([disabled])');
+            if (checkboxes.length > 0) {
+                return true;
+            }
+
+            return false;
+        }
+    </script>
+    @endpush
 </div>

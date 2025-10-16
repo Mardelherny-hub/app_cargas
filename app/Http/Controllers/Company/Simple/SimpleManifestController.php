@@ -468,26 +468,53 @@ class SimpleManifestController extends Controller
     public function anticipadaSend(Request $request, Voyage $voyage)
     {
         try {
+            // 1. VERIFICAR PERMISOS
             if (!$this->canPerform('manage_webservices')) {
-                return response()->json(['success' => false, 'message' => 'Sin permisos'], 403);
+                return response()->json([
+                    'success' => false, 
+                    'error' => 'Sin permisos para gestionar webservices',
+                    'error_code' => 'PERMISSION_DENIED'
+                ], 403);
             }
 
             $company = $this->getUserCompany();
             if ($voyage->company_id !== $company->id) {
-                return response()->json(['success' => false, 'message' => 'Viaje no pertenece a su empresa'], 403);
+                return response()->json([
+                    'success' => false, 
+                    'error' => 'Viaje no pertenece a su empresa',
+                    'error_code' => 'UNAUTHORIZED'
+                ], 403);
             }
 
-            // Obtener método solicitado
+            // 2. VALIDAR MÉTODO
             $method = $request->input('method', 'RegistrarViaje');
             $validMethods = ['RegistrarViaje', 'RectificarViaje', 'RegistrarTitulosCbc'];
             
             if (!in_array($method, $validMethods)) {
-                return response()->json(['success' => false, 'message' => 'Método no válido'], 400);
+                return response()->json([
+                    'success' => false, 
+                    'error' => 'Método no válido',
+                    'error_code' => 'INVALID_METHOD'
+                ], 400);
             }
 
-            // Crear servicio y procesar
-            $service = new ArgentinaAnticipatedService($company, auth()->user());
+            // 3. CREAR SERVICIO Y VALIDAR VOYAGE
+            $service = new \App\Services\Simple\ArgentinaAnticipatedService($company, auth()->user());
             
+            // ✅ VALIDACIÓN PREVIA
+            $validation = $service->canProcessVoyage($voyage);
+            
+            if (!$validation['can_process']) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Viaje no válido para {$method}",
+                    'validation_errors' => $validation['errors'],
+                    'warnings' => $validation['warnings'],
+                    'error_code' => 'VALIDATION_FAILED'
+                ]);
+            }
+
+            // 4. PREPARAR OPCIONES
             $options = [
                 'method' => $method,
                 'user_notes' => $request->input('notes', ''),
@@ -499,6 +526,7 @@ class SimpleManifestController extends Controller
                 $options['rectification_reason'] = $request->input('rectification_reason', '');
             }
 
+            // 5. ENVIAR A AFIP
             $result = $service->sendWebservice($voyage, $options);
 
             if ($result['success']) {
@@ -514,7 +542,10 @@ class SimpleManifestController extends Controller
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => $result['error_message'] ?? 'Error en envío a AFIP',
+                    'error' => $result['error_message'] ?? 'Error en envío a AFIP',
+                    'error_code' => $result['error_code'] ?? 'WEBSERVICE_ERROR',
+                    'validation_errors' => $result['validation_errors'] ?? [],
+                    'warnings' => $result['warnings'] ?? [],
                     'data' => [
                         'transaction_id' => $result['transaction_id'] ?? null,
                         'method' => $method,
@@ -527,11 +558,14 @@ class SimpleManifestController extends Controller
                 'voyage_id' => $voyage->id,
                 'user_id' => auth()->id(),
                 'method' => $request->input('method'),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error interno del servidor: ' . $e->getMessage()
+                'error' => 'Error interno del servidor',
+                'details' => config('app.debug') ? $e->getMessage() : null,
+                'error_code' => 'INTERNAL_ERROR'
             ], 500);
         }
     }
@@ -953,86 +987,104 @@ class SimpleManifestController extends Controller
     /**
      * Procesar envío MIC/DTA (AJAX) - MÉTODO CORREGIDO
      */
-    public function micDtaSend(Request $request, Voyage $voyage)
-    {
-        try {
-            // Validar permisos
-            $company = $this->getUserCompany();
-            if ($voyage->company_id !== $company->id) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Viaje no pertenece a su empresa.',
-                ], 403);
-            }
-
-            // Validar que el Viaje puede ser procesado
-            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
-            $validation = $micDtaService->canProcessVoyage($voyage);
-            
-            if (!$validation['can_process']) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Viaje no válido para MIC/DTA',
-                    'validation_errors' => $validation['errors'],
-                    'warnings' => $validation['warnings'],
-                ], 400);
-            }
-
-            // Verificar que no está ya en proceso
-            $status = $micDtaService->getWebserviceStatus($voyage);
-            if (in_array($status->status, ['sending', 'validating'])) {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'MIC/DTA ya está siendo procesado',
-                    'current_status' => $status->status,
-                ], 409);
-            }
-
-            // ENVIAR WEBSERVICE CON SERVICIOS CORREGIDOS
-            $result = $micDtaService->sendWebservice($voyage, [
-                'force_send' => $request->boolean('force_send', false),
-                'user_notes' => $request->input('notes', ''),
-                'environment' => $company->ws_environment ?? 'testing',
-            ]);
-
-            // Procesar resultado
-            if ($result['success']) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'MIC/DTA enviado exitosamente',
-                    'data' => [
-                        'transaction_id' => $result['transaction_id'] ?? null,
-                        'mic_dta_id' => $result['mic_dta_id'] ?? null,
-                        'tracks_generated' => $result['tracks_saved'] ?? 0,
-                        'timestamp' => now()->toISOString(),
-                    ],
-                    'redirect_url' => route('company.simple.micdta.show', $voyage->id),
-                ]);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Error enviando MIC/DTA',
-                    'details' => $result['error_message'] ?? 'Error desconocido',
-                    'error_code' => $result['error_code'] ?? 'UNKNOWN_ERROR',
-                    'transaction_id' => $result['transaction_id'] ?? null,
-                ], 500);
-            }
-
-        } catch (Exception $e) {
-            Log::error('Error en micDtaSend', [
-                'voyage_id' => $voyage->id,
-                'company_id' => $company->id ?? null,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
+    /**
+ * Procesar envío MIC/DTA (AJAX) - MÉTODO MEJORADO
+ */
+public function micDtaSend(Request $request, Voyage $voyage)
+{
+    try {
+        // 1. VERIFICAR PERMISOS
+        if (!$this->canPerform('manage_webservices')) {
             return response()->json([
                 'success' => false,
-                'error' => 'Error interno del servidor',
-                'details' => app()->environment('local') ? $e->getMessage() : 'Contacte al administrador',
-            ], 500);
+                'error' => 'Sin permisos para gestionar webservices',
+                'error_code' => 'PERMISSION_DENIED'
+            ], 403);
         }
+
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Viaje no pertenece a su empresa',
+                'error_code' => 'UNAUTHORIZED'
+            ], 403);
+        }
+
+        // 2. CREAR SERVICIO Y VALIDAR VOYAGE
+        $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
+        
+        // ✅ VALIDACIÓN PREVIA (igual que los otros métodos)
+        $validation = $micDtaService->canProcessVoyage($voyage);
+        
+        if (!$validation['can_process']) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Viaje no válido para MIC/DTA',
+                'validation_errors' => $validation['errors'],
+                'warnings' => $validation['warnings'],
+                'error_code' => 'VALIDATION_FAILED'
+            ], 422);
+        }
+
+        // 3. VERIFICAR QUE NO ESTÁ YA EN PROCESO
+        $status = $micDtaService->getWebserviceStatus($voyage);
+        if ($status && in_array($status->status, ['sending', 'validating'])) {
+            return response()->json([
+                'success' => false,
+                'error' => 'MIC/DTA ya está siendo procesado',
+                'current_status' => $status->status,
+                'error_code' => 'ALREADY_PROCESSING'
+            ], 409);
+        }
+
+        // 4. ENVIAR WEBSERVICE
+        $result = $micDtaService->sendWebservice($voyage, [
+            'force_send' => $request->boolean('force_send', false),
+            'user_notes' => $request->input('notes', ''),
+            'environment' => $company->ws_environment ?? 'testing',
+        ]);
+
+        // 5. PROCESAR RESULTADO
+        if ($result['success']) {
+            return response()->json([
+                'success' => true,
+                'message' => 'MIC/DTA enviado exitosamente',
+                'data' => [
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                    'mic_dta_id' => $result['mic_dta_id'] ?? null,
+                    'tracks_generated' => $result['tracks_saved'] ?? 0,
+                    'timestamp' => now()->toISOString(),
+                ],
+                'redirect_url' => route('company.simple.micdta.show', $voyage->id),
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'error' => $result['error_message'] ?? 'Error enviando MIC/DTA',
+                'error_code' => $result['error_code'] ?? 'WEBSERVICE_ERROR',
+                'validation_errors' => $result['validation_errors'] ?? [],
+                'warnings' => $result['warnings'] ?? [],
+                'transaction_id' => $result['transaction_id'] ?? null,
+            ], 400);
+        }
+
+    } catch (Exception $e) {
+        Log::error('Error en micDtaSend', [
+            'voyage_id' => $voyage->id,
+            'company_id' => $company->id ?? null,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'error' => 'Error interno del servidor',
+            'details' => config('app.debug') ? $e->getMessage() : null,
+            'error_code' => 'INTERNAL_ERROR'
+        ], 500);
     }
+}
 
     /**
      * Obtener estado detallado de MIC/DTA via AJAX
@@ -1170,10 +1222,6 @@ class SimpleManifestController extends Controller
     }
 
     /**
-     * MÉTODOS FALTANTES - Agregar al SimpleManifestController.php
-     */
-
-    /**
      * Obtener estado específico MIC/DTA para un voyage
      */
     private function getMicDtaStatus(Voyage $voyage): ?VoyageWebserviceStatus
@@ -1214,17 +1262,38 @@ class SimpleManifestController extends Controller
                 return response()->json(['error' => 'No autorizado'], 403);
             }
 
-            $validation = $this->validateVoyageForMicDta($voyage);
+            // Crear servicio y obtener validación completa
+            $service = new \App\Services\Simple\ArgentinaMicDtaService($company, auth()->user());
+            $validation = $service->canProcessVoyage($voyage);
             
-            return response()->json($validation);
+            // ✅ FORMATO DETALLADO PARA DEBUG
+            return response()->json([
+                'can_process' => $validation['can_process'],
+                'summary' => [
+                    'errors_count' => count($validation['errors']),
+                    'warnings_count' => count($validation['warnings']),
+                    'details_count' => count($validation['details'] ?? []),
+                ],
+                'errors' => $validation['errors'],
+                'warnings' => $validation['warnings'],
+                'details' => $validation['details'] ?? [],
+                'voyage_info' => [
+                    'id' => $voyage->id,
+                    'voyage_number' => $voyage->voyage_number,
+                    'company_id' => $voyage->company_id,
+                    'shipments_count' => $voyage->shipments->count(),
+                ],
+            ], 200, [], JSON_PRETTY_PRINT);
 
         } catch (Exception $e) {
             return response()->json([
                 'error' => 'Error en validación',
                 'details' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ], 500);
         }
     }
+    
 
     /**
      * Obtener log de actividad via AJAX
@@ -1690,13 +1759,24 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors(),
-                'error_code' => 'VALIDATION_ERROR'
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
-            
         } catch (Exception $e) {
             \Log::error('Error en registrarTitEnvios', [
                 'voyage_id' => $voyage->id,
@@ -1746,13 +1826,24 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors(),
-                'error_code' => 'VALIDATION_ERROR'
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
-            
         } catch (Exception $e) {
             \Log::error('Error en registrarEnvios', [
                 'voyage_id' => $voyage->id,
@@ -1802,13 +1893,24 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors(),
-                'error_code' => 'VALIDATION_ERROR'
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
-            
         } catch (Exception $e) {
             \Log::error('Error en registrarMicDta', [
                 'voyage_id' => $voyage->id,
@@ -1855,10 +1957,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en registrarConvoy', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -1891,10 +2006,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en asignarATARemol', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -1927,10 +2055,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en rectifConvoyMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -1970,10 +2111,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en registrarTitMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2008,10 +2162,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en desvincularTitMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2044,10 +2211,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en anularTitulo', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2087,10 +2267,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en registrarSalidaZonaPrimaria', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2124,10 +2317,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en registrarArriboZonaPrimaria', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2160,10 +2366,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en anularArriboZonaPrimaria', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2202,10 +2421,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en consultarMicDtaAsig', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2239,10 +2471,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en consultarTitEnviosReg', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2275,10 +2520,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en consultarPrecumplido', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2339,10 +2597,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en solicitarAnularMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2376,10 +2647,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en anularEnvios', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2411,10 +2695,23 @@ class SimpleManifestController extends Controller
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ MEJORADO: Convertir errores de validación a lista legible
+            $errorMessages = [];
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $errorMessages[] = $message;
+                }
+            }
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Datos de entrada inválidos',
-                'validation_errors' => $e->errors()
+                'error' => 'Este método requiere parámetros adicionales',
+                'validation_errors' => array_merge(
+                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
+                    $errorMessages,
+                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
+                ),
+                'error_code' => 'MISSING_PARAMETERS'
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en dummy', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
