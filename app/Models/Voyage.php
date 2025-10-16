@@ -529,6 +529,22 @@ public function billsOfLading(): HasManyThrough
     );
 }
 
+/**
+ * TRACKs generados para este viaje (a través de transacciones)
+ */
+public function webserviceTracks()
+{
+    return $this->hasManyThrough(
+        \App\Models\WebserviceTrack::class,
+        \App\Models\WebserviceTransaction::class,
+        'voyage_id',           // Foreign key en webservice_transactions
+        'webservice_transaction_id', // Foreign key en webservice_tracks
+        'id',                  // Local key en voyages
+        'id'                   // Local key en webservice_transactions
+    );
+}
+
+
 //
 // === SCOPES ÚTILES ===
 //

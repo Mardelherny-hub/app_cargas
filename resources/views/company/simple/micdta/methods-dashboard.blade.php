@@ -47,6 +47,49 @@
                 </div>
             </div>
 
+            @php
+                // RegistrarTitEnvios - transacciones con shipment_id pero sin tracks generados
+                $lastTitEnvios = $voyage->webserviceTransactions()
+                    ->where('webservice_type', 'micdta')
+                    ->whereNotNull('shipment_id')
+                    ->where(function($q) {
+                        $q->where('soap_action', 'like', '%TitEnvios%')
+                          ->orWhereDoesntHave('webserviceTracks');
+                    })
+                    ->latest()
+                    ->first();
+
+                // RegistrarEnvios - transacciones con shipment_id que generaron tracks
+                $lastEnvios = $voyage->webserviceTransactions()
+                    ->where('webservice_type', 'micdta')
+                    ->whereNotNull('shipment_id')
+                    ->whereHas('webserviceTracks')
+                    ->latest()
+                    ->first();
+
+                // RegistrarMicDta - transacciones sin shipment_id (nivel voyage)
+                $lastMicDta = $voyage->webserviceTransactions()
+                    ->where('webservice_type', 'micdta')
+                    ->whereNull('shipment_id')
+                    ->where('status', '!=', 'pending')
+                    ->latest()
+                    ->first();
+
+                // Obtener TRACKs
+                $tracks = $voyage->webserviceTracks()
+                    ->whereHas('webserviceTransaction', function($q) {
+                        $q->where('webservice_type', 'micdta');
+                    })
+                    ->latest()
+                    ->get();
+                
+                // DEBUG: Ver datos reales
+                $allTransactions = $voyage->webserviceTransactions()
+                    ->where('webservice_type', 'micdta')
+                    ->latest()
+                    ->take(10)
+                    ->get();
+            @endphp
             {{-- Panel de Métodos AFIP --}}
             <div class="bg-white shadow-sm rounded-lg">
                 <div class="px-6 py-4 border-b border-gray-200">
@@ -57,9 +100,7 @@
                         Ejecute métodos específicos según el estado del Viaje y requisitos AFIP
                     </p>
                 </div>
-
                 <div class="p-6 space-y-8">
-
                     {{-- GRUPO 1: MÉTODOS PRINCIPALES (1-3) --}}
                     <div class="border border-blue-200 rounded-lg p-4 bg-blue-50">
                         <h4 class="text-md font-semibold text-blue-900 mb-3">
@@ -67,26 +108,98 @@
                         </h4>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             
-                            <button onclick="executeAfipMethod('RegistrarTitEnvios')"
-                                    class="flex flex-col items-center justify-center p-4 bg-white border-2 border-blue-300 rounded-lg hover:bg-blue-100 hover:border-blue-400 transition-colors">
-                                <span class="text-2xl mb-2">📋</span>
-                                <span class="text-sm font-medium text-center">1. RegistrarTitEnvios</span>
-                                <span class="text-xs text-gray-600 text-center mt-1">Registra títulos de transporte</span>
-                            </button>
+                            <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
+                                <button onclick="executeAfipMethod('RegistrarTitEnvios')"
+                                        class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
+                                    <span class="text-2xl mb-2">📋</span>
+                                    <span class="text-sm font-medium text-center">1. RegistrarTitEnvios</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Registra títulos de transporte</span>
+                                </button>
+                                
+                                @if($lastTitEnvios)
+                                    <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-gray-600">Último envío:</span>
+                                            <span class="text-gray-900 font-medium">{{ $lastTitEnvios->created_at->format('d/m H:i') }}</span>
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">Estado:</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                @if($lastTitEnvios->status === 'sent') bg-green-100 text-green-800
+                                                @elseif($lastTitEnvios->status === 'error') bg-red-100 text-red-800
+                                                @else bg-yellow-100 text-yellow-800 @endif">
+                                                {{ ucfirst($lastTitEnvios->status) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                @endif
+                            </div>
 
-                            <button onclick="executeAfipMethod('RegistrarEnvios')"
-                                    class="flex flex-col items-center justify-center p-4 bg-white border-2 border-blue-300 rounded-lg hover:bg-blue-100 hover:border-blue-400 transition-colors">
-                                <span class="text-2xl mb-2">📦</span>
-                                <span class="text-sm font-medium text-center">2. RegistrarEnvios</span>
-                                <span class="text-xs text-gray-600 text-center mt-1">Genera TRACKs de envíos</span>
-                            </button>
+                            <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
+                                <button onclick="executeAfipMethod('RegistrarEnvios')"
+                                        class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
+                                    <span class="text-2xl mb-2">📦</span>
+                                    <span class="text-sm font-medium text-center">2. RegistrarEnvios</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Genera TRACKs de envíos</span>
+                                </button>
+                                
+                                @if($lastEnvios)
+                                    <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-gray-600">Último envío:</span>
+                                            <span class="text-gray-900 font-medium">{{ $lastEnvios->created_at->format('d/m H:i') }}</span>
+                                        </div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-gray-600">Estado:</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                @if($lastEnvios->status === 'sent') bg-green-100 text-green-800
+                                                @elseif($lastEnvios->status === 'error') bg-red-100 text-red-800
+                                                @else bg-yellow-100 text-yellow-800 @endif">
+                                                {{ ucfirst($lastEnvios->status) }}
+                                            </span>
+                                        </div>
+                                        @if($tracks->isNotEmpty())
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-gray-600">TRACKs:</span>
+                                                <span class="text-green-600 font-semibold">{{ $tracks->count() }}</span>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
 
-                            <button onclick="executeAfipMethod('RegistrarMicDta')"
-                                    class="flex flex-col items-center justify-center p-4 bg-white border-2 border-blue-300 rounded-lg hover:bg-blue-100 hover:border-blue-400 transition-colors">
-                                <span class="text-2xl mb-2">📄</span>
-                                <span class="text-sm font-medium text-center">3. RegistrarMicDta</span>
-                                <span class="text-xs text-gray-600 text-center mt-1">Registra MIC/DTA completo</span>
-                            </button>
+                            <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
+                                <button onclick="executeAfipMethod('RegistrarMicDta')"
+                                        class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
+                                    <span class="text-2xl mb-2">📄</span>
+                                    <span class="text-sm font-medium text-center">3. RegistrarMicDta</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Registra MIC/DTA completo</span>
+                                </button>
+                                
+                                @if($lastMicDta)
+                                    <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-gray-600">Último envío:</span>
+                                            <span class="text-gray-900 font-medium">{{ $lastMicDta->created_at->format('d/m H:i') }}</span>
+                                        </div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-gray-600">Estado:</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                @if($lastMicDta->status === 'sent') bg-green-100 text-green-800
+                                                @elseif($lastMicDta->status === 'error') bg-red-100 text-red-800
+                                                @else bg-yellow-100 text-yellow-800 @endif">
+                                                {{ ucfirst($lastMicDta->status) }}
+                                            </span>
+                                        </div>
+                                        @if($lastMicDta->external_reference)
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-gray-600">MIC/DTA:</span>
+                                                <span class="text-green-600 font-mono text-xs">{{ Str::limit($lastMicDta->external_reference, 12) }}</span>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
                         </div>
                     </div>
 
@@ -113,7 +226,7 @@
                                     <span class="text-2xl mb-2">🚢</span>
                                     <span class="text-sm font-medium text-center">4. RegistrarConvoy</span>
                                     <span class="text-xs text-gray-600 text-center mt-1">Agrupa MIC/DTAs en convoy</span>
-                                </button>
+                                </button>                                
                             @else
                                 {{-- CONVOY NO APLICABLE --}}
                                 <button onclick="showConvoyNotApplicable()"
@@ -125,8 +238,8 @@
                                 </button>
                             @endif
 
-                            @if ($isConvoyVoyage)        
-                            {{-- aplicable --}}                    
+                            @if ($isConvoyVoyage)
+                            {{-- aplicable --}}
                                 <button onclick="executeAfipMethod('AsignarATARemol')"
                                         class="flex flex-col items-center justify-center p-4 bg-white border-2 border-purple-300 rounded-lg hover:bg-purple-100 hover:border-purple-400 transition-colors">
                                     <span class="text-2xl mb-2">⚓</span>
@@ -288,6 +401,77 @@
                     </div>
                 </div>
             </div>
+             {{-- DEBUG TEMPORAL - ELIMINAR DESPUÉS --}}
+                @if(auth()->user()->is_admin || true)
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                        <h4 class="text-sm font-semibold text-yellow-900 mb-2">🔍 Últimas 10 transacciones MIC/DTA:</h4>
+                        <div class="text-xs space-y-2 max-h-96 overflow-y-auto">
+                            @forelse($allTransactions as $trans)
+                                <div class="bg-white p-2 rounded border">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div><strong>ID:</strong> {{ $trans->id }}</div>
+                                        <div><strong>Transaction ID:</strong> {{ Str::limit($trans->transaction_id, 20) }}</div>
+                                        <div><strong>Shipment ID:</strong> {{ $trans->shipment_id ?? 'NULL' }}</div>
+                                        <div><strong>Status:</strong> <span class="px-2 py-0.5 rounded text-xs
+                                            @if($trans->status === 'sent') bg-green-100 text-green-800
+                                            @elseif($trans->status === 'error') bg-red-100 text-red-800
+                                            @else bg-yellow-100 text-yellow-800 @endif">
+                                            {{ $trans->status }}
+                                        </span></div>
+                                        <div><strong>Fecha:</strong> {{ $trans->created_at->format('d/m H:i:s') }}</div>
+                                        <div><strong>TRACKs:</strong> {{ $trans->webserviceTracks->count() }}</div>
+                                        <div class="col-span-2"><strong>SOAP Action:</strong> <code class="text-xs bg-gray-100 px-1 rounded">{{ Str::limit($trans->soap_action ?? 'NULL', 60) }}</code></div>
+                                    </div>
+                                </div>
+                            @empty
+                                <p class="text-yellow-800">No hay transacciones MIC/DTA</p>
+                            @endforelse
+                        </div>
+                        
+                        {{-- <div class="mt-4 pt-4 border-t border-yellow-300">
+                            <p class="text-yellow-900 font-medium mb-2">📊 Resultados de búsqueda:</p>
+                            <div class="grid grid-cols-3 gap-4 text-xs">
+                                <div class="bg-white p-3 rounded border">
+                                    <p class="font-semibold text-gray-700 mb-1">RegistrarTitEnvios</p>
+                                    @if($lastTitEnvios)
+                                        <p class="text-green-700">✓ Encontrado</p>
+                                        <p class="text-gray-600">ID: {{ $lastTitEnvios->id }}</p>
+                                        <p class="text-gray-600">{{ $lastTitEnvios->created_at->format('d/m H:i') }}</p>
+                                    @else
+                                        <p class="text-red-700">✗ No encontrado</p>
+                                    @endif
+                                </div>
+                                
+                                <div class="bg-white p-3 rounded border">
+                                    <p class="font-semibold text-gray-700 mb-1">RegistrarEnvios</p>
+                                    @if($lastEnvios)
+                                        <p class="text-green-700">✓ Encontrado</p>
+                                        <p class="text-gray-600">ID: {{ $lastEnvios->id }}</p>
+                                        <p class="text-gray-600">{{ $lastEnvios->created_at->format('d/m H:i') }}</p>
+                                    @else
+                                        <p class="text-red-700">✗ No encontrado</p>
+                                    @endif
+                                </div>
+                                
+                                <div class="bg-white p-3 rounded border">
+                                    <p class="font-semibold text-gray-700 mb-1">RegistrarMicDta</p>
+                                    @if($lastMicDta)
+                                        <p class="text-green-700">✓ Encontrado</p>
+                                        <p class="text-gray-600">ID: {{ $lastMicDta->id }}</p>
+                                        <p class="text-gray-600">{{ $lastMicDta->created_at->format('d/m H:i') }}</p>
+                                    @else
+                                        <p class="text-red-700">✗ No encontrado</p>
+                                    @endif
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3 bg-white p-3 rounded border">
+                                <p class="font-semibold text-gray-700 mb-1">TRACKs Generados</p>
+                                <p class="text-gray-600">Total: {{ $tracks->count() }}</p>
+                            </div>
+                        </div> --}}
+                    </div>
+                @endif
         </div>
     </div>
 

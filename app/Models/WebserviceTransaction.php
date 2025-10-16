@@ -232,6 +232,14 @@ class WebserviceTransaction extends Model
     }
 
     /**
+     * TRACKs generados por esta transacción
+     */
+    public function webserviceTracks()
+    {
+        return $this->hasMany(\App\Models\WebserviceTrack::class, 'webservice_transaction_id');
+    }
+
+    /**
      * Logs de la transacción
      */
     public function logs(): HasMany

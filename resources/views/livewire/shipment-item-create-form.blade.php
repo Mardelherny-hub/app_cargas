@@ -1411,8 +1411,8 @@
 
                     {{-- Botones de acción --}}
                     <div class="flex justify-between">
+                        {{-- Botón CANCELAR - Navegación directa --}}
                         <a href="{{ route('company.shipments.show', $shipment) }}" 
-                            onclick="event.preventDefault(); window.confirmFinish(event, {{ $shipment->id }}); return false;"
                             class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
                             <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
@@ -1421,6 +1421,7 @@
                         </a>
                         
                         <div class="flex space-x-3">
+                            {{-- Botón AGREGAR ITEM - Submit normal --}}
                             <button type="submit" 
                                     wire:click="$set('continueAdding', true)"
                                     class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
@@ -1428,15 +1429,15 @@
                                 <span wire:loading wire:target="createShipmentItem">Agregando...</span>
                             </button>
 
-                           
-                            <a href="{{ route('company.shipments.show', $shipment) }}"
-                                onclick="event.preventDefault(); window.confirmFinish(event, {{ $shipment->id }}); return false;"
-                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                            {{-- Botón TERMINAR - Con confirmación inteligente --}}
+                            <button type="button"
+                                    onclick="handleFinishButton({{ $shipment->id }})"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
                                 <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                 </svg>
                                 Terminar
-                            </a>
+                            </button>
                         </div>
                     </div>
                 </form>
