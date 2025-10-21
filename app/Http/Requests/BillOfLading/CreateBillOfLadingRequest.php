@@ -160,6 +160,12 @@ class CreateBillOfLadingRequest extends FormRequest
                 Rule::unique('bills_of_lading', 'bill_number')
                     ->whereNull('deleted_at'),
             ],
+            'permiso_embarque' => [
+                'required',
+                'string',
+                'max:100',
+                'regex:/^[A-Z0-9\-]+$/',
+            ],
             'bl_type' => [
                 'required',
                 'string',
@@ -556,6 +562,8 @@ class CreateBillOfLadingRequest extends FormRequest
             'original_release_date.required_if' => 'Debe especificar la fecha cuando el original fue liberado.',
             'customs_bond_number.required_if' => 'Debe especificar el número de garantía cuando se requiere.',
             'permiso_embarque.max' => 'El permiso de embarque no puede exceder 100 caracteres.',
+            'permiso_embarque.required' => 'El permiso de embarque (TRP) es obligatorio para envíos a AFIP.',
+            'permiso_embarque.regex' => 'El permiso de embarque solo puede contener letras mayúsculas, números y guiones.',
         ];
     }
 

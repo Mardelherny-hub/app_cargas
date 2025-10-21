@@ -155,6 +155,12 @@ class UpdateBillOfLadingRequest extends FormRequest
                     }
                 },
             ],
+            'permiso_embarque' => [
+                'required',
+                'string',
+                'max:100',
+                'regex:/^[A-Z0-9\-]+$/',
+            ],
             'master_bill_number' => [
                 'nullable',
                 'string',
@@ -575,6 +581,8 @@ class UpdateBillOfLadingRequest extends FormRequest
             'incoterms.in' => 'El Incoterm seleccionado no es válido.',
             'currency_code.regex' => 'El código de moneda debe ser de 3 letras mayúsculas (ej: USD, BRL, ARS).',
             'permiso_embarque.max' => 'El permiso de embarque no puede exceder 100 caracteres.',
+            'permiso_embarque.required' => 'El permiso de embarque (TRP) es obligatorio para envíos a AFIP.',
+            'permiso_embarque.regex' => 'El permiso de embarque solo puede contener letras mayúsculas, números y guiones.',
         ];
     }
 

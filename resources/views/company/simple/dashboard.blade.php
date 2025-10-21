@@ -77,9 +77,11 @@
                                     $transbordoStatus = $voyage->webservice_stats['transbordo'] ?? null;
                                     $manifiestoStatus = $voyage->webservice_stats['manifiesto'] ?? null;
                                     
-                                    // Verificar si anticipada está enviada (para habilitar otros de Argentina)
+                                    // Cada webservice es independiente - NO hay dependencias obligatorias
                                     $anticipadaEnviada = $anticipadaStatus && in_array($anticipadaStatus['status'], ['sent', 'approved']);
-                                    
+                                    $micdtaHabilitado = true; // MIC/DTA siempre habilitado (exportación)
+                                    $desconsolidadoHabilitado = true; // Independiente
+                                    $transbordoHabilitado = true; // Independiente
                                     // Definir colores de estados
                                     $statusColors = [
                                         'pending' => 'bg-yellow-100 text-yellow-800',
@@ -141,7 +143,7 @@
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center mb-1">
-                                                            <span class="text-xs font-bold text-red-600 mr-2">PASO 1</span>
+                                                            <span class="text-xs font-bold text-red-600 mr-2">Importación</span>
                                                         </div>
                                                         <span class="text-sm font-semibold text-gray-900 block truncate">Anticipada</span>
                                                     </div>
@@ -175,8 +177,8 @@
                                                 </div>
                                             </div>
 
-                                            {{-- MIC/DTA - PASO 2 --}}
-                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col {{ $anticipadaEnviada ? 'bg-white' : 'bg-gray-50 opacity-60' }}">
+                                            {{-- MIC/DTA - EXPORTACIÓN (Independiente) --}}
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-gradient-to-br from-purple-50 to-white">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center mb-1">
@@ -185,7 +187,7 @@
                                                                     <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
                                                                 </svg>
                                                             @endif
-                                                            <span class="text-xs font-medium text-gray-600 mr-2">Paso 2</span>
+                                                            <span class="text-xs font-medium text-gray-600 mr-2">Exportación</span>
                                                         </div>
                                                         <span class="text-sm font-semibold text-gray-900 block truncate">MIC/DTA</span>
                                                     </div>
@@ -205,24 +207,19 @@
                                                 </div>
                                                 
                                                 <div class="mt-auto">
-                                                    @if($anticipadaEnviada)
+                                                    <div class="mt-auto">
                                                         @if(!$micdtaStatus || in_array($micdtaStatus['status'] ?? '', ['pending', 'error']))
-                                                            <a href="{{ route('company.simple.micdta.show', $voyage) }}" 
-                                                            class="block w-full text-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded transition">
+                                                            <a href="{{ route('company.simple.micdta.show', $voyage) }}"
+                                                            class="block w-full text-center px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition">
                                                                 Enviar Ahora
                                                             </a>
                                                         @else
-                                                            <a href="{{ route('company.simple.micdta.show', $voyage) }}" 
+                                                            <a href="{{ route('company.simple.micdta.show', $voyage) }}"
                                                             class="block w-full text-center px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded transition">
                                                                 Ver Detalles
                                                             </a>
                                                         @endif
-                                                    @else
-                                                        <button disabled 
-                                                                class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-500 text-xs font-medium rounded cursor-not-allowed">
-                                                            Requiere Paso 1
-                                                        </button>
-                                                    @endif
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -236,7 +233,7 @@
                                                                     <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
                                                                 </svg>
                                                             @endif
-                                                            <span class="text-xs font-medium text-gray-600 mr-2">Paso 3</span>
+                                                            <span class="text-xs font-medium text-gray-600 mr-2"></span>
                                                         </div>
                                                         <span class="text-sm font-semibold text-gray-900 block truncate">Desconsolidado</span>
                                                     </div>

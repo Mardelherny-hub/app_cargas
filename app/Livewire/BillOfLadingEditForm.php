@@ -41,6 +41,8 @@ class BillOfLadingEditForm extends Component
     public $payment_terms = 'cash';
     public $currency_code = 'USD';
     public $incoterms = '';
+    // === CAMPOS WEBSERVICES ===
+    public $permiso_embarque = ''; // TRP - Permiso de embarque (obligatorio AFIP)
 
     // === PARTES INVOLUCRADAS ===
     public $shipper_id = '';
@@ -275,24 +277,24 @@ class BillOfLadingEditForm extends Component
 }
 
     public function mount($billOfLading)
-{
-    \Log::info('MOUNT START');
-    
-    $this->billOfLading = $billOfLading;
-    \Log::info('MOUNT - billOfLading set');
-    
-    $this->loadBillOfLadingData();
-    \Log::info('MOUNT - loadBillOfLadingData done');
+    {
+        \Log::info('MOUNT START');
+        
+        $this->billOfLading = $billOfLading;
+        \Log::info('MOUNT - billOfLading set');
+        
+        $this->loadBillOfLadingData();
+        \Log::info('MOUNT - loadBillOfLadingData done');
 
-    $this->loadFormData();
-    \Log::info('MOUNT - loadFormData done');
-    
+        $this->loadFormData();
+        \Log::info('MOUNT - loadFormData done');
+        
 
-    $this->bill_date = optional($this->billOfLading->bill_date)?->format('Y-m-d') ?? '';
-    $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
-    $this->discharge_date = optional($this->billOfLading->discharge_date)?->format('Y-m-d') ?? '';
+        $this->bill_date = optional($this->billOfLading->bill_date)?->format('Y-m-d') ?? '';
+        $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
+        $this->discharge_date = optional($this->billOfLading->discharge_date)?->format('Y-m-d') ?? '';
 
-}
+    }
 
     /**
      * Cargar colecciones para selectores (copiado del create)
@@ -404,6 +406,7 @@ class BillOfLadingEditForm extends Component
         $this->payment_terms = $bl->payment_terms ?? 'cash';
         $this->currency_code = $bl->currency_code ?? 'USD';
         $this->incoterms = $bl->incoterms ?? '';
+        $this->permiso_embarque = $bl->permiso_embarque ?? '';
 
         // Partes
         $this->shipper_id = $bl->shipper_id;
@@ -725,6 +728,7 @@ class BillOfLadingEditForm extends Component
                 'payment_terms' => $this->payment_terms,
                 'currency_code' => $this->currency_code,
                 'incoterms' => $this->incoterms ?: null,
+                'permiso_embarque' => $this->permiso_embarque ?: null,
                 'shipper_id' => $this->shipper_id,
                 'consignee_id' => $this->consignee_id,
                 'notify_party_id' => $this->notify_party_id ?: null,

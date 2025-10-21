@@ -866,6 +866,16 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/{voyage}/methods-dashboard', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'methodsDashboard'])
             ->name('methods-dashboard')
             ->whereNumber('voyage');
+
+        // Ruta para obtener títulos vinculados (AJAX)
+        Route::get('/{voyage}/titulos-vinculados', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'getTitulosVinculados'])
+            ->name('titulos-vinculados')
+            ->whereNumber('voyage');
+
+        // Ruta para obtener títulos registrados (AJAX)
+        Route::get('/{voyage}/titulos-registrados', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'getTitulosRegistrados'])
+            ->name('titulos-registrados')
+            ->whereNumber('voyage');
     });
 
     // ====================================

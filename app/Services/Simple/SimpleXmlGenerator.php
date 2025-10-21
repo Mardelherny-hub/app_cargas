@@ -315,8 +315,11 @@ class SimpleXmlGenerator
                                 $w->writeElement('codDivisaFle', 'USD');
                                 $w->writeElement('codDivisaSeg', 'USD');
                                 
-                                // idDecla con 16 caracteres exactos
-                                $w->writeElement('idDecla', str_pad('D' . $bol->id, 16, '0', STR_PAD_LEFT));
+                                // TRP - Permiso de embarque (obligatorio AFIP)
+                                if (empty($bol->permiso_embarque)) {
+                                    throw new \Exception("BillOfLading {$bol->bill_number} no tiene permiso_embarque (TRP). Este campo es obligatorio para AFIP.");
+                                }
+                                $w->writeElement('idDecla', $bol->permiso_embarque);
                                 
                                 // Items con estructura obligatoria
                                 $w->startElement('items');

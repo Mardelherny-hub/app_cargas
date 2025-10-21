@@ -65,7 +65,7 @@ class SimpleManifestController extends Controller
         'anticipada' => [
             'name' => 'Información Anticipada',
             'country' => 'AR', 
-            'description' => 'PASO 1 OBLIGATORIO - Envío anticipado de información de viaje a AFIP',
+            'description' => 'Envío anticipado de información de viaje a AFIP (para IMPORTACIÓN)',
             'icon' => 'clock',
             'status' => 'active',
             'priority' => 1, // ← NUEVO
@@ -75,11 +75,11 @@ class SimpleManifestController extends Controller
         'micdta' => [
             'name' => 'MIC/DTA',
             'country' => 'AR',
-            'description' => 'Manifiesto Internacional de Carga / Documento de Transporte Aduanero',
+            'description' => 'MIC/DTA - Para EXPORTACIÓN de mercadería (proceso independiente)',
             'icon' => 'truck',
             'status' => 'active',
             'priority' => 2, // ← NUEVO
-            'requires' => 'anticipada', // ← NUEVO: requiere anticipada enviada
+            //'requires' => 'anticipada', // ← NUEVO: requiere anticipada enviada
             'service_class' => ArgentinaMicDtaService::class,
         ],
         'desconsolidado' => [
@@ -257,12 +257,80 @@ class SimpleManifestController extends Controller
                 
             case 'AnularTitulo':
                 return array_merge($baseData, [
-                    'titulo_id' => $request->input('titulo_id'),
-                    'motivo_anulacion' => $request->input('motivo_anulacion', 'Anulación solicitada')
+                    'titulo_id' => $request->input('titulo_id', 'ALL'),  // ✅ Default 'ALL'
+                    'anular_todos' => $request->input('anular_todos', true),  // ✅ Agregar
+                    'motivo_anulacion' => $request->input('motivo_anulacion', 'Anulación total solicitada')
+                ]);
+                \Log::info('🟢 prepareMethodData AnularTitulo', ['result' => $result]);
+
+            case 'AnularEnvios':
+                return array_merge($baseData, [
+                    'anular_todos' => $request->boolean('anular_todos', false),
+                    'motivo_anulacion' => $request->input('motivo_anulacion', ''),
+                    'envios_ids' => $request->input('envios_ids', []),
+                    'tracks' => $request->input('tracks', [])
+                ]);
+                              
+            case 'RegistrarSalidaZonaPrimaria':
+                return array_merge($baseData, [
+                    'fecha_salida' => $request->input('fecha_salida'),
+                    'puerto_salida' => $request->input('puerto_salida'),
+                    'aduana_salida' => $request->input('aduana_salida'),
+                ]);
+                
+            case 'RegistrarArriboZonaPrimaria':
+                return array_merge($baseData, [
+                    'fecha_arribo' => $request->input('fecha_arribo'),
+                    'puerto_arribo' => $request->input('puerto_arribo'),
+                    'aduana_arribo' => $request->input('aduana_arribo'),
+                ]);
+                
+            case 'AnularArriboZonaPrimaria':
+                return array_merge($baseData, [
+                    'arribo_id' => $request->input('arribo_id'),
+                    'motivo_anulacion' => $request->input('motivo_anulacion', ''),
+                ]);
+                
+            case 'ConsultarMicDtaAsig':
+            case 'ConsultarTitEnviosReg':
+            case 'ConsultarPrecumplido':
+                // Métodos de consulta - solo necesitan datos base
+                return $baseData;
+                
+            case 'SolicitarAnularMicDta':
+                return array_merge($baseData, [
+                    'micdta_id' => $request->input('micdta_id'),
+                    'motivo_anulacion' => $request->input('motivo_anulacion', ''),
+                ]);
+                
+            case 'Dummy':
+                // Método de test - solo necesita datos base
+                return $baseData;
+                
+            case 'RegistrarConvoy':
+                return array_merge($baseData, [
+                    'convoy_id' => $request->input('convoy_id'),
+                    'convoy_name' => $request->input('convoy_name', 'CONVOY_' . $voyage->voyage_number),
+                    'convoy_sequence' => $request->input('convoy_sequence', 1),
+                ]);
+                
+            case 'AsignarATARemol':
+                return array_merge($baseData, [
+                    'remolcador_id' => $request->input('remolcador_id'),
+                    'ata_remolcador' => $request->input('ata_remolcador'),
+                    'micdta_id' => $request->input('micdta_id'),
+                ]);
+                
+            case 'RectifConvoyMicDta':
+                return array_merge($baseData, [
+                    'convoy_id' => $request->input('convoy_id'),
+                    'micdta_id' => $request->input('micdta_id'),
+                    'campo_a_rectificar' => $request->input('campo_a_rectificar'),
+                    'valor_nuevo' => $request->input('valor_nuevo'),
                 ]);
                 
             default:
-                // Para métodos de consulta y otros
+            
                 return $baseData;
         }
     }
@@ -2097,9 +2165,10 @@ public function micDtaSend(Request $request, Voyage $voyage)
     public function registrarTitMicDta(Request $request, Voyage $voyage)
     {
         try {
+            // ✅ VALIDACIÓN OPCIONAL: Solo valida si se proveen manualmente
             $request->validate([
-                'id_micdta' => 'required|string|max:16',
-                'titulos' => 'required|array|min:1',
+                'id_micdta' => 'nullable|string|max:16',
+                'titulos' => 'nullable|array|min:1',
                 'titulos.*' => 'string|max:36',
                 'force_send' => 'boolean',
                 'notes' => 'string|max:500'
@@ -2111,23 +2180,10 @@ public function micDtaSend(Request $request, Voyage $voyage)
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ MEJORADO: Convertir errores de validación a lista legible
-            $errorMessages = [];
-            foreach ($e->errors() as $field => $messages) {
-                foreach ($messages as $message) {
-                    $errorMessages[] = $message;
-                }
-            }
-            
             return response()->json([
                 'success' => false,
-                'error' => 'Este método requiere parámetros adicionales',
-                'validation_errors' => array_merge(
-                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
-                    $errorMessages,
-                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
-                ),
-                'error_code' => 'MISSING_PARAMETERS'
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en registrarTitMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2145,11 +2201,11 @@ public function micDtaSend(Request $request, Voyage $voyage)
      * @return \Illuminate\Http\JsonResponse
      */
     public function desvincularTitMicDta(Request $request, Voyage $voyage)
-    {
+    {   
         try {
             $request->validate([
-                'id_micdta' => 'required|string|max:16',
-                'titulos' => 'required|array|min:1',
+                'id_micdta' => 'nullable|string|max:16',  // ✅ nullable
+                'titulos' => 'nullable|array|min:1',      // ✅ nullable
                 'titulos.*' => 'string|max:36',
                 'motivo_desvinculacion' => 'string|max:200',
                 'force_send' => 'boolean',
@@ -2162,27 +2218,136 @@ public function micDtaSend(Request $request, Voyage $voyage)
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ MEJORADO: Convertir errores de validación a lista legible
-            $errorMessages = [];
-            foreach ($e->errors() as $field => $messages) {
-                foreach ($messages as $message) {
-                    $errorMessages[] = $message;
-                }
-            }
-            
             return response()->json([
                 'success' => false,
-                'error' => 'Este método requiere parámetros adicionales',
-                'validation_errors' => array_merge(
-                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
-                    $errorMessages,
-                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
-                ),
-                'error_code' => 'MISSING_PARAMETERS'
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en desvincularTitMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
             return response()->json(['success' => false, 'error' => 'Error interno procesando DesvincularTitMicDta'], 500);
+        }
+    }
+
+    /**
+     * Obtener títulos vinculados al MIC/DTA (AJAX)
+     * 
+     * Ruta: GET /webservices/micdta/{voyage}/titulos-vinculados
+     * 
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getTitulosVinculados(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No autorizado'
+                ], 403);
+            }
+
+            // Buscar última vinculación exitosa
+            $lastVinculacion = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('soap_action', 'like', '%RegistrarTitMicDta%')
+                ->where('status', 'success')
+                ->latest()
+                ->first();
+
+            if (!$lastVinculacion) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se encontraron títulos vinculados',
+                    'titulos' => []
+                ]);
+            }
+
+            // Obtener títulos (manejar diferentes formatos)
+            $titulos = $lastVinculacion->success_data['titulos_vinculados'] ?? 
+                    $lastVinculacion->success_data['titulos'] ?? 
+                    [];
+
+            // Si es array asociativo con 'titulos', extraerlo
+            if (is_array($titulos) && isset($titulos[0]) === false && isset($titulos['titulos'])) {
+                $titulos = $titulos['titulos'];
+            }
+
+            // Si está vacío o es un contador, obtener del voyage
+            if (empty($titulos) || is_int($titulos)) {
+                $titulos = $voyage->shipments->pluck('shipment_number')->filter()->toArray();
+            }
+
+            return response()->json([
+                'success' => true,
+                'titulos' => array_values($titulos),
+                'count' => count($titulos),
+                'vinculacion_id' => $lastVinculacion->id,
+                'vinculado_en' => $lastVinculacion->created_at->format('d/m/Y H:i')
+            ]);
+
+        } catch (Exception $e) {
+            \Log::error('Error en getTitulosVinculados', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno del servidor'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtener títulos registrados en AFIP (AJAX)
+     * 
+     * Ruta: GET /webservices/micdta/{voyage}/titulos-registrados
+     * 
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getTitulosRegistrados(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No autorizado'
+                ], 403);
+            }
+
+            // Obtener shipments que tienen registro exitoso en AFIP
+            $titulosRegistrados = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                ->where('status', 'success')
+                ->whereNotNull('shipment_id')
+                ->with('shipment:id,shipment_number')
+                ->get()
+                ->pluck('shipment.shipment_number')
+                ->filter()
+                ->unique()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'titulos' => $titulosRegistrados,
+                'count' => $titulosRegistrados->count()
+            ]);
+
+        } catch (Exception $e) {
+            \Log::error('Error en getTitulosRegistrados', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error interno del servidor'
+            ], 500);
         }
     }
 
@@ -2198,9 +2363,17 @@ public function micDtaSend(Request $request, Voyage $voyage)
     public function anularTitulo(Request $request, Voyage $voyage)
     {
         try {
+            // LOG TEMPORAL
+        \Log::info('🔴 anularTitulo - Datos recibidos', [
+            'all_data' => $request->all(),
+            'titulo_id' => $request->input('titulo_id'),
+            'motivo_anulacion' => $request->input('motivo_anulacion'),
+        ]);
+
             $request->validate([
-                'titulo_id' => 'required|string|max:36',
+                'titulo_id' => 'required|string|max:36',  // ✅ nullable
                 'motivo_anulacion' => 'required|string|max:200',
+                'anular_todos' => 'boolean',  // ✅ Agregar este campo
                 'force_send' => 'boolean',
                 'notes' => 'string|max:500'
             ]);
@@ -2211,23 +2384,10 @@ public function micDtaSend(Request $request, Voyage $voyage)
             return response()->json($result, $httpCode);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ MEJORADO: Convertir errores de validación a lista legible
-            $errorMessages = [];
-            foreach ($e->errors() as $field => $messages) {
-                foreach ($messages as $message) {
-                    $errorMessages[] = $message;
-                }
-            }
-            
             return response()->json([
                 'success' => false,
-                'error' => 'Este método requiere parámetros adicionales',
-                'validation_errors' => array_merge(
-                    ['Este método AFIP requiere configurar parámetros específicos antes de ejecutarlo.', ''],
-                    $errorMessages,
-                    ['', 'Nota: Estos métodos están diseñados para ser ejecutados desde formularios específicos con datos adicionales.']
-                ),
-                'error_code' => 'MISSING_PARAMETERS'
+                'error' => 'Datos de entrada inválidos',
+                'validation_errors' => $e->errors()
             ], 422);
         } catch (Exception $e) {
             \Log::error('Error en anularTitulo', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
@@ -2633,10 +2793,19 @@ public function micDtaSend(Request $request, Voyage $voyage)
     public function anularEnvios(Request $request, Voyage $voyage)
     {
         try {
+
+            \Log::info('🔴 anularEnvios - Datos recibidos', [
+                'all_data' => $request->all(),
+                'anular_todos' => $request->input('anular_todos'),
+                'motivo' => $request->input('motivo_anulacion'),
+            ]);
+
             $request->validate([
-                'envios_ids' => 'required|array|min:1',
-                'envios_ids.*' => 'string|max:36',
                 'motivo_anulacion' => 'required|string|max:200',
+                'anular_todos' => 'boolean',
+                'envios_ids' => 'nullable|array',
+                'envios_ids.*' => 'string|max:36',
+                'tracks' => 'nullable|array',
                 'force_send' => 'boolean',
                 'notes' => 'string|max:500'
             ]);

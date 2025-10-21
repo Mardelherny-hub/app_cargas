@@ -33,6 +33,8 @@ class BillOfLadingCreateForm extends Component
     public $payment_terms = 'cash';
     public $currency_code = 'USD';
     public $incoterms = '';
+    // === CAMPOS WEBSERVICES ===
+    public $permiso_embarque = ''; // TRP - Permiso de embarque (obligatorio AFIP)
 
     // === PARTES INVOLUCRADAS ===
     public $shipper_id = '';

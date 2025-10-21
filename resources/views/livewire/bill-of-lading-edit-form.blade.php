@@ -73,6 +73,23 @@
                         @enderror
                     </div>
 
+                    {{-- Permiso de Embarque (TRP) --}}
+                    <div>
+                        <label for="permiso_embarque" class="block text-sm font-medium text-gray-700">
+                            Permiso de Embarque (TRP) <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" 
+                            id="permiso_embarque" 
+                            wire:model.defer="permiso_embarque"
+                            placeholder="Ej: 0-25001-TRB30265757Z"
+                            maxlength="100"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('permiso_embarque') border-red-300 @enderror">
+                        @error('permiso_embarque')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                        <p class="mt-1 text-xs text-gray-500">Número de permiso obligatorio para declaraciones AFIP</p>
+                    </div>
+
                     {{-- Fecha de Emisión --}}
                     <div>
                         <label for="bill_date" class="block text-sm font-medium text-gray-700">
