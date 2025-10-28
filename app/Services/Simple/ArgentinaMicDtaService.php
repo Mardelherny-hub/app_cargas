@@ -4,10 +4,13 @@ namespace App\Services\Simple;
 
 use App\Models\Voyage;
 use App\Models\WebserviceTrack;
+use App\Models\Company;
+use App\Models\User;
 use App\Services\Simple\BaseWebserviceService;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\Simple\Parsers\SoapResponseParser;
 
 /**
  * SISTEMA MODULAR WEBSERVICES - ArgentinaMicDtaService CORREGIDO
@@ -30,10 +33,7 @@ use Carbon\Carbon;
  */
 class ArgentinaMicDtaService extends BaseWebserviceService
 {
-    /**
-     * CORREGIR: Configuración específica MIC/DTA Argentina
-     * Reemplaza el método getWebserviceConfig() en ArgentinaMicDtaService.php
-     */
+    private SoapResponseParser $parser;
    
     
     protected function getWebserviceConfig(): array
@@ -60,6 +60,22 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             'validate_tracks_before_micdta' => true,
             'max_containers_per_shipment' => 50,
         ];
+    }
+
+    /**
+     * Constructor - Inicializar parser SOAP
+     */
+    public function __construct(Company $company, User $user, array $config = [])
+    {
+        // Llamar al constructor del padre (BaseWebserviceService)
+        parent::__construct($company, $user, $config);
+        
+        // Inicializar el parser de respuestas SOAP
+        $this->parser = new SoapResponseParser(true, [
+            'service' => 'ArgentinaMicDtaService',
+            'company_id' => $company->id,
+            'user_id' => $user->id,
+        ]);
     }
 
     /**
@@ -696,10 +712,17 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP response null para TitEnvios. Response: " . ($lastResponse ?: 'No response'));
             }
 
-            // Verificar errores SOAP
-            if (strpos($response, 'soap:Fault') !== false) {
-                $errorMsg = $this->extractSoapFaultMessage($response);
-                throw new Exception("SOAP Fault en TitEnvios: " . $errorMsg);
+            // ✅ VERIFICAR ERRORES SOAP CON PARSER
+            if ($this->parser->hasSoapFault($response)) {
+                $errorMsg = $this->parser->extractSoapFault($response);
+                $errorCode = $this->parser->extractAfipErrorCode($response);
+                
+                $fullError = "SOAP Fault en MicDta: {$errorMsg}";
+                if ($errorCode) {
+                    $fullError .= " (Código AFIP: {$errorCode})";
+                }
+                
+                throw new Exception($fullError);
             }
 
             $this->logOperation('info', 'RegistrarTitEnvios exitoso', [
@@ -3426,73 +3449,13 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
     }
 
     /**
-     * Extraer TRACKs de respuesta AFIP CORREGIDO
-     */
-    /**
-     * Extraer TRACKs de respuesta AFIP MEJORADO
-     * Reemplaza el método extractTracksFromResponse() en ArgentinaMicDtaService.php
+     * Extraer TRACKs de respuesta AFIP - USANDO PARSER CENTRALIZADO
      */
     private function extractTracksFromResponse(string $response): array
-{
-    if (!$response) {
-        $this->logOperation('warning', 'Respuesta AFIP vacía');
-        return [];
+    {
+        return $this->parser->extractTracks($response, 'RegistrarEnvios');
     }
 
-    try {
-        // Parsear XML con DOMDocument
-        $dom = new \DOMDocument();
-        @$dom->loadXML($response);
-        
-        $xpath = new \DOMXPath($dom);
-        $xpath->registerNamespace('ns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
-        
-        $tracks = [];
-        
-        // Extraer tracks de títulos (envíos)
-        $titTracksNodes = $xpath->query('//ns:RegistrarTitEnviosResult/ns:titTracksEnv/ns:TitTrackEnv');
-        foreach ($titTracksNodes as $node) {
-            $idTitTrans = $xpath->query('ns:idTitTrans', $node)->item(0)?->nodeValue;
-            $track = $xpath->query('ns:trackEnv', $node)->item(0)?->nodeValue;
-            
-            if ($track) {
-                $tracks[] = $track;
-                $this->logOperation('info', 'TRACK título extraído', [
-                    'id_titulo' => $idTitTrans,
-                    'track' => $track
-                ]);
-            }
-        }
-        
-        // Extraer tracks de contenedores vacíos
-        $contVacioNodes = $xpath->query('//ns:RegistrarTitEnviosResult/ns:titTracksContVacio/ns:TitTrackContVacio');
-        foreach ($contVacioNodes as $node) {
-            $idTitTrans = $xpath->query('ns:idTitTrans', $node)->item(0)?->nodeValue;
-            $track = $xpath->query('ns:trackContVacio', $node)->item(0)?->nodeValue;
-            
-            if ($track) {
-                $tracks[] = $track;
-                $this->logOperation('info', 'TRACK contenedor vacío extraído', [
-                    'id_titulo' => $idTitTrans,
-                    'track' => $track
-                ]);
-            }
-        }
-        
-        $this->logOperation('info', 'Extracción TRACKs con XPath completada', [
-            'tracks_encontrados' => count($tracks),
-            'tracks' => $tracks
-        ]);
-        
-        return $tracks;
-        
-    } catch (\Exception $e) {
-        $this->logOperation('error', 'Error XPath extrayendo TRACKs', [
-            'error' => $e->getMessage()
-        ]);
-        return [];
-    }
-}
     /**
      * MÉTODO ADICIONAL: Generar TRACKs simulados para testing (solo desarrollo)
      */
@@ -3518,39 +3481,19 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
     }
 
     /**
-     * Extraer mensaje de error SOAP Fault
+     * Extraer mensaje SOAP Fault - USANDO PARSER CENTRALIZADO
      */
     private function extractSoapFaultMessage(string $response): string
     {
-        if (preg_match('/<faultstring>([^<]+)<\/faultstring>/', $response, $matches)) {
-            return $matches[1];
-        }
-        
-        if (preg_match('/<faultcode>([^<]+)<\/faultcode>/', $response, $matches)) {
-            return 'Fault Code: ' . $matches[1];
-        }
-
-        return 'Error SOAP desconocido';
+        return $this->parser->extractSoapFault($response);
     }
 
     /**
-     * Extraer ID MIC/DTA de respuesta
+     * Extraer ID MIC/DTA de respuesta - USANDO PARSER CENTRALIZADO
      */
     private function extractMicDtaIdFromResponse(string $response): ?string
     {
-        $patterns = [
-            '/<MicDtaId>([^<]+)<\/MicDtaId>/',
-            '/<IdMicDta>([^<]+)<\/IdMicDta>/',
-            '/<NumeroMicDta>([^<]+)<\/NumeroMicDta>/',
-        ];
-
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $response, $matches)) {
-                return $matches[1];
-            }
-        }
-
-        return null;
+        return $this->parser->extractMicDtaId($response);
     }
 
     /**
