@@ -207,7 +207,7 @@ class ArgentinaAnticipatedService
 
             // Generar XML para RegistrarViaje
             $transactionId = 'ANTICIPADA_' . time() . '_' . $voyage->id;
-            $xmlGenerator = new SimpleXmlGenerator($this->company);
+            $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
             $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId);
 
             if (!$xmlContent) {
@@ -340,7 +340,7 @@ class ArgentinaAnticipatedService
                 'original_external_reference' => $previousTransaction->external_reference,
             ]);
             
-            $xmlGenerator = new SimpleXmlGenerator($this->company);
+            $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
             $xmlContent = $xmlGenerator->createRectificarViajeXml($voyage, $rectificationData, $transactionId);
 
             if (!$xmlContent) {
@@ -439,7 +439,7 @@ class ArgentinaAnticipatedService
 
             // Generar XML para RegistrarTitulosCbc
             $transactionId = 'ANTICIPADA_' . time() . '_' . $voyage->id;
-            $xmlGenerator = new SimpleXmlGenerator($this->company);
+            $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
             $xmlContent = $xmlGenerator->createRegistrarTitulosCbcXml($voyage, $options, $transactionId);
 
             if (!$xmlContent) {
@@ -583,7 +583,7 @@ class ArgentinaAnticipatedService
         }
 
         // Parsear respuesta HTML de AFIP para extraer IdentificadorViaje
-        $externalReference = $this->parseAfipHtmlResponse($response);
+        $externalReference = $this->parseAfipResponse($response);
         
         if ($externalReference) {
             // 📝 LOG: IdentificadorViaje extraído
@@ -963,22 +963,71 @@ public function debugSoapResponse(Voyage $voyage): array
         }
     }
 
+    
+
     /**
-     * Parsear respuesta HTML de AFIP para extraer IdentificadorViaje
+     * Parsear respuesta SOAP AFIP para extraer IdentificadorViaje
+     * 
+     * @param string $response XML SOAP completo de AFIP
+     * @return string|null IdentificadorViaje (16 chars) o null
      */
-    private function parseAfipHtmlResponse(string $response): ?string
+    private function parseAfipResponse(string $response): ?string
     {
-        // AFIP devuelve: <title></title>NUMERO_IDENTIFICADOR</head>
-        if (preg_match('/<\/title>(\d+)<\/head>/', $response, $matches)) {
-            Log::info("IdentificadorViaje extraído de HTML", ['identificador' => $matches[1]]);
-            return $matches[1];
+        try {
+            // Patrones XML SOAP según manual AFIP
+            $patterns = [
+                '/<IdentificadorViaje>([A-Z0-9]{16})<\/IdentificadorViaje>/i',
+                '/<identificadorViaje>([A-Z0-9]{16})<\/identificadorViaje>/i',
+            ];
+
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $response, $matches)) {
+                    $identifier = $matches[1];
+                    
+                    if ($this->validateAfipVoyageIdentifier($identifier)) {
+                        Log::info("✅ IdentificadorViaje extraído", ['id' => $identifier]);
+                        return $identifier;
+                    }
+                }
+            }
+
+            Log::warning("❌ No se encontró IdentificadorViaje válido", [
+                'response_snippet' => substr($response, 0, 300),
+            ]);
+
+            return null;
+
+        } catch (\Exception $e) {
+            Log::error("Error parseando respuesta AFIP", ['error' => $e->getMessage()]);
+            return null;
         }
-        
-        Log::warning("No se encontró IdentificadorViaje en respuesta", [
-            'response_snippet' => substr($response, 0, 200)
-        ]);
-        
-        return null;
+    }
+
+    /**
+     * Validar formato AFIP: AAAAVVNNNNNNNNND (16 chars)
+     * 
+     * @param string $identifier
+     * @return bool
+     */
+    private function validateAfipVoyageIdentifier(string $identifier): bool
+    {
+        // Longitud: 16 caracteres exactos
+        if (strlen($identifier) !== 16) {
+            return false;
+        }
+
+        // Formato: 15 dígitos + 1 alfanumérico
+        if (!preg_match('/^\d{15}[A-Z0-9]$/i', $identifier)) {
+            return false;
+        }
+
+        // Año razonable (2010-2099)
+        $year = (int)substr($identifier, 0, 4);
+        if ($year < 2010 || $year > 2099) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
