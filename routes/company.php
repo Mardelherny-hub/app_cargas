@@ -914,6 +914,25 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::post('/{voyage}/send', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoSend'])
             ->whereNumber('voyage')
             ->name('send');
+
+        // Descargar XML generado (para homologación)
+        Route::post('/{voyage}/download-xml/{type}', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'downloadXml'])
+            ->whereNumber('voyage')
+            ->where('type', 'XFFM|XFBL|XFBT|XFCT')
+            ->name('download-xml');
+
+            // Adjuntos
+        Route::get('/{voyage}/attachments-list', [ManifestCustomsController::class, 'getAttachmentsList'])
+            ->whereNumber('voyage')
+            ->name('attachments-list');
+
+        Route::post('/{voyage}/upload-attachments', [ManifestCustomsController::class, 'uploadAttachments'])
+            ->whereNumber('voyage')
+            ->name('upload-attachments');
+
+        Route::delete('/{voyage}/attachments/{attachment}', [ManifestCustomsController::class, 'deleteAttachment'])
+            ->whereNumber('voyage')
+            ->name('delete-attachment');
     });
 
 

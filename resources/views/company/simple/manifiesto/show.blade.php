@@ -171,267 +171,345 @@
                 <div class="p-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-    {{-- 1. XFFM - Carátula/Manifiesto --}}
-    <div class="border-2 rounded-lg p-5 {{ $xffmTransaction && $xffmTransaction->status === 'sent' ? 'border-green-400 bg-green-50' : 'border-blue-400 bg-blue-50' }}">
-        <div class="flex items-start justify-between mb-3">
-            <div>
-                <div class="flex items-center space-x-2 mb-2">
-                    <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
-                    <h4 class="text-base font-semibold text-gray-900">XFFM</h4>
-                </div>
-                <p class="text-sm text-gray-700 font-medium">Carátula/Manifiesto Fluvial</p>
-                <p class="text-xs text-gray-600 mt-1">Primer envío obligatorio. Retorna nroViaje.</p>
+                        {{-- 1. XFFM - Carátula/Manifiesto --}}
+                        <div class="border-2 rounded-lg p-5 {{ $xffmTransaction && $xffmTransaction->status === 'sent' ? 'border-green-400 bg-green-50' : 'border-blue-400 bg-blue-50' }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-bold">1</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFFM</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Carátula/Manifiesto Fluvial</p>
+                                    <p class="text-xs text-gray-600 mt-1">Primer envío obligatorio. Retorna nroViaje.</p>
+                                </div>
+                                @if($xffmTransaction && $xffmTransaction->status === 'sent')
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ ENVIADO
+                                    </span>
+                                @endif
+                            </div>
+
+                            @if($xffmTransaction && $xffmTransaction->external_reference)
+                                <div class="mb-3 p-2 bg-white rounded text-xs space-y-1">
+                                    <div><span class="text-gray-500">nroViaje:</span> <span class="font-bold text-green-700">{{ $xffmTransaction->external_reference }}</span></div>
+                                    <div><span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xffmTransaction->created_at->format('d/m/Y H:i') }}</span></div>
+                                </div>
+                            @endif
+
+                            @if($xffmTransaction && $xffmTransaction->status === 'sent')
+                                <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                    ✓ XFFM Ya Enviado
+                                </button>
+                            @else
+                                <button 
+                                    onclick="enviarMetodo('XFFM')" 
+                                    class="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                                    Enviar XFFM (Carátula)
+                                </button>
+                            @endif
+                        </div>
+
+                       {{-- 2. XFBL - Conocimientos --}}
+@php
+    $xffmSent = $xffmTransaction && $xffmTransaction->status === 'sent';
+    $xfblSent = $xfblTransaction && $xfblTransaction->status === 'sent';
+@endphp
+
+<div class="border-2 rounded-lg p-5 {{ $xfblSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
+    <div class="flex items-start justify-between mb-3">
+        <div>
+            <div class="flex items-center space-x-2 mb-2">
+                <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmSent ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">2</span>
+                <h4 class="text-base font-semibold text-gray-900">XFBL</h4>
             </div>
-            @if($xffmTransaction && $xffmTransaction->status === 'sent')
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
-                    ✓ ENVIADO
-                </span>
-            @endif
+            <p class="text-sm text-gray-700 font-medium">Conocimientos/BLs</p>
+            <p class="text-xs text-gray-600 mt-1">Declara los Bills of Lading ({{ $blCount ?? 0 }} detectados)</p>
         </div>
-
-        @if($xffmTransaction && $xffmTransaction->external_reference)
-            <div class="mb-3 p-2 bg-white rounded text-xs space-y-1">
-                <div><span class="text-gray-500">nroViaje:</span> <span class="font-bold text-green-700">{{ $xffmTransaction->external_reference }}</span></div>
-                <div><span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xffmTransaction->created_at->format('d/m/Y H:i') }}</span></div>
-            </div>
-        @endif
-
-        @if($xffmTransaction && $xffmTransaction->status === 'sent')
-            <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-                ✓ XFFM Ya Enviado
-            </button>
-        @else
-            <button 
-                onclick="enviarMetodo('XFFM')" 
-                class="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
-                Enviar XFFM (Carátula)
-            </button>
+        @if($xfblSent)
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                ✓ ENVIADO
+            </span>
         @endif
     </div>
-
-    {{-- 2. XFBL - Conocimientos --}}
-    @php
-        $xffmSent = $xffmTransaction && $xffmTransaction->status === 'sent';
-        $xfblSent = $xfblTransaction && $xfblTransaction->status === 'sent';
-    @endphp
     
-    <div class="border-2 rounded-lg p-5 {{ $xfblSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
-        <div class="flex items-start justify-between mb-3">
-            <div>
-                <div class="flex items-center space-x-2 mb-2">
-                    <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmSent ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">2</span>
-                    <h4 class="text-base font-semibold text-gray-900">XFBL</h4>
-                </div>
-                <p class="text-sm text-gray-700 font-medium">Conocimientos/BLs</p>
-                <p class="text-xs text-gray-600 mt-1">Declara los Bills of Lading ({{ $blCount ?? 0 }} detectados)</p>
-            </div>
-            @if($xfblSent)
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
-                    ✓ ENVIADO
-                </span>
-            @endif
+    @if($xfblTransaction)
+        <div class="mb-3 p-2 bg-white rounded text-xs">
+            <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfblTransaction->created_at->format('d/m/Y H:i') }}</span>
         </div>
-
-        @if($xfblTransaction)
-            <div class="mb-3 p-2 bg-white rounded text-xs">
-                <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfblTransaction->created_at->format('d/m/Y H:i') }}</span>
-            </div>
-        @endif
-
-        @if(!$xffmSent)
-            <button disabled title="Debe enviar XFFM primero"
-                class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
-                Requiere XFFM Primero
-            </button>
-        @elseif($xfblSent)
-            <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-                ✓ XFBL Ya Enviado
-            </button>
-        @else
-            <button 
-                onclick="enviarMetodo('XFBL')" 
-                class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
-                Enviar XFBL (Conocimientos)
-            </button>
-        @endif
-    </div>
-
-    {{-- 3. XFBT - Contenedores --}}
-    @php
-        $xfbtSent = $xfbtTransaction && $xfbtTransaction->status === 'sent';
-    @endphp
+    @endif
     
-    <div class="border-2 rounded-lg p-5 {{ $xfbtSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
-        <div class="flex items-start justify-between mb-3">
-            <div>
-                <div class="flex items-center space-x-2 mb-2">
-                    <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmSent ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">3</span>
-                    <h4 class="text-base font-semibold text-gray-900">XFBT</h4>
-                </div>
-                <p class="text-sm text-gray-700 font-medium">Hoja de Ruta/Contenedores</p>
-                <p class="text-xs text-gray-600 mt-1">Declara los contenedores ({{ $containerCount ?? 0 }} detectados)</p>
-            </div>
-            @if($xfbtSent)
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
-                    ✓ ENVIADO
-                </span>
-            @endif
-        </div>
-
-        @if($xfbtTransaction)
-            <div class="mb-3 p-2 bg-white rounded text-xs">
-                <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfbtTransaction->created_at->format('d/m/Y H:i') }}</span>
-            </div>
-        @endif
-
-        @if(!$xffmSent)
-            <button disabled title="Debe enviar XFFM primero"
-                class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
-                Requiere XFFM Primero
-            </button>
-        @elseif($xfbtSent)
-            <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-                ✓ XFBT Ya Enviado
-            </button>
-        @else
-            <button 
-                onclick="enviarMetodo('XFBT')" 
-                class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
-                Enviar XFBT (Contenedores)
-            </button>
-        @endif
-    </div>
-
-    {{-- 4. XFCT - Cerrar Viaje --}}
-    @php
-        $xfctSent = $xfctTransaction && $xfctTransaction->status === 'sent';
+    {{-- ✅ AGREGAR AQUÍ - ZONA DE ADJUNTOS --}}
+    @if($xffmSent && !$xfblSent)
+    <div class="mb-4 p-3 bg-white rounded border border-gray-300">
+        <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos</h5>
+        <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos (PDF)</p>
         
-        // XFCT requiere XFFM y XFBL obligatorios
-        // XFBT es opcional (solo si hay contenedores)
-        $hasContainers = ($containerCount ?? 0) > 0;
-        $xfbtRequired = $hasContainers;
+        {{-- Formulario Upload --}}
+        <form id="uploadAttachmentsForm" enctype="multipart/form-data" class="mb-3">
+            @csrf
+            <div class="flex gap-2">
+                <input 
+                    type="file" 
+                    name="files[]" 
+                    id="attachmentFiles"
+                    accept=".pdf"
+                    multiple
+                    class="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
+                >
+                <button 
+                    type="button"
+                    onclick="uploadAttachments()"
+                    class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                    Subir
+                </button>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">Solo PDF, máx 5MB c/u</p>
+        </form>
         
-        // Si hay contenedores, XFBT es obligatorio para cerrar
-        // Si NO hay contenedores, solo se requiere XFFM + XFBL
-        $canCloseVoyage = $xffmSent && $xfblSent && (!$xfbtRequired || $xfbtSent);
-    @endphp
-    
-    <div class="border-2 rounded-lg p-5 {{ $xfctSent ? 'border-green-400 bg-green-50' : ($canCloseVoyage ? 'border-purple-400 bg-purple-50' : 'border-gray-300 bg-gray-100') }}">
-        <div class="flex items-start justify-between mb-3">
-            <div>
-                <div class="flex items-center space-x-2 mb-2">
-                    <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $canCloseVoyage ? 'bg-purple-600' : 'bg-gray-400' }} text-white text-sm font-bold">4</span>
-                    <h4 class="text-base font-semibold text-gray-900">XFCT</h4>
-                </div>
-                <p class="text-sm text-gray-700 font-medium">Cerrar Viaje</p>
-                <p class="text-xs text-gray-600 mt-1">Finaliza el nroViaje en DNA Paraguay</p>
-            </div>
-            @if($xfctSent)
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
-                    ✓ CERRADO
-                </span>
-            @endif
+        {{-- Lista archivos --}}
+        <div id="attachmentsList" class="space-y-1">
+            <p class="text-xs text-gray-500 italic">Cargando...</p>
         </div>
-
-        @if($xfctTransaction)
-            <div class="mb-3 p-2 bg-white rounded text-xs">
-                <span class="text-gray-500">Cerrado:</span> <span class="font-medium">{{ $xfctTransaction->created_at->format('d/m/Y H:i') }}</span>
-            </div>
-        @endif
-
-        @if(!$canCloseVoyage)
-            <button disabled title="Debe enviar XFFM, XFBL y XFBT primero"
-                class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
-                Requiere XFFM + XFBL + XFBT
-            </button>
-        @elseif($xfctSent)
-            <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-                ✓ Viaje Ya Cerrado
-            </button>
-        @else
-            <button 
-                onclick="enviarMetodo('XFCT')" 
-                class="w-full px-4 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition-colors">
-                Cerrar Viaje (XFCT)
-            </button>
-        @endif
     </div>
-
+    @endif
+    
+    {{-- Botones originales --}}
+    @if(!$xffmSent)
+        <button disabled title="Debe enviar XFFM primero"
+            class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
+            Requiere XFFM Primero
+        </button>
+    @elseif($xfblSent)
+        <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+            ✓ XFBL Ya Enviado
+        </button>
+    @else
+        <button 
+            onclick="enviarMetodo('XFBL')" 
+            class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
+            Enviar XFBL (Conocimientos)
+        </button>
+    @endif
 </div>
+
+                        {{-- 3. XFBT - Contenedores --}}
+                        @php
+                            $xfbtSent = $xfbtTransaction && $xfbtTransaction->status === 'sent';
+                            $xfbtStatus = $voyage->webserviceStatuses->where('webservice_type', 'XFBT')->first();
+                            $xfbtSkipped = $xfbtStatus && ($xfbtStatus->additional_data['skipped'] ?? false);
+                        @endphp
+
+                        <div class="border-2 rounded-lg p-5 {{ $xfbtSent ? 'border-green-400 bg-green-50' : ($xfbtSkipped ? 'border-gray-400 bg-gray-100' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100')) }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xfbtSent ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">3</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFBT</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Hoja de Ruta/Contenedores</p>
+                                    <p class="text-xs text-gray-600 mt-1">Declara los contenedores ({{ $containerCount ?? 0 }} detectados)</p>
+                                </div>
+                                @if($xfbtSent)
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ ENVIADO
+                                    </span>
+                                @elseif($xfbtSkipped)
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-gray-500 text-white">
+                                        ⊘ OMITIDO
+                                    </span>
+                                @endif
+                            </div>
+
+                            @if($xfbtTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs">
+                                    <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfbtTransaction->created_at->format('d/m/Y H:i') }}</span>
+                                </div>
+                            @endif
+
+                            @if(!$xffmSent)
+                                <button disabled title="Debe enviar XFFM primero"
+                                    class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                    Requiere XFFM Primero
+                                </button>
+                            @elseif($xfbtSkipped)
+                                <div class="w-full px-4 py-2.5 bg-gray-200 text-gray-700 text-sm rounded-lg text-center">
+                                    <div class="flex items-center justify-center">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        <span class="font-semibold">Viaje sin contenedores - XFBT no requerido</span>
+                                    </div>
+                                </div>
+                            @elseif($xfbtSent)
+                                <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                    ✓ XFBT Ya Enviado
+                                </button>
+                            @else
+                                <button 
+                                    onclick="enviarMetodo('XFBT')" 
+                                    class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
+                                    Enviar XFBT (Contenedores)
+                                </button>
+                            @endif
+                        </div>
+
+                        {{-- 4. XFCT - Cerrar Viaje --}}
+                        @php
+                            $xfctSent = $xfctTransaction && $xfctTransaction->status === 'sent';
+                            
+                            // XFCT requiere XFFM y XFBL obligatorios
+                            // XFBT es opcional (solo si hay contenedores)
+                            $hasContainers = ($containerCount ?? 0) > 0;
+                            $xfbtRequired = $hasContainers;
+                            
+                            // Si hay contenedores, XFBT es obligatorio para cerrar
+                            // Si NO hay contenedores, solo se requiere XFFM + XFBL
+                            $canCloseVoyage = $xffmSent && $xfblSent && (!$xfbtRequired || $xfbtSent);
+                        @endphp
+                        
+                        <div class="border-2 rounded-lg p-5 {{ $xfctSent ? 'border-green-400 bg-green-50' : ($canCloseVoyage ? 'border-purple-400 bg-purple-50' : 'border-gray-300 bg-gray-100') }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $canCloseVoyage ? 'bg-purple-600' : 'bg-gray-400' }} text-white text-sm font-bold">4</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFCT</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Cerrar Viaje</p>
+                                    <p class="text-xs text-gray-600 mt-1">Finaliza el nroViaje en DNA Paraguay</p>
+                                </div>
+                                @if($xfctSent)
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ CERRADO
+                                    </span>
+                                @endif
+                            </div>
+
+                            @if($xfctTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs">
+                                    <span class="text-gray-500">Cerrado:</span> <span class="font-medium">{{ $xfctTransaction->created_at->format('d/m/Y H:i') }}</span>
+                                </div>
+                            @endif
+
+                            @if(!$canCloseVoyage)
+                                <button disabled title="Debe enviar XFFM, XFBL y XFBT primero"
+                                    class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                    Requiere XFFM + XFBL + XFBT
+                                </button>
+                            @elseif($xfctSent)
+                                <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                    ✓ Viaje Ya Cerrado
+                                </button>
+                            @else
+                                <button 
+                                    onclick="enviarMetodo('XFCT')" 
+                                    class="w-full px-4 py-2.5 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition-colors">
+                                    Cerrar Viaje (XFCT)
+                                </button>
+                            @endif
+                        </div>
+
+                    </div>
                 </div>
             </div>
 
             {{-- Historial de Transacciones --}}
-@if($transactions->isNotEmpty())
-<div class="bg-white shadow rounded-lg overflow-hidden mt-6">
-    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
-        <h3 class="text-lg font-semibold text-gray-900">📜 Historial de Transacciones GDSF</h3>
-        <p class="text-sm text-gray-600 mt-1">Registro completo de envíos a DNA Paraguay</p>
-    </div>
-    
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha/Hora</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Método</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">nroViaje</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-                @foreach($transactions as $transaction)
-                    @php
-                        $tipoMensaje = $transaction->additional_metadata['tipo_mensaje'] ?? 'N/A';
-                        $statusBadge = match($transaction->status) {
-                            'sent', 'success' => 'bg-green-100 text-green-800',
-                            'pending' => 'bg-yellow-100 text-yellow-800',
-                            'error' => 'bg-red-100 text-red-800',
-                            default => 'bg-gray-100 text-gray-800'
-                        };
-                        $statusIcon = match($transaction->status) {
-                            'sent', 'success' => '✅',
-                            'pending' => '⏳',
-                            'error' => '❌',
-                            default => '⚪'
-                        };
-                    @endphp
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                            {{ $transaction->created_at->format('d/m/Y H:i:s') }}
-                        </td>
-                        <td class="px-4 py-3 whitespace-nowrap">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                                {{ $tipoMensaje }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 whitespace-nowrap">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $statusBadge }}">
-                                {{ $statusIcon }} {{ strtoupper($transaction->status) }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-700">
-                            {{ $transaction->external_reference ?? '-' }}
-                        </td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {{ $transaction->user->name ?? 'Sistema' }}
-                        </td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                            <button 
-                                onclick="verDetalles({{ $transaction->id }})"
-                                class="text-blue-600 hover:text-blue-900 font-medium">
-                                Ver Detalles
-                            </button>
-                        </td>
-                    </tr>
+            @if($transactions->isNotEmpty())
+                <div class="bg-white shadow rounded-lg overflow-hidden mt-6">
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+                        <h3 class="text-lg font-semibold text-gray-900">📜 Historial de Transacciones GDSF</h3>
+                        <p class="text-sm text-gray-600 mt-1">Registro completo de envíos a DNA Paraguay</p>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha/Hora</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Método</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">nroViaje</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                @foreach($transactions as $transaction)
+                                    @php
+                                        $tipoMensaje = $transaction->additional_metadata['tipo_mensaje'] ?? 'N/A';
+                                        $statusBadge = match($transaction->status) {
+                                            'sent', 'success' => 'bg-green-100 text-green-800',
+                                            'pending' => 'bg-yellow-100 text-yellow-800',
+                                            'error' => 'bg-red-100 text-red-800',
+                                            default => 'bg-gray-100 text-gray-800'
+                                        };
+                                        $statusIcon = match($transaction->status) {
+                                            'sent', 'success' => '✅',
+                                            'pending' => '⏳',
+                                            'error' => '❌',
+                                            default => '⚪'
+                                        };
+                                    @endphp
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                            {{ $transaction->created_at->format('d/m/Y H:i:s') }}
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
+                                                {{ $tipoMensaje }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $statusBadge }}">
+                                                {{ $statusIcon }} {{ strtoupper($transaction->status) }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-700">
+                                            {{ $transaction->external_reference ?? '-' }}
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                            {{ $transaction->user->name ?? 'Sistema' }}
+                                        </td>
+                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                            <button 
+                                                onclick="verDetalles({{ $transaction->id }})"
+                                                class="text-blue-600 hover:text-blue-900 font-medium">
+                                                Ver Detalles
+                                            </button>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
+
+            @php
+                $transactions = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                    ->where('country', 'PY')
+                    ->whereNotNull('request_xml')
+                    ->get()
+                    ->groupBy(fn($t) => $t->additional_metadata['tipo_mensaje'] ?? 'UNKNOWN');
+            @endphp
+
+            @if($transactions->count() > 0)
+            <div class="bg-white shadow rounded-lg p-6 mt-6">
+                <h3 class="text-lg font-bold mb-4">📄 XMLs Generados</h3>
+                
+                @foreach(['XFFM', 'XFBL', 'XFBT', 'XFCT'] as $type)
+                    @if($transactions->has($type))
+                        <div class="mb-4 p-4 bg-blue-50 rounded">
+                            <h4 class="font-bold">{{ $type }}</h4>
+                            <pre class="text-xs bg-white p-2 max-h-32 overflow-auto">{{ $transactions[$type]->first()->request_xml }}</pre>
+                            <form action="{{ route('company.simple.manifiesto.download-xml', ['voyage' => $voyage, 'type' => $type]) }}" method="POST" class="mt-2">
+                                @csrf
+                                <button class="bg-blue-600 text-white px-4 py-2 rounded">Descargar</button>
+                            </form>
+                        </div>
+                    @endif
                 @endforeach
-            </tbody>
-        </table>
-    </div>
-</div>
-@endif
+            </div>
+            @endif
 
         </div>
     </div>
@@ -515,4 +593,89 @@
         </div>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAttachmentsList();
+});
+
+function loadAttachmentsList() {
+    fetch('{{ route("company.simple.manifiesto.attachments-list", $voyage) }}')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('attachmentsList');
+            if (!container) return;
+            
+            if (data.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-500 italic">No hay archivos adjuntos</p>';
+                return;
+            }
+            
+            container.innerHTML = data.map(att => `
+                <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-200">
+                    <div class="flex-1">
+                        <p class="text-xs font-medium text-gray-700">${att.name}</p>
+                        <p class="text-xs text-gray-500">${att.size}</p>
+                    </div>
+                    <button 
+                        onclick="deleteAttachment(${att.id})"
+                        class="text-red-600 hover:text-red-800 text-sm ml-2">
+                        ✕
+                    </button>
+                </div>
+            `).join('');
+        })
+        .catch(error => console.error('Error:', error));
+}
+
+function uploadAttachments() {
+    const input = document.getElementById('attachmentFiles');
+    if (!input || input.files.length === 0) {
+        alert('Seleccione archivos');
+        return;
+    }
+    
+    const formData = new FormData();
+    for (let file of input.files) {
+        if (file.size > 5242880) {
+            alert(`${file.name} supera 5MB`);
+            return;
+        }
+        formData.append('files[]', file);
+    }
+    formData.append('_token', '{{ csrf_token() }}');
+    
+    fetch('{{ route("company.simple.manifiesto.upload-attachments", $voyage) }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            input.value = '';
+            loadAttachmentsList();
+            alert(`${data.total_uploaded} archivo(s) subido(s)`);
+        } else {
+            alert('Error: ' + (data.error || 'Error'));
+        }
+    })
+    .catch(error => alert('Error al subir'));
+}
+
+function deleteAttachment(id) {
+    if (!confirm('¿Eliminar?')) return;
+    
+    fetch(`/manifests/customs/attachments/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) loadAttachmentsList();
+        else alert('Error al eliminar');
+    });
+}
+</script>
 </x-app-layout>

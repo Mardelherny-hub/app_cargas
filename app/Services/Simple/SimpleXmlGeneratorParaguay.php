@@ -7,6 +7,7 @@ use App\Models\Voyage;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\Container;
+use App\Models\VoyageAttachment;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -325,8 +326,51 @@ class SimpleXmlGeneratorParaguay
                                         
                                     $w->endElement(); // Bulto
                                 $w->endElement(); // bultos
-                                
-                            $w->endElement(); // TitTrans
+
+                                // ✅ AGREGAR AQUÍ (DESPUÉS de cerrar </bultos>, ANTES de cerrar </TitTrans>):
+
+                                // ADJUNTOS - DocAnexo
+                                $attachments = $voyage->attachments()
+                                    ->where(function($query) use ($bl) {
+                                        $query->where('bill_of_lading_id', $bl->id)
+                                            ->orWhereNull('bill_of_lading_id');
+                                    })
+                                    ->get();
+
+                                foreach ($attachments as $attachment) {
+                                    $w->startElement('DocAnexo');
+                                    
+                                        // Tipo de documento (código EDIFACT)
+                                        $w->writeElement('codTipDoc', $attachment->getDocumentTypeCode());
+                                        
+                                        // Número de documento
+                                        if ($attachment->document_number) {
+                                            $w->writeElement('documento', htmlspecialchars(
+                                                substr($attachment->document_number, 0, 39)
+                                            ));
+                                        } else {
+                                            // Si no tiene número, usar nombre del archivo
+                                            $w->writeElement('documento', htmlspecialchars(
+                                                substr($attachment->original_name, 0, 39)
+                                            ));
+                                        }
+                                        
+                                        // Archivo en Base64 (opcional según GDSF, pero lo incluimos)
+                                        try {
+                                            $base64Content = $attachment->getBase64Content();
+                                            $w->writeElement('archivo', $base64Content);
+                                        } catch (\Exception $e) {
+                                            Log::warning('Error obteniendo Base64 de adjunto', [
+                                                'attachment_id' => $attachment->id,
+                                                'error' => $e->getMessage()
+                                            ]);
+                                            // Continuar sin el archivo si falla
+                                        }
+                                        
+                                    $w->endElement(); // DocAnexo
+                                }
+
+                                $w->endElement(); // TitTrans
                         }
                         
                         $w->endElement(); // titTrans

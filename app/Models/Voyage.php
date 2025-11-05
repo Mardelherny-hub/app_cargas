@@ -23,6 +23,7 @@ use App\Models\Country;
 use App\Models\Captain;
 use App\Models\Container;
 use App\Models\BillOfLading;
+use App\Models\VoyageAttachment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
@@ -395,154 +396,170 @@ class Voyage extends Model
     }
 
     //
-// === RELACIONES PRINCIPALES ===
-//
- 
-/**
- * Empresa organizadora del viaje.
- */
-public function company(): BelongsTo
-{
-    return $this->belongsTo(Company::class, 'company_id');
-}
+    // === RELACIONES PRINCIPALES ===
+    //
+    
+    /**
+     * Empresa organizadora del viaje.
+     */
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class, 'company_id');
+    }
 
-/**
- * Embarcación líder/principal del viaje.
- */
-public function leadVessel(): BelongsTo
-{
-    return $this->belongsTo(Vessel::class, 'lead_vessel_id');
-}
+    /**
+     * Embarcación líder/principal del viaje.
+     */
+    public function leadVessel(): BelongsTo
+    {
+        return $this->belongsTo(Vessel::class, 'lead_vessel_id');
+    }
 
-/**
- * Capitán principal del viaje.
- */
-public function captain(): BelongsTo
-{
-    return $this->belongsTo(Captain::class, 'captain_id');
-}
+    /**
+     * Capitán principal del viaje.
+     */
+    public function captain(): BelongsTo
+    {
+        return $this->belongsTo(Captain::class, 'captain_id');
+    }
 
-/**
- * Puerto de origen.
- */
-public function originPort(): BelongsTo
-{
-    return $this->belongsTo(Port::class, 'origin_port_id');
-}
+    /**
+     * Puerto de origen.
+     */
+    public function originPort(): BelongsTo
+    {
+        return $this->belongsTo(Port::class, 'origin_port_id');
+    }
 
-/**
- * Puerto de destino.
- */
-public function destinationPort(): BelongsTo
-{
-    return $this->belongsTo(Port::class, 'destination_port_id');
-}
+    /**
+     * Puerto de destino.
+     */
+    public function destinationPort(): BelongsTo
+    {
+        return $this->belongsTo(Port::class, 'destination_port_id');
+    }
 
-/**
- * Puerto de transbordo (opcional).
- */
-public function transshipmentPort(): BelongsTo
-{
-    return $this->belongsTo(Port::class, 'transshipment_port_id');
-}
+    /**
+     * Puerto de transbordo (opcional).
+     */
+    public function transshipmentPort(): BelongsTo
+    {
+        return $this->belongsTo(Port::class, 'transshipment_port_id');
+    }
 
-/**
- * País de origen.
- */
-public function originCountry(): BelongsTo
-{
-    return $this->belongsTo(Country::class, 'origin_country_id');
-}
+    /**
+     * País de origen.
+     */
+    public function originCountry(): BelongsTo
+    {
+        return $this->belongsTo(Country::class, 'origin_country_id');
+    }
 
-/**
- * País de destino.
- */
-public function destinationCountry(): BelongsTo
-{
-    return $this->belongsTo(Country::class, 'destination_country_id');
-}
+    /**
+     * País de destino.
+     */
+    public function destinationCountry(): BelongsTo
+    {
+        return $this->belongsTo(Country::class, 'destination_country_id');
+    }
 
-//
-// === RELACIONES CON OTROS MÓDULOS ===
-//
+    /**
+     * Adjuntos de documentos para envíos XFBL Paraguay
+     */
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(VoyageAttachment::class);
+    }
 
-/**
- * Embarcación principal (alias de leadVessel para compatibilidad)
- */
-public function vessel(): BelongsTo
-{
-    return $this->leadVessel();
-}
+    /**
+     * Adjuntos específicos de Paraguay
+     */
+    public function paraguayAttachments(): HasMany
+    {
+        return $this->hasMany(VoyageAttachment::class)->where('country', 'PY');
+    }
 
-/**
- * ✅ NUEVO: Estados de webservice independientes por tipo
- * Permite múltiples webservices por voyage (anticipada + micdta + desconsolidado + transbordo)
- */
-public function webserviceStatuses(): HasMany
-{
-    return $this->hasMany(VoyageWebserviceStatus::class);
-}
+    //
+    // === RELACIONES CON OTROS MÓDULOS ===
+    //
 
-/**
- * Contenedores a través de eager loading (más simple)
- */
-public function getAllContainers()
-{
-    return Container::whereHas('shipmentItems.shipment', function($query) {
-        $query->where('voyage_id', $this->id);
-    });
-}
+    /**
+     * Embarcación principal (alias de leadVessel para compatibilidad)
+     */
+    public function vessel(): BelongsTo
+    {
+        return $this->leadVessel();
+    }
 
-/**
- * Todas las embarcaciones del convoy (más simple)
- */
-public function getAllVessels()
-{
-    return Vessel::whereIn('id', $this->shipments->pluck('vessel_id'));
-}
+    /**
+     * ✅ NUEVO: Estados de webservice independientes por tipo
+     * Permite múltiples webservices por voyage (anticipada + micdta + desconsolidado + transbordo)
+     */
+    public function webserviceStatuses(): HasMany
+    {
+        return $this->hasMany(VoyageWebserviceStatus::class);
+    }
 
-public function vessels()
-{
-    return $this->hasManyThrough(
-        Vessel::class,
-        Shipment::class,
-        'voyage_id',      // Foreign key en shipments
-        'id',             // Foreign key en vessels  
-        'id',             // Local key en voyages
-        'vessel_id'       // Local key en shipments
-    );
-}
+    /**
+     * Contenedores a través de eager loading (más simple)
+     */
+    public function getAllContainers()
+    {
+        return Container::whereHas('shipmentItems.shipment', function($query) {
+            $query->where('voyage_id', $this->id);
+        });
+    }
 
-/**
- * Bills of Lading de todos los shipments del viaje
- * Esta es una relación hasManyThrough que conecta Voyage → Shipment → BillOfLading
- */
-public function billsOfLading(): HasManyThrough
-{
-    return $this->hasManyThrough(
-        BillOfLading::class,    // Modelo final
-        Shipment::class,        // Modelo intermedio
-        'voyage_id',            // Foreign key en shipments table
-        'shipment_id',          // Foreign key en bills_of_lading table
-        'id',                   // Local key en voyages table
-        'id'                    // Local key en shipments table
-    );
-}
+    /**
+     * Todas las embarcaciones del convoy (más simple)
+     */
+    public function getAllVessels()
+    {
+        return Vessel::whereIn('id', $this->shipments->pluck('vessel_id'));
+    }
 
-/**
- * TRACKs generados para este viaje (a través de transacciones)
- */
-public function webserviceTracks()
-{
-    return $this->hasManyThrough(
-        \App\Models\WebserviceTrack::class,
-        \App\Models\WebserviceTransaction::class,
-        'voyage_id',           // Foreign key en webservice_transactions
-        'webservice_transaction_id', // Foreign key en webservice_tracks
-        'id',                  // Local key en voyages
-        'id'                   // Local key en webservice_transactions
-    );
-}
+    public function vessels()
+    {
+        return $this->hasManyThrough(
+            Vessel::class,
+            Shipment::class,
+            'voyage_id',      // Foreign key en shipments
+            'id',             // Foreign key en vessels  
+            'id',             // Local key en voyages
+            'vessel_id'       // Local key en shipments
+        );
+    }
+
+    /**
+     * Bills of Lading de todos los shipments del viaje
+     * Esta es una relación hasManyThrough que conecta Voyage → Shipment → BillOfLading
+     */
+    public function billsOfLading(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            BillOfLading::class,    // Modelo final
+            Shipment::class,        // Modelo intermedio
+            'voyage_id',            // Foreign key en shipments table
+            'shipment_id',          // Foreign key en bills_of_lading table
+            'id',                   // Local key en voyages table
+            'id'                    // Local key en shipments table
+        );
+    }
+
+    /**
+     * TRACKs generados para este viaje (a través de transacciones)
+     */
+    public function webserviceTracks()
+    {
+        return $this->hasManyThrough(
+            \App\Models\WebserviceTrack::class,
+            \App\Models\WebserviceTransaction::class,
+            'voyage_id',           // Foreign key en webservice_transactions
+            'webservice_transaction_id', // Foreign key en webservice_tracks
+            'id',                  // Local key en voyages
+            'id'                   // Local key en webservice_transactions
+        );
+    }
 
 
 //

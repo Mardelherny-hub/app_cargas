@@ -295,6 +295,10 @@ public function canProcessVoyage(Voyage $voyage): array
                 'tipo_mensaje' => 'XFFM',
                 'transaction_id' => $transactionId,
             ]);
+
+            $transaction->request_xml = $xml;
+            $transaction->save();
+
             $this->currentTransactionId = $transaction->id;
 
             // 5. Enviar SOAP
@@ -452,6 +456,12 @@ public function canProcessVoyage(Voyage $voyage): array
                 'transaction_id' => $transactionId,
             ]);
 
+            $transaction->request_xml = $xml;
+            $transaction->save();
+
+
+            $this->currentTransactionId = $transaction->id;  // ← ESTA LÍNEA
+
             // 6. Enviar SOAP
             $soapResult = $this->sendSoapMessage([
                 'codigo' => 'XFBL',
@@ -508,98 +518,124 @@ public function canProcessVoyage(Voyage $voyage): array
      * @return array
      */
     public function sendXfbt(Voyage $voyage, array $options = []): array
-    {
-        $this->logOperation('info', 'Iniciando envío XFBT (Contenedores)', [
-            'voyage_id' => $voyage->id,
+{
+    \Log::info('🔵 XFBT - Inicio', ['voyage_id' => $voyage->id]);
+    
+    $this->logOperation('info', 'Iniciando envío XFBT (Contenedores)', [
+        'voyage_id' => $voyage->id,
+    ]);
+
+    DB::beginTransaction();
+
+    try {
+        // 1. Verificar XFFM
+        $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+        if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+            throw new Exception('Debe enviar XFFM primero');
+        }
+
+        $nroViaje = $xffmTransaction->external_reference;
+
+        // 2. Validar contenedores (a través de shipmentItems)
+        $containers = $voyage->shipments
+            ->flatMap->billsOfLading
+            ->flatMap->shipmentItems
+            ->flatMap->containers
+            ->unique('id');
+
+        if ($containers->isEmpty()) {
+            $this->logOperation('warning', 'Viaje sin contenedores, saltando XFBT', [
+                'voyage_id' => $voyage->id,
+            ]);
+            
+            $this->updateWebserviceStatus($voyage, 'XFBT', [
+                'status' => 'skipped',
+                'additional_data' => [
+                    'skipped' => true,
+                    'reason' => 'Sin contenedores',
+                ],
+            ]);
+            
+            DB::commit();
+            
+            return [
+                'success' => true,
+                'skipped' => true,
+                'message' => 'XFBT omitido: viaje sin contenedores',
+                'container_count' => 0,
+            ];
+        } 
+
+        // 3. Generar XML
+        $transactionId = $this->generateTransactionId('XFBT');
+        $xml = $this->paraguayXmlGenerator->createXfbtXml($voyage, $transactionId, $nroViaje);
+
+        // 4. Crear transacción
+        $transaction = $this->createTransaction($voyage, [
+            'tipo_mensaje' => 'XFBT',
+            'transaction_id' => $transactionId,
         ]);
 
-        DB::beginTransaction();
+        $this->currentTransactionId = $transaction->id;
 
-        try {
-            // 1. Verificar XFFM
-            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
-            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
-                throw new Exception('Debe enviar XFFM primero');
-            }
+        // 5. Enviar SOAP
+        $soapResult = $this->sendSoapMessage([
+            'codigo' => 'XFBT',
+            'version' => '1.0',
+            'viaje' => $nroViaje,
+            'xml' => $xml,
+        ]);
 
-            $nroViaje = $xffmTransaction->external_reference;
-
-            // 2. Validar contenedores (a través de shipmentItems)
-            $containers = $voyage->shipments
-                ->flatMap->billsOfLading
-                ->flatMap->shipmentItems
-                ->flatMap->containers
-                ->unique('id');
-
-            if ($containers->isEmpty()) {
-                $this->logOperation('warning', 'Viaje sin contenedores, saltando XFBT', [
-                    'voyage_id' => $voyage->id,
-                ]);
-                
-                return [
-                    'success' => true,
-                    'skipped' => true,
-                    'message' => 'XFBT omitido: viaje sin contenedores',
-                    'container_count' => 0,
-                ];
-            }
-
-            // 3. Generar XML
-            $transactionId = $this->generateTransactionId('XFBT');
-            $xml = $this->paraguayXmlGenerator->createXfbtXml($voyage, $transactionId, $nroViaje);
-
-            // 4. Crear transacción
-            $transaction = $this->createTransaction($voyage, [
-                'tipo_mensaje' => 'XFBT',
-                'transaction_id' => $transactionId,
+        // 6. Procesar respuesta
+        if ($soapResult['success']) {
+            \Log::info('🔵 XFBT - Antes de update', [
+                'transaction_id' => $transaction->id,
+                'tiene_xml' => !empty($xml),
+                'xml_length' => strlen($xml),
+            ]);
+            
+            $transaction->update([
+                'status' => 'sent',
+                'response_xml' => $soapResult['raw_response'] ?? null,
+                'request_xml' => $xml,
+            ]);
+            
+            \Log::info('🔵 XFBT - Después de update', [
+                'transaction_id' => $transaction->id,
+                'tiene_request_xml' => !empty($transaction->fresh()->request_xml),
             ]);
 
-            // 5. Enviar SOAP
-            $soapResult = $this->sendSoapMessage([
-                'codigo' => 'XFBT',
-                'version' => '1.0',
-                'viaje' => $nroViaje,
-                'xml' => $xml,
+            $this->updateWebserviceStatus($voyage, 'XFBT', [
+                'status' => 'sent',
+                'nro_viaje' => $nroViaje,
             ]);
 
-            // 6. Procesar respuesta
-            if ($soapResult['success']) {
-                $transaction->update([
-                    'status' => 'sent',
-                    'response_xml' => $soapResult['raw_response'] ?? null,
-                ]);
-
-                $this->updateWebserviceStatus($voyage, 'XFBT', [
-                    'status' => 'sent',
-                    'nro_viaje' => $nroViaje,
-                ]);
-
-                DB::commit();
-
-                return [
-                    'success' => true,
-                    'transaction_id' => $transactionId,
-                    'message' => 'XFBT enviado exitosamente',
-                    'container_count' => $containers->count(),
-                ];
-            } else {
-                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
-            }
-
-        } catch (Exception $e) {
-            DB::rollBack();
-
-            $this->logOperation('error', 'Error enviando XFBT', [
-                'voyage_id' => $voyage->id,
-                'error' => $e->getMessage(),
-            ]);
+            DB::commit();
 
             return [
-                'success' => false,
-                'error_message' => $e->getMessage(),
+                'success' => true,
+                'transaction_id' => $transactionId,
+                'message' => 'XFBT enviado exitosamente',
+                'container_count' => $containers->count(),
             ];
+        } else {
+            throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
         }
+
+    } catch (Exception $e) {
+        DB::rollBack();
+
+        $this->logOperation('error', 'Error enviando XFBT', [
+            'voyage_id' => $voyage->id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return [
+            'success' => false,
+            'error_message' => $e->getMessage(),
+        ];
     }
+}
 
     /**
      * 4. XFCT - Cerrar Viaje
@@ -635,6 +671,9 @@ public function canProcessVoyage(Voyage $voyage): array
                 'tipo_mensaje' => 'XFCT',
                 'transaction_id' => $transactionId,
             ]);
+
+            $this->currentTransactionId = $transaction->id;  // ← ESTA LÍNEA 
+
 
             // 4. Enviar SOAP
             $soapResult = $this->sendSoapMessage([
@@ -767,6 +806,25 @@ protected function sendSoapMessage(array $params): array
         $result = $client->__soapCall('EnviarMensajeFluvial', [$soapParams]);
         $rawResponse = $client->__getLastResponse();
 
+        // Persistir WebserviceResponse con XML
+        try {
+            \App\Models\WebserviceResponse::create([
+                'transaction_id' => $this->currentTransactionId,
+                'response_type' => 'success',
+                'processing_status' => 'completed',
+                'requires_action' => false,
+                'customs_metadata' => [
+                    'request_xml' => $params['xml'],
+                    'raw_response' => $rawResponse,
+                    'codigo' => $params['codigo'],
+                ],
+                'customs_status' => 'sent',
+                'processed_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::warning('Error guardando XML real', ['error' => $e->getMessage()]);
+        }
+
         return [
             'success' => true,
             'response_data' => $result,
@@ -793,49 +851,63 @@ protected function sendSoapMessage(array $params): array
  */
 private function generateBypassResponse(array $params): array
 {
-    $codigo = $params['codigo'];
-    $viaje = $params['viaje'];
-    
-    // Generar nroViaje simulado si es XFFM
-    $nroViaje = $viaje ?? 'PY' . date('Y') . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
-    
-    $this->logOperation('info', '✅ BYPASS: Respuesta simulada generada', [
-        'codigo' => $codigo,
-        'nroViaje' => $nroViaje,
-        'timestamp' => now()->toISOString(),
-    ]);
-    
-    // Respuesta simulada según el tipo de mensaje
-    switch ($codigo) {
-        case 'XFFM':
-            $responseXml = $this->generateXffmBypassXml($nroViaje);
-            break;
-            
-        case 'XFBL':
-            $responseXml = $this->generateXfblBypassXml($viaje);
-            break;
-            
-        case 'XFBT':
-            $responseXml = $this->generateXfbtBypassXml($viaje);
-            break;
-            
-        case 'XFCT':
-            $responseXml = $this->generateXfctBypassXml($viaje);
-            break;
-            
-        default:
-            $responseXml = '<response><status>OK</status><message>BYPASS SUCCESS</message></response>';
+    try {
+        $codigo = $params['codigo'];
+        $viaje = $params['viaje'];
+        
+        \Log::info('🐛 Inicio generateBypassResponse');
+        
+        $nroViaje = $viaje ?? 'PY' . date('Y') . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+        
+        \Log::info('🐛 Antes del switch');
+        
+        // Respuesta simulada según el tipo de mensaje
+        switch ($codigo) {
+            case 'XFFM':
+                $responseXml = $this->generateXffmBypassXml($nroViaje);
+                break;
+            case 'XFBL':
+                $responseXml = $this->generateXfblBypassXml($viaje);
+                break;
+            case 'XFBT':
+                $responseXml = $this->generateXfbtBypassXml($viaje);
+                break;
+            case 'XFCT':
+                $responseXml = $this->generateXfctBypassXml($viaje);
+                break;
+            default:
+                $responseXml = '<response><status>OK</status></response>';
+        }
+        
+        \Log::info('🐛 Después del switch, antes de guardar');
+        
+        $response = \App\Models\WebserviceResponse::create([
+            'transaction_id' => $this->currentTransactionId,
+            'response_type' => 'success',
+            'processing_status' => 'completed',
+            'requires_action' => false,
+            'response_data' => json_encode([  // ← Usa response_data
+                'request_xml' => $params['xml'],
+                'raw_response' => $responseXml,
+                'codigo' => $codigo,
+            ]),
+            'customs_status' => 'sent',
+            'processed_at' => now(),
+        ]);
+        
+        \Log::info('✅ Response guardado: ' . $response->id);
+        
+    } catch (\Throwable $e) {
+        \Log::error('💥 ERROR FATAL en generateBypassResponse: ' . $e->getMessage() . ' | Línea: ' . $e->getLine());
     }
     
     return [
         'success' => true,
         'response_data' => (object)[
-            'nroViaje' => $nroViaje,
+            'nroViaje' => $nroViaje ?? 'ERROR',
             'estado' => 'ACEPTADO',
-            'mensaje' => 'Mensaje recibido correctamente (SIMULADO)',
-            'bypass_mode' => true,
         ],
-        'raw_response' => $responseXml,
+        'raw_response' => $responseXml ?? '<error/>',
     ];
 }
 

@@ -331,7 +331,7 @@ class SimpleManifestController extends Controller
                 
             default:
             
-                return $baseData;
+                return $baseData; 
         }
     }
 
@@ -1011,6 +1011,45 @@ class SimpleManifestController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Descargar XML generado para homologación
+     * UBICACIÓN: Agregar en SimpleManifestController.php después del método manifiestoSend()
+     * 
+     * Permite descargar los XMLs GDSF generados (XFFM, XFBL, XFBT, XFCT)
+     * para revisión y validación manual durante homologación DNA Paraguay
+     */
+    public function downloadXml(Request $request, Voyage $voyage, string $type)
+{
+    // Verificar permisos
+    if (!$this->hasCompanyRole('Cargas')) {
+        abort(403, 'No tiene permisos');
+    }
+
+    if (!$this->canAccessCompany($voyage->company_id)) {
+        abort(403, 'No puede acceder a este viaje');
+    }
+
+    // Buscar la transacción con el XML
+    $transaction = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+        ->where('country', 'PY')
+        ->whereJsonContains('additional_metadata->tipo_mensaje', $type)
+        ->whereNotNull('request_xml')
+        ->latest()
+        ->first();
+
+    if (!$transaction || !$transaction->request_xml) {
+        return redirect()->back()->with('error', "XML no encontrado para {$type}");
+    }
+
+    // Nombre del archivo
+    $filename = sprintf('%s_%s_%s.xml', $type, $voyage->voyage_number, now()->format('YmdHis'));
+
+    // Descargar
+    return response($transaction->request_xml, 200)
+        ->header('Content-Type', 'application/xml')
+        ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+}
 
 
 
