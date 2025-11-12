@@ -1991,7 +1991,7 @@ class SimpleXmlGenerator
                         $w->writeElement('ar:Token', $wsaa['token']);
                         $w->writeElement('ar:Sign', $wsaa['sign']);
                         $w->writeElement('ar:CuitEmpresaConectada', (string)$this->company->tax_id);
-                        $w->writeElement('ar:TipoAgente', 'ATA');
+                        $w->writeElement('ar:TipoAgente', 'TRSP');
                         $w->writeElement('ar:Rol', 'TRSP');
                     $w->endElement();
 
@@ -2162,6 +2162,12 @@ class SimpleXmlGenerator
             $w->writeElement('FechaArribo', $voyage->departure_date->copy()->addDay()->format('Y-m-d\TH:i:s'));
         } else {
             $w->writeElement('FechaArribo', now()->addDay()->format('Y-m-d\TH:i:s'));
+        }
+
+        if ($voyage->estimated_arrival_date) {
+            $w->writeElement('FechaArribo', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s.000-03:00'));
+        } else {
+            $w->writeElement('FechaArribo', $voyage->departure_date->copy()->addDay()->format('Y-m-d\TH:i:s.000-03:00'));
         }
 
         // 8. FechaEmbarque (opcional)

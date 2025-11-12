@@ -343,6 +343,13 @@ public function canProcessVoyage(Voyage $voyage): array
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
+                // Guardar nroViaje también en metadata como respaldo
+                if ($nroViaje) {
+                    $metadata = $transaction->additional_metadata ?? [];
+                    $metadata['nro_viaje'] = $nroViaje;
+                    $transaction->update(['additional_metadata' => $metadata]);
+                }
+
                 // Actualizar estado del voyage
                 $this->updateWebserviceStatus($voyage, 'XFFM', [
                     'status' => 'sent',
@@ -803,7 +810,14 @@ protected function sendSoapMessage(array $params): array
         ];
 
         // Enviar
-        $result = $client->__soapCall('EnviarMensajeFluvial', [$soapParams]);
+        // Llamada directa al método SOAP (más clara y correcta)
+        $result = $client->EnviarMensajeFluvial(
+            $soapParams['codigo'],
+            $soapParams['version'],
+            $soapParams['viaje'],
+            $soapParams['xml'],
+            $soapParams['Autenticacion']
+        );
         $rawResponse = $client->__getLastResponse();
 
         // Persistir WebserviceResponse con XML
