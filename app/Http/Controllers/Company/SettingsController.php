@@ -549,13 +549,13 @@ class SettingsController extends Controller
         $request->validate([
             'ws_environment' => 'required|in:testing,production',
             'ws_active' => 'boolean',
-
+            
             // Argentina
             'argentina_cuit' => 'nullable|string|size:11',
             'argentina_company_name' => 'required|string|max:255',
             'argentina_domicilio_fiscal' => 'required|string|max:500',
             'argentina_bypass_testing' => 'boolean',
-
+            
             // Paraguay
             'paraguay_ruc' => 'nullable|string|min:6|max:9',
             'paraguay_company_name' => 'required|string|max:255',
@@ -568,28 +568,16 @@ class SettingsController extends Controller
 
         try {
             $company = $this->getUserCompany();
-
-            // CORRECCIÓN: Determinar el tax_id correcto según el país de la empresa
-            $newTaxId = $company->tax_id; // Valor por defecto (mantener actual)
-
-            if ($company->country === 'AR' && $request->filled('argentina_cuit')) {
-                // Si la empresa es de Argentina, usar el CUIT como tax_id
-                $newTaxId = $request->argentina_cuit;
-            } elseif ($company->country === 'PY' && $request->filled('paraguay_ruc')) {
-                // Si la empresa es de Paraguay, usar el RUC como tax_id
-                $newTaxId = $request->paraguay_ruc;
-            }
-
-            // Actualizar configuración básica Y tax_id
+            
+            // Actualizar configuración básica
             $company->update([
                 'ws_environment' => $request->ws_environment,
                 'ws_active' => $request->boolean('ws_active'),
-                'tax_id' => $newTaxId, // CORRECCIÓN: Actualizar tax_id para sincronizar con ws_config
             ]);
 
             // Actualizar configuración por país
             $wsConfig = $company->ws_config ?? [];
-
+            
             $wsConfig['argentina'] = [
                 'cuit' => $request->argentina_cuit,
                 'company_name' => $request->argentina_company_name,
@@ -597,7 +585,7 @@ class SettingsController extends Controller
                 'afip_enabled' => true,
                 'bypass_testing' => $request->boolean('argentina_bypass_testing'),
             ];
-
+            
             $wsConfig['paraguay'] = [
                 'ruc' => $request->paraguay_ruc,
                 'company_name' => $request->paraguay_company_name,
@@ -612,13 +600,6 @@ class SettingsController extends Controller
             ];
 
             $company->update(['ws_config' => $wsConfig]);
-
-            Log::info('Configuración de webservices y tax_id actualizados', [
-                'company_id' => $company->id,
-                'old_tax_id' => $company->getOriginal('tax_id'),
-                'new_tax_id' => $newTaxId,
-                'user_id' => $this->getCurrentUser()->id
-            ]);
 
             return back()->with('success', 'Configuración de webservices actualizada correctamente.');
 
