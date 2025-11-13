@@ -103,140 +103,140 @@ class ParaguayDnaService extends BaseWebserviceService
     }
 
     /**
- * Validaciones específicas de Paraguay - VERSIÓN CON BYPASS
- */
-    protected function validateSpecificData(Voyage $voyage): array
-{
-    $errors = [];
-    $warnings = [];
+     * Validaciones específicas de Paraguay - VERSIÓN CON BYPASS
+     */
+        protected function validateSpecificData(Voyage $voyage): array
+    {
+        $errors = [];
+        $warnings = [];
 
-    // Validar datos básicos del viaje
-    if (!$voyage->voyage_number) {
-        $errors[] = 'Viaje sin número de viaje';
-    }
+        // Validar datos básicos del viaje
+        if (!$voyage->voyage_number) {
+            $errors[] = 'Viaje sin número de viaje';
+        }
 
-    if (!$voyage->leadVessel) {
-        $errors[] = 'Viaje sin embarcación principal asignada';
-    }
+        if (!$voyage->leadVessel) {
+            $errors[] = 'Viaje sin embarcación principal asignada';
+        }
 
-    if (!$voyage->originPort || !$voyage->destinationPort) {
-        $errors[] = 'Viaje sin puertos de origen/destino';
-    }
+        if (!$voyage->originPort || !$voyage->destinationPort) {
+            $errors[] = 'Viaje sin puertos de origen/destino';
+        }
 
-    // ========================================
-    // VALIDACIÓN DE CERTIFICADO CON BYPASS
-    // ========================================
-    
-    $shouldBypass = $this->company->shouldBypassTesting('paraguay');
-    $hasCertificate = $this->company->hasCertificateForCountry('paraguay');
-    
-    if ($this->config['require_certificate']) {
-        if (!$hasCertificate) {
-            if ($shouldBypass) {
-                // Con bypass, certificado faltante es solo advertencia
-                $warnings[] = 'Certificado Paraguay no configurado (usando modo bypass)';
-            } else {
-                // Sin bypass, certificado es obligatorio
-                $errors[] = 'Certificado digital Paraguay requerido';
-            }
-        } else {
-            // Verificar que el certificado sea válido (existe el archivo)
-            $certificate = $this->company->getCertificate('paraguay');
-            $certPath = $certificate['path'] ?? null;
-            
-            if ($certPath && !\Illuminate\Support\Facades\Storage::exists($certPath)) {
+        // ========================================
+        // VALIDACIÓN DE CERTIFICADO CON BYPASS
+        // ========================================
+        
+        $shouldBypass = $this->company->shouldBypassTesting('paraguay');
+        $hasCertificate = $this->company->hasCertificateForCountry('paraguay');
+        
+        if ($this->config['require_certificate']) {
+            if (!$hasCertificate) {
                 if ($shouldBypass) {
-                    $warnings[] = 'Archivo de certificado no encontrado (usando modo bypass)';
+                    // Con bypass, certificado faltante es solo advertencia
+                    $warnings[] = 'Certificado Paraguay no configurado (usando modo bypass)';
                 } else {
-                    $errors[] = 'Archivo de certificado no encontrado';
+                    // Sin bypass, certificado es obligatorio
+                    $errors[] = 'Certificado digital Paraguay requerido';
+                }
+            } else {
+                // Verificar que el certificado sea válido (existe el archivo)
+                $certificate = $this->company->getCertificate('paraguay');
+                $certPath = $certificate['path'] ?? null;
+                
+                if ($certPath && !\Illuminate\Support\Facades\Storage::exists($certPath)) {
+                    if ($shouldBypass) {
+                        $warnings[] = 'Archivo de certificado no encontrado (usando modo bypass)';
+                    } else {
+                        $errors[] = 'Archivo de certificado no encontrado';
+                    }
                 }
             }
+            
+            // Validar RUC
+            if (!$this->company->tax_id) {
+                $errors[] = 'Empresa sin RUC/Tax ID configurado';
+            }
         }
+
+        // ========================================
+        // VALIDACIÓN DE CREDENCIALES DNA CON BYPASS
+        // ========================================
         
-        // Validar RUC
-        if (!$this->company->tax_id) {
-            $errors[] = 'Empresa sin RUC/Tax ID configurado';
+        $auth = $this->config['auth'];
+        $hasCredentials = !empty($auth['idUsuario']) && !empty($auth['ticket']) && !empty($auth['firma']);
+        
+        if (!$hasCredentials) {
+            if ($shouldBypass) {
+                // Con bypass, credenciales faltantes son solo advertencia
+                $warnings[] = 'Credenciales DNA no configuradas (usando modo bypass)';
+                $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
+            } else {
+                // Sin bypass, credenciales son obligatorias
+                $errors[] = 'Credenciales DNA Paraguay incompletas';
+                $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
+            }
         }
+
+        return [
+            'errors' => $errors,
+            'warnings' => $warnings,
+        ];
     }
 
-    // ========================================
-    // VALIDACIÓN DE CREDENCIALES DNA CON BYPASS
-    // ========================================
-    
-    $auth = $this->config['auth'];
-    $hasCredentials = !empty($auth['idUsuario']) && !empty($auth['ticket']) && !empty($auth['firma']);
-    
-    if (!$hasCredentials) {
-        if ($shouldBypass) {
-            // Con bypass, credenciales faltantes son solo advertencia
-            $warnings[] = 'Credenciales DNA no configuradas (usando modo bypass)';
-            $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
-        } else {
-            // Sin bypass, credenciales son obligatorias
-            $errors[] = 'Credenciales DNA Paraguay incompletas';
-            $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
+    /**
+     * Override del método canProcessVoyage para manejar bypass
+     * Sobreescribe la validación de certificado de BaseWebserviceService
+     */
+    public function canProcessVoyage(Voyage $voyage): array
+    {
+        $validation = [
+            'can_process' => false,
+            'errors' => [],
+            'warnings' => [],
+        ];
+
+        try {
+            // 1. Validaciones básicas comunes (del padre)
+            $baseValidation = $this->validateBaseData($voyage);
+            $validation['errors'] = array_merge($validation['errors'], $baseValidation['errors']);
+            $validation['warnings'] = array_merge($validation['warnings'], $baseValidation['warnings']);
+
+            // 2. Validaciones específicas de Paraguay (con bypass integrado)
+            $specificValidation = $this->validateSpecificData($voyage);
+            $validation['errors'] = array_merge($validation['errors'], $specificValidation['errors']);
+            $validation['warnings'] = array_merge($validation['warnings'], $specificValidation['warnings']);
+
+            // 3. NO validar certificado con CertificateManagerService
+            //    Ya lo manejamos en validateSpecificData() con soporte de bypass
+
+            // 4. Determinar si puede procesar
+            $validation['can_process'] = empty($validation['errors']);
+
+            $this->logOperation(
+                $validation['can_process'] ? 'info' : 'warning',
+                'Validación de Viaje Paraguay completada',
+                [
+                    'can_process' => $validation['can_process'],
+                    'errors_count' => count($validation['errors']),
+                    'warnings_count' => count($validation['warnings']),
+                    'bypass_enabled' => $this->company->shouldBypassTesting('paraguay'),
+                ]
+            );
+
+            return $validation;
+
+        } catch (Exception $e) {
+            $validation['errors'][] = 'Error interno en validación: ' . $e->getMessage();
+            $validation['can_process'] = false;
+            
+            $this->logOperation('error', 'Error en canProcessVoyage', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            return $validation;
         }
     }
-
-    return [
-        'errors' => $errors,
-        'warnings' => $warnings,
-    ];
-}
-
-/**
- * Override del método canProcessVoyage para manejar bypass
- * Sobreescribe la validación de certificado de BaseWebserviceService
- */
-public function canProcessVoyage(Voyage $voyage): array
-{
-    $validation = [
-        'can_process' => false,
-        'errors' => [],
-        'warnings' => [],
-    ];
-
-    try {
-        // 1. Validaciones básicas comunes (del padre)
-        $baseValidation = $this->validateBaseData($voyage);
-        $validation['errors'] = array_merge($validation['errors'], $baseValidation['errors']);
-        $validation['warnings'] = array_merge($validation['warnings'], $baseValidation['warnings']);
-
-        // 2. Validaciones específicas de Paraguay (con bypass integrado)
-        $specificValidation = $this->validateSpecificData($voyage);
-        $validation['errors'] = array_merge($validation['errors'], $specificValidation['errors']);
-        $validation['warnings'] = array_merge($validation['warnings'], $specificValidation['warnings']);
-
-        // 3. NO validar certificado con CertificateManagerService
-        //    Ya lo manejamos en validateSpecificData() con soporte de bypass
-
-        // 4. Determinar si puede procesar
-        $validation['can_process'] = empty($validation['errors']);
-
-        $this->logOperation(
-            $validation['can_process'] ? 'info' : 'warning',
-            'Validación de Viaje Paraguay completada',
-            [
-                'can_process' => $validation['can_process'],
-                'errors_count' => count($validation['errors']),
-                'warnings_count' => count($validation['warnings']),
-                'bypass_enabled' => $this->company->shouldBypassTesting('paraguay'),
-            ]
-        );
-
-        return $validation;
-
-    } catch (Exception $e) {
-        $validation['errors'][] = 'Error interno en validación: ' . $e->getMessage();
-        $validation['can_process'] = false;
-        
-        $this->logOperation('error', 'Error en canProcessVoyage', [
-            'error' => $e->getMessage(),
-        ]);
-        
-        return $validation;
-    }
-}
 
     /**
      * Envío específico del webservice (no implementado aquí directamente)

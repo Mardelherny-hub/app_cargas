@@ -980,9 +980,9 @@ class SimpleManifestController extends Controller
 
             // Ejecutar método correspondiente
             $result = match($method) {
-                'XFFM' => $service->sendXffm($voyage),
-                'XFBL' => $service->sendXfbl($voyage),
-                'XFBT' => $service->sendXfbt($voyage),
+                'XFFM' => $service->sendXffm($voyage, ['force_resend' => $request->input('force_resend', false)]),
+                'XFBL' => $service->sendXfbl($voyage, ['force_resend' => $request->input('force_resend', false)]),
+                'XFBT' => $service->sendXfbt($voyage, ['force_resend' => $request->input('force_resend', false)]),
                 'XFCT' => $service->sendXfct($voyage),
                 default => ['success' => false, 'error_message' => 'Método no válido']
             };

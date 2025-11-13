@@ -197,9 +197,17 @@
                             @endif
 
                             @if($xffmTransaction && $xffmTransaction->status === 'sent')
-                                <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-                                    ✓ XFFM Ya Enviado
-                                </button>
+                                <div class="flex gap-2">
+                                    <button disabled class="flex-1 px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                        ✓ XFFM Ya Enviado
+                                    </button>
+                                    <button 
+                                        onclick="rectificarMetodo('XFFM')" 
+                                        class="px-4 py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                                        title="Reenviar con datos corregidos">
+                                        🔄 Rectificar
+                                    </button>
+                                </div>
                             @else
                                 <button 
                                     onclick="enviarMetodo('XFFM')" 
@@ -209,88 +217,96 @@
                             @endif
                         </div>
 
-                       {{-- 2. XFBL - Conocimientos --}}
-@php
-    $xffmSent = $xffmTransaction && $xffmTransaction->status === 'sent';
-    $xfblSent = $xfblTransaction && $xfblTransaction->status === 'sent';
-@endphp
+                      {{-- 2. XFBL - Conocimientos --}}
+                        @php
+                            $xffmSent = $xffmTransaction && $xffmTransaction->status === 'sent';
+                            $xfblSent = $xfblTransaction && $xfblTransaction->status === 'sent';
+                        @endphp
 
-<div class="border-2 rounded-lg p-5 {{ $xfblSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
-    <div class="flex items-start justify-between mb-3">
-        <div>
-            <div class="flex items-center space-x-2 mb-2">
-                <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmSent ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">2</span>
-                <h4 class="text-base font-semibold text-gray-900">XFBL</h4>
-            </div>
-            <p class="text-sm text-gray-700 font-medium">Conocimientos/BLs</p>
-            <p class="text-xs text-gray-600 mt-1">Declara los Bills of Lading ({{ $blCount ?? 0 }} detectados)</p>
-        </div>
-        @if($xfblSent)
-            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
-                ✓ ENVIADO
-            </span>
-        @endif
-    </div>
-    
-    @if($xfblTransaction)
-        <div class="mb-3 p-2 bg-white rounded text-xs">
-            <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfblTransaction->created_at->format('d/m/Y H:i') }}</span>
-        </div>
-    @endif
-    
-    {{-- ✅ AGREGAR AQUÍ - ZONA DE ADJUNTOS --}}
-    @if($xffmSent && !$xfblSent)
-    <div class="mb-4 p-3 bg-white rounded border border-gray-300">
-        <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos</h5>
-        <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos (PDF)</p>
-        
-        {{-- Formulario Upload --}}
-        <form id="uploadAttachmentsForm" enctype="multipart/form-data" class="mb-3">
-            @csrf
-            <div class="flex gap-2">
-                <input 
-                    type="file" 
-                    name="files[]" 
-                    id="attachmentFiles"
-                    accept=".pdf"
-                    multiple
-                    class="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
-                >
-                <button 
-                    type="button"
-                    onclick="uploadAttachments()"
-                    class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                    Subir
-                </button>
-            </div>
-            <p class="text-xs text-gray-500 mt-1">Solo PDF, máx 5MB c/u</p>
-        </form>
-        
-        {{-- Lista archivos --}}
-        <div id="attachmentsList" class="space-y-1">
-            <p class="text-xs text-gray-500 italic">Cargando...</p>
-        </div>
-    </div>
-    @endif
-    
-    {{-- Botones originales --}}
-    @if(!$xffmSent)
-        <button disabled title="Debe enviar XFFM primero"
-            class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
-            Requiere XFFM Primero
-        </button>
-    @elseif($xfblSent)
-        <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-            ✓ XFBL Ya Enviado
-        </button>
-    @else
-        <button 
-            onclick="enviarMetodo('XFBL')" 
-            class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
-            Enviar XFBL (Conocimientos)
-        </button>
-    @endif
-</div>
+                        <div class="border-2 rounded-lg p-5 {{ $xfblSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span class="flex items-center justify-center w-7 h-7 rounded-full {{ $xffmSent ? 'bg-emerald-600' : 'bg-gray-400' }} text-white text-sm font-bold">2</span>
+                                        <h4 class="text-base font-semibold text-gray-900">XFBL</h4>
+                                    </div>
+                                    <p class="text-sm text-gray-700 font-medium">Conocimientos/BLs</p>
+                                    <p class="text-xs text-gray-600 mt-1">Declara los Bills of Lading ({{ $blCount ?? 0 }} detectados)</p>
+                                </div>
+                                @if($xfblSent)
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                        ✓ ENVIADO
+                                    </span>
+                                @endif
+                            </div>
+                            
+                            @if($xfblTransaction)
+                                <div class="mb-3 p-2 bg-white rounded text-xs">
+                                    <span class="text-gray-500">Enviado:</span> <span class="font-medium">{{ $xfblTransaction->created_at->format('d/m/Y H:i') }}</span>
+                                </div>
+                            @endif
+                            
+                            {{-- Zona de adjuntos (solo cuando XFFM enviado y XFBL NO enviado) --}}
+                            @if($xffmSent && !$xfblSent)
+                                <div class="mb-4 p-3 bg-white rounded border border-gray-300">
+                                    <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos</h5>
+                                    <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos (PDF)</p>
+                                    
+                                    {{-- Formulario Upload --}}
+                                    <form id="uploadAttachmentsForm" enctype="multipart/form-data" class="mb-3">
+                                        @csrf
+                                        <div class="flex gap-2">
+                                            <input 
+                                                type="file" 
+                                                name="files[]" 
+                                                id="attachmentFiles"
+                                                accept=".pdf"
+                                                multiple
+                                                class="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
+                                            >
+                                            <button 
+                                                type="button"
+                                                onclick="uploadAttachments()"
+                                                class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                                Subir
+                                            </button>
+                                        </div>
+                                        <p class="text-xs text-gray-500 mt-1">Solo PDF, máx 5MB c/u</p>
+                                    </form>
+                                    
+                                    {{-- Lista archivos --}}
+                                    <div id="attachmentsList" class="space-y-1">
+                                        <p class="text-xs text-gray-500 italic">Cargando...</p>
+                                    </div>
+                                </div>
+                            @endif
+                            
+                            {{-- Botones de acción --}}
+                            @if(!$xffmSent)
+                                <button disabled title="Debe enviar XFFM primero"
+                                    class="w-full px-4 py-2.5 bg-gray-300 text-gray-500 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                    Requiere XFFM Primero
+                                </button>
+                            @elseif($xfblSent)
+                                <div class="flex gap-2">
+                                    <button disabled class="flex-1 px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                        ✓ XFBL Ya Enviado
+                                    </button>
+                                    <button 
+                                        onclick="rectificarMetodo('XFBL')" 
+                                        class="px-4 py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                                        title="Reenviar con datos corregidos">
+                                        🔄 Rectificar
+                                    </button>
+                                </div>
+                            @else
+                                <button 
+                                    onclick="enviarMetodo('XFBL')" 
+                                    class="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
+                                    Enviar XFBL (Conocimientos)
+                                </button>
+                            @endif
+                        </div>
 
                         {{-- 3. XFBT - Contenedores --}}
                         @php
@@ -341,9 +357,17 @@
                                     </div>
                                 </div>
                             @elseif($xfbtSent)
-                                <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
-                                    ✓ XFBT Ya Enviado
-                                </button>
+                                <div class="flex gap-2">
+                                    <button disabled class="flex-1 px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                        ✓ XFBT Ya Enviado
+                                    </button>
+                                    <button 
+                                        onclick="rectificarMetodo('XFBT')" 
+                                        class="px-4 py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                                        title="Reenviar con datos corregidos">
+                                        🔄 Rectificar
+                                    </button>
+                                </div>
                             @else
                                 <button 
                                     onclick="enviarMetodo('XFBT')" 
@@ -676,6 +700,50 @@ function deleteAttachment(id) {
         if (data.success) loadAttachmentsList();
         else alert('Error al eliminar');
     });
+}
+
+/**
+ * Rectificar mensaje enviado (reenvío con force_resend)
+ */
+async function rectificarMetodo(method) {
+    if (!confirm(`¿Está seguro de rectificar ${method}?\n\nEsto reenviará el mensaje con los datos actuales de la base de datos, manteniendo el mismo nroViaje.`)) {
+        return;
+    }
+    
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '⏳ Rectificando...';
+    
+    try {
+        const response = await fetch('{{ route('company.simple.manifiestos.send', $voyage) }}', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                method: method,
+                force_resend: true
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ ${method} rectificado exitosamente`);
+            location.reload();
+        } else {
+            alert(`❌ Error: ${result.error_message || 'Error desconocido'}`);
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+    } catch (error) {
+        alert(`❌ Error de conexión: ${error.message}`);
+        button.disabled = false;
+        button.innerHTML = originalText;
+    }
 }
 </script>
 </x-app-layout>
