@@ -601,6 +601,25 @@ class SettingsController extends Controller
 
             $company->update(['ws_config' => $wsConfig]);
 
+            // SINCRONIZAR CAMPOS LEGACY para compatibilidad con Super Admin
+            // Actualizar tax_id con CUIT de Argentina si es empresa argentina
+            if ($company->country === 'AR' && !empty($request->argentina_cuit)) {
+                $company->update([
+                    'tax_id' => $request->argentina_cuit,
+                    'legal_name' => $request->argentina_company_name,
+                    'address' => $request->argentina_domicilio_fiscal,
+                ]);
+            }
+
+            // Actualizar tax_id con RUC de Paraguay si es empresa paraguaya  
+            if ($company->country === 'PY' && !empty($request->paraguay_ruc)) {
+                $company->update([
+                    'tax_id' => $request->paraguay_ruc,
+                    'legal_name' => $request->paraguay_company_name,
+                    'address' => $request->paraguay_domicilio_fiscal,
+                ]);
+            }
+
             return back()->with('success', 'Configuración de webservices actualizada correctamente.');
 
         } catch (\Exception $e) {
