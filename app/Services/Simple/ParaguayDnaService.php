@@ -160,25 +160,16 @@ class ParaguayDnaService extends BaseWebserviceService
         // VALIDACIÓN DE CREDENCIALES DNA CON BYPASS
         // ========================================
 
-        $auth = $this->config['auth'];
-        $hasCredentials = ! empty($auth['idUsuario']) && ! empty($auth['ticket']) && ! empty($auth['firma']);
-
-        if (! $hasCredentials) {
-            if ($shouldBypass) {
-                // Con bypass, credenciales faltantes son solo advertencia
-                $warnings[] = 'Credenciales DNA no configuradas (usando modo bypass)';
-                $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
-            } else {
-                // Sin bypass, credenciales son obligatorias
-                $errors[] = 'Credenciales DNA Paraguay incompletas';
-                $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
+        // NOTA: Con WSAA dinámico, las credenciales se obtienen automáticamente
+        // Solo validamos si está en modo bypass
+        if ($shouldBypass) {
+            $warnings[] = 'Modo bypass activado - usando respuestas simuladas';
+        } else {
+            // Validar que tenga RUC (necesario para WSAA como idUsuario)
+            if (!$this->company->tax_id) {
+                $errors[] = 'Empresa sin RUC configurado (requerido para autenticación WSAA)';
             }
         }
-
-        return [
-            'errors' => $errors,
-            'warnings' => $warnings,
-        ];
     }
 
     /**
