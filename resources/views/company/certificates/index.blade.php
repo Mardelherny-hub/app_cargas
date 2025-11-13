@@ -232,7 +232,7 @@
             <div class="bg-gray-50 rounded-lg p-6">
                 <h4 class="text-lg font-medium text-gray-900 mb-4">🔗 Enlaces Relacionados</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <a href="{{ route('company.webservices.index') }}" 
+                    {{-- <a href="{{ route('company.webservices.index') }}" 
                        class="block p-4 bg-white rounded-lg border hover:shadow-md transition-shadow">
                         <div class="flex items-center">
                             <svg class="w-6 h-6 text-blue-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -244,7 +244,7 @@
                             </div>
                         </div>
                     </a>
-
+ --}}
                     <a href="{{ route('company.settings.index') }}" 
                        class="block p-4 bg-white rounded-lg border hover:shadow-md transition-shadow">
                         <div class="flex items-center">
