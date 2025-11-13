@@ -110,6 +110,13 @@ class WsaaToken extends Model
     ];
 
     /**
+     * Servicios DNA Paraguay soportados
+     */
+    public const PARAGUAY_SERVICES = [
+        'serviciotemaflu' => 'GDSF - Gestión de Declaración Sumaria Fluvial',
+    ];
+
+    /**
      * Ambientes disponibles
      */
     public const ENVIRONMENTS = [

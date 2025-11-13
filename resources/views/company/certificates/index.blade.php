@@ -221,7 +221,7 @@
                     <div class="mt-6 p-4 bg-blue-50 rounded-lg">
                         <h4 class="text-sm font-medium text-blue-800 mb-2">💡 Formatos Soportados</h4>
                         <p class="text-sm text-blue-700">
-                            El sistema acepta certificados en formato <strong>.p12</strong> o <strong>.pfx</strong> con un tamaño máximo de 2MB.
+                            El sistema acepta certificados en formato <strong>.p12</strong>, <strong>.pfx</strong> o <strong>.pem</strong> con un tamaño máximo de 2MB.
                             Estos deben ser emitidos por una autoridad certificadora reconocida por las aduanas correspondientes.
                         </p>
                     </div>

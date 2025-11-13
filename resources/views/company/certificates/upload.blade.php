@@ -78,7 +78,7 @@
                                         <p class="pl-1">o arrastrar y soltar aquí</p>
                                     </div>
                                     <p class="text-xs text-gray-500">
-                                        .p12, .pfx hasta 2MB
+                                        .p12, .pfx, .pem hasta 2MB
                                     </p>
                                     <div id="fileName" class="text-sm text-green-600 font-medium hidden"></div>
                                 </div>
@@ -86,7 +86,7 @@
                             <input id="certificate" 
                                    name="certificate" 
                                    type="file" 
-                                   accept=".p12,.pfx" 
+                                   accept=".p12,.pfx, .pem" 
                                    required 
                                    class="sr-only" 
                                    onchange="showFileName(this)">
@@ -410,9 +410,9 @@
 
             // Validar tipo de archivo
             const fileName = certificateInput.files[0].name.toLowerCase();
-            if (!fileName.endsWith('.p12') && !fileName.endsWith('.pfx')) {
+            if (!fileName.endsWith('.p12') && !fileName.endsWith('.pfx') && !fileName.endsWith('.pem')) {
                 e.preventDefault();
-                alert('El archivo debe ser un certificado .p12 o .pfx');
+                alert('El archivo debe ser un certificado .p12, .pfx o .pem');
                 certificateInput.focus();
                 return;
             }

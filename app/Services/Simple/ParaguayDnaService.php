@@ -6,20 +6,17 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
-use App\Services\Simple\BaseWebserviceService;
-use App\Services\Simple\SimpleXmlGeneratorParaguay;
 use Exception;
-use SoapClient;
-use SoapFault;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use SoapFault;
 
 /**
  * SISTEMA MODULAR WEBSERVICES - ParaguayDnaService
- * 
+ *
  * Servicio para Manifiestos Fluviales DNA Paraguay (GDSF)
  * Extiende BaseWebserviceService siguiendo el patrón exitoso de Argentina
- * 
+ *
  * MÉTODOS GDSF SOPORTADOS:
  * 1. XFFM - Carátula/Manifiesto (OBLIGATORIO PRIMERO)
  * 2. XFBL - Conocimientos/BLs (requiere XFFM)
@@ -27,10 +24,10 @@ use Illuminate\Support\Facades\DB;
  * 4. XISP - Incluir Embarcación (opcional)
  * 5. XRSP - Desvincular Embarcación (opcional)
  * 6. XFCT - Cerrar Viaje (último paso)
- * 
+ *
  * FLUJO OBLIGATORIO:
  * XFFM → retorna nroViaje → XFBL/XFBT (usan nroViaje) → XFCT
- * 
+ *
  * INTEGRACIÓN:
  * - Genera XML automático desde BD vía SimpleXmlGeneratorParaguay
  * - Valida dependencias (no permite XFBL sin XFFM)
@@ -44,7 +41,7 @@ class ParaguayDnaService extends BaseWebserviceService
     public function __construct(Company $company, User $user, array $config = [])
     {
         parent::__construct($company, $user, $config);
-        
+
         // Inicializar generador XML específico de Paraguay
         $this->paraguayXmlGenerator = new SimpleXmlGeneratorParaguay($company, $this->config);
     }
@@ -75,12 +72,12 @@ class ParaguayDnaService extends BaseWebserviceService
     protected function getWsdlUrl(): string
     {
         $environment = $this->company->ws_environment ?? 'testing';
-        
+
         $urls = [
             'testing' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
             'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
         ];
-        
+
         return $urls[$environment] ?? $urls['testing'];
     }
 
@@ -105,33 +102,33 @@ class ParaguayDnaService extends BaseWebserviceService
     /**
      * Validaciones específicas de Paraguay - VERSIÓN CON BYPASS
      */
-        protected function validateSpecificData(Voyage $voyage): array
+    protected function validateSpecificData(Voyage $voyage): array
     {
         $errors = [];
         $warnings = [];
 
         // Validar datos básicos del viaje
-        if (!$voyage->voyage_number) {
+        if (! $voyage->voyage_number) {
             $errors[] = 'Viaje sin número de viaje';
         }
 
-        if (!$voyage->leadVessel) {
+        if (! $voyage->leadVessel) {
             $errors[] = 'Viaje sin embarcación principal asignada';
         }
 
-        if (!$voyage->originPort || !$voyage->destinationPort) {
+        if (! $voyage->originPort || ! $voyage->destinationPort) {
             $errors[] = 'Viaje sin puertos de origen/destino';
         }
 
         // ========================================
         // VALIDACIÓN DE CERTIFICADO CON BYPASS
         // ========================================
-        
+
         $shouldBypass = $this->company->shouldBypassTesting('paraguay');
         $hasCertificate = $this->company->hasCertificateForCountry('paraguay');
-        
+
         if ($this->config['require_certificate']) {
-            if (!$hasCertificate) {
+            if (! $hasCertificate) {
                 if ($shouldBypass) {
                     // Con bypass, certificado faltante es solo advertencia
                     $warnings[] = 'Certificado Paraguay no configurado (usando modo bypass)';
@@ -143,8 +140,8 @@ class ParaguayDnaService extends BaseWebserviceService
                 // Verificar que el certificado sea válido (existe el archivo)
                 $certificate = $this->company->getCertificate('paraguay');
                 $certPath = $certificate['path'] ?? null;
-                
-                if ($certPath && !\Illuminate\Support\Facades\Storage::exists($certPath)) {
+
+                if ($certPath && ! \Illuminate\Support\Facades\Storage::exists($certPath)) {
                     if ($shouldBypass) {
                         $warnings[] = 'Archivo de certificado no encontrado (usando modo bypass)';
                     } else {
@@ -152,9 +149,9 @@ class ParaguayDnaService extends BaseWebserviceService
                     }
                 }
             }
-            
+
             // Validar RUC
-            if (!$this->company->tax_id) {
+            if (! $this->company->tax_id) {
                 $errors[] = 'Empresa sin RUC/Tax ID configurado';
             }
         }
@@ -162,11 +159,11 @@ class ParaguayDnaService extends BaseWebserviceService
         // ========================================
         // VALIDACIÓN DE CREDENCIALES DNA CON BYPASS
         // ========================================
-        
+
         $auth = $this->config['auth'];
-        $hasCredentials = !empty($auth['idUsuario']) && !empty($auth['ticket']) && !empty($auth['firma']);
-        
-        if (!$hasCredentials) {
+        $hasCredentials = ! empty($auth['idUsuario']) && ! empty($auth['ticket']) && ! empty($auth['firma']);
+
+        if (! $hasCredentials) {
             if ($shouldBypass) {
                 // Con bypass, credenciales faltantes son solo advertencia
                 $warnings[] = 'Credenciales DNA no configuradas (usando modo bypass)';
@@ -227,13 +224,13 @@ class ParaguayDnaService extends BaseWebserviceService
             return $validation;
 
         } catch (Exception $e) {
-            $validation['errors'][] = 'Error interno en validación: ' . $e->getMessage();
+            $validation['errors'][] = 'Error interno en validación: '.$e->getMessage();
             $validation['can_process'] = false;
-            
+
             $this->logOperation('error', 'Error en canProcessVoyage', [
                 'error' => $e->getMessage(),
             ]);
-            
+
             return $validation;
         }
     }
@@ -255,9 +252,7 @@ class ParaguayDnaService extends BaseWebserviceService
      * 1. XFFM - Carátula/Manifiesto Fluvial
      * PRIMER envío obligatorio - Registra el viaje en DNA Paraguay
      * Retorna nroViaje necesario para envíos posteriores
-     * 
-     * @param Voyage $voyage
-     * @param array $options
+     *
      * @return array ['success' => bool, 'nroViaje' => string|null, ...]
      */
     public function sendXffm(Voyage $voyage, array $options = []): array
@@ -272,13 +267,13 @@ class ParaguayDnaService extends BaseWebserviceService
         try {
             // 1. Validar viaje
             $validation = $this->canProcessVoyage($voyage);
-            if (!$validation['can_process']) {
-                throw new Exception('Viaje no válido: ' . implode(', ', $validation['errors']));
+            if (! $validation['can_process']) {
+                throw new Exception('Viaje no válido: '.implode(', ', $validation['errors']));
             }
 
             // 2. Verificar si ya fue enviado
             $existingXffm = $this->getExistingTransaction($voyage, 'XFFM');
-            if ($existingXffm && !($options['force_resend'] ?? false)) {
+            if ($existingXffm && ! ($options['force_resend'] ?? false)) {
                 return [
                     'success' => false,
                     'error_message' => 'XFFM ya fue enviado. Use force_resend=true para reenviar.',
@@ -322,7 +317,7 @@ class ParaguayDnaService extends BaseWebserviceService
                 ]);
 
                 // Si no se extrajo el nroViaje, intentar del raw_response XML
-                if (!$nroViaje && isset($soapResult['raw_response'])) {
+                if (! $nroViaje && isset($soapResult['raw_response'])) {
                     $nroViaje = $this->extractNroViajeFromRawXml($soapResult['raw_response']);
                     $this->logOperation('info', 'nroViaje extraído de raw_response', [
                         'nroViaje' => $nroViaje,
@@ -330,7 +325,7 @@ class ParaguayDnaService extends BaseWebserviceService
                 }
 
                 // Validar que tenemos nroViaje antes de actualizar
-                if (!$nroViaje) {
+                if (! $nroViaje) {
                     $this->logOperation('warning', 'No se pudo extraer nroViaje de la respuesta XFFM', [
                         'transaction_id' => $transaction->id,
                         'raw_response_length' => strlen($soapResult['raw_response'] ?? ''),
@@ -392,10 +387,6 @@ class ParaguayDnaService extends BaseWebserviceService
     /**
      * 2. XFBL - Conocimientos/BLs
      * Requiere XFFM enviado previamente
-     * 
-     * @param Voyage $voyage
-     * @param array $options
-     * @return array
      */
     public function sendXfbl(Voyage $voyage, array $options = []): array
     {
@@ -408,32 +399,32 @@ class ParaguayDnaService extends BaseWebserviceService
         try {
             // 1. Verificar que XFFM fue enviado
             $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
-            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+            if (! $xffmTransaction || $xffmTransaction->status !== 'sent') {
                 throw new Exception('Debe enviar XFFM primero');
             }
 
             // 2. Obtener nroViaje con fallback a response_xml
             $nroViaje = $xffmTransaction->external_reference;
-            if (!$nroViaje && $xffmTransaction->response_xml) {
+            if (! $nroViaje && $xffmTransaction->response_xml) {
                 $nroViaje = $this->extractNroViajeFromRawXml($xffmTransaction->response_xml);
                 if ($nroViaje) {
                     $xffmTransaction->update(['external_reference' => $nroViaje]);
                 }
             }
-            
+
             $this->logOperation('info', '🔍 Verificando nroViaje para XFBL', [
                 'external_reference' => $nroViaje,
-                'has_response_xml' => !empty($xffmTransaction->response_xml),
+                'has_response_xml' => ! empty($xffmTransaction->response_xml),
             ]);
-            
+
             // Si external_reference está vacío, extraer del response_xml
-            if (!$nroViaje && $xffmTransaction->response_xml) {
+            if (! $nroViaje && $xffmTransaction->response_xml) {
                 $this->logOperation('info', '🔄 Extrayendo nroViaje de response_xml', [
                     'xffm_transaction_id' => $xffmTransaction->id,
                 ]);
-                
+
                 $nroViaje = $this->extractNroViajeFromRawXml($xffmTransaction->response_xml);
-                
+
                 // Actualizar el external_reference para la próxima vez
                 if ($nroViaje) {
                     $xffmTransaction->update(['external_reference' => $nroViaje]);
@@ -442,8 +433,8 @@ class ParaguayDnaService extends BaseWebserviceService
                     ]);
                 }
             }
-            
-            if (!$nroViaje) {
+
+            if (! $nroViaje) {
                 throw new Exception('No se encontró nroViaje de XFFM');
             }
 
@@ -465,7 +456,6 @@ class ParaguayDnaService extends BaseWebserviceService
 
             $transaction->request_xml = $xml;
             $transaction->save();
-
 
             $this->currentTransactionId = $transaction->id;  // ← ESTA LÍNEA
 
@@ -519,138 +509,130 @@ class ParaguayDnaService extends BaseWebserviceService
     /**
      * 3. XFBT - Hoja de Ruta (Contenedores)
      * Requiere XFFM enviado previamente
-     * 
-     * @param Voyage $voyage
-     * @param array $options
-     * @return array
      */
     public function sendXfbt(Voyage $voyage, array $options = []): array
-{
-    \Log::info('🔵 XFBT - Inicio', ['voyage_id' => $voyage->id]);
-    
-    $this->logOperation('info', 'Iniciando envío XFBT (Contenedores)', [
-        'voyage_id' => $voyage->id,
-    ]);
+    {
+        \Log::info('🔵 XFBT - Inicio', ['voyage_id' => $voyage->id]);
 
-    DB::beginTransaction();
-
-    try {
-        // 1. Verificar XFFM
-        $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
-        if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
-            throw new Exception('Debe enviar XFFM primero');
-        }
-
-        $nroViaje = $xffmTransaction->external_reference;
-
-        // 2. Validar contenedores (a través de shipmentItems)
-        $containers = $voyage->shipments
-            ->flatMap->billsOfLading
-            ->flatMap->shipmentItems
-            ->flatMap->containers
-            ->unique('id');
-
-        if ($containers->isEmpty()) {
-            $this->logOperation('warning', 'Viaje sin contenedores, saltando XFBT', [
-                'voyage_id' => $voyage->id,
-            ]);
-            
-            $this->updateWebserviceStatus($voyage, 'XFBT', [
-                'status' => 'skipped',
-                'additional_data' => [
-                    'skipped' => true,
-                    'reason' => 'Sin contenedores',
-                ],
-            ]);
-            
-            DB::commit();
-            
-            return [
-                'success' => true,
-                'skipped' => true,
-                'message' => 'XFBT omitido: viaje sin contenedores',
-                'container_count' => 0,
-            ];
-        } 
-
-        // 3. Generar XML
-        $transactionId = $this->generateTransactionId('XFBT');
-        $xml = $this->paraguayXmlGenerator->createXfbtXml($voyage, $transactionId, $nroViaje);
-
-        // 4. Crear transacción
-        $transaction = $this->createTransaction($voyage, [
-            'tipo_mensaje' => 'XFBT',
-            'transaction_id' => $transactionId,
-        ]);
-
-        $this->currentTransactionId = $transaction->id;
-
-        // 5. Enviar SOAP
-        $soapResult = $this->sendSoapMessage([
-            'codigo' => 'XFBT',
-            'version' => '1.0',
-            'viaje' => $nroViaje,
-            'xml' => $xml,
-        ]);
-
-        // 6. Procesar respuesta
-        if ($soapResult['success']) {
-            \Log::info('🔵 XFBT - Antes de update', [
-                'transaction_id' => $transaction->id,
-                'tiene_xml' => !empty($xml),
-                'xml_length' => strlen($xml),
-            ]);
-            
-            $transaction->update([
-                'status' => 'sent',
-                'response_xml' => $soapResult['raw_response'] ?? null,
-                'request_xml' => $xml,
-            ]);
-            
-            \Log::info('🔵 XFBT - Después de update', [
-                'transaction_id' => $transaction->id,
-                'tiene_request_xml' => !empty($transaction->fresh()->request_xml),
-            ]);
-
-            $this->updateWebserviceStatus($voyage, 'XFBT', [
-                'status' => 'sent',
-                'nro_viaje' => $nroViaje,
-            ]);
-
-            DB::commit();
-
-            return [
-                'success' => true,
-                'transaction_id' => $transactionId,
-                'message' => 'XFBT enviado exitosamente',
-                'container_count' => $containers->count(),
-            ];
-        } else {
-            throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
-        }
-
-    } catch (Exception $e) {
-        DB::rollBack();
-
-        $this->logOperation('error', 'Error enviando XFBT', [
+        $this->logOperation('info', 'Iniciando envío XFBT (Contenedores)', [
             'voyage_id' => $voyage->id,
-            'error' => $e->getMessage(),
         ]);
 
-        return [
-            'success' => false,
-            'error_message' => $e->getMessage(),
-        ];
+        DB::beginTransaction();
+
+        try {
+            // 1. Verificar XFFM
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (! $xffmTransaction || $xffmTransaction->status !== 'sent') {
+                throw new Exception('Debe enviar XFFM primero');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+
+            // 2. Validar contenedores (a través de shipmentItems)
+            $containers = $voyage->shipments
+                ->flatMap->billsOfLading
+                ->flatMap->shipmentItems
+                ->flatMap->containers
+                ->unique('id');
+
+            if ($containers->isEmpty()) {
+                $this->logOperation('warning', 'Viaje sin contenedores, saltando XFBT', [
+                    'voyage_id' => $voyage->id,
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XFBT', [
+                    'status' => 'skipped',
+                    'additional_data' => [
+                        'skipped' => true,
+                        'reason' => 'Sin contenedores',
+                    ],
+                ]);
+
+                DB::commit();
+
+                return [
+                    'success' => true,
+                    'skipped' => true,
+                    'message' => 'XFBT omitido: viaje sin contenedores',
+                    'container_count' => 0,
+                ];
+            }
+
+            // 3. Generar XML
+            $transactionId = $this->generateTransactionId('XFBT');
+            $xml = $this->paraguayXmlGenerator->createXfbtXml($voyage, $transactionId, $nroViaje);
+
+            // 4. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XFBT',
+                'transaction_id' => $transactionId,
+            ]);
+
+            $this->currentTransactionId = $transaction->id;
+
+            // 5. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XFBT',
+                'version' => '1.0',
+                'viaje' => $nroViaje,
+                'xml' => $xml,
+            ]);
+
+            // 6. Procesar respuesta
+            if ($soapResult['success']) {
+                \Log::info('🔵 XFBT - Antes de update', [
+                    'transaction_id' => $transaction->id,
+                    'tiene_xml' => ! empty($xml),
+                    'xml_length' => strlen($xml),
+                ]);
+
+                $transaction->update([
+                    'status' => 'sent',
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                    'request_xml' => $xml,
+                ]);
+
+                \Log::info('🔵 XFBT - Después de update', [
+                    'transaction_id' => $transaction->id,
+                    'tiene_request_xml' => ! empty($transaction->fresh()->request_xml),
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XFBT', [
+                    'status' => 'sent',
+                    'nro_viaje' => $nroViaje,
+                ]);
+
+                DB::commit();
+
+                return [
+                    'success' => true,
+                    'transaction_id' => $transactionId,
+                    'message' => 'XFBT enviado exitosamente',
+                    'container_count' => $containers->count(),
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
+            }
+
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            $this->logOperation('error', 'Error enviando XFBT', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
+        }
     }
-}
 
     /**
      * 4. XFCT - Cerrar Viaje
      * Último paso - Cierra el nroViaje cuando todo está completo
-     * 
-     * @param Voyage $voyage
-     * @param array $options
-     * @return array
      */
     public function sendXfct(Voyage $voyage, array $options = []): array
     {
@@ -663,7 +645,7 @@ class ParaguayDnaService extends BaseWebserviceService
         try {
             // 1. Verificar XFFM
             $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
-            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+            if (! $xffmTransaction || $xffmTransaction->status !== 'sent') {
                 throw new Exception('Debe enviar XFFM primero');
             }
 
@@ -679,8 +661,7 @@ class ParaguayDnaService extends BaseWebserviceService
                 'transaction_id' => $transactionId,
             ]);
 
-            $this->currentTransactionId = $transaction->id;  // ← ESTA LÍNEA 
-
+            $this->currentTransactionId = $transaction->id;  // ← ESTA LÍNEA
 
             // 4. Enviar SOAP
             $soapResult = $this->sendSoapMessage([
@@ -734,205 +715,214 @@ class ParaguayDnaService extends BaseWebserviceService
     // ====================================
 
     /**
- * Enviar mensaje SOAP a DNA Paraguay CON BYPASS INTELIGENTE
- */
-protected function sendSoapMessage(array $params): array
-{
-    // ========================================
-    // BYPASS INTELIGENTE PARAGUAY
-    // ========================================
-    
-    $shouldBypass = $this->company->shouldBypassTesting('paraguay');
-    $environment = $this->config['environment'] ?? 'testing';
-    $auth = $this->config['auth'];
-    
-    // Verificar si debe usar bypass
-    $useBypass = false;
-    
-    // Razón 1: Bypass activado explícitamente en configuración
-    if ($shouldBypass) {
-        $useBypass = true;
-        $bypassReason = 'Bypass activado en configuración de empresa';
-    }
-    
-    // Razón 2: Ambiente testing sin credenciales DNA completas
-    if ($environment === 'testing' && (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma']))) {
-        $useBypass = true;
-        $bypassReason = 'Ambiente testing sin credenciales DNA';
-    }
-    
-    // Razón 3: Certificado es de testing (verificar si existe y es fake)
-    $certificate = $this->company->getCertificate('paraguay');
-    if ($certificate && isset($certificate['alias']) && str_contains(strtoupper($certificate['alias']), 'TEST')) {
-        $useBypass = true;
-        $bypassReason = 'Certificado de testing detectado';
-    }
-    
-    // ========================================
-    // SI DEBE USAR BYPASS: GENERAR RESPUESTA SIMULADA
-    // ========================================
-    
-    if ($useBypass) {
-        $this->logOperation('info', '🔄 BYPASS ACTIVADO - Simulando respuesta Paraguay', [
-            'codigo' => $params['codigo'],
-            'viaje' => $params['viaje'],
-            'reason' => $bypassReason,
-            'environment' => $environment,
-        ]);
-        
-        return $this->generateBypassResponse($params);
-    }
-    
-    // ========================================
-    // CONEXIÓN REAL A DNA PARAGUAY
-    // ========================================
-    
-    try {
-        $this->logOperation('info', '🌐 Conectando a DNA Paraguay REAL', [
-            'codigo' => $params['codigo'],
-            'viaje' => $params['viaje'],
-            'environment' => $environment,
-        ]);
-        
-        $client = $this->createSoapClient();
-        
-        // Parámetros GDSF
-        $soapParams = [
-            'codigo' => $params['codigo'],
-            'version' => $params['version'],
-            'viaje' => $params['viaje'],
-            'xml' => $params['xml'],
-            'Autenticacion' => [
-                'idUsuario' => $auth['idUsuario'],
-                'ticket' => $auth['ticket'],
-                'firma' => $auth['firma'],
-            ],
-        ];
+     * Enviar mensaje SOAP a DNA Paraguay CON BYPASS INTELIGENTE
+     */
+    protected function sendSoapMessage(array $params): array
+    {
+        // ========================================
+        // BYPASS INTELIGENTE PARAGUAY
+        // ========================================
 
-        // Enviar
-        // Llamada directa al método SOAP (más clara y correcta)
-        $result = $client->EnviarMensajeFluvial(
-            $soapParams['codigo'],
-            $soapParams['version'],
-            $soapParams['viaje'],
-            $soapParams['xml'],
-            $soapParams['Autenticacion']
-        );
-        $rawResponse = $client->__getLastResponse();
+        $shouldBypass = $this->company->shouldBypassTesting('paraguay');
+        $environment = $this->config['environment'] ?? 'testing';
+        $auth = $this->config['auth'];
 
-        // Persistir WebserviceResponse con XML
+        // Verificar si debe usar bypass
+        $useBypass = false;
+
+        // Razón 1: Bypass activado explícitamente en configuración
+        if ($shouldBypass) {
+            $useBypass = true;
+            $bypassReason = 'Bypass activado en configuración de empresa';
+        }
+
+        // Razón 2: Ambiente testing sin credenciales DNA completas
+        if ($environment === 'testing' && (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma']))) {
+            $useBypass = true;
+            $bypassReason = 'Ambiente testing sin credenciales DNA';
+        }
+
+        // Razón 3: Certificado es de testing (verificar si existe y es fake)
+        $certificate = $this->company->getCertificate('paraguay');
+        if ($certificate && isset($certificate['alias']) && str_contains(strtoupper($certificate['alias']), 'TEST')) {
+            $useBypass = true;
+            $bypassReason = 'Certificado de testing detectado';
+        }
+
+        // ========================================
+        // SI DEBE USAR BYPASS: GENERAR RESPUESTA SIMULADA
+        // ========================================
+
+        if ($useBypass) {
+            $this->logOperation('info', '🔄 BYPASS ACTIVADO - Simulando respuesta Paraguay', [
+                'codigo' => $params['codigo'],
+                'viaje' => $params['viaje'],
+                'reason' => $bypassReason,
+                'environment' => $environment,
+            ]);
+
+            return $this->generateBypassResponse($params);
+        }
+
+        // ========================================
+        // CONEXIÓN REAL A DNA PARAGUAY
+        // ========================================
+
         try {
-            \App\Models\WebserviceResponse::create([
+            $this->logOperation('info', '🌐 Conectando a DNA Paraguay', [
+                'codigo' => $params['codigo'],
+                'viaje' => $params['viaje'],
+                'environment' => $environment,
+            ]);
+
+            // Obtener tokens WSAA dinámicos
+            $wsaaService = new ParaguayWsaaService($this->company, $environment);
+            $wsaaTokens = $wsaaService->getTokens();
+
+            $this->logOperation('info', '✅ Tokens WSAA obtenidos', [
+                'token_length' => strlen($wsaaTokens['token']),
+                'sign_length' => strlen($wsaaTokens['sign']),
+            ]);
+
+            $client = $this->createSoapClient();
+
+            // Parámetros GDSF con autenticación WSAA dinámica
+            $soapParams = [
+                'codigo' => $params['codigo'],
+                'version' => $params['version'],
+                'viaje' => $params['viaje'],
+                'xml' => $params['xml'],
+                'Autenticacion' => [
+                    'idUsuario' => $wsaaTokens['ruc'], // RUC de la empresa
+                    'ticket' => $wsaaTokens['token'],   // Token WSAA dinámico
+                    'firma' => $wsaaTokens['sign'],     // Sign WSAA dinámico
+                ],
+            ];
+
+            // Enviar
+            // Llamada directa al método SOAP (más clara y correcta)
+            $result = $client->EnviarMensajeFluvial(
+                $soapParams['codigo'],
+                $soapParams['version'],
+                $soapParams['viaje'],
+                $soapParams['xml'],
+                $soapParams['Autenticacion']
+            );
+            $rawResponse = $client->__getLastResponse();
+
+            // Persistir WebserviceResponse con XML
+            try {
+                \App\Models\WebserviceResponse::create([
+                    'transaction_id' => $this->currentTransactionId,
+                    'response_type' => 'success',
+                    'processing_status' => 'completed',
+                    'requires_action' => false,
+                    'customs_metadata' => [
+                        'request_xml' => $params['xml'],
+                        'raw_response' => $rawResponse,
+                        'codigo' => $params['codigo'],
+                    ],
+                    'customs_status' => 'sent',
+                    'processed_at' => now(),
+                ]);
+            } catch (\Exception $e) {
+                \Log::warning('Error guardando XML real', ['error' => $e->getMessage()]);
+            }
+
+            return [
+                'success' => true,
+                'response_data' => $result,
+                'raw_response' => $rawResponse,
+            ];
+
+        } catch (SoapFault $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->faultstring ?? $e->getMessage(),
+                'error_code' => $e->faultcode ?? 'SOAP_ERROR',
+            ];
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'UNKNOWN_ERROR',
+            ];
+        }
+    }
+
+    /**
+     * Generar respuesta simulada (BYPASS)
+     */
+    private function generateBypassResponse(array $params): array
+    {
+        try {
+            $codigo = $params['codigo'];
+            $viaje = $params['viaje'];
+
+            \Log::info('🐛 Inicio generateBypassResponse');
+
+            $nroViaje = $viaje ?? 'PY'.date('Y').str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
+
+            \Log::info('🐛 Antes del switch');
+
+            // Respuesta simulada según el tipo de mensaje
+            switch ($codigo) {
+                case 'XFFM':
+                    $responseXml = $this->generateXffmBypassXml($nroViaje);
+                    break;
+                case 'XFBL':
+                    $responseXml = $this->generateXfblBypassXml($viaje);
+                    break;
+                case 'XFBT':
+                    $responseXml = $this->generateXfbtBypassXml($viaje);
+                    break;
+                case 'XFCT':
+                    $responseXml = $this->generateXfctBypassXml($viaje);
+                    break;
+                default:
+                    $responseXml = '<response><status>OK</status></response>';
+            }
+
+            \Log::info('🐛 Después del switch, antes de guardar');
+
+            $response = \App\Models\WebserviceResponse::create([
                 'transaction_id' => $this->currentTransactionId,
                 'response_type' => 'success',
                 'processing_status' => 'completed',
                 'requires_action' => false,
-                'customs_metadata' => [
+                'response_data' => json_encode([  // ← Usa response_data
                     'request_xml' => $params['xml'],
-                    'raw_response' => $rawResponse,
-                    'codigo' => $params['codigo'],
-                ],
+                    'raw_response' => $responseXml,
+                    'codigo' => $codigo,
+                ]),
                 'customs_status' => 'sent',
                 'processed_at' => now(),
             ]);
-        } catch (\Exception $e) {
-            \Log::warning('Error guardando XML real', ['error' => $e->getMessage()]);
+
+            \Log::info('✅ Response guardado: '.$response->id);
+
+        } catch (\Throwable $e) {
+            \Log::error('💥 ERROR FATAL en generateBypassResponse: '.$e->getMessage().' | Línea: '.$e->getLine());
         }
 
         return [
             'success' => true,
-            'response_data' => $result,
-            'raw_response' => $rawResponse,
-        ];
-
-    } catch (SoapFault $e) {
-        return [
-            'success' => false,
-            'error_message' => $e->faultstring ?? $e->getMessage(),
-            'error_code' => $e->faultcode ?? 'SOAP_ERROR',
-        ];
-    } catch (Exception $e) {
-        return [
-            'success' => false,
-            'error_message' => $e->getMessage(),
-            'error_code' => 'UNKNOWN_ERROR',
+            'response_data' => (object) [
+                'nroViaje' => $nroViaje ?? 'ERROR',
+                'estado' => 'ACEPTADO',
+            ],
+            'raw_response' => $responseXml ?? '<error/>',
         ];
     }
-}
 
-/**
- * Generar respuesta simulada (BYPASS)
- */
-private function generateBypassResponse(array $params): array
-{
-    try {
-        $codigo = $params['codigo'];
-        $viaje = $params['viaje'];
-        
-        \Log::info('🐛 Inicio generateBypassResponse');
-        
-        $nroViaje = $viaje ?? 'PY' . date('Y') . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
-        
-        \Log::info('🐛 Antes del switch');
-        
-        // Respuesta simulada según el tipo de mensaje
-        switch ($codigo) {
-            case 'XFFM':
-                $responseXml = $this->generateXffmBypassXml($nroViaje);
-                break;
-            case 'XFBL':
-                $responseXml = $this->generateXfblBypassXml($viaje);
-                break;
-            case 'XFBT':
-                $responseXml = $this->generateXfbtBypassXml($viaje);
-                break;
-            case 'XFCT':
-                $responseXml = $this->generateXfctBypassXml($viaje);
-                break;
-            default:
-                $responseXml = '<response><status>OK</status></response>';
-        }
-        
-        \Log::info('🐛 Después del switch, antes de guardar');
-        
-        $response = \App\Models\WebserviceResponse::create([
-            'transaction_id' => $this->currentTransactionId,
-            'response_type' => 'success',
-            'processing_status' => 'completed',
-            'requires_action' => false,
-            'response_data' => json_encode([  // ← Usa response_data
-                'request_xml' => $params['xml'],
-                'raw_response' => $responseXml,
-                'codigo' => $codigo,
-            ]),
-            'customs_status' => 'sent',
-            'processed_at' => now(),
-        ]);
-        
-        \Log::info('✅ Response guardado: ' . $response->id);
-        
-    } catch (\Throwable $e) {
-        \Log::error('💥 ERROR FATAL en generateBypassResponse: ' . $e->getMessage() . ' | Línea: ' . $e->getLine());
-    }
-    
-    return [
-        'success' => true,
-        'response_data' => (object)[
-            'nroViaje' => $nroViaje ?? 'ERROR',
-            'estado' => 'ACEPTADO',
-        ],
-        'raw_response' => $responseXml ?? '<error/>',
-    ];
-}
+    /**
+     * Generar XML de respuesta XFFM simulada
+     */
+    private function generateXffmBypassXml(string $nroViaje): string
+    {
+        $timestamp = now()->format('Y-m-d\TH:i:s');
 
-/**
- * Generar XML de respuesta XFFM simulada
- */
-private function generateXffmBypassXml(string $nroViaje): string
-{
-    $timestamp = now()->format('Y-m-d\TH:i:s');
-    
-    return <<<XML
+        return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
     <soap:Body>
@@ -948,16 +938,16 @@ private function generateXffmBypassXml(string $nroViaje): string
     </soap:Body>
 </soap:Envelope>
 XML;
-}
+    }
 
-/**
- * Generar XML de respuesta XFBL simulada
- */
-private function generateXfblBypassXml(string $viaje): string
-{
-    $timestamp = now()->format('Y-m-d\TH:i:s');
-    
-    return <<<XML
+    /**
+     * Generar XML de respuesta XFBL simulada
+     */
+    private function generateXfblBypassXml(string $viaje): string
+    {
+        $timestamp = now()->format('Y-m-d\TH:i:s');
+
+        return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
     <soap:Body>
@@ -973,16 +963,16 @@ private function generateXfblBypassXml(string $viaje): string
     </soap:Body>
 </soap:Envelope>
 XML;
-}
+    }
 
-/**
- * Generar XML de respuesta XFBT simulada
- */
-private function generateXfbtBypassXml(string $viaje): string
-{
-    $timestamp = now()->format('Y-m-d\TH:i:s');
-    
-    return <<<XML
+    /**
+     * Generar XML de respuesta XFBT simulada
+     */
+    private function generateXfbtBypassXml(string $viaje): string
+    {
+        $timestamp = now()->format('Y-m-d\TH:i:s');
+
+        return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
     <soap:Body>
@@ -998,16 +988,16 @@ private function generateXfbtBypassXml(string $viaje): string
     </soap:Body>
 </soap:Envelope>
 XML;
-}
+    }
 
-/**
- * Generar XML de respuesta XFCT simulada
- */
-private function generateXfctBypassXml(string $viaje): string
-{
-    $timestamp = now()->format('Y-m-d\TH:i:s');
-    
-    return <<<XML
+    /**
+     * Generar XML de respuesta XFCT simulada
+     */
+    private function generateXfctBypassXml(string $viaje): string
+    {
+        $timestamp = now()->format('Y-m-d\TH:i:s');
+
+        return <<<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
     <soap:Body>
@@ -1023,7 +1013,7 @@ private function generateXfctBypassXml(string $viaje): string
     </soap:Body>
 </soap:Envelope>
 XML;
-}
+    }
 
     /**
      * Extraer nroViaje de la respuesta GDSF
@@ -1033,20 +1023,20 @@ XML;
         try {
             // CASO 1: Response es un objeto con nroViaje directo (BYPASS)
             if (is_object($responseData) && isset($responseData->nroViaje)) {
-                return (string)$responseData->nroViaje;
+                return (string) $responseData->nroViaje;
             }
 
             // CASO 2: Response tiene XML string
             if (is_object($responseData) && isset($responseData->xml)) {
                 $xml = simplexml_load_string($responseData->xml);
                 if ($xml && isset($xml->nroViaje)) {
-                    return (string)$xml->nroViaje;
+                    return (string) $xml->nroViaje;
                 }
             }
 
             // CASO 3: Response es array con nroViaje
             if (is_array($responseData) && isset($responseData['nroViaje'])) {
-                return (string)$responseData['nroViaje'];
+                return (string) $responseData['nroViaje'];
             }
 
             // CASO 4: raw_response tiene XML con nroViaje
@@ -1056,10 +1046,10 @@ XML;
                     $namespaces = $xml->getNamespaces(true);
                     $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
                     $xml->registerXPathNamespace('gdsf', 'http://gdsf.aduana.gov.py/');
-                    
+
                     $nroViaje = $xml->xpath('//nroViaje');
-                    if (!empty($nroViaje)) {
-                        return (string)$nroViaje[0];
+                    if (! empty($nroViaje)) {
+                        return (string) $nroViaje[0];
                     }
                 }
             }
@@ -1076,6 +1066,7 @@ XML;
                 'error' => $e->getMessage(),
                 'response' => json_encode($responseData),
             ]);
+
             return null;
         }
     }
@@ -1084,127 +1075,128 @@ XML;
      * Obtener transacción existente por tipo de mensaje
      */
     /**
- * Obtener transacción existente por tipo de mensaje
- */
-protected function getExistingTransaction(Voyage $voyage, string $tipoMensaje): ?WebserviceTransaction
-{
-    return WebserviceTransaction::where('voyage_id', $voyage->id)
-        ->where('webservice_type', 'manifiesto')
-        ->where('country', 'PY')
-        ->whereJsonContains('additional_metadata->tipo_mensaje', $tipoMensaje)
-        ->orderBy('created_at', 'desc')
-        ->first();
-}
-
-/**
- * Crear transacción con datos específicos de Paraguay
- */
-protected function createTransaction(Voyage $voyage, array $additionalData = []): WebserviceTransaction
-{
-    return WebserviceTransaction::create([
-        'company_id' => $this->company->id,
-        'user_id' => $this->user->id,
-        'voyage_id' => $voyage->id,
-        'transaction_id' => $additionalData['transaction_id'] ?? $this->generateTransactionId('PY'),
-        'webservice_type' => 'manifiesto',
-        'country' => 'PY',
-        'webservice_url' => $this->getWsdlUrl(), // ← FIX
-        'soap_action' => 'EnviarMensajeFluvial',
-        'environment' => $this->config['environment'] ?? 'testing',
-        'status' => 'pending',
-        'retry_count' => 0,
-        'max_retries' => 3,
-        'currency_code' => 'USD',
-        'container_count' => 0,
-        'bill_of_lading_count' => 0,
-        'certificate_used' => $this->company->getCertificatePathForCountry('paraguay'),
-        'additional_metadata' => $additionalData,
-    ]);
-}
-
-    
-    /**
- * Extraer nroViaje directamente del XML raw de respuesta
- */
-private function extractNroViajeFromRawXml(string $xmlString): ?string
-{
-    try {
-        // Limpiar el XML
-        $xmlString = trim($xmlString);
-        
-        // Remover BOM si existe
-        if (substr($xmlString, 0, 3) === "\xEF\xBB\xBF") {
-            $xmlString = substr($xmlString, 3);
-        }
-
-        $this->logOperation('info', '🔍 Parseando XML', [
-            'xml_length' => strlen($xmlString),
-            'xml_preview' => substr($xmlString, 0, 200),
-        ]);
-
-        // Intentar parsear con SimpleXML
-        libxml_use_internal_errors(true);
-        libxml_clear_errors();
-        
-        $xml = @simplexml_load_string($xmlString, 'SimpleXMLElement', LIBXML_NOCDATA);
-        
-        if ($xml === false) {
-            $errors = libxml_get_errors();
-            $this->logOperation('warning', 'SimpleXML falló, intentando regex', [
-                'errors' => array_map(fn($e) => $e->message, $errors),
-            ]);
-            libxml_clear_errors();
-            
-            // FALLBACK: Usar expresión regular
-            if (preg_match('/<nroViaje>([^<]+)<\/nroViaje>/i', $xmlString, $matches)) {
-                $nroViaje = trim($matches[1]);
-                $this->logOperation('info', '✅ nroViaje extraído con regex', [
-                    'nroViaje' => $nroViaje,
-                ]);
-                return $nroViaje;
-            }
-            
-            return null;
-        }
-
-        // Si SimpleXML funciona, usar XPath
-        $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
-        $xml->registerXPathNamespace('gdsf', 'http://gdsf.aduana.gov.py/');
-
-        // Intentar múltiples paths
-        $paths = [
-            '//nroViaje',
-            '//gdsf:nroViaje',
-            '//*[local-name()="nroViaje"]',
-        ];
-
-        foreach ($paths as $path) {
-            $result = $xml->xpath($path);
-            if (!empty($result) && !empty((string)$result[0])) {
-                $nroViaje = trim((string)$result[0]);
-                $this->logOperation('info', '✅ nroViaje extraído con XPath', [
-                    'nroViaje' => $nroViaje,
-                    'xpath' => $path,
-                ]);
-                return $nroViaje;
-            }
-        }
-
-        $this->logOperation('warning', '❌ No se encontró nroViaje en el XML', [
-            'paths_tried' => $paths,
-        ]);
-
-        return null;
-
-    } catch (Exception $e) {
-        $this->logOperation('error', 'Error crítico parseando XML', [
-            'error' => $e->getMessage(),
-            'line' => $e->getLine(),
-        ]);
-        return null;
-    } finally {
-        libxml_use_internal_errors(false);
+     * Obtener transacción existente por tipo de mensaje
+     */
+    protected function getExistingTransaction(Voyage $voyage, string $tipoMensaje): ?WebserviceTransaction
+    {
+        return WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'manifiesto')
+            ->where('country', 'PY')
+            ->whereJsonContains('additional_metadata->tipo_mensaje', $tipoMensaje)
+            ->orderBy('created_at', 'desc')
+            ->first();
     }
-}
 
+    /**
+     * Crear transacción con datos específicos de Paraguay
+     */
+    protected function createTransaction(Voyage $voyage, array $additionalData = []): WebserviceTransaction
+    {
+        return WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $voyage->id,
+            'transaction_id' => $additionalData['transaction_id'] ?? $this->generateTransactionId('PY'),
+            'webservice_type' => 'manifiesto',
+            'country' => 'PY',
+            'webservice_url' => $this->getWsdlUrl(), // ← FIX
+            'soap_action' => 'EnviarMensajeFluvial',
+            'environment' => $this->config['environment'] ?? 'testing',
+            'status' => 'pending',
+            'retry_count' => 0,
+            'max_retries' => 3,
+            'currency_code' => 'USD',
+            'container_count' => 0,
+            'bill_of_lading_count' => 0,
+            'certificate_used' => $this->company->getCertificatePathForCountry('paraguay'),
+            'additional_metadata' => $additionalData,
+        ]);
+    }
+
+    /**
+     * Extraer nroViaje directamente del XML raw de respuesta
+     */
+    private function extractNroViajeFromRawXml(string $xmlString): ?string
+    {
+        try {
+            // Limpiar el XML
+            $xmlString = trim($xmlString);
+
+            // Remover BOM si existe
+            if (substr($xmlString, 0, 3) === "\xEF\xBB\xBF") {
+                $xmlString = substr($xmlString, 3);
+            }
+
+            $this->logOperation('info', '🔍 Parseando XML', [
+                'xml_length' => strlen($xmlString),
+                'xml_preview' => substr($xmlString, 0, 200),
+            ]);
+
+            // Intentar parsear con SimpleXML
+            libxml_use_internal_errors(true);
+            libxml_clear_errors();
+
+            $xml = @simplexml_load_string($xmlString, 'SimpleXMLElement', LIBXML_NOCDATA);
+
+            if ($xml === false) {
+                $errors = libxml_get_errors();
+                $this->logOperation('warning', 'SimpleXML falló, intentando regex', [
+                    'errors' => array_map(fn ($e) => $e->message, $errors),
+                ]);
+                libxml_clear_errors();
+
+                // FALLBACK: Usar expresión regular
+                if (preg_match('/<nroViaje>([^<]+)<\/nroViaje>/i', $xmlString, $matches)) {
+                    $nroViaje = trim($matches[1]);
+                    $this->logOperation('info', '✅ nroViaje extraído con regex', [
+                        'nroViaje' => $nroViaje,
+                    ]);
+
+                    return $nroViaje;
+                }
+
+                return null;
+            }
+
+            // Si SimpleXML funciona, usar XPath
+            $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $xml->registerXPathNamespace('gdsf', 'http://gdsf.aduana.gov.py/');
+
+            // Intentar múltiples paths
+            $paths = [
+                '//nroViaje',
+                '//gdsf:nroViaje',
+                '//*[local-name()="nroViaje"]',
+            ];
+
+            foreach ($paths as $path) {
+                $result = $xml->xpath($path);
+                if (! empty($result) && ! empty((string) $result[0])) {
+                    $nroViaje = trim((string) $result[0]);
+                    $this->logOperation('info', '✅ nroViaje extraído con XPath', [
+                        'nroViaje' => $nroViaje,
+                        'xpath' => $path,
+                    ]);
+
+                    return $nroViaje;
+                }
+            }
+
+            $this->logOperation('warning', '❌ No se encontró nroViaje en el XML', [
+                'paths_tried' => $paths,
+            ]);
+
+            return null;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error crítico parseando XML', [
+                'error' => $e->getMessage(),
+                'line' => $e->getLine(),
+            ]);
+
+            return null;
+        } finally {
+            libxml_use_internal_errors(false);
+        }
+    }
 }

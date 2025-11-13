@@ -158,8 +158,8 @@ class CertificateController extends Controller
                 'max:2048',
                 function ($attribute, $value, $fail) {
                     $extension = strtolower($value->getClientOriginalExtension());
-                    if (!in_array($extension, ['p12', 'pfx'])) {
-                        $fail('El certificado debe ser un archivo .p12 o .pfx');
+                    if (!in_array($extension, ['p12', 'pfx', 'pem'])) {
+                        $fail('El certificado debe ser un archivo .p12, .pfx o .pem');
                     }
                 }
             ],
@@ -169,7 +169,7 @@ class CertificateController extends Controller
         ], [
             'country.required' => 'Debe seleccionar el país del certificado.',
             'certificate.required' => 'Debe seleccionar el archivo del certificado.',
-            'certificate.mimes' => 'El certificado debe ser un archivo .p12 o .pfx.',
+            'certificate.mimes' => 'El certificado debe ser un archivo .p12, .pfx o .pem.',
             'certificate.max' => 'El archivo no puede ser mayor a 2MB.',
             'password.required' => 'La contraseña del certificado es obligatoria.',
             'expires_at.required' => 'La fecha de vencimiento es obligatoria.',
@@ -781,7 +781,7 @@ private function testFileValidation(Company $company): array
         
         // Verificar extensión
         $extension = strtolower(pathinfo($company->certificate_path, PATHINFO_EXTENSION));
-        $validExtensions = ['p12', 'pfx'];
+        $validExtensions = ['p12', 'pfx', 'pem'];
         $checks['file_extension'] = [
             'status' => in_array($extension, $validExtensions) ? 'success' : 'warning',
             'message' => "Extensión: .{$extension}" . (in_array($extension, $validExtensions) ? ' (válida)' : ' (no estándar)')
