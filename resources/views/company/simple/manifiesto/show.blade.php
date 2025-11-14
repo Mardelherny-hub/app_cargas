@@ -716,7 +716,7 @@ async function rectificarMetodo(method) {
     button.innerHTML = '⏳ Rectificando...';
     
     try {
-        const response = await fetch('{{ route('company.simple.manifiestos.send', $voyage) }}', {
+        const response = await fetch('{{ route('company.simple.manifiesto.send', $voyage) }}', {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': '{{ csrf_token() }}',
