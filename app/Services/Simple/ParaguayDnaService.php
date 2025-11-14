@@ -160,7 +160,7 @@ class ParaguayDnaService extends BaseWebserviceService
         // VALIDACIÓN DE CREDENCIALES DNA CON BYPASS
         // ========================================
 
-        $auth = $this->config['auth'];
+       /*  $auth = $this->config['auth'];
         $hasCredentials = ! empty($auth['idUsuario']) && ! empty($auth['ticket']) && ! empty($auth['firma']);
 
         if (! $hasCredentials) {
@@ -173,7 +173,7 @@ class ParaguayDnaService extends BaseWebserviceService
                 $errors[] = 'Credenciales DNA Paraguay incompletas';
                 $warnings[] = 'Configure las credenciales DNA en: Configuración → Webservices → Paraguay';
             }
-        }
+        } */
 
         return [
             'errors' => $errors,
