@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'paraguay' => [
+        'environment' => env('PARAGUAY_ENV', 'testing'),
+        'wsdl' => env('PARAGUAY_WSDL', 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl'),
+        'require_certificate' => true,
+        'auth' => [
+            'idUsuario' => null,
+            'ticket' => null,
+            'firma' => null,
+        ],
+    ],
+
 ];
