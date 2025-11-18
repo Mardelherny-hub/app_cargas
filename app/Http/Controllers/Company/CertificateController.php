@@ -188,7 +188,10 @@ class CertificateController extends Controller
             }
 
             // Guardar nuevo certificado en carpeta específica por país
-            $path = $request->file('certificate')->store("certificates/{$company->id}/{$country}");
+            $file = $request->file('certificate');
+            $extension = $file->getClientOriginalExtension();
+            $filename = uniqid() . '.' . $extension;
+            $path = $file->storeAs("certificates/{$company->id}/{$country}", $filename);
 
             // Preparar datos del certificado
             $certificateData = [

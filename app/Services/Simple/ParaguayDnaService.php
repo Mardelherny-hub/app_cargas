@@ -370,13 +370,17 @@ class ParaguayDnaService extends BaseWebserviceService
             }
 
         } catch (Exception $e) {
-            DB::rollBack();
+            
+            // Resetear transaction_id antes de loguear
+            $this->currentTransactionId = null;
 
             $this->logOperation('error', 'Error enviando XFFM', [
                 'voyage_id' => $voyage->id,
                 'error' => $e->getMessage(),
             ]);
-
+            
+            DB::rollBack();
+            
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
@@ -492,12 +496,16 @@ class ParaguayDnaService extends BaseWebserviceService
             }
 
         } catch (Exception $e) {
-            DB::rollBack();
+            
+            // Resetear transaction_id antes de loguear
+            $this->currentTransactionId = null;
 
             $this->logOperation('error', 'Error enviando XFBL', [
                 'voyage_id' => $voyage->id,
                 'error' => $e->getMessage(),
             ]);
+
+            DB::rollBack();
 
             return [
                 'success' => false,
@@ -616,13 +624,17 @@ class ParaguayDnaService extends BaseWebserviceService
             }
 
         } catch (Exception $e) {
-            DB::rollBack();
+            
+            // Resetear transaction_id antes de loguear
+            $this->currentTransactionId = null;
 
             $this->logOperation('error', 'Error enviando XFBT', [
                 'voyage_id' => $voyage->id,
                 'error' => $e->getMessage(),
             ]);
-
+            
+            DB::rollBack();
+            
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
@@ -696,12 +708,16 @@ class ParaguayDnaService extends BaseWebserviceService
             }
 
         } catch (Exception $e) {
-            DB::rollBack();
+            
+            // Resetear transaction_id antes de loguear
+            $this->currentTransactionId = null;
 
             $this->logOperation('error', 'Error enviando XFCT', [
                 'voyage_id' => $voyage->id,
                 'error' => $e->getMessage(),
             ]);
+
+            DB::rollBack();
 
             return [
                 'success' => false,
@@ -725,7 +741,7 @@ class ParaguayDnaService extends BaseWebserviceService
 
         $shouldBypass = $this->company->shouldBypassTesting('paraguay');
         $environment = $this->config['environment'] ?? 'testing';
-        $auth = $this->config['auth'];
+        //$auth = $this->config['auth'];
 
         // Verificar si debe usar bypass
         $useBypass = false;
@@ -737,17 +753,17 @@ class ParaguayDnaService extends BaseWebserviceService
         }
 
         // Razón 2: Ambiente testing sin credenciales DNA completas
-        if ($environment === 'testing' && (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma']))) {
+        /* if ($environment === 'testing' && (empty($auth['idUsuario']) || empty($auth['ticket']) || empty($auth['firma']))) {
             $useBypass = true;
             $bypassReason = 'Ambiente testing sin credenciales DNA';
-        }
+        } */
 
         // Razón 3: Certificado es de testing (verificar si existe y es fake)
-        $certificate = $this->company->getCertificate('paraguay');
+        /* $certificate = $this->company->getCertificate('paraguay');
         if ($certificate && isset($certificate['alias']) && str_contains(strtoupper($certificate['alias']), 'TEST')) {
             $useBypass = true;
             $bypassReason = 'Certificado de testing detectado';
-        }
+        } */
 
         // ========================================
         // SI DEBE USAR BYPASS: GENERAR RESPUESTA SIMULADA

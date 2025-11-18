@@ -556,7 +556,7 @@ class SimpleManifestController extends Controller
 
             // 2. VALIDAR MÉTODO
             $method = $request->input('method', 'RegistrarViaje');
-            $validMethods = ['RegistrarViaje', 'RectificarViaje', 'RegistrarTitulosCbc'];
+            $validMethods = ['RegistrarViaje', 'RectificarViaje', 'RegistrarTitulosCbc', 'CerrarViaje'];
             
             if (!in_array($method, $validMethods)) {
                 return response()->json([

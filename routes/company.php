@@ -898,6 +898,11 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::post('/{voyage}/send', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anticipadaSend'])
             ->name('send')
             ->whereNumber('voyage');
+
+        // Cerrar viaje - Información Anticipada (nuevo)
+        Route::post('/anticipada/{voyage}/cerrar-viaje', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'cerrarViaje'])
+            ->name('anticipada.cerrar-viaje')
+            ->whereNumber('voyage');
     });
 
     // ============================

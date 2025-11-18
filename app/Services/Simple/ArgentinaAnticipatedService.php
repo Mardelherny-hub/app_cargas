@@ -523,6 +523,272 @@ class ArgentinaAnticipatedService
     }
 
     /**
+     * ================================================================================
+     * MÉTODO: CerrarViaje - Cierre de Información Anticipada
+     * ================================================================================
+     * 
+     * Cierra el viaje de Información Anticipada enviando conocimientos que NO descargan en Argentina.
+     * CRÍTICO: Solo se envían BOLs cuyo puerto de descarga NO es argentino.
+     * 
+     * FLUJO:
+     * 1. Validar que el viaje tenga argentina_voyage_id (debe haberse ejecutado RegistrarViaje)
+     * 2. Filtrar BOLs que descargan fuera de Argentina
+     * 3. Generar XML con SimpleXmlGenerator
+     * 4. Obtener tokens WSAA
+     * 5. Enviar SOAP a AFIP
+     * 6. Procesar respuesta y guardar
+     * 
+     * @param Voyage $voyage
+     * @param array $options
+     * @return array
+     */
+    public function cerrarViaje(Voyage $voyage, array $options = []): array
+    {
+        try {
+            Log::info("=== INICIANDO CerrarViaje ===", [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+                'argentina_voyage_id' => $voyage->argentina_voyage_id,
+            ]);
+            
+            // 1. VALIDAR PREREQUISITOS
+            if (empty($voyage->argentina_voyage_id)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'El viaje debe tener IdentificadorViaje de AFIP. Primero ejecute RegistrarViaje.',
+                ];
+            }
+            
+            // 2. VERIFICAR QUE HAYA CONOCIMIENTOS FUERA DE ARGENTINA
+            $billsNoArgentina = $voyage->billsOfLading()
+                ->whereHas('dischargePort.country', function($query) {
+                    $query->where('code', '!=', 'AR');
+                })
+                ->count();
+            
+            if ($billsNoArgentina === 0) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No hay conocimientos que descarguen fuera de Argentina para cerrar el viaje.',
+                ];
+            }
+            
+            Log::info("Conocimientos fuera de Argentina encontrados: {$billsNoArgentina}");
+            
+            // 3. CREAR TRANSACCIÓN
+            $transaction = $this->createTransaction($voyage, [
+                'method' => 'CerrarViaje',
+                'soap_action' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/CerrarViaje',
+            ]);
+            
+            // 4. GENERAR XML
+            $xmlGenerator = new SimpleXmlGenerator($this->company);
+            $requestXml = $xmlGenerator->generateCerrarViajeXml($voyage, $this->company);
+            
+            Log::info("XML CerrarViaje generado", [
+                'xml_size' => strlen($requestXml),
+            ]);
+            
+            // 5. OBTENER TOKENS WSAA
+            $wsaaService = app(\App\Services\Webservice\WsaaService::class);
+            $wsaaTokens = $wsaaService->getToken(
+                $this->company,
+                'wgesinformacionanticipada',
+                $this->config['environment']
+            );
+            
+            if (!$wsaaTokens['success']) {
+                throw new \Exception("Error obteniendo tokens WSAA: " . $wsaaTokens['error']);
+            }
+            
+            // 6. REEMPLAZAR TOKENS EN XML
+            $requestXml = str_replace('__TOKEN__', $wsaaTokens['token'], $requestXml);
+            $requestXml = str_replace('__SIGN__', $wsaaTokens['sign'], $requestXml);
+            
+            // 7. GUARDAR REQUEST XML
+            $transaction->update([
+                'request_xml' => $requestXml,
+                'sent_at' => now(),
+            ]);
+            
+            // 8. ENVIAR SOAP
+            $soapClient = app(SoapClientService::class);
+            $soapResponse = $soapClient->sendSoapRequest(
+                $this->config['wsdl_url'],
+                $requestXml,
+                [
+                    'SOAPAction' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/CerrarViaje',
+                    'Content-Type' => 'text/xml; charset=utf-8',
+                ]
+            );
+            
+            // 9. PROCESAR RESPUESTA
+            $responseTime = now()->diffInMilliseconds($transaction->sent_at);
+            
+            $transaction->update([
+                'response_xml' => $soapResponse['response_xml'] ?? null,
+                'response_at' => now(),
+                'response_time_ms' => $responseTime,
+            ]);
+            
+            if (!$soapResponse['success']) {
+                $transaction->update([
+                    'status' => 'failed',
+                    'error_message' => $soapResponse['error'] ?? 'Error desconocido',
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $soapResponse['error'] ?? 'Error en comunicación SOAP',
+                    'transaction_id' => $transaction->id,
+                ];
+            }
+            
+            // 10. PARSEAR RESPUESTA XML
+            $responseData = $this->parseCerrarViajeResponse($soapResponse['response_xml']);
+            
+            if ($responseData['success']) {
+                // Éxito - marcar transacción como exitosa
+                $transaction->update([
+                    'status' => 'success',
+                    'confirmation_number' => $responseData['identificador_viaje'] ?? null,
+                    'success_data' => $responseData,
+                ]);
+                
+                // Actualizar estado del viaje
+                $voyage->update([
+                    'argentina_status' => 'closed',
+                ]);
+                
+                Log::info("=== CerrarViaje EXITOSO ===", [
+                    'identificador_viaje' => $responseData['identificador_viaje'],
+                ]);
+                
+                return [
+                    'success' => true,
+                    'message' => 'Viaje cerrado exitosamente en AFIP',
+                    'identificador_viaje' => $responseData['identificador_viaje'],
+                    'transaction_id' => $transaction->id,
+                    'data' => $responseData,
+                ];
+                
+            } else {
+                // Error de negocio AFIP
+                $transaction->update([
+                    'status' => 'failed',
+                    'error_code' => $responseData['error_code'] ?? null,
+                    'error_message' => $responseData['error_message'] ?? 'Error desconocido',
+                    'error_details' => $responseData['errors'] ?? null,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $responseData['error_message'] ?? 'Error en respuesta AFIP',
+                    'error_code' => $responseData['error_code'] ?? null,
+                    'errors' => $responseData['errors'] ?? [],
+                    'transaction_id' => $transaction->id,
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("Error en cerrarViaje: " . $e->getMessage(), [
+                'voyage_id' => $voyage->id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            if (isset($transaction)) {
+                $transaction->update([
+                    'status' => 'failed',
+                    'error_message' => $e->getMessage(),
+                ]);
+            }
+            
+            return [
+                'success' => false,
+                'error_message' => 'Error interno: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Parsear respuesta XML de CerrarViaje
+     * 
+     * @param string $responseXml
+     * @return array
+     */
+    private function parseCerrarViajeResponse(string $responseXml): array
+    {
+        try {
+            $xml = simplexml_load_string($responseXml);
+            
+            if ($xml === false) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error parseando XML de respuesta',
+                ];
+            }
+            
+            // Registrar namespaces
+            $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $xml->registerXPathNamespace('ar', 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada');
+            
+            // Buscar el resultado
+            $result = $xml->xpath('//ar:CerrarViajeResult');
+            
+            if (empty($result)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No se encontró CerrarViajeResult en la respuesta',
+                ];
+            }
+            
+            $result = $result[0];
+            
+            // Extraer errores
+            $errors = [];
+            if (isset($result->ListaErrores->DetalleError)) {
+                foreach ($result->ListaErrores->DetalleError as $error) {
+                    $codigo = (string)$error->Codigo;
+                    $descripcion = (string)$error->Descripcion;
+                    
+                    $errors[] = [
+                        'codigo' => $codigo,
+                        'descripcion' => $descripcion,
+                        'adicional' => (string)$error->DescripcionAdicional ?? null,
+                    ];
+                    
+                    // Código 0 = éxito
+                    if ($codigo !== '0') {
+                        return [
+                            'success' => false,
+                            'error_code' => $codigo,
+                            'error_message' => $descripcion,
+                            'errors' => $errors,
+                        ];
+                    }
+                }
+            }
+            
+            // Éxito
+            return [
+                'success' => true,
+                'identificador_viaje' => (string)$result->IdentificadorViaje ?? null,
+                'server' => (string)$result->Server ?? null,
+                'timestamp' => (string)$result->TimeStamp ?? null,
+                'errors' => $errors,
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error("Error parseando respuesta CerrarViaje: " . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'error_message' => 'Error parseando respuesta: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Enviar request SOAP específico para Información Anticipada
      */
     private function sendSoapRequest($transaction, $soapClient, string $xmlContent, string $method): array
@@ -745,6 +1011,9 @@ class ArgentinaAnticipatedService
                 
             case 'RegistrarTitulosCbc':
                 return $this->registrarTitulosCbc($voyage, $options);
+
+            case 'CerrarViaje':
+                return $this->cerrarViaje($voyage, $options);
                 
             default:
                 return [
@@ -1031,56 +1300,56 @@ public function debugSoapResponse(Voyage $voyage): array
     }
 
     /**
- * Parsear y guardar TRACKs de la respuesta RegistrarTitulosCbc
- */
-private function parseAndSaveTracks(string $response, int $transactionId, Voyage $voyage): array
-{
-    $tracks = [];
-    
-    try {
-        // AFIP devuelve HTML, no XML - buscar TRACKs con regex
-        // Patrón ejemplo: TRACK001, TRACK002, etc.
-        if (preg_match_all('/TRACK\d+/i', $response, $matches)) {
-            
-            $billsOfLading = collect();
-            foreach ($voyage->shipments as $shipment) {
-                $billsOfLading = $billsOfLading->merge($shipment->billsOfLading);
-            }
-            
-            foreach ($matches[0] as $index => $trackNumber) {
-                $bol = $billsOfLading->get($index);
+     * Parsear y guardar TRACKs de la respuesta RegistrarTitulosCbc
+     */
+    private function parseAndSaveTracks(string $response, int $transactionId, Voyage $voyage): array
+    {
+        $tracks = [];
+        
+        try {
+            // AFIP devuelve HTML, no XML - buscar TRACKs con regex
+            // Patrón ejemplo: TRACK001, TRACK002, etc.
+            if (preg_match_all('/TRACK\d+/i', $response, $matches)) {
                 
-                if ($trackNumber && $bol) {
-                    // Guardar en webservice_tracks
-                    \App\Models\WebserviceTrack::create([
-                        'webservice_transaction_id' => $transactionId,
-                        'bill_of_lading_id' => $bol->id,
-                        'track_number' => $trackNumber,
-                        'track_type' => 'envio',
-                        'webservice_method' => 'RegistrarTitulosCbc',
-                        'status' => 'active',
-                        'afip_response_data' => ['track' => $trackNumber],
-                    ]);
-                    
-                    $tracks[] = $trackNumber;
-                    
-                    \Log::info("TRACK guardado", [
-                        'track_number' => $trackNumber,
-                        'bill_id' => $bol->id,
-                    ]);
+                $billsOfLading = collect();
+                foreach ($voyage->shipments as $shipment) {
+                    $billsOfLading = $billsOfLading->merge($shipment->billsOfLading);
                 }
+                
+                foreach ($matches[0] as $index => $trackNumber) {
+                    $bol = $billsOfLading->get($index);
+                    
+                    if ($trackNumber && $bol) {
+                        // Guardar en webservice_tracks
+                        \App\Models\WebserviceTrack::create([
+                            'webservice_transaction_id' => $transactionId,
+                            'bill_of_lading_id' => $bol->id,
+                            'track_number' => $trackNumber,
+                            'track_type' => 'envio',
+                            'webservice_method' => 'RegistrarTitulosCbc',
+                            'status' => 'active',
+                            'afip_response_data' => ['track' => $trackNumber],
+                        ]);
+                        
+                        $tracks[] = $trackNumber;
+                        
+                        \Log::info("TRACK guardado", [
+                            'track_number' => $trackNumber,
+                            'bill_id' => $bol->id,
+                        ]);
+                    }
+                }
+            } else {
+                \Log::warning('No se encontraron TRACKs en respuesta HTML', [
+                    'response_snippet' => substr($response, 0, 200)
+                ]);
             }
-        } else {
-            \Log::warning('No se encontraron TRACKs en respuesta HTML', [
-                'response_snippet' => substr($response, 0, 200)
-            ]);
+            
+        } catch (Exception $e) {
+            \Log::error('Error parseando TRACKs: ' . $e->getMessage());
         }
         
-    } catch (Exception $e) {
-        \Log::error('Error parseando TRACKs: ' . $e->getMessage());
+        return $tracks;
     }
-    
-    return $tracks;
-}
     
 }
