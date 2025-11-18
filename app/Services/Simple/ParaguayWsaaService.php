@@ -205,29 +205,34 @@ XML;
             throw new Exception("Certificado Paraguay no encontrado para la empresa");
         }
 
-        $certPath = storage_path('app/' . $certificate['path']);
+        $certPath = storage_path('app/private/' . $certificate['path']);
         
         if (!file_exists($certPath)) {
             throw new Exception("Archivo de certificado no existe: {$certPath}");
         }
 
-        // Verificar extensión del certificado
+        // Verificar extensión del certificado (.pem o .p12)
         $extension = strtolower(pathinfo($certPath, PATHINFO_EXTENSION));
-        
-        if ($extension !== 'pem') {
-            throw new Exception("El certificado de Paraguay debe ser formato .pem (actual: .{$extension})");
-        }
 
-        // 2. Leer certificado .pem
-        $certContent = file_get_contents($certPath);
-        
-        if ($certContent === false) {
-            throw new Exception("No se pudo leer el certificado");
-        }
+        if (!in_array($extension, ['pem', 'p12', 'pfx'])) {
+            throw new Exception("El certificado de Paraguay debe ser formato .pem o .p12 (actual: .{$extension})");
+        }   
+        // 2. Leer certificado según formato
+        if (in_array($extension, ['p12', 'pfx'])) {
+            // Convertir .p12 a .pem temporal
+            $certContent = $this->convertP12ToPem($certPath, $certificate['password'] ?? '');
+        } else {
+            // Leer .pem directamente
+            $certContent = file_get_contents($certPath);
+            
+            if ($certContent === false) {
+                throw new Exception("No se pudo leer el certificado");
+            }
 
-        // Validar que contiene BEGIN/END markers
-        if (!str_contains($certContent, 'BEGIN CERTIFICATE') && !str_contains($certContent, 'BEGIN RSA PRIVATE KEY')) {
-            throw new Exception("El archivo .pem no tiene el formato válido (falta BEGIN CERTIFICATE o BEGIN RSA PRIVATE KEY)");
+            // Validar que contiene BEGIN/END markers
+            if (!str_contains($certContent, 'BEGIN CERTIFICATE') && !str_contains($certContent, 'BEGIN RSA PRIVATE KEY')) {
+                throw new Exception("El archivo .pem no tiene el formato válido (falta BEGIN CERTIFICATE o BEGIN RSA PRIVATE KEY)");
+            }
         }
 
         // 3. Crear archivos temporales
@@ -380,5 +385,92 @@ XML;
     {
         $certificate = $this->company->getCertificate('paraguay');
         return $certificate['path'] ?? null;
+    }
+
+    /**
+     * Convertir certificado .p12 a formato .pem
+     * 
+     * @param string $p12Path Ruta al archivo .p12
+     * @param string $password Contraseña del certificado (puede estar encriptada)
+     * @return string Contenido PEM (certificado + clave privada)
+     * @throws Exception
+     */
+    private function convertP12ToPem(string $p12Path, string $password): string
+    {
+        try {
+            // CRÍTICO: Desencriptar password si está encriptada
+            $plainPassword = $password;
+            
+            if (!empty($password)) {
+                try {
+                    $plainPassword = decrypt($password);
+                    Log::debug('WSAA Paraguay: Contraseña desencriptada exitosamente');
+                } catch (\Exception $e) {
+                    // Si falla decrypt, asumir que ya está en texto plano
+                    Log::debug('WSAA Paraguay: Contraseña ya está en texto plano', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            Log::info('WSAA Paraguay: Intentando leer .p12', [
+                'path' => $p12Path,
+                'password_length' => strlen($plainPassword),
+                'password_empty' => empty($plainPassword),
+            ]);
+
+            // Leer contenido del .p12
+            $p12Content = file_get_contents($p12Path);
+            
+            if ($p12Content === false) {
+                throw new Exception("No se pudo leer el archivo .p12");
+            }
+
+            // Parsear el archivo PKCS12
+            $certs = [];
+            $result = openssl_pkcs12_read($p12Content, $certs, $plainPassword);
+            
+            if (!$result) {
+                // Obtener error detallado de OpenSSL
+                $opensslError = '';
+                while ($msg = openssl_error_string()) {
+                    $opensslError .= $msg . '; ';
+                }
+                
+                Log::error('WSAA Paraguay: Error OpenSSL al leer .p12', [
+                    'openssl_error' => $opensslError,
+                    'password_used_length' => strlen($plainPassword),
+                ]);
+                
+                throw new Exception("Error al leer el certificado .p12. Verifique la contraseña. OpenSSL: {$opensslError}");
+            }
+
+            // Validar que tenemos certificado y clave privada
+            if (!isset($certs['cert']) || !isset($certs['pkey'])) {
+                Log::error('WSAA Paraguay: .p12 no contiene cert/pkey', [
+                    'keys_found' => array_keys($certs),
+                ]);
+                throw new Exception("El archivo .p12 no contiene certificado o clave privada válidos");
+            }
+
+            // Combinar certificado y clave privada en formato PEM
+            $pemContent = $certs['cert'] . "\n" . $certs['pkey'];
+
+            Log::info('WSAA Paraguay: Certificado .p12 convertido a PEM exitosamente', [
+                'cert_length' => strlen($certs['cert']),
+                'pkey_length' => strlen($certs['pkey']),
+            ]);
+
+            return $pemContent;
+
+        } catch (\Exception $e) {
+            Log::error('WSAA Paraguay: Error convirtiendo .p12 a PEM', [
+                'error' => $e->getMessage(),
+                'p12_path' => $p12Path,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            throw new Exception("Error procesando certificado .p12: " . $e->getMessage());
+        }
     }
 }

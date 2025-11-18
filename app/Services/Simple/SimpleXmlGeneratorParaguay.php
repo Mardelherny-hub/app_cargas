@@ -92,7 +92,7 @@ class SimpleXmlGeneratorParaguay
             ]);
 
             // Cargar containers del voyage para el XML
-            $containers = Container::whereHas('shipmentItems.shipment', function ($q) use ($voyage) {
+            $containers = Container::whereHas('shipmentItems.billOfLading.shipment', function($q) use ($voyage) {
                 $q->where('voyage_id', $voyage->id);
             })->with(['containerType', 'shipmentItems'])->get();
 
