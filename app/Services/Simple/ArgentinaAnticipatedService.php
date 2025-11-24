@@ -241,7 +241,6 @@ class ArgentinaAnticipatedService
                 $transaction->update([
                     'status' => 'success',
                     'external_reference' => $voyageIdentifier,
-                    'response_data' => $soapResult['response_data'] ?? null,
                     'completed_at' => now(),
                 ]);
                 
@@ -251,31 +250,56 @@ class ArgentinaAnticipatedService
                     'external_reference' => $voyageIdentifier,
                 ]);
 
+                // ✅ ACTUALIZAR VOYAGE CON IdentificadorViaje DE AFIP
+                $voyage->update([
+                    'argentina_voyage_id' => $voyageIdentifier,
+                ]);
+
                 Log::info('WebserviceSimple [anticipada]: RegistrarViaje enviado exitosamente', [
                     'voyage_id' => $voyage->id,
                     'transaction_id' => $transaction->id,
                     'external_reference' => $voyageIdentifier,
                 ]);
                 
-                $soapResult['external_reference'] = $voyageIdentifier;
                 DB::commit();
-                $soapResult['transaction_id'] = $transaction->id;
-                return $soapResult;
-
+                
+                return [
+                    'success' => true,
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => $voyageIdentifier,
+                    'error_message' => null,
+                ];
             } else {
+                $errorMessage = $soapResult['error_message'] ?? 'Error desconocido en envío SOAP';
+                
                 $transaction->update([
                     'status' => 'error',
-                    'error_message' => $soapResult['error_message'] ?? 'Error desconocido',
+                    'error_message' => $errorMessage,
                 ]);
 
                 $this->updateWebserviceStatus($voyage, 'error', [
                     'last_error_at' => now(),
-                    'last_error_message' => $soapResult['error_message'],
+                    'last_error_message' => $errorMessage,
+                ]);
+
+                Log::info('🔍 DEBUG: Antes de commit', [
+                    'transaction_id' => $transaction->id,
+                    'has_request_xml' => isset($soapResult['request_xml']),
+                    'has_response_xml' => isset($soapResult['response_xml']),
+                    'request_xml_length' => isset($soapResult['request_xml']) ? strlen($soapResult['request_xml']) : 0,
+                    'response_xml_length' => isset($soapResult['response_xml']) ? strlen($soapResult['response_xml']) : 0,
                 ]);
 
                 DB::commit();
-                $soapResult['transaction_id'] = $transaction->id;
-                return $soapResult;
+
+                Log::info('🔍 DEBUG: Después de commit exitoso');
+                
+                return [
+                    'success' => false,
+                    'transaction_id' => $transaction->id,
+                    'external_reference' => null,
+                    'error_message' => $errorMessage,
+                ];
             }
 
         } catch (Exception $e) {
@@ -288,8 +312,9 @@ class ArgentinaAnticipatedService
 
             return [
                 'success' => false,
-                'error_message' => $e->getMessage(),
                 'transaction_id' => $this->currentTransactionId,
+                'external_reference' => null,
+                'error_message' => $e->getMessage(),
             ];
         }
     }
@@ -523,20 +548,10 @@ class ArgentinaAnticipatedService
     }
 
     /**
-     * ================================================================================
-     * MÉTODO: CerrarViaje - Cierre de Información Anticipada
-     * ================================================================================
+     * CerrarViaje - Cierre de Información Anticipada
      * 
-     * Cierra el viaje de Información Anticipada enviando conocimientos que NO descargan en Argentina.
-     * CRÍTICO: Solo se envían BOLs cuyo puerto de descarga NO es argentino.
-     * 
-     * FLUJO:
-     * 1. Validar que el viaje tenga argentina_voyage_id (debe haberse ejecutado RegistrarViaje)
-     * 2. Filtrar BOLs que descargan fuera de Argentina
-     * 3. Generar XML con SimpleXmlGenerator
-     * 4. Obtener tokens WSAA
-     * 5. Enviar SOAP a AFIP
-     * 6. Procesar respuesta y guardar
+     * Cierra el viaje enviando conocimientos que NO descargan en Argentina.
+     * Requisito: El viaje debe tener argentina_voyage_id (RegistrarViaje previo).
      * 
      * @param Voyage $voyage
      * @param array $options
@@ -544,17 +559,15 @@ class ArgentinaAnticipatedService
      */
     public function cerrarViaje(Voyage $voyage, array $options = []): array
     {
+        DB::beginTransaction();
+        
         try {
-            Log::info("=== INICIANDO CerrarViaje ===", [
-                'voyage_id' => $voyage->id,
-                'voyage_number' => $voyage->voyage_number,
-                'argentina_voyage_id' => $voyage->argentina_voyage_id,
-            ]);
-            
             // 1. VALIDAR PREREQUISITOS
             if (empty($voyage->argentina_voyage_id)) {
                 return [
                     'success' => false,
+                    'transaction_id' => null,
+                    'external_reference' => null,
                     'error_message' => 'El viaje debe tener IdentificadorViaje de AFIP. Primero ejecute RegistrarViaje.',
                 ];
             }
@@ -569,143 +582,108 @@ class ArgentinaAnticipatedService
             if ($billsNoArgentina === 0) {
                 return [
                     'success' => false,
+                    'transaction_id' => null,
+                    'external_reference' => null,
                     'error_message' => 'No hay conocimientos que descarguen fuera de Argentina para cerrar el viaje.',
                 ];
             }
             
-            Log::info("Conocimientos fuera de Argentina encontrados: {$billsNoArgentina}");
+            Log::info("CerrarViaje: {$billsNoArgentina} conocimientos fuera de Argentina", [
+                'voyage_id' => $voyage->id,
+                'argentina_voyage_id' => $voyage->argentina_voyage_id,
+            ]);
             
             // 3. CREAR TRANSACCIÓN
-            $transaction = $this->createTransaction($voyage, [
+            $transaction = $this->createWebserviceTransaction($voyage, [
                 'method' => 'CerrarViaje',
                 'soap_action' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/CerrarViaje',
             ]);
             
-            // 4. GENERAR XML
+            // 4. GENERAR XML (con placeholders __TOKEN__ y __SIGN__)
             $xmlGenerator = new SimpleXmlGenerator($this->company);
             $requestXml = $xmlGenerator->generateCerrarViajeXml($voyage, $this->company);
             
             Log::info("XML CerrarViaje generado", [
+                'voyage_id' => $voyage->id,
                 'xml_size' => strlen($requestXml),
             ]);
             
-            // 5. OBTENER TOKENS WSAA
-            $wsaaService = app(\App\Services\Webservice\WsaaService::class);
-            $wsaaTokens = $wsaaService->getToken(
-                $this->company,
-                'wgesinformacionanticipada',
-                $this->config['environment']
-            );
+            // 5. CREAR CLIENTE SOAP
+            $soapClient = $this->soapClient->createClient($this->config['webservice_type'], $this->config['environment']);
+
+            // 5.1 ENVIAR REQUEST SOAP
+            $soapResult = $this->sendSoapRequest($transaction, $soapClient, $requestXml, 'CerrarViaje');
             
-            if (!$wsaaTokens['success']) {
-                throw new \Exception("Error obteniendo tokens WSAA: " . $wsaaTokens['error']);
-            }
-            
-            // 6. REEMPLAZAR TOKENS EN XML
-            $requestXml = str_replace('__TOKEN__', $wsaaTokens['token'], $requestXml);
-            $requestXml = str_replace('__SIGN__', $wsaaTokens['sign'], $requestXml);
-            
-            // 7. GUARDAR REQUEST XML
-            $transaction->update([
-                'request_xml' => $requestXml,
-                'sent_at' => now(),
-            ]);
-            
-            // 8. ENVIAR SOAP
-            $soapClient = app(SoapClientService::class);
-            $soapResponse = $soapClient->sendSoapRequest(
-                $this->config['wsdl_url'],
-                $requestXml,
-                [
-                    'SOAPAction' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/CerrarViaje',
-                    'Content-Type' => 'text/xml; charset=utf-8',
-                ]
-            );
-            
-            // 9. PROCESAR RESPUESTA
-            $responseTime = now()->diffInMilliseconds($transaction->sent_at);
-            
-            $transaction->update([
-                'response_xml' => $soapResponse['response_xml'] ?? null,
-                'response_at' => now(),
-                'response_time_ms' => $responseTime,
-            ]);
-            
-            if (!$soapResponse['success']) {
-                $transaction->update([
-                    'status' => 'failed',
-                    'error_message' => $soapResponse['error'] ?? 'Error desconocido',
-                ]);
-                
-                return [
-                    'success' => false,
-                    'error_message' => $soapResponse['error'] ?? 'Error en comunicación SOAP',
-                    'transaction_id' => $transaction->id,
-                ];
-            }
-            
-            // 10. PARSEAR RESPUESTA XML
-            $responseData = $this->parseCerrarViajeResponse($soapResponse['response_xml']);
-            
-            if ($responseData['success']) {
-                // Éxito - marcar transacción como exitosa
+            // 6. PROCESAR RESPUESTA
+            if ($soapResult['success']) {
+                // Actualizar transacción como exitosa
                 $transaction->update([
                     'status' => 'success',
-                    'confirmation_number' => $responseData['identificador_viaje'] ?? null,
-                    'success_data' => $responseData,
+                    'completed_at' => now(),
                 ]);
                 
                 // Actualizar estado del viaje
                 $voyage->update([
-                    'argentina_status' => 'closed',
+                    'argentina_status' => 'approved',
                 ]);
                 
-                Log::info("=== CerrarViaje EXITOSO ===", [
-                    'identificador_viaje' => $responseData['identificador_viaje'],
+                // ✅ PERSISTIR ESTADO DEL WEBSERVICE
+                $this->updateWebserviceStatus($voyage, 'approved', [
+                    'transaction_id' => $transaction->id,
                 ]);
+                
+                Log::info('CerrarViaje enviado exitosamente', [
+                    'voyage_id' => $voyage->id,
+                    'transaction_id' => $transaction->id,
+                    'argentina_voyage_id' => $voyage->argentina_voyage_id,
+                ]);
+                
+                DB::commit();
                 
                 return [
                     'success' => true,
-                    'message' => 'Viaje cerrado exitosamente en AFIP',
-                    'identificador_viaje' => $responseData['identificador_viaje'],
                     'transaction_id' => $transaction->id,
-                    'data' => $responseData,
+                    'external_reference' => $voyage->argentina_voyage_id,
+                    'error_message' => null,
                 ];
                 
             } else {
-                // Error de negocio AFIP
+                // Error en envío
+                $errorMessage = $soapResult['error_message'] ?? 'Error desconocido en envío SOAP';
+                
                 $transaction->update([
-                    'status' => 'failed',
-                    'error_code' => $responseData['error_code'] ?? null,
-                    'error_message' => $responseData['error_message'] ?? 'Error desconocido',
-                    'error_details' => $responseData['errors'] ?? null,
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
                 ]);
+                
+                $this->updateWebserviceStatus($voyage, 'error', [
+                    'last_error_at' => now(),
+                    'last_error_message' => $errorMessage,
+                ]);
+                
+                DB::commit();
                 
                 return [
                     'success' => false,
-                    'error_message' => $responseData['error_message'] ?? 'Error en respuesta AFIP',
-                    'error_code' => $responseData['error_code'] ?? null,
-                    'errors' => $responseData['errors'] ?? [],
                     'transaction_id' => $transaction->id,
+                    'external_reference' => null,
+                    'error_message' => $errorMessage,
                 ];
             }
             
         } catch (\Exception $e) {
-            Log::error("Error en cerrarViaje: " . $e->getMessage(), [
-                'voyage_id' => $voyage->id,
-                'trace' => $e->getTraceAsString(),
-            ]);
+            DB::rollBack();
             
-            if (isset($transaction)) {
-                $transaction->update([
-                    'status' => 'failed',
-                    'error_message' => $e->getMessage(),
-                ]);
-            }
+            $this->logOperation('error', 'Error en CerrarViaje', [
+                'error' => $e->getMessage(),
+                'voyage_id' => $voyage->id,
+            ]);
             
             return [
                 'success' => false,
-                'error_message' => 'Error interno: ' . $e->getMessage(),
+                'transaction_id' => $this->currentTransactionId ?? null,
+                'external_reference' => null,
+                'error_message' => $e->getMessage(),
             ];
         }
     }
@@ -792,141 +770,141 @@ class ArgentinaAnticipatedService
      * Enviar request SOAP específico para Información Anticipada
      */
     private function sendSoapRequest($transaction, $soapClient, string $xmlContent, string $method): array
-{
-    try {
-        // 📝 LOG: Inicio de envío
-        $this->createWebserviceLog(
-            $transaction->id,
-            'info',
-            'soap_request',
-            "Iniciando envío SOAP {$method}",
-            [
-                'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
-                'method' => $method,
-            ]
-        );
-
-        // Actualizar estado a 'sending'
-        $transaction->update(['status' => 'sending', 'sent_at' => now()]);
-
-        // Enviar usando __doRequest directo (ORIGINAL)
-        $startTime = microtime(true);
-        $response = $soapClient->__doRequest(
-            $xmlContent,
-            'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
-            "Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/{$method}",
-            SOAP_1_2
-        );
-        $responseTime = round((microtime(true) - $startTime) * 1000);
-
-        // 📝 LOG: Respuesta recibida
-        $this->createWebserviceLog(
-            $transaction->id,
-            'info',
-            'soap_response',
-            "Respuesta SOAP recibida en {$responseTime}ms",
-            [
-                'response_time_ms' => $responseTime,
-                'response_size_kb' => round(strlen($response) / 1024, 2),
-            ]
-        );
-
-        // Verificar si hay error SOAP
-        $hasError = strpos($response, 'soap:Fault') !== false;
-        
-        if ($hasError) {
-            // 📝 LOG: Error SOAP detectado
-            $this->createWebserviceLog(
-                $transaction->id,
-                'error',
-                'soap_fault',
-                'Error SOAP detectado en respuesta',
-                ['response_snippet' => substr($response, 0, 500)]
-            );
-            
-            // 📊 ERROR: Registrar en catálogo
-            $this->registerWebserviceError('SOAP_FAULT', 'Error en respuesta SOAP');
-        }
-
-        // Parsear respuesta HTML de AFIP para extraer IdentificadorViaje
-        $externalReference = $this->parseAfipResponse($response);
-        
-        if ($externalReference) {
-            // 📝 LOG: IdentificadorViaje extraído
+    {
+        try {
+            // 📝 LOG: Inicio de envío
             $this->createWebserviceLog(
                 $transaction->id,
                 'info',
-                'data_extraction',
-                "IdentificadorViaje extraído: {$externalReference}"
+                'soap_request',
+                "Iniciando envío SOAP {$method}",
+                [
+                    'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
+                    'method' => $method,
+                ]
             );
-        }
 
-        $soapResult = [
-            'success' => !$hasError && $externalReference !== null,
-            'response_data' => $response,
-            'response_time_ms' => $responseTime,
-            'request_xml' => $xmlContent,
-            'response_xml' => $response,
-            'external_reference' => $externalReference,
-        ];
+            // Actualizar estado a 'sending'
+            $transaction->update(['status' => 'sending', 'sent_at' => now()]);
 
-        // Actualizar transacción con XMLs
-        $transaction->update([
-            'request_xml' => $xmlContent,
-            'response_xml' => $response,
-            'response_time_ms' => $responseTime,
-            'response_at' => now(),
-            'external_reference' => $externalReference,
-        ]);
+            // Enviar usando __doRequest directo (ORIGINAL)
+            $startTime = microtime(true);
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                "Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/{$method}",
+                SOAP_1_2
+            );
+            $responseTime = round((microtime(true) - $startTime) * 1000);
 
-        // 📄 RESPONSE: Crear respuesta estructurada
-        $this->createWebserviceResponse(
-            $transaction->id,
-            $soapResult['success'],
-            [
-                'external_reference' => $externalReference,
+            // 📝 LOG: Respuesta recibida
+            $this->createWebserviceLog(
+                $transaction->id,
+                'info',
+                'soap_response',
+                "Respuesta SOAP recibida en {$responseTime}ms",
+                [
+                    'response_time_ms' => $responseTime,
+                    'response_size_kb' => round(strlen($response) / 1024, 2),
+                ]
+            );
+
+            // Verificar si hay error SOAP
+            $hasError = strpos($response, 'soap:Fault') !== false;
+            
+            if ($hasError) {
+                // 📝 LOG: Error SOAP detectado
+                $this->createWebserviceLog(
+                    $transaction->id,
+                    'error',
+                    'soap_fault',
+                    'Error SOAP detectado en respuesta',
+                    ['response_snippet' => substr($response, 0, 500)]
+                );
+                
+                // 📊 ERROR: Registrar en catálogo
+                $this->registerWebserviceError('SOAP_FAULT', 'Error en respuesta SOAP');
+            }
+
+            // Parsear respuesta HTML de AFIP para extraer IdentificadorViaje
+            $externalReference = $this->parseAfipResponse($response);
+            
+            if ($externalReference) {
+                // 📝 LOG: IdentificadorViaje extraído
+                $this->createWebserviceLog(
+                    $transaction->id,
+                    'info',
+                    'data_extraction',
+                    "IdentificadorViaje extraído: {$externalReference}"
+                );
+            }
+
+            $soapResult = [
+                'success' => !$hasError && $externalReference !== null,
+                'response_data' => $response,
                 'response_time_ms' => $responseTime,
-                'method' => $method,
-            ]
-        );
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
+                'external_reference' => $externalReference,
+            ];
 
-        // 📝 LOG: Finalización
-        $this->createWebserviceLog(
-            $transaction->id,
-            $soapResult['success'] ? 'info' : 'error',
-            'completion',
-            $soapResult['success'] 
-                ? "Proceso completado exitosamente" 
-                : "Proceso completado con errores",
-            ['final_status' => $soapResult['success'] ? 'success' : 'error']
-        );
+            // Actualizar transacción con XMLs
+            $transaction->update([
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
+                'response_time_ms' => $responseTime,
+                'response_at' => now(),
+                'external_reference' => $externalReference,
+            ]);
 
-        return $soapResult;
+            // 📄 RESPONSE: Crear respuesta estructurada
+            $this->createWebserviceResponse(
+                $transaction->id,
+                $soapResult['success'],
+                [
+                    'external_reference' => $externalReference,
+                    'response_time_ms' => $responseTime,
+                    'method' => $method,
+                ]
+            );
 
-    } catch (Exception $e) {
-        // 📝 LOG: Excepción capturada
-        $this->createWebserviceLog(
-            $transaction->id,
-            'critical',
-            'exception',
-            "Excepción durante envío SOAP: {$e->getMessage()}",
-            [
-                'exception_class' => get_class($e),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ]
-        );
-        
-        // 📊 ERROR: Registrar excepción
-        $this->registerWebserviceError('EXCEPTION', $e->getMessage());
+            // 📝 LOG: Finalización
+            $this->createWebserviceLog(
+                $transaction->id,
+                $soapResult['success'] ? 'info' : 'error',
+                'completion',
+                $soapResult['success'] 
+                    ? "Proceso completado exitosamente" 
+                    : "Proceso completado con errores",
+                ['final_status' => $soapResult['success'] ? 'success' : 'error']
+            );
 
-        return [
-            'success' => false,
-            'error_message' => $e->getMessage(),
-            'response_time_ms' => null,
-        ];
+            return $soapResult;
+
+        } catch (Exception $e) {
+            // 📝 LOG: Excepción capturada
+            $this->createWebserviceLog(
+                $transaction->id,
+                'critical',
+                'exception',
+                "Excepción durante envío SOAP: {$e->getMessage()}",
+                [
+                    'exception_class' => get_class($e),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ]
+            );
+            
+            // 📊 ERROR: Registrar excepción
+            $this->registerWebserviceError('EXCEPTION', $e->getMessage());
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'response_time_ms' => null,
+            ];
+        }
     }
-}
 
     /**
      * Extraer parámetros SOAP del XML generado
@@ -969,31 +947,31 @@ class ArgentinaAnticipatedService
      * Crear transacción webservice
      */
     private function createWebserviceTransaction(Voyage $voyage, array $options = []): \App\Models\WebserviceTransaction
-{
-    $transactionId = 'ANT-' . $this->company->id . '-' . now()->format('YmdHis') . '-' . rand(10, 99);
-    $method = $options['method'] ?? 'RegistrarViaje';
-    
-    return \App\Models\WebserviceTransaction::create([
-        'company_id' => $this->company->id,
-        'user_id' => $this->user->id,
-        'voyage_id' => $voyage->id,
-        'transaction_id' => $transactionId,
-        'webservice_type' => 'anticipada',
-        'country' => 'AR',
-        'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
-        'soap_action' => $options['soap_action'] ?? 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
-        'additional_metadata' => ['method' => $method],
-        'status' => 'pending',
-        'retry_count' => 0,
-        'max_retries' => 3,
-        'environment' => $this->config['environment'],
-        'currency_code' => 'USD',
-        'container_count' => 0,
-        'bill_of_lading_count' => 0,
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
-}
+    {
+        $transactionId = 'ANT-' . $this->company->id . '-' . now()->format('YmdHis') . '-' . rand(10, 99);
+        $method = $options['method'] ?? 'RegistrarViaje';
+        
+        return \App\Models\WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => $voyage->id,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'anticipada',
+            'country' => 'AR',
+            'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+            'soap_action' => $options['soap_action'] ?? 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
+            'additional_metadata' => ['method' => $method],
+            'status' => 'pending',
+            'retry_count' => 0,
+            'max_retries' => 3,
+            'environment' => $this->config['environment'],
+            'currency_code' => 'USD',
+            'container_count' => 0,
+            'bill_of_lading_count' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
 
     /**
      * Método público principal para envío
@@ -1024,46 +1002,46 @@ class ArgentinaAnticipatedService
     }
 
     /**
- * Método temporal para debugging - obtener respuesta SOAP completa
- */
-public function debugSoapResponse(Voyage $voyage): array
-{
-    try {
-        // Generar XML como lo hace el método normal
-        $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
-        $transactionId = 'DEBUG_' . time();
-        $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId);
-        
-        // Enviar y capturar respuesta completa
-        $soapClient = $this->createSoapClient();
-        $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarViaje');
-        
-        // Obtener respuesta completa del cliente SOAP
-        $lastResponse = $soapClient->__getLastResponse();
-        $lastRequest = $soapClient->__getLastRequest();
-        
-        // Extraer errores AFIP
-        $afipErrors = ['has_afip_errors' => false, 'afip_errors' => [], 'error_summary' => ''];
-        
-        return [
-            'xml_sent' => $xmlContent,
-            'xml_sent_size' => strlen($xmlContent),
-            'soap_response_raw' => $lastResponse,
-            'soap_response_size' => strlen($lastResponse),
-            'afip_errors' => $afipErrors,
-            'parsed_error' => $response,
-        ];
-        
-    } catch (Exception $e) {
-        return [
-            'error' => $e->getMessage(),
-            'soap_response_raw' => $soapClient->__getLastResponse() ?? '',
-            'soap_request_raw' => $soapClient->__getLastRequest() ?? '',
-        ];
+     * Método temporal para debugging - obtener respuesta SOAP completa
+     */
+    public function debugSoapResponse(Voyage $voyage): array
+    {
+        try {
+            // Generar XML como lo hace el método normal
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $transactionId = 'DEBUG_' . time();
+            $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId);
+            
+            // Enviar y capturar respuesta completa
+            $soapClient = $this->createSoapClient();
+            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarViaje');
+            
+            // Obtener respuesta completa del cliente SOAP
+            $lastResponse = $soapClient->__getLastResponse();
+            $lastRequest = $soapClient->__getLastRequest();
+            
+            // Extraer errores AFIP
+            $afipErrors = ['has_afip_errors' => false, 'afip_errors' => [], 'error_summary' => ''];
+            
+            return [
+                'xml_sent' => $xmlContent,
+                'xml_sent_size' => strlen($xmlContent),
+                'soap_response_raw' => $lastResponse,
+                'soap_response_size' => strlen($lastResponse),
+                'afip_errors' => $afipErrors,
+                'parsed_error' => $response,
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'error' => $e->getMessage(),
+                'soap_response_raw' => $soapClient->__getLastResponse() ?? '',
+                'soap_request_raw' => $soapClient->__getLastRequest() ?? '',
+            ];
+        }
     }
-}
 
-/**
+    /**
      * Actualizar estado del webservice en VoyageWebserviceStatus
      */
     private function updateWebserviceStatus(Voyage $voyage, string $status, array $data = []): void
@@ -1243,24 +1221,32 @@ public function debugSoapResponse(Voyage $voyage): array
     private function parseAfipResponse(string $response): ?string
     {
         try {
-            // Patrones XML SOAP según manual AFIP
+            // Patrón HTML (AFIP testing devuelve HTML: <title></title>NUMERO</head>)
+            if (preg_match('/<\/title>(.+?)<\/head>/s', $response, $matches)) {
+                $identifier = trim($matches[1]);
+                if (!empty($identifier)) {
+                    Log::info("✅ IdentificadorViaje extraído de HTML", ['id' => $identifier]);
+                    return $identifier;
+                }
+            }
+            
+            // Patrones XML SOAP (sin validación de longitud - aceptamos lo que AFIP envíe)
             $patterns = [
-                '/<IdentificadorViaje>([A-Z0-9]{16})<\/IdentificadorViaje>/i',
-                '/<identificadorViaje>([A-Z0-9]{16})<\/identificadorViaje>/i',
+                '/<IdentificadorViaje>(.+?)<\/IdentificadorViaje>/is',
+                '/<identificadorViaje>(.+?)<\/identificadorViaje>/is',
             ];
 
             foreach ($patterns as $pattern) {
                 if (preg_match($pattern, $response, $matches)) {
-                    $identifier = $matches[1];
-                    
-                    if ($this->validateAfipVoyageIdentifier($identifier)) {
-                        Log::info("✅ IdentificadorViaje extraído", ['id' => $identifier]);
+                    $identifier = trim($matches[1]);
+                    if (!empty($identifier)) {
+                        Log::info("✅ IdentificadorViaje extraído de XML", ['id' => $identifier]);
                         return $identifier;
                     }
                 }
             }
 
-            Log::warning("❌ No se encontró IdentificadorViaje válido", [
+            Log::warning("❌ No se encontró IdentificadorViaje en respuesta", [
                 'response_snippet' => substr($response, 0, 300),
             ]);
 

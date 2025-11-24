@@ -6,9 +6,12 @@ use App\Models\Company;
 use App\Models\User;
 use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
+use App\Services\Simple\Soap\ParaguaySecureSoapClient;
+use App\Services\Simple\Soap\ParaguayWSSecurityBuilder;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use SoapClient;
 use SoapFault;
 
 /**
@@ -74,8 +77,8 @@ class ParaguayDnaService extends BaseWebserviceService
         $environment = $this->company->ws_environment ?? 'testing';
 
         $urls = [
-            'testing' => 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
-            'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl',
+            'testing' => 'https://securetest.aduana.gov.py/gdsf/serviciogdsf?wsdl',
+            'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf',
         ];
 
         return $urls[$environment] ?? $urls['testing'];
@@ -91,6 +94,7 @@ class ParaguayDnaService extends BaseWebserviceService
             'webservice_url' => config('services.paraguay.wsdl'),
             'soap_method' => 'EnviarMensajeFluvial',
             'require_certificate' => config('services.paraguay.require_certificate', true),
+            'dna_public_certificate' => config('services.paraguay.dna_public_certificate'),
             'auth' => [
                 'idUsuario' => config('services.paraguay.auth.idUsuario'),
                 'ticket' => config('services.paraguay.auth.ticket'),
@@ -791,16 +795,28 @@ class ParaguayDnaService extends BaseWebserviceService
                 'environment' => $environment,
             ]);
 
-            // Obtener tokens WSAA dinámicos
-            $wsaaService = new ParaguayWsaaService($this->company, $environment);
-            $wsaaTokens = $wsaaService->getTokens();
+            // Credenciales DNA Paraguay (sin WSAA)
+            $ruc = $this->company->tax_id; 
 
-            $this->logOperation('info', '✅ Tokens WSAA obtenidos', [
-                'token_length' => strlen($wsaaTokens['token']),
-                'sign_length' => strlen($wsaaTokens['sign']),
-            ]);
+           /*  $client = new \SoapClient($this->getWsdlUrl(), [
+                'trace' => 1,
+                'exceptions' => true,
+                'soap_version' => SOAP_1_1,
+                'stream_context' => stream_context_create([
+                    'ssl' => [
+                        'verify_peer' => false,
+                        'verify_peer_name' => false,
+                        'allow_self_signed' => true,
+                    ]
+                ])
+            ]); */
 
-            $client = $this->createSoapClient();
+            // Crear cliente SOAP con WS-Security si no existe
+            if (!$this->soapClient) {
+                $this->soapClient = $this->createSoapClient();
+            }
+
+            $client = $this->soapClient;
 
             // Parámetros GDSF con autenticación WSAA dinámica
             $soapParams = [
@@ -809,9 +825,9 @@ class ParaguayDnaService extends BaseWebserviceService
                 'viaje' => $params['viaje'],
                 'xml' => $params['xml'],
                 'Autenticacion' => [
-                    'idUsuario' => $wsaaTokens['ruc'], // RUC de la empresa
-                    'ticket' => $wsaaTokens['token'],   // Token WSAA dinámico
-                    'firma' => $wsaaTokens['sign'],     // Sign WSAA dinámico
+                    'idUsuario' => $ruc,
+                    'ticket' => '',
+                    'firma' => '',
                 ],
             ];
 
@@ -901,17 +917,24 @@ class ParaguayDnaService extends BaseWebserviceService
 
             \Log::info('🐛 Después del switch, antes de guardar');
 
+            $responseData = [
+                'voyage_number' => $viaje,
+                'customs_status' => 'sent',
+                'customs_metadata' => [
+                    'codigo' => $codigo,
+                    'request_xml' => $params['xml'],
+                    'raw_response' => $responseXml,
+                ],
+            ];
+
             $response = \App\Models\WebserviceResponse::create([
                 'transaction_id' => $this->currentTransactionId,
                 'response_type' => 'success',
                 'processing_status' => 'completed',
                 'requires_action' => false,
-                'response_data' => json_encode([  // ← Usa response_data
-                    'request_xml' => $params['xml'],
-                    'raw_response' => $responseXml,
-                    'codigo' => $codigo,
-                ]),
+                'response_data' => json_encode($responseData),
                 'customs_status' => 'sent',
+                'bypass' => true,
                 'processed_at' => now(),
             ]);
 
@@ -1214,5 +1237,99 @@ XML;
         } finally {
             libxml_use_internal_errors(false);
         }
+    }
+
+
+    protected function createSoapClient(): SoapClient
+    {
+        if ($this->soapClient) {
+            return $this->soapClient;
+        }
+
+        $wsdlUrl = $this->getWsdlUrl();
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+            ],
+        ]);
+
+        $certData = $this->certificateManager->readCertificate();
+
+        // DEBUG: Ver qué devuelve
+        \Log::info('DEBUG certData Paraguay', [
+            'certData' => $certData,
+            'has_cert' => !empty($certData['cert'] ?? null),
+            'has_pkey' => !empty($certData['pkey'] ?? null),
+        ]);
+
+        if (! $certData || empty($certData['cert']) || empty($certData['pkey'])) {
+            throw new Exception('Certificado digital Paraguay inválido. Configure el .p12 y la contraseña.');
+        }
+
+        $dnaCertificatePath = storage_path('app/private/certificates/paraguay/gdsfws.pem');
+        $dnaCertificatePath = $this->resolveCertificatePath($dnaCertificatePath);
+
+        if (! $dnaCertificatePath || ! is_readable($dnaCertificatePath)) {
+            throw new Exception('Certificado público de la DNA Paraguay no encontrado o sin permisos de lectura.');
+        }
+
+        $dnaCertificate = file_get_contents($dnaCertificatePath);
+        if (! $dnaCertificate) {
+            throw new Exception('No se pudo leer el certificado público de la DNA Paraguay.');
+        }
+
+        // Certificado del servidor DNA para encriptar
+        $dnaCertPath = storage_path('app/private/certificates/paraguay/gdsfws.pem');
+        if (!file_exists($dnaCertPath)) {
+            throw new \Exception("Certificado del servidor DNA no encontrado: {$dnaCertPath}");
+        }
+        $dnaCertificate = file_get_contents($dnaCertPath);
+
+        $securityBuilder = new ParaguayWSSecurityBuilder(
+            $certData['cert'],
+            $certData['pkey'],
+            $dnaCertificate
+        );
+
+        $securityBuilder = new ParaguayWSSecurityBuilder(
+            $certData['cert'],
+            $certData['pkey'],
+            $dnaCertificate
+        );
+
+        $this->soapClient = new ParaguaySecureSoapClient($wsdlUrl, [
+            'trace' => 1,
+            'exceptions' => true,
+            'soap_version' => SOAP_1_1,  // ← AGREGAR ESTA LÍNEA
+            'stream_context' => stream_context_create([
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true,
+                ]
+            ])
+        ], $securityBuilder);
+
+        return $this->soapClient;
+    }
+
+    private function resolveCertificatePath(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        if (is_readable($path)) {
+            return $path;
+        }
+
+        $basePath = base_path($path);
+        if (is_readable($basePath)) {
+            return $basePath;
+        }
+
+        return null;
     }
 }

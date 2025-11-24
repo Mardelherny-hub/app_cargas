@@ -39,6 +39,7 @@ return [
         'environment' => env('PARAGUAY_ENV', 'testing'),
         'wsdl' => env('PARAGUAY_WSDL', 'https://securetest.aduana.gov.py/wsdl/gdsf/serviciogdsf?wsdl'),
         'require_certificate' => true,
+        'dna_public_certificate' => env('PARAGUAY_DNA_PUBLIC_CERT', base_path('VHA_2dc70c0239f18f76.crt')),
         'auth' => [
             'idUsuario' => null,
             'ticket' => null,

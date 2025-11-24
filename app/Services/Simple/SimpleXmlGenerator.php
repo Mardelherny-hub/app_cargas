@@ -5,6 +5,7 @@ namespace App\Services\Simple;
 use App\Models\Company;
 use App\Models\Shipment;
 use App\Models\Voyage;
+use App\Models\BillOfLading;
 use Illuminate\Support\Facades\Log;
 
 use Exception;
@@ -2157,7 +2158,7 @@ class SimpleXmlGenerator
                 'transshipmentPort.country',
                 'shipmentItems.cargoType',
                 'shipmentItems.packagingType',
-                'containers.containerType'
+                'shipmentItems.containers.containerType'
             ])
             ->whereHas('dischargePort.country', function($query) {
                 $query->where('code', '!=', 'AR');
@@ -2334,11 +2335,15 @@ class SimpleXmlGenerator
         
         $xml .= '              </ar:Mercaderias>' . "\n";
         
-        // Contenedores (si tiene contenedores asociados)
-        if ($bill->containers && $bill->containers->count() > 0) {
+        // Contenedores (obtenidos a través de shipmentItems)
+        $containers = $bill->shipmentItems->flatMap(function($item) {
+            return $item->containers ?? collect();
+        });
+
+        if ($containers->count() > 0) {
             $xml .= '              <ar:Contenedores>' . "\n";
             
-            foreach ($bill->containers as $container) {
+            foreach ($containers as $container) {
                 $xml .= $this->generateContenedorCierreXml($container, $bill);
             }
             
@@ -2809,103 +2814,167 @@ class SimpleXmlGenerator
     }
 
     /**
- * Genera el XML del método RegistrarDesconsolidado (AFIP)
- * usando BillOfLading madre/hijos del Voyage.
- */
-public function generateDeconsolidatedXml(Voyage $voyage): string
-{
-    try {
-        // Master BL del viaje
-        $master = $voyage->billsOfLading()
-            ->where('is_master_bill', true)
-            ->first();
+     * Genera el XML del método RegistrarDesconsolidado (AFIP)
+     * usando BillOfLading madre/hijos del Voyage.
+     */
+    public function generateDeconsolidatedXml(Voyage $voyage): string
+    {
+        try {
+            // Master BL del viaje
+            $master = $voyage->billsOfLading()
+                ->where('is_master_bill', true)
+                ->first();
 
-        if (!$master) {
-            throw new \Exception('No se encontró Conocimiento Madre (is_master_bill = true).');
-        }
+            if (!$master) {
+                throw new \Exception('No se encontró Conocimiento Madre (is_master_bill = true).');
+            }
 
-        // House BLs del master
-        $houses = $voyage->billsOfLading()
-            ->where('is_house_bill', true)
-            ->where('master_bill_number', $master->bill_number)
-            ->get();
+            // House BLs del master
+            $houses = $voyage->billsOfLading()
+                ->where('is_house_bill', true)
+                ->where('master_bill_number', $master->bill_number)
+                ->get();
 
-        if ($houses->isEmpty()) {
-            throw new \Exception('No se encontraron Conocimientos Hijo asociados al master BL.');
-        }
+            if ($houses->isEmpty()) {
+                throw new \Exception('No se encontraron Conocimientos Hijo asociados al master BL.');
+            }
 
-        // Crear raíz
-        $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><Desconsolidado></Desconsolidado>');
+            // Crear raíz
+            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><Desconsolidado></Desconsolidado>');
 
-        // Cabecera — tomar identificador de AFIP si existe, sino id local
-        $cabecera = $xml->addChild('Cabecera');
-        $cabecera->addChild('IdentificadorViaje', htmlspecialchars((string)($voyage->argentina_voyage_id ?? $voyage->id)));
-        // Para AFIP: identificador del título madre; usamos bill_number del master
-        $cabecera->addChild('IdentificadorTituloMadre', htmlspecialchars((string)$master->bill_number));
-        // Fecha operación (hoy) y puerto (usamos destino del viaje si está)
-        $cabecera->addChild('FechaOperacion', now()->format('Y-m-d'));
+            // Cabecera — tomar identificador de AFIP si existe, sino id local
+            $cabecera = $xml->addChild('Cabecera');
+            $cabecera->addChild('IdentificadorViaje', htmlspecialchars((string)($voyage->argentina_voyage_id ?? $voyage->id)));
+            // Para AFIP: identificador del título madre; usamos bill_number del master
+            $cabecera->addChild('IdentificadorTituloMadre', htmlspecialchars((string)$master->bill_number));
+            // Fecha operación (hoy) y puerto (usamos destino del viaje si está)
+            $cabecera->addChild('FechaOperacion', now()->format('Y-m-d'));
 
-        // Puerto: preferimos destinationPort->code si está cargado; fallback a nombre
-        $puerto = $voyage->destinationPort?->code
-            ?? $voyage->destinationPort?->name
-            ?? $master->dischargePort?->code
-            ?? $master->dischargePort?->name
-            ?? '';
-        $cabecera->addChild('Puerto', htmlspecialchars((string)$puerto));
-
-        // Titulos hijos
-        $lista = $xml->addChild('TitulosHijos');
-
-        foreach ($houses as $h) {
-            $titulo = $lista->addChild('TituloHijo');
-
-            // Identificador del hijo: usamos su bill_number
-            $titulo->addChild('IdentificadorTituloHijo', htmlspecialchars((string)$h->bill_number));
-
-            // BL (house BL si existe, sino el mismo bill_number)
-            $bl = $h->house_bill_number ?: $h->bill_number;
-            $titulo->addChild('BL', htmlspecialchars((string)$bl));
-
-            // Pesos y bultos — campos reales de tu migración
-            // gross_weight_kg (decimal), total_packages (int)
-            $peso   = number_format((float)($h->gross_weight_kg ?? 0), 2, '.', '');
-            $bultos = (int)($h->total_packages ?? 0);
-            $titulo->addChild('PesoBruto', $peso);
-            $titulo->addChild('CantidadBultos', $bultos);
-
-            // Tipo de bulto — intentar desde relación de embalaje principal, si no, unidad
-            $tipoBulto =
-                $h->primaryPackagingType?->code
-                ?? $h->primaryPackagingType?->name
-                ?? $h->measurement_unit
+            // Puerto: preferimos destinationPort->code si está cargado; fallback a nombre
+            $puerto = $voyage->destinationPort?->code
+                ?? $voyage->destinationPort?->name
+                ?? $master->dischargePort?->code
+                ?? $master->dischargePort?->name
                 ?? '';
-            $titulo->addChild('TipoBulto', htmlspecialchars((string)$tipoBulto));
+            $cabecera->addChild('Puerto', htmlspecialchars((string)$puerto));
 
-            // Consignatario — desde relación consignee (Client->name)
-            $consignatario = $h->consignee?->name ?? '';
-            $titulo->addChild('Consignatario', htmlspecialchars((string)$consignatario));
+            // Titulos hijos
+            $lista = $xml->addChild('TitulosHijos');
 
-            // País destino — intentar por dischargePort->country->code o finalDestinationPort
-            $paisDestino =
-                $h->dischargePort?->country?->code
-                ?? $h->finalDestinationPort?->country?->code
-                ?? '';
-            $titulo->addChild('PaisDestino', htmlspecialchars((string)$paisDestino));
+            foreach ($houses as $h) {
+                $titulo = $lista->addChild('TituloHijo');
+
+                // Identificador del hijo: usamos su bill_number
+                $titulo->addChild('IdentificadorTituloHijo', htmlspecialchars((string)$h->bill_number));
+
+                // BL (house BL si existe, sino el mismo bill_number)
+                $bl = $h->house_bill_number ?: $h->bill_number;
+                $titulo->addChild('BL', htmlspecialchars((string)$bl));
+
+                // Pesos y bultos — campos reales de tu migración
+                // gross_weight_kg (decimal), total_packages (int)
+                $peso   = number_format((float)($h->gross_weight_kg ?? 0), 2, '.', '');
+                $bultos = (int)($h->total_packages ?? 0);
+                $titulo->addChild('PesoBruto', $peso);
+                $titulo->addChild('CantidadBultos', $bultos);
+
+                // Tipo de bulto — intentar desde relación de embalaje principal, si no, unidad
+                $tipoBulto =
+                    $h->primaryPackagingType?->code
+                    ?? $h->primaryPackagingType?->name
+                    ?? $h->measurement_unit
+                    ?? '';
+                $titulo->addChild('TipoBulto', htmlspecialchars((string)$tipoBulto));
+
+                // Consignatario — desde relación consignee (Client->name)
+                $consignatario = $h->consignee?->name ?? '';
+                $titulo->addChild('Consignatario', htmlspecialchars((string)$consignatario));
+
+                // País destino — intentar por dischargePort->country->code o finalDestinationPort
+                $paisDestino =
+                    $h->dischargePort?->country?->code
+                    ?? $h->finalDestinationPort?->country?->code
+                    ?? '';
+                $titulo->addChild('PaisDestino', htmlspecialchars((string)$paisDestino));
+            }
+
+            // Formatear bonito
+            $dom = new \DOMDocument('1.0', 'UTF-8');
+            $dom->preserveWhiteSpace = false;
+            $dom->formatOutput = true;
+            $dom->loadXML($xml->asXML());
+
+            return $dom->saveXML();
+
+        } catch (\Exception $e) {
+            Log::error('Error al generar XML de Desconsolidado: '.$e->getMessage());
+            throw $e;
         }
-
-        // Formatear bonito
-        $dom = new \DOMDocument('1.0', 'UTF-8');
-        $dom->preserveWhiteSpace = false;
-        $dom->formatOutput = true;
-        $dom->loadXML($xml->asXML());
-
-        return $dom->saveXML();
-
-    } catch (\Exception $e) {
-        Log::error('Error al generar XML de Desconsolidado: '.$e->getMessage());
-        throw $e;
     }
-}
+
+    // ========================================
+    // HELPER METHODS FOR XML GENERATION
+    // ========================================
+
+    /**
+     * Limpia y valida números (CUIT, etc)
+     */
+    private function cleanNumeric(?string $value): string
+    {
+        if (empty($value)) {
+            return '';
+        }
+        
+        // Remover todo excepto dígitos
+        return preg_replace('/[^0-9]/', '', $value);
+    }
+
+    /**
+     * Limpia strings para XML (remueve caracteres especiales)
+     */
+    private function cleanString(?string $value, ?int $maxLength = null): string
+    {
+        if (empty($value)) {
+            return '';
+        }
+        
+        // Remover caracteres especiales y trim
+        $cleaned = trim($value);
+        
+        // Escapar para XML
+        $cleaned = htmlspecialchars($cleaned, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        
+        // Limitar longitud si se especifica
+        if ($maxLength && strlen($cleaned) > $maxLength) {
+            $cleaned = substr($cleaned, 0, $maxLength);
+        }
+        
+        return $cleaned;
+    }
+
+    /**
+     * Formatea fechas para AFIP (yyyy-mm-ddThh:mi:ss)
+     */
+    private function formatDateTime($date): string
+    {
+        if (empty($date)) {
+            return now()->format('Y-m-d\TH:i:s');
+        }
+        
+        if ($date instanceof \Carbon\Carbon) {
+            return $date->format('Y-m-d\TH:i:s');
+        }
+        
+        if (is_string($date)) {
+            try {
+                return \Carbon\Carbon::parse($date)->format('Y-m-d\TH:i:s');
+            } catch (\Exception $e) {
+                return now()->format('Y-m-d\TH:i:s');
+            }
+        }
+        
+        return now()->format('Y-m-d\TH:i:s');
+    }
 
 
 }
