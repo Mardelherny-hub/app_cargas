@@ -226,25 +226,41 @@ class CertificateManagerService
                 return null;
             }
 
-            // Leer certificado PKCS#12
-            $certificates = [];
-            if (!openssl_pkcs12_read($certificateContent, $certificates, $password)) {
-                $this->logOperation('error', 'Error leyendo certificado PKCS#12', [
-                    'openssl_error' => openssl_error_string(),
+            // Detectar tipo de certificado por extensión
+            $extension = strtolower(pathinfo($certificatePath, PATHINFO_EXTENSION));
+
+            if ($extension === 'pem') {
+                // Leer certificado .pem (contiene cert y clave privada en texto)
+                $this->logOperation('info', 'Leyendo certificado .pem', [
                     'certificate_path' => $certificatePath,
-                    'password_length' => strlen($password),
                 ]);
-                return null;
+                
+                return [
+                    'cert' => $certificateContent,
+                    'pkey' => $certificateContent, // El .pem completo contiene ambos
+                    'extracerts' => null,
+                ];
+            } else {
+                // Leer certificado PKCS#12 (.p12 o .pfx)
+                $certificates = [];
+                if (!openssl_pkcs12_read($certificateContent, $certificates, $password)) {
+                    $this->logOperation('error', 'Error leyendo certificado PKCS#12', [
+                        'openssl_error' => openssl_error_string(),
+                        'certificate_path' => $certificatePath,
+                        'password_length' => strlen($password),
+                    ]);
+                    return null;
+                }
+                
+                $this->logOperation('info', 'Certificado leído exitosamente', [
+                    'certificate_path' => $certificatePath,
+                    'has_cert' => isset($certificates['cert']),
+                    'has_pkey' => isset($certificates['pkey']),
+                    'has_extracerts' => isset($certificates['extracerts']),
+                ]);
+                
+                return $certificates;
             }
-
-            $this->logOperation('info', 'Certificado leído exitosamente', [
-                'certificate_path' => $certificatePath,
-                'has_cert' => isset($certificates['cert']),
-                'has_pkey' => isset($certificates['pkey']),
-                'has_extracerts' => isset($certificates['extracerts']),
-            ]);
-
-            return $certificates;
 
         } catch (Exception $e) {
             $this->logOperation('error', 'Excepción leyendo certificado', [
