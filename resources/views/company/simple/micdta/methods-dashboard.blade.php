@@ -349,16 +349,30 @@
                                             <span class="text-gray-600">Último envío:</span>
                                             <span class="text-gray-900 font-medium">{{ $lastTitEnvios->created_at->format('d/m H:i') }}</span>
                                         </div>
-                                        <div class="flex items-center justify-between">
+                                        <div class="flex items-center justify-between mb-1">
                                             <span class="text-gray-600">Estado:</span>
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                                                @if($lastTitEnvios->status === 'sent') bg-green-100 text-green-800
+                                                @if($lastTitEnvios->status === 'sent' || $lastTitEnvios->status === 'success') bg-green-100 text-green-800
                                                 @elseif($lastTitEnvios->status === 'error') bg-red-100 text-red-800
                                                 @else bg-yellow-100 text-yellow-800 @endif">
                                                 {{ ucfirst($lastTitEnvios->status) }}
                                             </span>
                                         </div>
+                                        {{-- Mostrar TRACKs generados --}}
+                                        @if($tracks->isNotEmpty())
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-gray-600">TRACKs:</span>
+                                                <span class="text-green-600 font-semibold">{{ $tracks->count() }} generados</span>
+                                            </div>
+                                        @endif
                                     </div>
+                                    {{-- Mostrar TRACKs generados --}}
+                                    @if($tracks->isNotEmpty())
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">TRACKs:</span>
+                                            <span class="text-green-600 font-semibold">{{ $tracks->count() }} generados</span>
+                                        </div>
+                                    @endif
                                 @endif
                             </div>
 
@@ -1525,14 +1539,45 @@
             icon.innerHTML = '✅';
             icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100';
             title.textContent = `${methodName} - Exitoso`;
-            message.innerHTML = `
+            
+            let successHtml = `
                 <p class="text-sm text-gray-700">
                     <strong>Método:</strong> ${methodName}<br>
-                    ${result.data?.transaction_id ? `<strong>Transaction ID:</strong> ${result.data.transaction_id}<br>` : ''}
-                    ${result.data?.external_reference ? `<strong>Referencia:</strong> ${result.data.external_reference}<br>` : ''}
-                    <strong>Mensaje:</strong> ${result.message || 'Operación completada exitosamente'}
+                    ${result.message ? `<strong>Mensaje:</strong> ${result.message}<br>` : ''}
+                    ${result.transaction_id ? `<strong>Transaction ID:</strong> ${result.transaction_id}<br>` : ''}
+                    ${result.shipments_processed ? `<strong>Shipments procesados:</strong> ${result.shipments_processed}<br>` : ''}
+                    ${result.tracks_generated ? `<strong>TRACKs generados:</strong> ${result.tracks_generated}<br>` : ''}
+                    ${result.mic_dta_id ? `<strong>MIC/DTA ID:</strong> ${result.mic_dta_id}<br>` : ''}
                 </p>
             `;
+            
+            // Mostrar detalles de éxito (TRACKs, próximos pasos, etc.)
+            if (result.success_details && result.success_details.length > 0) {
+                successHtml += `
+                    <div class="mt-4 p-3 bg-green-50 rounded-md">
+                        <p class="text-sm font-semibold text-green-800 mb-2">Detalles:</p>
+                        <ul class="text-sm text-green-700 space-y-1">
+                            ${result.success_details.map(detail => `<li>${detail}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            // Mostrar TRACKs por shipment si existen
+            if (result.tracks_by_shipment && Object.keys(result.tracks_by_shipment).length > 0) {
+                successHtml += `
+                    <div class="mt-3 p-3 bg-blue-50 rounded-md">
+                        <p class="text-sm font-semibold text-blue-800 mb-2">📦 TRACKs por Shipment:</p>
+                        <div class="text-sm text-blue-700 space-y-1">
+                            ${Object.entries(result.tracks_by_shipment).map(([shipment, tracks]) => 
+                                `<div><strong>${shipment}:</strong> ${tracks.join(', ')}</div>`
+                            ).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            message.innerHTML = successHtml;
         } else {
             icon.innerHTML = '❌';
             icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100';
@@ -1541,7 +1586,7 @@
             // ✅ CONSTRUIR MENSAJE DE ERROR CON DETALLES
             let errorHtml = `
                 <p class="text-sm text-gray-700">
-                    <strong>Error:</strong> ${result.error || result.details || 'Error desconocido'}<br>
+                    <strong>Error:</strong> ${result.error || result.error_message || result.details || 'Error desconocido'}<br>
                     ${result.error_code ? `<strong>Código:</strong> ${result.error_code}<br>` : ''}
                 </p>
             `;

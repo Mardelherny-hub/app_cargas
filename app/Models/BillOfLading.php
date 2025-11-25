@@ -138,6 +138,7 @@ class BillOfLading extends Model
 
         // ✅ NUEVO: Permiso de embarque para webservices Paraguay
         'permiso_embarque',
+        'id_decla',
 
         'is_consolidated',
         'is_transit_transshipment',

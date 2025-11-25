@@ -35,6 +35,7 @@ class BillOfLadingCreateForm extends Component
     public $incoterms = '';
     // === CAMPOS WEBSERVICES ===
     public $permiso_embarque = ''; // TRP - Permiso de embarque (obligatorio AFIP)
+    public $id_decla = ''; // Identificador Destinación Aduanera AFIP (obligatorio para RegistrarTitEnvios)
 
     // === PARTES INVOLUCRADAS ===
     public $shipper_id = '';
@@ -289,6 +290,7 @@ class BillOfLadingCreateForm extends Component
         'master_bill_number' => 'nullable|string|max:50|required_if:is_house_bill,true',
         'original_released' => 'boolean',
         'documentation_complete' => 'boolean',
+        'id_decla' => 'required|string|max:16|regex:/^[A-Z0-9]+$/',
     ];
 
     public function mount($shipmentId = null, $preselectedLoadingPortId = null, $preselectedDischargePortId = null)
@@ -556,6 +558,7 @@ class BillOfLadingCreateForm extends Component
                 'status' => 'draft',
                 'created_by_user_id' => auth()->id(),
                 'last_updated_by_user_id' => auth()->id(),
+                'id_decla' => $this->id_decla,
             ];
 
 

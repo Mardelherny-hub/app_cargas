@@ -89,27 +89,50 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      * @param array $data Datos adicionales para el método
      * @return array Resultado del procesamiento ['success' => bool, ...]
      */
-    public function executeMethod(string $method, Voyage $voyage, array $data = []): array
-    {
-        try {
-            $this->logOperation('info', 'Ejecutando método AFIP', [
-                'method' => $method,
-                'voyage_id' => $voyage->id,
-                'voyage_number' => $voyage->voyage_number,
-                'company_id' => $voyage->company_id,
-            ]);
 
-            // Validar que el viaje tenga empresa
-            if (!$voyage->company_id) {
-                return [
-                    'success' => false,
-                    'error_message' => 'El viaje debe tener una empresa asignada',
-                    'error_code' => 'MISSING_COMPANY',
-                ];
-            }
+        public function executeMethod(string $method, Voyage $voyage, array $data = []): array
+        {
+            try {
+                $this->logOperation('info', 'Ejecutando método AFIP', [
+                    'method' => $method,
+                    'voyage_id' => $voyage->id,
+                    'voyage_number' => $voyage->voyage_number,
+                    'company_id' => $voyage->company_id,
+                ]);
 
-            // Switch con todos los métodos AFIP soportados
-            switch ($method) {
+                // Validar que el viaje tenga empresa
+                if (!$voyage->company_id) {
+                    return [
+                        'success' => false,
+                        'error_message' => 'El viaje debe tener una empresa asignada',
+                        'error_code' => 'MISSING_COMPANY',
+                    ];
+                }
+
+                // ✅ NUEVO: Validar prerrequisitos específicos por método AFIP
+                $prereqValidation = $this->validateMethodPrerequisites($method, $voyage);
+                
+                if (!$prereqValidation['can_process']) {
+                    return [
+                        'success' => false,
+                        'error_message' => 'Prerrequisitos no cumplidos para ' . $method,
+                        'error_code' => 'PREREQUISITES_NOT_MET',
+                        'validation_errors' => $prereqValidation['errors'],
+                        'warnings' => $prereqValidation['warnings'],
+                    ];
+                }
+                
+                // Log de warnings si existen (pero no bloquean)
+                if (!empty($prereqValidation['warnings'])) {
+                    $this->logOperation('warning', 'Advertencias de prerrequisitos', [
+                        'method' => $method,
+                        'voyage_id' => $voyage->id,
+                        'warnings' => $prereqValidation['warnings'],
+                    ]);
+                }
+
+                // Switch con todos los métodos AFIP soportados
+                switch ($method) {
                 
                 // ✅ MÉTODOS EXISTENTES Y FUNCIONALES (NO TOCAR)
                 case 'RegistrarTitEnvios':
@@ -209,13 +232,15 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     // ================================================================
 
     /**
-     * ✅ CORREGIDO - Solo ejecuta RegistrarTitEnvios (NO genera TRACKs)
+     * ✅ Ejecuta RegistrarTitEnvios y extrae TRACKs
      */
     private function processRegistrarTitEnvios(Voyage $voyage, array $data): array
     {
         $soapClient = $this->createSoapClient();
         
         $results = [];
+        $allTracks = [];
+        $totalTracksGenerated = 0;
         
         foreach ($voyage->shipments as $shipment) {
             $result = $this->sendTitEnvios($soapClient, $shipment);
@@ -223,6 +248,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             
             if (!$result['success']) {
                 return $result;
+            }
+            
+            // Recolectar TRACKs generados
+            if (!empty($result['tracks'])) {
+                $allTracks[$shipment->shipment_number] = $result['tracks'];
+                $totalTracksGenerated += count($result['tracks']);
             }
             
             // Crear registro de transacción en BD
@@ -235,25 +266,66 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'webservice_type' => 'micdta',
                 'country' => 'AR',
                 'soap_action' => $this->config['soap_action_titenvios'],
-                'status' => 'sent',
+                'status' => 'success',
                 'environment' => $this->config['environment'],
                 'webservice_url' => $this->getWsdlUrl(),
                 'response_xml' => $result['response'],
+                'tracking_numbers' => $result['tracks'] ?? [],
             ]);
             
             $this->logOperation('info', 'TitEnvios registrado exitosamente', [
                 'shipment_id' => $shipment->id,
                 'transaction_id' => $result['transaction_id'],
+                'tracks_count' => $result['tracks_count'] ?? 0,
             ]);
+        }
+        
+        // Construir mensaje de éxito con detalle de TRACKs
+        $message = 'Títulos registrados exitosamente.';
+        if ($totalTracksGenerated > 0) {
+            $message = "Títulos registrados exitosamente. Se generaron {$totalTracksGenerated} TRACK(s).";
+        } else {
+            $message .= ' No se detectaron TRACKs en la respuesta (puede ser normal en ambiente de testing).';
         }
         
         return [
             'success' => true,
             'method' => 'RegistrarTitEnvios',
-            'message' => 'Títulos registrados exitosamente. Ahora puede ejecutar RegistrarEnvios para generar TRACKs.',
+            'message' => $message,
             'shipments_processed' => count($results),
+            'tracks_generated' => $totalTracksGenerated,
+            'tracks_by_shipment' => $allTracks,
             'results' => $results,
+            // Para mostrar en UI
+            'success_details' => $this->formatTracksForDisplay($allTracks, $totalTracksGenerated),
         ];
+    }
+
+    /**
+     * Formatear TRACKs para mostrar en UI
+     */
+    private function formatTracksForDisplay(array $tracksByShipment, int $total): array
+    {
+        $details = [];
+        
+        if ($total > 0) {
+            $details[] = "✅ Total TRACKs generados: {$total}";
+            
+            foreach ($tracksByShipment as $shipmentNumber => $tracks) {
+                $trackList = implode(', ', $tracks);
+                $details[] = "📦 Shipment {$shipmentNumber}: " . count($tracks) . " TRACK(s) - {$trackList}";
+            }
+            
+            $details[] = "";
+            $details[] = "💡 Próximo paso: Ejecutar RegistrarMicDta para usar estos TRACKs.";
+        } else {
+            $details[] = "⚠️ No se detectaron TRACKs en la respuesta de AFIP.";
+            $details[] = "Esto puede ser normal en ambiente de testing.";
+            $details[] = "";
+            $details[] = "💡 Si está en producción, verifique los logs para más detalles.";
+        }
+        
+        return $details;
     }
 
     /**
@@ -323,6 +395,120 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     public function getXmlSerializer()
     {
         return $this->xmlSerializer;
+    }
+
+    /**
+     * Validar prerrequisitos específicos por método AFIP
+     * 
+     * Cada método AFIP tiene dependencias que deben cumplirse antes de ejecutar.
+     * Este método previene errores AFIP como 27130, 10747, 27102, etc.
+     * 
+     * @param string $method Método AFIP a ejecutar
+     * @param Voyage $voyage Viaje a procesar
+     * @return array ['can_process' => bool, 'errors' => [], 'warnings' => []]
+     */
+    private function validateMethodPrerequisites(string $method, Voyage $voyage): array
+    {
+        $errors = [];
+        $warnings = [];
+        
+        switch ($method) {
+            case 'RegistrarTitEnvios':
+                // Primer paso - sin prerrequisitos de otros métodos
+                if ($voyage->shipments->isEmpty()) {
+                    $errors[] = 'El viaje debe tener al menos un shipment para registrar títulos.';
+                }
+                break;
+                
+            case 'RegistrarEnvios':
+                // Requiere que RegistrarTitEnvios se haya ejecutado exitosamente
+                $hasTitEnvios = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                    ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                    ->where('status', 'success')
+                    ->exists();
+                
+                if (!$hasTitEnvios) {
+                    $errors[] = 'Debe ejecutar RegistrarTitEnvios primero antes de RegistrarEnvios.';
+                }
+                break;
+                
+            case 'RegistrarMicDta':
+                // Requiere TRACKs existentes generados previamente
+                $tracksCount = WebserviceTrack::whereIn('shipment_id', $voyage->shipments->pluck('id'))
+                    ->where('status', 'generated')
+                    ->count();
+                
+                if ($tracksCount === 0) {
+                    $errors[] = 'No hay TRACKs generados. Ejecute RegistrarTitEnvios primero (Error AFIP 27130).';
+                } else {
+                    $this->logOperation('info', 'TRACKs disponibles para MIC/DTA', [
+                        'voyage_id' => $voyage->id,
+                        'tracks_count' => $tracksCount,
+                    ]);
+                }
+                break;
+                
+            case 'RegistrarConvoy':
+                // Requiere MIC/DTA en estado registrado
+                $micDtaCount = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                    ->where('soap_action', 'like', '%RegistrarMicDta%')
+                    ->where('status', 'success')
+                    ->count();
+                
+                if ($micDtaCount === 0) {
+                    $errors[] = 'Debe registrar al menos un MIC/DTA antes de crear convoy (Error AFIP 10747).';
+                }
+                
+                // Verificar que no exista convoy previo
+                $hasConvoy = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                    ->where('soap_action', 'like', '%RegistrarConvoy%')
+                    ->where('status', 'success')
+                    ->exists();
+                
+                if ($hasConvoy) {
+                    $errors[] = 'Ya existe un convoy registrado para este viaje (Error AFIP 27102).';
+                }
+                break;
+                
+            case 'RegistrarSalidaZonaPrimaria':
+                // Requiere convoy presentado
+                $warnings[] = 'Verifique que el convoy esté en estado PRESENTADO antes de continuar (Error AFIP 27175).';
+                break;
+                
+            case 'RectifConvoyMicDta':
+                // No debe haberse ejecutado salida
+                $hasSalida = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                    ->where('soap_action', 'like', '%RegistrarSalidaZonaPrimaria%')
+                    ->where('status', 'success')
+                    ->exists();
+                
+                if ($hasSalida) {
+                    $errors[] = 'No se puede rectificar después de registrar la salida (Error AFIP 27133).';
+                }
+                break;
+                
+            default:
+                // Para otros métodos, no hay validaciones específicas por ahora
+                break;
+        }
+        
+        // Log de validación
+        if (!empty($errors) || !empty($warnings)) {
+            $this->logOperation('info', 'Validación de prerrequisitos completada', [
+                'method' => $method,
+                'voyage_id' => $voyage->id,
+                'errors_count' => count($errors),
+                'warnings_count' => count($warnings),
+                'errors' => $errors,
+                'warnings' => $warnings,
+            ]);
+        }
+        
+        return [
+            'can_process' => empty($errors),
+            'errors' => $errors,
+            'warnings' => $warnings,
+        ];
     }
 
     /**
@@ -740,13 +926,27 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'completed_at' => now(),
             ]);
 
+            // Extraer TRACKs de la respuesta RegistrarTitEnvios
             $tracks = $this->extractTracksFromResponse($response);
+
+            // Guardar TRACKs en BD si se encontraron
+            if (!empty($tracks)) {
+                $this->saveTracksFromTitEnvios($tracks, $transaction, $shipment);
+                
+                $this->logOperation('info', 'TRACKs extraídos y guardados de RegistrarTitEnvios', [
+                    'shipment_id' => $shipment->id,
+                    'tracks_count' => count($tracks),
+                    'tracks' => $tracks,
+                ]);
+            }
 
             return [
                 'success' => true,
                 'response' => $response,
                 'transaction_id' => $transactionId,
                 'transaction_record_id' => $transaction->id,
+                'tracks' => $tracks,
+                'tracks_count' => count($tracks),
             ];
 
         } catch (Exception $e) {
@@ -770,6 +970,56 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'error_code' => 'TITENVIOS_ERROR',
                 'transaction_record_id' => $transaction->id ?? null,
             ];
+        }
+    }
+
+    /**
+     * Guardar TRACKs extraídos de RegistrarTitEnvios en BD
+     * 
+     * @param array $tracks Lista de números de TRACK
+     * @param WebserviceTransaction $transaction Transacción que generó los TRACKs
+     * @param Shipment $shipment Shipment asociado
+     */
+    private function saveTracksFromTitEnvios(array $tracks, $transaction, $shipment): void
+    {
+        foreach ($tracks as $trackNumber) {
+            try {
+                WebserviceTrack::create([
+                    'webservice_transaction_id' => $transaction->id,
+                    'shipment_id' => $shipment->id,
+                    'container_id' => null,
+                    'bill_of_lading_id' => null,
+                    'track_number' => $trackNumber,
+                    'track_type' => 'envio',
+                    'webservice_method' => 'RegistrarTitEnvios',
+                    'reference_type' => 'shipment',
+                    'reference_number' => $shipment->shipment_number ?? "SHIP_{$shipment->id}",
+                    'description' => "TRACK generado por RegistrarTitEnvios para shipment {$shipment->shipment_number}",
+                    'afip_metadata' => [
+                        'source_method' => 'RegistrarTitEnvios',
+                        'extraction_date' => now()->toIso8601String(),
+                        'transaction_id' => $transaction->transaction_id,
+                    ],
+                    'generated_at' => now(),
+                    'status' => 'generated',
+                    'created_by_user_id' => $this->user->id,
+                    'created_from_ip' => request()->ip(),
+                    'process_chain' => ['RegistrarTitEnvios'],
+                ]);
+                
+                $this->logOperation('debug', 'TRACK guardado en BD', [
+                    'track_number' => $trackNumber,
+                    'shipment_id' => $shipment->id,
+                    'method' => 'RegistrarTitEnvios',
+                ]);
+                
+            } catch (\Exception $e) {
+                $this->logOperation('error', 'Error guardando TRACK de TitEnvios', [
+                    'track_number' => $trackNumber,
+                    'shipment_id' => $shipment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
