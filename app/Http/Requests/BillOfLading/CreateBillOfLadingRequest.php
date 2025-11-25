@@ -166,6 +166,12 @@ class CreateBillOfLadingRequest extends FormRequest
                 'max:100',
                 'regex:/^[A-Z0-9\-]+$/',
             ],
+            'id_decla' => [
+                'required',
+                'string',
+                'max:16',
+                'regex:/^[A-Z0-9]+$/',
+            ],
             'bl_type' => [
                 'required',
                 'string',
@@ -564,6 +570,9 @@ class CreateBillOfLadingRequest extends FormRequest
             'permiso_embarque.max' => 'El permiso de embarque no puede exceder 100 caracteres.',
             'permiso_embarque.required' => 'El permiso de embarque (TRP) es obligatorio para envíos a AFIP.',
             'permiso_embarque.regex' => 'El permiso de embarque solo puede contener letras mayúsculas, números y guiones.',
+            'id_decla.required' => 'El ID de Destinación AFIP es obligatorio para envíos MIC/DTA.',
+            'id_decla.max' => 'El ID de Destinación no puede exceder 16 caracteres.',
+            'id_decla.regex' => 'El ID de Destinación solo puede contener letras mayúsculas y números.',
         ];
     }
 

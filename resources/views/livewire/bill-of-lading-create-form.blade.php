@@ -65,6 +65,23 @@ document.addEventListener('DOMContentLoaded', function() {
                         <p class="mt-1 text-xs text-gray-500">Número de permiso obligatorio para declaraciones AFIP</p>
                     </div>
 
+                    {{-- Identificador Destinación Aduanera (idDecla) --}}
+                    <div>
+                        <label for="id_decla" class="block text-sm font-medium text-gray-700">
+                            ID Destinación AFIP <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" 
+                            id="id_decla" 
+                            wire:model.defer="id_decla"
+                            placeholder="Ej: 25001TRB3025222E"
+                            maxlength="16"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 uppercase @error('id_decla') border-red-300 @enderror">
+                        @error('id_decla')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                        <p class="mt-1 text-xs text-gray-500">Número de destinación aduanera pre-cumplida en Malvina (16 caracteres)</p>
+                    </div>
+
                     {{-- Fecha del Conocimiento --}}
                     <div>
                         <label for="bill_date" class="block text-sm font-medium text-gray-700">

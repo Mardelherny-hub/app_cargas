@@ -43,6 +43,7 @@ class BillOfLadingEditForm extends Component
     public $incoterms = '';
     // === CAMPOS WEBSERVICES ===
     public $permiso_embarque = ''; // TRP - Permiso de embarque (obligatorio AFIP)
+    public $id_decla = ''; // Identificador Destinación Aduanera AFIP
 
     // === PARTES INVOLUCRADAS ===
     public $shipper_id = '';
@@ -293,6 +294,7 @@ class BillOfLadingEditForm extends Component
         $this->bill_date = optional($this->billOfLading->bill_date)?->format('Y-m-d') ?? '';
         $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
         $this->discharge_date = optional($this->billOfLading->discharge_date)?->format('Y-m-d') ?? '';
+        $this->id_decla = $this->billOfLading->id_decla ?? '';
 
     }
 
@@ -407,6 +409,7 @@ class BillOfLadingEditForm extends Component
         $this->currency_code = $bl->currency_code ?? 'USD';
         $this->incoterms = $bl->incoterms ?? '';
         $this->permiso_embarque = $bl->permiso_embarque ?? '';
+        $this->id_decla = $this->billOfLading->id_decla ?? '';
 
         // Partes
         $this->shipper_id = $bl->shipper_id;
@@ -729,6 +732,7 @@ class BillOfLadingEditForm extends Component
                 'currency_code' => $this->currency_code,
                 'incoterms' => $this->incoterms ?: null,
                 'permiso_embarque' => $this->permiso_embarque ?: null,
+                'id_decla' => $this->id_decla,
                 'shipper_id' => $this->shipper_id,
                 'consignee_id' => $this->consignee_id,
                 'notify_party_id' => $this->notify_party_id ?: null,

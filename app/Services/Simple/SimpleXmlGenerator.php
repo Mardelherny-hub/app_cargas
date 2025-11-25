@@ -44,130 +44,322 @@ class SimpleXmlGenerator
      */
     public function createRegistrarTitEnviosXml(Shipment $shipment, string $transactionId): string
     {
-        try {
-            $voyage = $shipment->voyage()->with(['originPort', 'destinationPort', 'originPort.country', 'destinationPort.country'])->first();
-            $wsaa = $this->getWSAATokens();
+        // ============ DIAGNÓSTICO COMPLETO CUIT ============
+\Log::info("=== DIAGNÓSTICO REGISTRAR TIT ENVIOS ===", [
+    'company_id' => $this->company->id,
+    'company_name' => $this->company->name,
+    'company_tax_id_RAW' => $this->company->tax_id,
+    'company_tax_id_CLEANED' => preg_replace('/[^0-9]/', '', $this->company->tax_id),
+    'shipment_id' => $shipment->id,
+    'transaction_id' => $transactionId,
+]);
 
-            $originPortCode = $voyage->originPort?->code ?? '';
-            $destPortCode = $voyage->destinationPort?->code ?? '';
+// Verificar si hay shipper/consignee con CUIT diferente
+$billsOfLading = $shipment->billsOfLading()->with(['shipper', 'consignee'])->get();
+foreach ($billsOfLading as $bl) {
+    \Log::info("BL Tax IDs", [
+        'bl_id' => $bl->id,
+        'bl_number' => $bl->bill_number,
+        'shipper_tax_id' => $bl->shipper?->tax_id,
+        'consignee_tax_id' => $bl->consignee?->tax_id,
+    ]);
+}
+
+// Verificar WSAA tokens
+$wsaa = $this->getWSAATokens();
+\Log::info("WSAA Tokens obtenidos", [
+    'token_length' => strlen($wsaa['token']),
+    'cuit_from_wsaa' => $wsaa['cuit'] ?? 'NO DEFINIDO',
+    'company_tax_id' => $this->company->tax_id,
+    'MATCH' => ($wsaa['cuit'] ?? '') === preg_replace('/[^0-9]/', '', $this->company->tax_id) ? 'SI' : 'NO'
+]);
+        try {
+            // Cargar relaciones necesarias
+            $voyage = $shipment->voyage()->with([
+                'originPort.country', 
+                'destinationPort.country',
+                'originCustoms',
+                'destinationCustoms'
+            ])->first();
             
+            $billsOfLading = $shipment->billsOfLading()->with([
+                'shipper',
+                'consignee', 
+                'notifyParty',
+                'shipmentItems.packagingType',
+                'shipmentItems.containers'
+            ])->get();
+
+            if ($billsOfLading->isEmpty()) {
+                throw new \Exception("El shipment {$shipment->shipment_number} no tiene Bills of Lading");
+            }
+
+            $wsaa = $this->getWSAATokens();
+            
+            // Códigos de puertos y aduanas
             $codAduOrigen = $voyage->originPort?->customs_code ?? '019';
             $codAduDest = $voyage->destinationPort?->customs_code ?? '051';
-            $codPaisOrigen = $voyage->originPort?->country?->numeric_code ?? '032'; // Argentina
-            $codPaisDest = $voyage->destinationPort?->country?->numeric_code ?? '600'; // Paraguay
+            $codPaisOrigen = $voyage->originPort?->country?->numeric_code ?? '032';
+            $codPaisDest = $voyage->destinationPort?->country?->numeric_code ?? '600';
+            $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
+            $codLugOperDest = $voyage->destinationPort?->operative_code ?? '001';
+            $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
+            $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
 
-            // Contenedores del shipment
-            $containers = $shipment->shipmentItems()
-                ->with(['containers.containerType'])
-                ->get()
-                ->flatMap(fn($item) => $item->containers);
-
-            // Bills of Lading
-            $billsOfLading = $shipment->billsOfLading()->get();
-
+            // Crear XMLWriter
             $w = new \XMLWriter();
             $w->openMemory();
             $w->startDocument('1.0', 'UTF-8');
 
-            // SOAP Envelope
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            // Envelope SOAP con namespace SOAP-ENV (como Roberto)
+            $w->startElementNs('SOAP-ENV', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
             $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
-
-            // SOAP Body
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            
+            $w->startElementNs('SOAP-ENV', 'Body', null);
                 $w->startElement('RegistrarTitEnvios');
                 $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
-                // Autenticación empresa
+                // === AUTENTICACIÓN ===
                 $w->startElement('argWSAutenticacionEmpresa');
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    //$w->writeElement('CuitEmpresaConectada', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                    $w->writeElement('CuitEmpresaConectada', '20170980418'); // CUIT del certificado de testing
+                    $w->writeElement('TipoAgente', 'TRSP'); // CORREGIDO: TRSP no ATA
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
-                // Parámetros RegistrarTitEnvios
+                // === PARÁMETROS PRINCIPALES ===
                 $w->startElement('argRegistrarTitEnviosParam');
                     $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
 
-                    // Títulos de transporte
+                    // === TÍTULOS DE TRANSPORTE CON ENVÍOS ===
                     $w->startElement('titulosTransEnvios');
-                    $w->startElement('TitTransEnvio');
-                        $w->writeElement('codViaTrans', '8'); // Hidrovía
-                        $w->writeElement('idTitTrans', (string)$shipment->shipment_number);
-                        $w->writeElement('indFinCom', 'S');
-                        $w->writeElement('indFraccTransp', 'N');
-                        $w->writeElement('indConsol', 'N');
-                        
-                        // IDs documentos
-                        $w->writeElement('idManiCargaArrPaisPart', $shipment->origin_manifest_id ?? 'SIN_MANIFIESTO');
-                        $w->writeElement('idDocTranspArrPaisPart', $shipment->origin_transport_doc ?? 'SIN_DOC');
+                    
+                    $envioIndex = 1;
+                    $allContainers = collect();
+                    $emptyContainers = collect();
 
-                        // Origen obligatorio
-                        $w->startElement('origen');
-                            $w->writeElement('codPais', $codPaisOrigen);
-                            $w->writeElement('codAdu', $codAduOrigen);
-                        $w->endElement();
-
-                        // Destino obligatorio
-                        $w->startElement('destino');
-                            $w->writeElement('codPais', $codPaisDest);
-                            $w->writeElement('codAdu', $codAduDest);
-                        $w->endElement();
-
-                        // Envíos (OBLIGATORIO para generar TRACKs)
-                        if ($billsOfLading->isNotEmpty()) {
-                            $w->startElement('envios');
-                            foreach ($billsOfLading as $index => $bol) {
-                                $w->startElement('Envio');
-                                    $w->writeElement('idEnvio', (string)($index + 1));
-                                    $w->writeElement('fechaEmb', $voyage->departure_date ? $voyage->departure_date->format('Y-m-d') : now()->format('Y-m-d'));
-                                    $w->writeElement('codPuertoEmb', $voyage->originPort?->code ?? 'ARBUE');
-                                    $w->writeElement('codPuertoDesc', $voyage->destinationPort?->code ?? 'PYASU');
-                                $w->endElement();
-                            }
+                    foreach ($billsOfLading as $bol) {
+                        $w->startElement('TitTransEnvio');
+                            
+                            // Datos básicos del título
+                            $w->writeElement('codViaTrans', '8'); // Hidrovía
+                            $w->writeElement('idTitTrans', $bol->bill_number);
+                            $w->writeElement('obsDeclaAduInter', $bol->cargo_description ?? 'CARGA GENERAL');
+                            
+                            // === REMITENTE (shipper) ===
+                            $this->writeRemitente($w, $bol);
+                            
+                            // === CONSIGNATARIO ===
+                            $this->writeConsignatario($w, $bol);
+                            
+                            // === DESTINATARIO (igual que consignatario normalmente) ===
+                            $this->writeDestinatario($w, $bol);
+                            
+                            // === NOTIFICADO ===
+                            $this->writeNotificado($w, $bol);
+                            
+                            // Indicadores
+                            $w->writeElement('indFinCom', 'S');
+                            $w->writeElement('indFraccTransp', 'N');
+                            $w->writeElement('indConsol', $bol->is_consolidated ? 'S' : 'N');
+                            
+                            // Origen
+                            $w->startElement('origen');
+                                $w->writeElement('codAdu', $codAduOrigen);
                             $w->endElement();
-                        }
-
-                    $w->endElement(); // TitTransEnvio
+                            
+                            // Destino
+                            $w->startElement('destino');
+                                $w->writeElement('codPais', $codPaisDest);
+                                $w->writeElement('codAdu', $codAduDest);
+                            $w->endElement();
+                            
+                            // === ENVÍOS ===
+                            $w->startElement('envios');
+                                $w->startElement('Envio');
+                                    
+                                    // === DESTINACIONES ===
+                                    $w->startElement('destinaciones');
+                                    
+                                    // Verificar que BL tenga id_decla
+                                    if (empty($bol->id_decla)) {
+                                        throw new \Exception("BL {$bol->bill_number} no tiene id_decla. Campo obligatorio.");
+                                    }
+                                    
+                                    $w->startElement('Destinacion');
+                                        $w->writeElement('idDecla', $bol->id_decla);
+                                        $w->writeElement('montoFob', '0');
+                                        $w->writeElement('montoFlete', '0');
+                                        $w->writeElement('montoSeg', '0');
+                                        $w->writeElement('codDivisaFob', '');
+                                        $w->writeElement('codDivisaFle', '');
+                                        $w->writeElement('codDivisaSeg', '');
+                                        
+                                        // Items de la destinación
+                                        $w->startElement('items');
+                                        $itemIndex = 1;
+                                        foreach ($bol->shipmentItems as $item) {
+                                            $w->startElement('Item');
+                                                $w->writeElement('nroItem', (string)$itemIndex);
+                                                $w->writeElement('peso', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
+                                            $w->endElement();
+                                            $itemIndex++;
+                                        }
+                                        if ($bol->shipmentItems->isEmpty()) {
+                                            // Al menos un item por defecto
+                                            $w->startElement('Item');
+                                                $w->writeElement('nroItem', '1');
+                                                $w->writeElement('peso', number_format($bol->gross_weight_kg ?? 1000, 0, '', ''));
+                                            $w->endElement();
+                                        }
+                                        $w->endElement(); // items
+                                        
+                                        // === BULTOS ===
+                                        $w->startElement('bultos');
+                                        foreach ($bol->shipmentItems as $item) {
+                                            // Obtener contenedores del item
+                                            $itemContainers = $item->containers ?? collect();
+                                            
+                                            if ($itemContainers->isEmpty()) {
+                                                // Bulto sin contenedor (carga suelta)
+                                                $w->startElement('Bulto');
+                                                    $w->writeElement('cantBultos', (string)($item->package_quantity ?? 1));
+                                                    $w->writeElement('cantBultosTotFrac', (string)($item->package_quantity ?? 1));
+                                                    $w->writeElement('pesoBruto', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
+                                                    $w->writeElement('pesoBrutoTotFrac', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
+                                                    $w->writeElement('codTipEmbalaje', $item->packagingType?->argentina_ws_code ?? 'BG');
+                                                    $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA', 0, 100));
+                                                    $w->writeElement('marcaNro', $item->cargo_marks ?? 'S/M');
+                                                    $w->writeElement('indCargSuelt', 'S');
+                                                $w->endElement();
+                                            } else {
+                                                // Bultos con contenedores
+                                                foreach ($itemContainers as $container) {
+                                                    $pivot = $container->pivot ?? null;
+                                                    $pesoContainer = $pivot?->gross_weight_kg ?? $item->gross_weight_kg ?? 0;
+                                                    $cantBultos = $pivot?->package_quantity ?? $item->package_quantity ?? 1;
+                                                    
+                                                    $w->startElement('Bulto');
+                                                        $w->writeElement('cantBultos', (string)$cantBultos);
+                                                        $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
+                                                        $w->writeElement('pesoBruto', number_format($pesoContainer, 0, '', ''));
+                                                        $w->writeElement('pesoBrutoTotFrac', number_format($pesoContainer, 0, '', ''));
+                                                        $w->writeElement('codTipEmbalaje', $item->packagingType?->argentina_ws_code ?? 'CN');
+                                                        $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA EN CONTENEDOR', 0, 100));
+                                                        $w->writeElement('marcaNro', $item->cargo_marks ?? 'S/M');
+                                                        $w->writeElement('indCargSuelt', 'N');
+                                                        $w->writeElement('idContenedor', $container->container_number);
+                                                    $w->endElement();
+                                                    
+                                                    // Registrar contenedor para sección global
+                                                    if ($container->container_condition !== 'V') {
+                                                        $allContainers->push($container);
+                                                    } else {
+                                                        $emptyContainers->push($container);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        $w->endElement(); // bultos
+                                        
+                                    $w->endElement(); // Destinacion
+                                    $w->endElement(); // destinaciones
+                                    
+                                    // Campos obligatorios del Envio
+                                    $w->writeElement('indUltFra', 'S');
+                                    $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                                    
+                                    // Lugar operativo origen
+                                    $w->startElement('lugOperOrigen');
+                                        $w->writeElement('codLugOper', $codLugOperOrigen);
+                                        $w->writeElement('codCiu', $codCiuOrigen);
+                                    $w->endElement();
+                                    
+                                    // Lugar operativo destino
+                                    $w->startElement('lugOperDestino');
+                                        $w->writeElement('codLugOper', $codLugOperDest);
+                                        $w->writeElement('codCiu', $codCiuDest);
+                                    $w->endElement();
+                                    
+                                    // idEnvio AL FINAL (importante!)
+                                    $w->writeElement('idEnvio', (string)$envioIndex);
+                                    
+                                $w->endElement(); // Envio
+                            $w->endElement(); // envios
+                            
+                        $w->endElement(); // TitTransEnvio
+                        $envioIndex++;
+                    }
+                    
                     $w->endElement(); // titulosTransEnvios
 
-                    // Títulos contenedores vacíos (puede estar vacío)
+                    // === TÍTULOS CONTENEDORES VACÍOS ===
                     $w->startElement('titulosTransContVacios');
-                    $w->endElement();
+                    if ($emptyContainers->isNotEmpty()) {
+                        $w->startElement('TitTransContVacio');
+                            $w->writeElement('codViaTrans', '8');
+                            $w->writeElement('idTitTrans', 'VACIOS-' . $transactionId);
+                            
+                            $w->startElement('idContenedores');
+                            foreach ($emptyContainers as $ec) {
+                                $w->writeElement('idCont', $ec->container_number);
+                            }
+                            $w->endElement();
+                            
+                            // Remitente simplificado para vacíos
+                            $firstBol = $billsOfLading->first();
+                            $this->writeRemitente($w, $firstBol);
+                            $this->writeConsignatario($w, $firstBol);
+                            $this->writeDestinatario($w, $firstBol);
+                            
+                            $w->startElement('origen');
+                                $w->writeElement('codAdu', $codAduOrigen);
+                                $w->writeElement('codLugOper', $codLugOperOrigen);
+                                $w->writeElement('codCiu', $codCiuOrigen);
+                            $w->endElement();
+                            
+                            $w->startElement('destino');
+                                $w->writeElement('codPais', $codPaisDest);
+                                $w->writeElement('codAdu', $codAduDest);
+                                $w->writeElement('codLugOper', $codLugOperDest);
+                                $w->writeElement('codCiu', $codCiuDest);
+                            $w->endElement();
+                            
+                            $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                        $w->endElement();
+                    }
+                    $w->endElement(); // titulosTransContVacios
 
-                    // Contenedores (registro básico para el título)
-                    if ($containers->isNotEmpty()) {
+                    // === CONTENEDORES (todos, llenos y vacíos) ===
+                    $allContainersUnique = $allContainers->merge($emptyContainers)->unique('container_number');
+                    
+                    if ($allContainersUnique->isNotEmpty()) {
                         $w->startElement('contenedores');
-                        foreach ($containers as $c) {
+                        foreach ($allContainersUnique as $container) {
                             $w->startElement('Contenedor');
-                                $w->writeElement('id', (string)$c->container_number);
+                                $w->writeElement('id', $container->container_number);
                                 
-                                // Mapeo códigos AFIP
-                                $containerCode = $c->containerType?->argentina_ws_code ?? '42G1';
-                                if ($containerCode === '40GP') $containerCode = '42G1';
-                                if ($containerCode === '20GP') $containerCode = '22G1';
-                                $w->writeElement('codMedida', $containerCode);
+                                // Código de medida ISO
+                                $codMedida = $container->containerType?->iso_code ?? '22G1';
+                                $w->writeElement('codMedida', $codMedida);
                                 
-                                // Condición contenedor
-                                $conditionMap = ['L' => 'P', 'V' => 'V', 'full' => 'P', 'empty' => 'V', 'loaded' => 'P'];
-                                $condition = $conditionMap[$c->condition] ?? 'P';
-                                $w->writeElement('condicion', $condition);
+                                // Condición: H=lleno, V=vacío
+                                $condicion = ($container->container_condition === 'V') ? 'V' : 'H';
+                                $w->writeElement('condicion', $condicion);
                                 
-                                // Precintos si existen
-                                $seals = $c->customsSeals ?? collect();
-                                if ($seals->isNotEmpty()) {
+                                // Precintos
+                                $precinto = $container->shipper_seal ?? $container->carrier_seal ?? $container->customs_seal;
+                                if ($precinto) {
                                     $w->startElement('precintos');
-                                    foreach ($seals as $seal) {
-                                        $w->writeElement('precinto', (string)$seal->seal_number);
-                                    }
+                                        $w->writeElement('precinto', $precinto);
                                     $w->endElement();
                                 }
                             $w->endElement();
                         }
-                        $w->endElement();
+                        $w->endElement(); // contenedores
                     }
 
                 $w->endElement(); // argRegistrarTitEnviosParam
@@ -176,12 +368,108 @@ class SimpleXmlGenerator
             $w->endElement(); // Envelope
 
             $w->endDocument();
-            return $w->outputMemory();
+            
+            $xml = $w->outputMemory();
+            \Log::info("XML RegistrarTitEnvios generado correctamente", ['length' => strlen($xml)]);
+            
+            return $xml;
 
-        } catch (Exception $e) {
-            \Log::info('Error en createRegistrarTitEnviosXml: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            \Log::error('Error en createRegistrarTitEnviosXml: ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Helper: Escribir sección Remitente
+     */
+    private function writeRemitente(\XMLWriter $w, BillOfLading $bol): void
+    {
+        $shipper = $bol->shipper;
+        $codPais = $shipper?->country?->iso2_code ?? 'AR';
+        
+        $w->startElement('remitente');
+            $w->writeElement('codPais', $codPais);
+            
+            // Si no es Argentina, incluir datos completos
+            if ($codPais !== 'AR') {
+                $w->writeElement('nomRazSoc', substr($shipper?->legal_name ?? 'REMITENTE', 0, 50));
+                $w->startElement('domicilio');
+                    $w->writeElement('barrio', '');
+                    $w->writeElement('ciudad', $shipper?->city ?? '');
+                    $w->writeElement('codPostal', $shipper?->postal_code ?? '');
+                    $w->writeElement('estado', $shipper?->state ?? '');
+                    $w->writeElement('nombreCalle', substr($shipper?->address ?? '', 0, 50));
+                $w->endElement();
+            }
+            
+            $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? $this->company->tax_id));
+            
+            if ($codPais !== 'AR') {
+                $w->writeElement('tipDocIdent', 'CUIT');
+                $w->writeElement('nroDocIdent', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? ''));
+            }
+        $w->endElement();
+    }
+
+    /**
+     * Helper: Escribir sección Consignatario
+     */
+    private function writeConsignatario(\XMLWriter $w, BillOfLading $bol): void
+    {
+        $consignee = $bol->consignee;
+        
+        $w->startElement('consignatario');
+            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? 'CONSIGNATARIO', 0, 50));
+            $w->startElement('domicilio');
+                $w->writeElement('barrio', '');
+                $w->writeElement('ciudad', $consignee?->city ?? '');
+                $w->writeElement('codPostal', $consignee?->postal_code ?? '');
+                $w->writeElement('estado', $consignee?->state ?? '');
+                $w->writeElement('nombreCalle', substr($consignee?->address ?? '', 0, 50));
+            $w->endElement();
+            $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $consignee?->tax_id ?? ''));
+        $w->endElement();
+    }
+
+    /**
+     * Helper: Escribir sección Destinatario
+     */
+    private function writeDestinatario(\XMLWriter $w, BillOfLading $bol): void
+    {
+        // Normalmente igual que consignatario
+        $consignee = $bol->consignee;
+        
+        $w->startElement('destinatario');
+            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? 'DESTINATARIO', 0, 50));
+            $w->startElement('domicilio');
+                $w->writeElement('barrio', '');
+                $w->writeElement('ciudad', $consignee?->city ?? '');
+                $w->writeElement('codPostal', $consignee?->postal_code ?? '');
+                $w->writeElement('estado', $consignee?->state ?? '');
+                $w->writeElement('nombreCalle', substr($consignee?->address ?? '', 0, 50));
+            $w->endElement();
+        $w->endElement();
+    }
+
+    /**
+     * Helper: Escribir sección Notificado
+     */
+    private function writeNotificado(\XMLWriter $w, BillOfLading $bol): void
+    {
+        $notify = $bol->notifyParty ?? $bol->consignee;
+        
+        $w->startElement('notificado');
+            $w->writeElement('nomRazSoc', substr($notify?->legal_name ?? 'A QUIEN CORRESPONDA', 0, 50));
+            $w->startElement('domicilio');
+                $w->writeElement('barrio', '');
+                $w->writeElement('ciudad', $notify?->city ?? '');
+                $w->writeElement('codPostal', $notify?->postal_code ?? '');
+                $w->writeElement('estado', $notify?->state ?? '');
+                $w->writeElement('nombreCalle', substr($notify?->address ?? '', 0, 50));
+            $w->endElement();
+            $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $notify?->tax_id ?? ''));
+        $w->endElement();
     }
     /**
      * PASO 2: RegistrarEnvios - Envíos detallados para generar TRACKs

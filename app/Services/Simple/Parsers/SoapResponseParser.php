@@ -42,8 +42,11 @@ class SoapResponseParser
         // Patrón con namespace
         '/<ns\d*:idTrack>([^<]+)<\/ns\d*:idTrack>/',
         
-        // Patrón regex para formato TRACK directo
-        '/(\d{4}-AR-\d{8}-\d)/',
+        // Patrón regex para formato TRACK directo (AFIP: YYYY-AR-########-#)
+        '/(\d{4}AR\d{8}\d)/',
+        
+        // Patrones adicionales para RegistrarTitEnvios
+        '/<idTrack>\s*([^<]+)\s*<\/idTrack>/i',
     ];
 
     /**
@@ -221,16 +224,41 @@ class SoapResponseParser
         foreach ($tracks as $track) {
             // Limpiar espacios
             $track = trim($track);
+            
+            // Saltar vacíos
+            if (empty($track)) {
+                continue;
+            }
 
-            // Validar formato AFIP: YYYY-AR-########-#
+            // Validar formato AFIP: YYYY-AR-########-# (con guiones)
             if (preg_match('/^\d{4}-AR-\d{8}-\d$/', $track)) {
                 $validated[] = $track;
-            } else {
-                $this->log('warning', 'TRACK con formato inválido', [
-                    'track' => $track,
-                    'expected_format' => 'YYYY-AR-########-#'
-                ]);
+                continue;
             }
+            
+            // Validar formato AFIP alternativo: YYYYAR#########  (sin guiones, 15 chars)
+            if (preg_match('/^\d{4}AR\d{9}$/', $track)) {
+                $validated[] = $track;
+                continue;
+            }
+            
+            // Validar formato AFIP alternativo: 16 caracteres numéricos con AR
+            if (preg_match('/^\d{4}AR\d{8}\d$/', $track)) {
+                $validated[] = $track;
+                continue;
+            }
+            
+            // Aceptar TRACKs de testing que empiecen con TEST_
+            if (str_starts_with($track, 'TEST_TRACK_')) {
+                $validated[] = $track;
+                continue;
+            }
+
+            $this->log('warning', 'TRACK con formato no reconocido', [
+                'track' => $track,
+                'length' => strlen($track),
+                'expected_formats' => ['YYYY-AR-########-#', 'YYYYAR#########', 'TEST_TRACK_*']
+            ]);
         }
 
         // Eliminar duplicados
