@@ -800,76 +800,107 @@ $wsaa = $this->getWSAATokens();
     }
 
     /**
-     * PASO 3: RegistrarMicDta - CORREGIDO usando voyage y tracks
+     * PASO 3: RegistrarMicDta - CORREGIDO según Manual AFIP
+     * 
+     * Registra el MIC/DTA con todos los campos obligatorios:
+     * - Transportista (estructura completa)
+     * - Propietario vehículo (estructura completa)
+     * - Conductores (capitán)
+     * - TRACKs de carga suelta
+     * - TRACKs de contenedores vacíos
+     * - Contenedores con carga
+     * - Ruta informática con eventos programados
+     * - Embarcación (estructura completa)
+     * 
+     * @param Voyage $voyage Viaje con relaciones cargadas
+     * @param array $tracks Array de TRACKs ['carga_suelta' => [...], 'cont_vacios' => [...]]
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string XML completo
      */
     public function createRegistrarMicDtaXml(Voyage $voyage, array $tracks, string $transactionId): string
     {
         try {
+            // Cargar relaciones necesarias
+            $voyage->load(['leadVessel.vesselType', 'leadVessel.flagCountry', 'captain', 'originPort.country', 'destinationPort.country']);
+            
             $vessel = $voyage->leadVessel;
+            $captain = $voyage->captain;
+            $originPort = $voyage->originPort;
+            $destinationPort = $voyage->destinationPort;
+            
+            // Validaciones
+            if (!$vessel) {
+                throw new \Exception('Voyage debe tener embarcación asignada');
+            }
+            if (!$captain) {
+                throw new \Exception('Voyage debe tener capitán asignado');
+            }
+            if (!$originPort || !$destinationPort) {
+                throw new \Exception('Voyage debe tener puertos de origen y destino');
+            }
+            
             $wsaa = $this->getWSAATokens();
+            $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
 
             $w = new \XMLWriter();
             $w->openMemory();
             $w->startDocument('1.0', 'UTF-8');
 
+            // Envelope SOAP
             $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            
+            $w->startElementNs('soap', 'Body', null);
                 $w->startElement('RegistrarMicDta');
                 $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
-                // Autenticación empresa
+                // === argWSAutenticacionEmpresa ===
                 $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('CuitEmpresaConectada', $cuit);
                     $w->writeElement('TipoAgente', 'ATA');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
-                // Parámetros MIC/DTA
+                // === argRegistrarMicDtaParam ===
                 $w->startElement('argRegistrarMicDtaParam');
-                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
                     
-                    // Estructura MIC/DTA
+                    // idTransaccion (obligatorio, máx 15 chars)
+                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+                    
+                    // === micDta (estructura principal) ===
                     $w->startElement('micDta');
-                        $w->writeElement('codViaTrans', '8'); // Hidrovía
                         
-                        // Transportista
-                        $w->startElement('transportista');
-                            $w->writeElement('cuitTransportista', (string)$this->company->tax_id);
-                            $w->writeElement('denominacionTransportista', htmlspecialchars($this->company->legal_name));
-                        $w->endElement();
+                        // codViaTrans - 8 para hidrovía (obligatorio)
+                        $w->writeElement('codViaTrans', '8');
                         
-                        // Propietario vehículo  
-                        $w->startElement('propietarioVehiculo');
-                            $w->writeElement('cuitPropietario', (string)$this->company->tax_id);
-                            $w->writeElement('denominacionPropietario', htmlspecialchars($this->company->legal_name));
-                        $w->endElement();
+                        // === transportista (obligatorio) ===
+                        $this->writeTransportistaElement($w);
                         
-                        $w->writeElement('indEnLastre', 'N'); // No en lastre
+                        // === propVehiculo (obligatorio) ===
+                        $this->writePropVehiculoElement($w);
                         
-                        // Embarcación
-                        $w->startElement('embarcacion');
-                            $w->writeElement('nombreEmbarcacion', htmlspecialchars($vessel?->name ?? 'SIN NOMBRE'));
-                            $w->writeElement('registroNacionalEmbarcacion', ($vessel?->registration_number ?? 'SIN_REGISTRO'));
-                            $w->writeElement('tipoEmbarcacion', 'BAR'); // Barcaza
-                        $w->endElement();
+                        // === indEnLastre (obligatorio S/N) ===
+                        $indEnLastre = ($voyage->has_cargo_onboard === 'N') ? 'S' : 'N';
+                        $w->writeElement('indEnLastre', $indEnLastre);
                         
-                        // TRACKs generados en pasos anteriores
-                        if (!empty($tracks)) {
-                            $w->startElement('tracks');
-                            foreach ($tracks as $shipmentId => $trackList) {
-                                if (is_array($trackList)) {
-                                    foreach ($trackList as $track) {
-                                        $w->startElement('track');
-                                            $w->writeElement('trackId', (string)$track);
-                                            $w->writeElement('shipmentId', (string)$shipmentId);
-                                        $w->endElement();
-                                    }
-                                }
-                            }
-                            $w->endElement();
-                        }
+                        // === conductores (obligatorio - datos del capitán) ===
+                        $this->writeConductoresElement($w, $captain);
+                        
+                        // === cargasSueltasIdTrack (TRACKs de carga suelta) ===
+                        $this->writeCargasSueltasIdTrack($w, $tracks);
+                        
+                        // === titTransContVaciosIdTrack (TRACKs de contenedores vacíos) ===
+                        $this->writeTitTransContVaciosIdTrack($w, $tracks);
+                        
+                        // === contenedoresConCarga (IDs de contenedores con carga) ===
+                        $this->writeContenedoresConCarga($w, $voyage);
+                        
+                        // === rutasInf (ruta informática obligatoria) ===
+                        $this->writeRutasInf($w, $voyage);
+                        
+                        // === embarcacion (obligatorio) ===
+                        $this->writeEmbarcacionElement($w, $vessel, $voyage);
                         
                     $w->endElement(); // micDta
                 $w->endElement(); // argRegistrarMicDtaParam
@@ -878,12 +909,306 @@ $wsaa = $this->getWSAATokens();
             $w->endElement(); // Envelope
 
             $w->endDocument();
-            return $w->outputMemory();
+            
+            $xml = $w->outputMemory();
+            
+            \Log::info('RegistrarMicDta XML generado', [
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+                'xml_length' => strlen($xml)
+            ]);
+            
+            return $xml;
 
-        } catch (Exception $e) {
-            \Log::info('Error en createRegistrarMicDtaXml: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            \Log::error('Error en createRegistrarMicDtaXml: ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Escribe elemento Transportista según AFIP
+     */
+    private function writeTransportistaElement(\XMLWriter $w): void
+    {
+        $w->startElement('transportista');
+            // nombre (obligatorio, C50)
+            $w->writeElement('nombre', substr(htmlspecialchars($this->company->legal_name ?? $this->company->name), 0, 50));
+            
+            // domicilio (obligatorio pero puede ser nil)
+            $w->startElement('domicilio');
+            $w->writeAttribute('xsi:nil', 'true');
+            $w->endElement();
+            
+            // codPais (obligatorio, C2 - ISO 3166-1 Alfa 2)
+            $w->writeElement('codPais', 'AR');
+            
+            // idFiscal (obligatorio, C14 - CUIT)
+            $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
+            $w->writeElement('idFiscal', $cuit);
+            
+            // tipTrans (obligatorio, C1 - R=Regular, O=Ocasional)
+            $w->writeElement('tipTrans', 'R');
+        $w->endElement();
+    }
+
+    /**
+     * Escribe elemento PropVehiculo según AFIP
+     */
+    private function writePropVehiculoElement(\XMLWriter $w): void
+    {
+        $w->startElement('propVehiculo');
+            // nombre (obligatorio, C50)
+            $w->writeElement('nombre', substr(htmlspecialchars($this->company->legal_name ?? $this->company->name), 0, 50));
+            
+            // domicilio (obligatorio pero puede ser nil)
+            $w->startElement('domicilio');
+            $w->writeAttribute('xsi:nil', 'true');
+            $w->endElement();
+            
+            // codPais (obligatorio, C2)
+            $w->writeElement('codPais', 'AR');
+            
+            // idFiscal (obligatorio, C14)
+            $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
+            $w->writeElement('idFiscal', $cuit);
+        $w->endElement();
+    }
+
+    /**
+     * Escribe elemento Conductores (capitán) según AFIP
+     */
+    private function writeConductoresElement(\XMLWriter $w, $captain): void
+    {
+        $w->startElement('conductores');
+            $w->startElement('Conductor');
+                // nombre (obligatorio, C150)
+                $nombre = $captain->full_name ?? trim($captain->first_name . ' ' . $captain->last_name);
+                $w->writeElement('nombre', substr(htmlspecialchars($nombre), 0, 150));
+                
+                // tipDocIdent (obligatorio, C3) - DNI, PAS, CI, etc.
+                $tipDoc = $this->mapDocumentType($captain->document_type ?? 'DNI');
+                $w->writeElement('tipDocIdent', $tipDoc);
+                
+                // nroDocIdent (obligatorio, C16)
+                $nroDoc = preg_replace('/[^0-9A-Za-z]/', '', $captain->document_number ?? '');
+                $w->writeElement('nroDocIdent', substr($nroDoc, 0, 16));
+            $w->endElement();
+        $w->endElement();
+    }
+
+    /**
+     * Mapea tipo de documento al código AFIP
+     */
+    private function mapDocumentType(?string $type): string
+    {
+        return match(strtoupper($type ?? 'DNI')) {
+            'DNI' => 'DNI',
+            'PASSPORT', 'PASAPORTE', 'PAS' => 'PAS',
+            'CI', 'CEDULA' => 'CI',
+            'LE', 'LIBRETA' => 'LE',
+            'LC' => 'LC',
+            default => 'DNI'
+        };
+    }
+
+    /**
+     * Escribe TRACKs de carga suelta
+     */
+    private function writeCargasSueltasIdTrack(\XMLWriter $w, array $tracks): void
+    {
+        $w->startElement('cargasSueltasIdTrack');
+        
+        // Tracks de carga suelta (pueden venir como array plano o bajo clave específica)
+        $tracksCargaSuelta = $tracks['carga_suelta'] ?? $tracks['cargas_sueltas'] ?? $tracks;
+        
+        if (is_array($tracksCargaSuelta)) {
+            foreach ($tracksCargaSuelta as $trackId) {
+                if (is_string($trackId) || is_numeric($trackId)) {
+                    $w->writeElement('cargaSueltaIdTrack', (string)$trackId);
+                } elseif (is_array($trackId) && isset($trackId['track_id'])) {
+                    $w->writeElement('cargaSueltaIdTrack', (string)$trackId['track_id']);
+                }
+            }
+        }
+        
+        $w->endElement();
+    }
+
+    /**
+     * Escribe TRACKs de títulos de contenedores vacíos
+     */
+    private function writeTitTransContVaciosIdTrack(\XMLWriter $w, array $tracks): void
+    {
+        $w->startElement('titTransContVaciosIdTrack');
+        
+        $tracksContVacios = $tracks['cont_vacios'] ?? $tracks['contenedores_vacios'] ?? [];
+        
+        if (is_array($tracksContVacios)) {
+            foreach ($tracksContVacios as $trackId) {
+                if (is_string($trackId) || is_numeric($trackId)) {
+                    $w->writeElement('titTransContVacioIdTrack', (string)$trackId);
+                }
+            }
+        }
+        
+        $w->endElement();
+    }
+
+    /**
+     * Escribe IDs de contenedores con carga
+     */
+    private function writeContenedoresConCarga(\XMLWriter $w, Voyage $voyage): void
+    {
+        $w->startElement('contenedoresConCarga');
+        
+        // Obtener contenedores del voyage
+        $containers = $voyage->shipments()
+            ->with('billsOfLading.shipmentItems.containers')
+            ->get()
+            ->flatMap(fn($s) => $s->billsOfLading)
+            ->flatMap(fn($bl) => $bl->shipmentItems)
+            ->flatMap(fn($item) => $item->containers ?? collect())
+            ->filter(fn($c) => $c->container_condition !== 'V') // Solo contenedores con carga (no vacíos)
+            ->unique('container_number');
+        
+        foreach ($containers as $container) {
+            if (!empty($container->container_number)) {
+                $w->writeElement('idCont', substr($container->container_number, 0, 16));
+            }
+        }
+        
+        $w->endElement();
+    }
+
+    /**
+     * Escribe Ruta Informática según AFIP
+     */
+    private function writeRutasInf(\XMLWriter $w, Voyage $voyage): void
+    {
+        $w->startElement('rutasInf');
+            $w->startElement('RutInf');
+                
+                // descRutItinerarios (obligatorio, C500)
+                $descripcion = sprintf(
+                    'Viaje %s: %s (%s) a %s (%s)',
+                    $voyage->voyage_number,
+                    $voyage->originPort->name ?? 'ORIGEN',
+                    $voyage->originPort->code ?? 'XXX',
+                    $voyage->destinationPort->name ?? 'DESTINO',
+                    $voyage->destinationPort->code ?? 'XXX'
+                );
+                $w->writeElement('descRutItinerarios', substr($descripcion, 0, 500));
+                
+                // plazo (obligatorio, N3 - días de viaje)
+                $plazo = 1;
+                if ($voyage->departure_date && $voyage->estimated_arrival_date) {
+                    $plazo = max(1, $voyage->departure_date->diffInDays($voyage->estimated_arrival_date));
+                }
+                $w->writeElement('plazo', (string)min($plazo, 999));
+                
+                // eventosProg (obligatorio - mínimo PATAI y FITAI)
+                $w->startElement('eventosProg');
+                    
+                    // Evento 1: PATAI (Partida)
+                    $this->writeEventoProg($w, $voyage->originPort, $voyage->departure_date, 'PATAI', 1);
+                    
+                    // Evento 2: FITAI (Fin de tránsito)
+                    $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2);
+                    
+                $w->endElement(); // eventosProg
+                
+            $w->endElement(); // RutInf
+        $w->endElement(); // rutasInf
+    }
+
+    /**
+     * Escribe un EventoProg individual
+     */
+    private function writeEventoProg(\XMLWriter $w, $port, $fecha, string $tipoEvento, int $orden): void
+    {
+        $w->startElement('EventoProg');
+            
+            // codPais (obligatorio, C2)
+            $codPais = $port->country->alpha2_code ?? 'AR';
+            $w->writeElement('codPais', strtoupper($codPais));
+            
+            // codAdu (obligatorio excepto EPTAI, C9)
+            if ($tipoEvento !== 'EPTAI') {
+                $codAdu = $this->getPortCustomsCode($port->code ?? '');
+                $w->writeElement('codAdu', $codAdu);
+            }
+            
+            // codCiu (obligatorio excepto EPTAI, C5 - UN/LOCODE)
+            if ($tipoEvento !== 'EPTAI') {
+                $w->writeElement('codCiu', substr($port->code ?? 'XXXXX', 0, 5));
+            }
+            
+            // codLugOper (obligatorio excepto EPTAI, C9)
+            if ($tipoEvento !== 'EPTAI') {
+                $w->writeElement('codLugOper', $port->operative_code ?? $port->code ?? '001');
+            }
+            
+            // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS±ZH)
+            if ($tipoEvento !== 'EPTAI' && $fecha) {
+                $fechaFormateada = $fecha->format('YmdHis') . '-03';
+                $w->writeElement('fecha', $fechaFormateada);
+            }
+            
+            // id (obligatorio, C5 - PATAI/EPTAI/FITAI)
+            $w->writeElement('id', $tipoEvento);
+            
+            // orden (obligatorio, N2)
+            $w->writeElement('orden', (string)$orden);
+            
+        $w->endElement();
+    }
+
+    /**
+     * Escribe elemento Embarcación según AFIP
+     */
+    private function writeEmbarcacionElement(\XMLWriter $w, $vessel, Voyage $voyage): void
+    {
+        $w->startElement('embarcacion');
+            
+            // codPais (obligatorio, C2 - país de bandera)
+            $codPais = $vessel->flagCountry->alpha2_code ?? 'AR';
+            $w->writeElement('codPais', strtoupper($codPais));
+            
+            // id (obligatorio, C10 - matrícula)
+            $w->writeElement('id', substr($vessel->registration_number ?? 'SIN_REG', 0, 10));
+            
+            // nombre (obligatorio, C50)
+            $w->writeElement('nombre', substr(htmlspecialchars($vessel->name ?? 'SIN_NOMBRE'), 0, 50));
+            
+            // tipEmb (obligatorio, C3 - EMP/REM/BUM/BAR)
+            $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+            $w->writeElement('tipEmb', $tipEmb);
+            
+            // indIntegraConvoy (obligatorio, S/N)
+            $integraConvoy = ($voyage->is_convoy ?? false) ? 'S' : 'N';
+            $w->writeElement('indIntegraConvoy', $integraConvoy);
+            
+            // idFiscalATARemol (opcional - CUIT del remolcador si integra convoy)
+            if ($integraConvoy === 'S' && !empty($voyage->tugboat_cuit)) {
+                $w->writeElement('idFiscalATARemol', preg_replace('/[^0-9]/', '', $voyage->tugboat_cuit));
+            }
+            
+        $w->endElement();
+    }
+
+    /**
+     * Mapea tipo de embarcación al código AFIP
+     */
+    private function mapVesselType(?string $code): string
+    {
+        return match(strtoupper($code ?? 'BAR')) {
+            'EMP', 'EMPUJE', 'EMPUJADOR' => 'EMP',
+            'REM', 'REMOLCADOR' => 'REM',
+            'BUM', 'BUQUE', 'BUQUE_MOTOR' => 'BUM',
+            'BAR', 'BARCAZA' => 'BAR',
+            default => 'BAR'
+        };
     }
 
     /**
