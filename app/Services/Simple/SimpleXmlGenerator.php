@@ -125,7 +125,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     //$w->writeElement('CuitEmpresaConectada', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-                    $w->writeElement('CuitEmpresaConectada', '20170980418'); // CUIT del certificado de testing
+                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
                     $w->writeElement('TipoAgente', 'TRSP'); // CORREGIDO: TRSP no ATA
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
@@ -471,192 +471,332 @@ $wsaa = $this->getWSAATokens();
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $notify?->tax_id ?? ''));
         $w->endElement();
     }
+    
     /**
-     * PASO 2: RegistrarEnvios - Envíos detallados para generar TRACKs
-     * CORREGIDO con todos los campos obligatorios AFIP
+     * PASO 2: RegistrarEnvios - Agregar envíos a un Título YA REGISTRADO
+     * 
+     * Genera XML según especificación AFIP para incorporar nuevos envíos
+     * a un título de transporte previamente registrado con RegistrarTitEnvios.
+     * 
+     * Estructura basada en XML exitoso del cliente y manual AFIP.
+     * 
+     * @param Shipment $shipment Shipment con los nuevos envíos a agregar
+     * @param string $idTitTrans ID del título YA REGISTRADO (de RegistrarTitEnvios)
+     * @param string $transactionId ID único de transacción (máx 15 chars)
+     * @return string XML completo según especificación AFIP
+     * @throws Exception Si faltan datos obligatorios
      */
-    /**
-     * PASO 2: RegistrarEnvios - CORREGIDO con cálculo de pesos REAL
-     * Reemplaza createRegistrarEnviosXml() en SimpleXmlGenerator.php
-     */
-    public function createRegistrarEnviosXml(Shipment $shipment, string $transactionId): string
+    public function createRegistrarEnviosXml(Shipment $shipment, string $idTitTrans, string $transactionId): string
     {
         try {
-            // LOG DE VERIFICACIÓN CRÍTICO
-            \Log::info("=== EJECUTANDO SimpleXmlGenerator::createRegistrarEnviosXml ===");
-            \Log::info("Shipment ID: " . $shipment->id);
-            \Log::info("Transaction ID: " . $transactionId);
-            $voyage = $shipment->voyage()->with(['originPort', 'destinationPort'])->first();
-            $wsaa = $this->getWSAATokens();
-            
-            // CARGAR CORRECTAMENTE BLs con shipmentItems
-            $billsOfLading = $shipment->billsOfLading()->with(['shipmentItems'])->get();
+            \Log::info("=== GENERANDO XML RegistrarEnvios ===", [
+                'shipment_id' => $shipment->id,
+                'id_tit_trans' => $idTitTrans,
+                'transaction_id' => $transactionId,
+            ]);
 
+            // Cargar relaciones necesarias
+            $voyage = $shipment->voyage()->with(['originPort', 'destinationPort'])->first();
+            $billsOfLading = $shipment->billsOfLading()
+                ->with(['shipmentItems.containers', 'shipmentItems.packagingType'])
+                ->get();
+
+            if ($billsOfLading->isEmpty()) {
+                throw new Exception("Shipment {$shipment->id} no tiene Bills of Lading para generar envíos.");
+            }
+
+            // Obtener tokens WSAA
+            $wsaa = $this->getWSAATokens();
+
+            // Códigos de lugares operativos desde puertos
+            $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
+            $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
+            $codLugOperDest = $voyage->destinationPort?->operative_code ?? '001';
+            $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
+
+            // Crear XMLWriter
             $w = new \XMLWriter();
             $w->openMemory();
             $w->startDocument('1.0', 'UTF-8');
 
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
+            // Envelope SOAP (mismo estilo que RegistrarTitEnvios exitoso)
+            $w->startElementNs('SOAP-ENV', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+
+            $w->startElementNs('SOAP-ENV', 'Body', null);
                 $w->startElement('RegistrarEnvios');
                 $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
-                // Autenticación
+                // === AUTENTICACIÓN (igual que RegistrarTitEnvios) ===
                 $w->startElement('argWSAutenticacionEmpresa');
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('CuitEmpresaConectada', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
-                // Parámetros RegistrarEnvios
+                // === PARÁMETROS REGISTRAR ENVIOS ===
                 $w->startElement('argRegistrarEnviosParam');
+                    
+                    // idTransaccion - máximo 15 caracteres
                     $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
-                    $w->writeElement('idTitTrans', (string)$shipment->shipment_number);
+                    
+                    // idTitTrans - ID del título YA REGISTRADO (obligatorio)
+                    $w->writeElement('idTitTrans', $idTitTrans);
 
-                    // Envíos individuales
+                    // === ENVÍOS ===
                     $w->startElement('envios');
-                    foreach ($billsOfLading as $index => $bol) {
-                        // CÁLCULO CORREGIDO DE PESOS - VERSIÓN SIMPLIFICADA
-                        // Prioridad: BL -> Shipment
-                        $weightSum = 0;
-                        $packageSum = 0;
+                    
+                    $envioIndex = 1;
+                    $allContainers = collect();
 
-                        // Opción 1: Intentar desde BL (más confiable para carga a granel)
-                        if (!empty($bol->gross_weight_kg) && $bol->gross_weight_kg > 0) {
-                            $weightSum = $bol->gross_weight_kg;
-                            $packageSum = $bol->total_packages ?? 1;
-                            
-                            \Log::info("BL {$bol->id}: Usando peso desde BL = {$weightSum} kg, bultos = {$packageSum}");
-                        }
-                        // Opción 2: Fallback a shipment
-                        elseif (!empty($shipment->cargo_weight_loaded) && $shipment->cargo_weight_loaded > 0) {
-                            $weightSum = $shipment->cargo_weight_loaded;
-                            $packageSum = 1; // Carga a granel = 1 bulto
-                            
-                            \Log::info("BL {$bol->id}: Usando peso desde Shipment = {$weightSum} kg");
-                        }
-                        // Opción 3: Intentar desde shipmentItems (si existen)
-                        else {
-                            try {
-                                $shipmentItemsQuery = $bol->shipmentItems();
-                                $shipmentItemsCount = $shipmentItemsQuery->count();
-                                
-                                if ($shipmentItemsCount > 0) {
-                                    $weightSum = $shipmentItemsQuery->sum('gross_weight_kg') ?? 0;
-                                    $packageSum = $shipmentItemsQuery->sum('package_quantity') ?? 1;
-                                    
-                                    \Log::info("BL {$bol->id}: Usando peso desde Items = {$weightSum} kg");
-                                }
-                            } catch (Exception $e) {
-                                \Log::info("Error leyendo shipmentItems: " . $e->getMessage());
-                            }
-                        }
-
-                        // Aplicar mínimos AFIP (peso mínimo 1kg, bultos mínimo 1)
-                        $totalWeight = max(1, $weightSum);
-                        $totalPackages = max(1, $packageSum);
-
-                        \Log::info("BL {$bol->id}: FINAL - Peso = {$totalWeight} kg, Bultos = {$totalPackages}");
+                    foreach ($billsOfLading as $bol) {
                         
-                        // LOG DETALLADO PARA DEBUG
-                        \Log::info("BL {$bol->bill_of_lading_number}: weight_sum={$weightSum}, package_sum={$packageSum}, final_weight={$totalWeight}, final_packages={$totalPackages}");
-                        
+                        // Validar campo obligatorio id_decla
+                        if (empty($bol->id_decla)) {
+                            throw new Exception("BL {$bol->bill_number} no tiene id_decla (Destinación AFIP). Campo obligatorio.");
+                        }
+
                         $w->startElement('Envio');
-                            $w->writeElement('idEnvio', (string)($index + 1));
-                            $w->writeElement('fechaEmb', ($voyage->departure_date ? $voyage->departure_date->format('Y-m-d') : now()->format('Y-m-d')));
-                            
-                            // Puertos UN/LOCODE
-                            $w->writeElement('codPuertoEmb', $voyage->originPort?->code ?? 'ARBUE');
-                            $w->writeElement('codPuertoDesc', $voyage->destinationPort?->code ?? 'PYTVT');
-                            
-                            // Documento comercial
-                            $bolNumber = $bol->bill_of_lading_number ?? $bol->bl_number ?? ('BL' . str_pad($index + 1, 6, '0', STR_PAD_LEFT));
-                            $w->writeElement('idDocComercial', (string)$bolNumber);
-                            $w->writeElement('descripcionMercaderia', (string)($bol->cargo_description ?? 'CARGA GENERAL'));
-                            
-                            // PESO Y BULTOS CORREGIDOS - NUNCA 0
-                            $w->writeElement('cantBultos', (string)$totalPackages);
-                            $w->writeElement('pesoBrutoKg', number_format($totalWeight, 3, '.', ''));
-                            $w->writeElement('indUltimaFraccion', 'S');
 
-                            // Lugares operativos obligatorios
-                            $w->startElement('lugOperOrigen');
-                                $w->writeElement('codLugOper', $voyage->originPort?->code ?? 'ARBUE');
-                                $w->writeElement('codCiu', $voyage->originPort?->code ?? 'ARBUE');
-                            $w->endElement();
-
-                            $w->startElement('lugOperDestino');
-                                $w->writeElement('codLugOper', $voyage->destinationPort?->code ?? 'PYTVT');
-                                $w->writeElement('codCiu', $voyage->destinationPort?->code ?? 'PYTVT');
-                            $w->endElement();
-
-                            // Campos obligatorios adicionales
-                            $w->writeElement('indUltFra', 'S');
-                            $w->writeElement('idFiscalATAMIC', (string)$this->company->tax_id);
-
-                            // Destinaciones con estructura completa
+                            // === DESTINACIONES ===
                             $w->startElement('destinaciones');
-                            $w->startElement('Destinacion');
-                                $w->writeElement('codDestinacion', 'EXP');
-                                $w->writeElement('codDivisaFob', 'USD');
-                                $w->writeElement('codDivisaFle', 'USD');
-                                $w->writeElement('codDivisaSeg', 'USD');
-                                
-                                // TRP - Permiso de embarque (obligatorio AFIP)
-                                if (empty($bol->permiso_embarque)) {
-                                    throw new \Exception("BillOfLading {$bol->bill_number} no tiene permiso_embarque (TRP). Este campo es obligatorio para AFIP.");
-                                }
-                                $w->writeElement('idDecla', $bol->permiso_embarque);
-                                
-                                // Items con estructura obligatoria
-                                $w->startElement('items');
-                                $w->startElement('Item');
-                                    $w->writeElement('nroItem', (string)($index + 1));
-                                    $w->writeElement('peso', number_format($totalWeight, 4, '.', ''));
-                                    $w->writeElement('descripcion', $bol->cargo_description ?? 'MERCADERIA GENERAL');
-                                $w->endElement();
-                                $w->endElement();
-                                
-                                // Bultos con todos los campos obligatorios - PESO CORRECTO
-                                $w->startElement('bultos');
-                                $w->startElement('Bulto');
-                                    $w->writeElement('cantBultos', (string)$totalPackages);
-                                    $w->writeElement('pesoBruto', number_format($totalWeight, 3, '.', ''));
-                                    $w->writeElement('pesoBrutoTotFrac', number_format($totalWeight, 3, '.', ''));
-                                    $w->writeElement('cantBultosTotFrac', (string)$totalPackages);
-                                    $w->writeElement('codEmbalaje', 'CT');
-                                    $w->writeElement('descMercaderia', $bol->cargo_description ?? 'MERCADERIA GENERAL');
-                                    $w->writeElement('indCargSuelt', 'N');
-                                    $w->writeElement('codTipEmbalaje', 'CT');
-                                $w->endElement();
-                                $w->endElement();
+                                $w->startElement('Destinacion');
+                                    
+                                    // idDecla - Obligatorio C(16)
+                                    $w->writeElement('idDecla', $bol->id_decla);
+                                    
+                                    // Montos - Obligatorios N(18,2) - Cliente usa 0
+                                    $w->writeElement('montoFob', '0');
+                                    $w->writeElement('montoFlete', '0');
+                                    $w->writeElement('montoSeg', '0');
+                                    
+                                    // Códigos divisa - Cliente los envía vacíos
+                                    $w->writeElement('codDivisaFob', '');
+                                    $w->writeElement('codDivisaFle', '');
+                                    $w->writeElement('codDivisaSeg', '');
+
+                                    // === ITEMS ===
+                                    $w->startElement('items');
+                                    
+                                    if ($bol->shipmentItems->isNotEmpty()) {
+                                        $itemIndex = 1;
+                                        foreach ($bol->shipmentItems as $item) {
+                                            $w->startElement('Item');
+                                                // nroItem - Obligatorio C(4)
+                                                $w->writeElement('nroItem', (string)$itemIndex);
+                                                // peso - Obligatorio N(12,4)
+                                                $peso = $item->gross_weight_kg ?? 0;
+                                                $w->writeElement('peso', number_format($peso, 4, '.', ''));
+                                            $w->endElement(); // Item
+                                            $itemIndex++;
+                                        }
+                                    } else {
+                                        // Al menos un item con datos del BL
+                                        $w->startElement('Item');
+                                            $w->writeElement('nroItem', '1');
+                                            $peso = $bol->gross_weight_kg ?? 1;
+                                            $w->writeElement('peso', number_format($peso, 4, '.', ''));
+                                        $w->endElement();
+                                    }
+                                    
+                                    $w->endElement(); // items
+
+                                    // === BULTOS (orden exacto del cliente) ===
+                                    $w->startElement('bultos');
+                                    
+                                    if ($bol->shipmentItems->isNotEmpty()) {
+                                        foreach ($bol->shipmentItems as $item) {
+                                            $itemContainers = $item->containers ?? collect();
+                                            
+                                            if ($itemContainers->isEmpty()) {
+                                                // Bulto SIN contenedor (carga suelta)
+                                                $this->writeBultoElement($w, $item, null);
+                                            } else {
+                                                // Bulto CON contenedor(es)
+                                                foreach ($itemContainers as $container) {
+                                                    $this->writeBultoElement($w, $item, $container);
+                                                    $allContainers->push($container);
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Bulto por defecto desde BL
+                                        $this->writeBultoFromBol($w, $bol);
+                                    }
+                                    
+                                    $w->endElement(); // bultos
+
+                                $w->endElement(); // Destinacion
+                            $w->endElement(); // destinaciones
+
+                            // === CAMPOS OBLIGATORIOS DEL ENVÍO ===
+                            
+                            // indUltFra - Obligatorio C(1) - S/N
+                            $w->writeElement('indUltFra', 'S');
+                            
+                            // idFiscalATAMIC - Obligatorio C(14)
+                            $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                            
+                            // lugOperOrigen - Obligatorio
+                            $w->startElement('lugOperOrigen');
+                                $w->writeElement('codLugOper', $codLugOperOrigen);
+                                $w->writeElement('codCiu', $codCiuOrigen);
                             $w->endElement();
+                            
+                            // lugOperDestino - Obligatorio
+                            $w->startElement('lugOperDestino');
+                                $w->writeElement('codLugOper', $codLugOperDest);
+                                $w->writeElement('codCiu', $codCiuDest);
                             $w->endElement();
-                        $w->endElement();
+                            
+                            // idEnvio - Obligatorio N(3) - AL FINAL
+                            $w->writeElement('idEnvio', (string)$envioIndex);
+
+                        $w->endElement(); // Envio
+                        $envioIndex++;
                     }
-                    $w->endElement();
-                $w->endElement();
-                $w->endElement();
-            $w->endElement();
-            $w->endElement();
+                    
+                    $w->endElement(); // envios
+
+                    // === CONTENEDORES (opcional, al final si hay) ===
+                    $uniqueContainers = $allContainers->unique('id');
+                    if ($uniqueContainers->isNotEmpty()) {
+                        $w->startElement('contenedores');
+                        foreach ($uniqueContainers as $container) {
+                            $this->writeContenedorElement($w, $container);
+                        }
+                        $w->endElement(); // contenedores
+                    }
+
+                $w->endElement(); // argRegistrarEnviosParam
+                $w->endElement(); // RegistrarEnvios
+            $w->endElement(); // Body
+            $w->endElement(); // Envelope
 
             $w->endDocument();
             
             $xmlContent = $w->outputMemory();
             
-            // LOG FINAL PARA VERIFICAR
-            \Log::info("XML RegistrarEnvios generado - BLs: " . $billsOfLading->count() . ", XML length: " . strlen($xmlContent));
-            // LOG DEL XML COMPLETO PARA DEBUG
-            \Log::info("=== XML COMPLETO QUE SE ENVÍA ===");
-            \Log::info($xmlContent);
+            \Log::info("XML RegistrarEnvios generado correctamente", [
+                'bls_count' => $billsOfLading->count(),
+                'containers_count' => $uniqueContainers->count(),
+                'xml_length' => strlen($xmlContent),
+            ]);
+            
             return $xmlContent;
 
         } catch (Exception $e) {
-            \Log::info('Error en createRegistrarEnviosXml: ' . $e->getMessage());
+            \Log::error('Error en createRegistrarEnviosXml: ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Helper: Escribir elemento Bulto con orden exacto del cliente
+     * 
+     * Orden: cantBultos → cantBultosTotFrac → pesoBruto → pesoBrutoTotFrac →
+     *        codTipEmbalaje → descMercaderia → marcaNro → indCargSuelt → idContenedor
+     */
+    private function writeBultoElement(\XMLWriter $w, \App\Models\ShipmentItem $item, ?\App\Models\Container $container = null): void
+    {
+        $pivot = $container?->pivot ?? null;
+        
+        // Obtener valores de pivot si existe, sino del item
+        $cantBultos = $pivot?->package_quantity ?? $item->package_quantity ?? 1;
+        $pesoBruto = $pivot?->gross_weight_kg ?? $item->gross_weight_kg ?? 0;
+        
+        // Asegurar mínimos
+        $cantBultos = max(1, (int)$cantBultos);
+        $pesoBruto = max(0, (float)$pesoBruto);
+
+        $w->startElement('Bulto');
+            
+            // cantBultos - Obligatorio N(9)
+            $w->writeElement('cantBultos', (string)$cantBultos);
+            
+            // cantBultosTotFrac - Obligatorio N(9) - mismo valor si no fraccionado
+            $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
+            
+            // pesoBruto - Obligatorio N(14,4)
+            $w->writeElement('pesoBruto', number_format($pesoBruto, 4, '.', ''));
+            
+            // pesoBrutoTotFrac - Obligatorio N(14,4) - mismo valor si no fraccionado
+            $w->writeElement('pesoBrutoTotFrac', number_format($pesoBruto, 4, '.', ''));
+            
+            // codTipEmbalaje - Obligatorio C(2) - EDIFACT 7065
+            $codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'CN';
+            $w->writeElement('codTipEmbalaje', $codEmbalaje);
+            
+            // descMercaderia - Obligatorio C(500)
+            $descripcion = $item->item_description ?? 'MERCADERIA GENERAL';
+            $w->writeElement('descMercaderia', substr($descripcion, 0, 500));
+            
+            // marcaNro - Opcional C(100) - Cliente usa "S/M"
+            $marcas = $item->cargo_marks ?? 'S/M';
+            $w->writeElement('marcaNro', substr($marcas, 0, 100));
+            
+            // indCargSuelt - Obligatorio C(1) - S/N
+            $indCargSuelt = $container ? 'N' : 'S';
+            $w->writeElement('indCargSuelt', $indCargSuelt);
+            
+            // idContenedor - Opcional C(16) - solo si hay contenedor
+            if ($container && !empty($container->container_number)) {
+                $w->writeElement('idContenedor', $container->container_number);
+            }
+
+        $w->endElement(); // Bulto
+    }
+
+    /**
+     * Helper: Escribir Bulto desde BillOfLading (cuando no hay items)
+     */
+    private function writeBultoFromBol(\XMLWriter $w, \App\Models\BillOfLading $bol): void
+    {
+        $cantBultos = max(1, (int)($bol->total_packages ?? 1));
+        $pesoBruto = max(0, (float)($bol->gross_weight_kg ?? 0));
+
+        $w->startElement('Bulto');
+            $w->writeElement('cantBultos', (string)$cantBultos);
+            $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
+            $w->writeElement('pesoBruto', number_format($pesoBruto, 4, '.', ''));
+            $w->writeElement('pesoBrutoTotFrac', number_format($pesoBruto, 4, '.', ''));
+            $w->writeElement('codTipEmbalaje', $bol->primaryPackagingType?->argentina_ws_code ?? 'CN');
+            $w->writeElement('descMercaderia', substr($bol->cargo_description ?? 'MERCADERIA GENERAL', 0, 500));
+            $w->writeElement('marcaNro', substr($bol->cargo_marks ?? 'S/M', 0, 100));
+            $w->writeElement('indCargSuelt', 'S');
+        $w->endElement();
+    }
+
+    /**
+     * Helper: Escribir elemento Contenedor
+     */
+    private function writeContenedorElement(\XMLWriter $w, \App\Models\Container $container): void
+    {
+        $w->startElement('Contenedor');
+            
+            // id - número del contenedor
+            $w->writeElement('id', $container->container_number);
+            
+            // codMedida - código ISO del contenedor (ej: 22G1, 42G1)
+            $codMedida = $container->argentina_container_code ?? $container->container_type ?? '22G1';
+            $w->writeElement('codMedida', $codMedida);
+            
+            // condicion - H=lleno, V=vacío
+            $condicion = ($container->container_condition === 'V') ? 'V' : 'H';
+            $w->writeElement('condicion', $condicion);
+            
+            // precintos - opcional
+            $precinto = $container->shipper_seal ?? $container->carrier_seal ?? $container->customs_seal;
+            if ($precinto) {
+                $w->startElement('precintos');
+                    $w->writeElement('precinto', $precinto);
+                $w->endElement();
+            }
+
+        $w->endElement(); // Contenedor
     }
 
     /**

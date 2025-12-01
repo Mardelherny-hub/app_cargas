@@ -241,6 +241,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         $results = [];
         $allTracks = [];
         $totalTracksGenerated = 0;
+        $hasWarnings = false;  // ✅ NUEVO
+        $warningMessages = [];  // ✅ NUEVO
         
         foreach ($voyage->shipments as $shipment) {
             $result = $this->sendTitEnvios($soapClient, $shipment);
@@ -250,6 +252,31 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 return $result;
             }
             
+            // ✅ NUEVO: Capturar warnings (sin TRACKs)
+            if (!empty($result['has_warning'])) {
+                $hasWarnings = true;
+                $warningMessages[] = "Shipment {$shipment->shipment_number}: {$result['warning_message']}";
+            }
+
+            // ✅ NUEVO: Acumular mensajes AFIP de este shipment
+            if (!empty($result['afip_messages'])) {
+                if (!isset($allAfipMessages)) {
+                    $allAfipMessages = ['errores' => [], 'alertas' => [], 'informativos' => []];
+                }
+                
+                foreach ($result['afip_messages']['alertas'] as $alerta) {
+                    $allAfipMessages['alertas'][] = array_merge($alerta, [
+                        'shipment_number' => $shipment->shipment_number
+                    ]);
+                }
+                
+                foreach ($result['afip_messages']['informativos'] as $info) {
+                    $allAfipMessages['informativos'][] = array_merge($info, [
+                        'shipment_number' => $shipment->shipment_number
+                    ]);
+                }
+            }
+            
             // Recolectar TRACKs generados
             if (!empty($result['tracks'])) {
                 $allTracks[$shipment->shipment_number] = $result['tracks'];
@@ -257,7 +284,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             }
             
             // Crear registro de transacción en BD
-            \App\Models\WebserviceTransaction::create([
+            /* \App\Models\WebserviceTransaction::create([
                 'company_id' => $this->company->id,
                 'user_id' => $this->user->id,
                 'shipment_id' => $shipment->id,
@@ -271,7 +298,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'webservice_url' => $this->getWsdlUrl(),
                 'response_xml' => $result['response'],
                 'tracking_numbers' => $result['tracks'] ?? [],
-            ]);
+            ]); */
             
             $this->logOperation('info', 'TitEnvios registrado exitosamente', [
                 'shipment_id' => $shipment->id,
@@ -288,15 +315,41 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $message .= ' No se detectaron TRACKs en la respuesta (puede ser normal en ambiente de testing).';
         }
         
+        // ✅ Preparar array de tracks para la vista JavaScript
+        $tracksForView = [];
+        foreach ($voyage->shipments as $shipment) {
+            if (isset($allTracks[$shipment->shipment_number])) {
+                foreach ($allTracks[$shipment->shipment_number] as $trackNumber) {
+                    $tracksForView[] = [
+                        'track_number' => $trackNumber,
+                        'track_type' => 'envio',
+                        'reference_number' => $shipment->shipment_number,
+                    ];
+                }
+            }
+        }
+
+         // ✅ DEBUG TEMPORAL
+        \Log::info('🔍 DEBUG processRegistrarTitEnvios - Return completo', [
+            'tracks_count' => count($tracksForView ?? []),
+            'tracks_preview' => $tracksForView ?? [],
+            'tracks_by_shipment' => $allTracks,
+            'return_tiene_tracks' => isset($tracksForView),
+        ]);
+        
         return [
             'success' => true,
+            'has_warning' => $hasWarnings || $totalTracksGenerated === 0,
+            'warning_messages' => $warningMessages,
+            'afip_messages' => $allAfipMessages ?? ['errores' => [], 'alertas' => [], 'informativos' => []],  // ✅ NUEVO
             'method' => 'RegistrarTitEnvios',
             'message' => $message,
             'shipments_processed' => count($results),
             'tracks_generated' => $totalTracksGenerated,
             'tracks_by_shipment' => $allTracks,
+            'tracks' => $tracksForView,
+            'transaction_id' => $results[0]['transaction_id'] ?? null,
             'results' => $results,
-            // Para mostrar en UI
             'success_details' => $this->formatTracksForDisplay($allTracks, $totalTracksGenerated),
         ];
     }
@@ -911,23 +964,62 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception($fullError);
             }
 
-            $this->logOperation('info', 'RegistrarTitEnvios exitoso', [
-                'shipment_id' => $shipment->id,
-                'transaction_record_id' => $transaction->id,
-                'response_length' => strlen($response),
-            ]);
+            // Extraer TRACKs de la respuesta RegistrarTitEnvios
+            $tracks = $this->extractTracksFromResponse($response);
 
-            // ✅ ACTUALIZAR TRANSACCIÓN CON RESPUESTA
+             // ✅ NUEVO: Extraer TODOS los mensajes de AFIP
+            $afipMessages = $this->extractAfipMessages($response);
+            $hasAfipAlerts = !empty($afipMessages['alertas']);
+            $hasAfipInfo = !empty($afipMessages['informativos']);
+            
+            // ✅ Determinar status según presencia de TRACKs
+            $hasTrackIssue = empty($tracks);
+            // ✅ Determinar status considerando TRACKs y mensajes AFIP
+            $hasIssues = $hasTrackIssue || $hasAfipAlerts;
+            $status = $hasIssues ? 'sent' : 'success';
+            
+            // Construir mensaje de warning
+            $warningMessage = null;
+            if ($hasTrackIssue) {
+                $warningMessage = 'Envío exitoso pero AFIP no devolvió TRACKs. Contactar a AFIP o reintentar.';
+            }
+            if ($hasAfipAlerts) {
+                $alertTexts = array_map(function($alert) {
+                    return "[{$alert['codigo']}] {$alert['descripcion']}";
+                }, $afipMessages['alertas']);
+                
+                if ($warningMessage) {
+                    $warningMessage .= ' | Alertas AFIP: ' . implode('; ', $alertTexts);
+                } else {
+                    $warningMessage = 'Alertas AFIP: ' . implode('; ', $alertTexts);
+                }
+            }
+
+            // ✅ ACTUALIZAR TRANSACCIÓN
             $transaction->update([
                 'response_xml' => $response,
                 'request_xml' => $xml,
                 'response_at' => now(),
-                'status' => 'success',
+                'status' => $status,
+                'error_message' => $warningMessage,
                 'completed_at' => now(),
             ]);
 
-            // Extraer TRACKs de la respuesta RegistrarTitEnvios
-            $tracks = $this->extractTracksFromResponse($response);
+            // Log apropiado según el caso
+            if ($hasTrackIssue) {
+                $this->logOperation('warning', '⚠️ RegistrarTitEnvios: Sin TRACKs en respuesta', [
+                    'shipment_id' => $shipment->id,
+                    'transaction_id' => $transactionId,
+                    'environment' => $this->config['environment'] ?? 'unknown',
+                    'nota' => 'AFIP aceptó el envío pero no devolvió TRACKs. Usuario debe contactar AFIP.',
+                ]);
+            } else {
+                $this->logOperation('info', 'RegistrarTitEnvios exitoso', [
+                    'shipment_id' => $shipment->id,
+                    'transaction_record_id' => $transaction->id,
+                    'response_length' => strlen($response),
+                ]);
+            }
 
             // Guardar TRACKs en BD si se encontraron
             if (!empty($tracks)) {
@@ -942,6 +1034,11 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             return [
                 'success' => true,
+                'has_warning' => $hasIssues,  // ✅ MODIFICADO: Ahora incluye alertas AFIP
+                'warning_message' => $warningMessage,
+                'afip_messages' => $afipMessages,  // ✅ NUEVO: Todos los mensajes de AFIP
+                'has_afip_alerts' => $hasAfipAlerts,  // ✅ NUEVO
+                'has_afip_info' => $hasAfipInfo,  // ✅ NUEVO
                 'response' => $response,
                 'transaction_id' => $transactionId,
                 'transaction_record_id' => $transaction->id,
@@ -3704,6 +3801,79 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
     private function extractTracksFromResponse(string $response): array
     {
         return $this->parser->extractTracks($response, 'RegistrarEnvios');
+    }
+
+    /**
+     * Extraer TODOS los mensajes de AFIP (errores, alertas, info)
+     * Devuelve array con mensajes clasificados por tipo
+     */
+    private function extractAfipMessages(string $response): array
+    {
+        $messages = [
+            'errores' => [],
+            'alertas' => [],
+            'informativos' => [],
+        ];
+        
+        try {
+            // Parsear XML
+            libxml_use_internal_errors(true);
+            $xml = simplexml_load_string($response);
+            
+            if ($xml === false) {
+                return $messages;
+            }
+            
+            // Registrar namespaces
+            $xml->registerXPathNamespace('soap', 'http://schemas.xmlsoap.org/soap/envelope/');
+            $xml->registerXPathNamespace('ns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+            
+            // Buscar ListaErrores
+            $listaErrores = $xml->xpath('//ns:ListaErrores/ns:DetalleError');
+            
+            if (!$listaErrores) {
+                return $messages;
+            }
+            
+            // Procesar cada mensaje
+            foreach ($listaErrores as $error) {
+                $codigo = (string)$error->Codigo;
+                $descripcion = (string)$error->Descripcion;
+                $descripcionDetallada = (string)$error->DescripcionDetallada;
+                $tipoMensaje = (string)$error->TipoMensaje; // "Error", "Alerta", "Informativo"
+                
+                $mensaje = [
+                    'codigo' => $codigo,
+                    'descripcion' => $descripcion,
+                    'descripcion_detallada' => $descripcionDetallada,
+                    'tipo' => $tipoMensaje,
+                ];
+                
+                // Clasificar según tipo
+                switch (strtolower($tipoMensaje)) {
+                    case 'error':
+                        $messages['errores'][] = $mensaje;
+                        break;
+                    case 'alerta':
+                        $messages['alertas'][] = $mensaje;
+                        break;
+                    case 'informativo':
+                    case 'información':
+                        $messages['informativos'][] = $mensaje;
+                        break;
+                    default:
+                        // Si no tiene tipo claro, considerarlo alerta
+                        $messages['alertas'][] = $mensaje;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            $this->logOperation('error', 'Error extrayendo mensajes AFIP', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
+        return $messages;
     }
 
     /**

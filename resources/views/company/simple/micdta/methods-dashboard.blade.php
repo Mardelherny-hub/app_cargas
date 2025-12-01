@@ -373,40 +373,144 @@
                                             <span class="text-green-600 font-semibold">{{ $tracks->count() }} generados</span>
                                         </div>
                                     @endif
+
+                                    {{-- ✅ NUEVO: Mostrar warnings cuando status=sent y hay error_message --}}
+                                    @if($lastTitEnvios->status === 'sent' && $lastTitEnvios->error_message)
+                                        <div class="m-2 p-2 bg-orange-50 border-l-2 border-orange-400 rounded">
+                                            <p class="text-xs text-orange-800 font-semibold">⚠️ Atención:</p>
+                                            <p class="text-xs text-orange-700 mt-1">{{ $lastTitEnvios->error_message }}</p>
+                                        </div>
+                                    @endif
                                 @endif
                             </div>
 
-                            <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
-                                <button onclick="executeAfipMethod('RegistrarEnvios')"
-                                        class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
+                            {{-- ============================================ --}}
+                            {{-- TARJETA 2: RegistrarEnvios (MEJORADA) --}}
+                            {{-- ============================================ --}}
+                            @php
+                                // Verificar si hay título registrado (requisito previo)
+                                $hasTituloRegistrado = $lastTitEnvios && in_array($lastTitEnvios->status, ['success', 'sent']);
+                                
+                                // Obtener idTitTrans del título registrado (de la respuesta AFIP)
+                                $idTitTrans = null;
+                                if ($hasTituloRegistrado && $lastTitEnvios->success_data) {
+                                    $successData = is_array($lastTitEnvios->success_data) 
+                                        ? $lastTitEnvios->success_data 
+                                        : json_decode($lastTitEnvios->success_data, true);
+                                    $idTitTrans = $successData['id_tit_trans'] ?? $successData['idTitTrans'] ?? null;
+                                }
+                                
+                                // Contar BLs con id_decla (campo obligatorio para RegistrarEnvios)
+                                $allBillsOfLading = $voyage->shipments->flatMap->billsOfLading;
+                                $blsConIdDecla = $allBillsOfLading->filter(fn($bl) => !empty($bl->id_decla))->count();
+                                $blsTotales = $allBillsOfLading->count();
+                                $blsListos = $blsConIdDecla === $blsTotales && $blsTotales > 0;
+                                
+                                // TRACKs específicos generados por RegistrarEnvios
+                                $tracksEnvios = $voyage->webserviceTracks()
+                                    ->where('webservice_tracks.webservice_method', 'RegistrarEnvios')
+                                    ->whereIn('webservice_tracks.status', ['generated', 'used_in_micdta', 'used_in_convoy', 'completed'])
+                                    ->get();
+                                
+                                // Determinar si el botón debe estar habilitado
+                                $puedeEjecutarEnvios = $hasTituloRegistrado && $blsListos;
+                            @endphp
+
+                            <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarEnvios ? 'border-blue-300' : 'border-gray-300' }} rounded-lg overflow-hidden">
+                                {{-- Botón principal --}}
+                                <button onclick="{{ $puedeEjecutarEnvios ? "executeAfipMethod('RegistrarEnvios')" : "showRequisitosPrevios('RegistrarEnvios')" }}"
+                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarEnvios ? 'hover:bg-blue-50' : 'bg-gray-50 cursor-not-allowed' }} transition-colors">
                                     <span class="text-2xl mb-2">📦</span>
-                                    <span class="text-sm font-medium text-center">2. RegistrarEnvios</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Genera TRACKs de envíos</span>
+                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarEnvios ? 'text-gray-500' : '' }}">2. RegistrarEnvios</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Agrega envíos a título existente</span>
                                 </button>
                                 
-                                @if($lastEnvios)
-                                    <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs">
-                                        <div class="flex items-center justify-between mb-1">
+                                {{-- Panel de información --}}
+                                <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
+                                    
+                                    {{-- Requisito: Título Registrado --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Título registrado:</span>
+                                        @if($hasTituloRegistrado)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                ✓ Sí
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                ✗ Pendiente
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    {{-- ID del Título (si existe) --}}
+                                    @if($idTitTrans)
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">idTitTrans:</span>
+                                            <span class="text-gray-900 font-mono text-xs truncate max-w-[120px]" title="{{ $idTitTrans }}">
+                                                {{ Str::limit($idTitTrans, 15) }}
+                                            </span>
+                                        </div>
+                                    @endif
+                                    
+                                    {{-- BLs con id_decla --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">BLs con id_decla:</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                            {{ $blsListos ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' }}">
+                                            {{ $blsConIdDecla }}/{{ $blsTotales }}
+                                        </span>
+                                    </div>
+                                    
+                                    {{-- Separador si hay historial --}}
+                                    @if($lastEnvios)
+                                        <hr class="border-gray-200 my-1">
+                                    @endif
+                                    
+                                    {{-- Historial de último envío --}}
+                                    @if($lastEnvios)
+                                        <div class="flex items-center justify-between">
                                             <span class="text-gray-600">Último envío:</span>
                                             <span class="text-gray-900 font-medium">{{ $lastEnvios->created_at->format('d/m H:i') }}</span>
                                         </div>
-                                        <div class="flex items-center justify-between mb-1">
+                                        
+                                        <div class="flex items-center justify-between">
                                             <span class="text-gray-600">Estado:</span>
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                                                @if($lastEnvios->status === 'sent') bg-green-100 text-green-800
+                                                @if($lastEnvios->status === 'sent' || $lastEnvios->status === 'success') bg-green-100 text-green-800
                                                 @elseif($lastEnvios->status === 'error') bg-red-100 text-red-800
                                                 @else bg-yellow-100 text-yellow-800 @endif">
                                                 {{ ucfirst($lastEnvios->status) }}
                                             </span>
                                         </div>
-                                        @if($tracks->isNotEmpty())
-                                            <div class="flex items-center justify-between">
-                                                <span class="text-gray-600">TRACKs:</span>
-                                                <span class="text-green-600 font-semibold">{{ $tracks->count() }}</span>
+                                        
+                                        {{-- Mostrar error si hubo --}}
+                                        @if($lastEnvios->status === 'error' && $lastEnvios->error_message)
+                                            <div class="mt-1 p-1.5 bg-red-50 rounded text-xs text-red-700 truncate" title="{{ $lastEnvios->error_message }}">
+                                                ⚠️ {{ Str::limit($lastEnvios->error_message, 50) }}
                                             </div>
                                         @endif
-                                    </div>
-                                @endif
+                                    @endif
+                                    
+                                    {{-- TRACKs generados por este método --}}
+                                    @if($tracksEnvios->isNotEmpty())
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">TRACKs (Envíos):</span>
+                                            <span class="text-green-600 font-semibold">{{ $tracksEnvios->count() }} generados</span>
+                                        </div>
+                                    @endif
+                                    
+                                    {{-- Mensaje de ayuda si no puede ejecutar --}}
+                                    @if(!$puedeEjecutarEnvios)
+                                        <div class="mt-1 p-1.5 bg-blue-50 rounded text-xs text-blue-700">
+                                            💡 
+                                            @if(!$hasTituloRegistrado)
+                                                Primero ejecute RegistrarTitEnvios
+                                            @elseif(!$blsListos)
+                                                Faltan {{ $blsTotales - $blsConIdDecla }} BL(s) con id_decla
+                                            @endif
+                                        </div>
+                                    @endif
+                                </div>
                             </div>
 
                             <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
@@ -1527,6 +1631,22 @@
     }
 
     /**
+     * Mostrar mensaje de requisitos previos faltantes
+     */
+    function showRequisitosPrevios(methodName) {
+        let mensaje = '';
+        
+        if (methodName === 'RegistrarEnvios') {
+            mensaje = 'Para ejecutar RegistrarEnvios necesita:\n\n';
+            mensaje += '1. Ejecutar primero RegistrarTitEnvios exitosamente\n';
+            mensaje += '2. Todos los BLs deben tener el campo id_decla completado\n\n';
+            mensaje += '¿Desea ver el estado actual de los requisitos?';
+        }
+        
+        alert(mensaje);
+    }
+
+    /**
      * Mostrar modal con resultado
      */
     function showResultModal(methodName, result, isSuccess) {
@@ -1573,6 +1693,60 @@
                                 `<div><strong>${shipment}:</strong> ${tracks.join(', ')}</div>`
                             ).join('')}
                         </div>
+                    </div>
+                `;
+            }
+
+            // ✅ NUEVO: Mostrar mensajes AFIP (Alertas e Informativos)
+            if (result.afip_messages) {
+                // Mostrar ALERTAS de AFIP
+                if (result.afip_messages.alertas && result.afip_messages.alertas.length > 0) {
+                    successHtml += `
+                        <div class="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-md">
+                            <p class="text-sm font-semibold text-yellow-800 mb-2">⚠️ Alertas de AFIP:</p>
+                            <ul class="text-sm text-yellow-700 space-y-2">
+                                ${result.afip_messages.alertas.map(alerta => `
+                                    <li>
+                                        <strong>[${alerta.codigo}]</strong> ${alerta.descripcion}
+                                        ${alerta.shipment_number ? `<br><span class="text-xs">Shipment: ${alerta.shipment_number}</span>` : ''}
+                                        ${alerta.descripcion_detallada ? `<br><span class="text-xs italic">${alerta.descripcion_detallada}</span>` : ''}
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                // Mostrar MENSAJES INFORMATIVOS de AFIP
+                if (result.afip_messages.informativos && result.afip_messages.informativos.length > 0) {
+                    successHtml += `
+                        <div class="mt-3 p-3 bg-blue-50 border-l-4 border-blue-400 rounded-md">
+                            <p class="text-sm font-semibold text-blue-800 mb-2">ℹ️ Información de AFIP:</p>
+                            <ul class="text-sm text-blue-700 space-y-1">
+                                ${result.afip_messages.informativos.map(info => `
+                                    <li>
+                                        <strong>[${info.codigo}]</strong> ${info.descripcion}
+                                        ${info.shipment_number ? `<br><span class="text-xs">Shipment: ${info.shipment_number}</span>` : ''}
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+            }
+            
+            // ✅ NUEVO: Mostrar warnings de TRACKs faltantes
+            if (result.has_warning && result.warning_messages && result.warning_messages.length > 0) {
+                successHtml += `
+                    <div class="mt-4 p-3 bg-orange-50 border-l-4 border-orange-500 rounded-md">
+                        <p class="text-sm font-semibold text-orange-800 mb-2">⚠️ ATENCIÓN - Acción Requerida:</p>
+                        <ul class="text-sm text-orange-700 space-y-1 list-disc list-inside">
+                            ${result.warning_messages.map(warning => `<li>${warning}</li>`).join('')}
+                        </ul>
+                        <p class="text-xs text-orange-600 mt-2 italic">
+                            💡 Los TRACKs son necesarios para continuar con RegistrarMicDta. 
+                            Por favor contacte a AFIP o reintente el envío.
+                        </p>
                     </div>
                 `;
             }
