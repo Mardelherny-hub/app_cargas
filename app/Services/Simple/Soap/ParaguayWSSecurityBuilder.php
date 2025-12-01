@@ -118,8 +118,12 @@ class ParaguayWSSecurityBuilder
         $timestamp = $doc->createElementNS(self::NS_WSU, 'wsu:Timestamp');
         $timestamp->setAttributeNS(self::NS_WSU, 'wsu:Id', $timestampId);
 
-        $created = $doc->createElementNS(self::NS_WSU, 'wsu:Created', gmdate('Y-m-d\TH:i:s\Z'));
-        $expires = $doc->createElementNS(self::NS_WSU, 'wsu:Expires', gmdate('Y-m-d\TH:i:s\Z', time() + 300));
+        $paraguayTz = new \DateTimeZone('America/Asuncion');
+$now = new \DateTime('now', $paraguayTz);
+$created = $doc->createElementNS(self::NS_WSU, 'wsu:Created', $now->format('Y-m-d\TH:i:s'));
+$nowExpires = new \DateTime('now', $paraguayTz);
+$nowExpires->modify('+5 minutes');
+$expires = $doc->createElementNS(self::NS_WSU, 'wsu:Expires', $nowExpires->format('Y-m-d\TH:i:s'));
         $timestamp->appendChild($created);
         $timestamp->appendChild($expires);
 

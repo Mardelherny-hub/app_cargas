@@ -288,6 +288,8 @@ class ParaguayDnaService extends BaseWebserviceService
             // 3. Generar XML automáticamente
             $transactionId = $this->generateTransactionId('XFFM');
             $xml = $this->paraguayXmlGenerator->createXffmXml($voyage, $transactionId);
+            // Guardar XML original para DNA (sin firmar)
+            file_put_contents(storage_path("logs/DNA_XFFM_ORIGINAL_{$voyage->id}_" . now()->format('YmdHis') . ".xml"), $xml);
 
             // 4. Crear transacción
             $transaction = $this->createTransaction($voyage, [
