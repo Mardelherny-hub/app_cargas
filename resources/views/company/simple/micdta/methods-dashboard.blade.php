@@ -335,7 +335,55 @@
                         </h4>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             
-                            <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
+                            {{-- ============================================ --}}
+                            {{-- TARJETA 1: RegistrarTitEnvios (MEJORADA) --}}
+                            {{-- ============================================ --}}
+                            @php
+                                // Contar Shipments del voyage
+                                $shipmentsCount = $voyage->shipments->count();
+                                
+                                // Contar BLs totales
+                                $allBillsOfLading = $voyage->shipments->flatMap->billsOfLading;
+                                $blsTotales = $allBillsOfLading->count();
+                                
+                                // Verificar datos obligatorios para RegistrarTitEnvios
+                                // - Cada BL necesita: shipper, consignee, permiso_embarque
+                                $blsConShipper = $allBillsOfLading->filter(fn($bl) => $bl->shipper_id !== null)->count();
+                                $blsConConsignee = $allBillsOfLading->filter(fn($bl) => $bl->consignee_id !== null)->count();
+                                $blsConPermiso = $allBillsOfLading->filter(fn($bl) => !empty($bl->permiso_embarque))->count();
+                                
+                                // Verificar embarcación
+                                $tieneEmbarcacion = $voyage->leadVessel !== null;
+                                
+                                // Verificar puertos
+                                $tienePuertos = $voyage->originPort !== null && $voyage->destinationPort !== null;
+                                
+                                // Requisitos completos
+                                $requisitosCompletos = $shipmentsCount > 0 
+                                    && $blsTotales > 0 
+                                    && $blsConShipper === $blsTotales 
+                                    && $blsConConsignee === $blsTotales
+                                    && $tieneEmbarcacion
+                                    && $tienePuertos;
+                                
+                                // TRACKs específicos generados por RegistrarTitEnvios
+                                $tracksTitEnvios = $voyage->webserviceTracks()
+                                    ->where('webservice_tracks.webservice_method', 'RegistrarTitEnvios')
+                                    ->whereIn('webservice_tracks.status', ['generated', 'used_in_micdta', 'used_in_convoy', 'completed'])
+                                    ->get();
+                                
+                                // Obtener idTitTrans si existe
+                                $idTitTransRegistrado = null;
+                                if ($lastTitEnvios && $lastTitEnvios->success_data) {
+                                    $successData = is_array($lastTitEnvios->success_data) 
+                                        ? $lastTitEnvios->success_data 
+                                        : json_decode($lastTitEnvios->success_data, true);
+                                    $idTitTransRegistrado = $successData['id_tit_trans'] ?? $successData['idTitTrans'] ?? null;
+                                }
+                            @endphp
+
+                            <div class="flex flex-col bg-white border-2 {{ $requisitosCompletos ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
+                                {{-- Botón principal --}}
                                 <button onclick="executeAfipMethod('RegistrarTitEnvios')"
                                         class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
                                     <span class="text-2xl mb-2">📋</span>
@@ -343,13 +391,85 @@
                                     <span class="text-xs text-gray-600 text-center mt-1">Registra títulos de transporte</span>
                                 </button>
                                 
-                                @if($lastTitEnvios)
-                                    <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs">
-                                        <div class="flex items-center justify-between mb-1">
+                                {{-- Panel de información --}}
+                                <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
+                                    
+                                    {{-- Datos del Voyage --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Shipments:</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                            {{ $shipmentsCount > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                            {{ $shipmentsCount }}
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Bills of Lading:</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                            {{ $blsTotales > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                            {{ $blsTotales }}
+                                        </span>
+                                    </div>
+                                    
+                                    {{-- Requisitos de datos --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Embarcación:</span>
+                                        @if($tieneEmbarcacion)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                ✓ {{ Str::limit($voyage->leadVessel->name ?? 'Sí', 12) }}
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                ✗ Falta
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Puertos:</span>
+                                        @if($tienePuertos)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                ✓ Configurados
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                ✗ Faltan
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    {{-- Datos de BLs --}}
+                                    @if($blsTotales > 0)
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">BLs c/Shipper:</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                {{ $blsConShipper === $blsTotales ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' }}">
+                                                {{ $blsConShipper }}/{{ $blsTotales }}
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">BLs c/Consignee:</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                                {{ $blsConConsignee === $blsTotales ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800' }}">
+                                                {{ $blsConConsignee }}/{{ $blsTotales }}
+                                            </span>
+                                        </div>
+                                    @endif
+                                    
+                                    {{-- Separador si hay historial --}}
+                                    @if($lastTitEnvios)
+                                        <hr class="border-gray-200 my-1">
+                                    @endif
+                                    
+                                    {{-- Historial de último envío --}}
+                                    @if($lastTitEnvios)
+                                        <div class="flex items-center justify-between">
                                             <span class="text-gray-600">Último envío:</span>
                                             <span class="text-gray-900 font-medium">{{ $lastTitEnvios->created_at->format('d/m H:i') }}</span>
                                         </div>
-                                        <div class="flex items-center justify-between mb-1">
+                                        
+                                        <div class="flex items-center justify-between">
                                             <span class="text-gray-600">Estado:</span>
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
                                                 @if($lastTitEnvios->status === 'sent' || $lastTitEnvios->status === 'success') bg-green-100 text-green-800
@@ -358,30 +478,48 @@
                                                 {{ ucfirst($lastTitEnvios->status) }}
                                             </span>
                                         </div>
-                                        {{-- Mostrar TRACKs generados --}}
-                                        @if($tracks->isNotEmpty())
+                                        
+                                        {{-- ID del Título registrado --}}
+                                        @if($idTitTransRegistrado)
                                             <div class="flex items-center justify-between">
-                                                <span class="text-gray-600">TRACKs:</span>
-                                                <span class="text-green-600 font-semibold">{{ $tracks->count() }} generados</span>
+                                                <span class="text-gray-600">idTitTrans:</span>
+                                                <span class="text-gray-900 font-mono text-xs truncate max-w-[120px]" title="{{ $idTitTransRegistrado }}">
+                                                    {{ Str::limit($idTitTransRegistrado, 15) }}
+                                                </span>
                                             </div>
                                         @endif
-                                    </div>
-                                    {{-- Mostrar TRACKs generados --}}
-                                    @if($tracks->isNotEmpty())
-                                        <div class="flex items-center justify-between">
-                                            <span class="text-gray-600">TRACKs:</span>
-                                            <span class="text-green-600 font-semibold">{{ $tracks->count() }} generados</span>
+                                        
+                                        {{-- TRACKs generados --}}
+                                        @if($tracksTitEnvios->isNotEmpty())
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-gray-600">TRACKs:</span>
+                                                <span class="text-green-600 font-semibold">{{ $tracksTitEnvios->count() }} generados</span>
+                                            </div>
+                                        @endif
+                                        
+                                        {{-- Mostrar error/warning si hubo --}}
+                                        @if($lastTitEnvios->status === 'error' && $lastTitEnvios->error_message)
+                                            <div class="mt-1 p-1.5 bg-red-50 rounded text-xs text-red-700 truncate" title="{{ $lastTitEnvios->error_message }}">
+                                                ⚠️ {{ Str::limit($lastTitEnvios->error_message, 50) }}
+                                            </div>
+                                        @elseif($lastTitEnvios->status === 'sent' && $lastTitEnvios->error_message)
+                                            <div class="mt-1 p-1.5 bg-orange-50 border-l-2 border-orange-400 rounded text-xs text-orange-700">
+                                                ⚠️ {{ Str::limit($lastTitEnvios->error_message, 50) }}
+                                            </div>
+                                        @endif
+                                    @endif
+                                    
+                                    {{-- Mensaje de ayuda si faltan requisitos --}}
+                                    @if(!$requisitosCompletos && !$lastTitEnvios)
+                                        <div class="mt-1 p-1.5 bg-yellow-50 rounded text-xs text-yellow-700">
+                                            💡 Verifique: 
+                                            @if($shipmentsCount === 0) Shipments @endif
+                                            @if($blsTotales === 0) BLs @endif
+                                            @if(!$tieneEmbarcacion) Embarcación @endif
+                                            @if(!$tienePuertos) Puertos @endif
                                         </div>
                                     @endif
-
-                                    {{-- ✅ NUEVO: Mostrar warnings cuando status=sent y hay error_message --}}
-                                    @if($lastTitEnvios->status === 'sent' && $lastTitEnvios->error_message)
-                                        <div class="m-2 p-2 bg-orange-50 border-l-2 border-orange-400 rounded">
-                                            <p class="text-xs text-orange-800 font-semibold">⚠️ Atención:</p>
-                                            <p class="text-xs text-orange-700 mt-1">{{ $lastTitEnvios->error_message }}</p>
-                                        </div>
-                                    @endif
-                                @endif
+                                </div>
                             </div>
 
                             {{-- ============================================ --}}
@@ -513,37 +651,184 @@
                                 </div>
                             </div>
 
-                            <div class="flex flex-col bg-white border-2 border-blue-300 rounded-lg overflow-hidden">
-                                <button onclick="executeAfipMethod('RegistrarMicDta')"
-                                        class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
+                            {{-- ============================================ --}}
+                            {{-- TARJETA 3: RegistrarMicDta (MEJORADA) --}}
+                            {{-- ============================================ --}}
+                            @php
+                                // Verificar requisitos previos para RegistrarMicDta
+                                // Necesita: TRACKs generados de RegistrarTitEnvios o RegistrarEnvios
+                                $tracksTotales = $voyage->webserviceTracks()
+                                    ->whereIn('webservice_tracks.webservice_method', ['RegistrarTitEnvios', 'RegistrarEnvios'])
+                                    ->whereIn('webservice_tracks.status', ['generated', 'used_in_micdta', 'used_in_convoy', 'completed'])
+                                    ->count();
+                                
+                                $tieneTracks = $tracksTotales > 0;
+                                
+                                // Verificar embarcación con datos completos
+                                $vessel = $voyage->leadVessel;
+                                $tieneEmbarcacion = $vessel !== null;
+                                $embarcacionCompleta = $tieneEmbarcacion && !empty($vessel->registration_number);
+                                
+                                // Verificar capitán asignado
+                                $captain = $voyage->captain;
+                                $tieneCapitan = $captain !== null;
+                                $capitanCompleto = $tieneCapitan && !empty($captain->document_number);
+                                
+                                // Verificar puertos para ruta informática
+                                $tienePuertos = $voyage->originPort !== null && $voyage->destinationPort !== null;
+                                
+                                // Verificar si es convoy o autopropulsado
+                                $isConvoyVoyage = $voyage->is_convoy ?? false;
+                                
+                                // Último registro de MicDta
+                                $lastMicDta = $voyage->webserviceTransactions()
+                                    ->where('webservice_type', 'micdta')
+                                    ->where('soap_action', 'like', '%RegistrarMicDta%')
+                                    ->where('soap_action', 'NOT LIKE', '%RegistrarTitMicDta%')
+                                    ->latest()
+                                    ->first();
+                                
+                                // Obtener idMicDta si existe
+                                $idMicDtaRegistrado = null;
+                                $nroViajeRegistrado = null;
+                                if ($lastMicDta && $lastMicDta->success_data) {
+                                    $successData = is_array($lastMicDta->success_data) 
+                                        ? $lastMicDta->success_data 
+                                        : json_decode($lastMicDta->success_data, true);
+                                    $idMicDtaRegistrado = $successData['id_micdta'] ?? $successData['idMicDta'] ?? null;
+                                    $nroViajeRegistrado = $successData['nro_viaje'] ?? $successData['nroViaje'] ?? null;
+                                }
+                                
+                                // Requisitos completos
+                                $puedeEjecutarMicDta = $tieneTracks && $embarcacionCompleta && $capitanCompleto && $tienePuertos;
+                            @endphp
+
+                            <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarMicDta ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
+                                {{-- Botón principal --}}
+                                <button onclick="{{ $puedeEjecutarMicDta ? "executeAfipMethod('RegistrarMicDta')" : "showRequisitosPrevios('RegistrarMicDta')" }}"
+                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarMicDta ? 'hover:bg-blue-50' : 'bg-gray-50' }} transition-colors">
                                     <span class="text-2xl mb-2">📄</span>
-                                    <span class="text-sm font-medium text-center">3. RegistrarMicDta</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Registra MIC/DTA completo</span>
+                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarMicDta ? 'text-gray-500' : '' }}">3. RegistrarMicDta</span>
+                                    <span class="text-xs text-gray-600 text-center mt-1">Genera MIC/DTA oficial</span>
                                 </button>
                                 
-                                @if($lastMicDta)
-                                    <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs">
-                                        <div class="flex items-center justify-between mb-1">
-                                            <span class="text-gray-600">Último envío:</span>
+                                {{-- Panel de información --}}
+                                <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
+                                    
+                                    {{-- TRACKs disponibles --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">TRACKs disponibles:</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                            {{ $tieneTracks ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                            {{ $tracksTotales }}
+                                        </span>
+                                    </div>
+                                    
+                                    {{-- Embarcación --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Embarcación:</span>
+                                        @if($embarcacionCompleta)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title="{{ $vessel->name }}">
+                                                ✓ {{ Str::limit($vessel->name, 12) }}
+                                            </span>
+                                        @elseif($tieneEmbarcacion)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                ⚠️ Sin matrícula
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                ✗ Falta
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    {{-- Capitán --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Capitán:</span>
+                                        @if($capitanCompleto)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title="{{ $captain->name }}">
+                                                ✓ {{ Str::limit($captain->name, 12) }}
+                                            </span>
+                                        @elseif($tieneCapitan)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                ⚠️ Sin documento
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                ✗ Falta
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    {{-- Tipo de viaje --}}
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">Tipo:</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                            {{ $isConvoyVoyage ? '⛴️ Convoy' : '🚢 Autopropulsado' }}
+                                        </span>
+                                    </div>
+                                    
+                                    {{-- Separador si hay historial --}}
+                                    @if($lastMicDta)
+                                        <hr class="border-gray-200 my-1">
+                                    @endif
+                                    
+                                    {{-- Historial de último registro --}}
+                                    @if($lastMicDta)
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-gray-600">Último registro:</span>
                                             <span class="text-gray-900 font-medium">{{ $lastMicDta->created_at->format('d/m H:i') }}</span>
                                         </div>
-                                        <div class="flex items-center justify-between mb-1">
+                                        
+                                        <div class="flex items-center justify-between">
                                             <span class="text-gray-600">Estado:</span>
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                                                @if($lastMicDta->status === 'sent') bg-green-100 text-green-800
+                                                @if($lastMicDta->status === 'sent' || $lastMicDta->status === 'success') bg-green-100 text-green-800
                                                 @elseif($lastMicDta->status === 'error') bg-red-100 text-red-800
                                                 @else bg-yellow-100 text-yellow-800 @endif">
                                                 {{ ucfirst($lastMicDta->status) }}
                                             </span>
                                         </div>
-                                        @if($lastMicDta->external_reference)
+                                        
+                                        {{-- ID MIC/DTA registrado --}}
+                                        @if($idMicDtaRegistrado)
                                             <div class="flex items-center justify-between">
-                                                <span class="text-gray-600">MIC/DTA:</span>
-                                                <span class="text-green-600 font-mono text-xs">{{ Str::limit($lastMicDta->external_reference, 12) }}</span>
+                                                <span class="text-gray-600">idMicDta:</span>
+                                                <span class="text-gray-900 font-mono text-xs truncate max-w-[100px]" title="{{ $idMicDtaRegistrado }}">
+                                                    {{ Str::limit($idMicDtaRegistrado, 12) }}
+                                                </span>
                                             </div>
                                         @endif
-                                    </div>
-                                @endif
+                                        
+                                        {{-- Nro Viaje (solo autopropulsado) --}}
+                                        @if($nroViajeRegistrado && !$isConvoyVoyage)
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-gray-600">Nro Viaje:</span>
+                                                <span class="text-green-700 font-mono font-semibold text-xs">
+                                                    {{ $nroViajeRegistrado }}
+                                                </span>
+                                            </div>
+                                        @endif
+                                        
+                                        {{-- Mostrar error si hubo --}}
+                                        @if($lastMicDta->status === 'error' && $lastMicDta->error_message)
+                                            <div class="mt-1 p-1.5 bg-red-50 rounded text-xs text-red-700 truncate" title="{{ $lastMicDta->error_message }}">
+                                                ⚠️ {{ Str::limit($lastMicDta->error_message, 50) }}
+                                            </div>
+                                        @endif
+                                    @endif
+                                    
+                                    {{-- Mensaje de ayuda si no puede ejecutar --}}
+                                    @if(!$puedeEjecutarMicDta)
+                                        <div class="mt-1 p-1.5 bg-yellow-50 rounded text-xs text-yellow-700">
+                                            💡 Faltan: 
+                                            @if(!$tieneTracks) TRACKs @endif
+                                            @if(!$embarcacionCompleta) Embarcación @endif
+                                            @if(!$capitanCompleto) Capitán @endif
+                                            @if(!$tienePuertos) Puertos @endif
+                                        </div>
+                                    @endif
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1640,7 +1925,14 @@
             mensaje = 'Para ejecutar RegistrarEnvios necesita:\n\n';
             mensaje += '1. Ejecutar primero RegistrarTitEnvios exitosamente\n';
             mensaje += '2. Todos los BLs deben tener el campo id_decla completado\n\n';
-            mensaje += '¿Desea ver el estado actual de los requisitos?';
+            mensaje += 'Verifique el panel de información de la tarjeta.';
+        } else if (methodName === 'RegistrarMicDta') {
+            mensaje = 'Para ejecutar RegistrarMicDta necesita:\n\n';
+            mensaje += '1. TRACKs generados (ejecutar RegistrarTitEnvios primero)\n';
+            mensaje += '2. Embarcación asignada con matrícula\n';
+            mensaje += '3. Capitán asignado con número de documento\n';
+            mensaje += '4. Puertos de origen y destino configurados\n\n';
+            mensaje += 'Verifique el panel de información de la tarjeta.';
         }
         
         alert(mensaje);
