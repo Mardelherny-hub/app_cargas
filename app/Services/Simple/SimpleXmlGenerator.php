@@ -1558,9 +1558,11 @@ $wsaa = $this->getWSAATokens();
 
     /**
      * PASO 4: RegistrarSalidaZonaPrimaria - Registrar salida de puerto
-     * Genera XML según especificación exacta AFIP
+     * Genera XML según especificación exacta AFIP y XML exitoso cliente
      * 
-     * @param array $salidaData Datos de salida
+     * CORREGIDO: Token y Sign DENTRO de argWSAutenticacionEmpresa (no en Header)
+     * 
+     * @param array $salidaData Datos de salida (requiere 'nro_viaje')
      * @param string $transactionId ID único de transacción (máx 15 chars)
      * @return string|null XML completo o null si error
      */
@@ -1571,48 +1573,41 @@ $wsaa = $this->getWSAATokens();
             if (empty($salidaData['nro_viaje'])) {
                 throw new Exception('Número de viaje (nroViaje) obligatorio');
             }
-
+            
             // Obtener tokens WSAA
             $wsaaTokens = $this->getWSAATokens();
             
             // Crear documento XML
-            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            $xml = '<?xml version="1.0"?>';
             
-            // Envelope SOAP con namespaces
-            $xml .= '<soap:Envelope ';
-            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
+            // Envelope SOAP con namespaces (formato exacto XML exitoso cliente)
+            $xml .= '<SOAP-ENV:Envelope ';
+            $xml .= 'xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" ';
             $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
-            $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
             
-            // Header con autenticación WSAA
-            $xml .= '<soap:Header>';
-            $xml .= '<Auth>';
-            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
-            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
-            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
-            $xml .= '</Auth>';
-            $xml .= '</soap:Header>';
-            
-            // Body con método RegistrarSalidaZonaPrimaria
-            $xml .= '<soap:Body>';
+            // Body con método RegistrarSalidaZonaPrimaria (SIN soap:Header)
+            $xml .= '<SOAP-ENV:Body>';
             $xml .= '<RegistrarSalidaZonaPrimaria xmlns="' . self::AFIP_NAMESPACE . '">';
             
-            // Autenticación empresa (obligatorio AFIP)
+            // Autenticación empresa con Token y Sign DENTRO (según XML exitoso)
             $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
             $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
-            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
-            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
             $xml .= '</argWSAutenticacionEmpresa>';
             
             // Número de viaje (único parámetro requerido)
             $xml .= '<argNroViaje>' . htmlspecialchars($salidaData['nro_viaje']) . '</argNroViaje>';
             
             $xml .= '</RegistrarSalidaZonaPrimaria>';
-            $xml .= '</soap:Body>';
-            $xml .= '</soap:Envelope>';
-
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
+            
             return $xml;
-
+            
         } catch (Exception $e) {
             \Log::info("SimpleXmlGenerator: Error creando XML RegistrarSalidaZonaPrimaria - " . $e->getMessage());
             return null;

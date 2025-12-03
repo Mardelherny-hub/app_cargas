@@ -126,6 +126,7 @@ class CertificateController extends Controller
 
     /**
      * Procesar subida de certificado.
+     * ACTUALIZADO: Soporta 2 archivos separados para Paraguay (cert + key)
      */
     public function processUpload(Request $request)
     {
@@ -149,60 +150,167 @@ class CertificateController extends Controller
             abort(403, 'No tiene permisos para acceder a esta empresa.');
         }
 
-        // NUEVA VALIDACIÓN: incluir country
-        $request->validate([
-            'country' => 'required|in:argentina,paraguay',  // ← NUEVO
-            'certificate' => [
-                'required',
-                'file',
-                'max:2048',
-                function ($attribute, $value, $fail) {
-                    $extension = strtolower($value->getClientOriginalExtension());
-                    if (!in_array($extension, ['p12', 'pfx', 'pem'])) {
-                        $fail('El certificado debe ser un archivo .p12, .pfx o .pem');
+        $country = $request->country;
+
+        // VALIDACIÓN DIFERENCIADA POR PAÍS
+        if ($country === 'paraguay') {
+            // Paraguay: 2 archivos separados (certificado + clave privada)
+            // DEBUG
+            \Log::info('=== Validando Paraguay ===');
+             try {
+                $request->validate([
+                    'country' => 'required|in:argentina,paraguay',
+                    'certificate' => [
+                        'required',
+                        'file',
+                        'max:2048',
+                        function ($attribute, $value, $fail) {
+                            $extension = strtolower($value->getClientOriginalExtension());
+                            if ($extension !== 'pem') {
+                                $fail('El certificado de Paraguay debe ser un archivo .pem');
+                            }
+                        }
+                    ],
+                    'private_key' => [
+                        'required',
+                        'file',
+                        'max:2048',
+                        function ($attribute, $value, $fail) {
+                            $extension = strtolower($value->getClientOriginalExtension());
+                            if ($extension !== 'pem') {
+                                $fail('La clave privada debe ser un archivo .pem');
+                            }
+                        }
+                    ],
+                    'alias' => 'nullable|string|max:255',
+                    'expires_at' => 'required|date|after:today',
+                ], [
+                    'country.required' => 'Debe seleccionar el país del certificado.',
+                    'certificate.required' => 'Debe seleccionar el archivo del certificado (.pem).',
+                    'private_key.required' => 'Debe seleccionar el archivo de clave privada (.pem).',
+                    'expires_at.required' => 'La fecha de vencimiento es obligatoria.',
+                    'expires_at.after' => 'La fecha de vencimiento debe ser posterior a hoy.',
+                ]);
+                \Log::info('=== Validación Paraguay OK ===');
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                \Log::error('=== Validación Paraguay FALLÓ ===', [
+                    'errors' => $e->errors()
+                ]);
+                throw $e;
+            }
+
+        } else {
+            // Argentina: archivo único .p12/.pfx
+            $request->validate([
+                'country' => 'required|in:argentina,paraguay',
+                'certificate' => [
+                    'required',
+                    'file',
+                    'max:2048',
+                    function ($attribute, $value, $fail) {
+                        $extension = strtolower($value->getClientOriginalExtension());
+                        if (!in_array($extension, ['p12', 'pfx', 'pem'])) {
+                            $fail('El certificado debe ser un archivo .p12, .pfx o .pem');
+                        }
                     }
-                }
-            ],
-            'password' => 'required|string|min:1',
-            'alias' => 'nullable|string|max:255',
-            'expires_at' => 'required|date|after:today',
-        ], [
-            'country.required' => 'Debe seleccionar el país del certificado.',
-            'certificate.required' => 'Debe seleccionar el archivo del certificado.',
-            'certificate.mimes' => 'El certificado debe ser un archivo .p12, .pfx o .pem.',
-            'certificate.max' => 'El archivo no puede ser mayor a 2MB.',
-            'password.required' => 'La contraseña del certificado es obligatoria.',
-            'expires_at.required' => 'La fecha de vencimiento es obligatoria.',
-            'expires_at.after' => 'La fecha de vencimiento debe ser posterior a hoy.',
+                ],
+                'password' => 'required|string|min:1',
+                'alias' => 'nullable|string|max:255',
+                'expires_at' => 'required|date|after:today',
+            ], [
+                'country.required' => 'Debe seleccionar el país del certificado.',
+                'certificate.required' => 'Debe seleccionar el archivo del certificado.',
+                'certificate.mimes' => 'El certificado debe ser un archivo .p12, .pfx o .pem.',
+                'certificate.max' => 'El archivo no puede ser mayor a 2MB.',
+                'password.required' => 'La contraseña del certificado es obligatoria.',
+                'expires_at.required' => 'La fecha de vencimiento es obligatoria.',
+                'expires_at.after' => 'La fecha de vencimiento debe ser posterior a hoy.',
+            ]);
+        }
+
+        // DEBUG TEMPORAL - Remover después
+        \Log::info('=== DEBUG processUpload ===', [
+            'country' => $request->country,
+            'has_certificate' => $request->hasFile('certificate'),
+            'has_private_key' => $request->hasFile('private_key'),
+            'all_files' => $request->allFiles(),
+            'all_input' => $request->except(['password']),
         ]);
 
         try {
-            $country = $request->country;
-            
-            // Eliminar certificado anterior de este país si existe
+            // Eliminar certificados anteriores de este país si existen
             $existingCert = $company->getCertificate($country);
-            if ($existingCert && isset($existingCert['path'])) {
-                if (Storage::exists($existingCert['path'])) {
+            if ($existingCert) {
+                // Eliminar archivo único (Argentina) o ambos archivos (Paraguay)
+                if (isset($existingCert['path']) && Storage::exists($existingCert['path'])) {
                     Storage::delete($existingCert['path']);
+                }
+                if (isset($existingCert['cert_path']) && Storage::exists($existingCert['cert_path'])) {
+                    Storage::delete($existingCert['cert_path']);
+                }
+                if (isset($existingCert['key_path']) && Storage::exists($existingCert['key_path'])) {
+                    Storage::delete($existingCert['key_path']);
                 }
             }
 
-            // Guardar nuevo certificado en carpeta específica por país
-            $file = $request->file('certificate');
-            $extension = $file->getClientOriginalExtension();
-            $filename = uniqid() . '.' . $extension;
-            $path = $file->storeAs("certificates/{$company->id}/{$country}", $filename);
+            if ($country === 'paraguay') {
+                // PARAGUAY: Guardar 2 archivos separados
+                \Log::info('=== Guardando archivos Paraguay ===');
+    
+                try {
+                    $certFile = $request->file('certificate');
+                    $keyFile = $request->file('private_key');
+                    
+                    $certFilename = uniqid() . '_cert.pem';
+                    $keyFilename = uniqid() . '_key.pem';
+                    
+                    \Log::info('=== Intentando storeAs ===', [
+                        'cert_filename' => $certFilename,
+                        'key_filename' => $keyFilename,
+                        'directory' => "certificates/{$company->id}/{$country}",
+                    ]);
+                    
+                    $certPath = $certFile->storeAs("certificates/{$company->id}/{$country}", $certFilename);
+                    \Log::info('=== certPath ===', ['certPath' => $certPath]);
+                    
+                    $keyPath = $keyFile->storeAs("certificates/{$company->id}/{$country}", $keyFilename);
+                    \Log::info('=== keyPath ===', ['keyPath' => $keyPath]);
 
-            // Preparar datos del certificado
-            $certificateData = [
-                'path' => $path,
-                'password' => $request->password, // Se encriptará en setCertificate()
-                'alias' => $request->alias ?? strtoupper($country) . '_CERT',
-                'expires_at' => $request->expires_at,
-                'issuer' => $country === 'argentina' ? 'AFIP' : 'DNA',
-            ];
+                    $certificateData = [
+                        'cert_path' => $certPath,
+                        'key_path' => $keyPath,
+                        'alias' => $request->alias ?? 'DNA_CERT_' . date('Y'),
+                        'expires_at' => $request->expires_at,
+                        'issuer' => 'DNA',
+                    ];
 
-            // Guardar usando el nuevo método
+                    \Log::info('=== certificateData Paraguay ===', $certificateData);
+                    
+                } catch (\Exception $e) {
+                    \Log::error('=== ERROR guardando archivos ===', [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    throw $e;
+                }
+            } else {
+                // ARGENTINA: Guardar archivo único
+                $file = $request->file('certificate');
+                $extension = $file->getClientOriginalExtension();
+                $filename = uniqid() . '.' . $extension;
+                $path = $file->storeAs("certificates/{$company->id}/{$country}", $filename, 'private');
+
+                // Preparar datos del certificado Argentina
+                $certificateData = [
+                    'path' => $path,
+                    'password' => $request->password,
+                    'alias' => $request->alias ?? 'AFIP_CERT_' . date('Y'),
+                    'expires_at' => $request->expires_at,
+                    'issuer' => 'AFIP',
+                ];
+            }
+
+            // Guardar usando el método del modelo
             $company->setCertificate($country, $certificateData);
 
             $countryName = $country === 'argentina' ? 'Argentina (AFIP)' : 'Paraguay (DNA)';

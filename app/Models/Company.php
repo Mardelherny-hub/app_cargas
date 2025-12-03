@@ -513,6 +513,11 @@ public function deleteCertificate(?string $country = null)
      */
     public function setCertificate(string $country, array $certificateData): bool
     {
+        \Log::info('=== setCertificate INICIO ===', [
+            'country' => $country,
+            'certificateData' => $certificateData,
+        ]);
+        
         $certificates = $this->certificates ?? [];
         $countryKey = strtolower($country);
         
@@ -527,11 +532,20 @@ public function deleteCertificate(?string $country = null)
         
         $certificates[$countryKey] = $certificateData;
         
-        return $this->update(['certificates' => $certificates]);
+        \Log::info('=== setCertificate UPDATE ===', [
+            'certificates' => $certificates,
+        ]);
+        
+        $result = $this->update(['certificates' => $certificates]);
+        
+        \Log::info('=== setCertificate RESULT ===', ['result' => $result]);
+        
+        return $result;
     }
 
     /**
      * Verificar si tiene certificado para un país
+     * ACTUALIZADO: Soporta estructura Paraguay (cert_path + key_path)
      */
     public function hasCertificateForCountry(string $country): bool
     {
@@ -549,28 +563,45 @@ public function deleteCertificate(?string $country = null)
             }
         }
         
-        // Verificar que el archivo exista
-        if (isset($cert['path']) && !Storage::exists($cert['path'])) {
-            return false;
+        // Paraguay: verificar ambos archivos (cert_path y key_path)
+        if (isset($cert['cert_path']) && isset($cert['key_path'])) {
+            return Storage::exists($cert['cert_path']) && Storage::exists($cert['key_path']);
         }
         
-        return true;
+        // Argentina/Legacy: verificar archivo único (path)
+        if (isset($cert['path'])) {
+            return Storage::exists($cert['path']);
+        }
+        
+        return false;
     }
 
     /**
      * Eliminar certificado de un país
+     * ACTUALIZADO: Soporta estructura Paraguay (cert_path + key_path)
      */
     public function deleteCertificateForCountry(string $country): bool
     {
         $certificates = $this->certificates ?? [];
         $countryKey = strtolower($country);
         
-        // Eliminar archivo físico si existe
-        if (isset($certificates[$countryKey]['path'])) {
-            $path = $certificates[$countryKey]['path'];
-            if (Storage::exists($path)) {
-                Storage::delete($path);
-            }
+        if (!isset($certificates[$countryKey])) {
+            return false;
+        }
+        
+        $cert = $certificates[$countryKey];
+        
+        // Eliminar archivos físicos según estructura
+        // Paraguay: 2 archivos
+        if (isset($cert['cert_path']) && Storage::exists('private/' . $cert['cert_path'])) {
+            Storage::delete('private/' . $cert['cert_path']);
+        }
+        if (isset($cert['key_path']) && Storage::exists('private/' . $cert['key_path'])) {
+            Storage::delete('private/' . $cert['key_path']);
+        }
+
+        if (isset($cert['path']) && Storage::exists('private/' . $cert['path'])) {
+            Storage::delete('private/' . $cert['path']);
         }
         
         // Eliminar del array
@@ -581,11 +612,28 @@ public function deleteCertificate(?string $country = null)
 
     /**
      * Obtener path del certificado para un país
+     * ACTUALIZADO: Soporta estructura Paraguay (retorna cert_path)
      */
     public function getCertificatePathForCountry(string $country): ?string
     {
         $cert = $this->getCertificate($country);
+        
+        // Paraguay: retornar cert_path
+        if (isset($cert['cert_path'])) {
+            return $cert['cert_path'];
+        }
+        
+        // Argentina/Legacy: retornar path
         return $cert['path'] ?? null;
+    }
+
+    /**
+     * Obtener path de la clave privada para un país (solo Paraguay)
+     */
+    public function getCertificateKeyPathForCountry(string $country): ?string
+    {
+        $cert = $this->getCertificate($country);
+        return $cert['key_path'] ?? null;
     }
 
     /**

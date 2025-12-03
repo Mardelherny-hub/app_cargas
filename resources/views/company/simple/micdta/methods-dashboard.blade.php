@@ -1151,41 +1151,114 @@
                         </h4>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             
-                            {{-- Botón 10: RegistrarSalidaZonaPrimaria --}}
-                            <div class="flex flex-col">
-                                <button onclick="executeAfipMethod('RegistrarSalidaZonaPrimaria')"
-                                        class="flex flex-col items-center justify-center p-4 bg-white border-2 border-orange-300 rounded-lg hover:bg-orange-100 hover:border-orange-400 transition-colors">
+                            {{-- ============================================ --}}
+                            {{-- TARJETA 10: RegistrarSalidaZonaPrimaria (MEJORADA) --}}
+                            {{-- ============================================ --}}
+                            @php
+                                // Verificar si hay MIC/DTA registrado (requisito previo)
+                                $hasMicDtaRegistrado = $lastMicDta && in_array($lastMicDta->status, ['success', 'sent']);
+                                
+                                // Obtener nroViaje del MIC/DTA registrado (necesario para SalidaZonaPrimaria)
+                                $nroViaje = null;
+                                if ($hasMicDtaRegistrado && $lastMicDta->success_data) {
+                                    $successDataMicDta = is_array($lastMicDta->success_data) 
+                                        ? $lastMicDta->success_data 
+                                        : json_decode($lastMicDta->success_data, true);
+                                    $nroViaje = $successDataMicDta['nro_viaje'] ?? $successDataMicDta['nroViaje'] ?? null;
+                                }
+                                
+                                // Determinar si puede ejecutar
+                                $puedeEjecutarSalidaZP = $hasMicDtaRegistrado && !empty($nroViaje);
+                                
+                                // Extraer nroSalida si ya se ejecutó
+                                $nroSalida = null;
+                                if ($lastSalidaZP && $lastSalidaZP->success_data) {
+                                    $successDataSalida = is_array($lastSalidaZP->success_data) 
+                                        ? $lastSalidaZP->success_data 
+                                        : json_decode($lastSalidaZP->success_data, true);
+                                    $nroSalida = $successDataSalida['nro_salida'] ?? $successDataSalida['nroSalida'] ?? null;
+                                }
+                            @endphp
+
+                            <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarSalidaZP ? 'border-orange-300' : 'border-gray-300' }} rounded-lg overflow-hidden">
+                                {{-- Botón principal --}}
+                                <button onclick="{{ $puedeEjecutarSalidaZP ? "executeAfipMethod('RegistrarSalidaZonaPrimaria')" : "showRequisitosPrevios('RegistrarSalidaZonaPrimaria')" }}"
+                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarSalidaZP ? 'hover:bg-orange-50' : 'bg-gray-50 cursor-not-allowed' }} transition-colors">
                                     <span class="text-2xl mb-2">🚪</span>
-                                    <span class="text-sm font-medium text-center">10. RegistrarSalida</span>
+                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarSalidaZP ? 'text-gray-500' : '' }}">4. RegistrarSalidaZP</span>
                                     <span class="text-xs text-gray-600 text-center mt-1">Salida zona primaria</span>
                                 </button>
                                 
-                                {{-- Info al pie --}}
-                                <div class="mt-2 p-2 bg-white rounded border border-orange-200 text-xs">
-                                    @if($lastSalidaZP)
-                                        <div class="flex justify-between mb-1">
-                                            <span class="text-gray-600">Última salida:</span>
+                                {{-- Panel de requisitos previos --}}
+                                @if(!$puedeEjecutarSalidaZP)
+                                    <div class="px-3 py-2 bg-yellow-50 border-t border-yellow-200">
+                                        <p class="text-xs font-semibold text-yellow-800 mb-1">⚠️ Requisitos faltantes:</p>
+                                        <ul class="text-xs text-yellow-700 space-y-0.5">
+                                            @if(!$hasMicDtaRegistrado)
+                                                <li>• Ejecutar RegistrarMicDta primero</li>
+                                            @elseif(empty($nroViaje))
+                                                <li>• No se obtuvo Nro. Viaje del MIC/DTA</li>
+                                            @endif
+                                        </ul>
+                                    </div>
+                                @else
+                                    {{-- Panel de información disponible --}}
+                                    <div class="px-3 py-2 bg-orange-50 border-t border-orange-200">
+                                        <p class="text-xs font-semibold text-orange-800 mb-1">📋 Datos para envío:</p>
+                                        <div class="text-xs space-y-1">
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Nro. Viaje:</span>
+                                                <span class="font-mono text-orange-900 font-semibold">{{ $nroViaje }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
+                                
+                                {{-- Panel de resultado último envío --}}
+                                @if($lastSalidaZP)
+                                    <div class="px-3 py-2 bg-gray-50 border-t border-orange-200 text-xs">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-gray-600">Último envío:</span>
                                             <span class="text-gray-900 font-medium">{{ $lastSalidaZP->created_at->format('d/m H:i') }}</span>
                                         </div>
-                                        <div class="flex justify-between mb-1">
-                                            <span class="text-gray-600">Nro. Salida:</span>
-                                            <span class="text-gray-700 font-mono text-xs">
-                                                {{ $lastSalidaZP->success_data['nro_salida'] ?? 'N/A' }}
-                                            </span>
-                                        </div>
-                                        <div class="flex justify-between">
+                                        <div class="flex items-center justify-between mb-1">
                                             <span class="text-gray-600">Estado:</span>
-                                            <span class="px-2 py-0.5 rounded text-xs font-semibold
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
                                                 @if($lastSalidaZP->status === 'success') bg-green-100 text-green-800
                                                 @elseif($lastSalidaZP->status === 'sent') bg-blue-100 text-blue-800
-                                                @else bg-gray-100 text-gray-800 @endif">
+                                                @elseif($lastSalidaZP->status === 'error') bg-red-100 text-red-800
+                                                @else bg-yellow-100 text-yellow-800 @endif">
                                                 {{ ucfirst($lastSalidaZP->status) }}
                                             </span>
                                         </div>
-                                    @else
-                                        <p class="text-gray-500 text-center">No registrado</p>
-                                    @endif
-                                </div>
+                                        
+                                        {{-- Mostrar Nro. Salida si fue exitoso --}}
+                                        @if($nroSalida)
+                                            <div class="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                                                <div class="flex justify-between items-center">
+                                                    <span class="text-green-700 font-semibold">Nro. Salida AFIP:</span>
+                                                    <span class="font-mono text-green-900 font-bold">{{ $nroSalida }}</span>
+                                                </div>
+                                            </div>
+                                        @endif
+                                        
+                                        {{-- Mostrar error si falló --}}
+                                        @if($lastSalidaZP->status === 'error' && $lastSalidaZP->error_message)
+                                            <div class="mt-2 p-2 bg-red-50 border-l-2 border-red-400 rounded">
+                                                <p class="text-xs text-red-800 font-semibold">❌ Error:</p>
+                                                <p class="text-xs text-red-700 mt-1">{{ $lastSalidaZP->error_message }}</p>
+                                            </div>
+                                        @endif
+                                        
+                                        {{-- Mostrar advertencia si hay mensaje en estado sent --}}
+                                        @if($lastSalidaZP->status === 'sent' && $lastSalidaZP->error_message)
+                                            <div class="mt-2 p-2 bg-orange-50 border-l-2 border-orange-400 rounded">
+                                                <p class="text-xs text-orange-800 font-semibold">⚠️ Atención:</p>
+                                                <p class="text-xs text-orange-700 mt-1">{{ $lastSalidaZP->error_message }}</p>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endif
                             </div>
 
                             {{-- Botón 11: RegistrarArriboZonaPrimaria --}}
