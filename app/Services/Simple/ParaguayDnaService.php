@@ -8,6 +8,7 @@ use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
 use App\Services\Simple\Soap\ParaguaySecureSoapClient;
 use App\Services\Simple\Soap\ParaguayWSSecurityBuilder;
+use App\Services\Simple\ParaguayWsaaService;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -820,6 +821,16 @@ class ParaguayDnaService extends BaseWebserviceService
 
             $client = $this->soapClient;
 
+            // Obtener tokens WSAA dinámicamente
+            $wsaaService = new ParaguayWsaaService($this->company, $environment);
+            $wsaaTokens = $wsaaService->getTokens();
+
+            $this->logOperation('info', 'Tokens WSAA obtenidos', [
+                'has_token' => !empty($wsaaTokens['token']),
+                'has_sign' => !empty($wsaaTokens['sign']),
+                'ruc' => $wsaaTokens['ruc'] ?? $ruc,
+            ]);
+
             // Parámetros GDSF con autenticación WSAA dinámica
             $soapParams = [
                 'codigo' => $params['codigo'],
@@ -827,12 +838,11 @@ class ParaguayDnaService extends BaseWebserviceService
                 'viaje' => $params['viaje'],
                 'xml' => $params['xml'],
                 'Autenticacion' => [
-                    'idUsuario' => $ruc,
-                    'ticket' => '',
-                    'firma' => '',
+                    'idUsuario' => $wsaaTokens['ruc'] ?? $ruc,
+                    'ticket' => $wsaaTokens['token'],
+                    'firma' => $wsaaTokens['sign'],
                 ],
             ];
-
             // Enviar
             // Llamada directa al método SOAP (más clara y correcta)
             $result = $client->EnviarMensajeFluvial(
@@ -1257,20 +1267,54 @@ XML;
             ],
         ]);
 
-        $certData = $this->certificateManager->readCertificate();
+        // Leer certificados Paraguay (estructura de archivos separados)
+        $certificate = $this->company->getCertificate('paraguay');
 
-        // DEBUG: Ver qué devuelve
-        \Log::info('DEBUG certData Paraguay', [
-            'certData' => $certData,
-            'has_cert' => !empty($certData['cert'] ?? null),
-            'has_pkey' => !empty($certData['pkey'] ?? null),
-        ]);
-
-        if (! $certData || empty($certData['cert']) || empty($certData['pkey'])) {
-            throw new Exception('Certificado digital Paraguay inválido. Configure el .p12 y la contraseña.');
+        if (!$certificate) {
+            throw new Exception('Certificado Paraguay no configurado.');
         }
 
-        $dnaCertificatePath = storage_path('app/private/certificates/paraguay/gdsfws.pem');
+        // Determinar rutas según estructura
+        if (isset($certificate['cert_path']) && isset($certificate['key_path'])) {
+            // Nueva estructura: archivos separados
+            $certPath = storage_path('app/private/' . $certificate['cert_path']);
+            $keyPath = storage_path('app/private/' . $certificate['key_path']);
+        } elseif (isset($certificate['path'])) {
+            // Legacy: archivo combinado
+            $certPath = storage_path('app/private/' . $certificate['path']);
+            $keyPath = $certPath; // Mismo archivo contiene ambos
+        } else {
+            throw new Exception('Estructura de certificado Paraguay inválida.');
+        }
+
+        if (!file_exists($certPath)) {
+            throw new Exception("Archivo de certificado no existe: {$certPath}");
+        }
+        if (!file_exists($keyPath)) {
+            throw new Exception("Archivo de clave privada no existe: {$keyPath}");
+        }
+
+        $certContent = file_get_contents($certPath);
+        $keyContent = file_get_contents($keyPath);
+
+        $certData = [
+            'cert' => $certContent,
+            'pkey' => $keyContent,
+        ];
+
+        \Log::info('DEBUG certData Paraguay', [
+            'certData' => 'LOADED',
+            'has_cert' => !empty($certData['cert']),
+            'has_pkey' => !empty($certData['pkey']),
+            'cert_path' => $certPath,
+            'key_path' => $keyPath,
+        ]);
+
+        if (empty($certData['cert']) || empty($certData['pkey'])) {
+            throw new Exception('Certificado digital Paraguay inválido. Verifique los archivos .pem.');
+        }
+
+        $dnaCertificatePath = storage_path('app/private/DNA/gdsfws.pem');
         $dnaCertificatePath = $this->resolveCertificatePath($dnaCertificatePath);
 
         if (! $dnaCertificatePath || ! is_readable($dnaCertificatePath)) {
@@ -1283,7 +1327,7 @@ XML;
         }
 
         // Certificado del servidor DNA para encriptar
-        $dnaCertPath = storage_path('app/private/certificates/paraguay/gdsfws.pem');
+        $dnaCertPath = storage_path('app/private/DNA/gdsfws.pem');
         if (!file_exists($dnaCertPath)) {
             throw new \Exception("Certificado del servidor DNA no encontrado: {$dnaCertPath}");
         }

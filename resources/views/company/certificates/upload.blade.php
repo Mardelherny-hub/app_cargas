@@ -25,6 +25,17 @@
                     <form method="POST" action="{{ route('company.certificates.process-upload') }}" enctype="multipart/form-data" id="certificateForm">
                         @csrf
 
+                        @if ($errors->any())
+                            <div class="mb-4 p-4 bg-red-100 border border-red-400 rounded">
+                                <h4 class="text-red-800 font-bold">Errores de validación:</h4>
+                                <ul class="text-red-700 text-sm">
+                                    @foreach ($errors->all() as $error)
+                                        <li>{{ $error }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+
                         <!-- Selector de País -->
                         <div class="mb-6">
                             <label for="country" class="block text-sm font-medium text-gray-700">
@@ -61,42 +72,117 @@
                         </div>
 
                         <!-- Zona de Subida de Archivo -->
-                        <div class="mb-6">
+                        <!-- ============================================ -->
+                        <!-- ZONA DE SUBIDA - ARGENTINA (archivo único) -->
+                        <!-- ============================================ -->
+                        <div id="argentinaUpload" class="mb-6 hidden">
                             <label for="certificate" class="block text-sm font-medium text-gray-700 mb-2">
                                 Archivo de Certificado (.p12 o .pfx) *
                             </label>
                             <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 transition-colors cursor-pointer"
-                                 onclick="document.getElementById('certificate').click()">
+                                onclick="document.getElementById('certificate').click()">
                                 <div class="space-y-1 text-center">
                                     <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                                         <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     </svg>
                                     <div class="flex text-sm text-gray-600">
-                                        <span class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
-                                            Subir un archivo
+                                        <span class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500">
+                                            Subir archivo .p12 o .pfx
                                         </span>
-                                        <p class="pl-1">o arrastrar y soltar aquí</p>
                                     </div>
-                                    <p class="text-xs text-gray-500">
-                                        .p12, .pfx, .pem hasta 2MB
-                                    </p>
-                                    <div id="fileName" class="text-sm text-green-600 font-medium hidden"></div>
+                                    <p class="text-xs text-gray-500">Certificado AFIP hasta 2MB</p>
+                                    <div id="fileNameArg" class="text-sm text-green-600 font-medium hidden"></div>
                                 </div>
                             </div>
                             <input id="certificate" 
-                                   name="certificate" 
-                                   type="file" 
-                                   accept=".p12,.pfx, .pem" 
-                                   required 
-                                   class="sr-only" 
-                                   onchange="showFileName(this)">
+                                name="certificate" 
+                                type="file" 
+                                accept=".p12,.pfx,.pem" 
+                                class="sr-only" 
+                                onchange="showFileNameArg(this)">
                             @error('certificate')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
 
+                        <!-- ============================================ -->
+                        <!-- ZONA DE SUBIDA - PARAGUAY (2 archivos) -->
+                        <!-- ============================================ -->
+                        <div id="paraguayUpload" class="mb-6 hidden">
+                            <!-- Instrucciones claras para Paraguay -->
+                            <div class="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                <h4 class="text-sm font-medium text-green-800 mb-2">🇵🇾 Certificados DNA Paraguay</h4>
+                                <p class="text-xs text-green-700 mb-2">
+                                    DNA entrega los certificados en <strong>2 archivos separados</strong>. 
+                                    Debe subir ambos archivos tal como los recibió de Aduana:
+                                </p>
+                                <ul class="text-xs text-green-700 space-y-1">
+                                    <li>📄 <strong>Certificado:</strong> Archivo con su RUC (ej: <code>800292944.pem</code>)</li>
+                                    <li>🔑 <strong>Clave Privada:</strong> Archivo <code>pkey.pem</code></li>
+                                </ul>
+                            </div>
+
+                            <!-- Campo 1: Certificado Público -->
+                            <div class="mb-4">
+                                <label for="certificate_py" class="block text-sm font-medium text-gray-700 mb-2">
+                                    📄 Certificado Público (.pem) *
+                                </label>
+                                <p class="text-xs text-gray-500 mb-2">
+                                    El archivo con su número de RUC, por ejemplo: <strong>800292944.pem</strong>
+                                </p>
+                                <div class="mt-1 flex justify-center px-4 py-4 border-2 border-gray-300 border-dashed rounded-md hover:border-green-400 transition-colors cursor-pointer"
+                                    onclick="document.getElementById('certificate_py').click()">
+                                    <div class="text-center">
+                                        <svg class="mx-auto h-8 w-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                        </svg>
+                                        <span class="text-sm text-green-600 font-medium">Seleccionar certificado .pem</span>
+                                        <div id="fileNameCert" class="text-sm text-green-600 font-medium hidden mt-1"></div>
+                                    </div>
+                                </div>
+                                <input id="certificate_py" 
+                                    name="certificate" 
+                                    type="file" 
+                                    accept=".pem" 
+                                    class="sr-only" 
+                                    onchange="showFileNameCert(this)">
+                                @error('certificate')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Campo 2: Clave Privada -->
+                            <div class="mb-4">
+                                <label for="private_key" class="block text-sm font-medium text-gray-700 mb-2">
+                                    🔑 Clave Privada (.pem) *
+                                </label>
+                                <p class="text-xs text-gray-500 mb-2">
+                                    El archivo de clave privada: <strong>pkey.pem</strong>
+                                </p>
+                                <div class="mt-1 flex justify-center px-4 py-4 border-2 border-gray-300 border-dashed rounded-md hover:border-yellow-400 transition-colors cursor-pointer"
+                                    onclick="document.getElementById('private_key').click()">
+                                    <div class="text-center">
+                                        <svg class="mx-auto h-8 w-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                                        </svg>
+                                        <span class="text-sm text-yellow-600 font-medium">Seleccionar clave privada .pem</span>
+                                        <div id="fileNameKey" class="text-sm text-yellow-600 font-medium hidden mt-1"></div>
+                                    </div>
+                                </div>
+                                <input id="private_key" 
+                                    name="private_key" 
+                                    type="file" 
+                                    accept=".pem" 
+                                    class="sr-only" 
+                                    onchange="showFileNameKey(this)">
+                                @error('private_key')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
                         <!-- Contraseña del Certificado -->
-                        <div class="mb-6">
+                        <div class="mb-6hidden" id="passwordSection">
                             <label for="password" class="block text-sm font-medium text-gray-700">
                                 Contraseña del Certificado *
                             </label>
@@ -320,12 +406,34 @@
 
     @push('scripts')
     <script>
-        // Información dinámica por país
+        // Mostrar/ocultar secciones según país seleccionado
         function updateCountryInfo(country) {
             const countryInfo = document.getElementById('countryInfo');
             const countryInfoBox = document.getElementById('countryInfoBox');
             const countryInfoText = document.getElementById('countryInfoText');
             const aliasInput = document.getElementById('alias');
+            
+            // Secciones de upload
+            const argentinaUpload = document.getElementById('argentinaUpload');
+            const paraguayUpload = document.getElementById('paraguayUpload');
+            const passwordSection = document.getElementById('passwordSection');
+            
+            // Inputs
+            const certificateArg = document.getElementById('certificate');
+            const certificatePy = document.getElementById('certificate_py');
+            const privateKey = document.getElementById('private_key');
+            const passwordInput = document.getElementById('password');
+            
+            // Ocultar todo primero
+            argentinaUpload.classList.add('hidden');
+            paraguayUpload.classList.add('hidden');
+            passwordSection.classList.add('hidden');
+            
+            // Limpiar required
+            if (certificateArg) certificateArg.removeAttribute('required');
+            if (certificatePy) certificatePy.removeAttribute('required');
+            if (privateKey) privateKey.removeAttribute('required');
+            if (passwordInput) passwordInput.removeAttribute('required');
             
             if (!country) {
                 countryInfo.classList.add('hidden');
@@ -336,7 +444,7 @@
             const hasCert = option.dataset.hasCert === '1';
             const issuer = option.dataset.issuer;
             
-            // Mostrar información
+            // Mostrar información del país
             countryInfo.classList.remove('hidden');
             
             if (hasCert) {
@@ -349,23 +457,55 @@
                 countryInfoText.innerHTML = `ℹ️ Subirá un certificado nuevo para ${issuer}.`;
             }
             
-            // Auto-completar alias si está vacío
-            if (!aliasInput.value) {
-                aliasInput.value = `${issuer}_CERT_${new Date().getFullYear()}`;
+            // Mostrar sección correspondiente según país
+            if (country === 'argentina') {
+                argentinaUpload.classList.remove('hidden');
+                passwordSection.classList.remove('hidden');
+                certificateArg.setAttribute('required', 'required');
+                passwordInput.setAttribute('required', 'required');
+                
+                if (!aliasInput.value) {
+                    aliasInput.value = 'AFIP_CERT_' + new Date().getFullYear();
+                }
+            } else if (country === 'paraguay') {
+                paraguayUpload.classList.remove('hidden');
+                // Password NO requerido para Paraguay
+                certificatePy.setAttribute('required', 'required');
+                privateKey.setAttribute('required', 'required');
+                
+                if (!aliasInput.value) {
+                    aliasInput.value = 'DNA_CERT_' + new Date().getFullYear();
+                }
             }
         }
 
-        // Ejecutar al cargar si ya hay país seleccionado
-        document.addEventListener('DOMContentLoaded', function() {
-            const countrySelect = document.getElementById('country');
-            if (countrySelect.value) {
-                updateCountryInfo(countrySelect.value);
-            }
-        });
-        function showFileName(input) {
-            const fileNameDiv = document.getElementById('fileName');
+        // Mostrar nombre de archivo - Argentina
+        function showFileNameArg(input) {
+            const fileNameDiv = document.getElementById('fileNameArg');
             if (input.files && input.files[0]) {
-                fileNameDiv.textContent = '📄 ' + input.files[0].name;
+                fileNameDiv.textContent = '✓ ' + input.files[0].name;
+                fileNameDiv.classList.remove('hidden');
+            } else {
+                fileNameDiv.classList.add('hidden');
+            }
+        }
+        
+        // Mostrar nombre de archivo - Paraguay Certificado
+        function showFileNameCert(input) {
+            const fileNameDiv = document.getElementById('fileNameCert');
+            if (input.files && input.files[0]) {
+                fileNameDiv.textContent = '✓ ' + input.files[0].name;
+                fileNameDiv.classList.remove('hidden');
+            } else {
+                fileNameDiv.classList.add('hidden');
+            }
+        }
+        
+        // Mostrar nombre de archivo - Paraguay Clave Privada
+        function showFileNameKey(input) {
+            const fileNameDiv = document.getElementById('fileNameKey');
+            if (input.files && input.files[0]) {
+                fileNameDiv.textContent = '✓ ' + input.files[0].name;
                 fileNameDiv.classList.remove('hidden');
             } else {
                 fileNameDiv.classList.add('hidden');
@@ -387,73 +527,66 @@
 
         // Validación del formulario
         document.getElementById('certificateForm').addEventListener('submit', function(e) {
-            const certificateInput = document.getElementById('certificate');
-            const passwordInput = document.getElementById('password');
+            const countrySelect = document.getElementById('country');
             const expiresInput = document.getElementById('expires_at');
             
-            // Validar país seleccionado
-            const countrySelect = document.getElementById('country');
             if (!countrySelect.value) {
                 e.preventDefault();
                 alert('Debe seleccionar el país del certificado.');
-                countrySelect.focus();
                 return;
             }
-
-            // Validar que se haya seleccionado un archivo
-            if (!certificateInput.files || certificateInput.files.length === 0) {
-                e.preventDefault();
-                alert('Por favor, seleccione un archivo de certificado.');
-                certificateInput.focus();
-                return;
-            }
-
-            // Validar tipo de archivo
-            const fileName = certificateInput.files[0].name.toLowerCase();
-            if (!fileName.endsWith('.p12') && !fileName.endsWith('.pfx') && !fileName.endsWith('.pem')) {
-                e.preventDefault();
-                alert('El archivo debe ser un certificado .p12, .pfx o .pem');
-                certificateInput.focus();
-                return;
-            }
-
-            // Validar tamaño del archivo (2MB = 2 * 1024 * 1024 bytes)
-            if (certificateInput.files[0].size > 2 * 1024 * 1024) {
-                e.preventDefault();
-                alert('El archivo no puede ser mayor a 2MB.');
-                certificateInput.focus();
-                return;
-            }
-
-            // Validar contraseña
-            if (passwordInput.value.trim() === '') {
-                e.preventDefault();
-                alert('La contraseña del certificado es obligatoria.');
-                passwordInput.focus();
-                return;
-            }
-
-            // Validar fecha de vencimiento
+            
+            // Validar fecha
             if (!expiresInput.value) {
                 e.preventDefault();
-                alert('La fecha de vencimiento es obligatoria.');
+                alert('Debe ingresar la fecha de vencimiento del certificado.');
                 expiresInput.focus();
                 return;
             }
 
-            // Validar que la fecha sea futura y con al menos 1 día de margen
             const selectedDate = new Date(expiresInput.value);
             const currentDate = new Date();
-            const oneDayFromNow = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
             
-            if (selectedDate <= oneDayFromNow) {
+            if (selectedDate <= currentDate) {
                 e.preventDefault();
-                alert('La fecha de vencimiento debe ser al menos 1 día después de hoy.');
+                alert('La fecha de vencimiento debe ser posterior a hoy.');
                 expiresInput.focus();
                 return;
             }
 
-            // Confirmación final con información del país
+            // Validaciones específicas por país
+            if (countrySelect.value === 'argentina') {
+                const certFile = document.getElementById('certificate');
+                const password = document.getElementById('password');
+                
+                if (!certFile.files || !certFile.files[0]) {
+                    e.preventDefault();
+                    alert('Debe seleccionar el archivo del certificado (.p12 o .pfx).');
+                    return;
+                }
+                if (!password.value) {
+                    e.preventDefault();
+                    alert('Debe ingresar la contraseña del certificado.');
+                    password.focus();
+                    return;
+                }
+            } else if (countrySelect.value === 'paraguay') {
+                const certFile = document.getElementById('certificate_py');
+                const keyFile = document.getElementById('private_key');
+                
+                if (!certFile.files || !certFile.files[0]) {
+                    e.preventDefault();
+                    alert('Debe seleccionar el archivo del certificado (.pem).');
+                    return;
+                }
+                if (!keyFile.files || !keyFile.files[0]) {
+                    e.preventDefault();
+                    alert('Debe seleccionar el archivo de clave privada (.pem).');
+                    return;
+                }
+            }
+
+            // Confirmación final
             const countryName = countrySelect.options[countrySelect.selectedIndex].text;
             if (!confirm(`¿Está seguro de subir el certificado para ${countryName}?\n\nLos webservices se configurarán inmediatamente.`)) {
                 e.preventDefault();
@@ -466,38 +599,11 @@
             submitButton.disabled = true;
         });
 
-        // Drag and drop functionality
-        const dropZone = document.querySelector('.border-dashed');
-
-        dropZone.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            this.classList.add('border-blue-500', 'bg-blue-50');
-        });
-
-        dropZone.addEventListener('dragleave', function(e) {
-            e.preventDefault();
-            this.classList.remove('border-blue-500', 'bg-blue-50');
-        });
-
-        dropZone.addEventListener('drop', function(e) {
-            e.preventDefault();
-            this.classList.remove('border-blue-500', 'bg-blue-50');
-
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                const certificateInput = document.getElementById('certificate');
-                certificateInput.files = files;
-                showFileName(certificateInput);
-            }
-        });
-
-        // Auto-rellenar alias basado en el nombre del archivo
-        document.getElementById('certificate').addEventListener('change', function() {
-            const aliasInput = document.getElementById('alias');
-            if (this.files && this.files[0] && !aliasInput.value) {
-                const fileName = this.files[0].name;
-                const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
-                aliasInput.value = nameWithoutExt.toUpperCase();
+        // Ejecutar al cargar si ya hay país seleccionado
+        document.addEventListener('DOMContentLoaded', function() {
+            const countrySelect = document.getElementById('country');
+            if (countrySelect.value) {
+                updateCountryInfo(countrySelect.value);
             }
         });
     </script>

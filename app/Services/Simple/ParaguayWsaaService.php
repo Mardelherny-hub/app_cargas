@@ -40,8 +40,16 @@ class ParaguayWsaaService
      * URLs del servicio WSAA según ambiente
      */
     private const WSAA_URLS = [
-        'testing' => 'https://securetest.aduana.gov.py/wsdl/wsaaserver/Server',
-        'production' => 'https://secure.aduana.gov.py/wsdl/wsaaserver/Server',
+        'testing' => 'https://securetest.aduana.gov.py/wsaaserver/Server?wsdl',
+        'production' => 'https://secure.aduana.gov.py/wsaaserver/Server?wsdl',
+    ];
+
+    /**
+     * DN del servidor WSAA según ambiente
+     */
+    private const WSAA_DESTINATION = [
+        'testing' => 'CN=*.aduana.gov.py, O=Dirección Nacional de Ingresos Tributarios, L=Asunción, C=PY',
+        'production' => 'CN=*.aduana.gov.py, O=Dirección Nacional de Ingresos Tributarios, L=Asunción, C=PY',
     ];
 
     /**
@@ -166,23 +174,29 @@ class ParaguayWsaaService
     private function generateTRA(): string
     {
         $uniqueId = time();
-        $generationTime = date('c', $uniqueId - 60); // 1 minuto en el pasado
-        $expirationTime = date('c', $uniqueId + 60); // 1 minuto en el futuro
+        $generationTime = date('c', $uniqueId - 60);
+        $expirationTime = date('c', $uniqueId + 60);
 
-        $tra = <<<XML
-<?xml version="1.0" encoding="UTF-8"?>
-<loginTicketRequest version="1.0">
-    <header>
-        <uniqueId>{$uniqueId}</uniqueId>
-        <generationTime>{$generationTime}</generationTime>
-        <expirationTime>{$expirationTime}</expirationTime>
-    </header>
-    <service>{$this->getServiceName()}</service>
-</loginTicketRequest>
-XML;
+        // Obtener DNs
+        $source = $this->getCertificateDN();
+        $destination = $this->getWsaaDestination();
+
+        $tra = '<?xml version="1.0" encoding="UTF-8"?>' .
+    '<loginTicketRequest version="1.0">' .
+    '<header>' .
+    '<source>' . $source . '</source>' .
+    '<destination>' . $destination . '</destination>' .
+    '<uniqueId>' . $uniqueId . '</uniqueId>' .
+    '<generationTime>' . $generationTime . '</generationTime>' .
+    '<expirationTime>' . $expirationTime . '</expirationTime>' .
+    '</header>' .
+    '<service>' . $this->getServiceName() . '</service>' .
+    '</loginTicketRequest>';
 
         Log::debug('WSAA Paraguay: TRA generado', [
             'uniqueId' => $uniqueId,
+            'source' => $source,
+            'destination' => $destination,
             'service' => self::SERVICE_NAME,
         ]);
 
@@ -191,6 +205,7 @@ XML;
 
     /**
      * Firmar TRA con certificado .pem usando OpenSSL
+     * SIMPLIFICADO: Usa archivos separados de Paraguay (cert_path + key_path)
      * 
      * @param string $tra XML del TRA sin firmar
      * @return string TRA firmado en base64
@@ -198,60 +213,95 @@ XML;
      */
     private function signTRA(string $tra): string
     {
-        // 1. Obtener certificado Paraguay
+        // 1. Obtener datos del certificado Paraguay
         $certificate = $this->company->getCertificate('paraguay');
         
         if (!$certificate) {
             throw new Exception("Certificado Paraguay no encontrado para la empresa");
         }
 
-        $certPath = storage_path('app/private/' . $certificate['path']);
-        
+        // 2. Determinar rutas según estructura (nueva o legacy)
+        if (isset($certificate['cert_path']) && isset($certificate['key_path'])) {
+            // NUEVA ESTRUCTURA: archivos separados
+            $certPath = storage_path('app/private/' . $certificate['cert_path']);
+            $keyPath = storage_path('app/private/' . $certificate['key_path']);
+            
+            Log::debug('WSAA Paraguay: Usando estructura nueva (archivos separados)', [
+                'cert_path' => $certificate['cert_path'],
+                'key_path' => $certificate['key_path'],
+            ]);
+        } elseif (isset($certificate['path'])) {
+            // ESTRUCTURA LEGACY: archivo único combinado, necesita separar
+            $pemPath = storage_path('app/private/' . $certificate['path']);
+            
+            if (!file_exists($pemPath)) {
+                throw new Exception("Archivo de certificado no existe: {$pemPath}");
+            }
+            
+            $pemContent = file_get_contents($pemPath);
+            
+            // Extraer certificado
+            $certStart = strpos($pemContent, '-----BEGIN CERTIFICATE-----');
+            $certEnd = strpos($pemContent, '-----END CERTIFICATE-----');
+            if ($certStart === false || $certEnd === false) {
+                throw new Exception("No se encontró el certificado en el archivo PEM");
+            }
+            $certOnly = substr($pemContent, $certStart, $certEnd - $certStart + strlen('-----END CERTIFICATE-----'));
+
+            // Extraer clave privada
+            $keyContent = '';
+            if (strpos($pemContent, '-----BEGIN PRIVATE KEY-----') !== false) {
+                $keyStart = strpos($pemContent, '-----BEGIN PRIVATE KEY-----');
+                $keyEnd = strpos($pemContent, '-----END PRIVATE KEY-----');
+                $keyContent = substr($pemContent, $keyStart, $keyEnd - $keyStart + strlen('-----END PRIVATE KEY-----'));
+            } elseif (strpos($pemContent, '-----BEGIN RSA PRIVATE KEY-----') !== false) {
+                $keyStart = strpos($pemContent, '-----BEGIN RSA PRIVATE KEY-----');
+                $keyEnd = strpos($pemContent, '-----END RSA PRIVATE KEY-----');
+                $keyContent = substr($pemContent, $keyStart, $keyEnd - $keyStart + strlen('-----END RSA PRIVATE KEY-----'));
+            }
+            
+            if (empty($keyContent)) {
+                throw new Exception("No se encontró la clave privada en el archivo PEM");
+            }
+
+            // Crear archivos temporales
+            $certPath = tempnam(sys_get_temp_dir(), 'cert_');
+            $keyPath = tempnam(sys_get_temp_dir(), 'key_');
+            file_put_contents($certPath, $certOnly);
+            file_put_contents($keyPath, $keyContent);
+            
+            $tempFiles = true;
+            
+            Log::debug('WSAA Paraguay: Usando estructura legacy (archivo combinado)', [
+                'path' => $certificate['path'],
+            ]);
+        } else {
+            throw new Exception("Estructura de certificado Paraguay inválida");
+        }
+
+        // 3. Verificar que los archivos existen
         if (!file_exists($certPath)) {
             throw new Exception("Archivo de certificado no existe: {$certPath}");
         }
-
-        // Verificar extensión del certificado (.pem o .p12)
-        $extension = strtolower(pathinfo($certPath, PATHINFO_EXTENSION));
-
-        if (!in_array($extension, ['pem', 'p12', 'pfx'])) {
-            throw new Exception("El certificado de Paraguay debe ser formato .pem o .p12 (actual: .{$extension})");
-        }   
-        // 2. Leer certificado según formato
-        if (in_array($extension, ['p12', 'pfx'])) {
-            // Convertir .p12 a .pem temporal
-            $certContent = $this->convertP12ToPem($certPath, $certificate['password'] ?? '');
-        } else {
-            // Leer .pem directamente
-            $certContent = file_get_contents($certPath);
-            
-            if ($certContent === false) {
-                throw new Exception("No se pudo leer el certificado");
-            }
-
-            // Validar que contiene BEGIN/END markers
-            if (!str_contains($certContent, 'BEGIN CERTIFICATE') && !str_contains($certContent, 'BEGIN RSA PRIVATE KEY')) {
-                throw new Exception("El archivo .pem no tiene el formato válido (falta BEGIN CERTIFICATE o BEGIN RSA PRIVATE KEY)");
-            }
+        if (!file_exists($keyPath)) {
+            throw new Exception("Archivo de clave privada no existe: {$keyPath}");
         }
 
-        // 3. Crear archivos temporales
+        // 4. Crear archivos temporales para TRA y firma
         $traFile = tempnam(sys_get_temp_dir(), 'tra_');
-        $signedFile = tempnam(sys_get_temp_dir(), 'tra_signed_');
-        $certFile = tempnam(sys_get_temp_dir(), 'cert_');
+        $signedFile = tempnam(sys_get_temp_dir(), 'signed_');
 
         try {
             // Escribir TRA a archivo temporal
             file_put_contents($traFile, $tra);
-            file_put_contents($certFile, $certContent);
 
-            // 4. Firmar con OpenSSL (comando exacto según manual DNA)
+            // 5. Firmar con OpenSSL - archivos separados
             $command = sprintf(
-                'openssl smime -sign -in %s -signer %s -inkey %s -out %s -outform DER 2>&1',
+                'openssl smime -sign -in %s -out %s -signer %s -inkey %s -outform DER -nodetach 2>&1',
                 escapeshellarg($traFile),
-                escapeshellarg($certFile),
-                escapeshellarg($certFile),
-                escapeshellarg($signedFile)
+                escapeshellarg($signedFile),
+                escapeshellarg($certPath),
+                escapeshellarg($keyPath)
             );
 
             exec($command, $output, $returnCode);
@@ -266,7 +316,7 @@ XML;
                 throw new Exception("Error firmando TRA con OpenSSL: " . implode(', ', $output));
             }
 
-            // 5. Leer firma y codificar en base64
+            // 6. Leer firma DER y codificar en base64
             $signedContent = file_get_contents($signedFile);
             
             if ($signedContent === false) {
@@ -285,7 +335,12 @@ XML;
             // Limpiar archivos temporales
             @unlink($traFile);
             @unlink($signedFile);
-            @unlink($certFile);
+            
+            // Si usamos estructura legacy, limpiar archivos temporales de cert/key
+            if (isset($tempFiles) && $tempFiles) {
+                @unlink($certPath);
+                @unlink($keyPath);
+            }
         }
     }
 
@@ -321,7 +376,8 @@ XML;
             ]);
 
             // Llamar al método loginCms (mismo que AFIP)
-            $response = $client->loginCms(['in0' => $signedTRA]);
+            // Llamar al método loginCms (DNA Paraguay usa parámetro directo, no array)
+            $response = $client->loginCms($signedTRA);
 
             if (!isset($response->loginCmsReturn)) {
                 throw new Exception("Respuesta WSAA inválida: no contiene loginCmsReturn");
@@ -385,6 +441,87 @@ XML;
     {
         $certificate = $this->company->getCertificate('paraguay');
         return $certificate['path'] ?? null;
+    }
+
+    /**
+     * Extraer DN (Distinguished Name) del certificado
+     * 
+     * @return string DN del certificado
+     * @throws Exception
+     */
+    /**
+     * Extraer DN (Distinguished Name) del certificado
+     * 
+     * @return string DN del certificado
+     * @throws Exception
+     */
+    private function getCertificateDN(): string
+    {
+        $certificate = $this->company->getCertificate('paraguay');
+        
+        if (!$certificate) {
+            throw new Exception("Certificado Paraguay no encontrado");
+        }
+
+        // Soportar ambas estructuras
+        if (isset($certificate['cert_path'])) {
+            $certPath = storage_path('app/private/' . $certificate['cert_path']);
+        } else {
+            $certPath = storage_path('app/private/' . $certificate['path']);
+        }
+        
+        if (!file_exists($certPath)) {
+            throw new Exception("Archivo de certificado no existe: {$certPath}");
+        }
+
+        // Leer contenido del certificado
+        $certContent = file_get_contents($certPath);
+        
+        // Extraer el DN usando OpenSSL
+        $certData = openssl_x509_parse($certContent);
+        
+        if (!$certData || !isset($certData['subject'])) {
+            throw new Exception("No se pudo parsear el certificado para extraer DN");
+        }
+
+        // Construir DN desde subject
+        $subject = $certData['subject'];
+        $dnParts = [];
+        
+        // Orden estándar: CN, OU, O, L, ST, C
+        // Manejar campos que pueden ser arrays
+        if (isset($subject['CN'])) {
+            $dnParts[] = 'CN=' . (is_array($subject['CN']) ? implode('.', $subject['CN']) : $subject['CN']);
+        }
+        if (isset($subject['OU'])) {
+            $dnParts[] = 'OU=' . (is_array($subject['OU']) ? implode('.', $subject['OU']) : $subject['OU']);
+        }
+        if (isset($subject['O'])) {
+            $dnParts[] = 'O=' . (is_array($subject['O']) ? implode('.', $subject['O']) : $subject['O']);
+        }
+        if (isset($subject['L'])) {
+            $dnParts[] = 'L=' . (is_array($subject['L']) ? implode('.', $subject['L']) : $subject['L']);
+        }
+        if (isset($subject['ST'])) {
+            $dnParts[] = 'ST=' . (is_array($subject['ST']) ? implode('.', $subject['ST']) : $subject['ST']);
+        }
+        if (isset($subject['C'])) {
+            $dnParts[] = 'C=' . (is_array($subject['C']) ? implode('.', $subject['C']) : $subject['C']);
+        }
+
+        $dn = implode(', ', $dnParts);
+        
+        Log::debug('WSAA Paraguay: DN extraído del certificado', ['dn' => $dn]);
+        
+        return $dn;
+    }
+
+    /**
+     * Obtener DN del servidor WSAA (destination)
+     */
+    private function getWsaaDestination(): string
+    {
+        return self::WSAA_DESTINATION[$this->environment] ?? self::WSAA_DESTINATION['testing'];
     }
 
     /**
