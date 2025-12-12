@@ -44,12 +44,9 @@ class ParaguayWsaaService
         'production' => 'https://secure.aduana.gov.py/wsaaserver/Server?wsdl',
     ];
 
-    /**
-     * DN del servidor WSAA según ambiente
-     */
     private const WSAA_DESTINATION = [
-        'testing' => 'CN=*.aduana.gov.py, O=Dirección Nacional de Ingresos Tributarios, L=Asunción, C=PY',
-        'production' => 'CN=*.aduana.gov.py, O=Dirección Nacional de Ingresos Tributarios, L=Asunción, C=PY',
+        'testing' => 'C=py, O=dna, OU=sofia, CN=wsaatest',
+        'production' => 'C=py, O=dna, OU=sofia, CN=wsaa',
     ];
 
     /**
@@ -194,13 +191,14 @@ class ParaguayWsaaService
     '</loginTicketRequest>';
 
         Log::debug('WSAA Paraguay: TRA generado', [
-            'uniqueId' => $uniqueId,
-            'source' => $source,
-            'destination' => $destination,
-            'service' => self::SERVICE_NAME,
-        ]);
+    'uniqueId' => $uniqueId,
+    'source' => $source,
+    'destination' => $destination,
+    'service' => self::SERVICE_NAME,
+    'tra_xml_completo' => $tra,
+]);
 
-        return $tra;
+return $tra;
     }
 
     /**
@@ -377,7 +375,28 @@ class ParaguayWsaaService
 
             // Llamar al método loginCms (mismo que AFIP)
             // Llamar al método loginCms (DNA Paraguay usa parámetro directo, no array)
-            $response = $client->loginCms($signedTRA);
+           // Loguear CMS antes de enviar
+Log::debug('WSAA Paraguay: CMS a enviar', [
+    'cms_length' => strlen($signedTRA),
+    'cms_preview' => substr($signedTRA, 0, 100) . '...',
+]);
+
+// Inspeccionar funciones disponibles en el WSDL
+Log::debug('WSAA Paraguay: Funciones WSDL', [
+    'functions' => $client->__getFunctions(),
+    'types' => $client->__getTypes(),
+]);
+
+// Enviar CMS como string directo (el WSDL de DNA puede esperarlo así)
+$response = $client->__soapCall('loginCms', [$signedTRA]);
+
+// Loguear request/response SOAP completo para diagnóstico
+Log::debug('WSAA Paraguay: SOAP Request enviado', [
+    'request' => $client->__getLastRequest(),
+]);
+Log::debug('WSAA Paraguay: SOAP Response recibido', [
+    'response' => $client->__getLastResponse(),
+]);
 
             if (!isset($response->loginCmsReturn)) {
                 throw new Exception("Respuesta WSAA inválida: no contiene loginCmsReturn");

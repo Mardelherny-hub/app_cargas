@@ -301,7 +301,7 @@
                                         <thead class="bg-gray-50">
                                             <tr>
                                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Línea</th>
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                                                {{-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th> --}}
                                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo de Carga</th>
                                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Bultos</th>
                                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Peso (kg)</th>
@@ -312,12 +312,12 @@
                                             @foreach($shipment->shipmentItems as $item)
                                                 <tr class="hover:bg-gray-50">
                                                     <td class="px-4 py-2 text-sm font-medium text-gray-900">{{ $item->line_number }}</td>
-                                                    <td class="px-4 py-2 text-sm text-gray-900">
+                                                    {{-- <td class="px-4 py-2 text-sm text-gray-900">
                                                         <div class="font-medium">{{ $item->item_description }}</div>
                                                         @if($item->is_dangerous_goods)
                                                             <span class="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">⚠️ Peligroso</span>
                                                         @endif
-                                                    </td>
+                                                    </td> --}}
                                                     <td class="px-4 py-2 text-sm text-gray-900">{{ $item->cargoType->name ?? 'Contenedores' }}</td>
                                                     <td class="px-4 py-2 text-sm text-gray-900">
                                                         {{ number_format($item->package_quantity) }}
@@ -374,15 +374,15 @@
                                 <h3 class="text-lg font-medium text-gray-900">Conocimientos de Embarque</h3>
                                 <div class="flex space-x-2">
                                     <a href="{{ route('company.bills-of-lading.create', ['shipment_id' => $shipment->id]) }}" 
-                                    class="inline-flex items-center px-3 py-2 border border-green-300 shadow-sm text-sm leading-4 font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                    class="inline-flex items-center mr-2 px-3 py-2 border border-green-300 shadow-sm text-sm leading-4 font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                                         </svg>
                                         Nuevo Conocimiento
                                     </a>
                                 </div>
-                                <div class="text-sm text-gray-500">
-                                    Gestione los conocimientos de embarque (B/L) de este shipment
+                                <div class="text-sm text-gray-500 ml-2">
+                                    Gestione los conocimientos de embarque de esta carga
                                 </div>
                             </div>
 
