@@ -502,7 +502,7 @@ if ($user) {
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Línea</th>
-                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
+                                        {{-- <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th> --}}
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peso (kg)</th>
@@ -514,7 +514,7 @@ if ($user) {
                                     @foreach($itemsToShow as $item)
                                         <tr class="hover:bg-gray-50 item-row" data-search="{{ strtolower($item->item_description . ' ' . $item->item_reference . ' ' . ($item->cargoType->name ?? '')) }}">
                                             <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ $item->line_number }}</td>
-                                            <td class="px-4 py-3">
+                                            {{-- <td class="px-4 py-3">
                                                 <div class="text-sm font-medium text-gray-900">{{ $item->item_description }}</div>
                                                 @if($item->item_reference)
                                                     <div class="text-sm text-gray-500">Ref: {{ $item->item_reference }}</div>
@@ -522,7 +522,7 @@ if ($user) {
                                                 @if($item->hs_code)
                                                     <div class="text-xs text-gray-400">HS: {{ $item->hs_code }}</div>
                                                 @endif
-                                            </td>
+                                            </td> --}}
                                             <td class="px-4 py-3 text-sm text-gray-900">
                                                 {{ $item->cargoType->name ?? 'N/A' }}
                                                 @if($item->packagingType)
