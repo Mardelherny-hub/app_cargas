@@ -5,10 +5,10 @@
                 {{ __('Historial de Webservices') }} - {{ $company->legal_name }}
             </h2>
             <div class="flex space-x-2">
-                <a href="{{ route('company.webservices.index') }}" 
+                {{-- <a href="{{ route('company.webservices.index') }}" 
                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors">
                     ← Dashboard
-                </a>
+                </a> --}}
                 <a href="{{ route('company.webservices.query') }}" 
                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
                     🔍 Consultar Estado
