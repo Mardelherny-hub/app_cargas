@@ -24,3 +24,6 @@ yarn-error.log
 *.key
 *.p12
 *.csr
+
+# Archivos obsoletos movidos a backup (no commitear)
+backup_obsoletos/
