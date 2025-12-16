@@ -373,7 +373,7 @@
                                         <div class="text-xs text-gray-400 mt-1">Certificados, envíos y monitoreo</div>
                                     </div>
 
-                                    <!-- Dashboard de Métricas -->
+                                    {{--                                     <!-- Dashboard de Métricas -->
                                     <a href="{{ route('company.webservices.dashboard') }}" 
                                     class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.webservices.dashboard') ? 'bg-purple-50 text-purple-700 font-medium' : '' }}">
                                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -384,7 +384,7 @@
                                             <div class="text-xs text-gray-500">Estadísticas y gráficos</div>
                                         </div>
                                     </a>
-
+ --}}
                                     <!-- Envíos a Aduanas -->
                                     <a href="{{ route('company.simple.dashboard') }}" 
                                     class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 mx-2 rounded-md transition-colors duration-200 {{ request()->routeIs('company.manifests.customs.*') ? 'bg-green-50 text-green-700 font-medium' : '' }}">
@@ -632,7 +632,7 @@
                 <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     ⚙️ {{ __('Webservices') }}
                 </div>
-                <x-responsive-nav-link :href="route('company.webservices.index')" :active="request()->routeIs('company.webservices.index')" class="pl-6">
+                <x-responsive-nav-link :href="route('company.simple.dashboard')" :active="request()->routeIs('company.simple.dashboard')" class="pl-6">
                     {{ __('Dashboard Webservices') }}
                 </x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('company.webservices.import')" :active="request()->routeIs('company.webservices.import')" class="pl-6">
