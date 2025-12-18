@@ -357,16 +357,20 @@ class G2OceanXmlParser implements ManifestParserInterface
      */
     protected function extractCargoDetail(SimpleXMLElement $detail): array
     {
+        $description = $this->extractCargoDescription($detail);
+        
         return [
             'item_number' => (int)($detail->itemSNo ?? 1),
-            'description' => $this->extractCargoDescription($detail),
+            'description' => $description,
             'packages' => (int)($detail->noOfPkgs ?? 1),
             'package_type' => (string)($detail->pkgType ?? 'PACKAGES'),
             'weight_mt' => (float)($detail->weight ?? 0),
             'weight_unit' => (string)($detail->weightUOM ?? 'MT'),
             'volume' => (float)($detail->measure ?? 0),
             'volume_unit' => (string)($detail->measureUOM ?? 'M³'),
-            'marks' => (string)($detail->marks ?? 'S/M')
+            'marks' => (string)($detail->marks ?? 'S/M'),
+            // Extraer NCM/HS del texto de descripción
+            'commodity_code' => $this->extractCommodityCode($description),
         ];
     }
 
@@ -387,6 +391,34 @@ class G2OceanXmlParser implements ManifestParserInterface
         }
 
         return implode(' ', $descriptions) ?: 'Mercadería general';
+    }
+
+    /**
+     * Extraer código NCM/HS de la descripción de carga
+     */
+    protected function extractCommodityCode(string $description): ?string
+    {
+        // Patrones para extraer NCM/HS Code del texto
+        $patterns = [
+            '/NCM[:\s]+([0-9]{4}\.[0-9]{2}\.[0-9]{2})/i',           // NCM: 8705.10.30
+            '/NCM[:\s]+([0-9]{4}\.[0-9]{2})/i',                      // NCM: 7213.91
+            '/NCM\s+([0-9]{4}\.[0-9]{2}\.[0-9]{2})/i',               // NCM 8705.10.30
+            '/TARIFF\s+(?:NUMBER|CODE)[:\s]+([0-9]{4}\.[0-9]{2})/i', // TARIFF NUMBER: 7208.51
+            '/HARMONIZED\s+TARIFF\s+CODE[:\s]+([0-9]{8})/i',         // HARMONIZED TARIFF CODE: 84213990
+            '/HS\s+CODE[:\s]+([0-9]{4}\.[0-9]{2})/i',                // HS CODE: 7213.91
+            '/([0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{3}[A-Z]?)/i',     // 8419.90.20.900D (código directo)
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $description, $matches)) {
+                // Limpiar y normalizar: quitar puntos y letras finales
+                $code = preg_replace('/[^0-9]/', '', $matches[1]);
+                // Retornar máximo 8 dígitos (formato NCM estándar)
+                return substr($code, 0, 8) ?: null;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -591,6 +623,8 @@ class G2OceanXmlParser implements ManifestParserInterface
                 'net_weight_kg' => $cargoItem['weight_mt'] * 1000 * 0.9, // Estimación
                 'volume_m3' => $cargoItem['volume'],
                 'cargo_marks' => $cargoItem['marks'] ?: 'S/M',
+                // Campo NCM/HS extraído de la descripción
+                'commodity_code' => $cargoItem['commodity_code'] ?? null,
                 'created_by_user_id' => auth()->id()
             ]);
             

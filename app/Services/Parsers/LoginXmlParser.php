@@ -68,6 +68,9 @@ class LoginXmlParser implements ManifestParserInterface
         'uruguay' => 'URY'
     ];
 
+    // Contenedores creados durante la importación actual (evita duplicados)
+    protected array $createdContainersInImport = [];
+
     /**
      * Verificar si el parser puede procesar el archivo XML
      */
@@ -182,7 +185,7 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Parsear el archivo Login XML con contexto específico
+     * Parsear el archivo Login XML con contexto específico - SOPORTA MÚLTIPLES BLs
      */
     protected function parseWithContext(string $filePath, array $context): ManifestParseResult
     {
@@ -196,6 +199,9 @@ class LoginXmlParser implements ManifestParserInterface
             DB::beginTransaction();
 
             $startTime = microtime(true);
+
+             // Reset container tracking for this import
+            $this->createdContainersInImport = [];
             
             // Crear registro de importación
             $importRecord = $this->createImportRecord($filePath, $context);
@@ -204,7 +210,7 @@ class LoginXmlParser implements ManifestParserInterface
             $xmlContent = file_get_contents($filePath);
             $xml = new SimpleXMLElement($xmlContent);
             
-            // 2. Extraer datos del XML
+            // 2. Extraer datos del XML (ahora extrae TODOS los BLs)
             $rawData = $this->extractDataFromXml($xml);
             
             // 3. Validar datos extraídos
@@ -219,33 +225,45 @@ class LoginXmlParser implements ManifestParserInterface
             // 5. Crear objetos del modelo
             $voyage = $this->createVoyage($transformedData, $context);
             $shipment = $this->createShipment($transformedData, $voyage, $context);
-            $billOfLading = $this->createBillOfLading($transformedData, $shipment, $context);
-            $shipmentItems = $this->createShipmentItems($transformedData, $billOfLading, $context);
+            
+            // 6. Crear MÚLTIPLES BillOfLading con sus items
+            $allBillsOfLading = [];
+            $allShipmentItems = [];
+            
+            foreach ($transformedData['bills_of_lading'] as $blData) {
+                $billOfLading = $this->createBillOfLadingFromData($blData, $shipment, $context);
+                $allBillsOfLading[] = $billOfLading;
+                
+                $items = $this->createShipmentItemsFromData($blData['containers'], $billOfLading, $context);
+                $allShipmentItems = array_merge($allShipmentItems, $items);
+                
+                Log::debug("BL creado: {$billOfLading->bill_number} con " . count($items) . " items");
+            }
             
             DB::commit();
 
             Log::info('Login XML parseado exitosamente', [
                 'voyage_id' => $voyage->id,
                 'shipment_id' => $shipment->id,
-                'bill_of_lading_id' => $billOfLading->id,
-                'items_created' => count($shipmentItems)
+                'bills_of_lading_count' => count($allBillsOfLading),
+                'items_created' => count($allShipmentItems)
             ]);
 
             // Completar registro de importación
-            $this->completeImportRecord($importRecord, $voyage, [$shipment], [$billOfLading], $shipmentItems, $startTime);
+            $this->completeImportRecord($importRecord, $voyage, [$shipment], $allBillsOfLading, $allShipmentItems, $startTime);
 
             return ManifestParseResult::success(
                 voyage: $voyage,
                 shipments: [$shipment],
-                billsOfLading: [$billOfLading],
-                containers: [], // Los contenedores se crean dentro de shipmentItems
+                billsOfLading: $allBillsOfLading,
+                containers: [],
                 statistics: [
                     'format' => 'Login XML',
-                    'bills_of_lading' => 1,
+                    'bills_of_lading' => count($allBillsOfLading),
                     'containers' => count($transformedData['containers']),
                     'total_weight_kg' => array_sum(array_column($transformedData['containers'], 'gross_weight_kg')),
-                    'shipper' => $transformedData['header']['shipper_name'] ?? 'N/A',
-                    'consignee' => $transformedData['header']['consignee_name'] ?? 'N/A'
+                    'shipper' => 'Multiple shippers',
+                    'consignee' => 'Multiple consignees'
                 ]
             );
 
@@ -254,7 +272,7 @@ class LoginXmlParser implements ManifestParserInterface
             
             // Detectar voyage duplicado
             if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
-                $voyageNumber = $data['voyage']['voyage_number'] ?? 'desconocido';
+                $voyageNumber = $transformedData['voyage']['voyage_number'] ?? 'desconocido';
                 Log::warning('Intento de importar voyage duplicado', [
                     'voyage_number' => $voyageNumber,
                     'file_path' => $filePath,
@@ -280,25 +298,34 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Extraer datos del XML parseado
+     * Extraer datos del XML parseado - SOPORTA MÚLTIPLES BillOfLading
      */
     protected function extractDataFromXml(SimpleXMLElement $xml): array
     {
-         Log::debug('=== EXTRAYENDO DATOS XML ===');
+        Log::debug('=== EXTRAYENDO DATOS XML ===');
 
         $data = [
-            'header' => [],
-            'containers' => []
+            'header' => [],           // Header del primer BL (para voyage/shipment)
+            'bills_of_lading' => [],  // Array con TODOS los BLs
+            'containers' => []        // Todos los containers (para compatibilidad)
         ];
 
-        // Extraer datos del header del primer BillOfLading
-        Log::debug('Buscando BillOfLading->BillOfLadingHeader');
-        if (isset($xml->BillOfLading->BillOfLadingHeader)) {
-            Log::debug('Header encontrado, extrayendo datos');
-             Log::debug('Datos del header:', (array)$xml->BillOfLading->BillOfLadingHeader);        
-            $header = $xml->BillOfLading->BillOfLadingHeader;
+        $blCount = 0;
+        
+        // Iterar sobre TODOS los BillOfLading del XML
+        foreach ($xml->BillOfLading as $billOfLading) {
+            $blCount++;
+            Log::debug("Procesando BillOfLading #{$blCount}");
             
-            $data['header'] = [
+            if (!isset($billOfLading->BillOfLadingHeader)) {
+                Log::warning("BillOfLading #{$blCount} sin header, saltando");
+                continue;
+            }
+            
+            $header = $billOfLading->BillOfLadingHeader;
+            
+            // Extraer datos del header de este BL
+            $blData = [
                 'bill_number' => (string)$header->BillOfLadingNumber ?? null,
                 'shipper_name' => (string)$header->ShipperExporter ?? null,
                 'shipper_cuit' => (string)$header->ShipperExporterCUIT ?? null,
@@ -311,45 +338,57 @@ class LoginXmlParser implements ManifestParserInterface
                 'gross_weight' => (string)$header->GrossWeight ?? null,
                 'measurement' => (string)$header->Measurement ?? null,
                 'cargo_description' => (string)$header->DescriptionOfPackagesAndGoods ?? null,
-                // CAMPOS AGREGADOS PARA EVITAR ERROR:
-                'loading_date' => null, // XML Login no parece tener fecha de carga específica
-                'bill_date' => null,    // XML Login no parece tener fecha de bill específica
-                'voyage_number' => (string)$header->BookingNumber ?? null // Usar booking como voyage
+                'loading_date' => null,
+                'bill_date' => null,
+                'voyage_number' => (string)$header->BookingNumber ?? null,
+                'containers' => []  // Containers de este BL específico
             ];
-        }
+            
+            // Extraer contenedores de este BL
+            if (isset($billOfLading->BillOfLadingLineDetail->BillOfLadingLine)) {
+                foreach ($billOfLading->BillOfLadingLineDetail->BillOfLadingLine as $line) {
+                    $container = [
+                        'line_number' => (int)$line->BillOfLadingLineNumber ?? 0,
+                        'container_number' => (string)$line->Container ?? null,
+                        'container_type' => (string)$line->Type ?? null,
+                        'tare_weight_kg' => $this->parseWeight((string)$line->Tare),
+                        'net_weight_kg' => $this->parseWeight((string)$line->NetWeight),
+                        'gross_weight_kg' => $this->parseWeight((string)$line->GrossWeight),
+                        'vgm' => isset($line->Vgm) ? $this->parseWeight((string)$line->Vgm) : null,
+                        'seals' => [],
+                        'ncm_codes' => []
+                    ];
 
-        // Extraer datos de contenedores del primer BillOfLading
-        if (isset($xml->BillOfLading->BillOfLadingLineDetail->BillOfLadingLine)) {
-            foreach ($xml->BillOfLading->BillOfLadingLineDetail->BillOfLadingLine as $line) {
-                $container = [
-                    'line_number' => (int)$line->BillOfLadingLineNumber ?? 0,
-                    'container_number' => (string)$line->Container ?? null,
-                    'container_type' => (string)$line->Type ?? null,
-                    'tare_weight_kg' => $this->parseWeight((string)$line->Tare),
-                    'net_weight_kg' => $this->parseWeight((string)$line->NetWeight),
-                    'gross_weight_kg' => $this->parseWeight((string)$line->GrossWeight),
-                    'vgm' => isset($line->Vgm) ? $this->parseWeight((string)$line->Vgm) : null,
-                    'seals' => [],
-                    'ncm_codes' => []
-                ];
-
-                // Extraer sellos
-                if (isset($line->Seal->Nseal)) {
-                    foreach ($line->Seal->Nseal as $seal) {
-                        $container['seals'][] = (string)$seal;
+                    // Extraer sellos
+                    if (isset($line->Seal->Nseal)) {
+                        foreach ($line->Seal->Nseal as $seal) {
+                            $container['seals'][] = (string)$seal;
+                        }
                     }
-                }
 
-                // Extraer códigos NCM
-                if (isset($line->Ncm->Nncm)) {
-                    foreach ($line->Ncm->Nncm as $ncm) {
-                        $container['ncm_codes'][] = (string)$ncm;
+                    // Extraer códigos NCM
+                    if (isset($line->Ncm->Nncm)) {
+                        foreach ($line->Ncm->Nncm as $ncm) {
+                            $container['ncm_codes'][] = (string)$ncm;
+                        }
                     }
-                }
 
-                $data['containers'][] = $container;
+                    $blData['containers'][] = $container;
+                    $data['containers'][] = $container; // También al array global
+                }
             }
+            
+            $data['bills_of_lading'][] = $blData;
+            
+            // El primer BL se usa como header principal (para voyage/shipment)
+            if (empty($data['header'])) {
+                $data['header'] = $blData;
+            }
+            
+            Log::debug("BL #{$blCount}: {$blData['bill_number']} con " . count($blData['containers']) . " contenedores");
         }
+        
+        Log::info("Total BLs extraídos: " . count($data['bills_of_lading']) . ", Total contenedores: " . count($data['containers']));
 
         return $data;
     }
@@ -391,25 +430,19 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Validar datos extraídos
+     * Validar datos extraídos - SOPORTA MÚLTIPLES BillOfLading
      */
     public function validate(array $data): array
     {
         $errors = [];
 
-        // Validar header
-        if (empty($data['header']['bill_number'])) {
-            $errors[] = 'Número de Bill of Lading requerido en el XML';
+        // Validar que existan BLs
+        if (empty($data['bills_of_lading'])) {
+            $errors[] = 'Al menos un Bill of Lading es requerido en el XML';
+            return $errors;
         }
 
-        if (empty($data['header']['shipper_name']) && empty($data['header']['shipper_cuit'])) {
-            $errors[] = 'Información del shipper (nombre o CUIT) requerida en el XML';
-        }
-
-        if (empty($data['header']['consignee_name'])) {
-            $errors[] = 'Nombre del consignee requerido en el XML';
-        }
-
+        // Validar header principal (para voyage/shipment)
         if (empty($data['header']['loading_port'])) {
             $errors[] = 'Puerto de carga requerido en el XML';
         }
@@ -418,65 +451,67 @@ class LoginXmlParser implements ManifestParserInterface
             $errors[] = 'Puerto de descarga requerido en el XML';
         }
 
-        // Validar contenedores
-        if (empty($data['containers'])) {
-            $errors[] = 'Al menos un contenedor es requerido en el XML';
-        }
-
-        foreach ($data['containers'] as $index => $container) {
-            $lineNumber = $index + 1;
+        // Validar cada BL individualmente
+        foreach ($data['bills_of_lading'] as $blIndex => $bl) {
+            $blNum = $blIndex + 1;
+            $blRef = $bl['bill_number'] ?? "BL #{$blNum}";
             
-            if (empty($container['container_number'])) {
-                $errors[] = "Número de contenedor requerido en línea {$lineNumber}";
+            if (empty($bl['bill_number'])) {
+                $errors[] = "Número de Bill of Lading requerido en {$blRef}";
             }
 
-            if (empty($container['container_type'])) {
-                $errors[] = "Tipo de contenedor requerido en línea {$lineNumber}";
+            if (empty($bl['shipper_name']) && empty($bl['shipper_cuit'])) {
+                $errors[] = "Información del shipper requerida en {$blRef}";
             }
 
-            if ($container['gross_weight_kg'] <= 0) {
-                $errors[] = "Peso bruto debe ser mayor a 0 en línea {$lineNumber}";
+            if (empty($bl['consignee_name'])) {
+                $errors[] = "Nombre del consignee requerido en {$blRef}";
             }
 
-            if ($container['net_weight_kg'] > $container['gross_weight_kg']) {
-                $errors[] = "Peso neto no puede ser mayor al peso bruto en línea {$lineNumber}";
+            // Validar contenedores de este BL
+            if (empty($bl['containers'])) {
+                $errors[] = "Al menos un contenedor requerido en {$blRef}";
             }
 
-            if ($container['tare_weight_kg'] <= 0) {
-                $errors[] = "Peso tara debe ser mayor a 0 en línea {$lineNumber}";
+            foreach ($bl['containers'] as $cIndex => $container) {
+                $lineRef = "{$blRef} línea " . ($cIndex + 1);
+                
+                if (empty($container['container_number'])) {
+                    $errors[] = "Número de contenedor requerido en {$lineRef}";
+                }
+
+                if (empty($container['container_type'])) {
+                    $errors[] = "Tipo de contenedor requerido en {$lineRef}";
+                }
+
+                if ($container['gross_weight_kg'] <= 0) {
+                    $errors[] = "Peso bruto debe ser mayor a 0 en {$lineRef}";
+                }
+
+                if ($container['net_weight_kg'] > $container['gross_weight_kg']) {
+                    $errors[] = "Peso neto no puede ser mayor al peso bruto en {$lineRef}";
+                }
+
+                if ($container['tare_weight_kg'] <= 0) {
+                    $errors[] = "Peso tara debe ser mayor a 0 en {$lineRef}";
+                }
             }
         }
 
         return $errors;
     }
 
+    /**
+     * Transformar datos - SOPORTA MÚLTIPLES BillOfLading
+     */
     public function transform(array $data): array
     {
-        return [
-            'voyage' => [
-                'voyage_number' => $data['header']['voyage_number'] ?? 'LGN-' . date('Y-m-d'),
-                'vessel_name' => $data['header']['vessel_name'] ?? 'Login Vessel',
-                'origin_port' => $data['header']['loading_port'] ?? 'Unknown',
-                'destination_port' => $data['header']['discharge_port'] ?? 'Unknown',
-                'departure_date' => $this->parseDate($data['header']['loading_date'] ?? null),
-                'estimated_arrival_date' => $this->parseDate($data['header']['loading_date'] ?? null, '+3 days')
-            ],
-            'shipment' => [
-                'shipment_number' => 'LGN-' . date('Ymd') . '-001',
-                'status' => 'planning'
-            ],
-            'bill_of_lading' => [
-                'bill_number' => $data['header']['bill_number'],
-                'shipper_name' => $data['header']['shipper_name'],
-                'consignee_name' => $data['header']['consignee_name'],
-                'notify_party_name' => $data['header']['notify_party_name'],
-                'bill_date' => $this->parseDate($data['header']['bill_date'] ?? null),
-                'loading_date' => $this->parseDate($data['header']['loading_date'] ?? null),
-                'cargo_description' => 'Login XML Import - Multiple containers',
-                'total_containers' => count($data['containers']),
-                'total_weight_kg' => array_sum(array_column($data['containers'], 'gross_weight_kg'))
-            ],
-            'containers' => array_map(function($container) {
+        // Transformar cada BL con sus contenedores
+        $billsOfLading = [];
+        $allContainers = [];
+        
+        foreach ($data['bills_of_lading'] as $bl) {
+            $blContainers = array_map(function($container) {
                 return [
                     'line_number' => $container['line_number'],
                     'container_number' => $container['container_number'],
@@ -490,7 +525,40 @@ class LoginXmlParser implements ManifestParserInterface
                     'package_description' => $this->getContainerDescription($container['container_type']),
                     'country_of_origin' => $this->countryMapping['default']
                 ];
-            }, $data['containers'])
+            }, $bl['containers']);
+            
+            $billsOfLading[] = [
+                'bill_number' => $bl['bill_number'],
+                'shipper_name' => $bl['shipper_name'],
+                'shipper_cuit' => $bl['shipper_cuit'] ?? null,
+                'consignee_name' => $bl['consignee_name'],
+                'notify_party_name' => $bl['notify_party_name'],
+                'bill_date' => $this->parseDate($bl['bill_date'] ?? null),
+                'loading_date' => $this->parseDate($bl['loading_date'] ?? null),
+                'cargo_description' => $bl['cargo_description'] ?? 'Login XML Import',
+                'total_containers' => count($bl['containers']),
+                'total_weight_kg' => array_sum(array_column($bl['containers'], 'gross_weight_kg')),
+                'containers' => $blContainers
+            ];
+            
+            $allContainers = array_merge($allContainers, $blContainers);
+        }
+        
+        return [
+            'voyage' => [
+                'voyage_number' => $data['header']['voyage_number'] ?? 'LGN-' . date('Y-m-d'),
+                'vessel_name' => $data['header']['vessel_name'] ?? 'Login Vessel',
+                'origin_port' => $data['header']['loading_port'] ?? 'Unknown',
+                'destination_port' => $data['header']['discharge_port'] ?? 'Unknown',
+                'departure_date' => $this->parseDate($data['header']['loading_date'] ?? null),
+                'estimated_arrival_date' => $this->parseDate($data['header']['loading_date'] ?? null, '+3 days')
+            ],
+            'shipment' => [
+                'shipment_number' => 'LGN-' . date('Ymd') . '-001',
+                'status' => 'planning'
+            ],
+            'bills_of_lading' => $billsOfLading,
+            'containers' => $allContainers  // Para compatibilidad
         ];
     }
 
@@ -673,12 +741,15 @@ class LoginXmlParser implements ManifestParserInterface
     protected function createShipmentItems(array $data, BillOfLading $billOfLading): array
     {
         $items = [];
+        
         $cargoType = CargoType::where('name', 'LIKE', '%container%')->first() 
                      ?? CargoType::first();
         $packagingType = PackagingType::where('name', 'LIKE', '%container%')->first() 
                          ?? PackagingType::first();
 
-        foreach ($data['containers'] as $containerData) {
+        foreach ($containers as $containerData) {
+            $containerNumber = $containerData['container_number'];
+            
             // Crear ShipmentItem
             $item = ShipmentItem::create([
                 'bill_of_lading_id' => $billOfLading->id,
@@ -698,24 +769,31 @@ class LoginXmlParser implements ManifestParserInterface
                 'created_by_user_id' => 1
             ]);
 
-            // Crear Container asociado
-            $containerType = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
-                            ?? ContainerType::first();
+            // Crear Container asociado (evitar duplicados)
+            if (isset($this->createdContainersInImport[$containerNumber])) {
+                $container = $this->createdContainersInImport[$containerNumber];
+            } else {
+                $containerType = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
+                                ?? ContainerType::first();
 
-            $container = Container::create([
-                'container_number' => $containerData['container_number'],
-                'container_type_id' => $containerType?->id,
-                'tare_weight_kg' => $containerData['tare_weight_kg'],
-                'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
-                'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                'cargo_weight_kg' => $containerData['net_weight_kg'],
-                'condition' => 'L',
-                'operational_status' => 'loaded',
-                'shipper_seal' => $containerData['seals'],
-                'active' => true,
-                'created_date' => now(),
-                'created_by_user_id' => 1
-            ]);
+                $container = Container::firstOrCreate(
+                    ['container_number' => $containerNumber],
+                    [
+                        'container_type_id' => $containerType?->id,
+                        'tare_weight_kg' => $containerData['tare_weight_kg'],
+                        'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
+                        'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                        'cargo_weight_kg' => $containerData['net_weight_kg'],
+                        'condition' => 'L',
+                        'operational_status' => 'loaded',
+                        'shipper_seal' => $containerData['seals'],
+                        'active' => true,
+                        'created_date' => now(),
+                        'created_by_user_id' => $context['user_id']
+                    ]
+                );
+                $this->createdContainersInImport[$containerNumber] = $container;
+            }
 
             // Asociar item con contenedor
             $container->shipmentItems()->attach($item->id, [
@@ -732,6 +810,137 @@ class LoginXmlParser implements ManifestParserInterface
 
         return $items;
     }
+
+    /**
+     * Crear Bill of Lading desde datos transformados de un BL individual
+     */
+    protected function createBillOfLadingFromData(array $blData, Shipment $shipment, array $context): BillOfLading
+    {
+        // Crear o encontrar clientes con datos reales del XML
+        $shipper = $this->findOrCreateClient(
+            $blData['shipper_name'], 
+            'shipper',
+            $context,
+            $blData['shipper_cuit'] ?? null
+        );
+        
+        $consignee = $this->findOrCreateClient(
+            $blData['consignee_name'], 
+            'consignee',
+            $context
+        );
+        
+        $notifyParty = null;
+        if (!empty($blData['notify_party_name'])) {
+            $notifyParty = $this->findOrCreateClient(
+                $blData['notify_party_name'], 
+                'notify_party',
+                $context
+            );
+        }
+
+        $cargoType = CargoType::where('active', true)->first();
+        $packagingType = PackagingType::where('active', true)->first();
+
+        return BillOfLading::create([
+            'shipment_id' => $shipment->id,
+            'bill_number' => $blData['bill_number'],
+            'shipper_id' => $shipper?->id,
+            'consignee_id' => $consignee?->id,
+            'notify_party_id' => $notifyParty?->id,
+            'loading_port_id' => $shipment->voyage->origin_port_id,
+            'discharge_port_id' => $shipment->voyage->destination_port_id,
+            'primary_cargo_type_id' => $cargoType?->id ?? 1,        
+            'primary_packaging_type_id' => $packagingType?->id ?? 1,
+            'bill_date' => $blData['bill_date'] ?? now(),
+            'loading_date' => $blData['loading_date'] ?? now(),
+            'cargo_description' => $blData['cargo_description'] ?? 'Login XML Import',
+            'total_packages' => $blData['total_containers'],
+            'gross_weight_kg' => $blData['total_weight_kg'],
+            'container_count' => $blData['total_containers'],
+            'freight_terms' => 'prepaid',
+            'currency_code' => 'USD',
+            'status' => 'draft',
+            'is_consolidated' => false,
+            'created_by_user_id' => $context['user_id']
+        ]);
+    }
+
+    /**
+     * Crear ShipmentItems desde array de contenedores transformados
+     */
+    protected function createShipmentItemsFromData(array $containers, BillOfLading $billOfLading, array $context): array
+    {
+        $items = [];
+        $cargoType = CargoType::where('name', 'LIKE', '%container%')->first() 
+                     ?? CargoType::first();
+        $packagingType = PackagingType::where('name', 'LIKE', '%container%')->first() 
+                         ?? PackagingType::first();
+
+        foreach ($containers as $containerData) {
+            $containerNumber = $containerData['container_number'];
+            
+            // Crear ShipmentItem
+            $item = ShipmentItem::create([
+                'bill_of_lading_id' => $billOfLading->id,
+                'line_number' => $containerData['line_number'],
+                'item_reference' => 'LGN-' . $containerNumber,
+                'item_description' => $containerData['package_description'],
+                'cargo_type_id' => $cargoType?->id,
+                'packaging_type_id' => $packagingType?->id,
+                'package_quantity' => 1,
+                'gross_weight_kg' => $containerData['gross_weight_kg'],
+                'net_weight_kg' => $containerData['net_weight_kg'],
+                'country_of_origin' => $containerData['country_of_origin'],
+                'commodity_code' => $containerData['commodity_code'],
+                'cargo_marks' => $containerData['seals'] ? "Seals: {$containerData['seals']}" : null,
+                'package_type_description' => $containerData['package_description'],
+                'created_date' => now(),
+                'created_by_user_id' => $context['user_id']
+            ]);
+
+            // Crear Container asociado (evitar duplicados en misma importación)
+            if (isset($this->createdContainersInImport[$containerNumber])) {
+                $container = $this->createdContainersInImport[$containerNumber];
+            } else {
+                $containerType = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
+                                ?? ContainerType::first();
+
+                $container = Container::firstOrCreate(
+                    ['container_number' => $containerNumber],
+                    [
+                        'container_type_id' => $containerType?->id,
+                        'tare_weight_kg' => $containerData['tare_weight_kg'],
+                        'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
+                        'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                        'cargo_weight_kg' => $containerData['net_weight_kg'],
+                        'condition' => 'L',
+                        'operational_status' => 'loaded',
+                        'shipper_seal' => $containerData['seals'],
+                        'active' => true,
+                        'created_date' => now(),
+                        'created_by_user_id' => $context['user_id']
+                    ]
+                );
+                $this->createdContainersInImport[$containerNumber] = $container;
+            }
+
+            // Asociar item con contenedor
+            $container->shipmentItems()->attach($item->id, [
+                'package_quantity' => 1,
+                'gross_weight_kg' => $containerData['gross_weight_kg'],
+                'net_weight_kg' => $containerData['net_weight_kg'],
+                'status' => 'loaded',
+                'created_date' => now(),
+                'created_by_user_id' => $context['user_id']
+            ]);
+
+            $items[] = $item;
+        }
+
+        return $items;
+    }
+
 
     /**
      * Encontrar o crear cliente con datos reales
