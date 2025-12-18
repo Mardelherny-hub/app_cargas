@@ -78,10 +78,13 @@ class ParaguayWSSecurityBuilder
         $tokenId = $this->appendBinarySecurityToken($doc, $security);
         $bodyId = $this->ensureNodeHasId($body, 'Body-');
 
-        $encryptionIds = $this->encryptBody($doc, $body, $security);
+        //$encryptionIds = $this->encryptBody($doc, $body, $security);
+        // DNA Paraguay solo requiere firma, NO encriptación del body
+        // $encryptionIds = $this->encryptBody($doc, $body, $security);
+        $encryptionIds = []; // Sin encriptación
         $this->appendSignature($doc, $security, $bodyId, $timestampId, $tokenId);
 
-        Log::debug('SOAP Paraguay firmado y encriptado', [
+        Log::debug('SOAP Paraguay firmado (sin encriptación)', [
             'timestamp_id' => $timestampId,
             'token_id' => $tokenId,
             'body_id' => $bodyId,
