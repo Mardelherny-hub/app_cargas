@@ -845,13 +845,17 @@ class ParaguayDnaService extends BaseWebserviceService
             ];
             // Enviar
             // Llamada directa al método SOAP (más clara y correcta)
-            $result = $client->EnviarMensajeFluvial(
-                $soapParams['codigo'],
-                $soapParams['version'],
-                $soapParams['viaje'],
-                $soapParams['xml'],
-                $soapParams['Autenticacion']
-            );
+            $result = $client->enviarMensajeFluvial([
+                'codigo' => $soapParams['codigo'],
+                'version' => $soapParams['version'],
+                'viaje' => $soapParams['viaje'],
+                'xml' => $soapParams['xml'],
+                'autenticacion' => [
+                    'firma' => $wsaaTokens['sign'],
+                    'idUsuario' => $wsaaTokens['ruc'] ?? $ruc,
+                    'ticket' => $wsaaTokens['token'],
+                ],
+            ]);
             $rawResponse = $client->__getLastResponse();
 
             // Persistir WebserviceResponse con XML
