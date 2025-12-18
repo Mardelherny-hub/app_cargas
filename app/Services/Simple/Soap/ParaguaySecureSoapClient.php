@@ -23,7 +23,7 @@ class ParaguaySecureSoapClient extends SoapClient
             'request_length' => strlen($request ?? ''),
         ]);
         
-        if ($this->shouldSecurePayload($request)) {
+        if (false && $this->shouldSecurePayload($request)) {
             \Log::info('Aplicando WS-Security al request');
             $request = $this->securityBuilder->secure($request);
             
