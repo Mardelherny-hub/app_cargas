@@ -398,12 +398,32 @@ Log::debug('WSAA Paraguay: SOAP Response recibido', [
     'response' => $client->__getLastResponse(),
 ]);
 
-            if (!isset($response->loginCmsReturn)) {
-                throw new Exception("Respuesta WSAA inválida: no contiene loginCmsReturn");
+            // DNA Paraguay devuelve "return", no "loginCmsReturn" como AFIP
+            $loginTicketXml = null;
+            
+            if (isset($response->return)) {
+                $loginTicketXml = $response->return;
+            } elseif (isset($response->loginCmsReturn)) {
+                $loginTicketXml = $response->loginCmsReturn;
+            } elseif (is_string($response)) {
+                $loginTicketXml = $response;
             }
+            
+            if (empty($loginTicketXml)) {
+                Log::error('WSAA Paraguay: Respuesta sin datos', [
+                    'response_type' => gettype($response),
+                    'response_keys' => is_object($response) ? get_object_vars($response) : 'N/A',
+                ]);
+                throw new Exception("Respuesta WSAA inválida: no contiene return ni loginCmsReturn");
+            }
+            
+            Log::debug('WSAA Paraguay: LoginTicket XML recibido', [
+                'xml_length' => strlen($loginTicketXml),
+                'xml_preview' => substr($loginTicketXml, 0, 200),
+            ]);
 
             // Parsear XML de respuesta
-            $xml = simplexml_load_string($response->loginCmsReturn);
+            $xml = simplexml_load_string($loginTicketXml);
 
             if ($xml === false) {
                 throw new Exception("Error parseando XML de respuesta WSAA");

@@ -255,7 +255,13 @@ class CmspEdiParser implements ManifestParserInterface
                         'gross_weight_kg' => 0,
                         'tare_weight_kg' => 0,
                         'volume_m3' => 0,
-                        'containers' => []
+                        'containers' => [],
+                        // Campos DGS (mercadería peligrosa)
+                        'is_dangerous_goods' => false,
+                        'imdg_class' => null,
+                        'un_number' => null,
+                        // Campo CST (código arancelario)
+                        'commodity_code' => null,
                     ];
                     
                     // Agregar item al contenedor actual
@@ -279,8 +285,29 @@ class CmspEdiParser implements ManifestParserInterface
                 case 'FTX':
                     $this->parseFreeText($segment, $currentItem);
                     break;
+
+                case 'DGS':
+                    // DGS+IMD+9+3077 → clase IMO 9, UN 3077
+                    if ($currentItem !== null) {
+                        $currentItem['is_dangerous_goods'] = true;
+                        $currentItem['imdg_class'] = $segment['elements'][1] ?? null;
+                        $currentItem['un_number'] = $segment['elements'][2] ?? null;
+                    }
+                    break;
+
+                case 'CST':
+                    // CST+1+9999.00+:169 → código arancelario
+                    if ($currentItem !== null && !empty($segment['elements'][1])) {
+                        $commodity = explode(':', $segment['elements'][1])[0] ?? '';
+                        $commodity = str_replace('.', '', $commodity); // 9999.00 → 999900
+                        if (!empty($commodity) && $commodity !== '0') {
+                            $currentItem['commodity_code'] = $commodity;
+                        }
+                    }
+                    break;
             }
         }
+
 
         // Agregar el último contenedor si tiene items
         if ($currentContainer !== null && !empty($currentContainer['items'])) {
@@ -399,8 +426,14 @@ class CmspEdiParser implements ManifestParserInterface
             $refType = explode(':', $segment['elements'][0] ?? '')[0] ?? '';
             $refValue = explode(':', $segment['elements'][0] ?? '')[1] ?? '';
 
-            if ($refType === 'BM' && $currentContainer) {
-                $currentContainer['references']['booking'] = $refValue;
+            if ($currentContainer) {
+                if ($refType === 'BM') {
+                    // BM = Bill of Lading number (número de conocimiento)
+                    $currentContainer['references']['bill_number'] = $refValue;
+                } elseif ($refType === 'PLZ') {
+                    // PLZ = Permiso/License
+                    $currentContainer['references']['permit'] = $refValue;
+                }
             }
         }
     }
@@ -521,36 +554,51 @@ class CmspEdiParser implements ManifestParserInterface
      * Crear objetos de modelo
      */
     protected function createModelObjects(array $data): ManifestParseResult
-{
-    return DB::transaction(function () use ($data) {
-        $voyage = $this->createVoyage($data);
-        $shipment = $this->createShipment($voyage, $data);
-        $billOfLading = $this->createBillOfLading($shipment, $data);
-        $this->createContainersAndItems($billOfLading, $data);
+    {
+        return DB::transaction(function () use ($data) {
+            $voyage = $this->createVoyage($data);
+            $shipment = $this->createShipment($voyage, $data);
+            
+            $billsOfLading = [];
+            
+            // Iterar sobre cada CNI (cada uno es un BL separado)
+            foreach ($data['containers'] as $containerGroup) {
+                // Obtener bill_number del RFF+BM, o usar fallback
+                $billNumber = $containerGroup['references']['bill_number'] 
+                    ?? $data['message']['document_number'] . '-' . ($containerGroup['sequence'] ?? uniqid());
+                
+                // Crear BL para este grupo
+                $billOfLading = $this->createBillOfLadingForGroup($shipment, $data, $billNumber);
+                $billsOfLading[] = $billOfLading;
+                
+                // Crear items y contenedores solo para este BL
+                $this->createContainersAndItemsForGroup($billOfLading, $containerGroup);
+                
+                $this->stats['processed_bls']++;
+            }
 
-        Log::info('CMSP EDI parsing completed successfully', [
-            'voyage_id' => $voyage->id,
-            'shipment_id' => $shipment->id,
-            'bill_of_lading_id' => $billOfLading->id,
-            'stats' => $this->stats
-        ]);
+            Log::info('CMSP EDI parsing completed successfully', [
+                'voyage_id' => $voyage->id,
+                'shipment_id' => $shipment->id,
+                'bills_created' => count($billsOfLading),
+                'stats' => $this->stats
+            ]);
 
-        // CORRECCIÓN: Usar variables correctas
-        return ManifestParseResult::success(
-            voyage: $voyage,
-            shipments: [$shipment],
-            containers: $this->getCreatedContainers($data), // CAMBIAR esto
-            billsOfLading: [$billOfLading],                 // CAMBIAR esto
-            statistics: [
-                'processed_containers' => $this->stats['processed_containers'],
-                'processed_items' => $this->stats['processed_items'],
-                'processed_bls' => $this->stats['processed_bls'],
-                'errors' => $this->stats['errors'],
-                'warnings' => $this->stats['warnings']
-            ]
-        );
-    });
-}
+            return ManifestParseResult::success(
+                voyage: $voyage,
+                shipments: [$shipment],
+                containers: $this->getCreatedContainers($data),
+                billsOfLading: $billsOfLading,
+                statistics: [
+                    'processed_containers' => $this->stats['processed_containers'],
+                    'processed_items' => $this->stats['processed_items'],
+                    'processed_bls' => $this->stats['processed_bls'],
+                    'errors' => $this->stats['errors'],
+                    'warnings' => $this->stats['warnings']
+                ]
+            );
+        });
+    }
 
     /**
      * Crear voyage
@@ -763,6 +811,66 @@ class CmspEdiParser implements ManifestParserInterface
         return $bl;
     }
 
+    /**
+     * Crear BL para un grupo específico de CNI
+     */
+    protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber): BillOfLading
+    {
+        $shipper   = $this->findOrCreateClient($data['parties']['shipper'] ?? null);
+        $consignee = $this->findOrCreateClient($data['parties']['consignee'] ?? null);
+
+        $billDate = $this->extractBillDate($data) ?? now()->toDateString();
+        $loadingDate = $this->extractLoadingDate($data)
+            ?? optional($shipment->voyage)->departure_date
+            ?? $billDate;
+
+        return BillOfLading::create([
+            'shipment_id'               => $shipment->id,
+            'bill_number'               => (string) $billNumber,
+            'shipper_id'                => $shipper?->id,
+            'consignee_id'              => $consignee?->id,
+            'loading_port_id'           => $shipment->voyage->origin_port_id,
+            'discharge_port_id'         => $shipment->voyage->destination_port_id,
+            'bill_type'                 => 'house',
+            'origin_country_id'         => $shipment->voyage->origin_country_id,
+            'destination_country_id'    => $shipment->voyage->destination_country_id,
+            'loading_customs_id'        => null,
+            'discharge_customs_id'      => null,
+            'primary_cargo_type_id'     => $this->getDefaultCargoTypeId(),
+            'primary_packaging_type_id' => $this->getDefaultPackagingTypeId(),
+            'freight_terms'             => 'prepaid',
+            'is_consolidated'           => false,
+            'documentation_complete'    => false,
+            'customs_cleared'           => false,
+            'cargo_description'         => 'Según detalle',
+            'total_packages'            => 0,
+            'gross_weight_kg'           => 0,
+            'net_weight_kg'             => 0,
+            'volume_m3'                 => 0,
+            'status'                    => 'draft',
+            'issue_date'                => now()->toDateString(),
+            'bill_date'                 => $billDate,
+            'loading_date'              => $loadingDate,
+            'created_by_user_id'        => auth()->id(),
+        ]);
+    }
+
+    /**
+     * Crear contenedores e items para un grupo específico de CNI
+     */
+    protected function createContainersAndItemsForGroup(BillOfLading $billOfLading, array $containerGroup): void
+    {
+        foreach ($containerGroup['items'] as $item) {
+            $shipmentItem = $this->createShipmentItem($billOfLading, $item);
+
+            foreach ($item['containers'] as $containerNumber) {
+                $this->createContainer($containerNumber, $item, $shipmentItem);
+            }
+
+            $this->stats['processed_items']++;
+        }
+    }
+
     protected function getDefaultCargoTypeId(): int
     {
         return CargoType::where('active', true)->where('is_common', true)->first()?->id ?? 1;
@@ -836,10 +944,16 @@ class CmspEdiParser implements ManifestParserInterface
         'cargo_type_id' => $this->getDefaultCargoTypeId(),
         'packaging_type_id' => $this->getDefaultPackagingTypeId(),
         'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
-        'item_description' => $cleanDescription, // USAR DESCRIPCIÓN LIMPIA
+        'item_description' => $cleanDescription,
         'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
         'net_weight_kg' => ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 0),
         'volume_m3' => $itemData['volume_m3'] ?? 0,
+        // Campos DGS (mercadería peligrosa)
+        'is_dangerous_goods' => $itemData['is_dangerous_goods'] ?? false,
+        'imdg_class' => $itemData['imdg_class'] ?? null,
+        'un_number' => $itemData['un_number'] ?? null,
+        // Campo CST (código arancelario)
+        'commodity_code' => $itemData['commodity_code'] ?? null,
         'created_by_user_id' => auth()->id()
     ]);
 }
