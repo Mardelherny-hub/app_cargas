@@ -182,7 +182,7 @@
                         </div>
 
                         <!-- Contraseña del Certificado -->
-                        <div class="mb-6hidden" id="passwordSection">
+                        <div class="mb-6 hidden" id="passwordSection">
                             <label for="password" class="block text-sm font-medium text-gray-700">
                                 Contraseña del Certificado *
                             </label>
@@ -477,6 +477,23 @@
                     aliasInput.value = 'DNA_CERT_' + new Date().getFullYear();
                 }
             }
+            
+            // =============================================
+            // CRÍTICO: Deshabilitar inputs del país NO seleccionado
+            // Los inputs disabled NO se envían en el formulario
+            // Esto evita conflicto de dos inputs con name="certificate"
+            // =============================================
+            if (country === 'argentina') {
+                certificateArg.disabled = false;
+                certificatePy.disabled = true;
+                privateKey.disabled = true;
+                passwordInput.disabled = false;
+            } else if (country === 'paraguay') {
+                certificateArg.disabled = true;
+                certificatePy.disabled = false;
+                privateKey.disabled = false;
+                passwordInput.disabled = true;
+            }
         }
 
         // Mostrar nombre de archivo - Argentina
@@ -527,6 +544,14 @@
 
         // Validación del formulario
         document.getElementById('certificateForm').addEventListener('submit', function(e) {
+            // DEBUG - Verificar estado de elementos
+            console.log('=== DEBUG SUBMIT ===');
+            console.log('argentinaUpload hidden?', document.getElementById('argentinaUpload').classList.contains('hidden'));
+            console.log('certificate input:', document.getElementById('certificate'));
+            console.log('certificate files:', document.getElementById('certificate').files);
+            console.log('certificate files length:', document.getElementById('certificate').files.length);
+            console.log('certificate disabled?', document.getElementById('certificate').disabled);
+            console.log('certificate name:', document.getElementById('certificate').name);
             const countrySelect = document.getElementById('country');
             const expiresInput = document.getElementById('expires_at');
             
