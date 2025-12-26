@@ -213,7 +213,7 @@ class ShipmentItemCreateForm extends Component
     public $inspection_type = '';
 
     // CAMPOS AFIP
-    #[Validate('required|string|min:7|max:15')]
+    #[Validate('nullable|string|min:7|max:15')]
     public $tariff_position = '';
 
     #[Validate('required|in:S,N')]
@@ -225,7 +225,7 @@ class ShipmentItemCreateForm extends Component
     #[Validate('required|in:S,N')]
     public $is_renar = 'N';
 
-    #[Validate('required|string|max:70')]
+    #[Validate('nullable|string|max:70')]
     public $foreign_forwarder_name = '';
 
     #[Validate('nullable|string|max:35')]
@@ -245,10 +245,10 @@ class ShipmentItemCreateForm extends Component
     public $packaging_type_code = '';
 
     // CAMPOS AFIP - CÓDIGOS ADUANEROS Y DESTINATARIO
-    #[Validate('required|string|size:3')]
+    #[Validate('nullable|string|size:3')]
     public $discharge_customs_code = '';
 
-    #[Validate('required|string|max:5')]
+    #[Validate('nullable|string|max:5')]
     public $operational_discharge_code = '';
 
     #[Validate('nullable|string|max:60')]

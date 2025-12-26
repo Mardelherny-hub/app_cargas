@@ -1315,18 +1315,16 @@
                             </div>
                         </div>
 
-
-
                         {{-- Información explicativa --}}
                         <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
                             <p class="text-xs text-blue-800">
                                 <strong>Campos obligatorios AFIP:</strong> Estos datos son requeridos para declaraciones aduaneras electrónicas.
                             </p>
                         </div>
-                    </div>
+                    
 
                     {{-- Marcas y Embalaje --}}
-                    <div>
+                    <div class="mt-6">
                         <h4 class="text-lg font-medium text-gray-900 mb-4">Marcas y Embalaje</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1352,7 +1350,7 @@
                     </div>
 
                     {{-- Información Adicional --}}
-                    <div>
+                    <div class="mt-6">
                         <h4 class="text-lg font-medium text-gray-900 mb-4">Información Adicional</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1429,15 +1427,14 @@
                                 <span wire:loading wire:target="createShipmentItem">Agregando...</span>
                             </button>
 
-                            {{-- Botón TERMINAR - Con confirmación inteligente --}}
-                            <button type="button"
-                                    onclick="handleFinishButton({{ $shipment->id }})"
-                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                            {{-- Botón TERMINAR - Link directo al shipment --}}
+                            <a href="{{ route('company.shipments.show', $shipment) }}"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
                                 <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                 </svg>
                                 Terminar
-                            </button>
+                            </a>
                         </div>
                     </div>
                 </form>

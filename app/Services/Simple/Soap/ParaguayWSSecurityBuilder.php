@@ -49,17 +49,17 @@ class ParaguayWSSecurityBuilder
         $objKey = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
         $objKey->loadKey($this->clientPrivateKey, false, false);
         
-        $objWSSE->signSoapDoc($objKey, ['algorithm' => XMLSecurityKey::SHA256]);
+        $objWSSE->signSoapDoc($objKey);
 
         // 3. Agregar BinarySecurityToken y vincularlo a la firma
         $token = $objWSSE->addBinaryToken($this->clientCertificate);
         $objWSSE->attachTokentoSig($token);
 
         // 4. Encriptar Body + Firma con clave pública del servidor DNA
-        $sessionKey = new XMLSecurityKey(XMLSecurityKey::AES256_CBC);
+        $sessionKey = new XMLSecurityKey(XMLSecurityKey::TRIPLEDES_CBC);
         $sessionKey->generateSessionKey();
 
-        $siteKey = new XMLSecurityKey(XMLSecurityKey::RSA_OAEP_MGF1P, ['type' => 'public']);
+        $siteKey = new XMLSecurityKey(XMLSecurityKey::RSA_1_5, ['type' => 'public']);
         $siteKey->loadKey($this->serverCertificate, false, true);
 
         // encryptSignature=true es el default - encripta BODY + SIGNATURE

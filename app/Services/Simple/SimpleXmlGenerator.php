@@ -99,8 +99,8 @@ $wsaa = $this->getWSAATokens();
             // Códigos de puertos y aduanas
             $codAduOrigen = $voyage->originPort?->customs_code ?? '019';
             $codAduDest = $voyage->destinationPort?->customs_code ?? '051';
-            $codPaisOrigen = $voyage->originPort?->country?->numeric_code ?? '032';
-            $codPaisDest = $voyage->destinationPort?->country?->numeric_code ?? '600';
+            $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
+            $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
             $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
             $codLugOperDest = $voyage->destinationPort?->operative_code ?? '001';
             $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
@@ -230,9 +230,10 @@ $wsaa = $this->getWSAATokens();
                                                     $w->writeElement('cantBultosTotFrac', (string)($item->package_quantity ?? 1));
                                                     $w->writeElement('pesoBruto', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
                                                     $w->writeElement('pesoBrutoTotFrac', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
-                                                    $w->writeElement('codTipEmbalaje', $item->packagingType?->argentina_ws_code ?? 'BG');
+                                                    $codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'BG';
+                                                    $w->writeElement('codTipEmbalaje', (strlen($codEmbalaje) === 2) ? $codEmbalaje : 'BG');
                                                     $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA', 0, 100));
-                                                    $w->writeElement('marcaNro', $item->cargo_marks ?? 'S/M');
+                                                    $w->writeElement('marcaNro', !empty($item->cargo_marks) ? $item->cargo_marks : 'S/M');
                                                     $w->writeElement('indCargSuelt', 'S');
                                                 $w->endElement();
                                             } else {
@@ -247,9 +248,10 @@ $wsaa = $this->getWSAATokens();
                                                         $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
                                                         $w->writeElement('pesoBruto', number_format($pesoContainer, 0, '', ''));
                                                         $w->writeElement('pesoBrutoTotFrac', number_format($pesoContainer, 0, '', ''));
-                                                        $w->writeElement('codTipEmbalaje', $item->packagingType?->argentina_ws_code ?? 'CN');
+                                                        $codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'CN';
+                                                        $w->writeElement('codTipEmbalaje', (strlen($codEmbalaje) === 2) ? $codEmbalaje : 'CN');
                                                         $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA EN CONTENEDOR', 0, 100));
-                                                        $w->writeElement('marcaNro', $item->cargo_marks ?? 'S/M');
+                                                        $w->writeElement('marcaNro', !empty($item->cargo_marks) ? $item->cargo_marks : 'S/M');
                                                         $w->writeElement('indCargSuelt', 'N');
                                                         $w->writeElement('idContenedor', $container->container_number);
                                                     $w->endElement();
@@ -296,42 +298,42 @@ $wsaa = $this->getWSAATokens();
                     
                     $w->endElement(); // titulosTransEnvios
 
-                    // === TÍTULOS CONTENEDORES VACÍOS ===
-                    $w->startElement('titulosTransContVacios');
+                    // === TÍTULOS CONTENEDORES VACÍOS (solo si hay) ===
                     if ($emptyContainers->isNotEmpty()) {
-                        $w->startElement('TitTransContVacio');
-                            $w->writeElement('codViaTrans', '8');
-                            $w->writeElement('idTitTrans', 'VACIOS-' . $transactionId);
-                            
-                            $w->startElement('idContenedores');
-                            foreach ($emptyContainers as $ec) {
-                                $w->writeElement('idCont', $ec->container_number);
-                            }
-                            $w->endElement();
-                            
-                            // Remitente simplificado para vacíos
-                            $firstBol = $billsOfLading->first();
-                            $this->writeRemitente($w, $firstBol);
-                            $this->writeConsignatario($w, $firstBol);
-                            $this->writeDestinatario($w, $firstBol);
-                            
-                            $w->startElement('origen');
-                                $w->writeElement('codAdu', $codAduOrigen);
-                                $w->writeElement('codLugOper', $codLugOperOrigen);
-                                $w->writeElement('codCiu', $codCiuOrigen);
-                            $w->endElement();
-                            
-                            $w->startElement('destino');
-                                $w->writeElement('codPais', $codPaisDest);
-                                $w->writeElement('codAdu', $codAduDest);
-                                $w->writeElement('codLugOper', $codLugOperDest);
-                                $w->writeElement('codCiu', $codCiuDest);
-                            $w->endElement();
-                            
-                            $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-                        $w->endElement();
+                        $w->startElement('titulosTransContVacios');
+                            $w->startElement('TitTransContVacio');
+                                $w->writeElement('codViaTrans', '8');
+                                $w->writeElement('idTitTrans', 'VACIOS-' . $transactionId);
+                                
+                                $w->startElement('idContenedores');
+                                foreach ($emptyContainers as $ec) {
+                                    $w->writeElement('idCont', $ec->container_number);
+                                }
+                                $w->endElement();
+                                
+                                // Remitente simplificado para vacíos
+                                $firstBol = $billsOfLading->first();
+                                $this->writeRemitente($w, $firstBol);
+                                $this->writeConsignatario($w, $firstBol);
+                                $this->writeDestinatario($w, $firstBol);
+                                
+                                $w->startElement('origen');
+                                    $w->writeElement('codAdu', $codAduOrigen);
+                                    $w->writeElement('codLugOper', $codLugOperOrigen);
+                                    $w->writeElement('codCiu', $codCiuOrigen);
+                                $w->endElement();
+                                
+                                $w->startElement('destino');
+                                    $w->writeElement('codPais', $codPaisDest);
+                                    $w->writeElement('codAdu', $codAduDest);
+                                    $w->writeElement('codLugOper', $codLugOperDest);
+                                    $w->writeElement('codCiu', $codCiuDest);
+                                $w->endElement();
+                                
+                                $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                            $w->endElement(); // TitTransContVacio
+                        $w->endElement(); // titulosTransContVacios
                     }
-                    $w->endElement(); // titulosTransContVacios
 
                     // === CONTENEDORES (todos, llenos y vacíos) ===
                     $allContainersUnique = $allContainers->merge($emptyContainers)->unique('container_number');
@@ -391,20 +393,19 @@ $wsaa = $this->getWSAATokens();
         $w->startElement('remitente');
             $w->writeElement('codPais', $codPais);
             
-            // Si no es Argentina, incluir datos completos
-            if ($codPais !== 'AR') {
-                $w->writeElement('nomRazSoc', substr($shipper?->legal_name ?? 'REMITENTE', 0, 50));
-                $w->startElement('domicilio');
-                    $w->writeElement('barrio', '');
-                    $w->writeElement('ciudad', $shipper?->city ?? '');
-                    $w->writeElement('codPostal', $shipper?->postal_code ?? '');
-                    $w->writeElement('estado', $shipper?->state ?? '');
-                    $w->writeElement('nombreCalle', substr($shipper?->address ?? '', 0, 50));
-                $w->endElement();
-            }
+            // SIEMPRE incluir nomRazSoc y domicilio (AFIP los requiere)
+            $w->writeElement('nomRazSoc', substr($shipper?->legal_name ?? $shipper?->name ?? 'REMITENTE', 0, 50));
+            $w->startElement('domicilio');
+                $w->writeElement('barrio', substr($shipper?->district ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('ciudad', substr($shipper?->city ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('codPostal', substr($shipper?->postal_code ?? 'x', 0, 8) ?: 'x');
+                $w->writeElement('estado', substr($shipper?->state ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('nombreCalle', substr($shipper?->address ?? 'x', 0, 150) ?: 'x');
+            $w->endElement();
             
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? $this->company->tax_id));
             
+            // tipDocIdent y nroDocIdent solo para extranjeros
             if ($codPais !== 'AR') {
                 $w->writeElement('tipDocIdent', 'CUIT');
                 $w->writeElement('nroDocIdent', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? ''));
@@ -420,13 +421,13 @@ $wsaa = $this->getWSAATokens();
         $consignee = $bol->consignee;
         
         $w->startElement('consignatario');
-            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? 'CONSIGNATARIO', 0, 50));
+            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? $consignee?->name ?? 'CONSIGNATARIO', 0, 50));
             $w->startElement('domicilio');
-                $w->writeElement('barrio', '');
-                $w->writeElement('ciudad', $consignee?->city ?? '');
-                $w->writeElement('codPostal', $consignee?->postal_code ?? '');
-                $w->writeElement('estado', $consignee?->state ?? '');
-                $w->writeElement('nombreCalle', substr($consignee?->address ?? '', 0, 50));
+                $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
+                $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
             $w->endElement();
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $consignee?->tax_id ?? ''));
         $w->endElement();
@@ -441,13 +442,13 @@ $wsaa = $this->getWSAATokens();
         $consignee = $bol->consignee;
         
         $w->startElement('destinatario');
-            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? 'DESTINATARIO', 0, 50));
+            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? $consignee?->name ?? 'DESTINATARIO', 0, 50));
             $w->startElement('domicilio');
-                $w->writeElement('barrio', '');
-                $w->writeElement('ciudad', $consignee?->city ?? '');
-                $w->writeElement('codPostal', $consignee?->postal_code ?? '');
-                $w->writeElement('estado', $consignee?->state ?? '');
-                $w->writeElement('nombreCalle', substr($consignee?->address ?? '', 0, 50));
+                $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
+                $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
             $w->endElement();
         $w->endElement();
     }
@@ -460,13 +461,13 @@ $wsaa = $this->getWSAATokens();
         $notify = $bol->notifyParty ?? $bol->consignee;
         
         $w->startElement('notificado');
-            $w->writeElement('nomRazSoc', substr($notify?->legal_name ?? 'A QUIEN CORRESPONDA', 0, 50));
+            $w->writeElement('nomRazSoc', substr($notify?->legal_name ?? $notify?->name ?? 'A QUIEN CORRESPONDA', 0, 50));
             $w->startElement('domicilio');
-                $w->writeElement('barrio', '');
-                $w->writeElement('ciudad', $notify?->city ?? '');
-                $w->writeElement('codPostal', $notify?->postal_code ?? '');
-                $w->writeElement('estado', $notify?->state ?? '');
-                $w->writeElement('nombreCalle', substr($notify?->address ?? '', 0, 50));
+                $w->writeElement('barrio', substr($notify?->district ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('ciudad', substr($notify?->city ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('codPostal', substr($notify?->postal_code ?? 'x', 0, 8) ?: 'x');
+                $w->writeElement('estado', substr($notify?->state ?? 'x', 0, 50) ?: 'x');
+                $w->writeElement('nombreCalle', substr($notify?->address ?? 'x', 0, 150) ?: 'x');
             $w->endElement();
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $notify?->tax_id ?? ''));
         $w->endElement();

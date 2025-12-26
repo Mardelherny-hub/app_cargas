@@ -152,6 +152,24 @@ class CertificateController extends Controller
 
         $country = $request->country;
 
+        // DEBUG TEMPORAL
+\Log::info('=== DEBUG REQUEST FILES ===', [
+    'has_certificate' => $request->hasFile('certificate'),
+    'certificate_valid' => $request->hasFile('certificate') ? $request->file('certificate')->isValid() : 'N/A',
+    'all_files' => array_keys($request->allFiles()),
+    'request_method' => $request->method(),
+    'content_type' => $request->header('Content-Type'),
+]);
+
+if ($request->hasFile('certificate')) {
+    \Log::info('=== CERTIFICATE FILE INFO ===', [
+        'original_name' => $request->file('certificate')->getClientOriginalName(),
+        'extension' => $request->file('certificate')->getClientOriginalExtension(),
+        'size' => $request->file('certificate')->getSize(),
+        'mime' => $request->file('certificate')->getMimeType(),
+    ]);
+}
+
         // VALIDACIÓN DIFERENCIADA POR PAÍS
         if ($country === 'paraguay') {
             // Paraguay: 2 archivos separados (certificado + clave privada)
@@ -295,10 +313,24 @@ class CertificateController extends Controller
                 }
             } else {
                 // ARGENTINA: Guardar archivo único
+                \Log::info('=== INICIANDO GUARDADO ARGENTINA ===');
+                
                 $file = $request->file('certificate');
                 $extension = $file->getClientOriginalExtension();
                 $filename = uniqid() . '.' . $extension;
-                $path = $file->storeAs("certificates/{$company->id}/{$country}", $filename, 'private');
+                
+                \Log::info('=== Antes de storeAs ===', [
+                    'filename' => $filename,
+                    'directory' => "certificates/{$company->id}/{$country}",
+                    'disk' => 'private',
+                ]);
+                
+                $path = $file->storeAs("certificates/{$company->id}/{$country}", $filename, 'local');
+                
+                \Log::info('=== Después de storeAs ===', [
+                    'path' => $path,
+                    'path_is_null' => is_null($path),
+                ]);
 
                 // Preparar datos del certificado Argentina
                 $certificateData = [
@@ -308,10 +340,14 @@ class CertificateController extends Controller
                     'expires_at' => $request->expires_at,
                     'issuer' => 'AFIP',
                 ];
+                
+                \Log::info('=== certificateData Argentina ===', $certificateData);
             }
 
             // Guardar usando el método del modelo
+            \Log::info('=== Antes de setCertificate ===', ['country' => $country]);
             $company->setCertificate($country, $certificateData);
+            \Log::info('=== Después de setCertificate ===');
 
             $countryName = $country === 'argentina' ? 'Argentina (AFIP)' : 'Paraguay (DNA)';
             
