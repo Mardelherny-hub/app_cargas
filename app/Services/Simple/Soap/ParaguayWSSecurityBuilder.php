@@ -46,7 +46,7 @@ class ParaguayWSSecurityBuilder
         $objWSSE->addTimestamp(300);
 
         // 2. Firmar con clave privada del cliente (RSA-SHA256)
-        $objKey = new XMLSecurityKey(XMLSecurityKey::RSA_SHA256, ['type' => 'private']);
+        $objKey = new XMLSecurityKey(XMLSecurityKey::RSA_SHA1, ['type' => 'private']);
         $objKey->loadKey($this->clientPrivateKey, false, false);
         
         $objWSSE->signSoapDoc($objKey);

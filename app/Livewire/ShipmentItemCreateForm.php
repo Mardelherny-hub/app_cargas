@@ -66,6 +66,9 @@ class ShipmentItemCreateForm extends Component
     
     #[Validate('nullable|string|max:500')]
     public $modal_address = '';
+
+    #[Validate('nullable|string|max:500')]
+    public $modal_address_1 = '';
     
     #[Validate('nullable|string|max:100')]
     public $modal_phone = '';
@@ -940,27 +943,42 @@ class ShipmentItemCreateForm extends Component
                 $containersCreated = [];
                 
                 foreach ($this->containers as $containerData) {
-                    // Crear el contenedor
-                    $container = \App\Models\Container::create([
-                        'container_number' => $containerData['container_number'],
-                        'container_type_id' => $containerData['container_type_id'],
-                        'container_condition' => $containerData['container_condition'] ?? 'P',
-                        'tare_weight_kg' => $containerData['tare_weight'] ?: 2200,
-                        'max_gross_weight_kg' => 30000,
-                        'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                        'cargo_weight_kg' => $containerData['net_weight_kg'],
-                        'condition' => 'L', // Loaded
-                        'operational_status' => 'loaded',
-                        'shipper_seal' => $containerData['seal_number'],
-                        'active' => true,
-                        'blocked' => false,
-                        'out_of_service' => false,
-                        'requires_repair' => false,
-                        'created_date' => now(),
-                        'created_by_user_id' => Auth::id(),
-                        'last_updated_date' => now(),
-                        'last_updated_by_user_id' => Auth::id(),
-                    ]);
+                    // Buscar contenedor existente o crear uno nuevo
+                    $container = \App\Models\Container::firstOrCreate(
+                        ['container_number' => $containerData['container_number']],
+                        [
+                            'container_type_id' => $containerData['container_type_id'],
+                            'container_condition' => $containerData['container_condition'] ?? 'P',
+                            'tare_weight_kg' => $containerData['tare_weight'] ?: 2200,
+                            'max_gross_weight_kg' => 30000,
+                            'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                            'cargo_weight_kg' => $containerData['net_weight_kg'],
+                            'condition' => 'L', // Loaded
+                            'operational_status' => 'loaded',
+                            'shipper_seal' => $containerData['seal_number'],
+                            'active' => true,
+                            'blocked' => false,
+                            'out_of_service' => false,
+                            'requires_repair' => false,
+                            'created_date' => now(),
+                            'created_by_user_id' => Auth::id(),
+                            'last_updated_date' => now(),
+                            'last_updated_by_user_id' => Auth::id(),
+                        ]
+                    );
+                    
+                    // Si el contenedor ya existía, actualizar sus datos
+                    if (!$container->wasRecentlyCreated) {
+                        $container->update([
+                            'container_type_id' => $containerData['container_type_id'],
+                            'container_condition' => $containerData['container_condition'] ?? $container->container_condition,
+                            'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+                            'cargo_weight_kg' => $containerData['net_weight_kg'],
+                            'shipper_seal' => $containerData['seal_number'] ?: $container->shipper_seal,
+                            'last_updated_date' => now(),
+                            'last_updated_by_user_id' => Auth::id(),
+                        ]);
+                    }
 
                     // Asociar el item con el contenedor en la tabla pivote
                     $container->shipmentItems()->attach($shipmentItem->id, [
