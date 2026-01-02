@@ -97,8 +97,8 @@ $wsaa = $this->getWSAATokens();
             $wsaa = $this->getWSAATokens();
             
             // Códigos de puertos y aduanas
-            $codAduOrigen = $voyage->originPort?->customs_code ?? '019';
-            $codAduDest = $voyage->destinationPort?->customs_code ?? '051';
+            $codAduOrigen = $voyage->originPort?->customs_code ?? '001';
+            $codAduDest = $voyage->destinationPort?->customs_code ?? '001';
             $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
             $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
             $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
@@ -3549,16 +3549,16 @@ $wsaa = $this->getWSAATokens();
         
         // Fallbacks seguros para puertos conocidos de la hidrovía
         return match(strtoupper($portCode)) {
-            'ARBUE' => '019', // Buenos Aires
-            'ARPAR' => '013', // Paraná
-            'ARSFE' => '014', // Santa Fe
-            'ARROS' => '016', // Rosario
-            'ARSLA' => '016', // San Lorenzo (usa código Rosario)
-            'PYASU' => '001', // Asunción
-            'PYTVT' => '051', // Villeta
-            'PYCON' => '002', // Concepción
-            'PYPIL' => '003', // Pilar
-            default => '019'  // Buenos Aires por defecto
+            'ARBUE' => '001', // Buenos Aires Capital
+            'ARPAR' => '041', // Paraná
+            'ARSFE' => '062', // Santa Fe
+            'ARROS' => '052', // Rosario
+            'ARSLA' => '057', // San Lorenzo
+            'PYASU' => '001', // Asunción (Paraguay)
+            'PYTVT' => '001', // Villeta (Paraguay - misma aduana Asunción)
+            'PYCON' => '002', // Concepción (Paraguay)
+            'PYPIL' => '003', // Pilar (Paraguay)
+            default => '001'  // Buenos Aires por defecto
         };
     }
 
