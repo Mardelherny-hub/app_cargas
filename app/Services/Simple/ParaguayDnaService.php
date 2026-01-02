@@ -366,11 +366,25 @@ class ParaguayDnaService extends BaseWebserviceService
                     'transaction_id' => $transactionId,
                 ]);
 
+                // Extraer detalles de la respuesta DNA
+                $dnaDetails = $this->extractDnaResponseDetails($soapResult['response_data']);
+                
+                // Determinar si fue aceptado o rechazado por DNA
+                $wasRejected = ($dnaDetails['status_code'] === 'REJECTED');
+                
                 return [
                     'success' => true,
+                    'accepted' => !$wasRejected,
                     'nroViaje' => $nroViaje,
                     'transaction_id' => $transactionId,
-                    'message' => 'XFFM enviado exitosamente',
+                    'message' => $wasRejected 
+                        ? 'Mensaje enviado pero RECHAZADO por DNA' 
+                        : 'XFFM enviado exitosamente',
+                    'dna_response' => [
+                        'status_code' => $dnaDetails['status_code'],
+                        'reason_code' => $dnaDetails['reason_code'],
+                        'reason' => $dnaDetails['reason'],
+                    ],
                 ];
             } else {
                 throw new Exception($soapResult['error_message'] ?? 'Error SOAP desconocido');
@@ -1094,8 +1108,8 @@ XML;
                 return (string) $responseData['nroViaje'];
             }
 
-            // CASO 4: raw_response tiene XML con nroViaje
-            if (isset($responseData['raw_response'])) {
+            // CASO 4: raw_response tiene XML con nroViaje (array)
+            if (is_array($responseData) && isset($responseData['raw_response'])) {
                 $xml = simplexml_load_string($responseData['raw_response']);
                 if ($xml) {
                     $namespaces = $xml->getNamespaces(true);
@@ -1123,12 +1137,76 @@ XML;
             ]);
 
             return null;
-        }
+       }
     }
 
     /**
-     * Obtener transacción existente por tipo de mensaje
+     * Extraer detalles completos de la respuesta DNA (StatusCode, ReasonCode, Reason)
      */
+    protected function extractDnaResponseDetails($responseData): array
+    {
+        $details = [
+            'status_code' => null,
+            'reason_code' => null,
+            'reason' => null,
+            'raw_xml' => null,
+        ];
+
+        try {
+            // Obtener el XML de la respuesta
+            $xmlString = null;
+            
+            if (is_object($responseData) && isset($responseData->return->xml)) {
+                $xmlString = $responseData->return->xml;
+            } elseif (is_object($responseData) && isset($responseData->xml)) {
+                $xmlString = $responseData->xml;
+            }
+
+            if (!$xmlString) {
+                return $details;
+            }
+
+            $details['raw_xml'] = $xmlString;
+
+            // Parsear el XML
+            libxml_use_internal_errors(true);
+            $xml = @simplexml_load_string($xmlString);
+            
+            if ($xml === false) {
+                return $details;
+            }
+
+            // Extraer StatusCode
+            $statusCode = $xml->xpath('//StatusCode');
+            if (!empty($statusCode)) {
+                $details['status_code'] = (string) $statusCode[0];
+            }
+
+            // Extraer ReasonCode
+            $reasonCode = $xml->xpath('//ReasonCode');
+            if (!empty($reasonCode)) {
+                $details['reason_code'] = (string) $reasonCode[0];
+            }
+
+            // Extraer Reason
+            $reason = $xml->xpath('//Reason');
+            if (!empty($reason)) {
+                $details['reason'] = (string) $reason[0];
+            }
+
+            // También intentar extraer nroViaje si existe
+            $nroViaje = $xml->xpath('//nroViaje');
+            if (!empty($nroViaje)) {
+                $details['nro_viaje'] = (string) $nroViaje[0];
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Error extrayendo detalles DNA', ['error' => $e->getMessage()]);
+        }
+
+        return $details;
+    }
+
     /**
      * Obtener transacción existente por tipo de mensaje
      */
@@ -1352,7 +1430,7 @@ XML;
         $this->soapClient = new ParaguaySecureSoapClient($wsdlUrl, [
             'trace' => 1,
             'exceptions' => true,
-            'soap_version' => SOAP_1_1,  // ← AGREGAR ESTA LÍNEA
+            'soap_version' => SOAP_1_1,
             'stream_context' => stream_context_create([
                 'ssl' => [
                     'verify_peer' => false,
@@ -1360,7 +1438,7 @@ XML;
                     'allow_self_signed' => true,
                 ]
             ])
-        ], $securityBuilder);
+        ], $securityBuilder, $certData['pkey']);
 
         return $this->soapClient;
     }

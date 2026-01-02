@@ -7,10 +7,12 @@ use SoapClient;
 class ParaguaySecureSoapClient extends SoapClient
 {
     private ParaguayWSSecurityBuilder $securityBuilder;
+    private string $clientPrivateKey;
 
-    public function __construct(string $wsdl, array $options, ParaguayWSSecurityBuilder $securityBuilder)
+    public function __construct(string $wsdl, array $options, ParaguayWSSecurityBuilder $securityBuilder, string $clientPrivateKey = '')
     {
         $this->securityBuilder = $securityBuilder;
+        $this->clientPrivateKey = $clientPrivateKey;
         parent::__construct($wsdl, $options);
     }
 
@@ -35,9 +37,26 @@ class ParaguaySecureSoapClient extends SoapClient
             \Log::warning('NO se aplicó WS-Security - shouldSecurePayload = false');
         }
 
-        return parent::__doRequest($request, $location, $action, $version, $one_way);
-    }
+        $response = parent::__doRequest($request, $location, $action, $version, $one_way);
 
+        // Desencriptar respuesta si tenemos clave privada
+        if ($response && $this->clientPrivateKey && $this->isEncryptedResponse($response)) {
+            try {
+                \Log::info('ParaguaySecureSoapClient: Desencriptando respuesta');
+                $decryptor = new ParaguayWSSecurityDecryptor($this->clientPrivateKey);
+                $response = $decryptor->decrypt($response);
+                
+                // Guardar respuesta desencriptada para debug
+                $xmlPath = storage_path('logs/soap_response_decrypted_' . date('YmdHis') . '.xml');
+                file_put_contents($xmlPath, $response);
+                \Log::info('Respuesta desencriptada guardada', ['path' => $xmlPath]);
+            } catch (\Exception $e) {
+                \Log::error('Error desencriptando respuesta', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return $response;
+    }
     private function shouldSecurePayload(?string $request): bool
     {
         
@@ -51,5 +70,13 @@ class ParaguaySecureSoapClient extends SoapClient
         ]);
 
         return (bool) preg_match('/<[^>]+:Envelope/i', $request);
+    }
+
+    private function isEncryptedResponse(?string $response): bool
+    {
+        if (!$response) {
+            return false;
+        }
+        return strpos($response, 'EncryptedData') !== false || strpos($response, 'EncryptedKey') !== false;
     }
 }

@@ -208,6 +208,23 @@
                                         🔄 Rectificar
                                     </button>
                                 </div>
+                                {{-- Enlaces descarga XML para soporte DNA --}}
+                                <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
+                                    @if($xffmTransaction->request_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xffmTransaction->id, 'type' => 'request']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                            📤 Request XML
+                                        </a>
+                                    @endif
+                                    @if($xffmTransaction->response_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xffmTransaction->id, 'type' => 'response']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                            📥 Response XML
+                                        </a>
+                                    @endif
+                                </div>
                             @else
                                 <button 
                                     onclick="enviarMetodo('XFFM')" 
@@ -299,6 +316,23 @@
                                         🔄 Rectificar
                                     </button>
                                 </div>
+                                {{-- Enlaces descarga XML para soporte DNA --}}
+                                <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
+                                    @if($xfblTransaction->request_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfblTransaction->id, 'type' => 'request']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                            📤 Request XML
+                                        </a>
+                                    @endif
+                                    @if($xfblTransaction->response_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfblTransaction->id, 'type' => 'response']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                            📥 Response XML
+                                        </a>
+                                    @endif
+                                </div>
                             @else
                                 <button 
                                     onclick="enviarMetodo('XFBL')" 
@@ -368,6 +402,23 @@
                                         🔄 Rectificar
                                     </button>
                                 </div>
+                                {{-- Enlaces descarga XML para soporte DNA --}}
+                                <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
+                                    @if($xfbtTransaction->request_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfbtTransaction->id, 'type' => 'request']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                            📤 Request XML
+                                        </a>
+                                    @endif
+                                    @if($xfbtTransaction->response_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfbtTransaction->id, 'type' => 'response']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                            📥 Response XML
+                                        </a>
+                                    @endif
+                                </div>
                             @else
                                 <button 
                                     onclick="enviarMetodo('XFBT')" 
@@ -423,6 +474,23 @@
                                 <button disabled class="w-full px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
                                     ✓ Viaje Ya Cerrado
                                 </button>
+                                {{-- Enlaces descarga XML para soporte DNA --}}
+                                <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
+                                    @if($xfctTransaction->request_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfctTransaction->id, 'type' => 'request']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                            📤 Request XML
+                                        </a>
+                                    @endif
+                                    @if($xfctTransaction->response_xml)
+                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfctTransaction->id, 'type' => 'response']) }}" 
+                                           target="_blank"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                            📥 Response XML
+                                        </a>
+                                    @endif
+                                </div>
                             @else
                                 <button 
                                     onclick="enviarMetodo('XFCT')" 
@@ -563,13 +631,20 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert(`✓ ${metodo} enviado exitosamente`);
-                    window.location.reload();
+                    // Verificar si fue aceptado o rechazado por DNA
+                    if (data.accepted === false) {
+                        showDnaResponseModal(metodo, data, 'rejected');
+                    } else if (data.nroViaje) {
+                        showDnaResponseModal(metodo, data, 'success');
+                        setTimeout(() => window.location.reload(), 3000);
+                    } else {
+                        showDnaResponseModal(metodo, data, 'warning');
+                    }
                 } else {
-                    alert(`✗ Error: ${data.error_message || 'Error desconocido'}`);
-                    button.disabled = false;
-                    button.textContent = originalText;
+                    showDnaResponseModal(metodo, data, 'error');
                 }
+                button.disabled = false;
+                button.textContent = originalText;
             })
             .catch(error => {
                 alert(`✗ Error de conexión: ${error.message}`);
@@ -578,11 +653,373 @@
             });
         }
 
+    /**
+     * Mostrar modal con respuesta de DNA Paraguay
+     */
+    function showDnaResponseModal(metodo, data, type) {
+        const modal = document.getElementById('dnaResponseModal');
+        const title = document.getElementById('dnaModalTitle');
+        const content = document.getElementById('dnaModalContent');
+        const icon = document.getElementById('dnaModalIcon');
+        
+        // Configurar según tipo
+        const configs = {
+            success: {
+                iconBg: 'bg-green-100',
+                iconColor: 'text-green-600',
+                iconSvg: '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>',
+                titleText: `✅ ${metodo} - Aceptado`
+            },
+            rejected: {
+                iconBg: 'bg-red-100',
+                iconColor: 'text-red-600',
+                iconSvg: '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+                titleText: `❌ ${metodo} - Rechazado por DNA`
+            },
+            warning: {
+                iconBg: 'bg-yellow-100',
+                iconColor: 'text-yellow-600',
+                iconSvg: '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>',
+                titleText: `⚠️ ${metodo} - Enviado (sin nroViaje)`
+            },
+            error: {
+                iconBg: 'bg-red-100',
+                iconColor: 'text-red-600',
+                iconSvg: '<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+                titleText: `❌ ${metodo} - Error`
+            }
+        };
+        
+        const config = configs[type] || configs.error;
+        
+        icon.className = `mx-auto flex items-center justify-center h-12 w-12 rounded-full ${config.iconBg}`;
+        icon.innerHTML = `<span class="${config.iconColor}">${config.iconSvg}</span>`;
+        title.textContent = config.titleText;
+        
+        // Construir contenido
+        let html = '<div class="space-y-3 text-left">';
+        
+        if (data.nroViaje) {
+            html += `<div class="p-3 bg-green-50 rounded-lg"><span class="font-semibold text-green-800">Nro. Viaje:</span> <span class="font-mono text-green-900">${data.nroViaje}</span></div>`;
+        }
+        
+        if (data.transaction_id) {
+            html += `<div class="text-sm"><span class="font-semibold text-gray-600">ID Transacción:</span> <span class="font-mono">${data.transaction_id}</span></div>`;
+        }
+        
+        if (data.dna_response) {
+            const dna = data.dna_response;
+            html += '<div class="mt-4 p-4 bg-gray-50 rounded-lg border">';
+            html += '<h4 class="font-semibold text-gray-700 mb-2">Respuesta DNA Paraguay:</h4>';
+            
+            if (dna.status_code) {
+                const statusClass = dna.status_code === 'REJECTED' ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100';
+                html += `<div class="mb-2"><span class="font-medium">Estado:</span> <span class="px-2 py-1 rounded ${statusClass} font-semibold">${dna.status_code}</span></div>`;
+            }
+            
+            if (dna.reason_code) {
+                html += `<div class="mb-2"><span class="font-medium">Código:</span> <span class="font-mono">${dna.reason_code}</span></div>`;
+            }
+            
+            if (dna.reason) {
+                html += `<div class="p-3 bg-white rounded border-l-4 ${type === 'rejected' ? 'border-red-500' : 'border-blue-500'}"><span class="font-medium block mb-1">Mensaje:</span><span class="text-sm">${dna.reason}</span></div>`;
+            }
+            
+            html += '</div>';
+        }
+        
+        if (data.error_message) {
+            html += `<div class="p-3 bg-red-50 rounded-lg border border-red-200"><span class="font-semibold text-red-800">Error:</span> <span class="text-red-700">${data.error_message}</span></div>`;
+        }
+        
+        if (data.message) {
+            html += `<div class="text-sm text-gray-600 mt-3">${data.message}</div>`;
+        }
+        
+        if (type === 'success') {
+            html += '<div class="mt-4 p-3 bg-blue-50 rounded text-sm text-blue-700">La página se recargará automáticamente en 3 segundos...</div>';
+        }
+        
+        html += '</div>';
+        
+        content.innerHTML = html;
+        modal.classList.remove('hidden');
+    }
+    
+    function closeDnaModal() {
+        document.getElementById('dnaResponseModal').classList.add('hidden');
+    }
+
     function verDetalles(transactionId) {
-        // TODO: Implementar modal con detalles de la transacción
-        alert('Ver detalles de transacción ID: ' + transactionId + '\n(Implementar modal próximamente)');
+        const modal = document.getElementById('detallesModal');
+        const content = document.getElementById('detallesContent');
+
+        content.innerHTML = `
+            <div class="flex justify-center items-center py-8">
+                <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="ml-3 text-gray-600">Cargando detalles...</span>
+            </div>
+        `;
+
+        modal.classList.remove('hidden');
+
+        fetch(`/company/webservices/transaction/${transactionId}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                renderDetallesTransaccion(data.transaction, data.response, transactionId);
+            } else {
+                renderDetallesError(data.message || 'Error al cargar los detalles');
+            }
+        })
+        .catch(() => {
+            renderDetallesError('Error de conexión al cargar los detalles');
+        });
+    }
+    
+    function cerrarModal() {
+        document.getElementById('detallesModal').classList.add('hidden');
+    }
+
+    function renderDetallesError(message) {
+        const content = document.getElementById('detallesContent');
+        content.innerHTML = `
+            <div class="text-center py-8">
+                <div class="text-red-500 text-5xl mb-3">❌</div>
+                <h4 class="text-lg font-semibold text-gray-900 mb-2">No se pudieron cargar los detalles</h4>
+                <p class="text-gray-600 text-sm">${message}</p>
+            </div>
+        `;
+    }
+
+    function renderDetallesTransaccion(transaction, response, transactionId) {
+        const content = document.getElementById('detallesContent');
+
+        content.innerHTML = `
+            <div class="space-y-5">
+                <div class="bg-gray-50 p-4 rounded-lg border">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="font-semibold text-gray-900">📋 Información General</h4>
+                        ${getStatusBadge(transaction.status)}
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <span class="text-gray-500">ID Transacción:</span>
+                            <span class="font-mono text-blue-600">${transaction.transaction_id || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Tipo:</span>
+                            <span class="font-medium">${getWebserviceTypeName(transaction.webservice_type)}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">País:</span>
+                            <span class="font-medium">${transaction.country === 'AR' ? '🇦🇷 Argentina' : '🇵🇾 Paraguay'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Entorno:</span>
+                            <span class="font-medium ${transaction.environment === 'production' ? 'text-red-600' : 'text-blue-600'}">
+                                ${transaction.environment === 'production' ? 'Producción' : 'Testing'}
+                            </span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Referencia:</span>
+                            <span class="font-mono">${transaction.external_reference || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Usuario:</span>
+                            <span class="font-medium">${transaction.user_name || 'Sistema'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Fecha:</span>
+                            <span class="font-medium">${formatDateTime(transaction.created_at)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                ${renderResponseSection(transaction, response)}
+
+                <div class="bg-white p-4 rounded-lg border">
+                    <h4 class="font-semibold text-gray-900 mb-3">🔧 Detalles Técnicos</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <span class="text-gray-500">URL Webservice:</span>
+                            <div class="font-mono text-xs text-blue-600 break-all">${transaction.webservice_url || 'N/A'}</div>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Tiempo de Respuesta:</span>
+                            <span class="font-medium">${transaction.response_time_ms ? transaction.response_time_ms + ' ms' : 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Enviado:</span>
+                            <span class="font-medium">${formatDateTime(transaction.sent_at)}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Respuesta:</span>
+                            <span class="font-medium">${formatDateTime(transaction.response_at)}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">XML Solicitud:</span>
+                            <span class="font-medium">${transaction.request_xml ? 'Disponible' : 'No disponible'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">XML Respuesta:</span>
+                            <span class="font-medium">${transaction.response_xml ? 'Disponible' : 'No disponible'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                ${renderXmlLinks(transaction, transactionId)}
+            </div>
+        `;
+    }
+
+    function renderResponseSection(transaction, response) {
+        if (transaction.status === 'pending' || transaction.status === 'sent') {
+            return `
+                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                    <h4 class="font-semibold text-yellow-800 mb-2">⏳ Sin Respuesta</h4>
+                    <p class="text-yellow-700 text-sm">La transacción está pendiente o aún no recibió respuesta.</p>
+                </div>
+            `;
+        }
+
+        if (transaction.status === 'success') {
+            return `
+                <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+                    <h4 class="font-semibold text-green-800 mb-3">✅ Respuesta Exitosa</h4>
+                    <div class="space-y-2 text-sm">
+                        <div>
+                            <span class="text-gray-600">Confirmación:</span>
+                            <span class="font-mono text-green-700 font-medium">${response?.confirmation_number || transaction.confirmation_number || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">Referencia:</span>
+                            <span class="font-mono text-blue-700 font-medium">${response?.reference_number || transaction.external_reference || 'N/A'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="bg-red-50 p-4 rounded-lg border border-red-200">
+                <h4 class="font-semibold text-red-800 mb-3">❌ Error en Respuesta</h4>
+                <div class="space-y-2 text-sm">
+                    <div>
+                        <span class="text-gray-600">Código:</span>
+                        <span class="font-mono text-red-700 font-medium">${transaction.error_code || 'N/A'}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Mensaje:</span>
+                        <span class="text-red-700">${transaction.error_message || 'Error desconocido'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderXmlLinks(transaction, transactionId) {
+        if (!transaction.request_xml && !transaction.response_xml) {
+            return '';
+        }
+
+        return `
+            <div class="pt-2 flex gap-3">
+                ${transaction.request_xml ? `
+                    <a href="/company/webservices/transaction/${transactionId}/xml/request" 
+                       target="_blank"
+                       class="flex-1 text-center px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium">
+                        📤 Descargar Request XML
+                    </a>
+                ` : ''}
+                ${transaction.response_xml ? `
+                    <a href="/company/webservices/transaction/${transactionId}/xml/response" 
+                       target="_blank"
+                       class="flex-1 text-center px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium">
+                        📥 Descargar Response XML
+                    </a>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function getStatusBadge(status) {
+        const badges = {
+            success: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Exitoso</span>',
+            sent: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">📤 Enviado</span>',
+            error: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">❌ Error</span>',
+            pending: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">⏳ Pendiente</span>'
+        };
+        return badges[status] || badges.pending;
+    }
+
+    function getWebserviceTypeName(type) {
+        const names = {
+            micdta: 'MIC/DTA',
+            anticipada: 'Información Anticipada',
+            transbordo: 'Transbordos',
+            desconsolidados: 'Desconsolidados',
+            paraguay_customs: 'Aduana Paraguay'
+        };
+        return names[type] || type || 'N/A';
+    }
+
+    function formatDateTime(dateString) {
+        if (!dateString) return 'N/A';
+        return new Date(dateString).toLocaleDateString('es-AR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     }
     </script>
+
+    {{-- Modal Ve</script>
+
+{{-- Modal Respuesta DNA --}}
+<div id="dnaResponseModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-10 mx-auto p-5 border w-11/12 md:w-2/3 lg:w-1/2 max-w-2xl shadow-lg rounded-lg bg-white">
+        {{-- Header --}}
+        <div class="flex items-center justify-between pb-3 border-b">
+            <div class="flex items-center space-x-3">
+                <div id="dnaModalIcon" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-gray-100">
+                </div>
+                <h3 id="dnaModalTitle" class="text-lg font-semibold text-gray-900">Respuesta DNA</h3>
+            </div>
+            <button onclick="closeDnaModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        
+        {{-- Content --}}
+        <div id="dnaModalContent" class="py-4">
+            <!-- Contenido dinámico -->
+        </div>
+        
+        {{-- Footer --}}
+        <div class="pt-3 border-t flex justify-end space-x-3">
+            <button onclick="closeDnaModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">
+                Cerrar
+            </button>
+            <button onclick="closeDnaModal(); window.location.reload();" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                Actualizar Página
+            </button>
+        </div>
+    </div>
+</div>
 
     {{-- Modal Ver Detalles de Transacción --}}
 <div id="detallesModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -732,18 +1169,27 @@ async function rectificarMetodo(method) {
         const result = await response.json();
         
         if (result.success) {
-            alert(`✅ ${method} rectificado exitosamente`);
-            location.reload();
+            // Verificar si fue aceptado o rechazado por DNA
+            if (result.accepted === false) {
+                showDnaResponseModal(method + ' (Rectificación)', result, 'rejected');
+            } else if (result.nroViaje) {
+                showDnaResponseModal(method + ' (Rectificación)', result, 'success');
+                setTimeout(() => window.location.reload(), 3000);
+            } else {
+                showDnaResponseModal(method + ' (Rectificación)', result, 'warning');
+            }
         } else {
-            alert(`❌ Error: ${result.error_message || 'Error desconocido'}`);
-            button.disabled = false;
-            button.innerHTML = originalText;
+            showDnaResponseModal(method + ' (Rectificación)', result, 'error');
         }
+        button.disabled = false;
+        button.innerHTML = originalText;
     } catch (error) {
         alert(`❌ Error de conexión: ${error.message}`);
         button.disabled = false;
         button.innerHTML = originalText;
     }
 }
+
+
 </script>
 </x-app-layout>
