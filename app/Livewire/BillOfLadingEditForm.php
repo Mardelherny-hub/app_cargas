@@ -529,6 +529,12 @@ class BillOfLadingEditForm extends Component
 
     public function createClient()
     {
+        \Log::info('createClient llamado', [
+            'new_legal_name' => $this->new_legal_name,
+            'new_tax_id' => $this->new_tax_id,
+            'new_country_id' => $this->new_country_id,
+        ]);
+
         $this->validate([
             'new_legal_name' => 'required|string|min:3|max:255',
             'new_tax_id' => 'required|string|max:15',
@@ -539,20 +545,39 @@ class BillOfLadingEditForm extends Component
             'new_city' => 'nullable|string|max:100',
         ]);
 
+        \Log::info('createClient - validación pasó');
+
         try {
             DB::beginTransaction();
 
             $company = $this->getUserCompany();
+            \Log::info('createClient - company', ['company_id' => $company->id]);
+
+            // Obtener document_type_id primario para el país seleccionado
+            $documentTypeId = \App\Models\DocumentType::where('country_id', $this->new_country_id)
+                ->where('active', true)
+                ->where('is_primary', true)
+                ->first()?->id;
+
+            // Si no hay primario, buscar cualquier tipo de documento activo del país
+            if (!$documentTypeId) {
+                $documentTypeId = \App\Models\DocumentType::where('country_id', $this->new_country_id)
+                    ->where('active', true)
+                    ->first()?->id ?? 1; // Fallback a ID 1 si no hay ninguno
+            }
 
             $client = Client::create([
                 'legal_name' => $this->new_legal_name,
                 'tax_id' => $this->new_tax_id,
                 'country_id' => $this->new_country_id,
+                'document_type_id' => $documentTypeId,
                 'status' => 'active',
                 'client_type' => 'both',
                 'created_by_company_id' => $company->id,
                 'created_by_user_id' => auth()->id(),
             ]);
+
+            \Log::info('createClient - cliente creado', ['client_id' => $client->id]);
 
             // Crear datos de contacto si se proporcionaron
             if ($this->new_email || $this->new_phone || $this->new_address) {
@@ -588,12 +613,15 @@ class BillOfLadingEditForm extends Component
 
             DB::commit();
 
+            \Log::info('createClient - éxito total');
+
             session()->flash('message', 'Cliente creado exitosamente.');
             $this->showCreateClientModal = false;
             $this->resetClientModalData();
 
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('createClient - error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             session()->flash('error', 'Error al crear cliente: ' . $e->getMessage());
         }
     }
