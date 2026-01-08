@@ -97,8 +97,8 @@ $wsaa = $this->getWSAATokens();
             $wsaa = $this->getWSAATokens();
             
             // Códigos de puertos y aduanas
-            $codAduOrigen = $voyage->originPort?->customs_code ?? '001';
-            $codAduDest = $voyage->destinationPort?->customs_code ?? '001';
+            $codAduOrigen = $this->getPortCustomsCode($voyage->originPort?->code ?? 'ARBUE');
+            $codAduDest = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU');
             $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
             $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
             $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
@@ -241,12 +241,13 @@ $wsaa = $this->getWSAATokens();
                                                 foreach ($itemContainers as $container) {
                                                     $pivot = $container->pivot ?? null;
                                                     $pesoContainer = $pivot?->gross_weight_kg ?? $item->gross_weight_kg ?? 0;
-                                                    $cantBultos = $pivot?->package_quantity ?? $item->package_quantity ?? 1;
-                                                    
+                                                    // Cuando hay contenedor, cantBultos debe ser 0 según AFIP
+                                                    // Cuando hay contenedor: cantBultos=0, cantBultosTotFrac=total de contenedores
+                                                    $totalContainersInItem = $itemContainers->count();
+
                                                     $w->startElement('Bulto');
-                                                        $w->writeElement('cantBultos', (string)$cantBultos);
-                                                        $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
-                                                        $w->writeElement('pesoBruto', number_format($pesoContainer, 0, '', ''));
+                                                        $w->writeElement('cantBultos', '0');
+                                                        $w->writeElement('cantBultosTotFrac', (string)$totalContainersInItem);                                                        $w->writeElement('pesoBruto', number_format($pesoContainer, 0, '', ''));
                                                         $w->writeElement('pesoBrutoTotFrac', number_format($pesoContainer, 0, '', ''));
                                                         $codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'CN';
                                                         $w->writeElement('codTipEmbalaje', (strlen($codEmbalaje) === 2) ? $codEmbalaje : 'CN');
@@ -706,11 +707,16 @@ $wsaa = $this->getWSAATokens();
         $pivot = $container?->pivot ?? null;
         
         // Obtener valores de pivot si existe, sino del item
-        $cantBultos = $pivot?->package_quantity ?? $item->package_quantity ?? 1;
         $pesoBruto = $pivot?->gross_weight_kg ?? $item->gross_weight_kg ?? 0;
-        
-        // Asegurar mínimos
-        $cantBultos = max(1, (int)$cantBultos);
+
+        // Cuando hay contenedor, cantBultos = 0 según AFIP
+        // Cuando es carga suelta, usar la cantidad real
+        $cantBultos = $container ? 0 : ($pivot?->package_quantity ?? $item->package_quantity ?? 1);
+
+        // Asegurar mínimos solo para carga suelta
+        if (!$container) {
+            $cantBultos = max(1, (int)$cantBultos);
+        }
         $pesoBruto = max(0, (float)$pesoBruto);
 
         $w->startElement('Bulto');
@@ -756,7 +762,9 @@ $wsaa = $this->getWSAATokens();
      */
     private function writeBultoFromBol(\XMLWriter $w, \App\Models\BillOfLading $bol): void
     {
-        $cantBultos = max(1, (int)($bol->total_packages ?? 1));
+        // Detectar si es carga containerizada
+        $isContainerized = $bol->primaryCargoType?->packaging_type === 'containerized';
+        $cantBultos = $isContainerized ? 0 : max(1, (int)($bol->total_packages ?? 1));
         $pesoBruto = max(0, (float)($bol->gross_weight_kg ?? 0));
 
         $w->startElement('Bulto');
@@ -3550,6 +3558,7 @@ $wsaa = $this->getWSAATokens();
         // Fallbacks seguros para puertos conocidos de la hidrovía
         return match(strtoupper($portCode)) {
             'ARBUE' => '001', // Buenos Aires Capital
+            'ARLPG' => '033', // La Plata
             'ARPAR' => '041', // Paraná
             'ARSFE' => '062', // Santa Fe
             'ARROS' => '052', // Rosario
