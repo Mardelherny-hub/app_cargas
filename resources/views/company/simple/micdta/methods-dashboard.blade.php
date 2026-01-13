@@ -1584,6 +1584,29 @@
                                         <div><strong>Fecha:</strong> {{ $trans->created_at->format('d/m H:i:s') }}</div>
                                         <div><strong>TRACKs:</strong> {{ $trans->webserviceTracks->count() }}</div>
                                         <div class="col-span-2"><strong>SOAP Action:</strong> <code class="text-xs bg-gray-100 px-1 rounded">{{ Str::limit($trans->soap_action ?? 'NULL', 60) }}</code></div>
+                                        {{-- Botones para ver XML Request/Response --}}
+                                        <div class="col-span-2 mt-2 pt-2 border-t border-gray-200 flex items-center gap-2">
+                                            <span class="text-gray-600 font-medium">XMLs:</span>
+                                            @if($trans->request_xml)
+                                                <button type="button" 
+                                                        onclick="verXml({{ $trans->id }}, 'request')"
+                                                        class="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                                    📤 Request
+                                                </button>
+                                            @else
+                                                <span class="text-xs text-gray-400">Sin Request</span>
+                                            @endif
+                                            
+                                            @if($trans->response_xml)
+                                                <button type="button" 
+                                                        onclick="verXml({{ $trans->id }}, 'response')"
+                                                        class="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-700 hover:bg-green-200">
+                                                    📥 Response
+                                                </button>
+                                            @else
+                                                <span class="text-xs text-gray-400">Sin Response</span>
+                                            @endif
+                                        </div>
                                     </div>
                                 </div>
                             @empty
@@ -1896,7 +1919,54 @@
         </div>
     </div>
 
+{{-- ========================================== --}}
+{{-- MODAL PARA VER XML REQUEST/RESPONSE --}}
+{{-- ========================================== --}}
+<div id="xml-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        {{-- Fondo oscuro --}}
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="cerrarXmlModal()"></div>
+
+        {{-- Centrador --}}
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+
+        {{-- Contenido del modal --}}
+        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+            {{-- Header --}}
+            <div class="bg-gray-800 px-4 py-3 flex items-center justify-between">
+                <h3 id="xml-modal-title" class="text-lg font-medium text-white">
+                    XML Request
+                </h3>
+                <button type="button" onclick="cerrarXmlModal()" class="text-gray-300 hover:text-white">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            {{-- Body con XML --}}
+            <div class="bg-gray-900 p-4 max-h-[70vh] overflow-auto">
+                <pre id="xml-modal-content" class="text-sm text-green-400 whitespace-pre-wrap font-mono">Cargando...</pre>
+            </div>
+            
+            {{-- Footer --}}
+            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                <span id="xml-modal-info" class="text-xs text-gray-500">Transaction ID: -</span>
+                <div class="flex gap-2">
+                    <button type="button" onclick="copiarXml(this)" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                        📋 Copiar
+                    </button>
+                    <button type="button" onclick="cerrarXmlModal()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-gray-600 hover:bg-gray-700">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 </x-app-layout>
+
 
 <script>
     const voyageId = {{ $voyage->id }};
@@ -2613,4 +2683,62 @@
         tituloSeleccionado = null;
     }
 
+    // ========================================
+    // FUNCIONES PARA VER XML REQUEST/RESPONSE
+    // ========================================
+
+    function verXml(transactionId, type) {
+        const modal = document.getElementById('xml-modal');
+        const title = document.getElementById('xml-modal-title');
+        const content = document.getElementById('xml-modal-content');
+        const info = document.getElementById('xml-modal-info');
+        
+        // Mostrar modal con loading
+        modal.classList.remove('hidden');
+        title.textContent = type === 'request' ? '📤 XML Request' : '📥 XML Response';
+        content.textContent = 'Cargando XML...';
+        content.className = 'text-sm text-yellow-400 whitespace-pre-wrap font-mono';
+        info.textContent = 'Transaction ID: ' + transactionId;
+        
+        // Llamar al endpoint existente
+        fetch(`/company/webservices/transaction/${transactionId}/xml/${type}`, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                content.textContent = data.xml;
+                content.className = 'text-sm text-green-400 whitespace-pre-wrap font-mono';
+            } else {
+                content.textContent = 'Error: ' + (data.message || 'No se pudo cargar el XML');
+                content.className = 'text-sm text-red-400 whitespace-pre-wrap font-mono';
+            }
+        })
+        .catch(error => {
+            content.textContent = 'Error de conexión: ' + error.message;
+            content.className = 'text-sm text-red-400 whitespace-pre-wrap font-mono';
+        });
+    }
+
+    function cerrarXmlModal() {
+        document.getElementById('xml-modal').classList.add('hidden');
+    }
+
+    function copiarXml(btn) {
+    const content = document.getElementById('xml-modal-content').textContent;
+    navigator.clipboard.writeText(content).then(() => {
+        // Feedback visual
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✅ Copiado!';
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+        }, 2000);
+    }).catch(err => {
+        alert('Error al copiar: ' + err);
+    });
+}
 </script>
