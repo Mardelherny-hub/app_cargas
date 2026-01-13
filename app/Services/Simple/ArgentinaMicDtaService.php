@@ -782,6 +782,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'shipments_count' => $shipments->count(),
                 'total_containers' => $totalContainers,
                 'can_process' => empty($validation['errors']),
+                'errors' => $validation['errors'],
+                'warnings' => $validation['warnings'],
             ]);
 
         } catch (Exception $e) {
