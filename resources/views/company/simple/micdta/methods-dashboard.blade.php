@@ -2195,7 +2195,8 @@
             // ✅ CONSTRUIR MENSAJE DE ERROR CON DETALLES
             let errorHtml = `
                 <p class="text-sm text-gray-700">
-                    <strong>Error:</strong> ${result.error || result.error_message || result.details || 'Error desconocido'}<br>
+                    <strong>Error:</strong> ${result.error || result.error_message || 'Error desconocido'}<br>
+                    ${result.details ? `<strong>Detalle:</strong> ${result.details}<br>` : ''}
                     ${result.error_code ? `<strong>Código:</strong> ${result.error_code}<br>` : ''}
                 </p>
             `;
