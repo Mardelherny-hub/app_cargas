@@ -2,11 +2,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between">
             <div class="flex items-center space-x-4">
-                <a href="{{ route('company.webservices.index') }}" class="text-gray-500 hover:text-gray-700">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                    </svg>
-                </a>
+               
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                     🔒 Gestión de Certificados Digitales
                 </h2>
