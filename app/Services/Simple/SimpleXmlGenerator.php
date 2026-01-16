@@ -185,12 +185,12 @@ $wsaa = $this->getWSAATokens();
                                     $w->startElement('destinaciones');
                                     
                                     // Verificar que BL tenga id_decla
-                                    if (empty($bol->id_decla)) {
-                                        throw new \Exception("BL {$bol->bill_number} no tiene id_decla. Campo obligatorio.");
+                                    if (empty($bol->permiso_embarque)) {
+                                        throw new Exception("BL {$bol->bill_number} no tiene Permiso de Embarque. Campo obligatorio para AFIP.");
                                     }
                                     
                                     $w->startElement('Destinacion');
-                                        $w->writeElement('idDecla', $bol->id_decla);
+                                        $w->writeElement('idDecla', substr($bol->permiso_embarque, 0, 16));
                                         $w->writeElement('montoFob', '0');
                                         $w->writeElement('montoFlete', '0');
                                         $w->writeElement('montoSeg', '0');
@@ -557,8 +557,8 @@ $wsaa = $this->getWSAATokens();
                     foreach ($billsOfLading as $bol) {
                         
                         // Validar campo obligatorio id_decla
-                        if (empty($bol->id_decla)) {
-                            throw new Exception("BL {$bol->bill_number} no tiene id_decla (Destinación AFIP). Campo obligatorio.");
+                        if (empty($bol->permiso_embarque)) {
+                            throw new \Exception("BL {$bol->bill_number} no tiene Permiso de Embarque. Campo obligatorio para AFIP.");
                         }
 
                         $w->startElement('Envio');

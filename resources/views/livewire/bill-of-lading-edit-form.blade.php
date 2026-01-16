@@ -81,8 +81,8 @@
                         <input type="text" 
                             id="permiso_embarque" 
                             wire:model.defer="permiso_embarque"
-                            placeholder="Ej: 0-25001-TRB30265757Z"
-                            maxlength="100"
+                            placeholder="Ej: 24033TRB3000225E"
+                            maxlength="16"
                             class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('permiso_embarque') border-red-300 @enderror">
                         @error('permiso_embarque')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
