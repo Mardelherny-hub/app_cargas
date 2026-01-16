@@ -971,12 +971,42 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
              // ✅ NUEVO: Extraer TODOS los mensajes de AFIP
             $afipMessages = $this->extractAfipMessages($response);
+            $hasAfipErrors = !empty($afipMessages['errores']);
             $hasAfipAlerts = !empty($afipMessages['alertas']);
             $hasAfipInfo = !empty($afipMessages['informativos']);
-            
+
+            // ✅ Si AFIP devolvió errores, es un error (no éxito)
+            // También si hay alertas Y no hay TRACKs (indica fallo real)
+            if ($hasAfipErrors || ($hasAfipAlerts && empty($tracks))) {
+                $mensajesAfip = $hasAfipErrors ? $afipMessages['errores'] : $afipMessages['alertas'];
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $mensajesAfip);
+                
+                
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                
+                $transaction->update([
+                    'response_xml' => $response,
+                    'request_xml' => $xml,
+                    'response_at' => now(),
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                    'completed_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                    'transaction_record_id' => $transaction->id,
+                ];
+            }
+
             // ✅ Determinar status según presencia de TRACKs
             $hasTrackIssue = empty($tracks);
-            // ✅ Determinar status considerando TRACKs y mensajes AFIP
+            // ✅ Determinar status considerando TRACKs y alertas AFIP (no errores, ya manejados arriba)
             $hasIssues = $hasTrackIssue || $hasAfipAlerts;
             $status = $hasIssues ? 'sent' : 'success';
             
