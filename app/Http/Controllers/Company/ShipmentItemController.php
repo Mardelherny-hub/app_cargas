@@ -906,9 +906,7 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                 'gross_weight_kg' => $containerData['gross_weight_kg'],
                 'net_weight_kg' => $containerData['net_weight_kg'] ?? 0,
                 'volume_m3' => $containerData['volume_m3'] ?? 0,
-                'seal_number' => $containerData['seal_number'] ?? null,
                 'loading_sequence' => $containerData['loading_sequence'] ?? null,
-                'notes' => $containerData['notes'] ?? null,
                 'created_date' => now(),
                 'created_by_user_id' => Auth::id(),
             ]);
