@@ -734,7 +734,8 @@ $wsaa = $this->getWSAATokens();
             $w->writeElement('pesoBrutoTotFrac', number_format($pesoBruto, 4, '.', ''));
             
             // codTipEmbalaje - Obligatorio C(2) - EDIFACT 7065
-            $codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'CN';
+            // TEMPORAL: ZW hardcodeado para pruebas AFIP - TODO: implementar lógica completa
+            $codEmbalaje = $container ? 'ZW' : ($item->packagingType?->argentina_ws_code ?? 'BG');
             $w->writeElement('codTipEmbalaje', $codEmbalaje);
             
             // descMercaderia - Obligatorio C(500)
