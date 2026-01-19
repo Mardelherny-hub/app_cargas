@@ -251,7 +251,7 @@ $wsaa = $this->getWSAATokens();
                                                         $w->writeElement('pesoBrutoTotFrac', number_format($pesoContainer, 0, '', ''));
                                                         //$codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'CN';
                                                         // TEMPORAL: ZW hardcodeado para contenedores - pruebas AFIP
-                                                        $codEmbalaje = 'ZW';
+                                                        $codEmbalaje = 'ZT';
                                                         $w->writeElement('codTipEmbalaje', (strlen($codEmbalaje) === 2) ? $codEmbalaje : 'CN');
                                                         $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA EN CONTENEDOR', 0, 100));
                                                         $w->writeElement('marcaNro', !empty($item->cargo_marks) ? $item->cargo_marks : 'S/M');
