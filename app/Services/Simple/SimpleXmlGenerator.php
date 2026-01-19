@@ -1031,8 +1031,26 @@ $wsaa = $this->getWSAATokens();
     {
         $w->startElement('cargasSueltasIdTrack');
         
-        // Tracks de carga suelta (pueden venir como array plano o bajo clave específica)
-        $tracksCargaSuelta = $tracks['carga_suelta'] ?? $tracks['cargas_sueltas'] ?? $tracks;
+        // Tracks pueden venir como:
+        // 1. ['carga_suelta' => [...]] o ['cargas_sueltas' => [...]]
+        // 2. [shipment_id => ['track1', 'track2'], ...] (agrupado por shipment)
+        // 3. Array plano ['track1', 'track2']
+        
+        $tracksCargaSuelta = $tracks['carga_suelta'] ?? $tracks['cargas_sueltas'] ?? null;
+        
+        // Si no hay clave específica, aplanar el array (puede estar agrupado por shipment_id)
+        if ($tracksCargaSuelta === null) {
+            $tracksCargaSuelta = [];
+            foreach ($tracks as $key => $value) {
+                if (is_array($value)) {
+                    // Agrupado por shipment_id: [15 => ['track1'], 16 => ['track2']]
+                    $tracksCargaSuelta = array_merge($tracksCargaSuelta, $value);
+                } elseif (is_string($value) || is_numeric($value)) {
+                    // Array plano: ['track1', 'track2']
+                    $tracksCargaSuelta[] = $value;
+                }
+            }
+        }
         
         if (is_array($tracksCargaSuelta)) {
             foreach ($tracksCargaSuelta as $trackId) {
