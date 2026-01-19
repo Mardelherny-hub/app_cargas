@@ -3551,14 +3551,15 @@ $wsaa = $this->getWSAATokens();
         // Usar datos reales del modelo Port
         $port = \App\Models\Port::where('code', strtoupper($portCode))->first();
         
-        if ($port && $port->customs_code) {
-            return $port->customs_code;
+        if ($port && $port->afip_code) {
+            return $port->afip_code;
         }
         
         // Fallbacks seguros para puertos conocidos de la hidrovía
+        // CORREGIDO según información de Roberto Benbassat
         return match(strtoupper($portCode)) {
-            'ARBUE' => '001', // Buenos Aires Capital
-            'ARLPG' => '033', // La Plata
+            'ARBUE' => '033', // Buenos Aires (CORREGIDO: era 001)
+            'ARLPG' => '001', // La Plata (CORREGIDO: era 033)
             'ARPAR' => '041', // Paraná
             'ARSFE' => '062', // Santa Fe
             'ARROS' => '052', // Rosario
@@ -3567,7 +3568,7 @@ $wsaa = $this->getWSAATokens();
             'PYTVT' => '001', // Villeta (Paraguay - misma aduana Asunción)
             'PYCON' => '002', // Concepción (Paraguay)
             'PYPIL' => '003', // Pilar (Paraguay)
-            default => '001'  // Buenos Aires por defecto
+            default => '033'  // Buenos Aires por defecto (CORREGIDO)
         };
     }
 

@@ -248,6 +248,40 @@
                             </select>
                             @error('port_category') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                         </div>
+
+                        {{-- Códigos de Aduana --}}
+                        <div class="md:col-span-2 mt-4">
+                            <h4 class="text-md font-medium text-gray-700 mb-3 border-t pt-4">Códigos de Aduana (Webservices)</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {{-- Código AFIP Argentina --}}
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                        Código AFIP (Argentina)
+                                    </label>
+                                    <input type="text" 
+                                        wire:model="afip_code"
+                                        placeholder="ej. 033, 001, 052"
+                                        maxlength="10"
+                                        class="w-full rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 font-mono">
+                                    @error('afip_code') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                                    <p class="mt-1 text-xs text-gray-500">Código de aduana AFIP para webservices Argentina</p>
+                                </div>
+
+                                {{-- Código DNA Paraguay --}}
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                        Código DNA (Paraguay)
+                                    </label>
+                                    <input type="text" 
+                                        wire:model="dna_code"
+                                        placeholder="ej. 001, 019, 002"
+                                        maxlength="10"
+                                        class="w-full rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 font-mono">
+                                    @error('dna_code') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                                    <p class="mt-1 text-xs text-gray-500">Código de aduana DNA para webservices Paraguay</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             @endif

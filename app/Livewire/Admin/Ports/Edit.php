@@ -102,6 +102,12 @@ class Edit extends Component
     #[Validate('nullable|string|max:10')]
     public ?string $vhf_channel = '';
 
+    #[Validate('nullable|string|max:10')]
+    public ?string $afip_code = '';
+
+    #[Validate('nullable|string|max:10')]
+    public ?string $dna_code = '';
+
     // Información económica
     #[Validate('nullable|string|max:3')]
     public ?string $currency_code = '';
@@ -166,6 +172,8 @@ class Edit extends Component
         $this->has_crane = $this->port->has_crane;
         $this->has_warehouse = $this->port->has_warehouse;
         $this->webservice_code = $this->port->webservice_code;
+        $this->afip_code = $this->port->afip_code;
+        $this->dna_code = $this->port->dna_code;
         $this->supports_anticipada = $this->port->supports_anticipada;
         $this->supports_micdta = $this->port->supports_micdta;
         $this->supports_manifest = $this->port->supports_manifest;
@@ -240,6 +248,10 @@ private function loadCountries()
         $this->website = $this->port->website ?? '';
         $this->vhf_channel = $this->port->vhf_channel ?? '';
 
+        // Códigos de aduana por país
+        $this->afip_code = $this->port->afip_code ?? '';
+        $this->dna_code = $this->port->dna_code ?? '';
+
         // Económico
         $this->currency_code = $this->port->currency_code ?? '';
 
@@ -290,6 +302,8 @@ private function loadCountries()
             'email' => $this->email,
             'website' => $this->website,
             'vhf_channel' => $this->vhf_channel,
+            'afip_code' => $this->afip_code,
+            'dna_code' => $this->dna_code,
             'currency_code' => $this->currency_code,
             'active' => $this->active,
             'accepts_new_vessels' => $this->accepts_new_vessels,
@@ -346,6 +360,7 @@ private function loadCountries()
             'handles_dangerous_goods', 'has_customs_office', 'max_vessel_length',
             'max_draft', 'berths_count', 'cranes_count', 'warehouse_area',
             'open_storage_area', 'phone', 'fax', 'email', 'website', 'vhf_channel',
+            'afip_code', 'dna_code',
             'currency_code', 'active', 'accepts_new_vessels', 'display_order',
             'established_date', 'special_notes'
         ];
@@ -432,6 +447,10 @@ private function loadCountries()
                 'email' => $this->email ?: null,
                 'website' => $this->website ?: null,
                 'vhf_channel' => $this->vhf_channel ?: null,
+
+                // Códigos de aduana
+                'afip_code' => $this->afip_code ?: null,
+                'dna_code' => $this->dna_code ?: null,
 
                 // Económico
                 'currency_code' => $this->currency_code ?: null,

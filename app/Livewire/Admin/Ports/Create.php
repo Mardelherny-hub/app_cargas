@@ -100,6 +100,12 @@ class Create extends Component
     #[Validate('nullable|string|max:10')]
     public string $vhf_channel = '';
 
+    #[Validate('nullable|string|max:10')]
+    public string $afip_code = '';
+
+    #[Validate('nullable|string|max:10')]
+    public string $dna_code = '';
+
     // Información económica
     #[Validate('nullable|string|max:3')]
     public string $currency_code = '';
@@ -238,6 +244,10 @@ class Create extends Component
                 'email' => $this->email ?: null,
                 'website' => $this->website ?: null,
                 'vhf_channel' => $this->vhf_channel ?: null,
+
+                // Códigos de aduana
+                'afip_code' => $this->afip_code ?: null,
+                'dna_code' => $this->dna_code ?: null,
 
                 // Económico
                 'currency_code' => $this->currency_code ?: null,

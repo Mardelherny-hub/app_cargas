@@ -42,6 +42,8 @@ class Port extends Model
         'port_authority',
         'timezone',
         'webservice_code',
+        'afip_code',
+        'dna_code',
         'webservice_config',
         'supports_anticipada',
         'supports_micdta',
