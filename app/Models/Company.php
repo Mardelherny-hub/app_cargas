@@ -31,6 +31,7 @@ class Company extends Model
         'phone',
         'address',
         'city',
+        'state',                // NUEVO: Provincia/Estado
         'postal_code',
         'company_roles',        // NUEVO: Roles de empresa
         'roles_config',         // NUEVO: Configuración por roles
