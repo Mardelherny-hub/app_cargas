@@ -52,6 +52,7 @@ class SettingsController extends Controller
                 'phone' => $company->phone,
                 'address' => $company->address,
                 'city' => $company->city,
+                'state' => $company->state,
                 'postal_code' => $company->postal_code,
             ],
             'webservices' => [
@@ -100,6 +101,7 @@ class SettingsController extends Controller
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
+            'state' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
             'id_maria' => 'nullable|string|max:10|regex:/^[A-Z0-9]*$/',
         ]);
@@ -112,6 +114,7 @@ class SettingsController extends Controller
                 'phone' => $request->phone,
                 'address' => $request->address,
                 'city' => $request->city,
+                'state' => $request->state,
                 'postal_code' => $request->postal_code,
                 'id_maria' => $request->id_maria,
             ]);

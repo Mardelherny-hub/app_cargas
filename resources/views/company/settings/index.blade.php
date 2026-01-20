@@ -132,6 +132,23 @@
                                     @enderror
                                 </div>
 
+                                <!-- Provincia/Estado -->
+                                <div>
+                                    <label for="state" class="block text-sm font-medium text-gray-700">
+                                        Provincia/Estado
+                                    </label>
+                                    <input type="text" 
+                                        name="state" 
+                                        id="state" 
+                                        value="{{ old('state', $currentSettings['general']['state'] ?? '') }}"
+                                        maxlength="100"
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('state') border-red-300 @enderror"
+                                        placeholder="Buenos Aires">
+                                    @error('state')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
                                 <!-- Código Postal -->
                                 <div>
                                     <label for="postal_code" class="block text-sm font-medium text-gray-700">

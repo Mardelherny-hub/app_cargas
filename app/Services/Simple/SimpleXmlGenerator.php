@@ -870,7 +870,7 @@ $wsaa = $this->getWSAATokens();
                 // === argWSAutenticacionEmpresa ===
                 $w->startElement('argWSAutenticacionEmpresa');
                     $w->writeElement('CuitEmpresaConectada', $cuit);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -947,9 +947,12 @@ $wsaa = $this->getWSAATokens();
             // nombre (obligatorio, C50)
             $w->writeElement('nombre', substr(htmlspecialchars($this->company->legal_name ?? $this->company->name), 0, 50));
             
-            // domicilio (obligatorio pero puede ser nil)
+            // domicilio (obligatorio - estructura completa requerida por AFIP)
             $w->startElement('domicilio');
-            $w->writeAttribute('xsi:nil', 'true');
+                $w->writeElement('ciudad', substr($this->company->city ?? 'S/D', 0, 50));
+                $w->writeElement('codPostal', substr($this->company->postal_code ?? '0000', 0, 8));
+                $w->writeElement('estado', substr($this->company->state ?? 'BUENOS AIRES', 0, 50));
+                $w->writeElement('nombreCalle', substr($this->company->address ?? 'S/D', 0, 150));
             $w->endElement();
             
             // codPais (obligatorio, C2 - ISO 3166-1 Alfa 2)
@@ -973,9 +976,12 @@ $wsaa = $this->getWSAATokens();
             // nombre (obligatorio, C50)
             $w->writeElement('nombre', substr(htmlspecialchars($this->company->legal_name ?? $this->company->name), 0, 50));
             
-            // domicilio (obligatorio pero puede ser nil)
+            // domicilio (obligatorio - estructura completa requerida por AFIP)
             $w->startElement('domicilio');
-            $w->writeAttribute('xsi:nil', 'true');
+                $w->writeElement('ciudad', substr($this->company->city ?? 'S/D', 0, 50));
+                $w->writeElement('codPostal', substr($this->company->postal_code ?? '0000', 0, 8));
+                $w->writeElement('estado', substr($this->company->state ?? 'BUENOS AIRES', 0, 50));
+                $w->writeElement('nombreCalle', substr($this->company->address ?? 'S/D', 0, 150));
             $w->endElement();
             
             // codPais (obligatorio, C2)
@@ -1777,7 +1783,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -1925,7 +1931,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2003,7 +2009,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2058,7 +2064,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2121,7 +2127,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2192,7 +2198,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2280,7 +2286,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2355,7 +2361,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2451,7 +2457,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2528,7 +2534,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2613,7 +2619,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
@@ -2686,7 +2692,7 @@ $wsaa = $this->getWSAATokens();
                     $w->writeElement('Token', $wsaa['token']);
                     $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'ATA');
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
