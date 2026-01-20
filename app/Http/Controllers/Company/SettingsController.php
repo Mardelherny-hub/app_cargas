@@ -92,12 +92,7 @@ class SettingsController extends Controller
         $request->validate([
             'legal_name' => 'required|string|max:255',
             'commercial_name' => 'nullable|string|max:255',
-            'email' => [
-                'required',
-                'email',
-                'max:255',
-                Rule::unique('companies', 'email')->ignore($company->id)
-            ],
+            'email' => 'required|email|max:255',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
