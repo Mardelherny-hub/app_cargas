@@ -1139,7 +1139,7 @@ $wsaa = $this->getWSAATokens();
                 // plazo (obligatorio, N3 - días de viaje)
                 $plazo = 1;
                 if ($voyage->departure_date && $voyage->estimated_arrival_date) {
-                    $plazo = max(1, $voyage->departure_date->diffInDays($voyage->estimated_arrival_date));
+                    $plazo = (int) max(1, floor($voyage->departure_date->diffInDays($voyage->estimated_arrival_date)));
                 }
                 $w->writeElement('plazo', (string)min($plazo, 999));
                 
