@@ -695,7 +695,7 @@
                                     $successData = is_array($lastMicDta->success_data) 
                                         ? $lastMicDta->success_data 
                                         : json_decode($lastMicDta->success_data, true);
-                                    $idMicDtaRegistrado = $successData['id_micdta'] ?? $successData['idMicDta'] ?? null;
+                                    $idMicDtaRegistrado = $successData['mic_dta_id'] ?? $successData['id_micdta'] ?? $successData['idMicDta'] ?? null;
                                     $nroViajeRegistrado = $successData['nro_viaje'] ?? $successData['nroViaje'] ?? null;
                                 }
                                 
