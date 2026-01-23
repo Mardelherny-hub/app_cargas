@@ -1194,7 +1194,7 @@ $wsaa = $this->getWSAATokens();
             
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS - sin zona horaria)
             if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('YmdHis');
+                $fechaFormateada = $fecha->format('Y-m-d');
                 $w->writeElement('fecha', $fechaFormateada);
             }
             
