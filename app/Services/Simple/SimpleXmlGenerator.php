@@ -868,11 +868,16 @@ $wsaa = $this->getWSAATokens();
                 $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
                 // === argWSAutenticacionEmpresa ===
+                $wsaa = $this->getWSAATokens('wgesregsintia2');
+
                 $w->startElement('argWSAutenticacionEmpresa');
+                    $w->writeElement('Token', $wsaa['token']);
+                    $w->writeElement('Sign', $wsaa['sign']);
                     $w->writeElement('CuitEmpresaConectada', $cuit);
                     $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
+
 
                 // === argRegistrarMicDtaParam ===
                 $w->startElement('argRegistrarMicDtaParam');
@@ -1076,21 +1081,19 @@ $wsaa = $this->getWSAATokens();
      */
     private function writeTitTransContVaciosIdTrack(\XMLWriter $w, array $tracks): void
     {
-        $w->startElement('titTransContVaciosIdTrack');
-        
         $tracksContVacios = $tracks['cont_vacios'] ?? $tracks['contenedores_vacios'] ?? [];
         
-        if (is_array($tracksContVacios)) {
+        // Solo escribir el elemento si hay contenedores vacíos
+        if (!empty($tracksContVacios) && is_array($tracksContVacios)) {
+            $w->startElement('titTransContVaciosIdTrack');
             foreach ($tracksContVacios as $trackId) {
                 if (is_string($trackId) || is_numeric($trackId)) {
                     $w->writeElement('titTransContVacioIdTrack', (string)$trackId);
                 }
             }
+            $w->endElement();
         }
-        
-        $w->endElement();
     }
-
     /**
      * Escribe IDs de contenedores con carga
      */
@@ -1152,7 +1155,11 @@ $wsaa = $this->getWSAATokens();
                     // Evento 2: FITAI (Fin de tránsito)
                     $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2);
                     
-                $w->endElement(); // eventosProg
+                    $w->endElement(); // eventosProg
+                
+                // idRefUniTrs (obligatorio según XSD AFIP - referencia única transporte)
+                $idRefUniTrs = 'REF' . $voyage->id . '-' . date('YmdHis');
+                $w->writeElement('idRefUniTrs', substr($idRefUniTrs, 0, 35));
                 
             $w->endElement(); // RutInf
         $w->endElement(); // rutasInf
@@ -1166,7 +1173,7 @@ $wsaa = $this->getWSAATokens();
         $w->startElement('EventoProg');
             
             // codPais (obligatorio, C2)
-            $codPais = $port->country->alpha2_code ?? 'AR';
+            $codPais = $port->country->iso2_code ?? $port->country->alpha2_code ?? 'AR';
             $w->writeElement('codPais', strtoupper($codPais));
             
             // codAdu (obligatorio excepto EPTAI, C9)
@@ -1185,9 +1192,9 @@ $wsaa = $this->getWSAATokens();
                 $w->writeElement('codLugOper', $port->operative_code ?? $port->code ?? '001');
             }
             
-            // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS±ZH)
+            // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS - sin zona horaria)
             if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('YmdHis') . '-03';
+                $fechaFormateada = $fecha->format('YmdHis');
                 $w->writeElement('fecha', $fechaFormateada);
             }
             

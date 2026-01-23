@@ -1390,6 +1390,29 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en MicDta: " . $errorMsg);
             }
 
+            // ✅ VERIFICAR SI HAY ERRORES EN ListaErrores (aunque no haya SOAP Fault)
+            $erroresAfip = $this->extractAfipErrors($response);
+            if (!empty($erroresAfip)) {
+                $errorMsg = implode(' | ', array_map(fn($e) => "[{$e['codigo']}] {$e['descripcion']}", $erroresAfip));
+                
+                $this->saveStructuredError($transaction, 'validation', 'high', $errorMsg);
+                $transaction->update([
+                    'status' => 'error',
+                    'error_code' => 'AFIP_VALIDATION_ERROR',
+                    'error_message' => $errorMsg,
+                    'validation_errors' => $erroresAfip,
+                    'completed_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMsg,
+                    'error_code' => 'AFIP_VALIDATION_ERROR',
+                    'errors' => $erroresAfip,
+                    'response_time_ms' => $responseTime,
+                ];
+            }
+
             // Procesar respuesta exitosa
             $micDtaId = $this->extractMicDtaIdFromResponse($response);
 
@@ -1526,6 +1549,44 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'response_time_ms' => $responseTime,
             ];
         }
+    }
+
+    /**
+     * Extrae errores de ListaErrores en respuesta AFIP
+     */
+    private function extractAfipErrors(string $response): array
+    {
+        $errores = [];
+        
+        try {
+            // Limpiar namespaces para facilitar parsing
+            $cleanXml = preg_replace('/(<\/?)(\w+):([^>]*>)/', '$1$3', $response);
+            $xml = @simplexml_load_string($cleanXml);
+            
+            if (!$xml) {
+                return [];
+            }
+            
+            // Buscar ListaErrores en la respuesta
+            $listaErrores = $xml->xpath('//ListaErrores/DetalleError');
+            
+            foreach ($listaErrores as $error) {
+                $tipoMensaje = (string)($error->TipoMensaje ?? 'Error');
+                
+                // Solo considerar como error si es "Error" o "Alerta" que impide el registro
+                // Las alertas XSD impiden el registro
+                $errores[] = [
+                    'codigo' => (string)($error->Codigo ?? 'SIN_CODIGO'),
+                    'descripcion' => (string)($error->Descripcion ?? 'Sin descripción'),
+                    'descripcion_adicional' => (string)($error->DescripcionAdicional ?? ''),
+                    'tipo' => $tipoMensaje,
+                ];
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Error parseando ListaErrores AFIP: ' . $e->getMessage());
+        }
+        
+        return $errores;
     }
 
     /**
