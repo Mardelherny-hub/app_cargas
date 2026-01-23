@@ -1,0 +1,1659 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions xmlns:s="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:http="http://schemas.xmlsoap.org/wsdl/http/" xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/" xmlns:tns="Ar.Gob.Afip.Dga.wgesregsintia2" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tm="http://microsoft.com/wsdl/mime/textMatching/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" targetNamespace="Ar.Gob.Afip.Dga.wgesregsintia2" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Gestion de Registro Sintia2 por parte de los Agentes de Transporte Aduaneros (ATA)</wsdl:documentation>
+  <wsdl:types>
+    <s:schema elementFormDefault="qualified" targetNamespace="Ar.Gob.Afip.Dga.wgesregsintia2">
+      <s:element name="RegistrarTitEnvios">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRegistrarTitEnviosParam" type="tns:RegistrarTitEnviosParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="WSAutenticacionEmpresa">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:WSAutenticacion">
+            <s:sequence>
+              <s:element minOccurs="1" maxOccurs="1" name="CuitEmpresaConectada" type="s:long" />
+              <s:element minOccurs="0" maxOccurs="1" name="TipoAgente" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="Rol" type="s:string" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="WSAutenticacion">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="Token" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="Sign" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="RegistrarTitEnviosParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="titulosTransEnvios" type="tns:ArrayOfTitTransEnvio" />
+          <s:element minOccurs="0" maxOccurs="1" name="titulosTransContVacios" type="tns:ArrayOfTitTransContVacio" />
+          <s:element minOccurs="0" maxOccurs="1" name="contenedores" type="tns:ArrayOfContenedor" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitTransEnvio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitTransEnvio" nillable="true" type="tns:TitTransEnvio" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitTransEnvio">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="codViaTrans" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="obsDeclaAduInter" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="remitente" type="tns:Remitente" />
+          <s:element minOccurs="0" maxOccurs="1" name="consignatario" type="tns:Consignatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="destinatario" type="tns:Destinatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="notificado" type="tns:Notificado" />
+          <s:element minOccurs="0" maxOccurs="1" name="indFinCom" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroFact" type="tns:ArrayOfString" />
+          <s:element minOccurs="0" maxOccurs="1" name="indFraccTransp" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="indConsol" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idManiCargaArrPaisPart" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idDocTranspArrPaisPart" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="origen" type="tns:Origen" />
+          <s:element minOccurs="0" maxOccurs="1" name="destino" type="tns:Destino" />
+          <s:element minOccurs="0" maxOccurs="1" name="envios" type="tns:ArrayOfEnvio" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Remitente">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nomRazSoc" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="domicilio" type="tns:Direccion" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="tipDocIdent" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroDocIdent" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Direccion">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="barrio" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="ciudad" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codPostal" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="estado" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nombreCalle" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Consignatario">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nomRazSoc" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="domicilio" type="tns:Direccion" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Destinatario">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nomRazSoc" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="domicilio" type="tns:Direccion" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Notificado">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nomRazSoc" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="domicilio" type="tns:Direccion" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="nroFact" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Origen">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codAdu" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Destino">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codAdu" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfEnvio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="Envio" nillable="true" type="tns:Envio" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Envio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="destinaciones" type="tns:ArrayOfDestinacion" />
+          <s:element minOccurs="0" maxOccurs="1" name="indUltFra" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscalATAMIC" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="lugOperOrigen" type="tns:LugOperOrigen" />
+          <s:element minOccurs="0" maxOccurs="1" name="lugOperDestino" type="tns:LugOperDestino" />
+          <s:element minOccurs="1" maxOccurs="1" name="idEnvio" type="s:int" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfDestinacion">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="Destinacion" nillable="true" type="tns:Destinacion" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Destinacion">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idDecla" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="montoFob" type="s:decimal" />
+          <s:element minOccurs="1" maxOccurs="1" name="montoFlete" type="s:decimal" />
+          <s:element minOccurs="1" maxOccurs="1" name="montoSeg" type="s:decimal" />
+          <s:element minOccurs="0" maxOccurs="1" name="codDivisaFob" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codDivisaFle" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codDivisaSeg" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="items" type="tns:ArrayOfItem" />
+          <s:element minOccurs="0" maxOccurs="1" name="docAnexos" type="tns:ArrayOfDocAnexo" />
+          <s:element minOccurs="0" maxOccurs="1" name="bultos" type="tns:ArrayOfBulto" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfItem">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="Item" nillable="true" type="tns:Item" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Item">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nroItem" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="peso" type="s:decimal" />
+          <s:element minOccurs="0" maxOccurs="1" name="indNCM" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codIMO" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfDocAnexo">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="DocAnexo" nillable="true" type="tns:DocAnexo" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="DocAnexo">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codTipDoc" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="documento" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfBulto">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="Bulto" nillable="true" type="tns:Bulto" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Bulto">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="cantBultos" type="s:int" />
+          <s:element minOccurs="1" maxOccurs="1" name="cantBultosTotFrac" type="s:int" />
+          <s:element minOccurs="1" maxOccurs="1" name="pesoBruto" type="s:decimal" />
+          <s:element minOccurs="1" maxOccurs="1" name="pesoBrutoTotFrac" type="s:decimal" />
+          <s:element minOccurs="0" maxOccurs="1" name="codTipEmbalaje" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="descMercaderia" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="marcaNro" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="indCargSuelt" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idContenedor" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="LugOperOrigen">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codLugOper" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codCiu" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="LugOperDestino">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codLugOper" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codCiu" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitTransContVacio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitTransContVacio" nillable="true" type="tns:TitTransContVacio" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitTransContVacio">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="codViaTrans" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idContenedores" type="tns:ArrayOfString1" />
+          <s:element minOccurs="0" maxOccurs="1" name="remitente" type="tns:Remitente" />
+          <s:element minOccurs="0" maxOccurs="1" name="consignatario" type="tns:Consignatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="destinatario" type="tns:Destinatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="origen" type="tns:OrigenContVacio" />
+          <s:element minOccurs="0" maxOccurs="1" name="destino" type="tns:DestinoContVacio" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscalATAMIC" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString1">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="idCont" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="OrigenContVacio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codAdu" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codLugOper" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codCiu" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="DestinoContVacio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codAdu" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codLugOper" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codCiu" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfContenedor">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="Contenedor" nillable="true" type="tns:Contenedor" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Contenedor">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="id" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codMedida" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="condicion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="accesorio" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="precintos" type="tns:ArrayOfString2" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString2">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="precinto" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarTitEnviosResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarTitEnviosResult" type="tns:RegistrarTitEnviosRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarTitEnviosRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="titTracksEnv" type="tns:ArrayOfTitRefUniTrEnv" />
+              <s:element minOccurs="0" maxOccurs="1" name="titTracksContVacios" type="tns:ArrayOfTitRefUniTrContVacio" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="ResultadoEjecucionSerializable">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="ListaErrores" type="tns:ArrayOfDgaMensajeSistema" />
+          <s:element minOccurs="0" maxOccurs="1" name="Server" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="TimeStamp" type="s:dateTime" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfDgaMensajeSistema">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="DetalleError" nillable="true" type="tns:DgaMensajeSistema" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="DgaMensajeSistema">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:AbstractEntidadOfInt32">
+            <s:sequence>
+              <s:element minOccurs="1" maxOccurs="1" name="Codigo" nillable="true" type="s:int" />
+              <s:element minOccurs="0" maxOccurs="1" name="Descripcion" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="DescripcionDetallada" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="TextoAclaratorio" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="TipoUsuario" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="DescripcionAdicional" type="s:string" />
+              <s:element minOccurs="1" maxOccurs="1" name="TipoMensaje" type="tns:DgaTipoMensaje" />
+              <s:element minOccurs="0" maxOccurs="1" name="Parametros" type="tns:ArrayOfString3" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="AbstractEntidadOfInt32" abstract="true">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:AbstractEntidadGenerica" />
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="AbstractEntidadGenerica" abstract="true" />
+      <s:simpleType name="DgaTipoMensaje">
+        <s:restriction base="s:string">
+          <s:enumeration value="Alerta" />
+          <s:enumeration value="Advertencia" />
+          <s:enumeration value="Informacion" />
+        </s:restriction>
+      </s:simpleType>
+      <s:complexType name="ArrayOfString3">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="string" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitRefUniTrEnv">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitTrackEnv" nillable="true" type="tns:TitRefUniTrEnv" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitRefUniTrEnv">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="tracksEnv" type="tns:ArrayOfRefUniTrEnv" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfRefUniTrEnv">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TrackEnv" nillable="true" type="tns:RefUniTrEnv" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="RefUniTrEnv">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTrack" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="idEnvio" type="s:int" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitRefUniTrContVacio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitTrackContVacio" nillable="true" type="tns:TitRefUniTrContVacio" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitRefUniTrContVacio">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTrack" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarEnvios">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRegistrarEnviosParam" type="tns:RegistrarEnviosParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarEnviosParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="envios" type="tns:ArrayOfEnvio" />
+          <s:element minOccurs="0" maxOccurs="1" name="contenedores" type="tns:ArrayOfContenedor" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarEnviosResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarEnviosResult" type="tns:RegistrarEnviosRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarEnviosRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="tracksEnv" type="tns:ArrayOfRefUniTrEnv" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="AnularEnvios">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argIdTracks" type="tns:ArrayOfString3" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="AnularEnviosResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="AnularEnviosResult" type="tns:AnularEnviosRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="AnularEnviosRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="ConsultarTitEnviosReg">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="ConsultarTitEnviosRegResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="ConsultarTitEnviosRegResult" type="tns:ConsultarTitEnviosRegRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="ConsultarTitEnviosRegRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="titTransEnviosReg" type="tns:ArrayOfTitTransEnvioReg" />
+              <s:element minOccurs="0" maxOccurs="1" name="titTransContVaciosReg" type="tns:ArrayOfTitTransContVacioReg" />
+              <s:element minOccurs="0" maxOccurs="1" name="contenedores" type="tns:ArrayOfContenedor" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitTransEnvioReg">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitTransEnvioReg" nillable="true" type="tns:TitTransEnvioReg" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitTransEnvioReg">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="codViaTrans" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="obsDeclaAduInter" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="remitente" type="tns:Remitente" />
+          <s:element minOccurs="0" maxOccurs="1" name="consignatario" type="tns:Consignatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="destinatario" type="tns:Destinatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="notificado" type="tns:Notificado" />
+          <s:element minOccurs="0" maxOccurs="1" name="indFinCom" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroFact" type="tns:ArrayOfString" />
+          <s:element minOccurs="0" maxOccurs="1" name="indFraccTransp" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="indConsol" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idManiCargaArrPaisPart" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idDocTranspArrPaisPart" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="origen" type="tns:Origen" />
+          <s:element minOccurs="0" maxOccurs="1" name="destino" type="tns:Destino" />
+          <s:element minOccurs="0" maxOccurs="1" name="enviosReg" type="tns:ArrayOfEnvioReg" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfEnvioReg">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="EnvioReg" nillable="true" type="tns:EnvioReg" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="EnvioReg">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="destinaciones" type="tns:ArrayOfDestinacion" />
+          <s:element minOccurs="0" maxOccurs="1" name="indUltFra" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="lugOperOrigen" type="tns:LugOperOrigen" />
+          <s:element minOccurs="0" maxOccurs="1" name="lugOperDestino" type="tns:LugOperDestino" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTrack" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="idEnvio" type="s:int" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitTransContVacioReg">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitTransContVacioReg" nillable="true" type="tns:TitTransContVacioReg" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitTransContVacioReg">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="codViaTrans" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTitTrans" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idContenedor" type="tns:ArrayOfString1" />
+          <s:element minOccurs="0" maxOccurs="1" name="remitente" type="tns:Remitente" />
+          <s:element minOccurs="0" maxOccurs="1" name="consignatario" type="tns:Consignatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="destinatario" type="tns:Destinatario" />
+          <s:element minOccurs="0" maxOccurs="1" name="origen" type="tns:OrigenContVacio" />
+          <s:element minOccurs="0" maxOccurs="1" name="destino" type="tns:DestinoContVacio" />
+          <s:element minOccurs="0" maxOccurs="1" name="idTrack" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarMicDta">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRegistrarMicDtaParam" type="tns:RegistrarMicDtaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarMicDtaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="micDta" type="tns:MicDta" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="MicDta">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="codViaTrans" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="transportista" type="tns:Transportista" />
+          <s:element minOccurs="0" maxOccurs="1" name="propVehiculo" type="tns:PropVehiculo" />
+          <s:element minOccurs="0" maxOccurs="1" name="indEnLastre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="vehiculo" type="tns:Vehiculo" />
+          <s:element minOccurs="0" maxOccurs="1" name="conductores" type="tns:ArrayOfConductor" />
+          <s:element minOccurs="0" maxOccurs="1" name="cargasSueltasIdTrack" type="tns:ArrayOfString5" />
+          <s:element minOccurs="0" maxOccurs="1" name="titTransContVaciosIdTrack" type="tns:ArrayOfString6" />
+          <s:element minOccurs="0" maxOccurs="1" name="contenedoresConCarga" type="tns:ArrayOfString1" />
+          <s:element minOccurs="0" maxOccurs="1" name="rutasInf" type="tns:ArrayOfRutInf" />
+          <s:element minOccurs="0" maxOccurs="1" name="embarcacion" type="tns:Embarcacion" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Transportista">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nombre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="domicilio" type="tns:Direccion" />
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="tipTrans" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="PropVehiculo">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nombre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="domicilio" type="tns:Direccion" />
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscal" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Vehiculo">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="patente" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="patentesRemol" type="tns:ArrayOfPatenteRemol" />
+          <s:element minOccurs="0" maxOccurs="1" name="marca" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroChasis" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="modChasis" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="anioFab" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="capTraccion" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="acceTipNum" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="precintos" type="tns:ArrayOfString4" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfPatenteRemol">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="PatenteRemol" nillable="true" type="tns:PatenteRemol" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="PatenteRemol">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="id" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString4">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="nroPrecin" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfConductor">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="Conductor" nillable="true" type="tns:Conductor" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Conductor">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="nombre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="tipDocIdent" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroDocIdent" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString5">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="cargaSueltaIdTrack" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString6">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="titTransContVacioIdTrack" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfRutInf">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="RutInf" nillable="true" type="tns:RutInf" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="RutInf">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idRefUniTrs" type="tns:ArrayOfString7" />
+          <s:element minOccurs="0" maxOccurs="1" name="descRutItinerarios" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="plazo" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="eventosProg" type="tns:ArrayOfEventoProg" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString7">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="idRefUniTr" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfEventoProg">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="EventoProg" nillable="true" type="tns:EventoProg" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="EventoProg">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codAdu" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codLugOper" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codCiu" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="fecha" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="id" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="orden" type="s:int" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="Embarcacion">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="id" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nombre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="tipEmb" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="indIntegraConvoy" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="indSolicitaPres" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscalATARemol" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarMicDtaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarMicDtaResult" type="tns:RegistrarMicDtaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarMicDtaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="RegistrarConvoy">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRegistrarConvoyParam" type="tns:RegistrarConvoyParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarConvoyParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDtaRemol" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="tns:ArrayOfString8" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfString8">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="idMicDta" nillable="true" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarConvoyResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarConvoyResult" type="tns:RegistrarConvoyRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarConvoyRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="AsignarATARemol">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argAsignarATARemolParam" type="tns:AsignarATARemolParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="AsignarATARemolParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idFiscalATARemol" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="AsignarATARemolResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="AsignarATARemolResult" type="tns:AsignarATARemolRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="AsignarATARemolRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="RegistrarSalidaZonaPrimaria">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argNroViaje" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="RegistrarSalidaZonaPrimariaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarSalidaZonaPrimariaResult" type="tns:RegistrarSalidaZonaPrimariaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarSalidaZonaPrimariaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="nroSalida" type="s:string" />
+              <s:element minOccurs="0" maxOccurs="1" name="nroPartida" type="s:string" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="SolicitarAnularMicDta">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argSolicitarAnularMicDtaParam" type="tns:SolicitarAnularMicDtaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="SolicitarAnularMicDtaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="descMotivo" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="SolicitarAnularMicDtaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="SolicitarAnularMicDtaResult" type="tns:SolicitarAnularMicDtaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="SolicitarAnularMicDtaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="RectifConvoyMicDta">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRectifConvoyMicDtaParam" type="tns:RectifConvoyMicDtaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RectifConvoyMicDtaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="rectifConvoy" type="tns:RectifConvoy" />
+          <s:element minOccurs="0" maxOccurs="1" name="rectifMicDta" type="tns:RectifMicDta" />
+          <s:element minOccurs="0" maxOccurs="1" name="descMotivo" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="RectifConvoy">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDtaRemol" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="tns:ArrayOfString8" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="RectifMicDta">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="conductores" type="tns:ArrayOfConductor" />
+          <s:element minOccurs="0" maxOccurs="1" name="transportista" type="tns:Transportista" />
+          <s:element minOccurs="0" maxOccurs="1" name="propVehiculo" type="tns:PropVehiculo" />
+          <s:element minOccurs="0" maxOccurs="1" name="rectifEmbarcacion" type="tns:RectifEmbarcacion" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="RectifEmbarcacion">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="codPais" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="id" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nombre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="tipEmb" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RectifConvoyMicDtaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RectifConvoyMicDtaResult" type="tns:RectifConvoyMicDtaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RectifConvoyMicDtaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="AnularTitulo">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argIdTitTrans" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="AnularTituloResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="AnularTituloResult" type="tns:AnularTituloRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="AnularTituloRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="RegistrarArriboZonaPrimaria">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRegistrarArriboZonaPrimariaParam" type="tns:RegistrarArriboZonaPrimariaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarArriboZonaPrimariaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codAdu" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="codLugOper" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="descAmarre" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarArriboZonaPrimariaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarArriboZonaPrimariaResult" type="tns:RegistrarArriboZonaPrimariaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarArriboZonaPrimariaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="nroArribo" type="s:string" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="AnularArriboZonaPrimaria">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argAnularArriboZonaPrimariaParam" type="tns:AnularArriboZonaPrimariaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="AnularArriboZonaPrimariaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="descMotivo" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="AnularArriboZonaPrimariaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="AnularArriboZonaPrimariaResult" type="tns:AnularArriboZonaPrimariaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="AnularArriboZonaPrimariaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="ConsultarMicDtaAsig">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="ConsultarMicDtaAsigResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="ConsultarMicDtaAsigResult" type="tns:ConsultarMicDtaAsigRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="ConsultarMicDtaAsigRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="MicDtasAsig" type="tns:ArrayOfMicDtaAsig" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="ArrayOfMicDtaAsig">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="MicDtaAsig" nillable="true" type="tns:MicDtaAsig" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="MicDtaAsig">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="codViaTrans" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="transportista" type="tns:Transportista" />
+          <s:element minOccurs="0" maxOccurs="1" name="propVehiculo" type="tns:PropVehiculo" />
+          <s:element minOccurs="0" maxOccurs="1" name="indEnLastre" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="vehiculo" type="tns:Vehiculo" />
+          <s:element minOccurs="0" maxOccurs="1" name="conductores" type="tns:ArrayOfConductor" />
+          <s:element minOccurs="0" maxOccurs="1" name="embarcacion" type="tns:Embarcacion" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarTitMicDta">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argRegistrarTitMicDtaParam" type="tns:RegistrarTitMicDtaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarTitMicDtaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="titMicDtas" type="tns:ArrayOfTitMicDta" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfTitMicDta">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="TitMicDta" nillable="true" type="tns:TitMicDta" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="TitMicDta">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="cargasSueltasIdTrack" type="tns:ArrayOfString5" />
+          <s:element minOccurs="0" maxOccurs="1" name="titTransContVaciosIdTrack" type="tns:ArrayOfString6" />
+          <s:element minOccurs="0" maxOccurs="1" name="contenedoresConCarga" type="tns:ArrayOfString1" />
+          <s:element minOccurs="0" maxOccurs="1" name="rutasInf" type="tns:ArrayOfRutInf" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="RegistrarTitMicDtaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="RegistrarTitMicDtaResult" type="tns:RegistrarTitMicDtaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="RegistrarTitMicDtaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="DesvincularTitMicDta">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argDesvincularTitMicDtaParam" type="tns:DesvincularTitMicDtaParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="DesvincularTitMicDtaParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idTransaccion" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="nroViaje" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="descMotivo" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="desTitMicDtas" type="tns:ArrayOfDesTitMicDta" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfDesTitMicDta">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="DesTitMicDta" nillable="true" type="tns:DesTitMicDta" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="DesTitMicDta">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idMicDta" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="cargasSueltasIdTrack" type="tns:ArrayOfString5" />
+          <s:element minOccurs="0" maxOccurs="1" name="titTransContVaciosIdTrack" type="tns:ArrayOfString6" />
+          <s:element minOccurs="0" maxOccurs="1" name="contenedoresConCarga" type="tns:ArrayOfString1" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="DesvincularTitMicDtaResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="DesvincularTitMicDtaResult" type="tns:DesvincularTitMicDtaRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="DesvincularTitMicDtaRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable" />
+        </s:complexContent>
+      </s:complexType>
+      <s:element name="ConsultarPrecumplido">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="argWSAutenticacionEmpresa" type="tns:WSAutenticacionEmpresa" />
+            <s:element minOccurs="0" maxOccurs="1" name="argConsultarPrecumplidoParam" type="tns:ConsultarPrecumplidoParam" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="ConsultarPrecumplidoParam">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idDecla" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="ConsultarPrecumplidoResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="ConsultarPrecumplidoResult" type="tns:ConsultarPrecumplidoRta" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="ConsultarPrecumplidoRta">
+        <s:complexContent mixed="false">
+          <s:extension base="tns:ResultadoEjecucionSerializable">
+            <s:sequence>
+              <s:element minOccurs="0" maxOccurs="1" name="precumplido" type="tns:Precumplido" />
+            </s:sequence>
+          </s:extension>
+        </s:complexContent>
+      </s:complexType>
+      <s:complexType name="Precumplido">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idDecla" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="indCierre" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="fechaCierre" type="s:dateTime" />
+          <s:element minOccurs="0" maxOccurs="1" name="granelesPre" type="tns:ArrayOfGranelPre" />
+          <s:element minOccurs="0" maxOccurs="1" name="bultosPre" type="tns:ArrayOfBultoPre" />
+          <s:element minOccurs="0" maxOccurs="1" name="contenedoresPre" type="tns:ArrayOfContenedorPre" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfGranelPre">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="GranelPre" nillable="true" type="tns:GranelPre" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="GranelPre">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="tipoEmbalaje" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="pesoBruto" type="s:decimal" />
+          <s:element minOccurs="1" maxOccurs="1" name="fecha" type="s:dateTime" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfBultoPre">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="BultoPre" nillable="true" type="tns:BultoPre" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="BultoPre">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="tipEmbalaje" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="cantidad" type="s:int" />
+          <s:element minOccurs="1" maxOccurs="1" name="pesoBruto" type="s:decimal" />
+          <s:element minOccurs="1" maxOccurs="1" name="fecha" type="s:dateTime" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ArrayOfContenedorPre">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="unbounded" name="ContenedorPre" nillable="true" type="tns:ContenedorPre" />
+        </s:sequence>
+      </s:complexType>
+      <s:complexType name="ContenedorPre">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="idContenedor" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="cantidad" type="s:int" />
+          <s:element minOccurs="1" maxOccurs="1" name="pesoBruto" type="s:decimal" />
+          <s:element minOccurs="0" maxOccurs="1" name="embalajeAcond" type="s:string" />
+          <s:element minOccurs="1" maxOccurs="1" name="fecha" type="s:dateTime" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="Dummy">
+        <s:complexType />
+      </s:element>
+      <s:element name="DummyResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="DummyResult" type="tns:ResultadoEjecucionDummy" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="ResultadoEjecucionDummy">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="AppServer" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="DbServer" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="AuthServer" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+    </s:schema>
+  </wsdl:types>
+  <wsdl:message name="RegistrarTitEnviosSoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarTitEnvios" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarTitEnviosSoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarTitEnviosResponse" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarEnviosSoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarEnvios" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarEnviosSoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarEnviosResponse" />
+  </wsdl:message>
+  <wsdl:message name="AnularEnviosSoapIn">
+    <wsdl:part name="parameters" element="tns:AnularEnvios" />
+  </wsdl:message>
+  <wsdl:message name="AnularEnviosSoapOut">
+    <wsdl:part name="parameters" element="tns:AnularEnviosResponse" />
+  </wsdl:message>
+  <wsdl:message name="ConsultarTitEnviosRegSoapIn">
+    <wsdl:part name="parameters" element="tns:ConsultarTitEnviosReg" />
+  </wsdl:message>
+  <wsdl:message name="ConsultarTitEnviosRegSoapOut">
+    <wsdl:part name="parameters" element="tns:ConsultarTitEnviosRegResponse" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarMicDtaSoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarMicDta" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarMicDtaSoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarMicDtaResponse" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarConvoySoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarConvoy" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarConvoySoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarConvoyResponse" />
+  </wsdl:message>
+  <wsdl:message name="AsignarATARemolSoapIn">
+    <wsdl:part name="parameters" element="tns:AsignarATARemol" />
+  </wsdl:message>
+  <wsdl:message name="AsignarATARemolSoapOut">
+    <wsdl:part name="parameters" element="tns:AsignarATARemolResponse" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarSalidaZonaPrimariaSoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarSalidaZonaPrimaria" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarSalidaZonaPrimariaSoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarSalidaZonaPrimariaResponse" />
+  </wsdl:message>
+  <wsdl:message name="SolicitarAnularMicDtaSoapIn">
+    <wsdl:part name="parameters" element="tns:SolicitarAnularMicDta" />
+  </wsdl:message>
+  <wsdl:message name="SolicitarAnularMicDtaSoapOut">
+    <wsdl:part name="parameters" element="tns:SolicitarAnularMicDtaResponse" />
+  </wsdl:message>
+  <wsdl:message name="RectifConvoyMicDtaSoapIn">
+    <wsdl:part name="parameters" element="tns:RectifConvoyMicDta" />
+  </wsdl:message>
+  <wsdl:message name="RectifConvoyMicDtaSoapOut">
+    <wsdl:part name="parameters" element="tns:RectifConvoyMicDtaResponse" />
+  </wsdl:message>
+  <wsdl:message name="AnularTituloSoapIn">
+    <wsdl:part name="parameters" element="tns:AnularTitulo" />
+  </wsdl:message>
+  <wsdl:message name="AnularTituloSoapOut">
+    <wsdl:part name="parameters" element="tns:AnularTituloResponse" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarArriboZonaPrimariaSoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarArriboZonaPrimaria" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarArriboZonaPrimariaSoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarArriboZonaPrimariaResponse" />
+  </wsdl:message>
+  <wsdl:message name="AnularArriboZonaPrimariaSoapIn">
+    <wsdl:part name="parameters" element="tns:AnularArriboZonaPrimaria" />
+  </wsdl:message>
+  <wsdl:message name="AnularArriboZonaPrimariaSoapOut">
+    <wsdl:part name="parameters" element="tns:AnularArriboZonaPrimariaResponse" />
+  </wsdl:message>
+  <wsdl:message name="ConsultarMicDtaAsigSoapIn">
+    <wsdl:part name="parameters" element="tns:ConsultarMicDtaAsig" />
+  </wsdl:message>
+  <wsdl:message name="ConsultarMicDtaAsigSoapOut">
+    <wsdl:part name="parameters" element="tns:ConsultarMicDtaAsigResponse" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarTitMicDtaSoapIn">
+    <wsdl:part name="parameters" element="tns:RegistrarTitMicDta" />
+  </wsdl:message>
+  <wsdl:message name="RegistrarTitMicDtaSoapOut">
+    <wsdl:part name="parameters" element="tns:RegistrarTitMicDtaResponse" />
+  </wsdl:message>
+  <wsdl:message name="DesvincularTitMicDtaSoapIn">
+    <wsdl:part name="parameters" element="tns:DesvincularTitMicDta" />
+  </wsdl:message>
+  <wsdl:message name="DesvincularTitMicDtaSoapOut">
+    <wsdl:part name="parameters" element="tns:DesvincularTitMicDtaResponse" />
+  </wsdl:message>
+  <wsdl:message name="ConsultarPrecumplidoSoapIn">
+    <wsdl:part name="parameters" element="tns:ConsultarPrecumplido" />
+  </wsdl:message>
+  <wsdl:message name="ConsultarPrecumplidoSoapOut">
+    <wsdl:part name="parameters" element="tns:ConsultarPrecumplidoResponse" />
+  </wsdl:message>
+  <wsdl:message name="DummySoapIn">
+    <wsdl:part name="parameters" element="tns:Dummy" />
+  </wsdl:message>
+  <wsdl:message name="DummySoapOut">
+    <wsdl:part name="parameters" element="tns:DummyResponse" />
+  </wsdl:message>
+  <wsdl:portType name="wgesregsintia2Soap">
+    <wsdl:operation name="RegistrarTitEnvios">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro de Titulos y Envios</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarTitEnviosSoapIn" />
+      <wsdl:output message="tns:RegistrarTitEnviosSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarEnvios">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro de Envios</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarEnviosSoapIn" />
+      <wsdl:output message="tns:RegistrarEnviosSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="AnularEnvios">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Anulacion de Envios</wsdl:documentation>
+      <wsdl:input message="tns:AnularEnviosSoapIn" />
+      <wsdl:output message="tns:AnularEnviosSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarTitEnviosReg">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Consulta de Envios Registrados</wsdl:documentation>
+      <wsdl:input message="tns:ConsultarTitEnviosRegSoapIn" />
+      <wsdl:output message="tns:ConsultarTitEnviosRegSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarMicDta">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro de MicDta</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarMicDtaSoapIn" />
+      <wsdl:output message="tns:RegistrarMicDtaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarConvoy">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro del Convoy</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarConvoySoapIn" />
+      <wsdl:output message="tns:RegistrarConvoySoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="AsignarATARemol">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Asignar ATA Remol</wsdl:documentation>
+      <wsdl:input message="tns:AsignarATARemolSoapIn" />
+      <wsdl:output message="tns:AsignarATARemolSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarSalidaZonaPrimaria">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro de salida de Zona Primaria / Partida</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarSalidaZonaPrimariaSoapIn" />
+      <wsdl:output message="tns:RegistrarSalidaZonaPrimariaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="SolicitarAnularMicDta">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Solicitar Anulacion de un MIC/DTA</wsdl:documentation>
+      <wsdl:input message="tns:SolicitarAnularMicDtaSoapIn" />
+      <wsdl:output message="tns:SolicitarAnularMicDtaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RectifConvoyMicDta">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Rectificacion del Convoy / MicDta</wsdl:documentation>
+      <wsdl:input message="tns:RectifConvoyMicDtaSoapIn" />
+      <wsdl:output message="tns:RectifConvoyMicDtaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="AnularTitulo">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Anulacion de Titulo</wsdl:documentation>
+      <wsdl:input message="tns:AnularTituloSoapIn" />
+      <wsdl:output message="tns:AnularTituloSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarArriboZonaPrimaria">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro de arribo a Zona Primaria / Llegada</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarArriboZonaPrimariaSoapIn" />
+      <wsdl:output message="tns:RegistrarArriboZonaPrimariaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="AnularArriboZonaPrimaria">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Anulacion de arribo a Zona Primaria / Llegada</wsdl:documentation>
+      <wsdl:input message="tns:AnularArriboZonaPrimariaSoapIn" />
+      <wsdl:output message="tns:AnularArriboZonaPrimariaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarMicDtaAsig">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Consulta de MIC/DTA asignados al ATA remolcador/empujador</wsdl:documentation>
+      <wsdl:input message="tns:ConsultarMicDtaAsigSoapIn" />
+      <wsdl:output message="tns:ConsultarMicDtaAsigSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarTitMicDta">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Registro de Titulos a un MicDta</wsdl:documentation>
+      <wsdl:input message="tns:RegistrarTitMicDtaSoapIn" />
+      <wsdl:output message="tns:RegistrarTitMicDtaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="DesvincularTitMicDta">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Desvinculacion de Titulos a un MicDta</wsdl:documentation>
+      <wsdl:input message="tns:DesvincularTitMicDtaSoapIn" />
+      <wsdl:output message="tns:DesvincularTitMicDtaSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarPrecumplido">
+      <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Consulta valores de precumplido de una Destinacion</wsdl:documentation>
+      <wsdl:input message="tns:ConsultarPrecumplidoSoapIn" />
+      <wsdl:output message="tns:ConsultarPrecumplidoSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="Dummy">
+      <wsdl:input message="tns:DummySoapIn" />
+      <wsdl:output message="tns:DummySoapOut" />
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="wgesregsintia2Soap" type="tns:wgesregsintia2Soap">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="RegistrarTitEnvios">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarEnvios">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarEnvios" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnularEnvios">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AnularEnvios" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarTitEnviosReg">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarTitEnviosReg" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarMicDta">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarConvoy">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AsignarATARemol">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AsignarATARemol" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarSalidaZonaPrimaria">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SolicitarAnularMicDta">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/SolicitarAnularMicDta" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RectifConvoyMicDta">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RectifConvoyMicDta" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnularTitulo">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AnularTitulo" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarArriboZonaPrimaria">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarArriboZonaPrimaria" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnularArriboZonaPrimaria">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AnularArriboZonaPrimaria" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarMicDtaAsig">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarMicDtaAsig" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarTitMicDta">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitMicDta" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="DesvincularTitMicDta">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/DesvincularTitMicDta" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarPrecumplido">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarPrecumplido" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Dummy">
+      <soap:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/Dummy" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="wgesregsintia2Soap12" type="tns:wgesregsintia2Soap">
+    <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="RegistrarTitEnvios">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarEnvios">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarEnvios" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnularEnvios">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AnularEnvios" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarTitEnviosReg">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarTitEnviosReg" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarMicDta">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarConvoy">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AsignarATARemol">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AsignarATARemol" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarSalidaZonaPrimaria">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SolicitarAnularMicDta">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/SolicitarAnularMicDta" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RectifConvoyMicDta">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RectifConvoyMicDta" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnularTitulo">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AnularTitulo" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarArriboZonaPrimaria">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarArriboZonaPrimaria" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="AnularArriboZonaPrimaria">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/AnularArriboZonaPrimaria" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarMicDtaAsig">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarMicDtaAsig" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="RegistrarTitMicDta">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitMicDta" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="DesvincularTitMicDta">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/DesvincularTitMicDta" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ConsultarPrecumplido">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarPrecumplido" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Dummy">
+      <soap12:operation soapAction="Ar.Gob.Afip.Dga.wgesregsintia2/Dummy" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="wgesregsintia2">
+    <wsdl:documentation xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">Gestion de Registro Sintia2 por parte de los Agentes de Transporte Aduaneros (ATA)</wsdl:documentation>
+    <wsdl:port name="wgesregsintia2Soap" binding="tns:wgesregsintia2Soap">
+      <soap:address location="https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx" />
+    </wsdl:port>
+    <wsdl:port name="wgesregsintia2Soap12" binding="tns:wgesregsintia2Soap12">
+      <soap12:address location="https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx" />
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
