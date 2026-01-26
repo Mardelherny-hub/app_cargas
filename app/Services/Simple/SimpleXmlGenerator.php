@@ -1176,14 +1176,21 @@ $wsaa = $this->getWSAATokens();
     }
 
     /**
-     * Escribe Ruta Informática según AFIP
+     * Escribe Ruta Informática según WSDL AFIP
+     * ORDEN CORRECTO según XSD: idRefUniTrs, descRutItinerarios, plazo, eventosProg
      */
     private function writeRutasInf(\XMLWriter $w, Voyage $voyage): void
     {
         $w->startElement('rutasInf');
             $w->startElement('RutInf');
                 
-                // descRutItinerarios (obligatorio, C500)
+                // 1. idRefUniTrs (PRIMERO según WSDL - es un array de idRefUniTr)
+                $idRefUniTr = 'REF' . $voyage->id . '-' . date('YmdHis');
+                $w->startElement('idRefUniTrs');
+                    $w->writeElement('idRefUniTr', substr($idRefUniTr, 0, 35));
+                $w->endElement();
+                
+                // 2. descRutItinerarios (C500)
                 $descripcion = sprintf(
                     'Viaje %s: %s (%s) a %s (%s)',
                     $voyage->voyage_number,
@@ -1194,27 +1201,18 @@ $wsaa = $this->getWSAATokens();
                 );
                 $w->writeElement('descRutItinerarios', substr($descripcion, 0, 500));
                 
-                // plazo (obligatorio, N3 - días de viaje)
+                // 3. plazo (N3 - días de viaje)
                 $plazo = 1;
                 if ($voyage->departure_date && $voyage->estimated_arrival_date) {
                     $plazo = (int) max(1, floor($voyage->departure_date->diffInDays($voyage->estimated_arrival_date)));
                 }
                 $w->writeElement('plazo', (string)min($plazo, 999));
                 
-                // eventosProg (obligatorio - mínimo PATAI y FITAI)
+                // 4. eventosProg (mínimo PATAI y FITAI)
                 $w->startElement('eventosProg');
-                    
-                    // Evento 1: PATAI (Partida)
                     $this->writeEventoProg($w, $voyage->originPort, $voyage->departure_date, 'PATAI', 1);
-                    
-                    // Evento 2: FITAI (Fin de tránsito)
                     $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2);
-                    
-                    $w->endElement(); // eventosProg
-                
-                // idRefUniTrs (obligatorio según XSD AFIP - referencia única transporte)
-                $idRefUniTrs = 'REF' . $voyage->id . '-' . date('YmdHis');
-                $w->writeElement('idRefUniTrs', substr($idRefUniTrs, 0, 35));
+                $w->endElement();
                 
             $w->endElement(); // RutInf
         $w->endElement(); // rutasInf
@@ -1250,7 +1248,7 @@ $wsaa = $this->getWSAATokens();
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
             // Ejemplo AFIP: 20080417000000-03
             if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('YmdHis') . '-03';
+                $fechaFormateada = $fecha->format('YmdHis');
                 $w->writeElement('fecha', $fechaFormateada);
             }
             
