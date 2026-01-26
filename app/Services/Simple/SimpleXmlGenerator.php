@@ -1184,10 +1184,9 @@ $wsaa = $this->getWSAATokens();
         $w->startElement('rutasInf');
             $w->startElement('RutInf');
                 
-                // 1. idRefUniTrs (PRIMERO según WSDL - es un array de idRefUniTr)
-                $idRefUniTr = 'REF' . $voyage->id . '-' . date('YmdHis');
+                // 1. idRefUniTrs - vacío según XML exitoso Roberto
                 $w->startElement('idRefUniTrs');
-                    $w->writeElement('idRefUniTr', substr($idRefUniTr, 0, 35));
+                    $w->writeElement('idRefUniTr', '');
                 $w->endElement();
                 
                 // 2. descRutItinerarios (C500)
@@ -1247,8 +1246,9 @@ $wsaa = $this->getWSAATokens();
             
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
             // Ejemplo AFIP: 20080417000000-03
+            // fecha formato AFIP: YYYYMMDD000000-03 (C17 - horas en ceros + zona horaria)
             if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('YmdHis');
+                $fechaFormateada = $fecha->format('Ymd') . '000000-03';
                 $w->writeElement('fecha', $fechaFormateada);
             }
             
