@@ -1247,9 +1247,10 @@ $wsaa = $this->getWSAATokens();
                 $w->writeElement('codLugOper', $port->operative_code ?? $port->code ?? '001');
             }
             
-            // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS - sin zona horaria)
+            // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
+            // Ejemplo AFIP: 20080417000000-03
             if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('YmdHis');
+                $fechaFormateada = $fecha->format('YmdHis') . '-03';
                 $w->writeElement('fecha', $fechaFormateada);
             }
             
