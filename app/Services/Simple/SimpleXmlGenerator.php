@@ -1046,10 +1046,18 @@ $wsaa = $this->getWSAATokens();
      * @param \XMLWriter $w
      * @param Voyage $voyage Para detectar si hay carga suelta real
      */
+    /**
+     * Escribe TRACKs de carga suelta - CORREGIDO
+     * 
+     * IMPORTANTE: cargasSueltasIdTrack es SOLO para items SIN contenedor (indCargSuelt=S)
+     * Si todos los items tienen contenedor, NO se escribe este elemento.
+     * Los TrackEnv de AFIP NO van aquí - AFIP los vincula internamente.
+     * 
+     * @param \XMLWriter $w
+     * @param Voyage $voyage Para detectar si hay carga suelta real
+     */
     private function writeCargasSueltasIdTrack(\XMLWriter $w, Voyage $voyage): void
     {
-        $w->startElement('cargasSueltasIdTrack');
-        
         // Obtener items SIN contenedor (carga suelta real)
         $itemsSinContenedor = $voyage->shipments()
             ->with('billsOfLading.shipmentItems.containers')
@@ -1058,41 +1066,46 @@ $wsaa = $this->getWSAATokens();
             ->flatMap(fn($bl) => $bl->shipmentItems)
             ->filter(fn($item) => $item->containers->isEmpty());
         
-        // Solo generar cargaSueltaIdTrack si hay items sin contenedor
-        if ($itemsSinContenedor->isNotEmpty()) {
-            $year = date('Y');
-            $country = 'AR';
-            $usedIds = [];
+        // Solo escribir el elemento si hay items sin contenedor
+        // AFIP no acepta el elemento vacío
+        if ($itemsSinContenedor->isEmpty()) {
+            \Log::info('cargasSueltasIdTrack OMITIDO - todos los items tienen contenedor', [
+                'voyage_id' => $voyage->id,
+            ]);
+            return; // No escribir nada
+        }
+        
+        // Hay carga suelta, generar IDs únicos
+        $w->startElement('cargasSueltasIdTrack');
+        
+        $year = date('Y');
+        $country = 'AR';
+        $usedIds = [];
+        
+        foreach ($itemsSinContenedor as $index => $item) {
+            // Generar ID único por item de carga suelta
+            // Formato AFIP: YYYYAR99999999X (16 chars)
+            $sequence = str_pad($index + 1, 8, '0', STR_PAD_LEFT);
+            $baseId = $year . $country . $sequence;
             
-            foreach ($itemsSinContenedor as $index => $item) {
-                // Generar ID único por item de carga suelta
-                // Formato AFIP: YYYYAR99999999X (16 chars)
-                $sequence = str_pad($index + 1, 8, '0', STR_PAD_LEFT);
-                $baseId = $year . $country . $sequence;
-                
-                // Calcular dígito verificador simple (módulo 10)
-                $checkDigit = $this->calculateTrackCheckDigit($baseId);
-                $uniqueId = $baseId . $checkDigit;
-                
-                // Evitar duplicados dentro del mismo envío
-                if (!in_array($uniqueId, $usedIds)) {
-                    $w->writeElement('cargaSueltaIdTrack', $uniqueId);
-                    $usedIds[] = $uniqueId;
-                }
+            // Calcular dígito verificador simple
+            $checkDigit = $this->calculateTrackCheckDigit($baseId);
+            $uniqueId = $baseId . $checkDigit;
+            
+            // Evitar duplicados dentro del mismo envío
+            if (!in_array($uniqueId, $usedIds)) {
+                $w->writeElement('cargaSueltaIdTrack', $uniqueId);
+                $usedIds[] = $uniqueId;
             }
-            
-            \Log::info('cargasSueltasIdTrack generados para carga suelta', [
-                'voyage_id' => $voyage->id,
-                'items_sin_contenedor' => $itemsSinContenedor->count(),
-                'ids_generados' => $usedIds,
-            ]);
-        } else {
-            \Log::info('cargasSueltasIdTrack vacío - todos los items tienen contenedor', [
-                'voyage_id' => $voyage->id,
-            ]);
         }
         
         $w->endElement();
+        
+        \Log::info('cargasSueltasIdTrack generados para carga suelta', [
+            'voyage_id' => $voyage->id,
+            'items_sin_contenedor' => $itemsSinContenedor->count(),
+            'ids_generados' => $usedIds,
+        ]);
     }
     
     /**
@@ -1236,7 +1249,7 @@ $wsaa = $this->getWSAATokens();
             
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS - sin zona horaria)
             if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('Y-m-d');
+                $fechaFormateada = $fecha->format('YmdHis');
                 $w->writeElement('fecha', $fechaFormateada);
             }
             
