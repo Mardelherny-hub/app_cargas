@@ -905,7 +905,8 @@ $wsaa = $this->getWSAATokens();
                         $this->writeConductoresElement($w, $captain);
                         
                         // === cargasSueltasIdTrack (TRACKs de carga suelta) ===
-                        $this->writeCargasSueltasIdTrack($w, $tracks);
+                        // CORREGIDO: Solo para items SIN contenedor, no usa TrackEnv de AFIP
+                        $this->writeCargasSueltasIdTrack($w, $voyage);
                         
                         // === titTransContVaciosIdTrack (TRACKs de contenedores vacíos) ===
                         $this->writeTitTransContVaciosIdTrack($w, $tracks);
@@ -1036,44 +1037,85 @@ $wsaa = $this->getWSAATokens();
     }
 
     /**
-     * Escribe TRACKs de carga suelta
+     * Escribe TRACKs de carga suelta - CORREGIDO
+     * 
+     * IMPORTANTE: cargasSueltasIdTrack es SOLO para items SIN contenedor (indCargSuelt=S)
+     * Si todos los items tienen contenedor, este elemento va vacío.
+     * Los TrackEnv de AFIP NO van aquí - AFIP los vincula internamente.
+     * 
+     * @param \XMLWriter $w
+     * @param Voyage $voyage Para detectar si hay carga suelta real
      */
-    private function writeCargasSueltasIdTrack(\XMLWriter $w, array $tracks): void
+    private function writeCargasSueltasIdTrack(\XMLWriter $w, Voyage $voyage): void
     {
         $w->startElement('cargasSueltasIdTrack');
         
-        // Tracks pueden venir como:
-        // 1. ['carga_suelta' => [...]] o ['cargas_sueltas' => [...]]
-        // 2. [shipment_id => ['track1', 'track2'], ...] (agrupado por shipment)
-        // 3. Array plano ['track1', 'track2']
+        // Obtener items SIN contenedor (carga suelta real)
+        $itemsSinContenedor = $voyage->shipments()
+            ->with('billsOfLading.shipmentItems.containers')
+            ->get()
+            ->flatMap(fn($s) => $s->billsOfLading)
+            ->flatMap(fn($bl) => $bl->shipmentItems)
+            ->filter(fn($item) => $item->containers->isEmpty());
         
-        $tracksCargaSuelta = $tracks['carga_suelta'] ?? $tracks['cargas_sueltas'] ?? null;
-        
-        // Si no hay clave específica, aplanar el array (puede estar agrupado por shipment_id)
-        if ($tracksCargaSuelta === null) {
-            $tracksCargaSuelta = [];
-            foreach ($tracks as $key => $value) {
-                if (is_array($value)) {
-                    // Agrupado por shipment_id: [15 => ['track1'], 16 => ['track2']]
-                    $tracksCargaSuelta = array_merge($tracksCargaSuelta, $value);
-                } elseif (is_string($value) || is_numeric($value)) {
-                    // Array plano: ['track1', 'track2']
-                    $tracksCargaSuelta[] = $value;
+        // Solo generar cargaSueltaIdTrack si hay items sin contenedor
+        if ($itemsSinContenedor->isNotEmpty()) {
+            $year = date('Y');
+            $country = 'AR';
+            $usedIds = [];
+            
+            foreach ($itemsSinContenedor as $index => $item) {
+                // Generar ID único por item de carga suelta
+                // Formato AFIP: YYYYAR99999999X (16 chars)
+                $sequence = str_pad($index + 1, 8, '0', STR_PAD_LEFT);
+                $baseId = $year . $country . $sequence;
+                
+                // Calcular dígito verificador simple (módulo 10)
+                $checkDigit = $this->calculateTrackCheckDigit($baseId);
+                $uniqueId = $baseId . $checkDigit;
+                
+                // Evitar duplicados dentro del mismo envío
+                if (!in_array($uniqueId, $usedIds)) {
+                    $w->writeElement('cargaSueltaIdTrack', $uniqueId);
+                    $usedIds[] = $uniqueId;
                 }
             }
-        }
-        
-        if (is_array($tracksCargaSuelta)) {
-            foreach ($tracksCargaSuelta as $trackId) {
-                if (is_string($trackId) || is_numeric($trackId)) {
-                    $w->writeElement('cargaSueltaIdTrack', (string)$trackId);
-                } elseif (is_array($trackId) && isset($trackId['track_id'])) {
-                    $w->writeElement('cargaSueltaIdTrack', (string)$trackId['track_id']);
-                }
-            }
+            
+            \Log::info('cargasSueltasIdTrack generados para carga suelta', [
+                'voyage_id' => $voyage->id,
+                'items_sin_contenedor' => $itemsSinContenedor->count(),
+                'ids_generados' => $usedIds,
+            ]);
+        } else {
+            \Log::info('cargasSueltasIdTrack vacío - todos los items tienen contenedor', [
+                'voyage_id' => $voyage->id,
+            ]);
         }
         
         $w->endElement();
+    }
+    
+    /**
+     * Calcula dígito verificador para Track ID (formato AFIP)
+     */
+    private function calculateTrackCheckDigit(string $baseId): string
+    {
+        $sum = 0;
+        for ($i = 0; $i < strlen($baseId); $i++) {
+            $char = $baseId[$i];
+            if (is_numeric($char)) {
+                $sum += (int)$char;
+            } else {
+                $sum += ord($char) - 64; // A=1, B=2, etc.
+            }
+        }
+        $remainder = $sum % 36;
+        
+        // Devolver letra si >= 10, sino número
+        if ($remainder >= 10) {
+            return chr(55 + $remainder); // 10=A, 11=B, etc.
+        }
+        return (string)$remainder;
     }
 
     /**
