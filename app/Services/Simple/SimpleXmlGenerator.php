@@ -930,7 +930,13 @@ $wsaa = $this->getWSAATokens();
                         $this->writeContenedoresConCarga($w, $voyage);
                         
                         // === rutasInf (ruta informática obligatoria) ===
-                        $this->writeRutasInf($w, $voyage);
+                        // Obtener códigos AFIP desde el primer BL del voyage
+                        $firstBol = $voyage->shipments->first()?->billsOfLading->first() 
+                                ?? $voyage->billsOfLading->first();
+                        $codLugOperOrigen = $firstBol?->origin_operative_code ?: '10073';
+                        $codLugOperDest = $firstBol?->operational_discharge_code ?: '001';
+
+                        $this->writeRutasInf($w, $voyage, $codLugOperOrigen, $codLugOperDest);
                         
                         // === embarcacion (obligatorio) ===
                         $this->writeEmbarcacionElement($w, $vessel, $voyage);
@@ -1194,7 +1200,7 @@ $wsaa = $this->getWSAATokens();
      * Escribe Ruta Informática según WSDL AFIP
      * ORDEN CORRECTO según XSD: idRefUniTrs, descRutItinerarios, plazo, eventosProg
      */
-    private function writeRutasInf(\XMLWriter $w, Voyage $voyage): void
+    private function writeRutasInf(\XMLWriter $w, Voyage $voyage, string $codLugOperOrigen = '10073', string $codLugOperDest = '001'): void
     {
         $w->startElement('rutasInf');
             $w->startElement('RutInf');
@@ -1223,9 +1229,14 @@ $wsaa = $this->getWSAATokens();
                 $w->writeElement('plazo', (string)min($plazo, 999));
                 
                 // 4. eventosProg (mínimo PATAI y FITAI)
+                // Obtener códigos AFIP desde el primer BL del shipment
+                $firstBol = $this->currentShipment?->billsOfLading?->first();
+                $codLugOperOrigen = $firstBol?->origin_operative_code ?: '10073';
+                $codLugOperDest = $firstBol?->operational_discharge_code ?: '001';
+
                 $w->startElement('eventosProg');
-                    $this->writeEventoProg($w, $voyage->originPort, $voyage->departure_date, 'PATAI', 1);
-                    $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2);
+                    $this->writeEventoProg($w, $voyage->originPort, $voyage->departure_date, 'PATAI', 1, $codLugOperOrigen);
+                    $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2, $codLugOperDest);
                 $w->endElement();
                 
             $w->endElement(); // RutInf
@@ -1235,7 +1246,7 @@ $wsaa = $this->getWSAATokens();
     /**
      * Escribe un EventoProg individual
      */
-    private function writeEventoProg(\XMLWriter $w, $port, $fecha, string $tipoEvento, int $orden): void
+    private function writeEventoProg(\XMLWriter $w, $port, $fecha, string $tipoEvento, int $orden, ?string $codLugOper = null): void
     {
         $w->startElement('EventoProg');
             
@@ -1256,7 +1267,7 @@ $wsaa = $this->getWSAATokens();
             
             // codLugOper (obligatorio excepto EPTAI, C9)
             if ($tipoEvento !== 'EPTAI') {
-                $w->writeElement('codLugOper', $port->operative_code ?? $port->code ?? '001');
+                $w->writeElement('codLugOper', $codLugOper ?? '001');
             }
             
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
