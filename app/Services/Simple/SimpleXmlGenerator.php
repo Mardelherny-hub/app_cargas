@@ -1230,10 +1230,6 @@ $wsaa = $this->getWSAATokens();
                 
                 // 4. eventosProg (mínimo PATAI y FITAI)
                 // Obtener códigos AFIP desde el primer BL del shipment
-                $firstBol = $this->currentShipment?->billsOfLading?->first();
-                $codLugOperOrigen = $firstBol?->origin_operative_code ?: '10073';
-                $codLugOperDest = $firstBol?->operational_discharge_code ?: '001';
-
                 $w->startElement('eventosProg');
                     $this->writeEventoProg($w, $voyage->originPort, $voyage->departure_date, 'PATAI', 1, $codLugOperOrigen);
                     $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2, $codLugOperDest);
