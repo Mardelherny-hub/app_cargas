@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\CargoTypeController;
 use App\Http\Controllers\Admin\PackagingTypeController;
 use App\Http\Controllers\Admin\PortController;
 use App\Http\Controllers\Admin\CountryController;
+use App\Http\Controllers\Admin\AfipConfigController;
 
 /*
 |--------------------------------------------------------------------------
@@ -248,4 +249,31 @@ Route::prefix('roles')->name('admin.roles.')->group(function () {
     Route::get('/', [UserController::class, 'roles'])->name('index');
     Route::get('/permissions', [UserController::class, 'permissions'])->name('permissions');
     Route::put('/permissions', [UserController::class, 'updateRolePermissions'])->name('update-permissions');
+});
+
+// ============================================================================
+// CONFIGURACIÓN AFIP - Aduanas, Lugares Operativos y Vínculos
+// ============================================================================
+
+Route::prefix('afip-config')->name('admin.afip-config.')->group(function () {
+    // Vista principal con tabs
+    Route::get('/', [AfipConfigController::class, 'index'])->name('index');
+    
+    // === ADUANAS AFIP ===
+    Route::post('/customs-offices', [AfipConfigController::class, 'storeCustomsOffice'])->name('customs-offices.store');
+    Route::put('/customs-offices/{customsOffice}', [AfipConfigController::class, 'updateCustomsOffice'])->name('customs-offices.update');
+    Route::delete('/customs-offices/{customsOffice}', [AfipConfigController::class, 'destroyCustomsOffice'])->name('customs-offices.destroy');
+    Route::patch('/customs-offices/{customsOffice}/toggle', [AfipConfigController::class, 'toggleCustomsOffice'])->name('customs-offices.toggle');
+    
+    // === LUGARES OPERATIVOS ===
+    Route::post('/locations', [AfipConfigController::class, 'storeLocation'])->name('locations.store');
+    Route::put('/locations/{location}', [AfipConfigController::class, 'updateLocation'])->name('locations.update');
+    Route::delete('/locations/{location}', [AfipConfigController::class, 'destroyLocation'])->name('locations.destroy');
+    Route::patch('/locations/{location}/toggle', [AfipConfigController::class, 'toggleLocation'])->name('locations.toggle');
+    Route::get('/locations/by-customs/{customsCode}', [AfipConfigController::class, 'locationsByCustoms'])->name('locations.by-customs');
+    
+    // === VÍNCULOS PUERTO-ADUANA ===
+    Route::post('/port-customs', [AfipConfigController::class, 'attachPort'])->name('port-customs.attach');
+    Route::delete('/port-customs/{portAfipCustoms}', [AfipConfigController::class, 'detachPort'])->name('port-customs.detach');
+    Route::patch('/port-customs/{portAfipCustoms}/default', [AfipConfigController::class, 'setDefaultPort'])->name('port-customs.set-default');
 });

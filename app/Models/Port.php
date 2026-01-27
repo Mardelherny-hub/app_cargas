@@ -145,6 +145,34 @@ class Port extends Model
     }
 
     /**
+     * Aduanas AFIP asociadas a este puerto
+     */
+    public function afipCustomsOffices()
+    {
+        return $this->belongsToMany(AfipCustomsOffice::class, 'port_afip_customs')
+            ->withPivot('is_default')
+            ->withTimestamps();
+    }
+
+    /**
+     * Aduana AFIP por defecto de este puerto
+     */
+    public function defaultAfipCustomsOffice()
+    {
+        return $this->belongsToMany(AfipCustomsOffice::class, 'port_afip_customs')
+            ->wherePivot('is_default', true)
+            ->withTimestamps();
+    }
+
+    /**
+     * Verificar si el puerto tiene configuración AFIP
+     */
+    public function hasAfipConfig(): bool
+    {
+        return $this->afipCustomsOffices()->exists();
+    }
+
+    /**
      * Clients using this port (will be implemented in Phase 1)
      */
     // public function clients(): HasMany

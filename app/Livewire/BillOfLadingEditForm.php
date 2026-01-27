@@ -12,6 +12,8 @@ use App\Models\PackagingType;
 use App\Models\CustomOffice;
 use App\Models\BillOfLading;
 use App\Models\Country;
+use App\Models\AfipCustomsOffice;
+use App\Models\AfipOperativeLocation;
 use App\Traits\UserHelper;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
@@ -37,6 +39,16 @@ class BillOfLadingEditForm extends Component
     public $destination_country_code = '';
     public $discharge_customs_code = '';
     public $operational_discharge_code = '';
+
+    // === CÓDIGOS AFIP CASCADA ===
+    public $origin_customs_code = '';
+    public $origin_operative_code = '';
+
+    // Colecciones para selectores AFIP cascada
+    public $afipCustomsOfficesOrigin = [];
+    public $afipCustomsOfficesDischarge = [];
+    public $afipLocationsOrigin = [];
+    public $afipLocationsDischarge = [];
     public $freight_terms = 'prepaid';
     public $payment_terms = 'cash';
     public $currency_code = 'USD';
@@ -290,6 +302,9 @@ class BillOfLadingEditForm extends Component
         $this->loadFormData();
         \Log::info('MOUNT - loadFormData done');
         
+        // Inicializar selectores AFIP con datos existentes
+        $this->initializeAfipSelectors();
+        \Log::info('MOUNT - initializeAfipSelectors done');
 
         $this->bill_date = optional($this->billOfLading->bill_date)?->format('Y-m-d') ?? '';
         $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
@@ -297,7 +312,6 @@ class BillOfLadingEditForm extends Component
         $this->id_decla = $this->billOfLading->id_decla ?? '';
 
     }
-
     /**
      * Cargar colecciones para selectores (copiado del create)
      */
@@ -401,6 +415,8 @@ class BillOfLadingEditForm extends Component
         $this->origin_location = $bl->origin_location ?? '';
         $this->origin_country_code = $bl->origin_country_code ?? '';
         $this->origin_loading_date = $bl->origin_loading_date ? $bl->origin_loading_date->format('Y-m-d\TH:i') : '';
+        $this->origin_customs_code = $bl->origin_customs_code ?? '';
+        $this->origin_operative_code = $bl->origin_operative_code ?? '';
         $this->destination_country_code = $bl->destination_country_code ?? '';
         $this->discharge_customs_code = $bl->discharge_customs_code ?? '';
         $this->operational_discharge_code = $bl->operational_discharge_code ?? '';
@@ -752,6 +768,8 @@ class BillOfLadingEditForm extends Component
                 'origin_location' => $this->origin_location ?: null,
                 'origin_country_code' => $this->origin_country_code ?: null,
                 'origin_loading_date' => $this->origin_loading_date ? \Carbon\Carbon::parse($this->origin_loading_date) : null,
+                'origin_customs_code' => $this->origin_customs_code ?: null,
+                'origin_operative_code' => $this->origin_operative_code ?: null,
                 'destination_country_code' => $this->destination_country_code ?: null,
                 'discharge_customs_code' => $this->discharge_customs_code ?: null,
                 'operational_discharge_code' => $this->operational_discharge_code ?: null,
@@ -819,37 +837,373 @@ class BillOfLadingEditForm extends Component
     }
 
     private function normalizeDate(?string $value): ?string
-{
-    if (!$value) return null;
+    {
+        if (!$value) return null;
 
-    // Aceptamos 3 formatos comunes y devolvemos Y-m-d
-    // 1) Y-m-d (nativo HTML date)
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-        return $value;
-    }
-    // 2) d/m/Y (muy usado por usuarios)
-    if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value)) {
+        // Aceptamos 3 formatos comunes y devolvemos Y-m-d
+        // 1) Y-m-d (nativo HTML date)
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return $value;
+        }
+        // 2) d/m/Y (muy usado por usuarios)
+        if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value)) {
+            try {
+                return Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+        // 3) Intento “last resort” con Carbon::parse, pero encapsulado
         try {
-            return Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+            return Carbon::parse($value)->format('Y-m-d');
         } catch (\Throwable $e) {
             return null;
         }
     }
-    // 3) Intento “last resort” con Carbon::parse, pero encapsulado
-    try {
-        return Carbon::parse($value)->format('Y-m-d');
-    } catch (\Throwable $e) {
-        return null;
-    }
-}
 
-/**
- * Obtener nombre completo del puerto con país
+    /**
+     * Obtener nombre completo del puerto con país
+     */
+    private function getPortDisplayName($port)
+    {
+        $countryCode = $port->country_id == Country::where('alpha2_code', 'AR')->first()?->id ? '🇦🇷' : '🇵🇾';
+        return "{$countryCode} {$port->name} {$port->code}";
+    }
+
+    // =========================================================================
+    // MÉTODOS CASCADA AFIP - ORIGEN
+    // =========================================================================
+
+    /**
+     * Cuando cambia el puerto de carga, cargar aduanas AFIP vinculadas
+     */
+    public function updatedLoadingPortId($value)
+    {
+        // Resetear selecciones dependientes
+        $this->origin_customs_code = '';
+        $this->origin_operative_code = '';
+        $this->afipCustomsOfficesOrigin = [];
+        $this->afipLocationsOrigin = [];
+
+        if ($value) {
+            $port = Port::with(['afipCustomsOffices', 'country'])->find($value);
+            
+            if (!$port) {
+                return;
+            }
+
+            // Detectar si es puerto argentino o extranjero
+            $isArgentina = $port->country && $port->country->alpha2_code === 'AR';
+
+            if ($isArgentina) {
+                // Puerto argentino: buscar en tabla pivote port_afip_customs
+                if ($port->afipCustomsOffices->count() > 0) {
+                    $this->afipCustomsOfficesOrigin = $port->afipCustomsOffices
+                        ->where('is_active', true)
+                        ->map(fn($office) => [
+                            'code' => $office->code,
+                            'name' => $office->name,
+                            'is_default' => $office->pivot->is_default ?? false,
+                        ])
+                        ->values()
+                        ->toArray();
+
+                    $default = collect($this->afipCustomsOfficesOrigin)->firstWhere('is_default', true);
+                    if ($default) {
+                        $this->origin_customs_code = $default['code'];
+                        $this->loadAfipLocationsOrigin();
+                    }
+                }
+            } else {
+                // Puerto extranjero: cargar lugares directamente de afip_operative_locations
+                $this->afipLocationsOrigin = AfipOperativeLocation::where('country_id', $port->country_id)
+                    ->where('is_foreign', true)
+                    ->where('is_active', true)
+                    ->orderBy('location_code')
+                    ->get()
+                    ->map(fn($loc) => [
+                        'customs_code' => $loc->customs_code,
+                        'code' => $loc->location_code,
+                        'description' => $loc->description,
+                    ])
+                    ->toArray();
+            }
+        }
+    }
+
+    /**
+     * Cuando cambia la aduana de origen, cargar lugares operativos
+     */
+    public function updatedOriginCustomsCode($value)
+    {
+        $this->origin_operative_code = '';
+        
+        // Solo recargar lugares si es puerto argentino (cascada)
+        // Para extranjeros, los lugares ya están cargados en updatedLoadingPortId
+        if ($value && $this->loading_port_id) {
+            $port = Port::with('country')->find($this->loading_port_id);
+            $isArgentina = $port?->country?->alpha2_code === 'AR';
+            
+            if ($isArgentina) {
+                $this->loadAfipLocationsOrigin();
+            }
+        } else {
+            $this->afipLocationsOrigin = [];
+        }
+    }
+
+    /**
+     * Cargar lugares operativos para el código de aduana origen seleccionado
+     */
+    private function loadAfipLocationsOrigin()
+    {
+        if (!$this->origin_customs_code) {
+            return;
+        }
+
+        // Obtener país del puerto de carga
+        $port = Port::with('country')->find($this->loading_port_id);
+        $countryId = $port?->country_id;
+
+        $this->afipLocationsOrigin = AfipOperativeLocation::where('customs_code', $this->origin_customs_code)
+            ->where('is_active', true)
+            ->when($countryId, fn($q) => $q->where('country_id', $countryId))
+            ->orderBy('location_code')
+            ->get()
+            ->map(fn($loc) => [
+                'customs_code' => $loc->customs_code,
+                'code' => $loc->location_code,
+                'description' => $loc->description,
+            ])
+            ->toArray();
+    }
+
+    /**
+     * Seleccionar lugar operativo extranjero para ORIGEN
+     * Setea tanto el código de lugar como el de aduana
+     */
+    public function selectForeignLocationOrigin($locationCode)
+    {
+        $this->origin_operative_code = $locationCode;
+        
+        // Buscar el customs_code correspondiente
+        $location = collect($this->afipLocationsOrigin)->firstWhere('code', $locationCode);
+        if ($location) {
+            $this->origin_customs_code = $location['customs_code'];
+        }
+    }
+
+    /**
+     * Seleccionar lugar operativo extranjero para DESTINO
+     * Setea tanto el código de lugar como el de aduana
+     */
+    public function selectForeignLocationDischarge($locationCode)
+    {
+        $this->operational_discharge_code = $locationCode;
+        
+        // Buscar el customs_code correspondiente
+        $location = collect($this->afipLocationsDischarge)->firstWhere('code', $locationCode);
+        if ($location) {
+            $this->discharge_customs_code = $location['customs_code'];
+        }
+    }
+
+    // =========================================================================
+    // MÉTODOS CASCADA AFIP - DESTINO
+    // =========================================================================
+
+    /**
+     * Cuando cambia el puerto de descarga, cargar aduanas AFIP vinculadas
+     */
+    public function updatedDischargePortId($value)
+    {
+        // Resetear selecciones dependientes
+        $this->discharge_customs_code = '';
+        $this->operational_discharge_code = '';
+        $this->afipCustomsOfficesDischarge = [];
+        $this->afipLocationsDischarge = [];
+
+        if ($value) {
+            $port = Port::with(['afipCustomsOffices', 'country'])->find($value);
+            
+            if (!$port) {
+                return;
+            }
+
+            // Detectar si es puerto argentino o extranjero
+            $isArgentina = $port->country && $port->country->alpha2_code === 'AR';
+
+            if ($isArgentina) {
+                // Puerto argentino: buscar en tabla pivote port_afip_customs
+                if ($port->afipCustomsOffices->count() > 0) {
+                    $this->afipCustomsOfficesDischarge = $port->afipCustomsOffices
+                        ->where('is_active', true)
+                        ->map(fn($office) => [
+                            'code' => $office->code,
+                            'name' => $office->name,
+                            'is_default' => $office->pivot->is_default ?? false,
+                        ])
+                        ->values()
+                        ->toArray();
+
+                    $default = collect($this->afipCustomsOfficesDischarge)->firstWhere('is_default', true);
+                    if ($default) {
+                        $this->discharge_customs_code = $default['code'];
+                        $this->loadAfipLocationsDischarge();
+                    }
+                }
+            } else {
+                // Puerto extranjero: cargar lugares directamente de afip_operative_locations
+                $this->afipLocationsDischarge = AfipOperativeLocation::where('country_id', $port->country_id)
+                    ->where('is_foreign', true)
+                    ->where('is_active', true)
+                    ->orderBy('location_code')
+                    ->get()
+                    ->map(fn($loc) => [
+                        'customs_code' => $loc->customs_code,
+                        'code' => $loc->location_code,
+                        'description' => $loc->description,
+                    ])
+                    ->toArray();
+            }
+        }
+    }
+
+    /**
+     * Cuando cambia la aduana de descarga, cargar lugares operativos
+     */
+    public function updatedDischargeCustomsCode($value)
+    {
+        $this->operational_discharge_code = '';
+        
+        // Solo recargar lugares si es puerto argentino (cascada)
+        // Para extranjeros, los lugares ya están cargados en updatedDischargePortId
+        if ($value && $this->discharge_port_id) {
+            $port = Port::with('country')->find($this->discharge_port_id);
+            $isArgentina = $port?->country?->alpha2_code === 'AR';
+            
+            if ($isArgentina) {
+                $this->loadAfipLocationsDischarge();
+            }
+        } else {
+            $this->afipLocationsDischarge = [];
+        }
+    }
+
+    /**
+     * Cargar lugares operativos para el código de aduana descarga seleccionado
+     */
+    private function loadAfipLocationsDischarge()
+    {
+        if (!$this->discharge_customs_code) {
+            return;
+        }
+
+        // Obtener país del puerto de descarga
+        $port = Port::with('country')->find($this->discharge_port_id);
+        $countryId = $port?->country_id;
+
+        $this->afipLocationsDischarge = AfipOperativeLocation::where('customs_code', $this->discharge_customs_code)
+            ->where('is_active', true)
+            ->when($countryId, fn($q) => $q->where('country_id', $countryId))
+            ->orderBy('location_code')
+            ->get()
+            ->map(fn($loc) => [
+                'customs_code' => $loc->customs_code,
+                'code' => $loc->location_code,
+                'description' => $loc->description,
+            ])
+            ->toArray();
+    }
+
+    /**
+ * Inicializar selectores AFIP con datos existentes del BL
  */
-private function getPortDisplayName($port)
+private function initializeAfipSelectors()
 {
-    $countryCode = $port->country_id == Country::where('alpha2_code', 'AR')->first()?->id ? '🇦🇷' : '🇵🇾';
-    return "{$countryCode} {$port->name} {$port->code}";
+    // Cargar para puerto de ORIGEN
+    if ($this->loading_port_id) {
+        $port = Port::with(['afipCustomsOffices', 'country'])->find($this->loading_port_id);
+        
+        if ($port) {
+            $isArgentina = $port->country && $port->country->alpha2_code === 'AR';
+            
+            if ($isArgentina) {
+                // Puerto argentino: cargar aduanas
+                if ($port->afipCustomsOffices->count() > 0) {
+                    $this->afipCustomsOfficesOrigin = $port->afipCustomsOffices
+                        ->where('is_active', true)
+                        ->map(fn($office) => [
+                            'code' => $office->code,
+                            'name' => $office->name,
+                            'is_default' => $office->pivot->is_default ?? false,
+                        ])
+                        ->values()
+                        ->toArray();
+                    
+                    // Cargar lugares si ya hay aduana seleccionada
+                    if ($this->origin_customs_code) {
+                        $this->loadAfipLocationsOrigin();
+                    }
+                }
+            } else {
+                // Puerto extranjero: cargar lugares directamente
+                $this->afipLocationsOrigin = AfipOperativeLocation::where('country_id', $port->country_id)
+                    ->where('is_foreign', true)
+                    ->where('is_active', true)
+                    ->orderBy('location_code')
+                    ->get()
+                    ->map(fn($loc) => [
+                        'customs_code' => $loc->customs_code,
+                        'code' => $loc->location_code,
+                        'description' => $loc->description,
+                    ])
+                    ->toArray();
+            }
+        }
+    }
+    
+    // Cargar para puerto de DESTINO
+    if ($this->discharge_port_id) {
+        $port = Port::with(['afipCustomsOffices', 'country'])->find($this->discharge_port_id);
+        
+        if ($port) {
+            $isArgentina = $port->country && $port->country->alpha2_code === 'AR';
+            
+            if ($isArgentina) {
+                // Puerto argentino: cargar aduanas
+                if ($port->afipCustomsOffices->count() > 0) {
+                    $this->afipCustomsOfficesDischarge = $port->afipCustomsOffices
+                        ->where('is_active', true)
+                        ->map(fn($office) => [
+                            'code' => $office->code,
+                            'name' => $office->name,
+                            'is_default' => $office->pivot->is_default ?? false,
+                        ])
+                        ->values()
+                        ->toArray();
+                    
+                    // Cargar lugares si ya hay aduana seleccionada
+                    if ($this->discharge_customs_code) {
+                        $this->loadAfipLocationsDischarge();
+                    }
+                }
+            } else {
+                // Puerto extranjero: cargar lugares directamente
+                $this->afipLocationsDischarge = AfipOperativeLocation::where('country_id', $port->country_id)
+                    ->where('is_foreign', true)
+                    ->where('is_active', true)
+                    ->orderBy('location_code')
+                    ->get()
+                    ->map(fn($loc) => [
+                        'customs_code' => $loc->customs_code,
+                        'code' => $loc->location_code,
+                        'description' => $loc->description,
+                    ])
+                    ->toArray();
+            }
+        }
+    }
 }
 
 

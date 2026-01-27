@@ -420,7 +420,47 @@ if ($user) {
                             </div>
                             @endif
                         </div>
+                        {{-- Códigos AFIP --}}
+                        @if($billOfLading->origin_customs_code || $billOfLading->discharge_customs_code)
+                        <div class="md:col-span-2 mt-6">
+                            <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Códigos AFIP Webservices</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {{-- Origen AFIP --}}
+                                @if($billOfLading->origin_customs_code && $billOfLading->origin_operative_code)
+                                <div class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                    <p class="text-xs font-semibold text-blue-800 uppercase mb-1">📦 Origen</p>
+                                    <p class="text-sm text-gray-700">
+                                        <span class="font-medium">Aduana:</span> {{ $billOfLading->origin_customs_code }}
+                                    </p>
+                                    <p class="text-sm text-gray-700">
+                                        <span class="font-medium">Lugar Operativo:</span> {{ $billOfLading->origin_operative_code }}
+                                    </p>
+                                    <p class="text-xs text-blue-600 mt-1">
+                                        <code>&lt;codAdu&gt;{{ $billOfLading->origin_customs_code }}&lt;/codAdu&gt; &lt;codLugOper&gt;{{ $billOfLading->origin_operative_code }}&lt;/codLugOper&gt;</code>
+                                    </p>
+                                </div>
+                                @endif
+
+                                {{-- Destino AFIP --}}
+                                @if($billOfLading->discharge_customs_code && $billOfLading->operational_discharge_code)
+                                <div class="bg-green-50 p-3 rounded-lg border border-green-200">
+                                    <p class="text-xs font-semibold text-green-800 uppercase mb-1">📍 Destino</p>
+                                    <p class="text-sm text-gray-700">
+                                        <span class="font-medium">Aduana:</span> {{ $billOfLading->discharge_customs_code }}
+                                    </p>
+                                    <p class="text-sm text-gray-700">
+                                        <span class="font-medium">Lugar Operativo:</span> {{ $billOfLading->operational_discharge_code }}
+                                    </p>
+                                    <p class="text-xs text-green-600 mt-1">
+                                        <code>&lt;codAdu&gt;{{ $billOfLading->discharge_customs_code }}&lt;/codAdu&gt; &lt;codLugOper&gt;{{ $billOfLading->operational_discharge_code }}&lt;/codLugOper&gt;</code>
+                                    </p>
+                                </div>
+                                @endif
+                            </div>
+                        </div>
+                        @endif
                     </div>
+                    
                 </div>
 
                 {{-- ITEMS DE MERCADERÍA --}}

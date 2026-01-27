@@ -104,6 +104,10 @@
                                         class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.countries.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         {{ __('Países') }}
                                     </a>
+                                    <a href="{{ route('admin.afip-config.index') }}" 
+                                        class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('admin.afip-config.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+                                        {{ __('🏛️ Config. AFIP') }}
+                                    </a>
                                     </div>
                             </div>
                         </div>                                  

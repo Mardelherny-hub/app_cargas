@@ -87,6 +87,8 @@ class BillOfLading extends Model
         'origin_location',
         'origin_country_code',
         'origin_loading_date',
+        'origin_customs_code',
+        'origin_operative_code',
         'destination_country_code',
         'discharge_customs_code',
         'operational_discharge_code',
