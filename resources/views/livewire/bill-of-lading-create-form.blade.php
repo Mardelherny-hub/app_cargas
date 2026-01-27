@@ -411,45 +411,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
 
-                {{-- Aduanas --}}
-                <div class="mt-6">
-                    <h4 class="text-md font-medium text-gray-900 mb-4">Oficinas Aduaneras</h4>
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                        {{-- Aduana de Carga --}}
-                        <div>
-                            <label for="loading_customs_id" class="block text-sm font-medium text-gray-700">
-                                Aduana de Carga
-                            </label>
-                            <select wire:model="loading_customs_id" id="loading_customs_id"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_customs_id') border-red-300 @enderror">
-                                <option value="">Seleccione aduana (opcional)</option>
-                                @foreach($customsOffices as $customs)
-                                    <option value="{{ $customs->id }}">{{ $customs->name }} - {{ $customs->code }}</option>
-                                @endforeach
-                            </select>
-                            @error('loading_customs_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        {{-- Aduana de Descarga --}}
-                        <div>
-                            <label for="discharge_customs_id" class="block text-sm font-medium text-gray-700">
-                                Aduana de Descarga
-                            </label>
-                            <select wire:model="discharge_customs_id" id="discharge_customs_id"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('discharge_customs_id') border-red-300 @enderror">
-                                <option value="">Seleccione aduana (opcional)</option>
-                                @foreach($customsOffices as $customs)
-                                    <option value="{{ $customs->id }}">{{ $customs->name }} - {{ $customs->code }}</option>
-                                @endforeach
-                            </select>
-                            @error('discharge_customs_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-                    </div>
-                </div>
+               
 
                 {{-- Datos AFIP Origen/Destino --}}
                 <div class="mt-6 border-t pt-6">
@@ -457,15 +419,250 @@ document.addEventListener('DOMContentLoaded', function() {
                         <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                         </svg>
-                        Datos AFIP Origen/Destino
+                        Códigos AFIP para Webservices
                     </h4>
-                    <p class="text-xs text-gray-500 mb-4">Campos opcionales requeridos por AFIP para webservice RegistrarTitulosCbc</p>
+                    <p class="text-xs text-gray-500 mb-4">Códigos de aduana y lugar operativo requeridos por AFIP (codAdu, codLugOper)</p>
                     
-                    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                        {{-- Lugar de Origen --}}
+                    {{-- ORIGEN --}}
+                    <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h5 class="text-sm font-semibold text-blue-800 mb-3">📦 ORIGEN (Puerto de Carga)</h5>
+                        
+                        @php
+                            $isArgentinaOrigin = false;
+                            if ($loading_port_id) {
+                                $portOrigin = \App\Models\Port::with('country')->find($loading_port_id);
+                                $isArgentinaOrigin = $portOrigin?->country?->alpha2_code === 'AR';
+                            }
+                        @endphp
+
+                        @if($isArgentinaOrigin)
+                            {{-- ARGENTINA: Selector cascada Aduana → Lugar Operativo --}}
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                {{-- Aduana Origen --}}
+                                <div>
+                                    <label for="origin_customs_code" class="block text-sm font-medium text-gray-700">
+                                        Aduana AFIP Origen
+                                    </label>
+                                    @if(count($afipCustomsOfficesOrigin) > 0)
+                                        <select wire:model.live="origin_customs_code" id="origin_customs_code"
+                                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="">Seleccionar aduana</option>
+                                            @foreach($afipCustomsOfficesOrigin as $office)
+                                                <option value="{{ $office['code'] }}">
+                                                    {{ $office['code'] }} - {{ $office['name'] }}
+                                                    @if($office['is_default']) ⭐ @endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    @else
+                                        <div class="mt-1 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                                            <p class="text-xs text-yellow-700">
+                                                ⚠️ Este puerto no tiene aduanas AFIP configuradas
+                                            </p>
+                                        </div>
+                                    @endif
+                                    @error('origin_customs_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                {{-- Lugar Operativo Origen --}}
+                                <div>
+                                    <label for="origin_operative_code" class="block text-sm font-medium text-gray-700">
+                                        Lugar Operativo Origen
+                                    </label>
+                                    @if(count($afipLocationsOrigin) > 0)
+                                        <select wire:model="origin_operative_code" id="origin_operative_code"
+                                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="">Seleccionar lugar</option>
+                                            @foreach($afipLocationsOrigin as $loc)
+                                                <option value="{{ $loc['code'] }}">
+                                                    {{ $loc['code'] }} - {{ Str::limit($loc['description'], 40) }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    @else
+                                        <div class="mt-1 p-2 bg-gray-50 border border-gray-200 rounded-md">
+                                            <p class="text-xs text-gray-500">
+                                                @if($origin_customs_code)
+                                                    No hay lugares operativos para esta aduana
+                                                @else
+                                                    Seleccione una aduana primero
+                                                @endif
+                                            </p>
+                                        </div>
+                                    @endif
+                                    @error('origin_operative_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        @else
+                           {{-- EXTRANJERO: Selector directo de lugar operativo --}}
+                            <div>
+                                <label for="origin_operative_code" class="block text-sm font-medium text-gray-700">
+                                    Lugar Operativo AFIP
+                                </label>
+                                @if(count($afipLocationsOrigin) > 0)
+                                    <select wire:change="selectForeignLocationOrigin($event.target.value)" id="origin_operative_code"
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccionar lugar operativo</option>
+                                        @foreach($afipLocationsOrigin as $loc)
+                                            <option value="{{ $loc['code'] }}" @selected($origin_operative_code == $loc['code'])>
+                                                {{ $loc['code'] }} - {{ $loc['description'] }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        El código de aduana se asignará automáticamente
+                                    </p>
+                                @else
+                                    <div class="mt-1 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                                        <p class="text-xs text-yellow-700">
+                                            @if($loading_port_id)
+                                                ⚠️ No hay lugares operativos configurados para este país
+                                            @else
+                                                Seleccione un puerto de carga primero
+                                            @endif
+                                        </p>
+                                    </div>
+                                @endif
+                                @error('origin_operative_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @endif
+
+                        @if($origin_customs_code && $origin_operative_code)
+                            <div class="mt-2 text-xs text-blue-600">
+                                ✓ XML: <code class="bg-blue-100 px-1 rounded">&lt;codAdu&gt;{{ $origin_customs_code }}&lt;/codAdu&gt; &lt;codLugOper&gt;{{ $origin_operative_code }}&lt;/codLugOper&gt;</code>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- DESTINO --}}
+                    <div class="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <h5 class="text-sm font-semibold text-green-800 mb-3">📍 DESTINO (Puerto de Descarga)</h5>
+                        
+                        @php
+                            $isArgentinaDischarge = false;
+                            if ($discharge_port_id) {
+                                $portDischarge = \App\Models\Port::with('country')->find($discharge_port_id);
+                                $isArgentinaDischarge = $portDischarge?->country?->alpha2_code === 'AR';
+                            }
+                        @endphp
+
+                        @if($isArgentinaDischarge)
+                            {{-- ARGENTINA: Selector cascada Aduana → Lugar Operativo --}}
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                {{-- Aduana Destino --}}
+                                <div>
+                                    <label for="discharge_customs_code" class="block text-sm font-medium text-gray-700">
+                                        Aduana AFIP Destino
+                                    </label>
+                                    @if(count($afipCustomsOfficesDischarge) > 0)
+                                        <select wire:model.live="discharge_customs_code" id="discharge_customs_code"
+                                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="">Seleccionar aduana</option>
+                                            @foreach($afipCustomsOfficesDischarge as $office)
+                                                <option value="{{ $office['code'] }}">
+                                                    {{ $office['code'] }} - {{ $office['name'] }}
+                                                    @if($office['is_default']) ⭐ @endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    @else
+                                        <div class="mt-1 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                                            <p class="text-xs text-yellow-700">
+                                                ⚠️ Este puerto no tiene aduanas AFIP configuradas
+                                            </p>
+                                        </div>
+                                    @endif
+                                    @error('discharge_customs_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                {{-- Lugar Operativo Destino --}}
+                                <div>
+                                    <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
+                                        Lugar Operativo Destino
+                                    </label>
+                                    @if(count($afipLocationsDischarge) > 0)
+                                        <select wire:model="operational_discharge_code" id="operational_discharge_code"
+                                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="">Seleccionar lugar</option>
+                                            @foreach($afipLocationsDischarge as $loc)
+                                                <option value="{{ $loc['code'] }}">
+                                                    {{ $loc['code'] }} - {{ Str::limit($loc['description'], 40) }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    @else
+                                        <div class="mt-1 p-2 bg-gray-50 border border-gray-200 rounded-md">
+                                            <p class="text-xs text-gray-500">
+                                                @if($discharge_customs_code)
+                                                    No hay lugares operativos para esta aduana
+                                                @else
+                                                    Seleccione una aduana primero
+                                                @endif
+                                            </p>
+                                        </div>
+                                    @endif
+                                    @error('operational_discharge_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        @else
+                            {{-- EXTRANJERO: Selector directo de lugar operativo --}}
+                            <div>
+                                <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
+                                    Lugar Operativo AFIP
+                                </label>
+                                @if(count($afipLocationsDischarge) > 0)
+                                    <select wire:change="selectForeignLocationDischarge($event.target.value)" id="operational_discharge_code"
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccionar lugar operativo</option>
+                                        @foreach($afipLocationsDischarge as $loc)
+                                            <option value="{{ $loc['code'] }}" @selected($operational_discharge_code == $loc['code'])>
+                                                {{ $loc['code'] }} - {{ $loc['description'] }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        El código de aduana se asignará automáticamente
+                                    </p>
+                                @else
+                                    <div class="mt-1 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                                        <p class="text-xs text-yellow-700">
+                                            @if($discharge_port_id)
+                                                ⚠️ No hay lugares operativos configurados para este país
+                                            @else
+                                                Seleccione un puerto de descarga primero
+                                            @endif
+                                        </p>
+                                    </div>
+                                @endif
+                                @error('operational_discharge_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @endif
+
+                        @if($discharge_customs_code && $operational_discharge_code)
+                            <div class="mt-2 text-xs text-green-600">
+                                ✓ XML: <code class="bg-green-100 px-1 rounded">&lt;codAdu&gt;{{ $discharge_customs_code }}&lt;/codAdu&gt; &lt;codLugOper&gt;{{ $operational_discharge_code }}&lt;/codLugOper&gt;</code>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Campos adicionales AFIP --}}
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {{-- Lugar de Origen (texto libre) --}}
                         <div>
                             <label for="origin_location" class="block text-sm font-medium text-gray-700">
-                                Lugar de Origen
+                                Lugar de Origen (descripción)
                                 <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
                             </label>
                             <input wire:model="origin_location" type="text" id="origin_location" 
@@ -475,7 +672,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             @error('origin_location')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
-                            <p class="mt-1 text-xs text-gray-500">AFIP: LugarOrigen (máx. 50 caracteres)</p>
                         </div>
 
                         {{-- País Lugar de Origen --}}
@@ -485,33 +681,29 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
                             </label>
                             <select wire:model="origin_country_code" id="origin_country_code"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('origin_country_code') border-red-300 @enderror">
-                                <option value="">Seleccionar país (opcional)</option>
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Seleccionar país</option>
                                 <option value="ARG">🇦🇷 Argentina</option>
                                 <option value="PRY">🇵🇾 Paraguay</option>
                                 <option value="BRA">🇧🇷 Brasil</option>
                                 <option value="URY">🇺🇾 Uruguay</option>
-                                <option value="CHL">🇨🇱 Chile</option>
-                                <option value="BOL">🇧🇴 Bolivia</option>
                             </select>
                             @error('origin_country_code')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
-                            <p class="mt-1 text-xs text-gray-500">AFIP: CodigoPaisLugarOrigen (código 3 letras)</p>
                         </div>
 
                         {{-- Fecha Carga en Lugar de Origen --}}
                         <div>
                             <label for="origin_loading_date" class="block text-sm font-medium text-gray-700">
-                                Fecha Carga en Lugar de Origen
+                                Fecha Carga en Origen
                                 <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
                             </label>
                             <input wire:model="origin_loading_date" type="datetime-local" id="origin_loading_date"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('origin_loading_date') border-red-300 @enderror">
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                             @error('origin_loading_date')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
-                            <p class="mt-1 text-xs text-gray-500">AFIP: FechaCargaLugarOrigen</p>
                         </div>
 
                         {{-- País de Destino --}}
@@ -521,51 +713,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
                             </label>
                             <select wire:model="destination_country_code" id="destination_country_code"
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('destination_country_code') border-red-300 @enderror">
-                                <option value="">Seleccionar país (opcional)</option>
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Seleccionar país</option>
                                 <option value="ARG">🇦🇷 Argentina</option>
                                 <option value="PRY">🇵🇾 Paraguay</option>
                                 <option value="BRA">🇧🇷 Brasil</option>
                                 <option value="URY">🇺🇾 Uruguay</option>
-                                <option value="CHL">🇨🇱 Chile</option>
-                                <option value="BOL">🇧🇴 Bolivia</option>
                             </select>
                             @error('destination_country_code')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                             @enderror
-                            <p class="mt-1 text-xs text-gray-500">AFIP: CodigoPaisDestino (código 3 letras)</p>
-                        </div>
-
-                        {{-- Código Aduana de Descarga --}}
-                        <div>
-                            <label for="discharge_customs_code" class="block text-sm font-medium text-gray-700">
-                                Código Aduana de Descarga
-                                <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
-                            </label>
-                            <input wire:model="discharge_customs_code" type="text" id="discharge_customs_code" 
-                                maxlength="3"
-                                placeholder="Ej: 001"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('discharge_customs_code') border-red-300 @enderror">
-                            @error('discharge_customs_code')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                            <p class="mt-1 text-xs text-gray-500">AFIP: CodigoAduanaDescarga (BUR_DESC, 3 caracteres)</p>
-                        </div>
-
-                        {{-- Código Lugar Operativo de Descarga --}}
-                        <div>
-                            <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
-                                Código Lugar Operativo Descarga
-                                <span class="text-xs text-gray-500 ml-1">(Opcional)</span>
-                            </label>
-                            <input wire:model="operational_discharge_code" type="text" id="operational_discharge_code" 
-                                maxlength="5"
-                                placeholder="Ej: PYTVT"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('operational_discharge_code') border-red-300 @enderror">
-                            @error('operational_discharge_code')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
-                            <p class="mt-1 text-xs text-gray-500">AFIP: CodigoLugarOperativoDescarga (LOT_ADUA, máx. 5 caracteres)</p>
                         </div>
                     </div>
                 </div>

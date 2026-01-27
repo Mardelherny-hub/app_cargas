@@ -142,6 +142,12 @@ $wsaa = $this->getWSAATokens();
                     $emptyContainers = collect();
 
                     foreach ($billsOfLading as $bol) {
+                        // Códigos AFIP desde el BL (prioridad) o fallback a voyage/hardcoded
+                        $bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
+                        $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
+                        $bolCodAduDest = $bol->discharge_customs_code ?: $codAduDest;
+                        $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
+                        
                         $w->startElement('TitTransEnvio');
                             
                             // Datos básicos del título
@@ -168,13 +174,13 @@ $wsaa = $this->getWSAATokens();
                             
                             // Origen
                             $w->startElement('origen');
-                                $w->writeElement('codAdu', $codAduOrigen);
+                                $w->writeElement('codAdu', $bolCodAduOrigen);
                             $w->endElement();
-                            
+
                             // Destino
                             $w->startElement('destino');
                                 $w->writeElement('codPais', $codPaisDest);
-                                $w->writeElement('codAdu', $codAduDest);
+                                $w->writeElement('codAdu', $bolCodAduDest);
                             $w->endElement();
                             
                             // === ENVÍOS ===
@@ -279,13 +285,13 @@ $wsaa = $this->getWSAATokens();
                                     
                                     // Lugar operativo origen
                                     $w->startElement('lugOperOrigen');
-                                        $w->writeElement('codLugOper', $codLugOperOrigen);
+                                        $w->writeElement('codLugOper', $bolCodLugOperOrigen);
                                         $w->writeElement('codCiu', $codCiuOrigen);
                                     $w->endElement();
-                                    
+
                                     // Lugar operativo destino
                                     $w->startElement('lugOperDestino');
-                                        $w->writeElement('codLugOper', $codLugOperDest);
+                                        $w->writeElement('codLugOper', $bolCodLugOperDest);
                                         $w->writeElement('codCiu', $codCiuDest);
                                     $w->endElement();
                                     
@@ -319,17 +325,23 @@ $wsaa = $this->getWSAATokens();
                                 $this->writeRemitente($w, $firstBol);
                                 $this->writeConsignatario($w, $firstBol);
                                 $this->writeDestinatario($w, $firstBol);
-                                
+
+                                // Códigos AFIP desde el primer BL
+                                $vaciosCodAduOrigen = $firstBol->origin_customs_code ?: $codAduOrigen;
+                                $vaciosCodLugOperOrigen = $firstBol->origin_operative_code ?: $codLugOperOrigen;
+                                $vaciosCodAduDest = $firstBol->discharge_customs_code ?: $codAduDest;
+                                $vaciosCodLugOperDest = $firstBol->operational_discharge_code ?: $codLugOperDest;
+
                                 $w->startElement('origen');
-                                    $w->writeElement('codAdu', $codAduOrigen);
-                                    $w->writeElement('codLugOper', $codLugOperOrigen);
+                                    $w->writeElement('codAdu', $vaciosCodAduOrigen);
+                                    $w->writeElement('codLugOper', $vaciosCodLugOperOrigen);
                                     $w->writeElement('codCiu', $codCiuOrigen);
                                 $w->endElement();
-                                
+
                                 $w->startElement('destino');
                                     $w->writeElement('codPais', $codPaisDest);
-                                    $w->writeElement('codAdu', $codAduDest);
-                                    $w->writeElement('codLugOper', $codLugOperDest);
+                                    $w->writeElement('codAdu', $vaciosCodAduDest);
+                                    $w->writeElement('codLugOper', $vaciosCodLugOperDest);
                                     $w->writeElement('codCiu', $codCiuDest);
                                 $w->endElement();
                                 
@@ -556,7 +568,10 @@ $wsaa = $this->getWSAATokens();
                     $envioIndex = 1;
                     $allContainers = collect();
 
-                    foreach ($billsOfLading as $bol) {
+                   foreach ($billsOfLading as $bol) {
+                        // Códigos AFIP desde el BL (prioridad) o fallback
+                        $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
+                        $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
                         
                         // Validar campo obligatorio id_decla
                         if (empty($bol->permiso_embarque)) {
@@ -646,13 +661,13 @@ $wsaa = $this->getWSAATokens();
                             
                             // lugOperOrigen - Obligatorio
                             $w->startElement('lugOperOrigen');
-                                $w->writeElement('codLugOper', $codLugOperOrigen);
+                                $w->writeElement('codLugOper', $bolCodLugOperOrigen);
                                 $w->writeElement('codCiu', $codCiuOrigen);
                             $w->endElement();
-                            
+
                             // lugOperDestino - Obligatorio
                             $w->startElement('lugOperDestino');
-                                $w->writeElement('codLugOper', $codLugOperDest);
+                                $w->writeElement('codLugOper', $bolCodLugOperDest);
                                 $w->writeElement('codCiu', $codCiuDest);
                             $w->endElement();
                             
