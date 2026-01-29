@@ -3661,7 +3661,7 @@ class SimpleXmlGenerator
         };
     }
 
-    private function getPortCustomsCode(string $portCode): string
+   /*  private function getPortCustomsCode(string $portCode): string
     {
         // Usar datos reales del modelo Port
         $port = \App\Models\Port::where('code', strtoupper($portCode))->first();
@@ -3685,6 +3685,40 @@ class SimpleXmlGenerator
             'PYPIL' => '003', // Pilar (Paraguay)
             default => '033'  // Buenos Aires por defecto (CORREGIDO)
         };
+    } */
+    private function getPortCustomsCode(string $portCode): string
+    {
+        // PRIORIDAD: Mapeo hardcodeado para puertos conocidos de la hidrovía
+        // Según confirmación de Roberto Benbassat y Luciano de AFIP
+        $portCode = strtoupper($portCode);
+        
+        $hidrovia = match($portCode) {
+            'ARBUE' => '033', // Buenos Aires → Aduana La Plata
+            'ARLPG' => '033', // La Plata → Aduana La Plata
+            'ARPAR' => '041', // Paraná
+            'ARSFE' => '062', // Santa Fe
+            'ARROS' => '052', // Rosario
+            'ARSLA' => '057', // San Lorenzo
+            'PYASU' => '001', // Asunción (Paraguay)
+            'PYTVT' => '001', // Villeta (Paraguay)
+            'PYCON' => '002', // Concepción (Paraguay)
+            'PYPIL' => '003', // Pilar (Paraguay)
+            default => null
+        };
+        
+        if ($hidrovia !== null) {
+            return $hidrovia;
+        }
+        
+        // Fallback: buscar en BD para otros puertos
+        $port = \App\Models\Port::where('code', $portCode)->first();
+        
+        if ($port && $port->afip_code) {
+            return $port->afip_code;
+        }
+        
+        // Default
+        return '033';
     }
 
     /**
