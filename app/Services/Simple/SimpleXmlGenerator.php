@@ -143,12 +143,18 @@ class SimpleXmlGenerator
                     $emptyContainers = collect();
 
                     foreach ($billsOfLading as $bol) {
-                        // Códigos AFIP desde el BL (prioridad) o fallback a voyage/hardcoded
+                        /* // Códigos AFIP desde el BL (prioridad) o fallback a voyage/hardcoded
                         $bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
                         $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
                         //$bolCodAduDest = $bol->discharge_customs_code ?: $codAduDest;
                         $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                        $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
+                        $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest; */
+
+                        // TEMPORAL: Ignorar valores del BL, usar siempre hardcodeados de getPortCustomsCode()
+                        $bolCodAduOrigen = $codAduOrigen;
+                        $bolCodLugOperOrigen = $codLugOperOrigen;
+                        $bolCodAduDest = str_pad($codAduDest, 3, '0', STR_PAD_LEFT);
+                        $bolCodLugOperDest = str_pad($codLugOperDest, 3, '0', STR_PAD_LEFT);
                         
                         $w->startElement('TitTransEnvio');
                             
