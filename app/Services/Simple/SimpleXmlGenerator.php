@@ -45,34 +45,34 @@ class SimpleXmlGenerator
     public function createRegistrarTitEnviosXml(Shipment $shipment, string $transactionId): string
     {
         // ============ DIAGNÓSTICO COMPLETO CUIT ============
-\Log::info("=== DIAGNÓSTICO REGISTRAR TIT ENVIOS ===", [
-    'company_id' => $this->company->id,
-    'company_name' => $this->company->name,
-    'company_tax_id_RAW' => $this->company->tax_id,
-    'company_tax_id_CLEANED' => preg_replace('/[^0-9]/', '', $this->company->tax_id),
-    'shipment_id' => $shipment->id,
-    'transaction_id' => $transactionId,
-]);
+        \Log::info("=== DIAGNÓSTICO REGISTRAR TIT ENVIOS ===", [
+            'company_id' => $this->company->id,
+            'company_name' => $this->company->name,
+            'company_tax_id_RAW' => $this->company->tax_id,
+            'company_tax_id_CLEANED' => preg_replace('/[^0-9]/', '', $this->company->tax_id),
+            'shipment_id' => $shipment->id,
+            'transaction_id' => $transactionId,
+        ]);
 
-// Verificar si hay shipper/consignee con CUIT diferente
-$billsOfLading = $shipment->billsOfLading()->with(['shipper', 'consignee'])->get();
-foreach ($billsOfLading as $bl) {
-    \Log::info("BL Tax IDs", [
-        'bl_id' => $bl->id,
-        'bl_number' => $bl->bill_number,
-        'shipper_tax_id' => $bl->shipper?->tax_id,
-        'consignee_tax_id' => $bl->consignee?->tax_id,
-    ]);
-}
+        // Verificar si hay shipper/consignee con CUIT diferente
+        $billsOfLading = $shipment->billsOfLading()->with(['shipper', 'consignee'])->get();
+        foreach ($billsOfLading as $bl) {
+            \Log::info("BL Tax IDs", [
+                'bl_id' => $bl->id,
+                'bl_number' => $bl->bill_number,
+                'shipper_tax_id' => $bl->shipper?->tax_id,
+                'consignee_tax_id' => $bl->consignee?->tax_id,
+            ]);
+        }
 
-// Verificar WSAA tokens
-$wsaa = $this->getWSAATokens();
-\Log::info("WSAA Tokens obtenidos", [
-    'token_length' => strlen($wsaa['token']),
-    'cuit_from_wsaa' => $wsaa['cuit'] ?? 'NO DEFINIDO',
-    'company_tax_id' => $this->company->tax_id,
-    'MATCH' => ($wsaa['cuit'] ?? '') === preg_replace('/[^0-9]/', '', $this->company->tax_id) ? 'SI' : 'NO'
-]);
+        // Verificar WSAA tokens
+        $wsaa = $this->getWSAATokens();
+        \Log::info("WSAA Tokens obtenidos", [
+            'token_length' => strlen($wsaa['token']),
+            'cuit_from_wsaa' => $wsaa['cuit'] ?? 'NO DEFINIDO',
+            'company_tax_id' => $this->company->tax_id,
+            'MATCH' => ($wsaa['cuit'] ?? '') === preg_replace('/[^0-9]/', '', $this->company->tax_id) ? 'SI' : 'NO'
+        ]);
         try {
             // Cargar relaciones necesarias
             $voyage = $shipment->voyage()->with([
@@ -102,7 +102,7 @@ $wsaa = $this->getWSAATokens();
             $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
             $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
             $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
-            $codLugOperDest = $voyage->destinationPort?->operative_code ?? '001';
+            $codLugOperDest = str_pad($voyage->destinationPort?->operative_code ?? '1', 3, '0', STR_PAD_LEFT);
             $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
             $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
 
@@ -527,7 +527,7 @@ $wsaa = $this->getWSAATokens();
             // Códigos de lugares operativos desde puertos
             $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
             $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
-            $codLugOperDest = $voyage->destinationPort?->operative_code ?? '001';
+            $codLugOperDest = str_pad($voyage->destinationPort?->operative_code ?? '1', 3, '0', STR_PAD_LEFT);
             $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
 
             // Crear XMLWriter
@@ -1305,7 +1305,9 @@ $wsaa = $this->getWSAATokens();
             $w->writeElement('tipEmb', $tipEmb);
             
             // indIntegraConvoy (obligatorio, S/N)
-            $integraConvoy = ($voyage->is_convoy ?? false) ? 'S' : 'N';
+            // AFIP: Las barcazas (BAR) siempre integran convoy
+            $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+            $integraConvoy = ($tipEmb === 'BAR' || $voyage->is_convoy) ? 'S' : 'N';
             $w->writeElement('indIntegraConvoy', $integraConvoy);
             
             // idFiscalATARemol (opcional - CUIT del remolcador si integra convoy)
