@@ -98,7 +98,8 @@ class SimpleXmlGenerator
             
             // Códigos de puertos y aduanas
             $codAduOrigen = $this->getPortCustomsCode($voyage->originPort?->code ?? 'ARBUE');
-            $codAduDest = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU');
+            //$codAduDest = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU');
+            $codAduDest = str_pad($this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU'), 3, '0', STR_PAD_LEFT);
             $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
             $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
             $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
@@ -145,7 +146,8 @@ class SimpleXmlGenerator
                         // Códigos AFIP desde el BL (prioridad) o fallback a voyage/hardcoded
                         $bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
                         $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
-                        $bolCodAduDest = $bol->discharge_customs_code ?: $codAduDest;
+                        //$bolCodAduDest = $bol->discharge_customs_code ?: $codAduDest;
+                        $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
                         $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
                         
                         $w->startElement('TitTransEnvio');
@@ -571,7 +573,8 @@ class SimpleXmlGenerator
                    foreach ($billsOfLading as $bol) {
                         // Códigos AFIP desde el BL (prioridad) o fallback
                         $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
-                        $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
+                        //$bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
+                        $bolCodLugOperDest = str_pad($bol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
                         
                         // Validar campo obligatorio id_decla
                         if (empty($bol->permiso_embarque)) {
