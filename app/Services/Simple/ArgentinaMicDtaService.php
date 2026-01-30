@@ -1390,8 +1390,62 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en MicDta: " . $errorMsg);
             }
 
+            // ✅ NUEVO: Extraer TODOS los mensajes de AFIP (igual que sendTitEnvios)
+            $afipMessages = $this->extractAfipMessages($response);
+            $hasAfipErrors = !empty($afipMessages['errores']);
+            $hasAfipAlerts = !empty($afipMessages['alertas']);
+
+            // ✅ Si AFIP devolvió errores, es un error (no éxito)
+            if ($hasAfipErrors) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+                
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                
+                $transaction->update([
+                    'response_xml' => $response,
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                    'completed_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                    'response_time_ms' => $responseTime,
+                ];
+            }
+
+            // ✅ Si hay alertas sin ID MIC/DTA, también es error
+            $micDtaId = $this->extractMicDtaIdFromResponse($response);
+            if ($hasAfipAlerts && empty($micDtaId)) {
+                $alertTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['alertas']);
+                
+                $errorMessage = 'Alerta AFIP (sin confirmación): ' . implode('; ', $alertTexts);
+                
+                $transaction->update([
+                    'response_xml' => $response,
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                    'completed_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ALERT',
+                    'afip_messages' => $afipMessages,
+                    'response_time_ms' => $responseTime,
+                ];
+            }
+
             // ✅ VERIFICAR SI HAY ERRORES EN ListaErrores (aunque no haya SOAP Fault)
-            $erroresAfip = $this->extractAfipErrors($response);
+            /* $erroresAfip = $this->extractAfipErrors($response);
             if (!empty($erroresAfip)) {
                 $errorMsg = implode(' | ', array_map(fn($e) => "[{$e['codigo']}] {$e['descripcion']}", $erroresAfip));
                 
@@ -1411,7 +1465,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'errors' => $erroresAfip,
                     'response_time_ms' => $responseTime,
                 ];
-            }
+            } */
 
             // Procesar respuesta exitosa
             $micDtaId = $this->extractMicDtaIdFromResponse($response);
