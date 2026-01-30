@@ -1276,7 +1276,12 @@ class SimpleXmlGenerator
                 if (strtoupper($codPais) !== 'AR') {
                     $w->writeElement('codLugOper', '001');
                 } else {
-                    $w->writeElement('codLugOper', $port->operative_code ?? $port->code ?? '001');
+                    // Buscar lugar operativo vinculado al puerto
+                    $operativeLocation = \App\Models\AfipOperativeLocation::where('port_id', $port->id)
+                        ->where('is_active', true)
+                        ->first();
+                    $codLugOper = $operativeLocation?->location_code ?? '001';
+                    $w->writeElement('codLugOper', $codLugOper);
                 }
             }
             

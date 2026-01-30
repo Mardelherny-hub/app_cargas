@@ -249,4 +249,19 @@ class AfipConfigController extends Controller
             ->route('admin.afip-config.index', ['tab' => 'port-customs'])
             ->with('success', 'Aduana marcada como predeterminada.');
     }
+
+    public function vincularPuerto(Request $request, AfipOperativeLocation $location)
+    {
+        $validated = $request->validate([
+            'port_id' => 'required|exists:ports,id',
+        ]);
+
+        $location->update(['port_id' => $validated['port_id']]);
+
+        $port = Port::find($validated['port_id']);
+
+        return redirect()
+            ->route('admin.afip-config.index', ['tab' => 'locations'])
+            ->with('success', "Lugar {$location->location_code} vinculado a puerto {$port->code}.");
+    }
 }

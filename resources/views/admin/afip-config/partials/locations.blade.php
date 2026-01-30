@@ -71,6 +71,15 @@
                    placeholder="TERMINAL PORTUARIA SUR"
                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
         </div>
+        <div>
+            <label for="port_id" class="block text-sm font-medium text-gray-700">Puerto</label>
+            <select name="port_id" id="port_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                <option value="">Sin asignar</option>
+                @foreach($ports as $port)
+                    <option value="{{ $port->id }}">{{ $port->code }} - {{ $port->name }}</option>
+                @endforeach
+            </select>
+        </div>
         <div class="flex items-center gap-4">
             <label class="flex items-center">
                 <input type="checkbox" name="is_foreign" value="1" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
@@ -92,6 +101,7 @@
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aduana</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
                 <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Puerto</th>
                 <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Tipo</th>
                 <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase">Estado</th>
                 <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
@@ -109,8 +119,19 @@
                     <td class="px-3 py-2 whitespace-nowrap">
                         <span class="font-mono text-sm font-bold text-green-600">{{ $location->location_code }}</span>
                     </td>
+                    
                     <td class="px-3 py-2">
                         <span class="text-sm text-gray-900">{{ Str::limit($location->description, 50) }}</span>
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        @if($location->port)
+                            <span class="text-sm font-mono text-indigo-600 mr-1">{{ $location->port->code }}</span>
+                        @endif
+                        <button type="button" 
+                                onclick="openVincularModal({{ $location->id }}, '{{ $location->location_code }}', '{{ $location->description }}', '{{ $location->port_id ?? '' }}')"
+                                class="px-2 py-1 text-xs {{ $location->port ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded">
+                            {{ $location->port ? '✏️' : 'Vincular' }}
+                        </button>
                     </td>
                     <td class="px-3 py-2 text-center">
                         @if($location->is_foreign)
@@ -149,7 +170,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                    <td colspan="8" class="px-4 py-8 text-center text-gray-500">
                         No hay lugares operativos registrados.
                     </td>
                 </tr>
@@ -157,6 +178,65 @@
         </tbody>
     </table>
 </div>
+
+{{-- Modal Vincular Puerto --}}
+<div id="vincularModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div class="px-6 py-4 border-b">
+            <h3 class="text-lg font-medium text-gray-900">Vincular Puerto</h3>
+            <p class="text-sm text-gray-500 mt-1">
+                Lugar: <span id="modalLocationCode" class="font-mono font-bold"></span> - <span id="modalLocationDesc"></span>
+            </p>
+        </div>
+        
+        <form id="vincularForm" method="POST">
+            @csrf
+            @method('PATCH')
+            <div class="px-6 py-4">
+                <label for="modal_port_id" class="block text-sm font-medium text-gray-700 mb-2">
+                    Seleccionar Puerto
+                </label>
+                <select name="port_id" id="modal_port_id" required 
+                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <option value="">-- Seleccionar --</option>
+                    @foreach($ports as $port)
+                        <option value="{{ $port->id }}">{{ $port->code }} - {{ $port->name }} ({{ $port->city }})</option>
+                    @endforeach
+                </select>
+            </div>
+            
+            <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
+                <button type="button" onclick="closeVincularModal()" 
+                        class="px-4 py-2 text-sm text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
+                    Cancelar
+                </button>
+                <button type="submit" 
+                        class="px-4 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                    Vincular
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openVincularModal(locationId, code, description, currentPortId) {
+    document.getElementById('modalLocationCode').textContent = code;
+    document.getElementById('modalLocationDesc').textContent = description;
+    document.getElementById('vincularForm').action = `/admin/afip-config/locations/${locationId}/vincular-puerto`;
+    document.getElementById('modal_port_id').value = currentPortId || '';
+    document.getElementById('vincularModal').classList.remove('hidden');
+}
+
+function closeVincularModal() {
+    document.getElementById('vincularModal').classList.add('hidden');
+}
+
+// Cerrar modal con Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeVincularModal();
+});
+</script>
 
 {{-- Paginación --}}
 @if($locations->hasPages())
