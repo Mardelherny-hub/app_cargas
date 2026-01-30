@@ -1354,7 +1354,7 @@ class SimpleXmlGenerator
         return match(strtoupper($code ?? 'BAR')) {
             'EMP', 'EMPUJE', 'EMPUJADOR' => 'EMP',
             'REM', 'REMOLCADOR' => 'REM',
-            'BUM', 'BUQUE', 'BUQUE_MOTOR' => 'BUM',
+            'BUM', 'BUQUE', 'BUQUE_MOTOR', 'SELF_CARGO_001' => 'BUM',
             'BAR', 'BARCAZA' => 'BAR',
             default => 'BAR'
         };
