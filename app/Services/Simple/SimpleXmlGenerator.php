@@ -102,8 +102,16 @@ class SimpleXmlGenerator
             $codAduDest = str_pad($this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU'), 3, '0', STR_PAD_LEFT);
             $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
             $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
-            $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
-            $codLugOperDest = str_pad($voyage->destinationPort?->operative_code ?? '1', 3, '0', STR_PAD_LEFT);
+            // Buscar lugar operativo vinculado al puerto de origen
+            $operativeLocationOrigen = \App\Models\AfipOperativeLocation::where('port_id', $voyage->originPort?->id)
+                ->where('is_active', true)
+                ->first();
+            $codLugOperOrigen = $operativeLocationOrigen?->location_code ?? '001';
+            // Buscar lugar operativo vinculado al puerto de destino
+            $operativeLocationDest = \App\Models\AfipOperativeLocation::where('port_id', $voyage->destinationPort?->id)
+                ->where('is_active', true)
+                ->first();
+            $codLugOperDest = $operativeLocationDest?->location_code ?? '001';
             $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
             $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
 
@@ -143,18 +151,11 @@ class SimpleXmlGenerator
                     $emptyContainers = collect();
 
                     foreach ($billsOfLading as $bol) {
-                        /* // Códigos AFIP desde el BL (prioridad) o fallback a voyage/hardcoded
+                        // Códigos AFIP desde el BL (prioridad) o fallback a voyage
                         $bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
                         $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
-                        //$bolCodAduDest = $bol->discharge_customs_code ?: $codAduDest;
                         $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                        $bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest; */
-
-                        // TEMPORAL: Ignorar valores del BL, usar siempre hardcodeados de getPortCustomsCode()
-                        $bolCodAduOrigen = $codAduOrigen;
-                        $bolCodLugOperOrigen = $codLugOperOrigen;
-                        $bolCodAduDest = str_pad($codAduDest, 3, '0', STR_PAD_LEFT);
-                        $bolCodLugOperDest = str_pad($codLugOperDest, 3, '0', STR_PAD_LEFT);
+                        $bolCodLugOperDest = $bol->operational_discharge_code ?: str_pad($codLugOperDest, 3, '0', STR_PAD_LEFT);
                         
                         $w->startElement('TitTransEnvio');
                             
@@ -533,9 +534,17 @@ class SimpleXmlGenerator
             $wsaa = $this->getWSAATokens();
 
             // Códigos de lugares operativos desde puertos
-            $codLugOperOrigen = $voyage->originPort?->operative_code ?? '10073';
+            // Buscar lugar operativo vinculado al puerto de origen
+            $operativeLocationOrigen = \App\Models\AfipOperativeLocation::where('port_id', $voyage->originPort?->id)
+                ->where('is_active', true)
+                ->first();
+            $codLugOperOrigen = $operativeLocationOrigen?->location_code ?? '001';
             $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
-            $codLugOperDest = str_pad($voyage->destinationPort?->operative_code ?? '1', 3, '0', STR_PAD_LEFT);
+            // Buscar lugar operativo vinculado al puerto de destino
+            $operativeLocationDest = \App\Models\AfipOperativeLocation::where('port_id', $voyage->destinationPort?->id)
+                ->where('is_active', true)
+                ->first();
+            $codLugOperDest = $operativeLocationDest?->location_code ?? '001';
             $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
 
             // Crear XMLWriter
