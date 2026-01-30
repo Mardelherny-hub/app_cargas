@@ -1500,7 +1500,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'payment_status' => 'not_required',
                     
                     // ✅ METADATOS PARA ANÁLISIS FUTURO
-                    'additional_data' => [
+                    'customs_metadata' => json_encode([
                         'mic_dta_id' => $micDtaId,
                         'voyage_id' => $voyage->id,
                         'voyage_number' => $voyage->voyage_number,
@@ -1509,7 +1509,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                         'environment' => $this->config['environment'],
                         'company_id' => $this->company->id,
                         'company_name' => $this->company->legal_name,
-                    ],
+                    ]),
+
+                    'processed_at' => now(),
                     
                     'is_success' => true,
                     'processed_at' => now(),
