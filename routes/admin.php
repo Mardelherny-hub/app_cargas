@@ -271,6 +271,7 @@ Route::prefix('afip-config')->name('admin.afip-config.')->group(function () {
     Route::delete('/locations/{location}', [AfipConfigController::class, 'destroyLocation'])->name('locations.destroy');
     Route::patch('/locations/{location}/toggle', [AfipConfigController::class, 'toggleLocation'])->name('locations.toggle');
     Route::get('/locations/by-customs/{customsCode}', [AfipConfigController::class, 'locationsByCustoms'])->name('locations.by-customs');
+    Route::patch('/locations/{location}/vincular-puerto', [AfipConfigController::class, 'vincularPuerto'])->name('locations.vincular-puerto');
     
     // === VÍNCULOS PUERTO-ADUANA ===
     Route::post('/port-customs', [AfipConfigController::class, 'attachPort'])->name('port-customs.attach');
