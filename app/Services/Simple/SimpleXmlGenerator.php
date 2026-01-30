@@ -1272,7 +1272,12 @@ class SimpleXmlGenerator
             
             // codLugOper (obligatorio excepto EPTAI, C9)
             if ($tipoEvento !== 'EPTAI') {
-                $w->writeElement('codLugOper', $codLugOper ?? '001');
+                // Para países extranjeros (no AR), usar 001 según tabla AFIP exterior
+                if (strtoupper($codPais) !== 'AR') {
+                    $w->writeElement('codLugOper', '001');
+                } else {
+                    $w->writeElement('codLugOper', $port->operative_code ?? $port->code ?? '001');
+                }
             }
             
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
