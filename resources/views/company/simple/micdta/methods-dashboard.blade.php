@@ -1830,6 +1830,50 @@
             </div>
         </div>
     </div>
+
+    {{-- ========================================================================
+        MODAL: REGISTRAR SALIDA ZONA PRIMARIA (Botón 10)
+        ======================================================================== --}}
+    <div id="salida-zp-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex items-center justify-between pb-3 border-b">
+                    <h3 class="text-lg font-medium text-orange-900">
+                        🚪 Registrar Salida Zona Primaria
+                    </h3>
+                    <button onclick="closeSalidaZPModal()" class="text-gray-400 hover:text-gray-500">
+                        <span class="text-2xl">&times;</span>
+                    </button>
+                </div>
+                <div class="mt-4 space-y-4">
+                    <div class="bg-blue-50 border border-blue-200 rounded p-3">
+                        <p class="text-xs text-blue-800">
+                            📋 Registra la salida del viaje desde la zona primaria aduanera. Verifique el Nro. de Viaje antes de enviar.
+                        </p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Nro. Viaje <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="salida-zp-nro-viaje" maxlength="20" placeholder="Ej: AR202600000001V" 
+                               value="{{ $nroViaje ?? '' }}"
+                               class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500 font-mono">
+                        <p class="text-xs text-gray-500 mt-1">Número de viaje asignado por AFIP al registrar MIC/DTA</p>
+                    </div>
+                    <div class="flex justify-end space-x-3 border-t pt-4">
+                        <button onclick="closeSalidaZPModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 text-sm">
+                            Cancelar
+                        </button>
+                        <button onclick="confirmarSalidaZP()" id="btn-confirmar-salida-zp"
+                                class="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-sm">
+                            Registrar Salida
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- ========================================================================
         MODAL: REGISTRAR ARRIBO ZONA PRIMARIA (Botón 11)
         ======================================================================== --}}
@@ -2142,6 +2186,11 @@
 
         if (methodName === 'RegistrarArriboZonaPrimaria') {
             showArriboZPModal();
+            return;
+        }
+
+        if (methodName === 'RegistrarSalidaZonaPrimaria') {
+            showSalidaZPModal();
             return;
         }
 
@@ -2799,6 +2848,66 @@
 
         } catch (error) {
             showResultModal('SolicitarAnularMicDta', { error: 'Error de comunicación: ' + error.message }, false);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+
+    // ========================================================================
+    // MODAL REGISTRAR SALIDA ZONA PRIMARIA (Botón 10)
+    // ========================================================================
+    function showSalidaZPModal() {
+        document.getElementById('salida-zp-modal').classList.remove('hidden');
+    }
+
+    function closeSalidaZPModal() {
+        document.getElementById('salida-zp-modal').classList.add('hidden');
+    }
+
+    async function confirmarSalidaZP() {
+        const nroViaje = document.getElementById('salida-zp-nro-viaje').value.trim();
+
+        if (!nroViaje) {
+            alert('Debe ingresar el Nro. de Viaje');
+            document.getElementById('salida-zp-nro-viaje').focus();
+            return;
+        }
+
+        if (!confirm(`⚠️ CONFIRMACIÓN\n\n¿Registrar salida de zona primaria?\n\nNro. Viaje: ${nroViaje}`)) {
+            return;
+        }
+
+        const btn = document.getElementById('btn-confirmar-salida-zp');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/registrar-salida-zona-primaria`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    nro_viaje: nroViaje,
+                    force_send: false,
+                    notes: `Salida ZP desde panel - ${new Date().toLocaleString()}`
+                })
+            });
+
+            const result = await response.json();
+            closeSalidaZPModal();
+            showResultModal('RegistrarSalidaZonaPrimaria', result, response.ok);
+
+            if (result.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+        } catch (error) {
+            showResultModal('RegistrarSalidaZonaPrimaria', { error: 'Error de comunicación: ' + error.message }, false);
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;

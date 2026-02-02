@@ -273,9 +273,7 @@ class SimpleManifestController extends Controller
                               
             case 'RegistrarSalidaZonaPrimaria':
                 return array_merge($baseData, [
-                    'fecha_salida' => $request->input('fecha_salida'),
-                    'puerto_salida' => $request->input('puerto_salida'),
-                    'aduana_salida' => $request->input('aduana_salida'),
+                    'nro_viaje' => $request->input('nro_viaje'),
                 ]);
                 
             case 'RegistrarArriboZonaPrimaria':
@@ -2470,11 +2468,9 @@ public function micDtaSend(Request $request, Voyage $voyage)
     {
         try {
             $request->validate([
-                'fecha_salida' => 'required|date',
-                'puerto_salida' => 'required|string|max:10',
-                'aduana_salida' => 'required|string|max:3',
+                'nro_viaje' => 'required|string|max:20',
                 'force_send' => 'boolean',
-                'notes' => 'string|max:500'
+                'notes' => 'nullable|string|max:500'
             ]);
 
             $result = $this->executeAfipMethod('RegistrarSalidaZonaPrimaria', $request, $voyage);
