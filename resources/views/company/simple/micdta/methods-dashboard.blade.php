@@ -1747,6 +1747,82 @@
     </div>
 
     {{-- ========================================================================
+        MODAL: SOLICITAR ANULAR MIC/DTA (Botón 16)
+        ======================================================================== --}}
+    <div id="anular-micdta-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                {{-- Header --}}
+                <div class="flex items-center justify-between pb-3 border-b">
+                    <h3 class="text-lg font-medium text-red-900">
+                        🗂️ Solicitar Anulación MIC/DTA
+                    </h3>
+                    <button onclick="closeAnularMicDtaModal()" class="text-gray-400 hover:text-gray-500">
+                        <span class="text-2xl">&times;</span>
+                    </button>
+                </div>
+
+                {{-- Loading --}}
+                <div id="anular-micdta-loading" class="hidden text-center py-6">
+                    <svg class="animate-spin h-8 w-8 mx-auto text-red-600" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="mt-2 text-sm text-gray-600">Cargando MIC/DTAs registrados...</p>
+                </div>
+
+                {{-- Error --}}
+                <div id="anular-micdta-error" class="hidden mt-4 p-3 bg-red-50 rounded border border-red-200">
+                    <p class="text-sm text-red-700">Error al cargar datos.</p>
+                </div>
+
+                {{-- Content --}}
+                <div id="anular-micdta-content" class="hidden mt-4 space-y-4">
+                    <div class="bg-yellow-50 border border-yellow-200 rounded p-3">
+                        <p class="text-xs text-yellow-800">
+                            ⚠️ La solicitud será evaluada por el servicio aduanero (AFIP). Puede ser aprobada o rechazada.
+                        </p>
+                    </div>
+
+                    {{-- Select MIC/DTA --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            ID MIC/DTA <span class="text-red-500">*</span>
+                        </label>
+                        <select id="anular-micdta-select" class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-red-500 focus:ring-red-500">
+                            <option value="">-- Seleccione MIC/DTA --</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">O ingrese manualmente:</p>
+                        <input type="text" id="anular-micdta-manual" maxlength="16" placeholder="Ej: 25ARMIF00005933A" 
+                               class="mt-1 w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-red-500 focus:ring-red-500 font-mono">
+                    </div>
+
+                    {{-- Motivo --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Motivo de anulación <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="anular-micdta-motivo" maxlength="50" placeholder="Ej: mal registrado" 
+                               class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-red-500 focus:ring-red-500">
+                        <p class="text-xs text-gray-500 mt-1">Máximo 50 caracteres</p>
+                    </div>
+
+                    {{-- Botones --}}
+                    <div class="flex justify-end space-x-3 border-t pt-4">
+                        <button onclick="closeAnularMicDtaModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 text-sm">
+                            Cancelar
+                        </button>
+                        <button onclick="confirmarAnularMicDta()" id="btn-confirmar-anular-micdta"
+                                class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm">
+                            Solicitar Anulación
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ========================================================================
         MODAL: ANULAR TODO (RESET COMPLETO)
         ======================================================================== --}}
     <div id="anular-todo-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -1983,6 +2059,11 @@
 
         if (methodName === 'AnularEnvios') {
             showAnularTodoModal();
+            return;
+        }
+
+        if (methodName === 'SolicitarAnularMicDta') {
+            showAnularMicDtaModal();
             return;
         }
 
@@ -2523,6 +2604,127 @@
         document.getElementById('anular-todo-modal').classList.add('hidden');
         document.getElementById('motivo-anulacion').value = '';
         document.getElementById('confirm-reset').checked = false;
+    }
+
+    // ========================================================================
+    // MODAL SOLICITAR ANULAR MIC/DTA (Botón 16)
+    // ========================================================================
+
+    function showAnularMicDtaModal() {
+        const modal = document.getElementById('anular-micdta-modal');
+        const loading = document.getElementById('anular-micdta-loading');
+        const content = document.getElementById('anular-micdta-content');
+        const errorDiv = document.getElementById('anular-micdta-error');
+        
+        modal.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        content.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+        
+        // Buscar MIC/DTAs registrados en transacciones del viaje
+        fetch(`/company/simple/webservices/micdta/${voyageId}/titulos-registrados`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(r => r.json())
+        .then(result => {
+            loading.classList.add('hidden');
+            
+            // Buscar idMicDta en la respuesta (viene de transacciones RegistrarMicDta)
+            const select = document.getElementById('anular-micdta-select');
+            select.innerHTML = '<option value="">-- Seleccione MIC/DTA --</option>';
+            
+            if (result.success && result.micdta_ids && result.micdta_ids.length > 0) {
+                result.micdta_ids.forEach(id => {
+                    select.innerHTML += `<option value="${id}">${id}</option>`;
+                });
+            }
+            
+            // También permitir ingreso manual (por si no se detectan automáticamente)
+            content.classList.remove('hidden');
+        })
+        .catch(error => {
+            loading.classList.add('hidden');
+            // Aunque falle la carga, mostrar el formulario con ingreso manual
+            content.classList.remove('hidden');
+        });
+    }
+
+    function closeAnularMicDtaModal() {
+        document.getElementById('anular-micdta-modal').classList.add('hidden');
+        document.getElementById('anular-micdta-select').value = '';
+        document.getElementById('anular-micdta-manual').value = '';
+        document.getElementById('anular-micdta-motivo').value = '';
+    }
+
+    async function confirmarAnularMicDta() {
+        const select = document.getElementById('anular-micdta-select');
+        const manual = document.getElementById('anular-micdta-manual').value.trim();
+        const motivo = document.getElementById('anular-micdta-motivo').value.trim();
+        
+        // Usar select si tiene valor, sino el manual
+        const micdtaId = select.value || manual;
+        
+        if (!micdtaId) {
+            alert('Debe seleccionar o ingresar un ID MIC/DTA');
+            return;
+        }
+        
+        if (micdtaId.length > 16) {
+            alert('El ID MIC/DTA no puede exceder 16 caracteres');
+            return;
+        }
+        
+        if (!motivo) {
+            alert('Debe ingresar un motivo de anulación');
+            document.getElementById('anular-micdta-motivo').focus();
+            return;
+        }
+        
+        if (motivo.length > 50) {
+            alert('El motivo no puede exceder 50 caracteres');
+            return;
+        }
+
+        if (!confirm(`⚠️ CONFIRMACIÓN\n\n¿Solicitar anulación del MIC/DTA "${micdtaId}"?\n\nMotivo: ${motivo}\n\nLa solicitud será evaluada por AFIP.`)) {
+            return;
+        }
+
+        const btn = document.getElementById('btn-confirmar-anular-micdta');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/solicitar-anular-micdta`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    micdta_id: micdtaId,
+                    motivo_anulacion: motivo,
+                    force_send: false,
+                    notes: `Anulación MIC/DTA desde panel - ${new Date().toLocaleString()}`
+                })
+            });
+
+            const result = await response.json();
+            closeAnularMicDtaModal();
+            showResultModal('SolicitarAnularMicDta', result, response.ok);
+
+            if (result.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+
+        } catch (error) {
+            showResultModal('SolicitarAnularMicDta', { error: 'Error de comunicación: ' + error.message }, false);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 
     // ========================================================================

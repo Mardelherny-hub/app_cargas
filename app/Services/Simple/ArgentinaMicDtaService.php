@@ -1890,9 +1890,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function verifyMicDtaExists(Voyage $voyage, string $micDtaId): bool
     {
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'micdta')
             ->where('status', 'success')
-            ->whereJsonContains('response_data->micdta_id', $micDtaId)
+            ->where(function($q) use ($micDtaId) {
+                $q->where('external_reference', $micDtaId)
+                  ->orWhere('confirmation_number', $micDtaId)
+                  ->orWhereJsonContains('response_data->micdta_id', $micDtaId);
+            })
             ->exists();
     }
 
