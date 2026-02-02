@@ -1156,14 +1156,23 @@
                             {{-- ============================================ --}}
                             @php
                                 // Verificar si hay MIC/DTA registrado (requisito previo)
-                                $hasMicDtaRegistrado = $lastMicDta && in_array($lastMicDta->status, ['success', 'sent']);
+                                // Buscar MIC/DTA exitoso (independiente de $lastMicDta que puede tener status error)
+                                $lastMicDtaExitoso = $voyage->webserviceTransactions()
+                                    ->where('webservice_type', 'micdta')
+                                    ->where('soap_action', 'like', '%RegistrarMicDta%')
+                                    ->where('soap_action', 'NOT LIKE', '%RegistrarTitMicDta%')
+                                    ->where('soap_action', 'NOT LIKE', '%Anular%')
+                                    ->whereIn('status', ['success', 'sent'])
+                                    ->latest()
+                                    ->first();
+                                $hasMicDtaRegistrado = !is_null($lastMicDtaExitoso);
                                 
-                                // Obtener nroViaje del MIC/DTA registrado (necesario para SalidaZonaPrimaria)
+                                // Obtener nroViaje del MIC/DTA exitoso
                                 $nroViaje = null;
-                                if ($hasMicDtaRegistrado && $lastMicDta->success_data) {
-                                    $successDataMicDta = is_array($lastMicDta->success_data) 
-                                        ? $lastMicDta->success_data 
-                                        : json_decode($lastMicDta->success_data, true);
+                                if ($hasMicDtaRegistrado && $lastMicDtaExitoso->success_data) {
+                                    $successDataMicDta = is_array($lastMicDtaExitoso->success_data) 
+                                        ? $lastMicDtaExitoso->success_data 
+                                        : json_decode($lastMicDtaExitoso->success_data, true);
                                     $nroViaje = $successDataMicDta['nro_viaje'] ?? $successDataMicDta['nroViaje'] ?? null;
                                 }
                                 
