@@ -2603,17 +2603,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // 4. Verificaciones de dependencias previas - convoy debe existir
-            $convoyTransaction = $this->findConvoyTransactionByNroViaje($voyage, $nroViaje);
-            if (!$convoyTransaction) {
-                return [
-                    'success' => false,
-                    'error_message' => 'No se encontró convoy registrado con número de viaje: ' . $nroViaje,
-                    'error_code' => 'CONVOY_NOT_FOUND',
-                ];
-            }
-
-            // Verificar que el convoy no tenga ya una salida registrada
+            // 4. Verificar que no tenga ya una salida registrada       
             $salidaExists = $this->verifySalidaAlreadyRegistered($voyage, $nroViaje);
             if ($salidaExists) {
                 return [
