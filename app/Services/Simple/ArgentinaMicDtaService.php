@@ -2764,7 +2764,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'voyage_number' => $voyage->voyage_number,
             ]);
 
-            // 2. Validación parámetro básico
+// 2. Validación parámetros obligatorios
             if (empty($data['nro_viaje'])) {
                 return [
                     'success' => false,
@@ -2772,10 +2772,26 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'error_code' => 'MISSING_NRO_VIAJE',
                 ];
             }
-
+            if (empty($data['cod_adu'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro cod_adu (código aduana) es obligatorio',
+                    'error_code' => 'MISSING_COD_ADU',
+                ];
+            }
+            if (empty($data['cod_lug_oper'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Parámetro cod_lug_oper (código lugar operativo) es obligatorio',
+                    'error_code' => 'MISSING_COD_LUG_OPER',
+                ];
+            }
             // 3. Preparar datos
             $requestData = [
                 'nro_viaje' => $data['nro_viaje'],
+                'cod_adu' => $data['cod_adu'],
+                'cod_lug_oper' => $data['cod_lug_oper'],
+                'desc_amarre' => $data['desc_amarre'] ?? '',
             ];
 
             // 4. Crear transactionId único

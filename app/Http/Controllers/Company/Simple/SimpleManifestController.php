@@ -280,9 +280,10 @@ class SimpleManifestController extends Controller
                 
             case 'RegistrarArriboZonaPrimaria':
                 return array_merge($baseData, [
-                    'fecha_arribo' => $request->input('fecha_arribo'),
-                    'puerto_arribo' => $request->input('puerto_arribo'),
-                    'aduana_arribo' => $request->input('aduana_arribo'),
+                    'nro_viaje' => $request->input('nro_viaje'),
+                    'cod_adu' => $request->input('cod_adu'),
+                    'cod_lug_oper' => $request->input('cod_lug_oper'),
+                    'desc_amarre' => $request->input('desc_amarre', ''),
                 ]);
                 
             case 'AnularArriboZonaPrimaria':
@@ -2519,9 +2520,10 @@ public function micDtaSend(Request $request, Voyage $voyage)
     {
         try {
             $request->validate([
-                'fecha_arribo' => 'required|date',
-                'puerto_arribo' => 'required|string|max:10',
-                'aduana_arribo' => 'required|string|max:3',
+                'nro_viaje' => 'required|string|max:20',
+                'cod_adu' => 'required|string|max:3',
+                'cod_lug_oper' => 'required|string|max:5',
+                'desc_amarre' => 'nullable|string|max:50',
                 'force_send' => 'boolean',
                 'notes' => 'string|max:500'
             ]);

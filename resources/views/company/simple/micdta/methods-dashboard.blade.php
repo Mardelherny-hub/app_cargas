@@ -1830,7 +1830,71 @@
             </div>
         </div>
     </div>
-
+    {{-- ========================================================================
+        MODAL: REGISTRAR ARRIBO ZONA PRIMARIA (Botón 11)
+        ======================================================================== --}}
+    <div id="arribo-zp-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex items-center justify-between pb-3 border-b">
+                    <h3 class="text-lg font-medium text-orange-900">
+                        🛬 Registrar Arribo Zona Primaria
+                    </h3>
+                    <button onclick="closeArriboZPModal()" class="text-gray-400 hover:text-gray-500">
+                        <span class="text-2xl">&times;</span>
+                    </button>
+                </div>
+                <div class="mt-4 space-y-4">
+                    <div class="bg-blue-50 border border-blue-200 rounded p-3">
+                        <p class="text-xs text-blue-800">
+                            📋 Registra el arribo del viaje a una zona primaria aduanera. Complete los datos del punto de arribo.
+                        </p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Nro. Viaje <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="arribo-zp-nro-viaje" maxlength="20" placeholder="Ej: AR202600000001V" 
+                               value="{{ $nroViaje ?? '' }}"
+                               class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500 font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Código Aduana <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="arribo-zp-cod-adu" maxlength="3" placeholder="Ej: 033" 
+                               class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500 font-mono">
+                        <p class="text-xs text-gray-500 mt-1">3 dígitos - Código de aduana destino</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Código Lugar Operativo <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="arribo-zp-cod-lug-oper" maxlength="5" placeholder="Ej: 10056" 
+                               class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500 font-mono">
+                        <p class="text-xs text-gray-500 mt-1">Hasta 5 dígitos - Lugar operativo de arribo</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Descripción Amarre <span class="text-gray-400">(opcional)</span>
+                        </label>
+                        <input type="text" id="arribo-zp-desc-amarre" maxlength="50" placeholder="Ej: TERMINAL 5" 
+                               class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500">
+                        <p class="text-xs text-gray-500 mt-1">Máximo 50 caracteres</p>
+                    </div>
+                    <div class="flex justify-end space-x-3 border-t pt-4">
+                        <button onclick="closeArriboZPModal()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 text-sm">
+                            Cancelar
+                        </button>
+                        <button onclick="confirmarArriboZP()" id="btn-confirmar-arribo-zp"
+                                class="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-sm">
+                            Registrar Arribo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     {{-- ========================================================================
         MODAL: ANULAR TODO (RESET COMPLETO)
         ======================================================================== --}}
@@ -2073,6 +2137,11 @@
 
         if (methodName === 'SolicitarAnularMicDta') {
             showAnularMicDtaModal();
+            return;
+        }
+
+        if (methodName === 'RegistrarArriboZonaPrimaria') {
+            showArriboZPModal();
             return;
         }
 
@@ -2730,6 +2799,84 @@
 
         } catch (error) {
             showResultModal('SolicitarAnularMicDta', { error: 'Error de comunicación: ' + error.message }, false);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    // ========================================================================
+    // MODAL REGISTRAR ARRIBO ZONA PRIMARIA (Botón 11)
+    // ========================================================================
+    function showArriboZPModal() {
+        document.getElementById('arribo-zp-modal').classList.remove('hidden');
+    }
+
+    function closeArriboZPModal() {
+        document.getElementById('arribo-zp-modal').classList.add('hidden');
+        document.getElementById('arribo-zp-cod-adu').value = '';
+        document.getElementById('arribo-zp-cod-lug-oper').value = '';
+        document.getElementById('arribo-zp-desc-amarre').value = '';
+    }
+
+    async function confirmarArriboZP() {
+        const nroViaje = document.getElementById('arribo-zp-nro-viaje').value.trim();
+        const codAdu = document.getElementById('arribo-zp-cod-adu').value.trim();
+        const codLugOper = document.getElementById('arribo-zp-cod-lug-oper').value.trim();
+        const descAmarre = document.getElementById('arribo-zp-desc-amarre').value.trim();
+
+        if (!nroViaje) {
+            alert('Debe ingresar el Nro. de Viaje');
+            document.getElementById('arribo-zp-nro-viaje').focus();
+            return;
+        }
+        if (!codAdu) {
+            alert('Debe ingresar el Código de Aduana');
+            document.getElementById('arribo-zp-cod-adu').focus();
+            return;
+        }
+        if (!codLugOper) {
+            alert('Debe ingresar el Código de Lugar Operativo');
+            document.getElementById('arribo-zp-cod-lug-oper').focus();
+            return;
+        }
+
+        if (!confirm(`⚠️ CONFIRMACIÓN\n\n¿Registrar arribo en zona primaria?\n\nNro. Viaje: ${nroViaje}\nAduana: ${codAdu}\nLugar Operativo: ${codLugOper}\nAmarre: ${descAmarre || '(sin especificar)'}`)) {
+            return;
+        }
+
+        const btn = document.getElementById('btn-confirmar-arribo-zp');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/registrar-arribo-zona-primaria`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    nro_viaje: nroViaje,
+                    cod_adu: codAdu,
+                    cod_lug_oper: codLugOper,
+                    desc_amarre: descAmarre,
+                    force_send: false,
+                    notes: `Arribo ZP desde panel - ${new Date().toLocaleString()}`
+                })
+            });
+
+            const result = await response.json();
+            closeArriboZPModal();
+            showResultModal('RegistrarArriboZonaPrimaria', result, response.ok);
+
+            if (result.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+        } catch (error) {
+            showResultModal('RegistrarArriboZonaPrimaria', { error: 'Error de comunicación: ' + error.message }, false);
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;

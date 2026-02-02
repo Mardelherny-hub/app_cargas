@@ -2149,42 +2149,56 @@ class SimpleXmlGenerator
             if (empty($arriboData['nro_viaje'])) {
                 throw new Exception('Número de viaje (nroViaje) obligatorio');
             }
+            if (empty($arriboData['cod_adu'])) {
+                throw new Exception('Código de aduana (codAdu) obligatorio');
+            }
+            if (empty($arriboData['cod_lug_oper'])) {
+                throw new Exception('Código de lugar operativo (codLugOper) obligatorio');
+            }
 
             // Obtener tokens WSAA
             $wsaa = $this->getWSAATokens();
 
-            // Crear XMLWriter
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
+            // Generar idTransaccion si no se proporcionó
+            if (empty($transactionId)) {
+                $transactionId = (string)time();
+            }
 
-            // Envelope SOAP
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
-            
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                $w->startElement('RegistrarArriboZonaPrimaria');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+            // XML con formato SOAP-ENV (igual al XML exitoso de Roberto)
+            $xml = '<?xml version="1.0"?>';
+            $xml .= '<SOAP-ENV:Envelope ';
+            $xml .= 'xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" ';
+            $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
 
-                // Autenticación empresa (obligatorio)
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'TRSP');
-                    $w->writeElement('Rol', 'TRSP');
-                $w->endElement();
+            $xml .= '<SOAP-ENV:Body>';
+            $xml .= '<RegistrarArriboZonaPrimaria xmlns="' . self::AFIP_NAMESPACE . '">';
 
-                // Número de viaje (único parámetro requerido)
-                $w->writeElement('argNroViaje', (string)$arriboData['nro_viaje']);
+            // Autenticación empresa con Token y Sign DENTRO
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<Token>' . htmlspecialchars($wsaa['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaa['sign']) . '</Sign>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaa['cuit']) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
+            $xml .= '</argWSAutenticacionEmpresa>';
 
-                $w->endElement(); // RegistrarArriboZonaPrimaria
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
+            // Parámetros específicos del método (según XML exitoso Roberto + nroViaje que AFIP exigió)
+            $xml .= '<argRegistrarArriboZonaPrimariaParam>';
+            $xml .= '<idTransaccion>' . htmlspecialchars(substr($transactionId, 0, 15)) . '</idTransaccion>';
+            $xml .= '<codAdu>' . htmlspecialchars($arriboData['cod_adu']) . '</codAdu>';
+            $xml .= '<codLugOper>' . htmlspecialchars($arriboData['cod_lug_oper']) . '</codLugOper>';
+            if (!empty($arriboData['desc_amarre'])) {
+                $xml .= '<descAmarre>' . htmlspecialchars($arriboData['desc_amarre']) . '</descAmarre>';
+            }
+            $xml .= '<nroViaje>' . htmlspecialchars($arriboData['nro_viaje']) . '</nroViaje>';
+            $xml .= '</argRegistrarArriboZonaPrimariaParam>';
 
-            $w->endDocument();
-            return $w->outputMemory();
+            $xml .= '</RegistrarArriboZonaPrimaria>';
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
+
+            return $xml;
 
         } catch (Exception $e) {
             \Log::info('Error en createRegistrarArriboZonaPrimariaXml: ' . $e->getMessage());
