@@ -2020,64 +2020,29 @@ class SimpleXmlGenerator
             // Obtener tokens WSAA
             $wsaa = $this->getWSAATokens();
 
-            // Crear XMLWriter
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
+            // XML según manual AFIP y XML exitoso Roberto: solo autenticación, sin parámetros adicionales
+            $xml = '<?xml version="1.0"?>';
+            $xml .= '<SOAP-ENV:Envelope ';
+            $xml .= 'xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" ';
+            $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
 
-            // Envelope SOAP
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
-            
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                $w->startElement('ConsultarMicDtaAsig');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+            $xml .= '<SOAP-ENV:Body>';
+            $xml .= '<ConsultarMicDtaAsig xmlns="' . self::AFIP_NAMESPACE . '">';
 
-                // Autenticación empresa (obligatorio para todos los métodos AFIP)
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'TRSP');
-                    $w->writeElement('Rol', 'TRSP');
-                $w->endElement();
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<Token>' . htmlspecialchars($wsaa['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaa['sign']) . '</Sign>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaa['cuit']) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
+            $xml .= '</argWSAutenticacionEmpresa>';
 
-                // Parámetros de consulta (si se especifican filtros)
-                if (!empty($consultaData) || !empty($transactionId)) {
-                    $w->startElement('argConsultarMicDtaAsigParam');
-                    
-                    // ID Transacción para identificar la consulta (opcional)
-                    if (!empty($transactionId)) {
-                        $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
-                    }
-                    
-                    // Filtros opcionales para la consulta
-                    if (!empty($consultaData['fecha_desde'])) {
-                        $w->writeElement('fechaDesde', $consultaData['fecha_desde']);
-                    }
-                    
-                    if (!empty($consultaData['fecha_hasta'])) {
-                        $w->writeElement('fechaHasta', $consultaData['fecha_hasta']);
-                    }
-                    
-                    if (!empty($consultaData['cuit_ata_remolcador'])) {
-                        $w->writeElement('cuitATARemolcador', $consultaData['cuit_ata_remolcador']);
-                    }
-                    
-                    if (!empty($consultaData['nro_viaje'])) {
-                        $w->writeElement('nroViaje', $consultaData['nro_viaje']);
-                    }
-                    
-                    $w->endElement(); // argConsultarMicDtaAsigParam
-                }
-                
-                $w->endElement(); // ConsultarMicDtaAsig
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
+            $xml .= '</ConsultarMicDtaAsig>';
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
 
-            $w->endDocument();
-            return $w->outputMemory();
+            return $xml;
 
         } catch (Exception $e) {
             \Log::info('Error en createConsultarMicDtaAsigXml: ' . $e->getMessage());
