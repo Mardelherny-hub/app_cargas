@@ -3340,48 +3340,27 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // 6. Enviar SOAP
-            $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'SolicitarAnularMicDta');
+           // 6. Delegar al método completo que ya funciona con sendSolicitarAnularMicDtaSoapRequest
+            $result = $this->solicitarAnularMicDta($data['id_micdta'], $data['desc_motivo']);
 
-            // 7. Verificar errores SOAP
-            if (strpos($response, 'soap:Fault') !== false) {
-                $errorMsg = $this->extractSoapFaultMessage($response);
-                throw new Exception("SOAP Fault en SolicitarAnularMicDta: " . $errorMsg);
-            }
-
-            // 8. Guardar transacción exitosa
-            $this->createWebserviceTransaction($voyage, [
-                'transaction_id' => $transactionId,
-                'webservice_method' => 'SolicitarAnularMicDta',
-                'request_data' => $requestData,
-                'response_data' => [
+            // 7. Adaptar respuesta al formato esperado por el dashboard
+            if ($result['success']) {
+                return [
+                    'success' => true,
+                    'method' => 'SolicitarAnularMicDta',
+                    'id_micdta' => $data['id_micdta'],
+                    'desc_motivo' => $data['desc_motivo'],
                     'solicitud_enviada' => true,
                     'requiere_aprobacion_afip' => true,
-                ],
-                'status' => 'success',
-            ]);
-
-            // 9. Logging éxito
-            $this->logOperation('info', 'SolicitarAnularMicDta exitoso', [
-                'voyage_id' => $voyage->id,
-                'id_micdta' => $data['id_micdta'],
-                'desc_motivo' => $data['desc_motivo'],
-                'transaction_id' => $transactionId,
-                'nota' => 'Solicitud enviada - requiere aprobación AFIP',
-            ]);
-
-            // 10. Return success
-            return [
-                'success' => true,
-                'method' => 'SolicitarAnularMicDta',
-                'id_micdta' => $data['id_micdta'],
-                'desc_motivo' => $data['desc_motivo'],
-                'solicitud_enviada' => true,
-                'requiere_aprobacion_afip' => true,
-                'response' => $response,
-                'transaction_id' => $transactionId,
-            ];
+                    'transaction_id' => $result['transaction_id'] ?? $transactionId,
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'error_message' => implode('. ', $result['errors'] ?? ['Error desconocido']),
+                    'error_code' => 'SOLICITAR_ANULAR_MICDTA_ERROR',
+                ];
+            }
 
         } catch (Exception $e) {
             // Error handling
