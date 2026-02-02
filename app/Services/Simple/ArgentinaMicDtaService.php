@@ -1738,9 +1738,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ->get();
         
         foreach ($transactions as $transaction) {
-            $responseData = $transaction->response_data ?? [];
-            if (isset($responseData['micdta_id'])) {
-                $micDtaIds[] = $responseData['micdta_id'];
+            $successData = $transaction->success_data ?? [];
+            if (isset($successData['idMicDta'])) {
+                $micDtaIds[] = $successData['idMicDta'];
             }
         }
         
@@ -1894,7 +1894,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ->where(function($q) use ($micDtaId) {
                 $q->where('external_reference', $micDtaId)
                   ->orWhere('confirmation_number', $micDtaId)
-                  ->orWhereJsonContains('response_data->micdta_id', $micDtaId);
+                  ->orWhereJsonContains('success_data->idMicDta', $micDtaId);
             })
             ->exists();
     }
@@ -2048,7 +2048,10 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         return $voyage->webserviceTransactions()
             ->where('webservice_method', 'RegistrarConvoy')
             ->where('status', 'success')
-            ->whereJsonContains('response_data->nro_viaje', $nroViaje)
+            ->where(function($q) use ($nroViaje) {
+                $q->where('confirmation_number', $nroViaje)
+                  ->orWhereJsonContains('success_data->nroViaje', $nroViaje);
+            })
             ->exists();
     }
 
@@ -2708,7 +2711,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ->where('status', 'success')
             ->where(function($query) use ($nroViaje) {
                 $query->where('confirmation_number', $nroViaje)
-                    ->orWhereJsonContains('response_data->nro_viaje', $nroViaje);
+                    ->orWhereJsonContains('success_data->nroViaje', $nroViaje);
             })
             ->latest('completed_at')
             ->first();
