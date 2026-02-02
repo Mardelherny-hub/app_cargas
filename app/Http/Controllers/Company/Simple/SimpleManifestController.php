@@ -2622,10 +2622,8 @@ public function micDtaSend(Request $request, Voyage $voyage)
     {
         try {
             $request->validate([
-                'external_reference' => 'string|max:50',
-                'micdta_id' => 'string|max:20',
                 'force_send' => 'boolean',
-                'notes' => 'string|max:500'
+                'notes' => 'nullable|string|max:500'
             ]);
 
             $result = $this->executeAfipMethod('ConsultarMicDtaAsig', $request, $voyage);
