@@ -2713,7 +2713,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $query->where('confirmation_number', $nroViaje)
                     ->orWhereJsonContains('success_data->nroViaje', $nroViaje);
             })
-            ->latest('completed_at')
+            ->latest('created_at')
             ->first();
     }
 
@@ -4340,7 +4340,7 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
                     ->where('status', 'sent')
                     ->whereNotNull('external_reference')
                     ->where('company_id', $this->company->id)
-                    ->latest('completed_at')
+                    ->latest('created_at')
                     ->first();
 
                 if (!$micDtaTransaction) {
@@ -4758,7 +4758,7 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             ->where('company_id', $this->company->id)
             ->where('webservice_type', 'micdta')
             ->where('status', 'success')
-            ->latest('completed_at')
+            ->latest('created_at')
             ->first();
     }
 
@@ -5046,7 +5046,7 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             ->where('company_id', $this->company->id)
             ->where('webservice_type', 'convoy')
             ->where('status', 'success')
-            ->latest('completed_at')
+            ->latest('created_at')
             ->first();
     }
 
@@ -5400,7 +5400,7 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             ->where('company_id', $this->company->id)
             ->where('webservice_type', 'micdta')
             ->where('status', 'success')
-            ->latest('completed_at')
+            ->latest('created_at')
             ->first();
     }
 
