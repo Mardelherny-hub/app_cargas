@@ -299,8 +299,8 @@ class SimpleManifestController extends Controller
                 
             case 'SolicitarAnularMicDta':
                 return array_merge($baseData, [
-                    'micdta_id' => $request->input('micdta_id'),
-                    'motivo_anulacion' => $request->input('motivo_anulacion', ''),
+                    'id_micdta' => $request->input('micdta_id'),
+                    'desc_motivo' => $request->input('motivo_anulacion', ''),
                 ]);
                 
             case 'Dummy':
@@ -2371,10 +2371,26 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 ->unique()
                 ->values();
 
+            // Obtener MIC/DTAs registrados (para modal SolicitarAnularMicDta)
+            $micDtaIds = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'success')
+                ->where(function($q) {
+                    $q->where('soap_action', 'like', '%RegistrarMicDta%')
+                      ->orWhere('soap_action', 'like', '%registrar-micdta%');
+                })
+                ->whereNotNull('external_reference')
+                ->pluck('external_reference')
+                ->filter()
+                ->unique()
+                ->values()
+                ->toArray();
+
             return response()->json([
                 'success' => true,
                 'titulos' => $titulosRegistrados,
-                'count' => $titulosRegistrados->count()
+                'count' => $titulosRegistrados->count(),
+                'micdta_ids' => $micDtaIds,
             ]);
 
         } catch (Exception $e) {

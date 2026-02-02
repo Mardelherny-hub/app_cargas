@@ -1765,7 +1765,9 @@ class SimpleXmlGenerator
 
     /**
      * SolicitarAnularMicDta - Solicitar anulación de MIC/DTA
-     * Genera XML según especificación exacta AFIP
+     * Genera XML según formato exacto XML exitoso Roberto
+     * 
+     * CORREGIDO: Token y Sign DENTRO de argWSAutenticacionEmpresa (no en Header separado)
      * 
      * @param array $anulacionData Datos de anulación
      * @param string $transactionId ID único de transacción (máx 15 chars)
@@ -1795,33 +1797,26 @@ class SimpleXmlGenerator
             // Obtener tokens WSAA
             $wsaaTokens = $this->getWSAATokens();
             
-            // Crear documento XML
-            $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+            // Crear documento XML (formato exacto XML exitoso Roberto)
+            $xml = '<?xml version="1.0"?>';
             
-            // Envelope SOAP con namespaces
-            $xml .= '<soap:Envelope ';
-            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
+            // Envelope SOAP con namespaces (formato Roberto exitoso)
+            $xml .= '<SOAP-ENV:Envelope ';
+            $xml .= 'xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" ';
             $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
-            $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
+            $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
             
-            // Header con autenticación WSAA
-            $xml .= '<soap:Header>';
-            $xml .= '<Auth>';
-            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
-            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
-            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
-            $xml .= '</Auth>';
-            $xml .= '</soap:Header>';
-            
-            // Body con método SolicitarAnularMicDta
-            $xml .= '<soap:Body>';
+            // Body directo SIN soap:Header (Token/Sign van dentro de argWSAutenticacionEmpresa)
+            $xml .= '<SOAP-ENV:Body>';
             $xml .= '<SolicitarAnularMicDta xmlns="' . self::AFIP_NAMESPACE . '">';
             
-            // Autenticación empresa (obligatorio AFIP)
+            // Autenticación empresa con Token y Sign DENTRO (según XML exitoso Roberto)
             $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
             $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
-            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
-            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
             $xml .= '</argWSAutenticacionEmpresa>';
             
             // Parámetros específicos SolicitarAnularMicDta
@@ -1835,8 +1830,8 @@ class SimpleXmlGenerator
             
             $xml .= '</argSolicitarAnularMicDtaParam>';
             $xml .= '</SolicitarAnularMicDta>';
-            $xml .= '</soap:Body>';
-            $xml .= '</soap:Envelope>';
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
 
             return $xml;
 
