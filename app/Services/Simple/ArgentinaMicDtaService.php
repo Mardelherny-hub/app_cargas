@@ -5395,8 +5395,11 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
      */
     private function findMicDtaTransactionByReference(string $micDtaId): ?\App\Models\WebserviceTransaction
     {
-        return \App\Models\WebserviceTransaction::where('external_reference', $micDtaId)
-            ->orWhere('confirmation_number', $micDtaId)
+        return \App\Models\WebserviceTransaction::where(function ($q) use ($micDtaId) {
+                $q->where('external_reference', $micDtaId)
+                  ->orWhere('confirmation_number', $micDtaId)
+                  ->orWhereJsonContains('success_data->idMicDta', $micDtaId);
+            })
             ->where('company_id', $this->company->id)
             ->where('webservice_type', 'micdta')
             ->where('status', 'success')
