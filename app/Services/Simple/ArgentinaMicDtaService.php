@@ -1838,7 +1838,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // Crear cliente SOAP y enviar
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'AsignarATARemol');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/AsignarATARemol',
+                SOAP_1_1,
+                false
+            );
 
             // Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -1991,7 +1997,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // Crear cliente SOAP y enviar
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RectifConvoyMicDta');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RectifConvoyMicDta',
+                SOAP_1_1,
+                false
+            );
 
             // Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -2638,7 +2650,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 8. Enviar SOAP
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarSalidaZonaPrimaria');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+                SOAP_1_1,
+                false
+            );
 
             // 9. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -2814,7 +2832,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 6. Enviar SOAP
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'RegistrarArriboZonaPrimaria');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarArriboZonaPrimaria',
+                SOAP_1_1,
+                false
+            );
 
             // 7. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -2910,7 +2934,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 6. Enviar SOAP
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'AnularArriboZonaPrimaria');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/AnularArriboZonaPrimaria',
+                SOAP_1_1,
+                false
+            );
 
             // 7. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -3044,7 +3074,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 6. Enviar SOAP
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'ConsultarMicDtaAsig');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarMicDtaAsig',
+                SOAP_1_1,
+                false
+            );
 
             // 7. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -3192,7 +3228,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 6. Enviar SOAP
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'ConsultarTitEnviosReg');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarTitEnviosReg',
+                SOAP_1_1,
+                false
+            );
 
             // 7. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
@@ -3669,7 +3711,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 6. Enviar SOAP
             $soapClient = $this->createSoapClient();
-            $response = $this->sendSoapRequest($soapClient, $xmlContent, 'Dummy');
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/Dummy',
+                SOAP_1_1,
+                false
+            );
 
             // 7. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {

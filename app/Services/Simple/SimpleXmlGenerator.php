@@ -2063,35 +2063,25 @@ class SimpleXmlGenerator
             // Obtener tokens WSAA
             $wsaa = $this->getWSAATokens();
 
-            // Crear XMLWriter
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
-
-            // Envelope SOAP
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            // XML con formato exacto de Roberto (SOAP-ENV namespace)
+            $xml = '<?xml version="1.0"?>';
+            $xml .= '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
+            $xml .= '<SOAP-ENV:Body>';
+            $xml .= '<ConsultarTitEnviosReg xmlns="' . self::AFIP_NAMESPACE . '">';
             
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                $w->startElement('ConsultarTitEnviosReg');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<Token>' . htmlspecialchars($wsaa['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaa['sign']) . '</Sign>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars((string)$this->company->tax_id) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
+            $xml .= '</argWSAutenticacionEmpresa>';
+            
+            $xml .= '</ConsultarTitEnviosReg>';
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
 
-                // Autenticación empresa (único parámetro requerido según AFIP)
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'TRSP');
-                    $w->writeElement('Rol', 'TRSP');
-                $w->endElement();
-
-                $w->endElement(); // ConsultarTitEnviosReg
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
-
-            $w->endDocument();
-            return $w->outputMemory();
+            return $xml;
 
         } catch (Exception $e) {
             \Log::info('Error en createConsultarTitEnviosRegXml: ' . $e->getMessage());
@@ -2484,26 +2474,15 @@ class SimpleXmlGenerator
     public function createDummyXml(): ?string
     {
         try {
-            // Crear XMLWriter
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
+            // XML con formato exacto SOAP-ENV
+            $xml = '<?xml version="1.0"?>';
+            $xml .= '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
+            $xml .= '<SOAP-ENV:Body>';
+            $xml .= '<Dummy xmlns="' . self::AFIP_NAMESPACE . '"/>';
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
 
-            // Envelope SOAP
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
-            
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                // Método Dummy sin parámetros específicos (solo namespace)
-                $w->startElement('Dummy');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
-                $w->endElement(); // Dummy (self-closing)
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
-
-            $w->endDocument();
-            return $w->outputMemory();
+            return $xml;
 
         } catch (Exception $e) {
             \Log::info('Error en createDummyXml: ' . $e->getMessage());
@@ -2525,57 +2504,40 @@ class SimpleXmlGenerator
             // Obtener tokens WSAA
             $wsaa = $this->getWSAATokens();
 
-            // Crear XMLWriter
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
-
-            // Envelope SOAP
-            $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
+            // XML con formato exacto de Roberto (SOAP-ENV namespace)
+            $xml = '<?xml version="1.0"?>';
+            $xml .= '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">';
+            $xml .= '<SOAP-ENV:Body>';
+            $xml .= '<ConsultarPrecumplido xmlns="' . self::AFIP_NAMESPACE . '">';
             
-            $w->startElementNs('soap', 'Body', 'http://schemas.xmlsoap.org/soap/envelope/');
-                $w->startElement('ConsultarPrecumplido');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
-
-                // Autenticación empresa (obligatorio)
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'TRSP');
-                    $w->writeElement('Rol', 'TRSP');
-                $w->endElement();
-
-                // Parámetros de consulta (si se especifican)
-                if (!empty($consultaData)) {
-                    $w->startElement('argConsultarPrecumplidoParam');
-                    
-                    // ID Transacción para identificar la consulta (opcional)
-                    if (!empty($transactionId)) {
-                        $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
-                    }
-                    
-                    // ID de destinación para consultar precumplido (principal parámetro)
-                    if (!empty($consultaData['destinacion_id'])) {
-                        $w->writeElement('idDestinacion', htmlspecialchars($consultaData['destinacion_id']));
-                    }
-                    
-                    // Otros filtros opcionales
-                    if (!empty($consultaData['codigo_aduana'])) {
-                        $w->writeElement('codAduana', htmlspecialchars($consultaData['codigo_aduana']));
-                    }
-                    
-                    $w->endElement(); // argConsultarPrecumplidoParam
+            $xml .= '<argWSAutenticacionEmpresa>';
+            $xml .= '<Token>' . htmlspecialchars($wsaa['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaa['sign']) . '</Sign>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars((string)$this->company->tax_id) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
+            $xml .= '</argWSAutenticacionEmpresa>';
+            
+            // Parámetros de consulta (si se especifican)
+            if (!empty($consultaData)) {
+                $xml .= '<argConsultarPrecumplidoParam>';
+                if (!empty($transactionId)) {
+                    $xml .= '<idTransaccion>' . htmlspecialchars(substr($transactionId, 0, 15)) . '</idTransaccion>';
                 }
+                if (!empty($consultaData['destinacion_id'])) {
+                    $xml .= '<idDestinacion>' . htmlspecialchars($consultaData['destinacion_id']) . '</idDestinacion>';
+                }
+                if (!empty($consultaData['codigo_aduana'])) {
+                    $xml .= '<codAduana>' . htmlspecialchars($consultaData['codigo_aduana']) . '</codAduana>';
+                }
+                $xml .= '</argConsultarPrecumplidoParam>';
+            }
+            
+            $xml .= '</ConsultarPrecumplido>';
+            $xml .= '</SOAP-ENV:Body>';
+            $xml .= '</SOAP-ENV:Envelope>';
 
-                $w->endElement(); // ConsultarPrecumplido
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
-
-            $w->endDocument();
-            return $w->outputMemory();
+            return $xml;
 
         } catch (Exception $e) {
             \Log::info('Error en createConsultarPrecumplidoXml: ' . $e->getMessage());
