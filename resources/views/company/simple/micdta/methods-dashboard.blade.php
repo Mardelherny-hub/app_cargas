@@ -181,9 +181,9 @@
                     ->latest()
                     ->get();
                 
-                // DEBUG: Ver datos reales
+                // DEBUG: Ver datos reales (incluye todos los tipos MIC/DTA relacionados)
                 $allTransactions = $voyage->webserviceTransactions()
-                    ->where('webservice_type', 'micdta')
+                    ->whereIn('webservice_type', ['micdta', 'anular_micdta', 'convoy', 'ata_remolcador', 'salida_zona_primaria'])
                     ->latest()
                     ->take(10)
                     ->get();
