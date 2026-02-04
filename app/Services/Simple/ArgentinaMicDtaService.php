@@ -3195,10 +3195,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
-     * ❌ IMPLEMENTAR - Consultar títulos y envíos registrados
+     * Consultar títulos y envíos registrados
      */
     private function processConsultarTitEnviosReg(Voyage $voyage, array $data): array
     {
+        $transactionId = 'CONSULTA_TITENVIOS_' . time() . '_' . $voyage->id;
+        $transaction = null;
+        
         try {
             // 1. Logging inicio
             $this->logOperation('info', 'Iniciando ConsultarTitEnviosReg', [
@@ -3206,19 +3209,32 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'voyage_number' => $voyage->voyage_number,
             ]);
 
-            // 2. No hay parámetros obligatorios para consultas generales
+            // 2. Crear transacción ANTES de enviar (para registrar errores)
+            $transaction = \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+                'webservice_type' => 'micdta',
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarTitEnviosReg',
+                'country' => 'AR',
+                'status' => 'pending',
+                'environment' => $this->config['environment'] ?? 'testing',
+                'webservice_url' => $this->getWsdlUrl(),
+                'sent_at' => now(),
+            ]);
 
-            // 3. Preparar datos (vacío para consulta general)
-            $requestData = [];
-
-            // 4. Crear transactionId único
-            $transactionId = 'CONSULTA_TITENVIOS_' . time() . '_' . $voyage->id;
-
-            // 5. Generar XML con SimpleXmlGenerator
-            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
-            $xmlContent = $xmlGenerator->createConsultarTitEnviosRegXml($transactionId);
-
+            // 3. Generar XML usando el serializer existente
+            $xmlContent = $this->xmlSerializer->createConsultarTitEnviosRegXml($transactionId);
+            
             if (!$xmlContent) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Error generando XML para ConsultarTitEnviosReg',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                    'response_at' => now(),
+                ]);
+                
                 return [
                     'success' => false,
                     'error_message' => 'Error generando XML para ConsultarTitEnviosReg',
@@ -3226,7 +3242,10 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // 6. Enviar SOAP
+            // 4. Guardar XML de request
+            $transaction->update(['request_xml' => $xmlContent]);
+
+            // 5. Enviar SOAP
             $soapClient = $this->createSoapClient();
             $response = $soapClient->__doRequest(
                 $xmlContent,
@@ -3236,48 +3255,123 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 false
             );
 
-            // 7. Verificar errores SOAP
-            if (strpos($response, 'soap:Fault') !== false) {
-                $errorMsg = $this->extractSoapFaultMessage($response);
-                throw new Exception("SOAP Fault en ConsultarTitEnviosReg: " . $errorMsg);
+            // 6. Verificar respuesta nula
+            if ($response === null || $response === false) {
+                $errorMsg = 'SOAP response null para ConsultarTitEnviosReg';
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMsg,
+                    'response_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMsg,
+                    'error_code' => 'SOAP_NULL_RESPONSE',
+                ];
             }
 
-            // Extraer títulos de la respuesta
+            // 7. Guardar respuesta
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+            ]);
+
+            // 8. Verificar errores SOAP con parser
+            if ($this->parser->hasSoapFault($response)) {
+                $errorMsg = $this->parser->extractSoapFault($response);
+                $errorCode = $this->parser->extractAfipErrorCode($response);
+                
+                $fullError = "SOAP Fault: {$errorMsg}";
+                if ($errorCode) {
+                    $fullError .= " (Código AFIP: {$errorCode})";
+                }
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $fullError,
+                    'error_code' => $errorCode,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $fullError,
+                    'error_code' => $errorCode ?: 'SOAP_FAULT',
+                ];
+            }
+
+            // 9. Extraer mensajes AFIP
+            $afipMessages = $this->extractAfipMessages($response);
+            
+            if (!empty($afipMessages['errores'])) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+                
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
+            // 10. Extraer títulos de la respuesta
             $titulos = $this->extractTitulosFromResponse($response);
 
-            // 8. Guardar transacción exitosa
-            $this->createWebserviceTransaction($voyage, [
-                'transaction_id' => $transactionId,
-                'webservice_method' => 'ConsultarTitEnviosReg',
-                'request_data' => $requestData,
-                'response_data' => [
+            // 11. Actualizar transacción exitosa
+            $transaction->update([
+                'status' => 'success',
+                'success_data' => [
                     'titulos_count' => count($titulos),
                     'titulos_list' => $titulos,
                 ],
-                'status' => 'success',
             ]);
 
-            // 9. Logging éxito
+            // 12. Logging éxito
             $this->logOperation('info', 'ConsultarTitEnviosReg exitoso', [
                 'voyage_id' => $voyage->id,
                 'titulos_encontrados' => count($titulos),
                 'transaction_id' => $transactionId,
             ]);
 
-            // 10. Return success
+            // 13. Return success
             return [
                 'success' => true,
                 'method' => 'ConsultarTitEnviosReg',
                 'titulos_count' => count($titulos),
                 'titulos_list' => $titulos,
+                'afip_messages' => $afipMessages,
                 'response' => $response,
                 'transaction_id' => $transactionId,
             ];
 
         } catch (Exception $e) {
+            $this->logOperation('error', 'Error en ConsultarTitEnviosReg', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            // Actualizar transacción si existe
+            if ($transaction) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'response_at' => now(),
+                ]);
+            }
+            
             return [
                 'success' => false,
-                'error_message' => $e->getMessage(),
+                'error_message' => $e->getMessage() ?: 'Error desconocido en ConsultarTitEnviosReg',
                 'error_code' => 'CONSULTAR_TITENVIOS_REG_ERROR',
             ];
         }

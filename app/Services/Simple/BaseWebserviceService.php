@@ -543,5 +543,33 @@ abstract class BaseWebserviceService
             ]);
         }
     }
+
+    /**
+     * Crear registro de transacción webservice
+     */
+    protected function createWebserviceTransaction($voyage, array $data): ?\App\Models\WebserviceTransaction
+    {
+        try {
+            return \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $data['transaction_id'] ?? uniqid('TXN_'),
+                'webservice_type' => $data['webservice_type'] ?? $this->config['webservice_type'] ?? 'micdta',
+                'soap_action' => $data['webservice_method'] ?? $data['soap_action'] ?? null,
+                'country' => $data['country'] ?? $this->config['country'] ?? 'AR',
+                'status' => $data['status'] ?? 'pending',
+                'environment' => $data['environment'] ?? $this->config['environment'] ?? 'testing',
+                'request_xml' => $data['request_xml'] ?? null,
+                'response_xml' => $data['response_xml'] ?? null,
+                'webservice_url' => $this->config['webservice_url'] ?? null,
+                'sent_at' => now(),
+                'response_at' => ($data['status'] ?? '') === 'success' ? now() : null,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error creando WebserviceTransaction: ' . $e->getMessage());
+            return null;
+        }
+    }
     
 }
