@@ -2058,7 +2058,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function verifyVoyageNumber(Voyage $voyage, string $nroViaje): bool
     {
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarConvoy')
+            ->where('soap_action', 'like', '%RegistrarConvoy%')
             ->where('status', 'success')
             ->where(function($q) use ($nroViaje) {
                 $q->where('confirmation_number', $nroViaje)
@@ -2390,7 +2390,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
         // Buscar transacciones de vinculación previas
         $vinculaciones = $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarTitMicDta')
+            ->where('soap_action', 'like', '%RegistrarTitMicDta%')
             ->where('status', 'success')
             ->whereJsonContains('request_data->id_micdta', $micDtaId)
             ->get();
@@ -2452,8 +2452,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             foreach ($metodosAAnular as $metodo) {
                 $anuladas = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
                     ->where(function($query) use ($metodo) {
-                        $query->where('webservice_method', $metodo)
-                              ->orWhere('soap_action', 'like', "%{$metodo}%");
+                        $query->where('soap_action', 'like', "%{$metodo}%");
                     })
                     ->whereIn('status', ['success', 'sent', 'pending'])
                     ->update([
@@ -2560,7 +2559,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     {
         // Buscar en transacciones RegistrarTitEnvios de este viaje
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarTitEnvios')
+            ->where('soap_action', 'like', '%RegistrarTitEnvios%')
             ->where('status', 'success')
             ->whereJsonContains('request_data->id_titulo', $idTitulo)
             ->exists();
@@ -2573,7 +2572,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     {
         // Buscar si el título está vinculado a algún MIC/DTA activo
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarTitMicDta')
+            ->where('soap_action', 'like', '%RegistrarTitMicDta%')
             ->where('status', 'success')
             ->whereJsonContains('request_data->titulos', $idTitulo)
             ->exists();
@@ -2725,7 +2724,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function findConvoyTransactionByNroViaje(Voyage $voyage, string $nroViaje): ?\App\Models\WebserviceTransaction
     {
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarConvoy')
+            ->where('soap_action', 'like', '%RegistrarConvoy%')
             ->where('status', 'success')
             ->where(function($query) use ($nroViaje) {
                 $query->where('confirmation_number', $nroViaje)
@@ -2741,7 +2740,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function verifySalidaAlreadyRegistered(Voyage $voyage, string $nroViaje): bool
     {
         return $voyage->webserviceTransactions()
-            ->where('webservice_method', 'RegistrarSalidaZonaPrimaria')
+             ->where('soap_action', 'like', '%RegistrarSalidaZonaPrimaria%')
             ->where('status', 'success')
             ->whereJsonContains('request_data->nro_viaje', $nroViaje)
             ->exists();
