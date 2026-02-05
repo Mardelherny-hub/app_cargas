@@ -2427,114 +2427,179 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     private function processAnularTitulo(Voyage $voyage, array $data): array
     {
+        $transactionId = 'ANULAR_TIT_' . time() . '_' . $voyage->id;
+        $transaction = null;
+        
         try {
-            $motivoAnulacion = $data['motivo_anulacion'] ?? 'Anulación total solicitada';
+            $tituloId = $data['titulo_id'] ?? null;
+            $motivoAnulacion = $data['motivo_anulacion'] ?? 'Anulación solicitada';
 
-            $this->logOperation('warning', '🚨 ANULACIÓN TOTAL iniciada', [
+            // Validar que venga el título
+            if (empty($tituloId)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Debe especificar el ID del título a anular (bill_number)',
+                    'error_code' => 'MISSING_TITULO_ID',
+                ];
+            }
+
+            $this->logOperation('info', 'Iniciando AnularTitulo AFIP', [
                 'voyage_id' => $voyage->id,
+                'titulo_id' => $tituloId,
                 'motivo' => $motivoAnulacion,
             ]);
 
-            $titulosAnulados = [];
-            $tracksCount = 0;
-            $transaccionesAnuladas = 0;
-
-            // 1. ANULAR TRANSACCIONES DE LOS MÉTODOS PRINCIPALES
-            $metodosAAnular = [
-                'RegistrarTitEnvios',
-                'RegistrarEnvios', 
-                'RegistrarMicDta',
-                'RegistrarConvoy',
-                'RegistrarTitMicDta',
-                'AsignarATARemol',
-            ];
-
-            foreach ($metodosAAnular as $metodo) {
-                $anuladas = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
-                    ->where(function($query) use ($metodo) {
-                        $query->where('soap_action', 'like', "%{$metodo}%");
-                    })
-                    ->whereIn('status', ['success', 'sent', 'pending'])
-                    ->update([
-                        'status' => 'cancelled',
-                        'error_message' => 'Anulado: ' . $motivoAnulacion,
-                        'additional_metadata' => \DB::raw("JSON_SET(COALESCE(additional_metadata, '{}'), '$.cancelled_at', NOW(), '$.cancellation_reason', '{$motivoAnulacion}')"),
-                        'updated_at' => now(),
-                    ]);
-
-                $transaccionesAnuladas += $anuladas;
-
-                if ($anuladas > 0) {
-                    $this->logOperation('info', "Anuladas {$anuladas} transacciones de {$metodo}", [
-                        'voyage_id' => $voyage->id,
-                    ]);
-                }
-            }
-
-            // 2. CANCELAR TRACKs
-            foreach ($voyage->shipments as $shipment) {
-                // Cancelar TRACKs de este shipment
-                $cancelled = \App\Models\WebserviceTrack::where('shipment_id', $shipment->id)
-                    ->update([
-                        'status' => 'expired',
-                        'completed_at' => now(),
-                        'notes' => 'Anulación total: ' . $motivoAnulacion,
-                    ]);
-
-                $tracksCount += $cancelled;
-                $titulosAnulados[] = $shipment->shipment_number;
-            }
-
-            // 3. ACTUALIZAR ESTADO DEL VIAJE EN voyage_webservice_status
-            \App\Models\VoyageWebserviceStatus::where('voyage_id', $voyage->id)
-                ->where('webservice_type', 'micdta')
-                ->update([
-                    'status' => 'cancelled',
-                    'last_error_message' => 'Reseteo completo: ' . $motivoAnulacion,
-                    'updated_at' => now(),
-                ]);
-
-            // 4. CREAR TRANSACCIÓN DE ANULACIÓN GENERAL
-            $transactionId = 'RESET_ALL_' . time() . '_' . $voyage->id;
-            
-            \App\Models\WebserviceTransaction::create([
+            // 1. Crear transacción ANTES de enviar
+            $transaction = \App\Models\WebserviceTransaction::create([
                 'company_id' => $this->company->id,
                 'user_id' => $this->user->id,
                 'voyage_id' => $voyage->id,
                 'transaction_id' => $transactionId,
                 'webservice_type' => 'micdta',
-                'country' => 'AR',
                 'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/AnularTitulo',
-                'status' => 'success',
-                'environment' => $this->config['environment'],
+                'country' => 'AR',
+                'status' => 'pending',
+                'environment' => $this->config['environment'] ?? 'testing',
                 'webservice_url' => $this->getWsdlUrl(),
-                'completed_at' => now(),
+                'sent_at' => now(),
+            ]);
+
+            // 2. Generar XML
+            $anulacionData = [
+                'id_titulo' => $tituloId,
+            ];
+            
+            $xmlContent = $this->xmlSerializer->createAnularTituloXml($anulacionData, $transactionId);
+            
+            if (!$xmlContent) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Error generando XML para AnularTitulo',
+                    'response_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para AnularTitulo',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // 3. Guardar XML request
+            $transaction->update(['request_xml' => $xmlContent]);
+
+            // 4. Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/AnularTitulo',
+                SOAP_1_1,
+                false
+            );
+
+            // 5. Verificar respuesta nula
+            if ($response === null || $response === false) {
+                $errorMsg = 'SOAP response null para AnularTitulo';
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMsg,
+                    'response_at' => now(),
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMsg,
+                    'error_code' => 'SOAP_NULL_RESPONSE',
+                ];
+            }
+
+            // 6. Guardar respuesta
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+            ]);
+
+            // 7. Verificar errores SOAP
+            if ($this->parser->hasSoapFault($response)) {
+                $errorMsg = $this->parser->extractSoapFault($response);
+                $errorCode = $this->parser->extractAfipErrorCode($response);
+                
+                $fullError = "SOAP Fault: {$errorMsg}";
+                if ($errorCode) {
+                    $fullError .= " (Código AFIP: {$errorCode})";
+                }
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $fullError,
+                    'error_code' => $errorCode,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $fullError,
+                    'error_code' => $errorCode ?: 'SOAP_FAULT',
+                ];
+            }
+
+            // 8. Extraer mensajes AFIP
+            $afipMessages = $this->extractAfipMessages($response);
+            
+            if (!empty($afipMessages['errores'])) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+                
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
+            // 9. Éxito - Actualizar transacción
+            $transaction->update([
+                'status' => 'success',
                 'success_data' => [
-                    'tipo_operacion' => 'reset_completo',
+                    'titulo_anulado' => $tituloId,
                     'motivo' => $motivoAnulacion,
-                    'titulos_afectados' => $titulosAnulados,
-                    'transacciones_anuladas' => $transaccionesAnuladas,
-                    'tracks_cancelados' => $tracksCount,
                 ],
             ]);
 
-            $this->logOperation('warning', '✅ RESET COMPLETO exitoso', [
+            // 10. Marcar transacciones anteriores del título como canceladas (local)
+            \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                ->whereIn('status', ['success', 'sent'])
+                ->whereHas('shipment.billsOfLading', function($q) use ($tituloId) {
+                    $q->where('bill_number', $tituloId);
+                })
+                ->update([
+                    'status' => 'cancelled',
+                    'error_message' => 'Anulado en AFIP: ' . $motivoAnulacion,
+                ]);
+
+            $this->logOperation('info', 'AnularTitulo exitoso', [
                 'voyage_id' => $voyage->id,
-                'transacciones_anuladas' => $transaccionesAnuladas,
-                'tracks_cancelados' => $tracksCount,
-                'titulos_afectados' => count($titulosAnulados),
+                'titulo_anulado' => $tituloId,
+                'transaction_id' => $transactionId,
             ]);
 
             return [
                 'success' => true,
                 'method' => 'AnularTitulo',
-                'message' => '🚨 VIAJE RESETEADO: Todas las operaciones han sido anuladas.',
-                'data' => [
-                    'transacciones_anuladas' => $transaccionesAnuladas,
-                    'titulos_afectados' => $titulosAnulados,
-                    'tracks_cancelados' => $tracksCount,
-                ],
-                'reload_required' => true,
+                'message' => "Título {$tituloId} anulado exitosamente en AFIP",
+                'titulo_anulado' => $tituloId,
+                'afip_messages' => $afipMessages,
+                'transaction_id' => $transactionId,
             ];
 
         } catch (Exception $e) {
@@ -2543,10 +2608,18 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-
+            
+            if ($transaction) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'response_at' => now(),
+                ]);
+            }
+            
             return [
                 'success' => false,
-                'error_message' => $e->getMessage(),
+                'error_message' => $e->getMessage() ?: 'Error desconocido en AnularTitulo',
                 'error_code' => 'ANULAR_TITULO_ERROR',
             ];
         }
