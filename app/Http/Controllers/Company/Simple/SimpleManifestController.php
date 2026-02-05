@@ -2357,16 +2357,19 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 ], 403);
             }
 
-            // Obtener shipments que tienen registro exitoso en AFIP
-            $titulosRegistrados = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+            // Obtener bill_numbers de los BLs que tienen registro exitoso en AFIP
+            $shipmentIds = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('webservice_type', 'micdta')
                 ->where('soap_action', 'like', '%RegistrarTitEnvios%')
                 ->whereIn('status', ['success', 'sent'])
                 ->whereNotNull('shipment_id')
-                ->with('shipment:id,shipment_number')
-                ->get()
-                ->pluck('shipment.shipment_number')
-                ->filter()
+                ->pluck('shipment_id')
+                ->unique();
+
+            $titulosRegistrados = \App\Models\BillOfLading::whereIn('shipment_id', $shipmentIds)
+                ->whereNotNull('bill_number')
+                ->where('bill_number', '!=', '')
+                ->pluck('bill_number')
                 ->unique()
                 ->values();
 
