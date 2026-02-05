@@ -152,7 +152,8 @@ class SimpleXmlGenerator
 
                     foreach ($billsOfLading as $bol) {
                         // Códigos AFIP desde el BL (prioridad) o fallback a voyage
-                        $bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
+                        //$bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
+                        $bolCodAduOrigen = $codAduOrigen; // usar el mapeo del puerto (getPortCustomsCode) haste que se aclare el problema de los codigos
                         $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
                         $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
                         $bolCodLugOperDest = $bol->operational_discharge_code ?: str_pad($codLugOperDest, 3, '0', STR_PAD_LEFT);
