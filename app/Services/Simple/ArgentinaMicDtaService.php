@@ -2750,17 +2750,36 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             }
 
             // 10. Guardar transacción exitosa
-            $this->createWebserviceTransaction($voyage, [
+            \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
                 'transaction_id' => $transactionId,
-                'webservice_method' => 'RegistrarSalidaZonaPrimaria',
-                'request_data' => $requestData,
-                'response_data' => [
+                'webservice_type' => 'micdta',
+                'country' => 'AR',
+                'webservice_url' => $this->getWsdlUrl(),
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+                'status' => 'success',
+                'environment' => $this->config['environment'],
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
+                'sent_at' => now(),
+                'response_at' => now(),
+                'completed_at' => now(),
+                'external_reference' => $nroSalida,
+                'confirmation_number' => $nroSalida,
+                'success_data' => [
                     'nro_salida' => $nroSalida,
                     'nro_partida' => $nroPartida,
                     'nro_viaje' => $nroViaje,
+                    'salida_registered' => true,
                     'final_step_completed' => true,
                 ],
-                'status' => 'success',
+                'additional_metadata' => [
+                    'method' => 'RegistrarSalidaZonaPrimaria',
+                    'step' => 4,
+                    'voyage_number' => $voyage->voyage_number,
+                ],
             ]);
 
             // 11. Logging éxito
@@ -2822,10 +2841,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     private function verifySalidaAlreadyRegistered(Voyage $voyage, string $nroViaje): bool
     {
-        return $voyage->webserviceTransactions()
-             ->where('soap_action', 'like', '%RegistrarSalidaZonaPrimaria%')
+        return \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('soap_action', 'like', '%RegistrarSalidaZonaPrimaria%')
             ->where('status', 'success')
-            ->whereJsonContains('request_data->nro_viaje', $nroViaje)
             ->exists();
     }
 
