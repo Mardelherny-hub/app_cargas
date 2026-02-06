@@ -2742,8 +2742,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en RegistrarSalidaZonaPrimaria: " . $errorMsg);
             }
 
-            // Extraer número de salida de la respuesta
+            // Extraer número de salida y partida de la respuesta
             $nroSalida = $this->extractNroSalidaFromSoapResponse($response);
+            $nroPartida = null;
+            if (preg_match('/<nroPartida>([^<]+)<\/nroPartida>/i', $response, $matchPartida)) {
+                $nroPartida = trim($matchPartida[1]);
+            }
 
             // 10. Guardar transacción exitosa
             $this->createWebserviceTransaction($voyage, [
@@ -2752,8 +2756,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'request_data' => $requestData,
                 'response_data' => [
                     'nro_salida' => $nroSalida,
+                    'nro_partida' => $nroPartida,
                     'nro_viaje' => $nroViaje,
-                    'convoy_transaction_id' => $convoyTransaction->id,
                     'final_step_completed' => true,
                 ],
                 'status' => 'success',
@@ -5403,6 +5407,7 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
                 'success_data' => [
                     'nro_viaje' => $nroViaje,
                     'nro_salida' => $nroSalida,
+                    'nro_partida' => $this->extractNroPartidaFromResponse($soapResponse),
                     'salida_registered' => true,
                     'final_step_completed' => true,
                 ],
@@ -6003,6 +6008,15 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
     {
         if (preg_match('/<TimeStamp>([^<]+)<\/TimeStamp>/', $xml, $matches)) {
             return $matches[1];
+        }
+        return null;
+    }
+
+    private function extractNroPartidaFromResponse($soapResponse): ?string
+    {
+        $response = $soapResponse['response_data'] ?? '';
+        if (is_string($response) && preg_match('/<nroPartida>([^<]+)<\/nroPartida>/i', $response, $matches)) {
+            return trim($matches[1]);
         }
         return null;
     }
