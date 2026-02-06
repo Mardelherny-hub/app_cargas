@@ -1179,13 +1179,15 @@
                                 // Determinar si puede ejecutar
                                 $puedeEjecutarSalidaZP = $hasMicDtaRegistrado && !empty($nroViaje);
                                 
-                                // Extraer nroSalida si ya se ejecutó
+                                // Extraer nroSalida y nroPartida si ya se ejecutó
                                 $nroSalida = null;
+                                $nroPartida = null;
                                 if ($lastSalidaZP && $lastSalidaZP->success_data) {
                                     $successDataSalida = is_array($lastSalidaZP->success_data) 
                                         ? $lastSalidaZP->success_data 
                                         : json_decode($lastSalidaZP->success_data, true);
                                     $nroSalida = $successDataSalida['nro_salida'] ?? $successDataSalida['nroSalida'] ?? null;
+                                    $nroPartida = $successDataSalida['nro_partida'] ?? $successDataSalida['nroPartida'] ?? null;
                                 }
                             @endphp
 
@@ -1243,11 +1245,17 @@
                                         
                                         {{-- Mostrar Nro. Salida si fue exitoso --}}
                                         @if($nroSalida)
-                                            <div class="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                                            <div class="mt-2 p-2 bg-green-50 border border-green-200 rounded space-y-1">
                                                 <div class="flex justify-between items-center">
-                                                    <span class="text-green-700 font-semibold">Nro. Salida AFIP:</span>
-                                                    <span class="font-mono text-green-900 font-bold">{{ $nroSalida }}</span>
+                                                    <span class="text-green-700 font-semibold text-xs">Nro. Salida:</span>
+                                                    <span class="font-mono text-green-900 font-bold text-xs">{{ $nroSalida }}</span>
                                                 </div>
+                                                @if($nroPartida)
+                                                <div class="flex justify-between items-center">
+                                                    <span class="text-green-700 font-semibold text-xs">Nro. Partida:</span>
+                                                    <span class="font-mono text-green-900 font-bold text-xs">{{ $nroPartida }}</span>
+                                                </div>
+                                                @endif
                                             </div>
                                         @endif
                                         
