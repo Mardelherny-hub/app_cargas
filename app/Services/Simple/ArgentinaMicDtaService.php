@@ -1471,14 +1471,20 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $micDtaId = $this->extractMicDtaIdFromResponse($response);
 
             if ($micDtaId) {
+                // Extraer nroViaje de la respuesta
+                $nroViaje = $this->extractVoyageNumberFromResponse($response);
+                
                 // ✅ ACTUALIZAR TRANSACCIÓN CON DATOS COMPLETOS PARA AUDITORÍA
                 $transaction->update([
-                    'status' => 'sent',
+                    'status' => 'success',
                     'external_reference' => $micDtaId,
-                    'confirmation_number' => $micDtaId,
+                    'confirmation_number' => $nroViaje ?? $micDtaId,
                     'completed_at' => now(),
                     'success_data' => [
                         'mic_dta_id' => $micDtaId,
+                        'idMicDta' => $micDtaId,
+                        'nro_viaje' => $nroViaje,
+                        'nroViaje' => $nroViaje,
                         'tracks_processed' => array_sum(array_map('count', $allTracks)),
                         'afip_server' => $this->extractServerFromResponse($response),
                         'afip_timestamp' => $this->extractTimestampFromResponse($response),
