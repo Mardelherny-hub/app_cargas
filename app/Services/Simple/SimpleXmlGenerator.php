@@ -156,7 +156,7 @@ class SimpleXmlGenerator
                         $bolCodAduOrigen = $codAduOrigen; // usar el mapeo del puerto (getPortCustomsCode) haste que se aclare el problema de los codigos
                         $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
                         $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                        $bolCodLugOperDest = $bol->operational_discharge_code ?: str_pad($codLugOperDest, 3, '0', STR_PAD_LEFT);
+                        $bolCodLugOperDest = str_pad($bol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
                         
                         $w->startElement('TitTransEnvio');
                             
@@ -339,8 +339,8 @@ class SimpleXmlGenerator
                                 // Códigos AFIP desde el primer BL
                                 $vaciosCodAduOrigen = $firstBol->origin_customs_code ?: $codAduOrigen;
                                 $vaciosCodLugOperOrigen = $firstBol->origin_operative_code ?: $codLugOperOrigen;
-                                $vaciosCodAduDest = $firstBol->discharge_customs_code ?: $codAduDest;
-                                $vaciosCodLugOperDest = $firstBol->operational_discharge_code ?: $codLugOperDest;
+                                $vaciosCodAduDest = str_pad($firstBol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
+                                $vaciosCodLugOperDest = str_pad($firstBol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
 
                                 $w->startElement('origen');
                                     $w->writeElement('codAdu', $vaciosCodAduOrigen);
@@ -953,7 +953,7 @@ class SimpleXmlGenerator
                         $firstBol = $voyage->shipments->first()?->billsOfLading->first() 
                                 ?? $voyage->billsOfLading->first();
                         $codLugOperOrigen = $firstBol?->origin_operative_code ?: '10073';
-                        $codLugOperDest = $firstBol?->operational_discharge_code ?: '001';
+                        $codLugOperDest = str_pad($firstBol?->operational_discharge_code ?: '001', 3, '0', STR_PAD_LEFT);
 
                         $this->writeRutasInf($w, $voyage, $codLugOperOrigen, $codLugOperDest);
                         
