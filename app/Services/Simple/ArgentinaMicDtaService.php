@@ -2742,6 +2742,54 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en RegistrarSalidaZonaPrimaria: " . $errorMsg);
             }
 
+            // 9b. Verificar errores AFIP en ListaErrores
+            $afipMessages = $this->extractAfipMessages($response);
+            $hasAfipErrors = !empty($afipMessages['errores']);
+            $hasAfipAlerts = !empty($afipMessages['alertas']);
+            
+            $nroSalidaCheck = null;
+            if (preg_match('/<nroSalida>([^<]+)<\/nroSalida>/i', $response, $m)) {
+                $nroSalidaCheck = trim($m[1]);
+            }
+            
+            if (($hasAfipErrors || $hasAfipAlerts) && empty($nroSalidaCheck)) {
+                $allMessages = array_merge($afipMessages['errores'] ?? [], $afipMessages['alertas'] ?? []);
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $allMessages);
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                
+                \App\Models\WebserviceTransaction::create([
+                    'company_id' => $this->company->id,
+                    'user_id' => $this->user->id,
+                    'voyage_id' => $voyage->id,
+                    'transaction_id' => $transactionId,
+                    'webservice_type' => 'micdta',
+                    'country' => 'AR',
+                    'webservice_url' => $this->getWsdlUrl(),
+                    'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+                    'status' => 'error',
+                    'environment' => $this->config['environment'],
+                    'request_xml' => $xmlContent,
+                    'response_xml' => $response,
+                    'sent_at' => now(),
+                    'response_at' => now(),
+                    'completed_at' => now(),
+                    'error_code' => 'AFIP_ALERT',
+                    'error_message' => $errorMessage,
+                    'additional_metadata' => [
+                        'method' => 'RegistrarSalidaZonaPrimaria',
+                        'afip_messages' => $afipMessages,
+                    ],
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ALERT',
+                ];
+            }
+
             // Extraer número de salida y partida de la respuesta
             $nroSalida = $this->extractNroSalidaFromSoapResponse($response);
             $nroPartida = null;
