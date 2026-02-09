@@ -863,14 +863,22 @@ class SimpleXmlGenerator
      * @param string $transactionId ID único de transacción (máx 15 chars)
      * @return string XML completo
      */
-    public function createRegistrarMicDtaXml(Voyage $voyage, array $tracks, string $transactionId): string
+    public function createRegistrarMicDtaXml(Voyage $voyage, array $tracks, string $transactionId, ?\App\Models\Shipment $shipment = null): string
     {
         try {
             // Cargar relaciones necesarias
             $voyage->load(['leadVessel.vesselType', 'leadVessel.flagCountry', 'captain', 'originPort.country', 'destinationPort.country']);
             
-            $vessel = $voyage->leadVessel;
-            $captain = $voyage->captain;
+            // Si viene shipment específico (convoy), usar su vessel y captain
+            if ($shipment) {
+                $shipment->load(['vessel.vesselType', 'vessel.flagCountry', 'captain']);
+                $vessel = $shipment->vessel ?? $voyage->leadVessel;
+                $captain = $shipment->captain ?? $voyage->captain;
+            } else {
+                $vessel = $voyage->leadVessel;
+                $captain = $voyage->captain;
+            }
+            
             $originPort = $voyage->originPort;
             $destinationPort = $voyage->destinationPort;
             
@@ -949,8 +957,9 @@ class SimpleXmlGenerator
                         $this->writeContenedoresConCarga($w, $voyage);
                         
                         // === rutasInf (ruta informática obligatoria) ===
-                        // Obtener códigos AFIP desde el primer BL del voyage
-                        $firstBol = $voyage->shipments->first()?->billsOfLading->first() 
+                        // Obtener códigos AFIP desde el primer BL del shipment o voyage
+                        $firstBol = $shipment?->billsOfLading->first()
+                                ?? $voyage->shipments->first()?->billsOfLading->first() 
                                 ?? $voyage->billsOfLading->first();
                         $codLugOperOrigen = $firstBol?->origin_operative_code ?: '10073';
                         $codLugOperDest = str_pad($firstBol?->operational_discharge_code ?: '001', 3, '0', STR_PAD_LEFT);

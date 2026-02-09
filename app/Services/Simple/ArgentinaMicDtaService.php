@@ -423,7 +423,40 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ];
         }
         
-        return $this->registrarMicDta($voyage, $allTracks);
+        // Iterar por cada shipment del voyage (como hace processRegistrarTitEnvios)
+        $results = [];
+        $allMicDtaIds = [];
+        
+        foreach ($voyage->shipments as $shipment) {
+            $shipment->load(['vessel.vesselType', 'vessel.flagCountry', 'captain', 'billsOfLading']);
+            
+            $this->logOperation('info', 'RegistrarMicDta para shipment', [
+                'shipment_id' => $shipment->id,
+                'shipment_number' => $shipment->shipment_number,
+                'vessel_name' => $shipment->vessel?->name ?? 'SIN VESSEL',
+            ]);
+            
+            $result = $this->registrarMicDta($voyage, $allTracks, $shipment);
+            $results[] = $result;
+            
+            if (!$result['success']) {
+                // Si falla uno, retornar el error indicando cuál shipment falló
+                $result['error_message'] = "Error en shipment {$shipment->shipment_number}: " . ($result['error_message'] ?? 'Error desconocido');
+                return $result;
+            }
+            
+            if (!empty($result['idMicDta'])) {
+                $allMicDtaIds[] = $result['idMicDta'];
+            }
+        }
+        
+        return [
+            'success' => true,
+            'method' => 'RegistrarMicDta',
+            'message' => 'MIC/DTA registrados para ' . count($results) . ' embarcación(es)',
+            'micdta_ids' => $allMicDtaIds,
+            'results_per_shipment' => $results,
+        ];
     }
 
     // ================================================================  
@@ -1265,13 +1298,15 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     // VERSIÓN COMPLETA - Poblar TODOS los campos para reportes/auditorías
     // REEMPLAZAR registrarMicDta() en app/Services/Simple/ArgentinaMicDtaService.php
 
-    private function registrarMicDta(Voyage $voyage, array $allTracks): array
+    private function registrarMicDta(Voyage $voyage, array $allTracks, ?\App\Models\Shipment $shipment = null): array
     {
         $startTime = microtime(true);
         
         try {
             $this->logOperation('info', 'Iniciando RegistrarMicDta', [
                 'voyage_id' => $voyage->id,
+                'shipment_id' => $shipment?->id,
+                'vessel_name' => $shipment?->vessel?->name ?? $voyage->leadVessel?->name,
                 'shipments_with_tracks' => count($allTracks),
                 'total_tracks' => array_sum(array_map('count', $allTracks)),
             ]);
@@ -1290,6 +1325,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'company_id' => $this->company->id,
                     'user_id' => $this->user->id,
                     'voyage_id' => $voyage->id,
+                    'shipment_id' => $shipment?->id,
                     'transaction_id' => $transactionId,
                     'webservice_type' => 'micdta',
                     'country' => 'AR',
@@ -1329,7 +1365,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $soapClient = $this->createSoapClient();
 
             // Generar XML MIC/DTA
-            $xml = $this->xmlSerializer->createRegistrarMicDtaXml($voyage, $allTracks, $transactionId);
+            $xml = $this->xmlSerializer->createRegistrarMicDtaXml($voyage, $allTracks, $transactionId, $shipment);
 
             $this->logOperation('info', 'Enviando RegistrarMicDta', [
                 'voyage_id' => $voyage->id,
