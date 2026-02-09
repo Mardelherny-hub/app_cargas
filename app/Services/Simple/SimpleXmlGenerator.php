@@ -886,7 +886,8 @@ class SimpleXmlGenerator
             if (!$vessel) {
                 throw new \Exception('Voyage debe tener embarcación asignada');
             }
-            if (!$captain) {
+            $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+            if (!$captain && $tipEmb !== 'BAR') {
                 throw new \Exception('Voyage debe tener capitán asignado');
             }
             if (!$originPort || !$destinationPort) {
@@ -943,8 +944,11 @@ class SimpleXmlGenerator
                         $indEnLastre = ($voyage->has_cargo_onboard === 'N') ? 'S' : 'N';
                         $w->writeElement('indEnLastre', $indEnLastre);
                         
-                        // === conductores (obligatorio - datos del capitán) ===
-                        $this->writeConductoresElement($w, $captain);
+                        // === conductores (datos del capitán - NO enviar para barcazas) ===
+                        $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+                        if ($tipEmb !== 'BAR') {
+                            $this->writeConductoresElement($w, $captain);
+                        }
                         
                         // === cargasSueltasIdTrack (TRACKs de carga suelta) ===
                         // CORREGIDO: Solo para items SIN contenedor, no usa TrackEnv de AFIP

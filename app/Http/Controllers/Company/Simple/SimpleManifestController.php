@@ -2769,7 +2769,7 @@ public function micDtaSend(Request $request, Voyage $voyage)
         }
 
         // Cargar datos necesarios
-        $voyage->load(['leadVessel', 'originPort', 'destinationPort']);
+        $voyage->load(['leadVessel.vesselType', 'originPort', 'destinationPort', 'shipments.vessel.vesselType', 'shipments.captain', 'captain']);
         $micdta_status = $this->getMicDtaStatus($voyage);
 
         return view('company.simple.micdta.methods-dashboard', [
