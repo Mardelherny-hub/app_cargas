@@ -44,17 +44,19 @@
                             {{ $micdta_status ? ucfirst($micdta_status->status) : 'No enviado' }}
                         </span>
                     </div>
-                {{-- Embarcaciones del Viaje --}}
+                </div>
+            </div>
+
+            {{-- Embarcaciones del Viaje --}}
             @if($voyage->shipments->count() > 0)
-                <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">🚢 Embarcaciones del Viaje ({{ $voyage->shipments->count() }})</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="bg-white shadow-sm rounded-lg p-4 mb-6">
+                    <h3 class="text-sm font-medium text-gray-900 mb-3">🚢 Embarcaciones del Viaje ({{ $voyage->shipments->count() }})</h3>
+                    <div class="flex flex-wrap gap-3">
                         @foreach($voyage->shipments as $shipment)
                             @php
                                 $sv = $shipment->vessel;
                                 $tipEmb = $sv && $sv->vesselType ? strtoupper($sv->vesselType->code) : 'N/A';
                                 $esBarcazaShip = in_array($tipEmb, ['BARGE_STD_001', 'BAR', 'BARCAZA']);
-                                $tieneCapitanShip = $shipment->captain !== null;
                                 
                                 $lastMicDtaShip = $voyage->webserviceTransactions()
                                     ->where('shipment_id', $shipment->id)
@@ -63,25 +65,19 @@
                                     ->first();
                                 $micDtaStatus = $lastMicDtaShip ? $lastMicDtaShip->status : null;
                             @endphp
-                            <div class="border rounded-lg p-4 {{ $micDtaStatus === 'success' ? 'border-green-300 bg-green-50' : ($micDtaStatus === 'error' ? 'border-red-300 bg-red-50' : 'border-gray-200') }}">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="font-medium text-gray-900">{{ $sv->name ?? 'Sin embarcación' }}</span>
-                                    <span class="text-xs px-2 py-1 rounded-full {{ $esBarcazaShip ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800' }}">
-                                        {{ $esBarcazaShip ? 'Barcaza' : 'Autopropulsado' }}
-                                    </span>
-                                </div>
-                                <p class="text-xs text-gray-600">Shipment: {{ $shipment->shipment_number }}</p>
-                                <p class="text-xs text-gray-600">Matrícula: {{ $sv->registration_number ?? 'N/A' }}</p>
-                                <p class="text-xs text-gray-600">Capitán: {{ $shipment->captain ? $shipment->captain->first_name . ' ' . $shipment->captain->last_name : ($esBarcazaShip ? 'No requiere' : 'Sin asignar') }}</p>
-                                <div class="mt-2">
-                                    @if($micDtaStatus === 'success')
-                                        <span class="text-xs text-green-700">✅ MIC/DTA registrado</span>
-                                    @elseif($micDtaStatus === 'error')
-                                        <span class="text-xs text-red-700">❌ Error: {{ Str::limit($lastMicDtaShip->error_message, 60) }}</span>
-                                    @else
-                                        <span class="text-xs text-gray-500">⏳ Pendiente de registro</span>
-                                    @endif
-                                </div>
+                            <div class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm
+                                {{ $micDtaStatus === 'success' ? 'border-green-300 bg-green-50' : ($micDtaStatus === 'error' ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50') }}">
+                                <span class="font-medium">{{ $sv->name ?? 'N/A' }}</span>
+                                <span class="text-xs px-1.5 py-0.5 rounded {{ $esBarcazaShip ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700' }}">
+                                    {{ $esBarcazaShip ? 'BAR' : 'AUT' }}
+                                </span>
+                                @if($micDtaStatus === 'success')
+                                    <span class="text-green-600">✅</span>
+                                @elseif($micDtaStatus === 'error')
+                                    <span class="text-red-600" title="{{ $lastMicDtaShip->error_message }}">❌</span>
+                                @else
+                                    <span class="text-gray-400">⏳</span>
+                                @endif
                             </div>
                         @endforeach
                     </div>
