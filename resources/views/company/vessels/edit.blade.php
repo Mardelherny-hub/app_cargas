@@ -138,11 +138,24 @@
                                     @error('operational_status')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
+                                <!-- País de Bandera -->
+                                <div>
+                                    <label for="flag_country_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                        País de Bandera *
+                                    </label>
+                                    <select name="flag_country_id" id="flag_country_id" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('flag_country_id') border-red-300 @enderror">
+                                        <option value="">Seleccione un país</option>
+                                        @foreach($countries as $id => $name)
+                                            <option value="{{ $id }}" {{ old('flag_country_id', $vessel->flag_country_id) == $id ? 'selected' : '' }}>
+                                                {{ $name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('flag_country_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                    <p class="mt-1 text-xs text-gray-500">País bajo cuya bandera está registrada la embarcación</p>
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- Clasificación -->
                         <div class="bg-gray-50 p-4 rounded-lg">
                             <h3 class="text-lg font-medium text-gray-900 mb-4">Clasificación</h3>
                             

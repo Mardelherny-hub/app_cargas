@@ -154,11 +154,11 @@
                                     </label>
                                     <select name="flag_country_id" id="flag_country_id" required class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('flag_country_id') border-red-300 @enderror">
                                         <option value="">Seleccione un país</option>
-                                        <!-- Países más comunes para navegación fluvial -->
-                                        <option value="1" {{ old('flag_country_id') == '1' ? 'selected' : '' }}>Argentina</option>
-                                        <option value="2" {{ old('flag_country_id') == '2' ? 'selected' : '' }}>Paraguay</option>
-                                        <option value="3" {{ old('flag_country_id') == '3' ? 'selected' : '' }}>Brasil</option>
-                                        <option value="4" {{ old('flag_country_id') == '4' ? 'selected' : '' }}>Uruguay</option>
+                                        @foreach($countries as $id => $name)
+                                            <option value="{{ $id }}" {{ old('flag_country_id') == $id ? 'selected' : '' }}>
+                                                {{ $name }}
+                                            </option>
+                                        @endforeach
                                     </select>
                                     @error('flag_country_id')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
