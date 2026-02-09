@@ -44,8 +44,49 @@
                             {{ $micdta_status ? ucfirst($micdta_status->status) : 'No enviado' }}
                         </span>
                     </div>
+                {{-- Embarcaciones del Viaje --}}
+            @if($voyage->shipments->count() > 0)
+                <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">🚢 Embarcaciones del Viaje ({{ $voyage->shipments->count() }})</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        @foreach($voyage->shipments as $shipment)
+                            @php
+                                $sv = $shipment->vessel;
+                                $tipEmb = $sv && $sv->vesselType ? strtoupper($sv->vesselType->code) : 'N/A';
+                                $esBarcazaShip = in_array($tipEmb, ['BARGE_STD_001', 'BAR', 'BARCAZA']);
+                                $tieneCapitanShip = $shipment->captain !== null;
+                                
+                                $lastMicDtaShip = $voyage->webserviceTransactions()
+                                    ->where('shipment_id', $shipment->id)
+                                    ->where('soap_action', 'like', '%RegistrarMicDta%')
+                                    ->latest()
+                                    ->first();
+                                $micDtaStatus = $lastMicDtaShip ? $lastMicDtaShip->status : null;
+                            @endphp
+                            <div class="border rounded-lg p-4 {{ $micDtaStatus === 'success' ? 'border-green-300 bg-green-50' : ($micDtaStatus === 'error' ? 'border-red-300 bg-red-50' : 'border-gray-200') }}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-medium text-gray-900">{{ $sv->name ?? 'Sin embarcación' }}</span>
+                                    <span class="text-xs px-2 py-1 rounded-full {{ $esBarcazaShip ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800' }}">
+                                        {{ $esBarcazaShip ? 'Barcaza' : 'Autopropulsado' }}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-gray-600">Shipment: {{ $shipment->shipment_number }}</p>
+                                <p class="text-xs text-gray-600">Matrícula: {{ $sv->registration_number ?? 'N/A' }}</p>
+                                <p class="text-xs text-gray-600">Capitán: {{ $shipment->captain ? $shipment->captain->first_name . ' ' . $shipment->captain->last_name : ($esBarcazaShip ? 'No requiere' : 'Sin asignar') }}</p>
+                                <div class="mt-2">
+                                    @if($micDtaStatus === 'success')
+                                        <span class="text-xs text-green-700">✅ MIC/DTA registrado</span>
+                                    @elseif($micDtaStatus === 'error')
+                                        <span class="text-xs text-red-700">❌ Error: {{ Str::limit($lastMicDtaShip->error_message, 60) }}</span>
+                                    @else
+                                        <span class="text-xs text-gray-500">⏳ Pendiente de registro</span>
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
                 </div>
-            </div>
+            @endif
 
             {{-- Sección TRACKs Generados --}}
             @if(isset($tracks) && $tracks->count() > 0)
@@ -700,7 +741,9 @@
                                 }
                                 
                                 // Requisitos completos
-                                $puedeEjecutarMicDta = $tieneTracks && $embarcacionCompleta && $capitanCompleto && $tienePuertos;
+                                // Para convoy/barcazas, no se requiere capitán (va en el remolcador)
+                                $esBarcaza = $vessel && $vessel->vesselType && in_array(strtoupper($vessel->vesselType->code), ['BARGE_STD_001', 'BAR', 'BARCAZA']);
+                                $puedeEjecutarMicDta = $tieneTracks && $embarcacionCompleta && ($capitanCompleto || $isConvoyVoyage || $esBarcaza) && $tienePuertos;
                             @endphp
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarMicDta ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
