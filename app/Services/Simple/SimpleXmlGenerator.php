@@ -940,9 +940,20 @@ class SimpleXmlGenerator
                         // === propVehiculo (obligatorio) ===
                         $this->writePropVehiculoElement($w);
                         
+                        // === Determinar si este shipment va en lastre ===
+                        $esLastre = false;
+                        if ($shipment && $voyage->vessel_count > 1 && $shipment->is_lead_vessel) {
+                            $vesselCategory = $vessel->vesselType?->category ?? '';
+                            if ($vesselCategory !== 'barge') {
+                                $esLastre = true; // Remolcador/empujador en convoy sin carga
+                            }
+                        }
+                        if (!$esLastre) {
+                            $esLastre = ($voyage->has_cargo_onboard === 'N') ? true : false;
+                        }
+                        
                         // === indEnLastre (obligatorio S/N) ===
-                        $indEnLastre = ($voyage->has_cargo_onboard === 'N') ? 'S' : 'N';
-                        $w->writeElement('indEnLastre', $indEnLastre);
+                        $w->writeElement('indEnLastre', $esLastre ? 'S' : 'N');
                         
                         // === conductores (datos del capitán - NO enviar para barcazas) ===
                         $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
@@ -950,15 +961,17 @@ class SimpleXmlGenerator
                             $this->writeConductoresElement($w, $captain);
                         }
                         
-                        // === cargasSueltasIdTrack (TRACKs de carga suelta) ===
-                        // CORREGIDO: Solo para items SIN contenedor, no usa TrackEnv de AFIP
-                        $this->writeCargasSueltasIdTrack($w, $voyage);
-                        
-                        // === titTransContVaciosIdTrack (TRACKs de contenedores vacíos) ===
-                        $this->writeTitTransContVaciosIdTrack($w, $tracks);
-                        
-                        // === contenedoresConCarga (IDs de contenedores con carga) ===
-                        $this->writeContenedoresConCarga($w, $voyage);
+                        // === Secciones de carga: OMITIR si va en lastre (AFIP error 27171) ===
+                        if (!$esLastre) {
+                            // === cargasSueltasIdTrack (TRACKs de carga suelta) ===
+                            $this->writeCargasSueltasIdTrack($w, $voyage);
+                            
+                            // === titTransContVaciosIdTrack (TRACKs de contenedores vacíos) ===
+                            $this->writeTitTransContVaciosIdTrack($w, $tracks);
+                            
+                            // === contenedoresConCarga (IDs de contenedores con carga) ===
+                            $this->writeContenedoresConCarga($w, $voyage);
+                        }
                         
                         // === rutasInf (ruta informática obligatoria) ===
                         // Obtener códigos AFIP desde el primer BL del shipment o voyage

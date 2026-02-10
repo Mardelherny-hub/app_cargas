@@ -712,16 +712,29 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                         $shipmentErrors[] = "Shipment " . ($index + 1) . " sin número de embarque";
                     }
 
-                    // Validar bills of lading
+                    // Determinar si este shipment es remolcador/líder en convoy (va en lastre, sin carga)
+                    $esRemolcadorEnConvoy = false;
+                    if ($voyage->vessel_count > 1 && $shipment->is_lead_vessel) {
+                        $vesselCategory = $shipment->vessel?->vesselType?->category ?? '';
+                        if ($vesselCategory !== 'barge') {
+                            $esRemolcadorEnConvoy = true;
+                            $validation['details'][] = "Shipment '{$shipment->shipment_number}': remolcador en convoy - modalidad LASTRE (sin BL requerido) ✓";
+                        }
+                    }
+
+                    // Validar bills of lading (no requerido para remolcadores en convoy)
                     $bolCount = $shipment->billsOfLading()->count();
-                    if ($bolCount === 0) {
+                    if ($bolCount === 0 && !$esRemolcadorEnConvoy) {
                         $shipmentErrors[] = "Shipment '{$shipment->shipment_number}' sin conocimientos de embarque (BL)";
+                    } elseif ($bolCount === 0 && $esRemolcadorEnConvoy) {
+                        // Remolcador sin carga - OK, va en lastre
+                        $validation['details'][] = "Shipment '{$shipment->shipment_number}': 0 BL (lastre) ✓";
                     } else {
                         $validation['details'][] = "Shipment '{$shipment->shipment_number}': {$bolCount} BL ✓";
                         
                         // Validar contenido de cada BL
                         foreach ($shipment->billsOfLading as $bol) {
-                            if (!$bol->bill_of_lading_number && !$bol->bl_number) {
+                            if (!$bol->bill_number) {
                                 $shipmentWarnings[] = "BL sin número válido en shipment '{$shipment->shipment_number}'";
                             }
                             
@@ -734,7 +747,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                             $totalPackages = $bol->shipmentItems->sum('package_quantity');
                             
                             if ($totalWeight <= 0) {
-                                $shipmentErrors[] = "BL '{$bol->bill_of_lading_number}' sin peso válido (actual: {$totalWeight} kg)";
+                                $shipmentErrors[] = "BL '{$bol->bill_number}' sin peso válido (actual: {$totalWeight} kg)";
                             }
 
                             // Validar permiso_embarque (TRP) obligatorio para AFIP
@@ -743,11 +756,11 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                             }
                             
                             if ($totalPackages <= 0) {
-                                $shipmentErrors[] = "BL '{$bol->bill_of_lading_number}' sin cantidad de bultos válida (actual: {$totalPackages})";
+                                $shipmentErrors[] = "BL '{$bol->bill_number}' sin cantidad de bultos válida (actual: {$totalPackages})";
                             }
                             
                             if ($totalWeight > 0 && $totalPackages > 0) {
-                                $validation['details'][] = "BL '{$bol->bill_of_lading_number}': {$totalPackages} bultos, {$totalWeight} kg ✓";
+                                $validation['details'][] = "BL '{$bol->bill_number}': {$totalPackages} bultos, {$totalWeight} kg ✓";
                             }
                         }
                     }
@@ -778,7 +791,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     
                     foreach ($containers as $container) {
                         if (!$container->container_number) {
-                            $validation['warnings'][] = "Contenedor sin número válido en BL '{$bol->bill_of_lading_number}'";
+                            $validation['warnings'][] = "Contenedor sin número válido en BL '{$bol->bill_number}'";
                         }
                     }
                 }
