@@ -714,9 +714,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
                     // Determinar si este shipment es remolcador/líder en convoy (va en lastre, sin carga)
                     $esRemolcadorEnConvoy = false;
-                    if ($voyage->vessel_count > 1 && $shipment->is_lead_vessel) {
+                    if ($voyage->vessel_count > 1) {
                         $vesselCategory = $shipment->vessel?->vesselType?->category ?? '';
-                        if ($vesselCategory !== 'barge') {
+                        if ($vesselCategory !== 'barge' && $shipment->billsOfLading()->count() === 0) {
                             $esRemolcadorEnConvoy = true;
                             $validation['details'][] = "Shipment '{$shipment->shipment_number}': remolcador en convoy - modalidad LASTRE (sin BL requerido) ✓";
                         }

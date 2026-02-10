@@ -262,6 +262,8 @@ class ShipmentController extends Controller
                 'origin_transport_doc' => 'nullable|string|max:39',
             ]);
 
+            $validated['is_lead_vessel'] = $request->has('is_lead_vessel') ? true : false;
+
             // NUEVO: Cargar voyage con sus datos
             $voyage = \App\Models\Voyage::with(['leadVessel', 'captain'])
                 ->findOrFail($validated['voyage_id']);
@@ -937,6 +939,8 @@ public function update(Request $request, Shipment $shipment)
         'origin_manifest_id' => 'nullable|string|max:20',
         'origin_transport_doc' => 'nullable|string|max:39',
     ]);
+
+    $validated['is_lead_vessel'] = $request->has('is_lead_vessel') ? true : false;
 
     // Si cambió vessel_id (de placeholder a embarcación real), quitar requires_attention
 if ($shipment->requires_attention && !empty($validated['vessel_id']) && $validated['vessel_id'] != $shipment->vessel_id) {
