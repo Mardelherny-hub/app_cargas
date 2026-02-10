@@ -1325,7 +1325,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ]);
 
             // ✅ BUSCAR TRANSACCIÓN EXISTENTE (puede haber sido creada antes)
-            $transactionId = 'MICDTA_' . time() . '_' . $voyage->id;
+            $transactionId = 'MD' . time() . substr(uniqid(), -3);
             $transaction = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('webservice_type', 'micdta')
                 ->where('status', 'pending')
