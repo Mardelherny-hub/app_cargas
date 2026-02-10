@@ -1587,37 +1587,29 @@ class SimpleXmlGenerator
             if (empty($convoyData['barcazas_micdta_ids']) || !is_array($convoyData['barcazas_micdta_ids'])) {
                 throw new Exception('IDs MIC/DTA barcazas obligatorios');
             }
+            
+           // Obtener tokens WSAA para wgesregsintia2
+            $wsaaTokens = $this->getWSAATokens('wgesregsintia2');
+            $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
 
-            // Obtener tokens WSAA
-            $wsaaTokens = $this->getWSAATokens();
-            
-            // Crear documento XML
+            // Crear documento XML (mismo patrón que RegistrarMicDta - sin soap:Header)
             $xml = '<?xml version="1.0" encoding="UTF-8"?>';
-            
-            // Envelope SOAP con namespaces
             $xml .= '<soap:Envelope ';
             $xml .= 'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
             $xml .= 'xmlns:xsd="http://www.w3.org/2001/XMLSchema" ';
             $xml .= 'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">';
             
-            // Header con autenticación WSAA
-            $xml .= '<soap:Header>';
-            $xml .= '<Auth>';
-            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
-            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
-            $xml .= '<Cuit>' . htmlspecialchars($wsaaTokens['cuit']) . '</Cuit>';
-            $xml .= '</Auth>';
-            $xml .= '</soap:Header>';
-            
-            // Body con método RegistrarConvoy
+            // Body con método RegistrarConvoy (autenticación dentro del Body)
             $xml .= '<soap:Body>';
             $xml .= '<RegistrarConvoy xmlns="' . self::AFIP_NAMESPACE . '">';
             
-            // Autenticación empresa (obligatorio AFIP)
+            // Autenticación empresa con Token y Sign (igual que RegistrarMicDta)
             $xml .= '<argWSAutenticacionEmpresa>';
-            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($wsaaTokens['cuit']) . '</CuitEmpresaConectada>';
-            $xml .= '<TipoAgente>TRSP</TipoAgente>'; // Transportista
-            $xml .= '<Rol>TRSP</Rol>'; // Rol transportista
+            $xml .= '<Token>' . htmlspecialchars($wsaaTokens['token']) . '</Token>';
+            $xml .= '<Sign>' . htmlspecialchars($wsaaTokens['sign']) . '</Sign>';
+            $xml .= '<CuitEmpresaConectada>' . htmlspecialchars($cuit) . '</CuitEmpresaConectada>';
+            $xml .= '<TipoAgente>TRSP</TipoAgente>';
+            $xml .= '<Rol>TRSP</Rol>';
             $xml .= '</argWSAutenticacionEmpresa>';
             
             // Parámetros específicos RegistrarConvoy

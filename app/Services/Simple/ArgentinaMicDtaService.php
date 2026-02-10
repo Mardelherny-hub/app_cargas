@@ -1711,57 +1711,212 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'voyage_number' => $voyage->voyage_number,
             ]);
 
-            // VALIDACIÓN PREVIA: ¿Es convoy real?
+            // VALIDACIÓN: ¿Es convoy real?
             $embarcacionesCount = $voyage->shipments->count();
-            
             if ($embarcacionesCount <= 1) {
-                $this->logOperation('info', 'Convoy no aplicable - Viaje de embarcación individual', [
-                    'voyage_id' => $voyage->id,
-                    'embarcaciones_count' => $embarcacionesCount,
-                ]);
-                
                 return [
                     'success' => false,
-                    'error_message' => 'RegistrarConvoy no es aplicable para Viajes de una sola embarcación. Este método es para agrupar múltiples embarcaciones (remolcador + barcazas).',
+                    'error_message' => 'RegistrarConvoy no es aplicable para viajes de una sola embarcación.',
                     'error_code' => 'NOT_CONVOY_VOYAGE',
-                    'validation_info' => [
-                        'embarcaciones_en_voyage' => $embarcacionesCount,
-                        'minimo_requerido' => 2,
-                        'nota' => 'Para convoy necesita: 1 remolcador + 1+ barcazas',
-                    ],
                 ];
             }
 
-            // Si llega aquí, SÍ es un convoy válido
+            // Obtener MIC/DTA IDs de transacciones previas
             $micDtaIds = $this->getMicDtaIdsFromPreviousTransactions($voyage);
-            
-            if (empty($micDtaIds)) {
+            if (count($micDtaIds) < 2) {
                 return [
                     'success' => false,
-                    'error_message' => 'No se encontraron MIC/DTA registrados para formar convoy. Ejecute RegistrarMicDta primero.',
+                    'error_message' => 'Se necesitan al menos 2 MIC/DTA distintos para formar convoy. Encontrados: ' . count($micDtaIds) . '. Ejecute RegistrarMicDta para cada embarcación.',
                     'error_code' => 'MISSING_MICDTA_IDS',
                 ];
             }
 
-            // FLUJO CONVOY VÁLIDO
-            $remolcadorId = array_shift($micDtaIds);
-            $barcazasIds = $micDtaIds;
-            
-            $this->logOperation('info', 'Procesando convoy válido', [
-                'remolcador_id' => $remolcadorId,
-                'barcazas_count' => count($barcazasIds),
-                'total_micdta' => count($micDtaIds) + 1,
+            // Identificar remolcador vs barcazas por tipo de embarcación
+            $remolcadorMicDtaId = null;
+            $barcazasMicDtaIds = [];
+
+            $transactions = $voyage->webserviceTransactions()
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->where('status', 'success')
+                ->with('shipment.vessel.vesselType')
+                ->get();
+
+            foreach ($transactions as $tx) {
+                $successData = $tx->success_data ?? [];
+                $idMicDta = $successData['idMicDta'] ?? null;
+                if (!$idMicDta) continue;
+
+                $vesselCategory = $tx->shipment?->vessel?->vesselType?->category ?? 'barge';
+                if ($vesselCategory !== 'barge' && !$remolcadorMicDtaId) {
+                    $remolcadorMicDtaId = $idMicDta;
+                } else {
+                    if (!in_array($idMicDta, $barcazasMicDtaIds)) {
+                        $barcazasMicDtaIds[] = $idMicDta;
+                    }
+                }
+            }
+
+            if (!$remolcadorMicDtaId) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No se encontró MIC/DTA del remolcador/autopropulsado.',
+                    'error_code' => 'MISSING_REMOLCADOR_MICDTA',
+                ];
+            }
+
+            if (empty($barcazasMicDtaIds)) {
+                return [
+                    'success' => false,
+                    'error_message' => 'No se encontraron MIC/DTA de barcazas.',
+                    'error_code' => 'MISSING_BARCAZAS_MICDTA',
+                ];
+            }
+
+            $this->logOperation('info', 'Convoy identificado', [
+                'remolcador_micdta' => $remolcadorMicDtaId,
+                'barcazas_micdta' => $barcazasMicDtaIds,
+            ]);
+
+            // Crear transacción
+            $transactionId = 'CV' . time() . substr(uniqid(), -3);
+            $transaction = \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+                'webservice_type' => 'convoy',
+                'country' => 'AR',
+                'webservice_url' => $this->getWsdlUrl(),
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy',
+                'status' => 'pending',
+                'environment' => $this->config['environment'],
+                'timeout_seconds' => 60,
+                'max_retries' => 3,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'additional_metadata' => [
+                    'method' => 'RegistrarConvoy',
+                    'remolcador_micdta_id' => $remolcadorMicDtaId,
+                    'barcazas_micdta_ids' => $barcazasMicDtaIds,
+                    'voyage_number' => $voyage->voyage_number,
+                ],
+                'sent_at' => now(),
+            ]);
+
+            // Generar XML
+            $convoyData = [
+                'remolcador_micdta_id' => $remolcadorMicDtaId,
+                'barcazas_micdta_ids' => $barcazasMicDtaIds,
+            ];
+
+            $xmlContent = $this->xmlSerializer->createRegistrarConvoyXml($convoyData, $transactionId);
+            if (!$xmlContent) {
+                throw new Exception('Error generando XML RegistrarConvoy');
+            }
+
+            // Crear cliente SOAP y enviar
+            $soapClient = $this->createSoapClient();
+
+            $transaction->update([
+                'status' => 'sending',
+                'request_xml' => $xmlContent,
+                'sent_at' => now(),
+            ]);
+
+            $startTime = microtime(true);
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy',
+                SOAP_1_1,
+                false
+            );
+            $endTime = microtime(true);
+            $responseTime = round(($endTime - $startTime) * 1000);
+
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+                'response_time_ms' => $responseTime,
+            ]);
+
+            // Validar respuesta
+            if ($response === null || $response === false) {
+                throw new Exception('SOAP response null para RegistrarConvoy');
+            }
+
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                $transaction->update([
+                    'status' => 'error',
+                    'error_code' => 'SOAP_FAULT',
+                    'error_message' => $errorMsg,
+                    'completed_at' => now(),
+                ]);
+                throw new Exception("SOAP Fault en RegistrarConvoy: " . $errorMsg);
+            }
+
+            // Verificar errores AFIP
+            $afipMessages = $this->extractAfipMessages($response);
+            if (!empty($afipMessages['errores'])) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                    'completed_at' => now(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
+            // Extraer nroViaje de respuesta
+            $nroViaje = $this->extractVoyageNumberFromResponse($response);
+
+            // Éxito
+            $transaction->update([
+                'status' => 'success',
+                'external_reference' => $remolcadorMicDtaId,
+                'confirmation_number' => $nroViaje ?? $remolcadorMicDtaId,
+                'completed_at' => now(),
+                'success_data' => [
+                    'method' => 'RegistrarConvoy',
+                    'nroViaje' => $nroViaje,
+                    'remolcador_micdta_id' => $remolcadorMicDtaId,
+                    'barcazas_micdta_ids' => $barcazasMicDtaIds,
+                    'total_embarcaciones' => $embarcacionesCount,
+                    'response_time_ms' => $responseTime,
+                ],
+            ]);
+
+            $this->logOperation('info', 'RegistrarConvoy exitoso', [
+                'voyage_id' => $voyage->id,
+                'remolcador' => $remolcadorMicDtaId,
+                'barcazas' => $barcazasMicDtaIds,
+                'response_time_ms' => $responseTime,
             ]);
 
             return [
                 'success' => true,
                 'method' => 'RegistrarConvoy',
-                'message' => 'Convoy procesado correctamente',
+                'message' => 'Convoy registrado exitosamente en AFIP',
+                'nro_viaje' => $nroViaje,
                 'convoy_data' => [
-                    'remolcador_micdta_id' => $remolcadorId,
-                    'barcazas_micdta_ids' => $barcazasIds,
+                    'remolcador_micdta_id' => $remolcadorMicDtaId,
+                    'barcazas_micdta_ids' => $barcazasMicDtaIds,
                     'total_embarcaciones' => $embarcacionesCount,
                 ],
+                'response' => $response,
+                'response_time_ms' => $responseTime,
             ];
 
         } catch (Exception $e) {
