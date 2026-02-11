@@ -430,6 +430,23 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         foreach ($voyage->shipments as $shipment) {
             $shipment->load(['vessel.vesselType', 'vessel.flagCountry', 'captain', 'billsOfLading']);
             
+            // Verificar si este shipment ya tiene MIC/DTA exitoso en AFIP
+            $micdtaExitoso = \App\Models\WebserviceTransaction::where('shipment_id', $shipment->id)
+                ->where('webservice_type', 'micdta')
+                ->where('status', 'success')
+                ->whereNotNull('external_reference')
+                ->first();
+
+            if ($micdtaExitoso) {
+                $this->logOperation('info', 'Shipment ya tiene MIC/DTA exitoso - saltear', [
+                    'shipment_id' => $shipment->id,
+                    'shipment_number' => $shipment->shipment_number,
+                    'idMicDta' => $micdtaExitoso->external_reference,
+                ]);
+                $allMicDtaIds[] = $micdtaExitoso->external_reference;
+                continue;
+            }
+
             $this->logOperation('info', 'RegistrarMicDta para shipment', [
                 'shipment_id' => $shipment->id,
                 'shipment_number' => $shipment->shipment_number,
@@ -861,9 +878,37 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // PROCESAR CADA SHIPMENT: TitEnvios -> Envios (genera TRACKs)
             foreach ($voyage->shipments as $shipment) {
+                // Verificar si este shipment ya tiene MIC/DTA exitoso en AFIP
+                $micdtaExitoso = \App\Models\WebserviceTransaction::where('shipment_id', $shipment->id)
+                    ->where('webservice_type', 'micdta')
+                    ->where('status', 'success')
+                    ->whereNotNull('external_reference')
+                    ->first();
+
+                if ($micdtaExitoso) {
+                    $this->logOperation('info', 'Shipment ya tiene MIC/DTA exitoso - saltear', [
+                        'shipment_id' => $shipment->id,
+                        'shipment_number' => $shipment->shipment_number,
+                        'idMicDta' => $micdtaExitoso->external_reference,
+                    ]);
+                    $allTracks[$shipment->id] = [];
+                    continue;
+                }
+
+                // Verificar si es remolcador en lastre (sin BLs) - no necesita TitEnvios/Envios
+                $vesselCategory = $shipment->vessel?->vesselType?->category ?? '';
+                if ($voyage->vessel_count > 1 && $vesselCategory !== 'barge' && $shipment->billsOfLading()->count() === 0) {
+                    $this->logOperation('info', 'Shipment en lastre - saltear flujo TitEnvios/Envios', [
+                        'shipment_id' => $shipment->id,
+                        'shipment_number' => $shipment->shipment_number,
+                    ]);
+                    $allTracks[$shipment->id] = [];
+                    continue;
+                }
+
                 $shipmentTracks = $this->processShipmentFlow($shipment);
                 if (!$shipmentTracks['success']) {
-                    return $shipmentTracks; // Error en shipment, abortar
+                    return $shipmentTracks;
                 }
                 
                 $allTracks[$shipment->id] = $shipmentTracks['tracks'];
