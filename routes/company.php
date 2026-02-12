@@ -867,6 +867,10 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
             ->name('methods-dashboard')
             ->whereNumber('voyage');
 
+        Route::get('/{voyage}/datos-convoy', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'getDatosConvoy'])
+            ->name('simple.micdta.datos-convoy')
+            ->whereNumber('voyage');
+
         // Ruta para obtener títulos vinculados (AJAX)
         Route::get('/{voyage}/titulos-vinculados', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'getTitulosVinculados'])
             ->name('titulos-vinculados')

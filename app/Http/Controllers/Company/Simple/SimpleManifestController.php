@@ -322,10 +322,10 @@ class SimpleManifestController extends Controller
                 
             case 'RectifConvoyMicDta':
                 return array_merge($baseData, [
-                    'convoy_id' => $request->input('convoy_id'),
-                    'micdta_id' => $request->input('micdta_id'),
-                    'campo_a_rectificar' => $request->input('campo_a_rectificar'),
-                    'valor_nuevo' => $request->input('valor_nuevo'),
+                    'nro_viaje' => $request->input('nro_viaje'),
+                    'desc_motivo' => $request->input('desc_motivo'),
+                    'rectif_convoy' => $request->input('rectif_convoy'),
+                    'rectif_micdta' => $request->input('rectif_micdta'),
                 ]);
                 
             default:
@@ -2405,6 +2405,92 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 'success' => false,
                 'error' => 'Error interno del servidor'
             ], 500);
+        }
+    }
+
+    /**
+     * Obtener datos del convoy para el modal de RectifConvoyMicDta
+     */
+    public function getDatosConvoy(Request $request, $voyageId)
+    {
+        try {
+            $voyage = Voyage::findOrFail($voyageId);
+
+            // Buscar transacción exitosa de RegistrarConvoy
+            $convoyTx = $voyage->webserviceTransactions()
+                ->where('soap_action', 'like', '%RegistrarConvoy%')
+                ->where('soap_action', 'NOT LIKE', '%Rectif%')
+                ->where('status', 'success')
+                ->latest()
+                ->first();
+
+            if (!$convoyTx) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se encontró un convoy registrado exitosamente para este viaje.',
+                ]);
+            }
+
+            // Extraer nro_viaje
+            $successData = is_array($convoyTx->success_data)
+                ? $convoyTx->success_data
+                : json_decode($convoyTx->success_data, true);
+
+            $nroViaje = $successData['nro_viaje']
+                ?? $convoyTx->confirmation_number
+                ?? null;
+
+            // Buscar MIC/DTAs registrados por shipment
+            $micdtaRemolcador = null;
+            $barcazas = [];
+
+            $micdtaTxs = $voyage->webserviceTransactions()
+                ->where('soap_action', 'like', '%RegistrarMicDta%')
+                ->where('soap_action', 'NOT LIKE', '%RegistrarTitMicDta%')
+                ->where('status', 'success')
+                ->get();
+
+            foreach ($micdtaTxs as $tx) {
+                $txData = is_array($tx->success_data)
+                    ? $tx->success_data
+                    : json_decode($tx->success_data, true);
+
+                $idMicDta = $txData['idMicDta'] ?? $tx->confirmation_number ?? null;
+                if (!$idMicDta) continue;
+
+                // Determinar si es remolcador o barcaza
+                $shipment = $tx->shipment_id ? \App\Models\Shipment::with('vessel.vesselType')->find($tx->shipment_id) : null;
+                $vesselName = $shipment && $shipment->vessel ? $shipment->vessel->name : 'N/A';
+                $vesselTypeCode = $shipment && $shipment->vessel && $shipment->vessel->vesselType
+                    ? strtoupper($shipment->vessel->vesselType->code)
+                    : 'N/A';
+
+                $esBarcaza = in_array($vesselTypeCode, ['BAR', 'BARGE_STD_001', 'BARCAZA']);
+
+                if ($esBarcaza) {
+                    $barcazas[] = [
+                        'micdta' => $idMicDta,
+                        'vessel_name' => $vesselName,
+                        'shipment_id' => $tx->shipment_id,
+                    ];
+                } else {
+                    $micdtaRemolcador = $idMicDta;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'nro_viaje' => $nroViaje,
+                'micdta_remolcador' => $micdtaRemolcador,
+                'barcazas' => $barcazas,
+                'convoy_transaction_id' => $convoyTx->id,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Error obteniendo datos del convoy: ' . $e->getMessage(),
+            ]);
         }
     }
 
