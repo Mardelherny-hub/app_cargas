@@ -2159,51 +2159,161 @@
         </div>
     </div>
 
-{{-- ========================================== --}}
-{{-- MODAL PARA VER XML REQUEST/RESPONSE --}}
-{{-- ========================================== --}}
-<div id="xml-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        {{-- Fondo oscuro --}}
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="cerrarXmlModal()"></div>
-
-        {{-- Centrador --}}
-        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
-
-        {{-- Contenido del modal --}}
-        <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+    {{-- ========================================================================
+    MODAL: RECTIFICAR CONVOY / MIC-DTA (Botón 6)
+    ======================================================================== --}}
+    <div id="rectif-convoy-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-10 mx-auto p-0 border w-full max-w-2xl shadow-lg rounded-lg bg-white">
             {{-- Header --}}
-            <div class="bg-gray-800 px-4 py-3 flex items-center justify-between">
-                <h3 id="xml-modal-title" class="text-lg font-medium text-white">
-                    XML Request
-                </h3>
-                <button type="button" onclick="cerrarXmlModal()" class="text-gray-300 hover:text-white">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-purple-50 rounded-t-lg">
+                <div>
+                    <h3 class="text-lg font-semibold text-purple-900">✏️ Rectificar Convoy</h3>
+                    <p class="text-sm text-purple-700 mt-1">Rectifica la configuración del convoy en AFIP</p>
+                </div>
+                <button onclick="closeRectifConvoyModal()" class="text-gray-400 hover:text-gray-600">
                     <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
-            
-            {{-- Body con XML --}}
-            <div class="bg-gray-900 p-4 max-h-[70vh] overflow-auto">
-                <pre id="xml-modal-content" class="text-sm text-green-400 whitespace-pre-wrap font-mono">Cargando...</pre>
+
+            {{-- Loading --}}
+            <div id="rectif-convoy-loading" class="p-8 text-center">
+                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mx-auto"></div>
+                <p class="text-sm text-gray-500 mt-3">Cargando datos del convoy...</p>
             </div>
-            
-            {{-- Footer --}}
-            <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
-                <span id="xml-modal-info" class="text-xs text-gray-500">Transaction ID: -</span>
-                <div class="flex gap-2">
-                    <button type="button" onclick="copiarXml(this)" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
-                        📋 Copiar
-                    </button>
-                    <button type="button" onclick="cerrarXmlModal()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-gray-600 hover:bg-gray-700">
+
+            {{-- Error --}}
+            <div id="rectif-convoy-error" class="hidden p-6">
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p class="text-red-800 font-medium">❌ Error</p>
+                    <p class="text-red-700 text-sm mt-1" id="rectif-convoy-error-msg"></p>
+                </div>
+                <div class="mt-4 text-right">
+                    <button onclick="closeRectifConvoyModal()" class="px-4 py-2 text-sm text-gray-700 bg-gray-200 rounded hover:bg-gray-300">
                         Cerrar
+                    </button>
+                </div>
+            </div>
+
+            {{-- Contenido principal --}}
+            <div id="rectif-convoy-content" class="hidden">
+                <div class="px-6 py-4 space-y-4">
+
+                    {{-- Info del convoy actual --}}
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="text-sm font-semibold text-blue-900 mb-2">📋 Convoy Actual en AFIP</h4>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                                <span class="text-gray-600">Nro Viaje:</span>
+                                <span id="rectif-nro-viaje" class="font-mono font-bold text-blue-800 ml-1"></span>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Remolcador MIC/DTA:</span>
+                                <span id="rectif-micdta-remol" class="font-mono font-bold text-blue-800 ml-1"></span>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="text-gray-600 text-sm">Barcazas MIC/DTA:</span>
+                            <div id="rectif-barcazas-list" class="mt-1"></div>
+                        </div>
+                    </div>
+
+                    {{-- Tipo de rectificación --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de rectificación</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-purple-50 border-purple-300 bg-purple-50">
+                                <input type="radio" name="rectif_tipo" value="convoy" checked class="text-purple-600">
+                                <div class="ml-3">
+                                    <span class="text-sm font-medium text-gray-900">Configuración de Convoy</span>
+                                    <p class="text-xs text-gray-500">Cambiar las barcazas que integran el convoy</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    {{-- Motivo de rectificación --}}
+                    <div>
+                        <label for="rectif-motivo" class="block text-sm font-medium text-gray-700 mb-1">
+                            Motivo de rectificación <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="rectif-motivo" maxlength="50"
+                            placeholder="Ej: Corrección barcaza en convoy"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500"
+                            oninput="updateRectifButton()">
+                        <p class="text-xs text-gray-400 mt-1">Máximo 50 caracteres (<span id="rectif-motivo-count">0</span>/50)</p>
+                    </div>
+
+                    {{-- Resumen de lo que se enviará --}}
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p class="text-sm text-yellow-800">
+                            <strong>⚠️ Se enviará a AFIP:</strong> Rectificación del convoy con el remolcador y barcazas mostrados arriba.
+                            El convoy está en estado <strong>Registrado</strong>, por lo que no requiere aprobación aduanera.
+                        </p>
+                    </div>
+                </div>
+
+                {{-- Footer con botones --}}
+                <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+                    <button onclick="closeRectifConvoyModal()"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancelar
+                    </button>
+                    <button id="btn-confirmar-rectif" onclick="confirmarRectifConvoy()" disabled
+                            class="px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-transparent rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        ✏️ Rectificar Convoy en AFIP
                     </button>
                 </div>
             </div>
         </div>
     </div>
-</div>
+
+    {{-- ========================================== --}}
+    {{-- MODAL PARA VER XML REQUEST/RESPONSE --}}
+    {{-- ========================================== --}}
+    <div id="xml-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            {{-- Fondo oscuro --}}
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="cerrarXmlModal()"></div>
+
+            {{-- Centrador --}}
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+
+            {{-- Contenido del modal --}}
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+                {{-- Header --}}
+                <div class="bg-gray-800 px-4 py-3 flex items-center justify-between">
+                    <h3 id="xml-modal-title" class="text-lg font-medium text-white">
+                        XML Request
+                    </h3>
+                    <button type="button" onclick="cerrarXmlModal()" class="text-gray-300 hover:text-white">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                
+                {{-- Body con XML --}}
+                <div class="bg-gray-900 p-4 max-h-[70vh] overflow-auto">
+                    <pre id="xml-modal-content" class="text-sm text-green-400 whitespace-pre-wrap font-mono">Cargando...</pre>
+                </div>
+                
+                {{-- Footer --}}
+                <div class="bg-gray-100 px-4 py-3 flex justify-between items-center">
+                    <span id="xml-modal-info" class="text-xs text-gray-500">Transaction ID: -</span>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="copiarXml(this)" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50">
+                            📋 Copiar
+                        </button>
+                        <button type="button" onclick="cerrarXmlModal()" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-gray-600 hover:bg-gray-700">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
 </x-app-layout>
 
@@ -2243,6 +2353,11 @@
 
         if (methodName === 'AnularTitulo') {
             showAnularTituloModal();
+            return;
+        }
+
+        if (methodName === 'RectifConvoyMicDta') {
+            showRectifConvoyModal();
             return;
         }
 
@@ -2778,6 +2893,140 @@
         document.getElementById('anular-todo-modal').classList.add('hidden');
         document.getElementById('motivo-anulacion').value = '';
         document.getElementById('confirm-reset').checked = false;
+    }
+
+    // ========================================================================
+    // MODAL RECTIFICAR CONVOY (Botón 6)
+    // ========================================================================
+
+    async function showRectifConvoyModal() {
+        const modal = document.getElementById('rectif-convoy-modal');
+        const loading = document.getElementById('rectif-convoy-loading');
+        const content = document.getElementById('rectif-convoy-content');
+        const errorDiv = document.getElementById('rectif-convoy-error');
+
+        modal.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        content.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/datos-convoy`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error || 'No se encontraron datos del convoy');
+            }
+
+            // Llenar datos
+            document.getElementById('rectif-nro-viaje').textContent = result.nro_viaje || 'N/A';
+            document.getElementById('rectif-micdta-remol').textContent = result.micdta_remolcador || 'N/A';
+
+            // Barcazas
+            const barcazasDiv = document.getElementById('rectif-barcazas-list');
+            barcazasDiv.innerHTML = '';
+            if (result.barcazas && result.barcazas.length > 0) {
+                result.barcazas.forEach(b => {
+                    const span = document.createElement('span');
+                    span.className = 'inline-flex items-center px-2 py-1 mr-2 mb-1 rounded text-xs font-mono font-bold bg-green-100 text-green-800';
+                    span.textContent = b.micdta + ' (' + b.vessel_name + ')';
+                    barcazasDiv.appendChild(span);
+                });
+            } else {
+                barcazasDiv.innerHTML = '<span class="text-xs text-gray-500">Sin barcazas detectadas</span>';
+            }
+
+            // Guardar datos en el modal para el envío
+            modal.dataset.nroViaje = result.nro_viaje || '';
+            modal.dataset.micDtaRemol = result.micdta_remolcador || '';
+            modal.dataset.barcazasIds = JSON.stringify(result.barcazas ? result.barcazas.map(b => b.micdta) : []);
+
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+
+        } catch (error) {
+            loading.classList.add('hidden');
+            errorDiv.classList.remove('hidden');
+            document.getElementById('rectif-convoy-error-msg').textContent = error.message;
+        }
+    }
+
+    function updateRectifButton() {
+        const motivo = document.getElementById('rectif-motivo').value.trim();
+        document.getElementById('rectif-motivo-count').textContent = motivo.length;
+        document.getElementById('btn-confirmar-rectif').disabled = motivo.length === 0;
+    }
+
+    async function confirmarRectifConvoy() {
+        const modal = document.getElementById('rectif-convoy-modal');
+        const motivo = document.getElementById('rectif-motivo').value.trim();
+
+        if (!motivo) {
+            alert('Debe indicar el motivo de rectificación');
+            return;
+        }
+
+        const nroViaje = modal.dataset.nroViaje;
+        const micDtaRemol = modal.dataset.micDtaRemol;
+        const barcazasIds = JSON.parse(modal.dataset.barcazasIds || '[]');
+
+        if (!nroViaje || !micDtaRemol) {
+            alert('Faltan datos del convoy. Cierre y reintente.');
+            return;
+        }
+
+        if (!confirm('¿Confirma enviar la rectificación del convoy a AFIP?')) {
+            return;
+        }
+
+        const button = document.getElementById('btn-confirmar-rectif');
+        const originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<svg class="animate-spin h-5 w-5 mx-auto" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/rectif-convoy-micdta`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    nro_viaje: nroViaje,
+                    desc_motivo: motivo,
+                    rectif_convoy: {
+                        id_micdta_remol: micDtaRemol,
+                        barcazas_micdta_ids: barcazasIds
+                    }
+                })
+            });
+
+            const result = await response.json();
+            closeRectifConvoyModal();
+            showResultModal('RectifConvoyMicDta', result, response.ok);
+
+            if (result.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+
+        } catch (error) {
+            showResultModal('RectifConvoyMicDta', { error: 'Error de comunicación: ' + error.message }, false);
+        } finally {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        }
+    }
+
+    function closeRectifConvoyModal() {
+        document.getElementById('rectif-convoy-modal').classList.add('hidden');
+        document.getElementById('rectif-motivo').value = '';
+        document.getElementById('rectif-motivo-count').textContent = '0';
+        document.getElementById('btn-confirmar-rectif').disabled = true;
     }
 
     // ========================================================================
