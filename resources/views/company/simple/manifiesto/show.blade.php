@@ -211,18 +211,16 @@
                                 {{-- Enlaces descarga XML para soporte DNA --}}
                                 <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
                                     @if($xffmTransaction->request_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xffmTransaction->id, 'type' => 'request']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                        <button onclick="verXml({{ $xffmTransaction->id }}, 'request')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors cursor-pointer">
                                             📤 Request XML
-                                        </a>
+                                        </button>
                                     @endif
                                     @if($xffmTransaction->response_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xffmTransaction->id, 'type' => 'response']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                        <button onclick="verXml({{ $xffmTransaction->id }}, 'response')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors cursor-pointer">
                                             📥 Response XML
-                                        </a>
+                                        </button>
                                     @endif
                                 </div>
                             @else
@@ -405,18 +403,16 @@
                                 {{-- Enlaces descarga XML para soporte DNA --}}
                                 <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
                                     @if($xfbtTransaction->request_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfbtTransaction->id, 'type' => 'request']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                        <button onclick="verXml({{ $xfbtTransaction->id }}, 'request')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors cursor-pointer">
                                             📤 Request XML
-                                        </a>
+                                        </button>
                                     @endif
                                     @if($xfbtTransaction->response_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfbtTransaction->id, 'type' => 'response']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                        <button onclick="verXml({{ $xfbtTransaction->id }}, 'response')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors cursor-pointer">
                                             📥 Response XML
-                                        </a>
+                                        </button>
                                     @endif
                                 </div>
                             @else
@@ -477,18 +473,16 @@
                                 {{-- Enlaces descarga XML para soporte DNA --}}
                                 <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
                                     @if($xfctTransaction->request_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfctTransaction->id, 'type' => 'request']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                        <button onclick="verXml({{ $xfctTransaction->id }}, 'request')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors cursor-pointer">
                                             📤 Request XML
-                                        </a>
+                                        </button>
                                     @endif
                                     @if($xfctTransaction->response_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfctTransaction->id, 'type' => 'response']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                        <button onclick="verXml({{ $xfctTransaction->id }}, 'response')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors cursor-pointer">
                                             📥 Response XML
-                                        </a>
+                                        </button>
                                     @endif
                                 </div>
                             @else
@@ -532,12 +526,14 @@
                                             'sent', 'success' => 'bg-green-100 text-green-800',
                                             'pending' => 'bg-yellow-100 text-yellow-800',
                                             'error' => 'bg-red-100 text-red-800',
+                                            'rejected' => 'bg-red-100 text-red-800',
                                             default => 'bg-gray-100 text-gray-800'
                                         };
                                         $statusIcon = match($transaction->status) {
                                             'sent', 'success' => '✅',
                                             'pending' => '⏳',
                                             'error' => '❌',
+                                            'rejected' => '🚫',
                                             default => '⚪'
                                         };
                                     @endphp
@@ -956,6 +952,7 @@
         const badges = {
             success: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">✅ Exitoso</span>',
             sent: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">📤 Enviado</span>',
+            rejected: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">🚫 Rechazado</span>',
             error: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">❌ Error</span>',
             pending: '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">⏳ Pendiente</span>'
         };
@@ -1190,6 +1187,73 @@ async function rectificarMetodo(method) {
     }
 }
 
+function verXml(transactionId, type) {
+    const modal = document.getElementById('xml-modal');
+    const title = document.getElementById('xml-modal-title');
+    const content = document.getElementById('xml-modal-content');
+    const info = document.getElementById('xml-modal-info');
+    
+    modal.classList.remove('hidden');
+    title.textContent = type === 'request' ? '📤 XML Request' : '📥 XML Response';
+    content.textContent = 'Cargando XML...';
+    content.className = 'mt-3 text-sm text-yellow-400 whitespace-pre-wrap font-mono bg-black p-4 rounded max-h-[70vh] overflow-auto';
+    info.textContent = 'Transaction ID: ' + transactionId;
+    
+    fetch(`/company/webservices/transaction/${transactionId}/xml/${type}`, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            content.textContent = data.xml;
+            content.className = 'mt-3 text-sm text-green-400 whitespace-pre-wrap font-mono bg-black p-4 rounded max-h-[70vh] overflow-auto';
+        } else {
+            content.textContent = 'Error: ' + (data.message || 'No se pudo cargar el XML');
+            content.className = 'mt-3 text-sm text-red-400 whitespace-pre-wrap font-mono bg-black p-4 rounded max-h-[70vh] overflow-auto';
+        }
+    })
+    .catch(error => {
+        content.textContent = 'Error de conexión: ' + error.message;
+        content.className = 'mt-3 text-sm text-red-400 whitespace-pre-wrap font-mono bg-black p-4 rounded max-h-[70vh] overflow-auto';
+    });
+}
 
+function cerrarXmlModal() {
+    document.getElementById('xml-modal').classList.add('hidden');
+}
+
+function copiarXml(btn) {
+    const content = document.getElementById('xml-modal-content').textContent;
+    navigator.clipboard.writeText(content).then(() => {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✅ Copiado!';
+        setTimeout(() => { btn.innerHTML = originalText; }, 2000);
+    }).catch(err => {
+        alert('Error al copiar: ' + err);
+    });
+}
 </script>
+
+{{-- Modal XML con botón copiar --}}
+<div id="xml-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-10 mx-auto p-5 border w-11/12 lg:w-3/4 max-w-5xl shadow-lg rounded-lg bg-gray-900">
+        <div class="flex items-center justify-between pb-3 border-b border-gray-700">
+            <h3 id="xml-modal-title" class="text-lg font-semibold text-white">XML</h3>
+            <div class="flex items-center space-x-2">
+                <button onclick="copiarXml(this)" class="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">📋 Copiar</button>
+                <button onclick="cerrarXmlModal()" class="text-gray-400 hover:text-white">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="mt-2 text-xs text-gray-400" id="xml-modal-info"></div>
+        <pre id="xml-modal-content" class="mt-3 text-sm text-green-400 whitespace-pre-wrap font-mono bg-black p-4 rounded max-h-[70vh] overflow-auto"></pre>
+    </div>
+</div>
 </x-app-layout>

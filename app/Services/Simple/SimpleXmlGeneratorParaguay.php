@@ -225,28 +225,30 @@ class SimpleXmlGeneratorParaguay
 
                     // ✅ PRECINTOS (múltiples posibles)
                     $w->startElement('precintos');
+                    // ✅ PRECINTOS (solo si hay al menos uno)
+                    if ($container->carrier_seal || $container->customs_seal) {
+                        $w->startElement('precintos');
 
-                    // Precinto principal (carrier_seal)
-                    if ($container->carrier_seal) {
-                        $w->startElement('precinto');
-                        $w->writeElement('nroPrecinto', htmlspecialchars(
-                            substr($container->carrier_seal, 0, 35)
-                        ));
-                        $w->writeElement('tipPrecin', 'BC'); // BC=Barrera Container
-                        $w->endElement(); // precinto
+                        if ($container->carrier_seal) {
+                            $w->startElement('precinto');
+                            $w->writeElement('nroPrecinto', htmlspecialchars(
+                                substr($container->carrier_seal, 0, 35)
+                            ));
+                            $w->writeElement('tipPrecin', 'BC');
+                            $w->endElement(); // precinto
+                        }
+
+                        if ($container->customs_seal) {
+                            $w->startElement('precinto');
+                            $w->writeElement('nroPrecinto', htmlspecialchars(
+                                substr($container->customs_seal, 0, 35)
+                            ));
+                            $w->writeElement('tipPrecin', 'BC');
+                            $w->endElement(); // precinto
+                        }
+
+                        $w->endElement(); // precintos
                     }
-
-                    // Precinto adicional (customs_seal)
-                    if ($container->customs_seal) {
-                        $w->startElement('precinto');
-                        $w->writeElement('nroPrecinto', htmlspecialchars(
-                            substr($container->customs_seal, 0, 35)
-                        ));
-                        $w->writeElement('tipPrecin', 'BC');
-                        $w->endElement(); // precinto
-                    }
-
-                    $w->endElement(); // precintos
 
                     $w->endElement(); // contenedor
                 }
