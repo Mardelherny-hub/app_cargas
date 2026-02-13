@@ -339,8 +339,11 @@ class ParaguayDnaService extends BaseWebserviceService
                     ]);
                 }
 
+                // Detectar REJECTED antes de persistir
+                $dnaStatus = $this->determineDnaStatus($soapResult);
+
                 $transaction->update([
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'external_reference' => $nroViaje,
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
@@ -354,37 +357,30 @@ class ParaguayDnaService extends BaseWebserviceService
 
                 // Actualizar estado del voyage
                 $this->updateWebserviceStatus($voyage, 'XFFM', [
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'nro_viaje' => $nroViaje,
                 ]);
 
                 DB::commit();
 
-                $this->logOperation('info', 'XFFM enviado exitosamente', [
+                $this->logOperation($dnaStatus['was_rejected'] ? 'warning' : 'info', 
+                    $dnaStatus['was_rejected'] ? 'XFFM RECHAZADO por DNA' : 'XFFM enviado exitosamente', [
                     'voyage_id' => $voyage->id,
                     'nroViaje' => $nroViaje,
                     'transaction_id' => $transactionId,
+                    'dna_status' => $dnaStatus['details']['status_code'],
+                    'dna_reason' => $dnaStatus['details']['reason'],
                 ]);
 
-                // Extraer detalles de la respuesta DNA
-                $dnaDetails = $this->extractDnaResponseDetails($soapResult['response_data']);
-                
-                // Determinar si fue aceptado o rechazado por DNA
-                $wasRejected = ($dnaDetails['status_code'] === 'REJECTED');
-                
                 return [
-                    'success' => true,
-                    'accepted' => !$wasRejected,
+                    'success' => !$dnaStatus['was_rejected'],
+                    'accepted' => !$dnaStatus['was_rejected'],
                     'nroViaje' => $nroViaje,
                     'transaction_id' => $transactionId,
-                    'message' => $wasRejected 
-                        ? 'Mensaje enviado pero RECHAZADO por DNA' 
+                    'message' => $dnaStatus['was_rejected'] 
+                        ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
                         : 'XFFM enviado exitosamente',
-                    'dna_response' => [
-                        'status_code' => $dnaDetails['status_code'],
-                        'reason_code' => $dnaDetails['reason_code'],
-                        'reason' => $dnaDetails['reason'],
-                    ],
+                    'dna_response' => $dnaStatus['details'],
                 ];
             } else {
                 throw new Exception($soapResult['error_message'] ?? 'Error SOAP desconocido');
@@ -494,23 +490,28 @@ class ParaguayDnaService extends BaseWebserviceService
 
             // 7. Procesar respuesta
             if ($soapResult['success']) {
+                $dnaStatus = $this->determineDnaStatus($soapResult);
+
                 $transaction->update([
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
                 $this->updateWebserviceStatus($voyage, 'XFBL', [
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'nro_viaje' => $nroViaje,
                 ]);
 
                 DB::commit();
 
                 return [
-                    'success' => true,
+                    'success' => !$dnaStatus['was_rejected'],
                     'transaction_id' => $transactionId,
-                    'message' => 'XFBL enviado exitosamente',
+                    'message' => $dnaStatus['was_rejected']
+                        ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
+                        : 'XFBL enviado exitosamente',
                     'bl_count' => $blCount,
+                    'dna_response' => $dnaStatus['details'],
                 ];
             } else {
                 throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
@@ -610,35 +611,29 @@ class ParaguayDnaService extends BaseWebserviceService
 
             // 6. Procesar respuesta
             if ($soapResult['success']) {
-                \Log::info('🔵 XFBT - Antes de update', [
-                    'transaction_id' => $transaction->id,
-                    'tiene_xml' => ! empty($xml),
-                    'xml_length' => strlen($xml),
-                ]);
+                $dnaStatus = $this->determineDnaStatus($soapResult);
 
                 $transaction->update([
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'response_xml' => $soapResult['raw_response'] ?? null,
                     'request_xml' => $xml,
                 ]);
 
-                \Log::info('🔵 XFBT - Después de update', [
-                    'transaction_id' => $transaction->id,
-                    'tiene_request_xml' => ! empty($transaction->fresh()->request_xml),
-                ]);
-
                 $this->updateWebserviceStatus($voyage, 'XFBT', [
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'nro_viaje' => $nroViaje,
                 ]);
 
                 DB::commit();
 
                 return [
-                    'success' => true,
+                    'success' => !$dnaStatus['was_rejected'],
                     'transaction_id' => $transactionId,
-                    'message' => 'XFBT enviado exitosamente',
+                    'message' => $dnaStatus['was_rejected']
+                        ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
+                        : 'XFBT enviado exitosamente',
                     'container_count' => $containers->count(),
+                    'dna_response' => $dnaStatus['details'],
                 ];
             } else {
                 throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
@@ -706,23 +701,28 @@ class ParaguayDnaService extends BaseWebserviceService
 
             // 5. Procesar respuesta
             if ($soapResult['success']) {
+                $dnaStatus = $this->determineDnaStatus($soapResult);
+
                 $transaction->update([
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
                 $this->updateWebserviceStatus($voyage, 'XFCT', [
-                    'status' => 'sent',
+                    'status' => $dnaStatus['status'],
                     'nro_viaje' => $nroViaje,
                 ]);
 
                 DB::commit();
 
                 return [
-                    'success' => true,
+                    'success' => !$dnaStatus['was_rejected'],
                     'transaction_id' => $transactionId,
-                    'message' => 'Viaje cerrado exitosamente',
+                    'message' => $dnaStatus['was_rejected']
+                        ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
+                        : 'Viaje cerrado exitosamente',
                     'nroViaje' => $nroViaje,
+                    'dna_response' => $dnaStatus['details'],
                 ];
             } else {
                 throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
@@ -1205,6 +1205,39 @@ XML;
         }
 
         return $details;
+    }
+
+    /**
+     * Determinar status DNA desde la respuesta SOAP
+     * Busca StatusCode/ReasonCode en response_data y raw_response (con fallback regex)
+     */
+    private function determineDnaStatus(array $soapResult): array
+    {
+        // 1. Intentar desde response_data (objeto SOAP parseado)
+        $details = $this->extractDnaResponseDetails($soapResult['response_data'] ?? null);
+
+        // 2. Fallback: regex directo del raw_response
+        if (!$details['status_code'] && !empty($soapResult['raw_response'])) {
+            $raw = $soapResult['raw_response'];
+            
+            if (preg_match('/<StatusCode>([^<]+)<\/StatusCode>/i', $raw, $m)) {
+                $details['status_code'] = trim($m[1]);
+            }
+            if (preg_match('/<ReasonCode>([^<]+)<\/ReasonCode>/i', $raw, $m)) {
+                $details['reason_code'] = trim($m[1]);
+            }
+            if (preg_match('/<Reason>([^<]+)<\/Reason>/i', $raw, $m)) {
+                $details['reason'] = trim($m[1]);
+            }
+        }
+
+        $wasRejected = ($details['status_code'] === 'REJECTED');
+
+        return [
+            'status' => $wasRejected ? 'rejected' : 'sent',
+            'was_rejected' => $wasRejected,
+            'details' => $details,
+        ];
     }
 
     /**

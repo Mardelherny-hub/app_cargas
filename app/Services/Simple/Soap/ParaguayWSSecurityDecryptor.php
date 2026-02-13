@@ -229,13 +229,26 @@ class ParaguayWSSecurityDecryptor
                 $sessionKey = substr($sessionKey, 0, $keyLength);
             }
             
-            return openssl_decrypt(
+            // Desencriptar sin validar padding automáticamente
+            $decrypted = openssl_decrypt(
                 $encrypted,
                 'des-ede3-cbc',
                 $sessionKey,
-                OPENSSL_RAW_DATA,
+                OPENSSL_RAW_DATA | OPENSSL_NO_PADDING,
                 $iv
             );
+
+            if ($decrypted === false) {
+                return false;
+            }
+
+            // Remover PKCS#5/PKCS#7 padding manualmente
+            $padLength = ord($decrypted[strlen($decrypted) - 1]);
+            if ($padLength > 0 && $padLength <= 8) {
+                $decrypted = substr($decrypted, 0, -$padLength);
+            }
+
+            return $decrypted;
         }
         
         // AES-256-CBC (respaldo)
