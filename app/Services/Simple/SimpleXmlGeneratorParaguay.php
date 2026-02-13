@@ -223,8 +223,6 @@ class SimpleXmlGeneratorParaguay
                         substr($container->containerType->iso_code ?? '40DV', 0, 4)
                     ));
 
-                    // ✅ PRECINTOS (múltiples posibles)
-                    $w->startElement('precintos');
                     // ✅ PRECINTOS (solo si hay al menos uno)
                     if ($container->carrier_seal || $container->customs_seal) {
                         $w->startElement('precintos');
