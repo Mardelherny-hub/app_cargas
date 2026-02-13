@@ -110,7 +110,7 @@ class SimpleXmlGeneratorParaguay
             $w->writeElement('fechEmi', $fechEmi);
 
             // ✅ CAMPO 2: idTransaccion
-            $w->writeElement('idTransaccion', substr($transactionId, 0, 20));
+            $w->writeElement('idTransaccion', $transactionId);
 
             // ✅ CAMPO 3: viaTrans (8 = Fluvial según tabla DNA)
             $w->writeElement('viaTrans', '8');
@@ -218,10 +218,10 @@ class SimpleXmlGeneratorParaguay
                             $container->container_number ?? 'SIN-NUMERO', 0, 20)
                     ));
 
-                    // medidas (40DV, 20GP, etc.)
-                    $w->writeElement('medidas', htmlspecialchars(
-                        substr($container->containerType->iso_code ?? '40DV', 0, 4)
-                    ));
+                    // Paraguay solo acepta: 20 o 40 (Error 75 GDSF)
+                    $lengthFeet = $container->containerType->length_feet ?? '40';
+                    $medida = in_array($lengthFeet, ['20', '40']) ? $lengthFeet : '40';
+                    $w->writeElement('medidas', $medida);
 
                     // ✅ PRECINTOS (solo si hay al menos uno)
                     if ($container->carrier_seal || $container->customs_seal) {

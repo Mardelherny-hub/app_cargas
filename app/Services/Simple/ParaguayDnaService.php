@@ -1241,6 +1241,18 @@ XML;
     }
 
     /**
+     * Override: Paraguay requiere idTransaccion de máximo 14 caracteres
+     * Formato: XX + AAMMDDHHmmss (2 + 12 = 14)
+     */
+    protected function generateTransactionId(string $tipo = 'PY'): string
+    {
+        $prefix = substr($tipo, 0, 2); // FF, BL, BT, CT
+        $timestamp = date('ymdHis');    // 12 chars: 260213183709
+        
+        return strtoupper($prefix . $timestamp);
+    }
+
+    /**
      * Obtener transacción existente por tipo de mensaje
      */
     protected function getExistingTransaction(Voyage $voyage, string $tipoMensaje): ?WebserviceTransaction
