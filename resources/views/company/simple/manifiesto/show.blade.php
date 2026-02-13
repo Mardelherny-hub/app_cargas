@@ -182,7 +182,7 @@
                                     <p class="text-sm text-gray-700 font-medium">Carátula/Manifiesto Fluvial</p>
                                     <p class="text-xs text-gray-600 mt-1">Primer envío obligatorio. Retorna nroViaje.</p>
                                 </div>
-                                @if($xffmTransaction && $xffmTransaction->status === 'sent')
+                                @if($xffmTransaction && in_array($xffmTransaction->status, ['sent', 'rejected']))
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
                                         ✓ ENVIADO
                                     </span>
@@ -196,7 +196,7 @@
                                 </div>
                             @endif
 
-                            @if($xffmTransaction && $xffmTransaction->status === 'sent')
+                            @if($xffmTransaction && in_array($xffmTransaction->status, ['sent', 'rejected']))
                                 <div class="flex gap-2">
                                     <button disabled class="flex-1 px-4 py-2.5 bg-green-100 text-green-800 text-sm font-semibold rounded-lg cursor-not-allowed">
                                         ✓ XFFM Ya Enviado
@@ -235,7 +235,7 @@
                       {{-- 2. XFBL - Conocimientos --}}
                         @php
                             $xffmSent = $xffmTransaction && $xffmTransaction->status === 'sent';
-                            $xfblSent = $xfblTransaction && $xfblTransaction->status === 'sent';
+                            $xfblSent = $xfblTransaction && in_array($xfblTransaction->status, ['sent', 'rejected']);
                         @endphp
 
                         <div class="border-2 rounded-lg p-5 {{ $xfblSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
@@ -342,7 +342,7 @@
 
                         {{-- 3. XFBT - Contenedores --}}
                         @php
-                            $xfbtSent = $xfbtTransaction && $xfbtTransaction->status === 'sent';
+                            $xfbtSent = $xfbtTransaction && in_array($xfbtTransaction->status, ['sent', 'rejected']);
                             $xfbtStatus = $voyage->webserviceStatuses->where('webservice_type', 'XFBT')->first();
                             $xfbtSkipped = $xfbtStatus && ($xfbtStatus->additional_data['skipped'] ?? false);
                         @endphp
@@ -426,7 +426,7 @@
 
                         {{-- 4. XFCT - Cerrar Viaje --}}
                         @php
-                            $xfctSent = $xfctTransaction && $xfctTransaction->status === 'sent';
+                            $xfctSent = $xfctTransaction && in_array($xfctTransaction->status, ['sent', 'rejected']);
                             
                             // XFCT requiere XFFM y XFBL obligatorios
                             // XFBT es opcional (solo si hay contenedores)
@@ -931,18 +931,16 @@
         return `
             <div class="pt-2 flex gap-3">
                 ${transaction.request_xml ? `
-                    <a href="/company/webservices/transaction/${transactionId}/xml/request" 
-                       target="_blank"
-                       class="flex-1 text-center px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium">
-                        📤 Descargar Request XML
-                    </a>
+                    <button onclick="cerrarModal(); verXml(${transactionId}, 'request')"
+                       class="flex-1 text-center px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium cursor-pointer">
+                        📤 Ver Request XML
+                    </button>
                 ` : ''}
                 ${transaction.response_xml ? `
-                    <a href="/company/webservices/transaction/${transactionId}/xml/response" 
-                       target="_blank"
-                       class="flex-1 text-center px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium">
-                        📥 Descargar Response XML
-                    </a>
+                    <button onclick="cerrarModal(); verXml(${transactionId}, 'response')"
+                       class="flex-1 text-center px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium cursor-pointer">
+                        📥 Ver Response XML
+                    </button>
                 ` : ''}
             </div>
         `;
