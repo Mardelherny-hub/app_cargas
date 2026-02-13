@@ -354,60 +354,39 @@
             </label>
         </div>
 
-        <!-- Credenciales DNA GDSF -->
+        <!-- Autenticación WSAA Automática -->
         <div class="mt-6 pt-6 border-t border-yellow-200">
-            <h5 class="text-md font-medium text-yellow-800 mb-4">🔐 Credenciales DNA (Webservice GDSF)</h5>
-            <p class="text-sm text-yellow-700 mb-4">
-                Credenciales proporcionadas por la DNA para acceso al webservice de manifiestos fluviales.
-                <span class="font-medium">Dejar vacío para usar modo bypass testing.</span>
-            </p>
-            
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                    <label for="paraguay_dna_id_usuario" class="block text-sm font-medium text-gray-700">
-                        ID Usuario DNA
-                    </label>
-                    <input type="text" name="paraguay_dna_id_usuario" id="paraguay_dna_id_usuario" 
-                           value="{{ old('paraguay_dna_id_usuario', $currentSettings['paraguay']['dna_credentials']['id_usuario'] ?? '') }}"
-                           placeholder="ID Usuario"
-                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
-                    <p class="mt-1 text-xs text-gray-500">Proporcionado por DNA</p>
-                </div>
-
-                <div>
-                    <label for="paraguay_dna_ticket" class="block text-sm font-medium text-gray-700">
-                        Ticket DNA
-                    </label>
-                    <input type="text" name="paraguay_dna_ticket" id="paraguay_dna_ticket" 
-                           value="{{ old('paraguay_dna_ticket', $currentSettings['paraguay']['dna_credentials']['ticket'] ?? '') }}"
-                           placeholder="Ticket"
-                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
-                    <p class="mt-1 text-xs text-gray-500">Token de autenticación</p>
-                </div>
-
-                <div>
-                    <label for="paraguay_dna_firma" class="block text-sm font-medium text-gray-700">
-                        Firma DNA
-                    </label>
-                    <input type="text" name="paraguay_dna_firma" id="paraguay_dna_firma" 
-                           value="{{ old('paraguay_dna_firma', $currentSettings['paraguay']['dna_credentials']['firma'] ?? '') }}"
-                           placeholder="Firma"
-                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500">
-                    <p class="mt-1 text-xs text-gray-500">Firma digital</p>
-                </div>
-            </div>
-
-            <div class="mt-4 bg-yellow-100 border border-yellow-300 rounded-md p-3">
-                <div class="flex">
-                    <svg class="h-5 w-5 text-yellow-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+            <h5 class="text-md font-medium text-yellow-800 mb-4">🔐 Autenticación WSAA (Automática)</h5>
+            <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div class="flex items-start">
+                    <svg class="w-5 h-5 text-green-600 mt-0.5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <div>
-                        <p class="text-sm font-medium text-yellow-800">Importante</p>
-                        <p class="text-sm text-yellow-700">
-                            Para obtener estas credenciales debe solicitarlas a la DNA Paraguay.
-                            Contacto: (+595) 21-441-000
+                        <h6 class="text-sm font-medium text-green-800">Autenticación Dinámica Habilitada</h6>
+                        <p class="text-sm text-green-700 mt-1">
+                            El sistema obtiene automáticamente las credenciales (ticket y firma) mediante el servicio WSAA de DNA Paraguay usando el certificado digital de la empresa. No es necesario configurar credenciales manualmente.
                         </p>
+                        <ul class="mt-2 space-y-1 text-sm text-green-700">
+                            <li class="flex items-center">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Token renovado automáticamente cada 12 horas
+                            </li>
+                            <li class="flex items-center">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Cache inteligente para reutilización de tokens válidos
+                            </li>
+                            <li class="flex items-center">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Requiere certificado digital .pem configurado
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </div>

@@ -583,21 +583,25 @@ class SettingsController extends Controller
                 'afip_enabled' => true,
                 'bypass_testing' => $request->boolean('argentina_bypass_testing'),
             ];
-            
+
             $wsConfig['paraguay'] = [
                 'ruc' => $request->paraguay_ruc,
                 'company_name' => $request->paraguay_company_name,
                 'domicilio_fiscal' => $request->paraguay_domicilio_fiscal,
                 'dna_enabled' => true,
                 'bypass_testing' => $request->boolean('paraguay_bypass_testing'),
-                'dna_credentials' => [
-                    'id_usuario' => $request->paraguay_dna_id_usuario,
-                    'ticket' => $request->paraguay_dna_ticket,
-                    'firma' => $request->paraguay_dna_firma,
-                ],
             ];
 
-            $company->update(['ws_config' => $wsConfig]);
+            // CORRECCIÓN: Sincronizar tax_id legacy con CUIT de Argentina (para Super Admin)
+            $updateData = ['ws_config' => $wsConfig];
+
+            if (!empty($request->argentina_cuit)) {
+                $updateData['tax_id'] = $request->argentina_cuit;
+            }
+
+            $company->update($updateData);
+
+            $company->refresh();
 
             // SINCRONIZAR CAMPOS LEGACY para compatibilidad con Super Admin
             // Actualizar tax_id con CUIT de Argentina si es empresa argentina
