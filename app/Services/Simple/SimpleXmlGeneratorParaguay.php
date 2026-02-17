@@ -286,7 +286,14 @@ class SimpleXmlGeneratorParaguay
      * Mensaje para declarar los Bills of Lading del viaje
      * Requiere XFFM enviado previamente
      *
-     * ✅ CORREGIDO según XML exitoso de Roberto Benbassat
+     * ✅ CORREGIDO según XML exitoso de Roberto Benbassat (Xfbl_ANA243EXOCAA01.xml)
+     *
+     * FIXES APLICADOS:
+     * 1. codDelegacion se escribía 2 veces → QUITADO duplicado
+     * 2. Bloque indTra duplicado → QUITADO duplicado
+     * 3. Eager load de loadingPort.country y dischargePort.country → AGREGADO
+     * 4. Embarcaciones: lógica sobrecomplicada → SIMPLIFICADO usando leadVessel
+     * 5. Containers: eager load de shipmentItems con relaciones → OPTIMIZADO
      *
      * @param  string|null  $nroViaje  Número de viaje retornado por XFFM
      * @return string XML completo
@@ -295,10 +302,14 @@ class SimpleXmlGeneratorParaguay
     {
         try {
             // Cargar Bills of Lading con todas sus relaciones
+            // ✅ FIX #3: Agregado loadingPort.country y dischargePort.country
             $voyage->load([
                 'shipments.billsOfLading.shipper',
                 'shipments.billsOfLading.consignee',
-                'shipments.billsOfLading.shipmentItems',
+                'shipments.billsOfLading.shipmentItems.containers',
+                'shipments.billsOfLading.loadingPort.country',
+                'shipments.billsOfLading.dischargePort.country',
+                'shipments.billsOfLading.dischargeCustoms',
                 'leadVessel',
             ]);
 
@@ -308,11 +319,6 @@ class SimpleXmlGeneratorParaguay
             if ($billsOfLading->isEmpty()) {
                 throw new Exception('No hay Bills of Lading para generar XFBL');
             }
-
-            // Obtener containers del voyage
-            $voyageContainers = Container::whereHas('shipmentItems.shipment', function ($q) use ($voyage) {
-                $q->where('voyage_id', $voyage->id);
-            })->get();
 
             $w = new \XMLWriter;
             $w->openMemory();
@@ -334,7 +340,6 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('pesoTotalBruto', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
 
                 // Indicador carga suelta (S/N)
-                // Si el packaging type es suitable_for_bulk_cargo, entonces es carga suelta
                 $isBulkCargo = $bl->primaryPackagingType?->suitable_for_bulk_cargo ?? false;
                 $w->writeElement('indCargSuelt', $isBulkCargo ? 'S' : 'N');
 
@@ -351,7 +356,7 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('indCombustible', 'N');
                 $w->writeElement('cantLitros', '0');
 
-                // Descripción mercadería
+                // Descripción mercadería (DENTRO de bulto según Roberto)
                 $w->writeElement('descMercaderia', htmlspecialchars(
                     substr($bl->cargo_description ?? 'MERCADERIA GENERAL', 0, 500)
                 ));
@@ -359,28 +364,26 @@ class SimpleXmlGeneratorParaguay
                 $w->endElement(); // bulto
                 $w->endElement(); // bultos
 
-                // ✅ 2. PESO BRUTO TOTAL
+                // ✅ 2. PESO BRUTO TOTAL (fuera de bultos según Roberto)
                 $w->writeElement('pesoBrutoTotal', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
 
-                // ✅ 3. CONSIGNATARIO
+                // ✅ 3. CONSIGNATARIO (sin nroDocIdent ni tipDocIdent según Roberto)
                 $w->startElement('consignatario');
                 $consignee = $bl->consignee;
 
-                // Determinar si es tránsito PRIMERO
+                // Determinar tráfico para lógica de tránsito
                 $loadingCountry = $bl->loadingPort->country->alpha2_code ?? '';
                 $dischargeCountry = $bl->dischargePort->country->alpha2_code ?? '';
                 $isTransit = ($loadingCountry !== 'PY' && $dischargeCountry !== 'PY');
 
-                // CASO e) - Si es tránsito, idFiscal debe ser 0 según DNA Paraguay
+                // Si es tránsito, idFiscal debe ser 0 según DNA Paraguay
                 $idFiscal = $isTransit ? '0' : (string) ($consignee->tax_id ?? '0');
                 $w->writeElement('idFiscal', $idFiscal);
 
-                // Nombre/razón social siempre se envía (información del destinatario real)
                 $w->writeElement('nomRazSoc', htmlspecialchars(
                     substr($consignee->legal_name ?? 'NO ESPECIFICADO', 0, 100)
                 ));
 
-                // Dirección: si es tránsito y no hay dirección, usar genérica
                 $w->startElement('direccion');
                 $direccion = $consignee->address ?? null;
                 if ($isTransit && empty($direccion)) {
@@ -392,7 +395,7 @@ class SimpleXmlGeneratorParaguay
                 $w->endElement(); // direccion
                 $w->endElement(); // consignatario
 
-                // ✅ 4. DESCRIPCIÓN MERCADERÍA (repetida)
+                // ✅ 4. DESCRIPCIÓN MERCADERÍA (repetida fuera de bultos según Roberto)
                 $w->writeElement('descMercaderia', htmlspecialchars(
                     substr($bl->cargo_description ?? 'MERCADERIA GENERAL', 0, 500)
                 ));
@@ -409,13 +412,12 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('idConsol', $bl->is_consolidated ? 'S' : 'N');
 
                 // ✅ 8. INDICADOR FINALIDAD COMERCIAL
-                $w->writeElement('indFinCom', 'S'); // S=Sí tiene fin comercial
+                $w->writeElement('indFinCom', 'S');
 
                 // ✅ 9. INDICADOR FRACCIONAMIENTO TRANSPORTE
-                $indFraccTransp = $bl->is_consolidated ? 'S' : 'N'; // Indicador fraccionamiento: S si es consolidado, N si no
-                $w->writeElement('indFraccTransp', $indFraccTransp);
+                $w->writeElement('indFraccTransp', $bl->is_consolidated ? 'S' : 'N');
 
-                // ✅ 10. REMITENTE
+                // ✅ 10. REMITENTE (con nroDocIdent y tipDocIdent según Roberto)
                 $w->startElement('remitente');
                 $shipper = $bl->shipper;
                 $w->writeElement('idFiscal', (string) ($shipper->tax_id ?? '0'));
@@ -423,7 +425,7 @@ class SimpleXmlGeneratorParaguay
                     substr($shipper->legal_name ?? 'NO ESPECIFICADO', 0, 100)
                 ));
                 $w->writeElement('nroDocIdent', (string) ($shipper->tax_id ?? '0'));
-                $w->writeElement('tipDocIdent', 'CI'); // CI=CUIT/RUC
+                $w->writeElement('tipDocIdent', 'CI');
                 $w->startElement('direccion');
                 $w->writeElement('nombreCalle', htmlspecialchars(
                     substr($shipper->address ?? 'NO ESPECIFICADO', 0, 100)
@@ -432,12 +434,9 @@ class SimpleXmlGeneratorParaguay
                 $w->endElement(); // remitente
 
                 // ✅ 11. INDICADOR TRÁFICO (IMP/EXP/TRA)
-                // Determinar según puertos
+                // ✅ FIX #2: Bloque único (estaba duplicado)
                 $indTra = 'IMP'; // Default
                 if ($bl->loadingPort && $bl->dischargePort) {
-                    $loadingCountry = $bl->loadingPort->country->alpha2_code ?? '';
-                    $dischargeCountry = $bl->dischargePort->country->alpha2_code ?? '';
-
                     if ($loadingCountry === 'PY') {
                         $indTra = 'EXP';
                     } elseif ($dischargeCountry === 'PY') {
@@ -446,108 +445,47 @@ class SimpleXmlGeneratorParaguay
                         $indTra = 'TRA';
                     }
                 }
-                if ($bl->loadingPort && $bl->dischargePort) {
-                    $loadingCountry = $bl->loadingPort->country->alpha2_code ?? '';
-                    $dischargeCountry = $bl->dischargePort->country->alpha2_code ?? '';
-
-                    if ($loadingCountry === 'PY') {
-                        $indTra = 'EXP'; // Exportación desde Paraguay
-                    } elseif ($dischargeCountry === 'PY') {
-                        $indTra = 'IMP'; // Importación a Paraguay
-                    } else {
-                        $indTra = 'TRA'; // Tránsito
-                    }
-                }
                 $w->writeElement('indTra', $indTra);
 
-                // ✅ 12. NÚMERO DE BL (repetido)
+                // ✅ 12. NÚMERO DE BL (repetido según Roberto)
                 $w->writeElement('nroBL', htmlspecialchars(
                     substr($bl->bill_number ?? 'SIN-BL', 0, 18)
                 ));
 
                 // ✅ 13. CÓDIGO DELEGACIÓN ADUANERA
-                // Determinar INTRAZONA vs EXTRAZONA
-                $loadingCountry = $bl->loadingPort->country->alpha2_code ?? '';
-                $dischargeCountry = $bl->dischargePort->country->alpha2_code ?? '';
-
-                // INTRAZONA: Ambos puertos en Paraguay → codDelegacion vacío
-                // EXTRAZONA: Al menos un puerto fuera de Paraguay → código de delegación
+                // ✅ FIX #1: Se escribía 2 veces → ahora 1 sola vez
                 $codDelegacion = '';
-
                 if ($loadingCountry !== 'PY' || $dischargeCountry !== 'PY') {
                     // EXTRAZONA - Necesita código de delegación
                     if ($bl->dischargeCustoms) {
                         $codDelegacion = $bl->dischargeCustoms->code ?? '';
                     }
-                    
-                    // Si no hay código y no es Intrazona, usar default solo para Extrazona
                     if (empty($codDelegacion) && $loadingCountry !== 'PY') {
-                        // El puerto de carga es el extranjero, usar su código
-                        $codDelegacion = $bl->loadingPort->unlocode ?? 'BAI';
+                        $codDelegacion = substr($bl->loadingPort->code ?? 'ARBAI', 2);
                     }
                 }
-
-                // IMPORTANTE: En Intrazona el elemento se envía vacío o se omite según Manual GDSF
-                $w->writeElement('codDelegacion', $codDelegacion);
                 $w->writeElement('codDelegacion', $codDelegacion);
 
                 // ✅ 14. EMBARCACIONES DEL TÍTULO
-                // Soportar múltiples embarcaciones en el mismo viaje
+                // ✅ FIX #4: Simplificado - usar leadVessel del voyage (como Roberto)
                 $w->startElement('TitEmbarcaciones');
+                $w->startElement('TitEmbarcacion');
 
-                // Obtener TODAS las embarcaciones únicas asociadas a este BL
-                // Un BL puede tener múltiples shipments (ej: transbordo, convoy)
-                $vesselIds = collect();
+                $leadVessel = $voyage->leadVessel;
+                $w->writeElement('idEmbarcacion', htmlspecialchars(
+                    substr($leadVessel->registration_number ?? 'SIN-REG', 0, 20)
+                ));
 
-                // Primero: obtener vessel del shipment directo del BL
-                if ($bl->shipment && $bl->shipment->vessel_id) {
-                    $vesselIds->push($bl->shipment->vessel_id);
-                }
-
-                // Segundo: si el BL tiene containers, pueden estar en otros shipments del mismo voyage
-                $blContainers = $voyageContainers->filter(function ($container) use ($bl) {
-                    return $container->shipmentItems->contains(function ($item) use ($bl) {
-                        return $item->bill_of_lading_id === $bl->id;
-                    });
-                });
-
-                foreach ($blContainers as $container) {
-                    foreach ($container->shipmentItems as $item) {
-                        if ($item->billOfLading && $item->billOfLading->shipment) {
-                            $vesselIds->push($item->billOfLading->shipment->vessel_id);
-                        }
-                    }
-                }
-
-                // Eliminar duplicados y obtener vessels
-                $uniqueVesselIds = $vesselIds->unique()->filter();
-
-                if ($uniqueVesselIds->isEmpty()) {
-                    // Fallback: usar leadVessel del voyage
-                    $uniqueVesselIds = collect([$voyage->lead_vessel_id])->filter();
-                }
-
-                // Generar TitEmbarcacion por cada vessel único
-                foreach ($uniqueVesselIds as $vesselId) {
-                    $vessel = \App\Models\Vessel::find($vesselId);
-                    if ($vessel && $vessel->registration_number) {
-                        $w->startElement('TitEmbarcacion');
-                        $w->writeElement('idEmbarcacion', htmlspecialchars(
-                            substr($vessel->registration_number, 0, 20)
-                        ));
-                        $w->endElement(); // TitEmbarcacion
-                    }
-                }
-
+                $w->endElement(); // TitEmbarcacion
                 $w->endElement(); // TitEmbarcaciones
 
                 // ✅ 15. CONTENEDORES DEL TÍTULO
-                // Obtener contenedores asociados a este BL
-                $blContainers = $voyageContainers->filter(function ($container) use ($bl) {
-                    return $container->shipmentItems->contains(function ($item) use ($bl) {
-                        return $item->bill_of_lading_id === $bl->id;
-                    });
-                });
+                // ✅ FIX #5: Usar containers ya eager-loaded via shipmentItems
+                $blContainers = $bl->shipmentItems
+                    ->flatMap(function ($item) {
+                        return $item->containers;
+                    })
+                    ->unique('id');
 
                 if ($blContainers->isNotEmpty()) {
                     $w->startElement('TitContenedores');
@@ -564,7 +502,7 @@ class SimpleXmlGeneratorParaguay
                     $w->endElement(); // TitContenedores
                 }
 
-                // ✅ 16. DOCUMENTOS ANEXOS (opcional)
+                // ✅ 16. DOCUMENTOS ANEXOS (opcional - no presente en XML de Roberto pero soportado)
                 $attachments = \App\Models\VoyageAttachment::where('voyage_id', $voyage->id)
                     ->where(function($q) use ($bl) {
                         $q->where('bill_of_lading_id', $bl->id)
@@ -576,14 +514,10 @@ class SimpleXmlGeneratorParaguay
                     foreach ($attachments as $attachment) {
                         $w->startElement('DocAnexo');
                         
-                            // Número/referencia del documento (OBLIGATORIO)
                             $documento = $attachment->document_number ?? $attachment->original_name;
                             $w->writeElement('documento', htmlspecialchars(substr($documento, 0, 39)));
-                            
-                            // Tipo de documento (OBLIGATORIO)
                             $w->writeElement('tipDoc', $this->getDocumentTypeCode($attachment->document_type));
                             
-                            // Archivo en Base64 (OPCIONAL - max 5MB)
                             $validation = $this->canIncludeFileInDocAnexo($attachment);
                             
                             if ($validation['can_include']) {
@@ -624,7 +558,7 @@ class SimpleXmlGeneratorParaguay
             $w->endDocument();
             $xmlContent = $w->outputMemory();
 
-            Log::info('XML XFBL generado (CORREGIDO)', [
+            Log::info('XML XFBL generado (CORREGIDO v2)', [
                 'voyage_id' => $voyage->id,
                 'transaction_id' => $transactionId,
                 'nro_viaje' => $nroViaje,
@@ -662,7 +596,8 @@ class SimpleXmlGeneratorParaguay
                 'destinationPort.country',
                 'originCustoms',
                 'destinationCustoms',
-                'shipments.billsOfLading',
+                'transshipmentCustoms',
+                'shipments.billsOfLading.loadingPort.country',
             ]);
 
             // Obtener todos los BLs para generar una ruta por cada uno
@@ -685,9 +620,11 @@ class SimpleXmlGeneratorParaguay
                 // ✅ 1. DESCRIPCIÓN RUTA ITINERARIOS
                 $originPort = $voyage->originPort;
                 $destPort = $voyage->destinationPort;
-                $descRuta = sprintf('%s-%s',
+                $destCountryName = $destPort->country->name ?? 'DESTINO';
+                $descRuta = sprintf('%s-%s-%s',
                     $originPort->name ?? 'ORIGEN',
-                    $destPort->name ?? 'DESTINO'
+                    $destPort->name ?? 'DESTINO',
+                    strtoupper($destCountryName)
                 );
                 $w->writeElement('descRutItinerarios', htmlspecialchars(
                     substr($descRuta, 0, 500)
@@ -708,48 +645,40 @@ class SimpleXmlGeneratorParaguay
                 // ✅ 4. PAÍS DE ORIGEN
                 $w->startElement('paisDeOrigen');
 
-                // País de partida (carga)
-                $loadingCountry = $bl->loadingPort->country ?? $originPort->country;
-                $w->writeElement('codPaisPart',
-                    $loadingCountry->alpha2_code 
-                );
+                // País de partida (carga) - extraer de code (ej: BEANW → BE)
+                $loadingPortCode = $bl->loadingPort->code ?? $originPort->code ?? 'ARBAI';
+                $w->writeElement('codPaisPart', substr($loadingPortCode, 0, 2));
 
-                // Ciudad de partida (UNLOCODE)
-                $w->writeElement('codCiuPart',
-                    $bl->loadingPort->unlocode ?? $originPort->unlocode ?? 'BAI'
-                );
+                // Ciudad de partida - extraer de code (ej: BEANW → ANW)
+                $w->writeElement('codCiuPart', substr($loadingPortCode, 2));
 
-                // País de salida
-                $w->writeElement('codPaisSal',
-                    $originPort->country->alpha2_code 
-                );
+                // País de salida - extraer de originPort code (ej: ARBAI → AR)
+                $originPortCode = $originPort->code ?? 'ARBAI';
+                $w->writeElement('codPaisSal', substr($originPortCode, 0, 2));
 
-                // Ciudad de salida (UNLOCODE)
-                $w->writeElement('codCiuSal',
-                    $originPort->unlocode ?? 'BAI'
-                );
+                // Ciudad de salida (ej: ARBAI → BAI)
+                $w->writeElement('codCiuSal', substr($originPortCode, 2));
 
-                // Lugar operativo de salida (UNLOCODE completo con país)
-                $lugOperSal = $originPort->country->alpha2_code ;
-                $lugOperSal .= $originPort->unlocode ?? 'BAI';
-                $w->writeElement('codLugOperSal', $lugOperSal);
+                // Lugar operativo de salida (code completo: ARBAI)
+                $w->writeElement('codLugOperSal', $originPortCode);
 
                 $w->endElement(); // paisDeOrigen
 
                 // ✅ 5. PAÍS DESTINO
                 $w->startElement('paisDest');
 
-                $destCountry = $destPort->country->alpha2_code;
+                $destPortCode = $destPort->code ?? 'PYASU';
+                $destCountry = substr($destPortCode, 0, 2);
                 $w->writeElement('codPais', $destCountry);
 
                 // Solo enviar aduanas si destino es Paraguay
                 if ($destCountry === 'PY') {
-                    // Aduana de entrada (primera que toca - usar transshipment como entrada si existe)
-                    $aduanaEntrada = $voyage->transshipmentCustoms->code 
-                                ?? $voyage->destinationCustoms->code;
+                    // Aduana de entrada (usar transshipment si existe, sino destino)
+                    $aduanaEntrada = $voyage->transshipmentCustoms?->code 
+                                ?? $voyage->destinationCustoms?->code;
                     
                     // Aduana de destino (destino final)
-                    $aduanaDestino = $voyage->destinationCustoms->code;
+                    $aduanaDestino = $voyage->destinationCustoms?->code;
                     
                     if ($aduanaEntrada) {
                         $w->writeElement('codAduEnt', $aduanaEntrada);
