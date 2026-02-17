@@ -1241,15 +1241,16 @@ XML;
     }
 
     /**
-     * Override: Paraguay requiere idTransaccion de máximo 14 caracteres
-     * Formato: XX + AAMMDDHHmmss (2 + 12 = 14)
+     * Paraguay valida fecha YYYYMMDD dentro del idTransaccion
+     * Formato manual: "6 digitos + fecha(yyyymmdd)"
+     * Ref: /MICDTA/IDTRANSACCION - Error 11 GDSF
      */
     protected function generateTransactionId(string $tipo = 'PY'): string
     {
-        $prefix = substr($tipo, 0, 2); // FF, BL, BT, CT
-        $timestamp = date('ymdHis');    // 12 chars: 260213183709
+        $seq = str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        $fecha = date('Ymd');
         
-        return strtoupper($prefix . $timestamp);
+        return $seq . $fecha;
     }
 
     /**
