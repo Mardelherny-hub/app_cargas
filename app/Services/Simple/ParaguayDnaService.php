@@ -1095,13 +1095,18 @@ XML;
                 return (string) $responseData->nroViaje;
             }
 
-            // CASO 2: Response tiene XML string
-            if (is_object($responseData) && isset($responseData->xml)) {
-                $xml = simplexml_load_string($responseData->xml);
+            // CASO 2: Response tiene XML string (->return->xml o ->xml)
+            $xmlString = null;
+            if (is_object($responseData) && isset($responseData->return->xml)) {
+                $xmlString = $responseData->return->xml;
+            } elseif (is_object($responseData) && isset($responseData->xml)) {
+                $xmlString = $responseData->xml;
+            }
+            if ($xmlString) {
+                $xml = simplexml_load_string($xmlString);
                 if ($xml && isset($xml->nroViaje)) {
                     return (string) $xml->nroViaje;
                 }
-                // GDSF: nroViaje viene en MessageHeaderDocument > ID
                 if ($xml && isset($xml->MessageHeaderDocument->ID)) {
                     $id = (string) $xml->MessageHeaderDocument->ID;
                     if (!empty($id)) {
