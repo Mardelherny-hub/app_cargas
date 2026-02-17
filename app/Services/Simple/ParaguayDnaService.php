@@ -1101,6 +1101,13 @@ XML;
                 if ($xml && isset($xml->nroViaje)) {
                     return (string) $xml->nroViaje;
                 }
+                // GDSF: nroViaje viene en MessageHeaderDocument > ID
+                if ($xml && isset($xml->MessageHeaderDocument->ID)) {
+                    $id = (string) $xml->MessageHeaderDocument->ID;
+                    if (!empty($id)) {
+                        return $id;
+                    }
+                }
             }
 
             // CASO 3: Response es array con nroViaje
@@ -1334,6 +1341,18 @@ XML;
                     return $nroViaje;
                 }
 
+                // FALLBACK 2: Buscar en MessageHeaderDocument > ID (formato GDSF)
+                $decoded = html_entity_decode($xmlString);
+                if (preg_match('/<MessageHeaderDocument>.*?<ID>([^<]+)<\/ID>/s', $decoded, $matches)) {
+                    $nroViaje = trim($matches[1]);
+                    if (!empty($nroViaje)) {
+                        $this->logOperation('info', '✅ nroViaje extraído de MessageHeaderDocument/ID', [
+                            'nroViaje' => $nroViaje,
+                        ]);
+                        return $nroViaje;
+                    }
+                }
+
                 return null;
             }
 
@@ -1361,8 +1380,24 @@ XML;
                 }
             }
 
+            // FALLBACK: Buscar en MessageHeaderDocument > ID con XPath
+            $idPaths = [
+                '//MessageHeaderDocument/ID',
+                '//*[local-name()="MessageHeaderDocument"]/*[local-name()="ID"]',
+            ];
+            foreach ($idPaths as $path) {
+                $result = $xml->xpath($path);
+                if (!empty($result) && !empty((string) $result[0])) {
+                    $nroViaje = trim((string) $result[0]);
+                    $this->logOperation('info', '✅ nroViaje extraído de MessageHeaderDocument/ID via XPath', [
+                        'nroViaje' => $nroViaje,
+                    ]);
+                    return $nroViaje;
+                }
+            }
+
             $this->logOperation('warning', '❌ No se encontró nroViaje en el XML', [
-                'paths_tried' => $paths,
+                'paths_tried' => array_merge($paths, $idPaths),
             ]);
 
             return null;
