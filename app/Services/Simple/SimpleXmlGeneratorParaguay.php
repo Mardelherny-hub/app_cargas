@@ -350,7 +350,8 @@ class SimpleXmlGeneratorParaguay
 
                 // Tipo de embalaje (código según tabla DNA)
                 $packagingCode = $bl->primaryPackagingType->code ?? '99';
-                $w->writeElement('tipEmbalaje', $packagingCode);
+                // DNA requiere código numérico de embalaje; si no es numérico, usar 99 (genérico)
+                $w->writeElement('tipEmbalaje', is_numeric($packagingCode) ? $packagingCode : '99');
 
                 // Indicador combustible
                 $w->writeElement('indCombustible', 'N');
@@ -453,15 +454,31 @@ class SimpleXmlGeneratorParaguay
                 ));
 
                 // ✅ 13. CÓDIGO DELEGACIÓN ADUANERA
-                // ✅ FIX #1: Se escribía 2 veces → ahora 1 sola vez
+                // Mapa de delegaciones según Manual GDSF v1.22 pág. 11
+                $delegacionesDna = [
+                    'ARBAI' => 'BAI', // Buenos Aires
+                    'ARBUE' => 'BAI', // Buenos Aires (otro puerto)
+                    'BRPNG' => 'PAR', // Paranaguá
+                    'BRSNT' => 'SAN', // Santos
+                    'UYMVD' => 'MVD', // Montevideo
+                    'CLIQQ' => 'IQU', // Iquique
+                ];
+
                 $codDelegacion = '';
                 if ($loadingCountry !== 'PY' || $dischargeCountry !== 'PY') {
-                    // EXTRAZONA - Necesita código de delegación
-                    if ($bl->dischargeCustoms) {
-                        $codDelegacion = $bl->dischargeCustoms->code ?? '';
-                    }
-                    if (empty($codDelegacion) && $loadingCountry !== 'PY') {
-                        $codDelegacion = substr($bl->loadingPort->code ?? 'ARBAI', 2);
+                    // EXTRAZONA - buscar delegación por puerto de carga
+                    $loadingPortCode = $bl->loadingPort->code ?? '';
+                    $codDelegacion = $delegacionesDna[$loadingPortCode] ?? '';
+
+                    // Si no hay match exacto, intentar por país
+                    if (empty($codDelegacion)) {
+                        $delegacionesPorPais = [
+                            'AR' => 'BAI',
+                            'BR' => 'SAN',
+                            'UY' => 'MVD',
+                            'CL' => 'IQU',
+                        ];
+                        $codDelegacion = $delegacionesPorPais[$loadingCountry] ?? '';
                     }
                 }
                 $w->writeElement('codDelegacion', $codDelegacion);
