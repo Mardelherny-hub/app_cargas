@@ -2149,8 +2149,10 @@ public function micDtaSend(Request $request, Voyage $voyage)
     {
         try {
             $request->validate([
-                'convoy_id' => 'required|string|max:20',
-                'rectification_reason' => 'required|string|max:200',
+                'nro_viaje' => 'required|string|max:30',
+                'desc_motivo' => 'required|string|max:50',
+                'rectif_convoy' => 'nullable|array',
+                'rectif_micdta' => 'nullable|array',
                 'force_send' => 'boolean',
                 'notes' => 'string|max:500'
             ]);
