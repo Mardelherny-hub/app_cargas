@@ -507,6 +507,7 @@ class ParaguayDnaService extends BaseWebserviceService
                 return [
                     'success' => !$dnaStatus['was_rejected'],
                     'transaction_id' => $transactionId,
+                    'nroViaje' => $nroViaje,
                     'message' => $dnaStatus['was_rejected']
                         ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
                         : 'XFBL enviado exitosamente',
