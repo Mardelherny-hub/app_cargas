@@ -711,9 +711,10 @@ class SimpleXmlGeneratorParaguay
                 // ✅ 6. PLAZO ORIGEN-DESTINO (días de viaje)
                 $plazo = 2; // Default
                 if ($voyage->departure_date && $voyage->estimated_arrival_date) {
-                    $plazo = Carbon::parse($voyage->departure_date)
-                        ->diffInDays(Carbon::parse($voyage->estimated_arrival_date));
+                    $plazo = (int) ceil(Carbon::parse($voyage->departure_date)
+                        ->diffInDays(Carbon::parse($voyage->estimated_arrival_date)));
                 }
+                $plazo = max($plazo, 1); // Mínimo 1 día
                 $w->writeElement('plazoOrigenDestino', (string) $plazo);
 
                 // ✅ 7. ID TÍTULO TRANSPORTE (número de BL)
