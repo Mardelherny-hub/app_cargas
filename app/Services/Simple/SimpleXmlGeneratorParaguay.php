@@ -455,31 +455,18 @@ class SimpleXmlGeneratorParaguay
 
                 // ✅ 13. CÓDIGO DELEGACIÓN ADUANERA
                 // Mapa de delegaciones según Manual GDSF v1.22 pág. 11
-                $delegacionesDna = [
-                    'ARBAI' => 'BAI', // Buenos Aires
-                    'ARBUE' => 'BAI', // Buenos Aires (otro puerto)
-                    'BRPNG' => 'PAR', // Paranaguá
-                    'BRSNT' => 'SAN', // Santos
-                    'UYMVD' => 'MVD', // Montevideo
-                    'CLIQQ' => 'IQU', // Iquique
-                ];
-
+                // codDelegacion según Manual GDSF v1.22 pág. 11
+                // Solo para tránsito (TRA) - cuando destino NO es Paraguay
+                // Para importaciones a PY (IMP), se envía vacío
                 $codDelegacion = '';
-                if ($loadingCountry !== 'PY' || $dischargeCountry !== 'PY') {
-                    // EXTRAZONA - buscar delegación por puerto de carga
-                    $loadingPortCode = $bl->loadingPort->code ?? '';
-                    $codDelegacion = $delegacionesDna[$loadingPortCode] ?? '';
-
-                    // Si no hay match exacto, intentar por país
-                    if (empty($codDelegacion)) {
-                        $delegacionesPorPais = [
-                            'AR' => 'BAI',
-                            'BR' => 'SAN',
-                            'UY' => 'MVD',
-                            'CL' => 'IQU',
-                        ];
-                        $codDelegacion = $delegacionesPorPais[$loadingCountry] ?? '';
-                    }
+                if ($dischargeCountry !== 'PY' && ($loadingCountry !== 'PY' || $dischargeCountry !== 'PY')) {
+                    $delegacionesPorPais = [
+                        'AR' => 'BAI',
+                        'BR' => 'SAN',
+                        'UY' => 'MVD',
+                        'CL' => 'IQU',
+                    ];
+                    $codDelegacion = $delegacionesPorPais[$loadingCountry] ?? '';
                 }
                 $w->writeElement('codDelegacion', $codDelegacion);
 
