@@ -669,15 +669,26 @@ class SimpleXmlGeneratorParaguay
                 // Ciudad de partida - extraer de code (ej: BEANW → ANW)
                 $w->writeElement('codCiuPart', substr($loadingPortCode, 2));
 
-                // País de salida - extraer de originPort code (ej: ARBAI → AR)
+                // Mapeo de puertos UNLOCODE a códigos DNA lugar operativo
+                $lugOperDna = [
+                    'ARBUE' => 'ARBAI',  // Buenos Aires
+                    'ARBAI' => 'ARBAI',
+                    'BRPNG' => 'BRPNG',  // Paranaguá
+                    'BRSNT' => 'BRSNT',  // Santos
+                    'UYMVD' => 'UYMVD',  // Montevideo
+                ];
+
                 $originPortCode = $originPort->code ?? 'ARBAI';
-                $w->writeElement('codPaisSal', substr($originPortCode, 0, 2));
+                $dnaPortCode = $lugOperDna[$originPortCode] ?? $originPortCode;
 
-                // Ciudad de salida (ej: ARBAI → BAI)
-                $w->writeElement('codCiuSal', substr($originPortCode, 2));
+                // País de salida
+                $w->writeElement('codPaisSal', substr($dnaPortCode, 0, 2));
 
-                // Lugar operativo de salida (code completo: ARBAI)
-                $w->writeElement('codLugOperSal', $originPortCode);
+                // Ciudad de salida
+                $w->writeElement('codCiuSal', substr($dnaPortCode, 2));
+
+                // Lugar operativo de salida
+                $w->writeElement('codLugOperSal', $dnaPortCode);
 
                 $w->endElement(); // paisDeOrigen
 
@@ -690,21 +701,18 @@ class SimpleXmlGeneratorParaguay
 
                 // Solo enviar aduanas si destino es Paraguay
                 if ($destCountry === 'PY') {
-                    // Aduana de entrada (usar transshipment si existe, sino destino)
-                    $aduanaEntrada = $voyage->transshipmentCustoms?->code 
-                                ?? $voyage->destinationCustoms?->code;
-                    
-                    // Aduana de destino (destino final)
-                    $aduanaDestino = $voyage->destinationCustoms?->code;
-                    
-                    if ($aduanaEntrada) {
-                        $w->writeElement('codAduEnt', $aduanaEntrada);
-                    }
-                    
-                    if ($aduanaDestino) {
-                        $w->writeElement('codAduDest', $aduanaDestino);
-                    }
-                }
+                // Aduana de entrada (usar transshipment si existe, sino destino)
+                $aduanaEntrada = $voyage->transshipmentCustoms?->code 
+                            ?? $voyage->destinationCustoms?->code
+                            ?? '017'; // Default: Capital
+
+                // Aduana de destino (destino final)
+                $aduanaDestino = $voyage->destinationCustoms?->code
+                            ?? '017'; // Default: Capital
+
+                $w->writeElement('codAduEnt', $aduanaEntrada);
+                $w->writeElement('codAduDest', $aduanaDestino);
+            }
 
                 $w->endElement(); // paisDest
 
