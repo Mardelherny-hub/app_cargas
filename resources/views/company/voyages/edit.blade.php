@@ -462,6 +462,74 @@
                     </div>
                 </div>
 
+                {{-- Indicadores de Carga (AFIP/DNA) --}}
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 mb-1">
+                            Indicadores de Carga
+                        </h3>
+                        <p class="text-sm text-gray-500 mb-4">
+                            Estos campos afectan la declaración ante AFIP y DNA Paraguay. Modificar solo si el viaje es en lastre o sin carga.
+                        </p>
+
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <!-- Transporte Vacío (is_empty_transport) -->
+                            <div>
+                                <label for="is_empty_transport" class="block text-sm font-medium text-gray-700">
+                                    Transporte Vacío / En Lastre
+                                </label>
+                                <select name="is_empty_transport" 
+                                        id="is_empty_transport"
+                                        @if(!$userPermissions['can_edit']) disabled @endif
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @if(!$userPermissions['can_edit']) bg-gray-100 @endif">
+                                    <option value="N" {{ old('is_empty_transport', $voyage->is_empty_transport) === 'N' ? 'selected' : '' }}>
+                                        No — Lleva carga o contenedores
+                                    </option>
+                                    <option value="S" {{ old('is_empty_transport', $voyage->is_empty_transport) === 'S' ? 'selected' : '' }}>
+                                        Sí — Embarcación en lastre (sin carga)
+                                    </option>
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500">
+                                    Genera <code>indEnLastre=S</code> en AFIP y DNA. Solo para viajes sin ninguna carga ni contenedores.
+                                </p>
+                            </div>
+
+                            <!-- Mercadería a Bordo (has_cargo_onboard) -->
+                            <div>
+                                <label for="has_cargo_onboard" class="block text-sm font-medium text-gray-700">
+                                    Mercadería a Bordo
+                                </label>
+                                <select name="has_cargo_onboard" 
+                                        id="has_cargo_onboard"
+                                        @if(!$userPermissions['can_edit']) disabled @endif
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @if(!$userPermissions['can_edit']) bg-gray-100 @endif">
+                                    <option value="S" {{ old('has_cargo_onboard', $voyage->has_cargo_onboard) === 'S' ? 'selected' : '' }}>
+                                        Sí — Tiene mercadería o contenedores a bordo
+                                    </option>
+                                    <option value="N" {{ old('has_cargo_onboard', $voyage->has_cargo_onboard) === 'N' ? 'selected' : '' }}>
+                                        No — Sin mercadería a bordo
+                                    </option>
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500">
+                                    Contenedores vacíos cuentan como mercadería (seleccionar "Sí").
+                                </p>
+                            </div>
+                        </div>
+
+                        {{-- Alerta informativa cuando es lastre --}}
+                        <div id="lastre-warning" class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md" style="display: none;">
+                            <div class="flex">
+                                <svg class="h-5 w-5 text-amber-400 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                                </svg>
+                                <p class="text-sm text-amber-700">
+                                    <strong>Viaje en lastre:</strong> No se enviarán BLs ni contenedores a AFIP/DNA. El flujo será solo XFFM → XFCT.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Botones de Acción -->
                 <div class="flex items-center justify-between">
                     <a href="{{ route('company.voyages.show', $voyage) }}" 
@@ -669,6 +737,28 @@
                     console.log(`Embarcación seleccionada: IMO ${imo}, Capacidad: ${capacity} tons`);
                 }
             });
+
+            // === Indicadores de Carga: mostrar alerta lastre ===
+            const isEmptySelect = document.getElementById('is_empty_transport');
+            const hasCargaSelect = document.getElementById('has_cargo_onboard');
+            const lastreWarning = document.getElementById('lastre-warning');
+
+            function toggleLastreWarning() {
+                if (isEmptySelect && lastreWarning) {
+                    lastreWarning.style.display = isEmptySelect.value === 'S' ? 'block' : 'none';
+                }
+            }
+
+            if (isEmptySelect) {
+                isEmptySelect.addEventListener('change', function() {
+                    toggleLastreWarning();
+                    // Si marca lastre, auto-cambiar mercadería a No
+                    if (this.value === 'S' && hasCargaSelect) {
+                        hasCargaSelect.value = 'N';
+                    }
+                });
+                toggleLastreWarning(); // Estado inicial
+            }
         });
     </script>
     @endpush
