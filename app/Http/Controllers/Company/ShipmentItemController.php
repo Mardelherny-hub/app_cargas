@@ -608,6 +608,7 @@ foreach ($existingContainers as $container) {
         'container_type_id' => $container->container_type_id,
         'seal_number' => $container->shipper_seal,
         'tare_weight' => $container->tare_weight_kg,
+        'condition' => $container->condition ?? 'L',
         'package_quantity' => $pivot->package_quantity,
         'gross_weight_kg' => $pivot->gross_weight_kg,
         'net_weight_kg' => $pivot->net_weight_kg,
@@ -865,7 +866,7 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                 $container->update([
                     'container_type_id' => $containerData['container_type_id'],
                     'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                    'condition' => 'L', // Loaded
+                    'condition' => $containerData['condition'] ?? 'L',
                     'operational_status' => 'loaded',
                     'active' => true,
                     'last_updated_date' => now(),
@@ -886,7 +887,7 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                     'tare_weight_kg' => $containerData['tare_weight'] ?? 2200,
                     'max_gross_weight_kg' => 30000,
                     'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                    'condition' => 'L',
+                    'condition' => $containerData['condition'] ?? 'L',
                     'operational_status' => 'loaded',
                     'active' => true,
                     'created_date' => now(),

@@ -735,6 +735,19 @@
                                     placeholder="2300"
                                 >
                             </div>
+
+                            {{-- Estado del Contenedor --}}
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Estado <span class="text-red-500">*</span>
+                                </label>
+                                <select name="containers[{{ $index }}][condition]" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="L" {{ old('containers.'.$index.'.condition', $container['condition'] ?? 'L') === 'L' ? 'selected' : '' }}>L - Lleno (con carga)</option>
+                                    <option value="V" {{ old('containers.'.$index.'.condition', $container['condition'] ?? 'L') === 'V' ? 'selected' : '' }}>V - Vacío</option>
+                                </select>
+                                <p class="mt-1 text-xs text-gray-500">Vacío para contenedores sin mercadería</p>
+                            </div>
                         </div>
 
                         {{-- Distribución de la carga en este contenedor --}}
