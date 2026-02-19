@@ -276,7 +276,7 @@ class SimpleXmlGenerator
                                                     $w->endElement();
                                                     
                                                     // Registrar contenedor para sección global
-                                                    if ($container->container_condition !== 'V') {
+                                                    if ($container->condition !== 'V') {
                                                         $allContainers->push($container);
                                                     } else {
                                                         $emptyContainers->push($container);
@@ -373,8 +373,8 @@ class SimpleXmlGenerator
                                 $codMedida = $container->containerType?->iso_code ?? '22G1';
                                 $w->writeElement('codMedida', $codMedida);
                                 
-                                // Condición: H=lleno, V=vacío
-                                $condicion = ($container->container_condition === 'V') ? 'V' : 'H';
+                                // Condición AFIP: H=house(casa a casa), P=pier(muelle a muelle)
+                                $condicion = $container->container_condition ?: 'H';
                                 $w->writeElement('condicion', $condicion);
                                 
                                 // Precintos
@@ -830,8 +830,8 @@ class SimpleXmlGenerator
             $codMedida = $container->argentina_container_code ?? $container->container_type ?? '22G1';
             $w->writeElement('codMedida', $codMedida);
             
-            // condicion - H=lleno, V=vacío
-            $condicion = ($container->container_condition === 'V') ? 'V' : 'H';
+            // condicion AFIP: H=house(casa a casa), P=pier(muelle a muelle)
+            $condicion = $container->container_condition ?: 'H';
             $w->writeElement('condicion', $condicion);
             
             // precintos - opcional
@@ -1229,7 +1229,7 @@ class SimpleXmlGenerator
             ->flatMap(fn($s) => $s->billsOfLading)
             ->flatMap(fn($bl) => $bl->shipmentItems)
             ->flatMap(fn($item) => $item->containers ?? collect())
-            ->filter(fn($c) => $c->container_condition !== 'V') // Solo contenedores con carga (no vacíos)
+            ->filter(fn($c) => $c->condition !== 'V') // Solo contenedores con carga (no vacíos)
             ->unique('container_number');
         
         foreach ($containers as $container) {
