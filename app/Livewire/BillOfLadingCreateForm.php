@@ -306,7 +306,7 @@ class BillOfLadingCreateForm extends Component
         'master_bill_number' => 'nullable|string|max:50|required_if:is_house_bill,true',
         'original_released' => 'boolean',
         'documentation_complete' => 'boolean',
-        'id_decla' => 'required|string|max:16|regex:/^[A-Z0-9]+$/',
+        'id_decla' => 'nullable|string|max:16|regex:/^[A-Z0-9]+$/',
     ];
 
     public function updatedIsOwnTransport($value)
