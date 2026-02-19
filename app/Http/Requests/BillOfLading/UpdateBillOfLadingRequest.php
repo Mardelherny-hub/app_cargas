@@ -156,13 +156,13 @@ class UpdateBillOfLadingRequest extends FormRequest
                 },
             ],
             'permiso_embarque' => [
-                'required',
+                'nullable',
                 'string',
                 'max:100',
                 'regex:/^[A-Z0-9\-]+$/',
             ],
             'id_decla' => [
-                'required',
+                'nullable',
                 'string',
                 'max:16',
                 'regex:/^[A-Z0-9]+$/',
