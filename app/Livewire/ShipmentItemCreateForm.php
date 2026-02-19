@@ -646,7 +646,8 @@ class ShipmentItemCreateForm extends Component
             'id' => uniqid(), // ID temporal para el frontend
             'container_number' => '',
             'container_type_id' => null,
-             'container_condition' => '',
+            'container_condition' => '',
+            'condition' => 'L',
             'seal_number' => '',
             'tare_weight' => 0,
             'package_quantity' => 0,
@@ -953,7 +954,7 @@ class ShipmentItemCreateForm extends Component
                             'max_gross_weight_kg' => 30000,
                             'current_gross_weight_kg' => $containerData['gross_weight_kg'],
                             'cargo_weight_kg' => $containerData['net_weight_kg'],
-                            'condition' => 'L', // Loaded
+                            'condition' => $containerData['condition'] ?? 'L',
                             'operational_status' => 'loaded',
                             'shipper_seal' => $containerData['seal_number'],
                             'active' => true,
@@ -972,6 +973,7 @@ class ShipmentItemCreateForm extends Component
                         $container->update([
                             'container_type_id' => $containerData['container_type_id'],
                             'container_condition' => $containerData['container_condition'] ?? $container->container_condition,
+                            'condition' => $containerData['condition'] ?? $container->condition,
                             'current_gross_weight_kg' => $containerData['gross_weight_kg'],
                             'cargo_weight_kg' => $containerData['net_weight_kg'],
                             'shipper_seal' => $containerData['seal_number'] ?: $container->shipper_seal,
