@@ -208,8 +208,12 @@ class SimpleXmlGeneratorParaguay
                 foreach ($containers as $container) {
                     $w->startElement('contenedor');
 
-                    // condicion (P=Pier/Muelle, H=House/Casa)
-                    $condicion = $container->container_condition === 'H' ? 'H' : 'P';
+                    // condicion: H=House, P=Pier, V=Vacio, C=Correo (GDSF pág 8, error 74)
+                    if ($container->condition === 'V') {
+                        $condicion = 'V';
+                    } else {
+                        $condicion = $container->container_condition === 'H' ? 'H' : 'P';
+                    }
                     $w->writeElement('condicion', $condicion);
 
                     // id (número del contenedor)
