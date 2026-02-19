@@ -2266,12 +2266,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en RectifConvoyMicDta: " . $errorMsg);
             }
 
-            // Guardar transacción exitosa
+            // Guardar transacción exitosa con XMLs completos
             $this->createWebserviceTransaction($voyage, [
                 'transaction_id' => $transactionId,
                 'webservice_method' => 'RectifConvoyMicDta',
-                'request_data' => $rectifData,
-                'response_data' => ['rectificacion_confirmada' => true],
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
                 'status' => 'success',
             ]);
 
