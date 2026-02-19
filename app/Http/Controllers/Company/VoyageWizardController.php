@@ -90,7 +90,7 @@ class VoyageWizardController extends Controller
                 }),
             ],
             'internal_reference' => 'nullable|string|max:100',
-            'departure_date' => 'required|date|after_or_equal:today',
+            'departure_date' => 'required|date',
             'estimated_arrival_date' => 'required|date|after:departure_date',
 
             // Puertos y países

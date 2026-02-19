@@ -228,7 +228,7 @@ class VoyageController extends Controller
             'origin_port_id' => 'required|exists:ports,id',
             'destination_country_id' => 'required|exists:countries,id',
             'destination_port_id' => 'required|exists:ports,id',
-            'departure_date' => 'required|date|after:now',
+            'departure_date' => 'required|date',
             'estimated_arrival_date' => 'required|date|after:departure_date',
             'voyage_type' => 'required|in:regular,charter,emergency',
             'cargo_type' => 'required|in:containers,bulk,general,liquid',
