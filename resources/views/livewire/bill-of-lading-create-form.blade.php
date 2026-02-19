@@ -195,6 +195,22 @@ document.addEventListener('DOMContentLoaded', function() {
             <p class="mt-1 text-sm text-gray-600">Empresas y contactos relacionados con el embarque</p>
         </div>
 
+        {{-- Checkbox Transporte Propio --}}
+        <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <label class="flex items-start space-x-3 cursor-pointer">
+                <input type="checkbox" 
+                       wire:model.live="is_own_transport"
+                       class="mt-0.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                <div>
+                    <span class="text-sm font-medium text-gray-900">Transporte propio</span>
+                    <p class="text-xs text-gray-600 mt-0.5">
+                        Activar cuando la empresa mueve sus propios contenedores (vacíos o reposicionamiento). 
+                        El cargador y consignatario serán la misma empresa.
+                    </p>
+                </div>
+            </label>
+        </div>
+
         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {{-- Cargador/Exportador --}}
             <div>

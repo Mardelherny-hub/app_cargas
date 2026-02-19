@@ -144,6 +144,9 @@ class BillOfLadingEditForm extends Component
     public $is_house_bill = false;
     public $master_bill_number = '';
 
+    // === TRANSPORTE PROPIO ===
+    public $is_own_transport = false;
+
     // === DOCUMENTACIÓN ===
     public $original_released = false;
     public $documentation_complete = false;
@@ -310,6 +313,11 @@ class BillOfLadingEditForm extends Component
         $this->loading_date = optional($this->billOfLading->loading_date)?->format('Y-m-d') ?? '';
         $this->discharge_date = optional($this->billOfLading->discharge_date)?->format('Y-m-d') ?? '';
         $this->id_decla = $this->billOfLading->id_decla ?? '';
+
+        // Auto-detectar transporte propio si shipper == consignee
+        if ($this->shipper_id && $this->consignee_id && $this->shipper_id == $this->consignee_id) {
+            $this->is_own_transport = true;
+        }
 
     }
     /**
@@ -730,6 +738,14 @@ class BillOfLadingEditForm extends Component
             ?->contactData()
             ->where('is_primary', true)
             ->first();
+    }
+
+    // Si se marca transporte propio, copiar shipper a consignee
+    public function updatedIsOwnTransport($value)
+    {
+        if ($value && $this->shipper_id) {
+            $this->consignee_id = $this->shipper_id;
+        }
     }
 
     /**

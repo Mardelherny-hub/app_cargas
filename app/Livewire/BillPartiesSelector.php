@@ -17,7 +17,7 @@ class BillPartiesSelector extends Component
     #[Validate('required|exists:clients,id,status,active')]
     public $shipper_id = null;
 
-    #[Validate('required|exists:clients,id,status,active|different:shipper_id')]
+    #[Validate('required|exists:clients,id,status,active')]
     public $consignee_id = null;
 
     #[Validate('nullable|exists:clients,id,status,active')]
@@ -25,6 +25,9 @@ class BillPartiesSelector extends Component
 
     #[Validate('nullable|exists:clients,id,status,active')]
     public $cargo_owner_id = null;
+
+    // === TRANSPORTE PROPIO ===
+    public $is_own_transport = false;
 
     // Direcciones específicas - Cargador
     public $shipper_use_specific = false;
@@ -65,6 +68,15 @@ class BillPartiesSelector extends Component
     public $new_phone = '';
     public $new_address_1 = '';
     public $new_city = '';
+
+    
+    public function updatedIsOwnTransport($value)
+    {
+        if ($value && $this->shipper_id) {
+            $this->consignee_id = $this->shipper_id;
+            $this->dispatch('updateFormField', 'consignee_id', $this->shipper_id);
+        }
+    }
 
     public function mount($billOfLading = null, $oldValues = [])
     {

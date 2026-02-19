@@ -75,12 +75,12 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'integer',
                 'exists:clients,id,status,active',
             ],
-            'consignee_id' => [
+            'consignee_id' => array_filter([
                 'required',
                 'integer',
                 'exists:clients,id,status,active',
-                'different:shipper_id',
-            ],
+                $this->input('is_own_transport') ? null : 'different:shipper_id',
+            ]),
             'notify_party_id' => [
                 'nullable',
                 'integer',
