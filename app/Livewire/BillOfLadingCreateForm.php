@@ -49,6 +49,7 @@ class BillOfLadingCreateForm extends Component
     // === CAMPOS WEBSERVICES ===
     public $permiso_embarque = ''; // TRP - Permiso de embarque (obligatorio AFIP)
     public $id_decla = ''; // Identificador Destinación Aduanera AFIP (obligatorio para RegistrarTitEnvios)
+    public $is_own_transport = false;
 
     // === PARTES INVOLUCRADAS ===
     public $shipper_id = '';
@@ -257,7 +258,7 @@ class BillOfLadingCreateForm extends Component
     protected $rules = [
         'shipment_id' => 'required|exists:shipments,id',
         'shipper_id' => 'required|exists:clients,id',
-        'consignee_id' => 'required|exists:clients,id|different:shipper_id',
+        'consignee_id' => 'required|exists:clients,id',
         'notify_party_id' => 'nullable|exists:clients,id',
         'cargo_owner_id' => 'nullable|exists:clients,id',
         'loading_port_id' => 'required|exists:ports,id',
@@ -307,6 +308,13 @@ class BillOfLadingCreateForm extends Component
         'documentation_complete' => 'boolean',
         'id_decla' => 'required|string|max:16|regex:/^[A-Z0-9]+$/',
     ];
+
+    public function updatedIsOwnTransport($value)
+    {
+        if ($value && $this->shipper_id) {
+            $this->consignee_id = $this->shipper_id;
+        }
+    }
 
     public function mount($shipmentId = null, $preselectedLoadingPortId = null, $preselectedDischargePortId = null)
     {
@@ -756,6 +764,13 @@ public function selectForeignLocationDischarge($locationCode)
         $this->loading = true;
 
         try {
+
+            // Validación condicional: si NO es transporte propio, shipper y consignee deben ser diferentes
+            if (!$this->is_own_transport && $this->shipper_id && $this->consignee_id && $this->shipper_id == $this->consignee_id) {
+                $this->addError('consignee_id', 'El consignatario debe ser diferente al cargador (o active "Transporte propio").');
+                return;
+            }
+            
             $this->validate();
 
             DB::beginTransaction();

@@ -98,7 +98,7 @@ class ShipmentItemCreateForm extends Component
     #[Validate('required|exists:clients,id,status,active')]
     public $bl_shipper_id = null;
 
-    #[Validate('required|exists:clients,id,status,active|different:bl_shipper_id')]
+    #[Validate('required|exists:clients,id,status,active')]
     public $bl_consignee_id = null;
 
     #[Validate('nullable|exists:clients,id,status,active')]
@@ -133,6 +133,9 @@ class ShipmentItemCreateForm extends Component
 
     #[Validate('required|in:USD,ARS,EUR')]
     public $bl_currency_code = 'USD';
+
+    // === TRANSPORTE PROPIO ===
+    public $is_own_transport = false;
 
     // Direcciones específicas para el Bill of Lading
     public $bl_shipper_use_specific = false;
@@ -780,7 +783,7 @@ class ShipmentItemCreateForm extends Component
         try {
             $this->validate([
                 'bl_shipper_id' => 'required|exists:clients,id,status,active',
-                'bl_consignee_id' => 'required|exists:clients,id,status,active|different:bl_shipper_id',
+                'bl_consignee_id' => 'required|exists:clients,id,status,active' . ($this->is_own_transport ? '' : '|different:bl_shipper_id'),
                 'bl_notify_party_id' => 'nullable|exists:clients,id,status,active',
                 'bl_loading_port_id' => 'required|exists:ports,id,active,1',
                 'bl_discharge_port_id' => 'required|exists:ports,id,active,1|different:bl_loading_port_id',
