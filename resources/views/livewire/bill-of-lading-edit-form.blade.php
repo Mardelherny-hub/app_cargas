@@ -76,7 +76,7 @@
                     {{-- Permiso de Embarque (TRP) --}}
                     <div>
                         <label for="permiso_embarque" class="block text-sm font-medium text-gray-700">
-                            Permiso de Embarque (TRP) <span class="text-red-500">*</span>
+                            Permiso de Embarque (TRP) 
                         </label>
                         <input type="text" 
                             id="permiso_embarque" 
@@ -87,7 +87,7 @@
                         @error('permiso_embarque')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
-                        <p class="mt-1 text-xs text-gray-500">Número de permiso obligatorio para declaraciones AFIP</p>
+                        <p class="mt-1 text-xs text-gray-500">Solo para exportaciones. No aplica para importaciones ni contenedores vacíos</p>
                     </div>
 
                      {{-- Identificador Destinación Aduanera (idDecla) --}}
