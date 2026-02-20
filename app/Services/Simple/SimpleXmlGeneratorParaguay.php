@@ -369,6 +369,20 @@ class SimpleXmlGeneratorParaguay
                 $w->endElement(); // bulto
                 $w->endElement(); // bultos
 
+                // ARMONIZADO - Clasificación arancelaria (Manual GDSF p.12)
+                // Obligatorio si indCombustible=S, opcional en otros casos
+                // Tomamos tariff_position del primer shipment item del BL
+                $firstItem = $bl->shipmentItems->first();
+                $tariffCode = $firstItem->tariff_position ?? null;
+                if ($tariffCode) {
+                    $w->startElement('Armonizado');
+                    $w->writeElement('codArmonizado', htmlspecialchars(substr($tariffCode, 0, 16)));
+                    $w->writeElement('DescArmonizado', htmlspecialchars(
+                        substr($bl->cargo_description ?? $firstItem->item_description ?? 'MERCADERIA', 0, 500)
+                    ));
+                    $w->endElement(); // Armonizado
+                }
+
                 // ✅ 2. PESO BRUTO TOTAL (fuera de bultos según Roberto)
                 $w->writeElement('pesoBrutoTotal', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
 
@@ -882,5 +896,264 @@ class SimpleXmlGeneratorParaguay
             'can_include' => true,
             'file_size' => $fileSize
         ];
+    }
+
+    /**
+     * XISP - Incluir Embarcación en Viaje
+     * Agrega una embarcación adicional a un viaje ya registrado (antes de generar manifiesto)
+     *
+     * Manual GDSF página 16 - Atributos XML del Mensaje XISP
+     *
+     * CAMPOS Y ORIGEN DE DATOS:
+     * - nroViaje       ← XFFM transaction external_reference (retornado por DNA)
+     * - id             ← Vessel->registration_number (matrícula, max 10 chars)
+     * - tipEmb         ← VesselType->category mapeado a EMP/BUM/BAR
+     * - NombreEmb      ← Vessel->name (max 200 chars)
+     * - indEnLastre    ← Parámetro $options['in_ballast'] o 'N' por defecto
+     * - codPais        ← Vessel->flagCountry->alpha2_code (ISO 3166-1 Alfa2)
+     * - Precinto       ← $options['seals'] array opcional [{nroPrecinto, tipPrecin}]
+     * - Contenedor     ← Contenedores del viaje asignados a esta embarcación (opcional)
+     *
+     * @param Voyage $voyage Viaje con embarcación a incluir
+     * @param \App\Models\Vessel $vessel Embarcación a incluir
+     * @param string $transactionId ID de transacción generado
+     * @param string $nroViaje Número de viaje DNA (del XFFM)
+     * @param array $options Opciones: in_ballast (S/N), seals (array)
+     * @return string XML completo
+     */
+    public function createXispXml(Voyage $voyage, $vessel, string $transactionId, string $nroViaje, array $options = []): string
+    {
+        try {
+            // Cargar relaciones necesarias del vessel
+            $vessel->load(['vesselType', 'flagCountry']);
+
+            $w = new \XMLWriter;
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            // Elemento raíz - Embarcación a incluir
+            $w->startElement('Embarcacion');
+
+            // nroViaje - Obligatorio (debe existir y no haberse generado manifiesto aún)
+            $w->writeElement('nroViaje', htmlspecialchars($nroViaje));
+
+            // codPais - Opcional según manual, pero lo incluimos siempre
+            $codPais = $vessel->flagCountry->alpha2_code ?? 'PY';
+            $w->writeElement('codPais', strtoupper($codPais));
+
+            // id - Obligatorio (identificador embarcación, max 10 chars)
+            // Origen: Vessel->registration_number (campo en migración vessels)
+            $w->writeElement('id', htmlspecialchars(
+                substr($vessel->registration_number ?? 'SIN_REG', 0, 10)
+            ));
+
+            // tipEmb - Obligatorio (EMP/BUM/BAR)
+            // Origen: VesselType->category mapeado
+            $tipEmb = $this->mapVesselTypeForParaguay($vessel->vesselType->category ?? 'barge');
+            $w->writeElement('tipEmb', $tipEmb);
+
+            // NombreEmb - Obligatorio (max 200 chars)
+            // Origen: Vessel->name
+            $w->writeElement('NombreEmb', htmlspecialchars(
+                substr($vessel->name ?? 'SIN NOMBRE', 0, 200)
+            ));
+
+            // indEnLastre - Obligatorio (S/N - indica si va en lastre/vacío)
+            // Origen: parámetro $options o 'N' por defecto
+            $inBallast = $options['in_ballast'] ?? 'N';
+            $w->writeElement('indEnLastre', in_array(strtoupper($inBallast), ['S', 'N']) ? strtoupper($inBallast) : 'N');
+
+            // Precintos - Opcional (precintos de la embarcación)
+            // Origen: $options['seals'] = [{nroPrecinto: 'xxx', tipPrecin: 'BC|BF'}]
+            $seals = $options['seals'] ?? [];
+            if (!empty($seals)) {
+                foreach ($seals as $seal) {
+                    $w->startElement('precinto');
+                    $w->writeElement('nroPrecinto', htmlspecialchars(
+                        substr($seal['nroPrecinto'] ?? '', 0, 30)
+                    ));
+                    // tipPrecin: BC (Bodega de Carga), BF (Bodega de Flotación)
+                    $tipPrecin = strtoupper($seal['tipPrecin'] ?? 'BC');
+                    $w->writeElement('tipPrecin', in_array($tipPrecin, ['BC', 'BF']) ? $tipPrecin : 'BC');
+                    $w->endElement(); // precinto
+                }
+            }
+
+            // Contenedores - Opcional (contenedores en esta embarcación)
+            // Origen: Contenedores del viaje filtrados por esta embarcación
+            $containers = $this->getContainersForVessel($voyage, $vessel);
+            if ($containers->isNotEmpty()) {
+                foreach ($containers as $container) {
+                    $w->startElement('Contenedor');
+
+                    // id contenedor - Obligatorio (ISO 6346)
+                    $w->writeElement('Id', htmlspecialchars(
+                        substr($container->full_container_number ??
+                            $container->container_number ?? 'SIN-NUMERO', 0, 11)
+                    ));
+
+                    // medidas - Obligatorio
+                    $lengthFeet = $container->containerType->length_feet ?? '40';
+                    $medida = in_array($lengthFeet, ['20', '40']) ? $lengthFeet : '40';
+                    $w->writeElement('medidas', $medida);
+
+                    // condicion - Obligatorio (H/P/V/C)
+                    $condicion = 'P'; // Default: a puerto
+                    if ($container->pivot ?? null) {
+                        $condicion = $container->pivot->condition ?? 'P';
+                    }
+                    $w->writeElement('condicion', $condicion);
+
+                    // Precintos del contenedor - Opcional
+                    if ($container->carrier_seal || $container->customs_seal) {
+                        $w->startElement('Precinto');
+                        if ($container->carrier_seal) {
+                            $w->startElement('precinto');
+                            $w->writeElement('nroPrecinto', htmlspecialchars(
+                                substr($container->carrier_seal, 0, 30)
+                            ));
+                            $w->writeElement('tipPrecin', 'BC');
+                            $w->endElement();
+                        }
+                        if ($container->customs_seal) {
+                            $w->startElement('precinto');
+                            $w->writeElement('nroPrecinto', htmlspecialchars(
+                                substr($container->customs_seal, 0, 30)
+                            ));
+                            $w->writeElement('tipPrecin', 'BC');
+                            $w->endElement();
+                        }
+                        $w->endElement(); // Precinto
+                    }
+
+                    $w->endElement(); // Contenedor
+                }
+            }
+
+            $w->endElement(); // Embarcacion
+
+            $w->endDocument();
+            $xmlContent = $w->outputMemory();
+
+            Log::info('XML XISP generado', [
+                'voyage_id' => $voyage->id,
+                'vessel_id' => $vessel->id,
+                'vessel_name' => $vessel->name,
+                'nro_viaje' => $nroViaje,
+                'transaction_id' => $transactionId,
+                'tip_emb' => $tipEmb,
+                'in_ballast' => $inBallast,
+                'seals_count' => count($seals),
+                'containers_count' => $containers->count(),
+                'xml_length' => strlen($xmlContent),
+            ]);
+
+            return $xmlContent;
+
+        } catch (Exception $e) {
+            Log::error('Error generando XML XISP', [
+                'voyage_id' => $voyage->id ?? null,
+                'vessel_id' => $vessel->id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * XRSP - Desvincular Embarcación de Viaje
+     * Remueve una embarcación de un viaje (antes de generar manifiesto)
+     *
+     * Manual GDSF página 18
+     *
+     * CAMPOS Y ORIGEN DE DATOS:
+     * - nroViaje ← XFFM transaction external_reference
+     * - id       ← Vessel->registration_number (matrícula)
+     *
+     * @param \App\Models\Vessel $vessel Embarcación a desvincular
+     * @param string $transactionId ID de transacción
+     * @param string $nroViaje Número de viaje DNA
+     * @return string XML completo
+     */
+    public function createXrspXml($vessel, string $transactionId, string $nroViaje): string
+    {
+        try {
+            $w = new \XMLWriter;
+            $w->openMemory();
+            $w->startDocument('1.0', 'UTF-8');
+
+            $w->startElement('DesvincularEmbarcacion');
+
+            // nroViaje - Obligatorio
+            $w->writeElement('nroViaje', htmlspecialchars($nroViaje));
+
+            // id - Obligatorio (identificador embarcación, max 10 chars)
+            // Origen: Vessel->registration_number
+            $w->writeElement('id', htmlspecialchars(
+                substr($vessel->registration_number ?? 'SIN_REG', 0, 10)
+            ));
+
+            $w->endElement(); // DesvincularEmbarcacion
+
+            $w->endDocument();
+            $xmlContent = $w->outputMemory();
+
+            Log::info('XML XRSP generado', [
+                'vessel_id' => $vessel->id,
+                'vessel_name' => $vessel->name,
+                'vessel_registration' => $vessel->registration_number,
+                'nro_viaje' => $nroViaje,
+                'transaction_id' => $transactionId,
+                'xml_length' => strlen($xmlContent),
+            ]);
+
+            return $xmlContent;
+
+        } catch (Exception $e) {
+            Log::error('Error generando XML XRSP', [
+                'vessel_id' => $vessel->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Mapear categoría de VesselType a código GDSF Paraguay
+     * Manual GDSF: EMP (Empuje/Remolcador), BUM (Buque Motor), BAR (Barcaza)
+     *
+     * Origen: VesselType->category (definido en VesselTypeSeeder)
+     */
+    private function mapVesselTypeForParaguay(?string $category): string
+    {
+        return match(strtolower($category ?? 'barge')) {
+            'pusher', 'empujador'       => 'EMP',
+            'tugboat', 'remolcador'     => 'EMP', // GDSF agrupa empuje y remolcador como EMP
+            'motor_vessel', 'self_propelled', 'buque_motor' => 'BUM',
+            'barge', 'barcaza'          => 'BAR',
+            default                     => 'BAR',
+        };
+    }
+
+    /**
+     * Obtener contenedores asignados a una embarcación específica en un viaje
+     * Busca a través de la jerarquía: Voyage → Shipments → BLs → ShipmentItems → Containers
+     */
+    private function getContainersForVessel(Voyage $voyage, $vessel): \Illuminate\Support\Collection
+    {
+        // Cargar relaciones si no están cargadas
+        $voyage->loadMissing([
+            'shipments.billsOfLading.shipmentItems.containers.containerType',
+        ]);
+
+        // Obtener todos los contenedores del viaje
+        // TODO: Cuando se implemente asignación de contenedores por embarcación,
+        // filtrar aquí por vessel_id. Por ahora retorna todos.
+        return $voyage->shipments
+            ->flatMap->billsOfLading
+            ->flatMap->shipmentItems
+            ->flatMap->containers
+            ->unique('id');
     }
 }

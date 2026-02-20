@@ -217,6 +217,17 @@ class ClientValidationService
         // Remove any formatting
         $cleanRuc = preg_replace('/[^0-9]/', '', $ruc);
 
+        // Valor especial "0" permitido por DNA Paraguay (idFiscal desconocido)
+        if ($cleanRuc === '0') {
+            return [
+                'valid' => true,
+                'message' => 'Valor especial DNA Paraguay (idFiscal desconocido)',
+                'formatted' => '0'
+            ];
+        }
+
+        // Check length (7-8 digits + check digit)
+
         // Check length (7-8 digits + check digit)
         if (strlen($cleanRuc) < 8 || strlen($cleanRuc) > 9) {
             return [

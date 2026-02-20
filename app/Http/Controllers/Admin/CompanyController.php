@@ -206,8 +206,8 @@ class CompanyController extends Controller
                             return;
                         }
                     } elseif ($country === 'PY') {
-                        // Paraguay: entre 6 y 9 dígitos
-                        if (strlen($cleanTaxId) < 6 || strlen($cleanTaxId) > 9) {
+                        // Paraguay: entre 6 y 9 dígitos (o "0" especial DNA)
+                        if ($cleanTaxId !== '0' && (strlen($cleanTaxId) < 6 || strlen($cleanTaxId) > 9)) {
                             $fail('El RUC debe tener entre 6 y 9 dígitos.');
                             return;
                         }
@@ -400,8 +400,8 @@ class CompanyController extends Controller
                             return;
                         }
                     } elseif ($country === 'PY') {
-                        // Paraguay: entre 6 y 9 dígitos
-                        if (strlen($cleanTaxId) < 6 || strlen($cleanTaxId) > 9) {
+                        // Paraguay: entre 6 y 9 dígitos (o "0" especial DNA)
+                        if ($cleanTaxId !== '0' && (strlen($cleanTaxId) < 6 || strlen($cleanTaxId) > 9)) {
                             $fail('El RUC debe tener entre 6 y 9 dígitos.');
                             return;
                         }
