@@ -108,9 +108,7 @@ class ClientController extends Controller
         $countries = Country::where('active', true)->orderBy('name')->get();
         $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
         // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
-        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
-        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
-        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
         $ports = Port::where('active', true)
             ->whereIn('country_id', $countryIds)
@@ -231,9 +229,7 @@ class ClientController extends Controller
         $countries = Country::where('active', true)->orderBy('name')->get();
         $documentTypes = DocumentType::where('active', true)->orderBy('name')->get();
         // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
-        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
-        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
-        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
         $ports = Port::where('active', true)
             ->whereIn('country_id', $countryIds)

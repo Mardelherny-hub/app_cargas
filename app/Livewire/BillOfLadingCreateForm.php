@@ -371,9 +371,7 @@ class BillOfLadingCreateForm extends Component
         ->get();
 
         // --- PUERTOS (activos) - FILTRADOS por Argentina y Paraguay
-        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
-        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
-        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
         $portsBase = Port::where('active', true)
             ->whereIn('country_id', $countryIds)
@@ -388,7 +386,7 @@ class BillOfLadingCreateForm extends Component
         $this->finalDestinationPorts = $portsBase;
 
         // Hacer países disponibles para la vista
-        $this->countries = collect([$argentina, $paraguay])->filter();
+        $this->countries = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->get();
 
         $this->customsOffices = CustomOffice::where('active', true)
             ->orderBy('name')
