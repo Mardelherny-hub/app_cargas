@@ -267,7 +267,6 @@
                                 <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos PDF para enviar a DNA</p>
                                 
                                 {{-- Formulario Upload completo --}}
-                                @if(!$xfblSent)
                                 <div class="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
                                     <div class="grid grid-cols-1 gap-2 mb-2">
                                         <div>
@@ -306,7 +305,6 @@
                                     </div>
                                     <p class="text-xs text-gray-400">Solo PDF, máx 5MB. Se incluirá en XFBL como DocAnexo.</p>
                                 </div>
-                                @endif
                                 
                                 {{-- Lista archivos con estado DNA --}}
                                 <div id="attachmentsList" class="space-y-1">
