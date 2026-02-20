@@ -262,59 +262,57 @@
                             @endif
                             
                             {{-- Zona de adjuntos (visible cuando XFFM enviado) --}}
-                            @if($xffmSent)
-                                <div class="mb-4 p-3 bg-white rounded border border-gray-300">
-                                    <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos (DocAnexo)</h5>
-                                    <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos PDF para enviar a DNA</p>
-                                    
-                                    {{-- Formulario Upload completo --}}
-                                    @if(!$xfblSent)
-                                    <div class="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
-                                        <div class="grid grid-cols-1 gap-2 mb-2">
+                            <div class="mb-4 p-3 bg-white rounded border border-gray-300">
+                                <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos (DocAnexo)</h5>
+                                <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos PDF para enviar a DNA</p>
+                                
+                                {{-- Formulario Upload completo --}}
+                                @if(!$xfblSent)
+                                <div class="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
+                                    <div class="grid grid-cols-1 gap-2 mb-2">
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">Conocimiento (BL)</label>
+                                            <select id="att_bl_id" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
+                                                <option value="">-- Seleccionar BL --</option>
+                                                @foreach($voyage->shipments->flatMap->billsOfLading as $bl)
+                                                    <option value="{{ $bl->id }}">{{ $bl->bill_number }} - {{ $bl->shipper->name ?? 'N/A' }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-2">
                                             <div>
-                                                <label class="block text-xs font-medium text-gray-600 mb-1">Conocimiento (BL)</label>
-                                                <select id="att_bl_id" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
-                                                    <option value="">-- Seleccionar BL --</option>
-                                                    @foreach($voyage->shipments->flatMap->billsOfLading as $bl)
-                                                        <option value="{{ $bl->id }}">{{ $bl->bill_number }} - {{ $bl->shipper->name ?? 'N/A' }}</option>
-                                                    @endforeach
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Tipo Documento</label>
+                                                <select id="att_doc_type" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
+                                                    <option value="380">380 - Factura Comercial</option>
+                                                    <option value="271">271 - Packing List</option>
+                                                    <option value="861">861 - Certificado</option>
+                                                    <option value="911">911 - Permiso</option>
+                                                    <option value="999">999 - Otros</option>
                                                 </select>
                                             </div>
-                                            <div class="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <label class="block text-xs font-medium text-gray-600 mb-1">Tipo Documento</label>
-                                                    <select id="att_doc_type" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
-                                                        <option value="380">380 - Factura Comercial</option>
-                                                        <option value="271">271 - Packing List</option>
-                                                        <option value="861">861 - Certificado</option>
-                                                        <option value="911">911 - Permiso</option>
-                                                        <option value="999">999 - Otros</option>
-                                                    </select>
-                                                </div>
-                                                <div>
-                                                    <label class="block text-xs font-medium text-gray-600 mb-1">Nº Documento</label>
-                                                    <input type="text" id="att_doc_number" placeholder="Ej: FAC-001" 
-                                                        class="w-full text-xs border-gray-300 rounded-md shadow-sm">
-                                                </div>
-                                            </div>
-                                            <div class="flex gap-2">
-                                                <input type="file" id="att_file" accept=".pdf" class="flex-1 text-xs border border-gray-300 rounded px-2 py-1">
-                                                <button type="button" onclick="uploadAttachment()" 
-                                                    class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                                                    Subir
-                                                </button>
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Nº Documento</label>
+                                                <input type="text" id="att_doc_number" placeholder="Ej: FAC-001" 
+                                                    class="w-full text-xs border-gray-300 rounded-md shadow-sm">
                                             </div>
                                         </div>
-                                        <p class="text-xs text-gray-400">Solo PDF, máx 5MB. Se incluirá en XFBL como DocAnexo.</p>
+                                        <div class="flex gap-2">
+                                            <input type="file" id="att_file" accept=".pdf" class="flex-1 text-xs border border-gray-300 rounded px-2 py-1">
+                                            <button type="button" onclick="uploadAttachment()" 
+                                                class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                                                Subir
+                                            </button>
+                                        </div>
                                     </div>
-                                    @endif
-                                    
-                                    {{-- Lista archivos con estado DNA --}}
-                                    <div id="attachmentsList" class="space-y-1">
-                                        <p class="text-xs text-gray-500 italic">Cargando...</p>
-                                    </div>
+                                    <p class="text-xs text-gray-400">Solo PDF, máx 5MB. Se incluirá en XFBL como DocAnexo.</p>
                                 </div>
-                            @endif
+                                @endif
+                                
+                                {{-- Lista archivos con estado DNA --}}
+                                <div id="attachmentsList" class="space-y-1">
+                                    <p class="text-xs text-gray-500 italic">Cargando...</p>
+                                </div>
+                            </div>
                             
                             {{-- Botones de acción --}}
                             @if(!$xffmSent)
