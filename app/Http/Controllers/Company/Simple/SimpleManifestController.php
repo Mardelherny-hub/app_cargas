@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
-
+use App\Models\VoyageAttachment;
 use App\Traits\UserHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -3298,5 +3298,182 @@ public function micDtaSend(Request $request, Voyage $voyage)
             ], 500);
         }
     }  
+
+
+    // ========================================
+    // PARAGUAY - ATTACHMENTS (DocumentoIMG)
+    // ========================================
+
+    /**
+     * Lista de adjuntos del voyage para AJAX
+     */
+    public function attachmentsList(Voyage $voyage)
+    {
+        if (!$this->hasCompanyRole('Cargas') || !$this->canAccessCompany($voyage->company_id)) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        }
+
+        $attachments = VoyageAttachment::where('voyage_id', $voyage->id)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($att) {
+                return [
+                    'id' => $att->id,
+                    'name' => $att->original_name,
+                    'size' => $att->getFormattedSize(),
+                    'document_type' => $att->document_type,
+                    'document_number' => $att->document_number,
+                    'bill_of_lading_id' => $att->bill_of_lading_id,
+                    'bl_number' => $att->billOfLading?->bill_number,
+                    'sent_to_dna' => $att->sent_to_dna,
+                    'sent_to_dna_at' => $att->sent_to_dna_at?->format('d/m/Y H:i'),
+                    'uploaded_at' => $att->created_at->format('d/m/Y H:i'),
+                ];
+            });
+
+        return response()->json($attachments);
+    }
+
+    /**
+     * Subir adjunto con datos completos para GDSF
+     */
+    public function uploadAttachment(Request $request, Voyage $voyage)
+    {
+        if (!$this->hasCompanyRole('Cargas') || !$this->canAccessCompany($voyage->company_id)) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        }
+
+        $request->validate([
+            'file' => 'required|file|mimes:pdf|max:5120', // 5MB
+            'bill_of_lading_id' => 'required|exists:bills_of_lading,id',
+            'document_type' => 'required|string|max:10',
+            'document_number' => 'required|string|max:100',
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $fileName = time() . '_' . $file->getClientOriginalName();
+            $filePath = $file->storeAs(
+                "attachments/paraguay/{$voyage->id}",
+                $fileName
+            );
+
+            $attachment = VoyageAttachment::create([
+                'voyage_id' => $voyage->id,
+                'bill_of_lading_id' => $request->input('bill_of_lading_id'),
+                'original_name' => $file->getClientOriginalName(),
+                'file_name' => $fileName,
+                'file_path' => $filePath,
+                'file_size' => $file->getSize(),
+                'mime_type' => $file->getMimeType(),
+                'document_type' => $request->input('document_type'),
+                'document_number' => $request->input('document_number'),
+                'country' => 'PY',
+                'uploaded_by' => auth()->id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Documento subido correctamente',
+                'attachment' => [
+                    'id' => $attachment->id,
+                    'name' => $attachment->original_name,
+                    'size' => $attachment->getFormattedSize(),
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error subiendo adjunto Paraguay', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Error al subir archivo: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Eliminar adjunto
+     */
+    public function deleteAttachment(Voyage $voyage, VoyageAttachment $attachment)
+    {
+        if (!$this->hasCompanyRole('Cargas') || !$this->canAccessCompany($voyage->company_id)) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        }
+
+        // Verificar que el attachment pertenece al voyage
+        if ($attachment->voyage_id !== $voyage->id) {
+            return response()->json(['error' => 'Adjunto no pertenece a este viaje'], 403);
+        }
+
+        // No permitir eliminar si ya fue enviado a DNA
+        if ($attachment->sent_to_dna) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No se puede eliminar un documento ya enviado a DNA',
+            ], 422);
+        }
+
+        try {
+            // Eliminar archivo físico
+            if ($attachment->file_path && Storage::exists($attachment->file_path)) {
+                Storage::delete($attachment->file_path);
+            }
+
+            $attachment->delete();
+
+            return response()->json(['success' => true, 'message' => 'Adjunto eliminado']);
+
+        } catch (\Exception $e) {
+            Log::error('Error eliminando adjunto', [
+                'attachment_id' => $attachment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'error' => 'Error al eliminar'], 500);
+        }
+    }
+
+    /**
+     * Enviar un adjunto a DNA Paraguay via enviarDocumento
+     */
+    public function sendDocumentoImg(Request $request, Voyage $voyage, VoyageAttachment $attachment)
+    {
+        if (!$this->hasCompanyRole('Cargas') || !$this->canAccessCompany($voyage->company_id)) {
+            return response()->json(['error' => 'Sin permisos'], 403);
+        }
+
+        if ($attachment->voyage_id !== $voyage->id) {
+            return response()->json(['error' => 'Adjunto no pertenece a este viaje'], 403);
+        }
+
+        try {
+            $service = new ParaguayDnaService(
+                $voyage->company,
+                auth()->user()
+            );
+
+            $result = $service->sendDocumentoImg($voyage, $attachment, [
+                'invalidate' => $request->boolean('invalidate', false),
+            ]);
+
+            return response()->json($result);
+
+        } catch (\Exception $e) {
+            Log::error('Error enviando DocumentoIMG', [
+                'voyage_id' => $voyage->id,
+                'attachment_id' => $attachment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_message' => 'Error: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 
 }
