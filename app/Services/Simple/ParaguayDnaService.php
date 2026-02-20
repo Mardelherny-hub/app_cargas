@@ -748,6 +748,236 @@ class ParaguayDnaService extends BaseWebserviceService
         }
     }
 
+    /**
+     * 5. XISP - Incluir Embarcación en Viaje
+     * Agrega una embarcación adicional al viaje (antes de generar manifiesto)
+     * Requiere XFFM enviado previamente
+     *
+     * @param Voyage $voyage Viaje
+     * @param \App\Models\Vessel $vessel Embarcación a incluir
+     * @param array $options in_ballast (S/N), seals (array), force_resend (bool)
+     * @return array Resultado
+     */
+    public function sendXisp(Voyage $voyage, $vessel, array $options = []): array
+    {
+        $this->logOperation('info', 'Iniciando envío XISP (Incluir Embarcación)', [
+            'voyage_id' => $voyage->id,
+            'vessel_id' => $vessel->id,
+            'vessel_name' => $vessel->name,
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // 1. Verificar XFFM
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+                throw new Exception('Debe enviar XFFM primero');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+            if (!$nroViaje && $xffmTransaction->response_xml) {
+                $nroViaje = $this->extractNroViajeFromRawXml($xffmTransaction->response_xml);
+                if ($nroViaje) {
+                    $xffmTransaction->update(['external_reference' => $nroViaje]);
+                }
+            }
+
+            if (!$nroViaje) {
+                throw new Exception('No se pudo obtener nroViaje del XFFM');
+            }
+
+            // 2. Generar XML
+            $transactionId = $this->generateTransactionId('XISP');
+            $xml = $this->paraguayXmlGenerator->createXispXml($voyage, $vessel, $transactionId, $nroViaje, $options);
+
+            // Guardar XML para debug
+            file_put_contents(storage_path("logs/DNA_XISP_{$voyage->id}_{$vessel->id}_" . now()->format('YmdHis') . ".xml"), $xml);
+
+            // 3. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XISP',
+                'transaction_id' => $transactionId,
+            ]);
+
+            $transaction->request_xml = $xml;
+            $transaction->save();
+
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XISP',
+                'version' => '1.0',
+                'viaje' => $nroViaje,
+                'xml' => $xml,
+            ]);
+
+            // 5. Procesar respuesta
+            if ($soapResult['success']) {
+                $dnaStatus = $this->determineDnaStatus($soapResult);
+
+                $transaction->update([
+                    'status' => $dnaStatus['status'],
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                    'request_xml' => $xml,
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XISP', [
+                    'status' => $dnaStatus['status'],
+                    'nro_viaje' => $nroViaje,
+                    'vessel_id' => $vessel->id,
+                    'vessel_name' => $vessel->name,
+                ]);
+
+                DB::commit();
+
+                return [
+                    'success' => !$dnaStatus['was_rejected'],
+                    'transaction_id' => $transactionId,
+                    'message' => $dnaStatus['was_rejected']
+                        ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
+                        : 'Embarcación incluida exitosamente',
+                    'vessel_name' => $vessel->name,
+                    'dna_response' => $dnaStatus['details'],
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
+            }
+
+        } catch (Exception $e) {
+            $this->currentTransactionId = null;
+
+            $this->logOperation('error', 'Error enviando XISP', [
+                'voyage_id' => $voyage->id,
+                'vessel_id' => $vessel->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            DB::rollBack();
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * 6. XRSP - Desvincular Embarcación de Viaje
+     * Remueve una embarcación del viaje (antes de generar manifiesto)
+     * Requiere XFFM enviado previamente
+     *
+     * @param Voyage $voyage Viaje
+     * @param \App\Models\Vessel $vessel Embarcación a desvincular
+     * @param array $options force_resend (bool)
+     * @return array Resultado
+     */
+    public function sendXrsp(Voyage $voyage, $vessel, array $options = []): array
+    {
+        $this->logOperation('info', 'Iniciando envío XRSP (Desvincular Embarcación)', [
+            'voyage_id' => $voyage->id,
+            'vessel_id' => $vessel->id,
+            'vessel_name' => $vessel->name,
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            // 1. Verificar XFFM
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (!$xffmTransaction || $xffmTransaction->status !== 'sent') {
+                throw new Exception('Debe enviar XFFM primero');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+            if (!$nroViaje && $xffmTransaction->response_xml) {
+                $nroViaje = $this->extractNroViajeFromRawXml($xffmTransaction->response_xml);
+                if ($nroViaje) {
+                    $xffmTransaction->update(['external_reference' => $nroViaje]);
+                }
+            }
+
+            if (!$nroViaje) {
+                throw new Exception('No se pudo obtener nroViaje del XFFM');
+            }
+
+            // 2. Generar XML
+            $transactionId = $this->generateTransactionId('XRSP');
+            $xml = $this->paraguayXmlGenerator->createXrspXml($vessel, $transactionId, $nroViaje);
+
+            // Guardar XML para debug
+            file_put_contents(storage_path("logs/DNA_XRSP_{$voyage->id}_{$vessel->id}_" . now()->format('YmdHis') . ".xml"), $xml);
+
+            // 3. Crear transacción
+            $transaction = $this->createTransaction($voyage, [
+                'tipo_mensaje' => 'XRSP',
+                'transaction_id' => $transactionId,
+            ]);
+
+            $transaction->request_xml = $xml;
+            $transaction->save();
+
+            $this->currentTransactionId = $transaction->id;
+
+            // 4. Enviar SOAP
+            $soapResult = $this->sendSoapMessage([
+                'codigo' => 'XRSP',
+                'version' => '1.0',
+                'viaje' => $nroViaje,
+                'xml' => $xml,
+            ]);
+
+            // 5. Procesar respuesta
+            if ($soapResult['success']) {
+                $dnaStatus = $this->determineDnaStatus($soapResult);
+
+                $transaction->update([
+                    'status' => $dnaStatus['status'],
+                    'response_xml' => $soapResult['raw_response'] ?? null,
+                    'request_xml' => $xml,
+                ]);
+
+                $this->updateWebserviceStatus($voyage, 'XRSP', [
+                    'status' => $dnaStatus['status'],
+                    'nro_viaje' => $nroViaje,
+                    'vessel_id' => $vessel->id,
+                    'vessel_name' => $vessel->name,
+                ]);
+
+                DB::commit();
+
+                return [
+                    'success' => !$dnaStatus['was_rejected'],
+                    'transaction_id' => $transactionId,
+                    'message' => $dnaStatus['was_rejected']
+                        ? 'RECHAZADO por DNA: ' . ($dnaStatus['details']['reason'] ?? 'Sin detalle')
+                        : 'Embarcación desvinculada exitosamente',
+                    'vessel_name' => $vessel->name,
+                    'dna_response' => $dnaStatus['details'],
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP');
+            }
+
+        } catch (Exception $e) {
+            $this->currentTransactionId = null;
+
+            $this->logOperation('error', 'Error enviando XRSP', [
+                'voyage_id' => $voyage->id,
+                'vessel_id' => $vessel->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            DB::rollBack();
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
+        }
+    }
+
     // ====================================
     // MÉTODOS HELPERS PRIVADOS
     // ====================================
@@ -941,6 +1171,12 @@ class ParaguayDnaService extends BaseWebserviceService
                     break;
                 case 'XFCT':
                     $responseXml = $this->generateXfctBypassXml($viaje);
+                    break;
+                case 'XISP':
+                    $responseXml = $this->generateXispBypassXml($viaje);
+                    break;
+                case 'XRSP':
+                    $responseXml = $this->generateXrspBypassXml($viaje);
                     break;
                 default:
                     $responseXml = '<response><status>OK</status></response>';
@@ -1546,5 +1782,55 @@ XML;
         }
 
         return null;
+    }
+    
+    /**
+     * Generar XML de respuesta XISP simulada
+     */
+    private function generateXispBypassXml(string $viaje): string
+    {
+        $timestamp = now()->format('Y-m-d\TH:i:s');
+
+        return <<<XML
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        <soap:Body>
+            <EnviarMensajeFluvialResponse xmlns="http://gdsf.aduana.gov.py/">
+                <resultado>
+                    <codigo>0</codigo>
+                    <mensaje>Embarcación incluida correctamente (BYPASS)</mensaje>
+                    <nroViaje>{$viaje}</nroViaje>
+                    <estado>ACEPTADO</estado>
+                    <fechaProceso>{$timestamp}</fechaProceso>
+                </resultado>
+            </EnviarMensajeFluvialResponse>
+        </soap:Body>
+    </soap:Envelope>
+    XML;
+    }
+
+    /**
+     * Generar XML de respuesta XRSP simulada
+     */
+    private function generateXrspBypassXml(string $viaje): string
+    {
+        $timestamp = now()->format('Y-m-d\TH:i:s');
+
+        return <<<XML
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        <soap:Body>
+            <EnviarMensajeFluvialResponse xmlns="http://gdsf.aduana.gov.py/">
+                <resultado>
+                    <codigo>0</codigo>
+                    <mensaje>Embarcación desvinculada correctamente (BYPASS)</mensaje>
+                    <nroViaje>{$viaje}</nroViaje>
+                    <estado>ACEPTADO</estado>
+                    <fechaProceso>{$timestamp}</fechaProceso>
+                </resultado>
+            </EnviarMensajeFluvialResponse>
+        </soap:Body>
+    </soap:Envelope>
+    XML;
     }
 }

@@ -904,6 +904,21 @@ class SimpleManifestController extends Controller
             return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XFCT';
         });
 
+        $xispTransactions = $transactions->filter(function($t) {
+            return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XISP';
+        });
+
+        $xrspTransactions = $transactions->filter(function($t) {
+            return ($t->additional_metadata['tipo_mensaje'] ?? null) === 'XRSP';
+        });
+
+        // Embarcaciones disponibles para XISP (de la misma empresa)
+        $companyVessels = \App\Models\Vessel::where('company_id', $voyage->company_id)
+            ->where('active', true)
+            ->with(['vesselType', 'flagCountry'])
+            ->orderBy('name')
+            ->get();
+
         // Estados de cada método
         $xffmStatus = $xffmTransaction && $xffmTransaction->status === 'sent' ? 'sent' : 'pending';
         $xfblStatus = $xfblTransaction && $xfblTransaction->status === 'sent' ? 'sent' : 'pending';
@@ -933,6 +948,9 @@ class SimpleManifestController extends Controller
             'xfblTransaction',
             'xfbtTransaction',
             'xfctTransaction',
+            'xispTransactions',
+            'xrspTransactions',
+            'companyVessels',
             'xffmStatus',
             'xfblStatus',
             'xfbtStatus',
@@ -965,7 +983,9 @@ class SimpleManifestController extends Controller
 
         // Validar método
         $request->validate([
-            'method' => 'required|in:XFFM,XFBL,XFBT,XFCT'
+            'method' => 'required|in:XFFM,XFBL,XFBT,XFCT,XISP,XRSP',
+            'vessel_id' => 'nullable|exists:vessels,id',
+            'in_ballast' => 'nullable|in:S,N',
         ]);
 
         $method = $request->input('method');
@@ -983,6 +1003,20 @@ class SimpleManifestController extends Controller
                 'XFBL' => $service->sendXfbl($voyage, ['force_resend' => $request->input('force_resend', false)]),
                 'XFBT' => $service->sendXfbt($voyage, ['force_resend' => $request->input('force_resend', false)]),
                 'XFCT' => $service->sendXfct($voyage),
+                'XISP' => (function() use ($service, $voyage, $request) {
+                    $vessel = \App\Models\Vessel::findOrFail($request->input('vessel_id'));
+                    return $service->sendXisp($voyage, $vessel, [
+                        'in_ballast' => $request->input('in_ballast', 'N'),
+                        'seals' => $request->input('seals', []),
+                        'force_resend' => $request->input('force_resend', false),
+                    ]);
+                })(),
+                'XRSP' => (function() use ($service, $voyage, $request) {
+                    $vessel = \App\Models\Vessel::findOrFail($request->input('vessel_id'));
+                    return $service->sendXrsp($voyage, $vessel, [
+                        'force_resend' => $request->input('force_resend', false),
+                    ]);
+                })(),
                 default => ['success' => false, 'error_message' => 'Método no válido']
             };
 

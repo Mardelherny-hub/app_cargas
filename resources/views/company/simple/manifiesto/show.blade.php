@@ -498,7 +498,142 @@
                 </div>
             </div>
 
+            {{-- XISP/XRSP - Gestión de Embarcaciones (Opcional) --}}
+            @if($xffmSent)
+            <div class="bg-white shadow rounded-lg overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-cyan-50 to-white">
+                    <h3 class="text-lg font-semibold text-gray-900">Gestión de Embarcaciones (Opcional)</h3>
+                    <p class="text-sm text-gray-600 mt-1">XISP: Incluir embarcación / XRSP: Desvincular embarcación del viaje</p>
+                </div>
+
+                <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        {{-- XISP - Incluir Embarcación --}}
+                        <div class="border-2 rounded-lg p-5 border-cyan-400 bg-cyan-50">
+                            <div class="flex items-center space-x-2 mb-3">
+                                <span class="flex items-center justify-center w-7 h-7 rounded-full bg-cyan-600 text-white text-sm font-bold">+</span>
+                                <h4 class="text-base font-semibold text-gray-900">XISP - Incluir Embarcación</h4>
+                            </div>
+                            <p class="text-xs text-gray-600 mb-4">Agrega una embarcación al viaje antes de generar el manifiesto</p>
+
+                            {{-- Selector de embarcación --}}
+                            <div class="space-y-3 mb-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Embarcación</label>
+                                    <select id="xisp_vessel_id" class="w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500">
+                                        <option value="">-- Seleccionar embarcación --</option>
+                                        @foreach($companyVessels as $v)
+                                            <option value="{{ $v->id }}" data-name="{{ $v->name }}" data-reg="{{ $v->registration_number }}" data-type="{{ $v->vesselType->category ?? 'barge' }}">
+                                                {{ $v->name }} ({{ $v->registration_number }}) - {{ $v->vesselType->short_name ?? 'N/A' }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">¿En Lastre?</label>
+                                    <select id="xisp_in_ballast" class="w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500">
+                                        <option value="N">No - Con carga</option>
+                                        <option value="S">Sí - En lastre (vacía)</option>
+                                    </select>
+                                </div>
+
+                                {{-- Precintos opcionales --}}
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Precintos (opcional)</label>
+                                    <div id="xisp_seals_container">
+                                        <div class="flex gap-2 mb-1">
+                                            <input type="text" id="xisp_seal_number" placeholder="Nro. precinto" 
+                                                class="flex-1 text-sm border-gray-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500">
+                                            <select id="xisp_seal_type" class="w-24 text-sm border-gray-300 rounded-md shadow-sm">
+                                                <option value="BC">BC</option>
+                                                <option value="BF">BF</option>
+                                            </select>
+                                            <button type="button" onclick="agregarPrecintoXisp()" 
+                                                class="px-3 py-1 bg-cyan-100 text-cyan-700 text-sm rounded hover:bg-cyan-200">
+                                                +
+                                            </button>
+                                        </div>
+                                        <div id="xisp_seals_list" class="space-y-1 text-xs"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button onclick="enviarXisp()" 
+                                class="w-full px-4 py-2.5 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 transition-colors">
+                                Incluir Embarcación (XISP)
+                            </button>
+
+                            {{-- Historial XISP --}}
+                            @if($xispTransactions->isNotEmpty())
+                                <div class="mt-3 pt-3 border-t border-cyan-200">
+                                    <p class="text-xs font-medium text-gray-600 mb-2">Embarcaciones incluidas:</p>
+                                    @foreach($xispTransactions as $xispTx)
+                                        <div class="flex items-center justify-between text-xs mb-1 p-1.5 bg-white rounded">
+                                            <span class="text-gray-700">
+                                                {{ $xispTx->additional_metadata['vessel_name'] ?? 'N/A' }}
+                                            </span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold {{ $xispTx->status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                                {{ $xispTx->status === 'sent' ? '✓' : '✗' }} {{ strtoupper($xispTx->status) }}
+                                            </span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
+
+                        {{-- XRSP - Desvincular Embarcación --}}
+                        <div class="border-2 rounded-lg p-5 border-red-300 bg-red-50">
+                            <div class="flex items-center space-x-2 mb-3">
+                                <span class="flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-sm font-bold">−</span>
+                                <h4 class="text-base font-semibold text-gray-900">XRSP - Desvincular Embarcación</h4>
+                            </div>
+                            <p class="text-xs text-gray-600 mb-4">Remueve una embarcación del viaje antes de generar el manifiesto</p>
+
+                            {{-- Selector de embarcación --}}
+                            <div class="mb-4">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Embarcación a desvincular</label>
+                                <select id="xrsp_vessel_id" class="w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500">
+                                    <option value="">-- Seleccionar embarcación --</option>
+                                    @foreach($companyVessels as $v)
+                                        <option value="{{ $v->id }}">
+                                            {{ $v->name }} ({{ $v->registration_number }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <button onclick="enviarXrsp()" 
+                                class="w-full px-4 py-2.5 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition-colors">
+                                Desvincular Embarcación (XRSP)
+                            </button>
+
+                            {{-- Historial XRSP --}}
+                            @if($xrspTransactions->isNotEmpty())
+                                <div class="mt-3 pt-3 border-t border-red-200">
+                                    <p class="text-xs font-medium text-gray-600 mb-2">Embarcaciones desvinculadas:</p>
+                                    @foreach($xrspTransactions as $xrspTx)
+                                        <div class="flex items-center justify-between text-xs mb-1 p-1.5 bg-white rounded">
+                                            <span class="text-gray-700">
+                                                {{ $xrspTx->additional_metadata['vessel_name'] ?? 'N/A' }}
+                                            </span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold {{ $xrspTx->status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                                {{ $xrspTx->status === 'sent' ? '✓' : '✗' }} {{ strtoupper($xrspTx->status) }}
+                                            </span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+            @endif
+
             {{-- Historial de Transacciones --}}
+
             @if($transactions->isNotEmpty())
                 <div class="bg-white shadow rounded-lg overflow-hidden mt-6">
                     <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
@@ -1234,6 +1369,134 @@ function copiarXml(btn) {
         alert('Error al copiar: ' + err);
     });
 }
+
+// ============================================
+        // XISP/XRSP - Gestión de Embarcaciones
+        // ============================================
+
+        let xispSeals = [];
+
+        function agregarPrecintoXisp() {
+            const number = document.getElementById('xisp_seal_number').value.trim();
+            const type = document.getElementById('xisp_seal_type').value;
+            
+            if (!number) {
+                alert('Ingrese el número de precinto');
+                return;
+            }
+
+            xispSeals.push({ nroPrecinto: number, tipPrecin: type });
+            
+            // Actualizar lista visual
+            const list = document.getElementById('xisp_seals_list');
+            const item = document.createElement('div');
+            item.className = 'flex items-center justify-between bg-cyan-100 px-2 py-1 rounded';
+            item.innerHTML = `
+                <span>${number} (${type})</span>
+                <button onclick="this.parentElement.remove(); xispSeals = xispSeals.filter(s => s.nroPrecinto !== '${number}')" 
+                    class="text-red-500 hover:text-red-700 font-bold">✗</button>
+            `;
+            list.appendChild(item);
+            
+            // Limpiar input
+            document.getElementById('xisp_seal_number').value = '';
+        }
+
+        function enviarXisp() {
+            const vesselId = document.getElementById('xisp_vessel_id').value;
+            const inBallast = document.getElementById('xisp_in_ballast').value;
+            
+            if (!vesselId) {
+                alert('Seleccione una embarcación');
+                return;
+            }
+
+            const vesselName = document.getElementById('xisp_vessel_id').selectedOptions[0].dataset.name;
+            
+            if (!confirm(`¿Incluir embarcación "${vesselName}" en el viaje?`)) return;
+
+            // Deshabilitar botón
+            event.target.disabled = true;
+            event.target.textContent = 'Enviando...';
+
+            fetch('{{ $send_route }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    method: 'XISP',
+                    vessel_id: vesselId,
+                    in_ballast: inBallast,
+                    seals: xispSeals
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✓ ' + (data.message || 'Embarcación incluida exitosamente'));
+                    xispSeals = [];
+                    location.reload();
+                } else {
+                    alert('✗ Error: ' + (data.error_message || 'Error desconocido'));
+                    event.target.disabled = false;
+                    event.target.textContent = 'Incluir Embarcación (XISP)';
+                }
+            })
+            .catch(error => {
+                alert('Error de conexión: ' + error.message);
+                event.target.disabled = false;
+                event.target.textContent = 'Incluir Embarcación (XISP)';
+            });
+        }
+
+        function enviarXrsp() {
+            const vesselId = document.getElementById('xrsp_vessel_id').value;
+            
+            if (!vesselId) {
+                alert('Seleccione una embarcación');
+                return;
+            }
+
+            const vesselName = document.getElementById('xrsp_vessel_id').selectedOptions[0].textContent.trim();
+            
+            if (!confirm(`¿DESVINCULAR embarcación "${vesselName}" del viaje? Esta acción no se puede deshacer.`)) return;
+
+            // Deshabilitar botón
+            event.target.disabled = true;
+            event.target.textContent = 'Enviando...';
+
+            fetch('{{ $send_route }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    method: 'XRSP',
+                    vessel_id: vesselId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✓ ' + (data.message || 'Embarcación desvinculada exitosamente'));
+                    location.reload();
+                } else {
+                    alert('✗ Error: ' + (data.error_message || 'Error desconocido'));
+                    event.target.disabled = false;
+                    event.target.textContent = 'Desvincular Embarcación (XRSP)';
+                }
+            })
+            .catch(error => {
+                alert('Error de conexión: ' + error.message);
+                event.target.disabled = false;
+                event.target.textContent = 'Desvincular Embarcación (XRSP)';
+            });
+        }
 </script>
 
 {{-- Modal XML con botón copiar --}}
