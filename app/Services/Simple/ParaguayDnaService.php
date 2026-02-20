@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use SoapClient;
 use SoapFault;
+use App\Models\VoyageAttachment;
 
 /**
  * SISTEMA MODULAR WEBSERVICES - ParaguayDnaService
@@ -974,6 +975,279 @@ class ParaguayDnaService extends BaseWebserviceService
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    // ====================================
+    // DOCUMENTO IMG - enviarDocumento
+    // ====================================
+
+    /**
+     * Enviar documento adjunto a DNA Paraguay via método SOAP enviarDocumento
+     * 
+     * DIFERENTE de EnviarMensajeFluvial - usa método SOAP propio
+     * Manual GDSF: enviarDocumento(DocumentoIMG, Autenticacion)
+     * 
+     * DocumentoIMG: { nroViaje, idTitTrans, tipo, nroDocumento, archivo (base64 max 5MB) }
+     * Para invalidar: enviar archivo = null
+     *
+     * @param Voyage $voyage Viaje (debe tener XFFM enviado con nroViaje)
+     * @param \App\Models\VoyageAttachment $attachment Adjunto a enviar
+     * @param array $options Opciones adicionales: invalidate (bool) para anular documento
+     * @return array ['success' => bool, 'message' => string, ...]
+     */
+    public function sendDocumentoImg(Voyage $voyage, \App\Models\VoyageAttachment $attachment, array $options = []): array
+    {
+        $this->logOperation('info', 'Iniciando envío DocumentoIMG', [
+            'voyage_id' => $voyage->id,
+            'attachment_id' => $attachment->id,
+            'document_number' => $attachment->document_number,
+            'document_type' => $attachment->document_type,
+            'invalidate' => $options['invalidate'] ?? false,
+        ]);
+
+        try {
+            // 1. Verificar XFFM enviado (necesitamos nroViaje)
+            $xffmTransaction = $this->getExistingTransaction($voyage, 'XFFM');
+            if (!$xffmTransaction) {
+                throw new Exception('Debe enviar XFFM primero para obtener nroViaje');
+            }
+
+            $nroViaje = $xffmTransaction->external_reference;
+            if (empty($nroViaje)) {
+                throw new Exception('No se encontró nroViaje en la transacción XFFM');
+            }
+
+            // 2. Verificar que el attachment tiene BL asociado
+            if (!$attachment->bill_of_lading_id) {
+                throw new Exception('El documento debe estar asociado a un Conocimiento (BL)');
+            }
+
+            $bl = $attachment->billOfLading;
+            if (!$bl) {
+                throw new Exception('Conocimiento de embarque no encontrado');
+            }
+
+            // idTitTrans = bill_number del BL (como se usa en XFBL)
+            $idTitTrans = $bl->bill_number;
+            if (empty($idTitTrans)) {
+                throw new Exception('El BL no tiene número de conocimiento (bill_number)');
+            }
+
+            // 3. Validar documento
+            $tipo = $attachment->document_type;
+            $nroDocumento = $attachment->document_number;
+
+            if (empty($tipo) || empty($nroDocumento)) {
+                throw new Exception('El documento requiere tipo EDIFACT y número de documento');
+            }
+
+            // 4. Obtener archivo en base64 (o null si es invalidación)
+            $isInvalidate = $options['invalidate'] ?? false;
+            $archivoBase64 = null;
+
+            if (!$isInvalidate) {
+                // Verificar tamaño (max 5MB)
+                if ($attachment->file_size > 5242880) {
+                    throw new Exception('El archivo excede el máximo de 5MB permitido por DNA');
+                }
+
+                $archivoBase64 = $attachment->getBase64Content();
+            }
+
+            // 5. Enviar SOAP
+            $soapResult = $this->sendDocumentoSoap($nroViaje, $idTitTrans, $tipo, $nroDocumento, $archivoBase64);
+
+            // 6. Procesar resultado
+            if ($soapResult['success']) {
+                // Marcar attachment como enviado
+                $attachment->update([
+                    'sent_to_dna' => true,
+                    'sent_to_dna_at' => now(),
+                ]);
+
+                $this->logOperation('info', 'DocumentoIMG enviado exitosamente', [
+                    'voyage_id' => $voyage->id,
+                    'attachment_id' => $attachment->id,
+                    'nro_viaje' => $nroViaje,
+                    'id_tit_trans' => $idTitTrans,
+                    'invalidate' => $isInvalidate,
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => $isInvalidate
+                        ? 'Documento invalidado exitosamente en DNA'
+                        : 'Documento enviado exitosamente a DNA',
+                    'attachment_id' => $attachment->id,
+                    'nro_viaje' => $nroViaje,
+                    'id_tit_trans' => $idTitTrans,
+                ];
+            } else {
+                throw new Exception($soapResult['error_message'] ?? 'Error SOAP enviarDocumento');
+            }
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error enviando DocumentoIMG', [
+                'voyage_id' => $voyage->id,
+                'attachment_id' => $attachment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Envío masivo de documentos pendientes para un viaje
+     * Envía todos los VoyageAttachment que tengan sent_to_dna = false
+     *
+     * @return array ['success' => bool, 'sent' => int, 'failed' => int, 'results' => array]
+     */
+    public function sendAllPendingDocuments(Voyage $voyage): array
+    {
+        $pendingAttachments = \App\Models\VoyageAttachment::where('voyage_id', $voyage->id)
+            ->where('sent_to_dna', false)
+            ->whereNotNull('bill_of_lading_id')
+            ->whereNotNull('document_type')
+            ->whereNotNull('document_number')
+            ->get();
+
+        if ($pendingAttachments->isEmpty()) {
+            return [
+                'success' => true,
+                'message' => 'No hay documentos pendientes de envío',
+                'sent' => 0,
+                'failed' => 0,
+                'results' => [],
+            ];
+        }
+
+        $results = [];
+        $sent = 0;
+        $failed = 0;
+
+        foreach ($pendingAttachments as $attachment) {
+            $result = $this->sendDocumentoImg($voyage, $attachment);
+            $results[] = [
+                'attachment_id' => $attachment->id,
+                'document_number' => $attachment->document_number,
+                'success' => $result['success'],
+                'message' => $result['message'] ?? $result['error_message'] ?? '',
+            ];
+
+            if ($result['success']) {
+                $sent++;
+            } else {
+                $failed++;
+            }
+        }
+
+        return [
+            'success' => $failed === 0,
+            'message' => "Enviados: {$sent}, Fallidos: {$failed}",
+            'sent' => $sent,
+            'failed' => $failed,
+            'results' => $results,
+        ];
+    }
+
+    /**
+     * Llamada SOAP a enviarDocumento (método DIFERENTE de EnviarMensajeFluvial)
+     * CON BYPASS INTELIGENTE
+     */
+    private function sendDocumentoSoap(
+        string $nroViaje,
+        string $idTitTrans,
+        string $tipo,
+        string $nroDocumento,
+        ?string $archivoBase64
+    ): array {
+        // ========================================
+        // BYPASS INTELIGENTE
+        // ========================================
+        $shouldBypass = $this->company->shouldBypassTesting('paraguay');
+        $environment = $this->config['environment'] ?? 'testing';
+
+        if ($shouldBypass) {
+            $this->logOperation('info', '🔄 BYPASS DocumentoIMG - Simulando respuesta', [
+                'nro_viaje' => $nroViaje,
+                'id_tit_trans' => $idTitTrans,
+                'tipo' => $tipo,
+                'nro_documento' => $nroDocumento,
+                'has_archivo' => !is_null($archivoBase64),
+            ]);
+
+            return [
+                'success' => true,
+                'raw_response' => '<enviarDocumentoResponse><confirmacion>Documento recibido correctamente (BYPASS)</confirmacion></enviarDocumentoResponse>',
+            ];
+        }
+
+        // ========================================
+        // CONEXIÓN REAL A DNA PARAGUAY
+        // ========================================
+        try {
+            $this->logOperation('info', '🌐 Enviando DocumentoIMG a DNA', [
+                'nro_viaje' => $nroViaje,
+                'id_tit_trans' => $idTitTrans,
+                'environment' => $environment,
+            ]);
+
+            // Crear cliente SOAP
+            if (!$this->soapClient) {
+                $this->soapClient = $this->createSoapClient();
+            }
+            $client = $this->soapClient;
+
+            // Obtener tokens WSAA
+            $wsaaService = new ParaguayWsaaService($this->company, $environment);
+            $wsaaTokens = $wsaaService->getTokens();
+            $ruc = $this->company->tax_id;
+
+            // Llamada SOAP al método enviarDocumento
+            $result = $client->enviarDocumento([
+                'DocumentoIMG' => [
+                    'nroViaje' => $nroViaje,
+                    'idTitTrans' => $idTitTrans,
+                    'tipo' => $tipo,
+                    'nroDocumento' => $nroDocumento,
+                    'archivo' => $archivoBase64,
+                ],
+                'autenticacion' => [
+                    'firma' => $wsaaTokens['sign'],
+                    'idUsuario' => $wsaaTokens['ruc'] ?? $ruc,
+                    'ticket' => $wsaaTokens['token'],
+                ],
+            ]);
+
+            $rawResponse = $client->__getLastResponse();
+
+            $this->logOperation('info', 'enviarDocumento respuesta recibida', [
+                'raw_length' => strlen($rawResponse ?? ''),
+            ]);
+
+            return [
+                'success' => true,
+                'response_data' => $result,
+                'raw_response' => $rawResponse,
+            ];
+
+        } catch (SoapFault $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->faultstring ?? $e->getMessage(),
+                'error_code' => $e->faultcode ?? 'SOAP_ERROR',
+            ];
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'UNKNOWN_ERROR',
             ];
         }
     }

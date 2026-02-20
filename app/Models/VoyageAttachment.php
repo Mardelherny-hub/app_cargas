@@ -42,12 +42,16 @@ class VoyageAttachment extends Model
         'document_number',
         'country',
         'uploaded_by',
+        'sent_to_dna',
+        'sent_to_dna_at',
     ];
 
     protected $casts = [
         'file_size' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'sent_to_dna' => 'boolean',
+        'sent_to_dna_at' => 'datetime',
     ];
 
     // ========================================

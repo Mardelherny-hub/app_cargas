@@ -261,35 +261,55 @@
                                 </div>
                             @endif
                             
-                            {{-- Zona de adjuntos (solo cuando XFFM enviado y XFBL NO enviado) --}}
-                            @if($xffmSent && !$xfblSent)
+                            {{-- Zona de adjuntos (visible cuando XFFM enviado) --}}
+                            @if($xffmSent)
                                 <div class="mb-4 p-3 bg-white rounded border border-gray-300">
-                                    <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos</h5>
-                                    <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos (PDF)</p>
+                                    <h5 class="text-sm font-semibold text-gray-700 mb-2">📎 Documentos Adjuntos (DocAnexo)</h5>
+                                    <p class="text-xs text-gray-600 mb-3">Facturas, packing lists u otros documentos PDF para enviar a DNA</p>
                                     
-                                    {{-- Formulario Upload --}}
-                                    <form id="uploadAttachmentsForm" enctype="multipart/form-data" class="mb-3">
-                                        @csrf
-                                        <div class="flex gap-2">
-                                            <input 
-                                                type="file" 
-                                                name="files[]" 
-                                                id="attachmentFiles"
-                                                accept=".pdf"
-                                                multiple
-                                                class="flex-1 text-sm border border-gray-300 rounded px-2 py-1"
-                                            >
-                                            <button 
-                                                type="button"
-                                                onclick="uploadAttachments()"
-                                                class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                                Subir
-                                            </button>
+                                    {{-- Formulario Upload completo --}}
+                                    @if(!$xfblSent)
+                                    <div class="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
+                                        <div class="grid grid-cols-1 gap-2 mb-2">
+                                            <div>
+                                                <label class="block text-xs font-medium text-gray-600 mb-1">Conocimiento (BL)</label>
+                                                <select id="att_bl_id" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
+                                                    <option value="">-- Seleccionar BL --</option>
+                                                    @foreach($voyage->shipments->flatMap->billsOfLading as $bl)
+                                                        <option value="{{ $bl->id }}">{{ $bl->bill_number }} - {{ $bl->shipper->name ?? 'N/A' }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label class="block text-xs font-medium text-gray-600 mb-1">Tipo Documento</label>
+                                                    <select id="att_doc_type" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
+                                                        <option value="380">380 - Factura Comercial</option>
+                                                        <option value="271">271 - Packing List</option>
+                                                        <option value="861">861 - Certificado</option>
+                                                        <option value="911">911 - Permiso</option>
+                                                        <option value="999">999 - Otros</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-medium text-gray-600 mb-1">Nº Documento</label>
+                                                    <input type="text" id="att_doc_number" placeholder="Ej: FAC-001" 
+                                                        class="w-full text-xs border-gray-300 rounded-md shadow-sm">
+                                                </div>
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <input type="file" id="att_file" accept=".pdf" class="flex-1 text-xs border border-gray-300 rounded px-2 py-1">
+                                                <button type="button" onclick="uploadAttachment()" 
+                                                    class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                                                    Subir
+                                                </button>
+                                            </div>
                                         </div>
-                                        <p class="text-xs text-gray-500 mt-1">Solo PDF, máx 5MB c/u</p>
-                                    </form>
+                                        <p class="text-xs text-gray-400">Solo PDF, máx 5MB. Se incluirá en XFBL como DocAnexo.</p>
+                                    </div>
+                                    @endif
                                     
-                                    {{-- Lista archivos --}}
+                                    {{-- Lista archivos con estado DNA --}}
                                     <div id="attachmentsList" class="space-y-1">
                                         <p class="text-xs text-gray-500 italic">Cargando...</p>
                                     </div>
@@ -1185,6 +1205,7 @@
     </div>
 </div>
 <script>
+<script>
 document.addEventListener('DOMContentLoaded', function() {
     loadAttachmentsList();
 });
@@ -1202,71 +1223,115 @@ function loadAttachmentsList() {
             }
             
             container.innerHTML = data.map(att => `
-                <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border border-gray-200">
-                    <div class="flex-1">
-                        <p class="text-xs font-medium text-gray-700">${att.name}</p>
-                        <p class="text-xs text-gray-500">${att.size}</p>
+                <div class="flex items-center justify-between bg-gray-50 px-2 py-1.5 rounded border ${att.sent_to_dna ? 'border-green-300 bg-green-50' : 'border-gray-200'}">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-medium text-gray-700 truncate">${att.name}</p>
+                        <p class="text-xs text-gray-500">
+                            BL: ${att.bl_number || 'N/A'} | Tipo: ${att.document_type} | Doc: ${att.document_number} | ${att.size}
+                        </p>
                     </div>
-                    <button 
-                        onclick="deleteAttachment(${att.id})"
-                        class="text-red-600 hover:text-red-800 text-sm ml-2">
-                        ✕
-                    </button>
+                    <div class="flex items-center gap-1 ml-2 flex-shrink-0">
+                        ${att.sent_to_dna 
+                            ? `<span class="text-xs text-green-700 font-bold px-1.5 py-0.5 bg-green-100 rounded">✓ DNA</span>`
+                            : `<button onclick="sendToDna(${att.id})" 
+                                class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Enviar a DNA">
+                                📤 DNA
+                              </button>
+                              <button onclick="deleteAttachment(${att.id})" 
+                                class="text-xs text-red-600 hover:text-red-800 px-1">✕</button>`
+                        }
+                    </div>
                 </div>
             `).join('');
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error cargando adjuntos:', error);
+            const container = document.getElementById('attachmentsList');
+            if (container) container.innerHTML = '<p class="text-xs text-red-500">Error al cargar adjuntos</p>';
+        });
 }
 
-function uploadAttachments() {
-    const input = document.getElementById('attachmentFiles');
-    if (!input || input.files.length === 0) {
-        alert('Seleccione archivos');
-        return;
-    }
+function uploadAttachment() {
+    const blId = document.getElementById('att_bl_id')?.value;
+    const docType = document.getElementById('att_doc_type')?.value;
+    const docNumber = document.getElementById('att_doc_number')?.value?.trim();
+    const fileInput = document.getElementById('att_file');
+    
+    if (!blId) { alert('Seleccione un Conocimiento (BL)'); return; }
+    if (!docNumber) { alert('Ingrese el número de documento'); return; }
+    if (!fileInput?.files?.length) { alert('Seleccione un archivo PDF'); return; }
+    
+    const file = fileInput.files[0];
+    if (file.size > 5242880) { alert('El archivo supera 5MB'); return; }
     
     const formData = new FormData();
-    for (let file of input.files) {
-        if (file.size > 5242880) {
-            alert(`${file.name} supera 5MB`);
-            return;
-        }
-        formData.append('files[]', file);
-    }
+    formData.append('file', file);
+    formData.append('bill_of_lading_id', blId);
+    formData.append('document_type', docType);
+    formData.append('document_number', docNumber);
     formData.append('_token', '{{ csrf_token() }}');
     
-    fetch('{{ route("company.simple.manifiesto.upload-attachments", $voyage) }}', {
+    fetch('{{ route("company.simple.manifiesto.upload-attachment", $voyage) }}', {
         method: 'POST',
         body: formData
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            input.value = '';
+            fileInput.value = '';
+            document.getElementById('att_doc_number').value = '';
             loadAttachmentsList();
-            alert(`${data.total_uploaded} archivo(s) subido(s)`);
+            alert('✓ ' + (data.message || 'Documento subido'));
         } else {
-            alert('Error: ' + (data.error || 'Error'));
+            alert('Error: ' + (data.error || 'Error al subir'));
         }
     })
-    .catch(error => alert('Error al subir'));
+    .catch(error => alert('Error de conexión: ' + error.message));
 }
 
 function deleteAttachment(id) {
-    if (!confirm('¿Eliminar?')) return;
+    if (!confirm('¿Eliminar este documento?')) return;
     
-    fetch(`/manifests/customs/attachments/${id}`, {
+    fetch(`{{ url('company/simple/webservices/manifiesto/' . $voyage->id . '/attachments') }}/${id}`, {
         method: 'DELETE',
         headers: {
             'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         }
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) loadAttachmentsList();
-        else alert('Error al eliminar');
-    });
+        if (data.success) {
+            loadAttachmentsList();
+        } else {
+            alert('Error: ' + (data.error || 'No se pudo eliminar'));
+        }
+    })
+    .catch(error => alert('Error: ' + error.message));
+}
+
+function sendToDna(attachmentId) {
+    if (!confirm('¿Enviar este documento a DNA Paraguay?')) return;
+    
+    fetch(`{{ url('company/simple/webservices/manifiesto/' . $voyage->id . '/attachments') }}/${attachmentId}/send-dna`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ ' + (data.message || 'Documento enviado a DNA'));
+            loadAttachmentsList();
+        } else {
+            alert('✗ Error: ' + (data.error_message || 'Error al enviar'));
+        }
+    })
+    .catch(error => alert('Error de conexión: ' + error.message));
 }
 
 /**

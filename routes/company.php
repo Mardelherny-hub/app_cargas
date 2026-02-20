@@ -930,18 +930,22 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
             ->where('type', 'XFFM|XFBL|XFBT|XFCT')
             ->name('download-xml');
 
-            // Adjuntos
-        Route::get('/{voyage}/attachments-list', [ManifestCustomsController::class, 'getAttachmentsList'])
+        // Adjuntos - Sistema Simple
+        Route::get('/{voyage}/attachments-list', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'attachmentsList'])
             ->whereNumber('voyage')
             ->name('attachments-list');
 
-        Route::post('/{voyage}/upload-attachments', [ManifestCustomsController::class, 'uploadAttachments'])
+        Route::post('/{voyage}/upload-attachment', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'uploadAttachment'])
             ->whereNumber('voyage')
-            ->name('upload-attachments');
+            ->name('upload-attachment');
 
-        Route::delete('/{voyage}/attachments/{attachment}', [ManifestCustomsController::class, 'deleteAttachment'])
+        Route::delete('/{voyage}/attachments/{attachment}', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'deleteAttachment'])
             ->whereNumber('voyage')
             ->name('delete-attachment');
+
+        Route::post('/{voyage}/attachments/{attachment}/send-dna', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'sendDocumentoImg'])
+            ->whereNumber('voyage')
+            ->name('send-documento-img');
     });
 
 
