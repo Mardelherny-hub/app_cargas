@@ -142,11 +142,9 @@ class VoyageController extends Controller
             ->get();
 
         // 6. Consultar todos los puertos activos (agrupados por país para JavaScript)
-        // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout
-        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
-        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
-        $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
-
+        // CORREGIDO: Solo puertos de Argentina y Paraguay para evitar timeout se agrgan BO UY  Y BR para futuras ampliaciones
+        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])
+            ->pluck('id');
         $ports = Port::where('active', true)
             ->where('accepts_new_vessels', true)
             ->whereIn('country_id', $countryIds)
@@ -566,10 +564,7 @@ private function getFormData()
         ->get();
     
     // --- PAÍSES (activos) - Solo Argentina y Paraguay como en BL
-    $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
-    $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
-
-    $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+    $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
     $countries = \App\Models\Country::where('active', true)
         ->whereIn('id', $countryIds)

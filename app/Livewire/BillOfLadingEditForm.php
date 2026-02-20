@@ -343,9 +343,8 @@ class BillOfLadingEditForm extends Component
     // --- PUERTOS (activos) - SOLO AQUÍ aplicar límite por performance + incluir seleccionados
     $LIMIT = 100; // Límite solo para puertos
     
-    $argentina = Country::where('alpha2_code', 'AR')->first();
-    $paraguay = Country::where('alpha2_code', 'PY')->first();
-    $countryIds = collect([$argentina?->id, $paraguay?->id])->filter()->values();
+    $countryIds = Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])
+        ->pluck('id');
 
     // Puertos base (limitados a AR/PY)
     $portsBase = Port::where('active', true)

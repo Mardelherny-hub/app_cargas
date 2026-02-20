@@ -60,10 +60,9 @@ class QuickCatalogsVerifier extends Seeder
         $this->command->info('=== 📊 CATALOG STATUS ===');
 
         // Show specific data needed for clients
-        $argentina = \App\Models\Country::where('alpha2_code', 'AR')->first();
-        $paraguay = \App\Models\Country::where('alpha2_code', 'PY')->first();
+        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
-        if ($argentina) {
+        if ($argentina = \App\Models\Country::where('alpha2_code', 'AR')->first()) {
             $this->command->info("✅ Argentina found (ID: {$argentina->id})");
             $arDocTypes = \App\Models\DocumentType::where('country_id', $argentina->id)->count();
             $arPorts = \App\Models\Port::where('country_id', $argentina->id)->count();
