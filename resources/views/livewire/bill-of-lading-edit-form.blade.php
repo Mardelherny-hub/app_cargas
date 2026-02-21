@@ -482,7 +482,7 @@
                             <option value="">Seleccionar puerto de carga</option>
                             @foreach($loadingPorts as $port)                            
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
@@ -505,7 +505,7 @@
                             <option value="">Seleccionar puerto de descarga</option>
                             @foreach($dischargePorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
@@ -528,7 +528,7 @@
                             <option value="">Sin transbordo</option>
                             @foreach($transshipmentPorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
@@ -551,7 +551,7 @@
                             <option value="">Mismo que descarga</option>
                             @foreach($finalDestinationPorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}

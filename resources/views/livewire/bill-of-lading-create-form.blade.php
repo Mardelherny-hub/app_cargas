@@ -344,7 +344,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Seleccione puerto</option>
                             @foreach($loadingPorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
@@ -367,7 +367,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Seleccione puerto</option>
                             @foreach($dischargePorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
@@ -390,7 +390,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Seleccione puerto (opcional)</option>
                             @foreach($transshipmentPorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
@@ -413,7 +413,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <option value="">Seleccione puerto (opcional)</option>
                             @foreach($finalDestinationPorts as $port)
                                 <option value="{{ $port->id }}">
-                                    @if($port->country_id == 11)
+                                    {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                     @else
                                         🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
