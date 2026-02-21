@@ -502,8 +502,6 @@
                             @foreach($dischargePorts as $port)
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    
                                 </option>
                             @endforeach
                         </select>
