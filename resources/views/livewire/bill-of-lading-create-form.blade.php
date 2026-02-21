@@ -346,9 +346,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @else
-                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @endif
+                                    
                                 </option>
                             @endforeach
                         </select>
@@ -369,9 +367,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @else
-                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @endif
+                                    
                                 </option>
                             @endforeach
                         </select>
@@ -392,9 +388,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @else
-                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @endif
+                                    
                                 </option>
                             @endforeach
                         </select>
@@ -415,9 +409,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
                                         🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @else
-                                        🇵🇾 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    @endif
+                                    
                                 </option>
                             @endforeach
                         </select>
