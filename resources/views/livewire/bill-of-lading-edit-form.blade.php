@@ -480,11 +480,9 @@
                         <select wire:model="loading_port_id" id="loading_port_id" required
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('loading_port_id') border-red-300 @enderror">
                             <option value="">Seleccionar puerto de carga</option>
-                            @foreach($loadingPorts as $port)                            
+                            @foreach($loadingPorts as $port)
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                   
                                 </option>
                             @endforeach
                         </select>
