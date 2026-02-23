@@ -1920,8 +1920,9 @@ class SimpleXmlGenerator
                     // ID Transacción (máximo 15 caracteres AFIP)
                     $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
                     
-                    // Número de viaje (obligatorio)
-                    $w->writeElement('nroViaje', (string)$rectifData['nro_viaje']);
+                    // Número de viaje (obligatorio, C(13) según manual AFIP)
+                    $nroViaje = substr((string)($rectifData['nro_viaje'] ?? ''), 0, 13);
+                    $w->writeElement('nroViaje', $nroViaje);
                     
                     // Rectificar configuración de convoy (si se especifica)
                     if ($tieneRectifConvoy) {

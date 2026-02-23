@@ -1228,8 +1228,12 @@ function loadAttachmentsList() {
                     </div>
                     <div class="flex items-center gap-1 ml-2 flex-shrink-0">
                         ${att.sent_to_dna 
-                            ? `<span class="text-xs text-green-700 font-bold px-1.5 py-0.5 bg-green-100 rounded">✓ DNA</span>`
-                            : `<button onclick="sendToDna(${att.id})" 
+                            ? `<span class="text-xs text-green-700 font-bold px-1.5 py-0.5 bg-green-100 rounded">✓ DNA</span>
+                            <button onclick="invalidateDocument(${att.id}, '${att.document_number || ''}')" 
+                                class="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200" title="Invalidar en DNA (enviar archivo=null)">
+                                ❌ Invalidar
+                            </button>`
+                            : `<button onclick="sendToDna(${att.id})"
                                 class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Enviar a DNA">
                                 📤 DNA
                               </button>
@@ -1431,7 +1435,31 @@ function copiarXml(btn) {
     });
 }
 
-// ============================================
+function invalidateDocument(attachmentId, docNumber) {
+    if (!confirm(`¿Invalidar documento "${docNumber}" en DNA Paraguay?\n\nEsto enviará archivo=null para anular el documento. Esta acción no se puede deshacer.`)) return;
+    
+    fetch(`{{ url('company/simple/webservices/manifiesto/' . $voyage->id . '/attachments') }}/${attachmentId}/send-dna`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({ invalidate: true })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ ' + (data.message || 'Documento invalidado en DNA'));
+            loadAttachmentsList();
+        } else {
+            alert('✗ Error: ' + (data.error_message || 'Error al invalidar'));
+        }
+    })
+    .catch(error => alert('Error de conexión: ' + error.message));
+}
+
+        // ============================================
         // XISP/XRSP - Gestión de Embarcaciones
         // ============================================
 

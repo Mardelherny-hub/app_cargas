@@ -307,6 +307,7 @@ class SimpleXmlGeneratorParaguay
                 'shipments.billsOfLading.loadingPort.country',
                 'shipments.billsOfLading.dischargePort.country',
                 'shipments.billsOfLading.dischargeCustoms',
+                'shipments.vessel',
                 'leadVessel',
             ]);
 
@@ -370,7 +371,7 @@ class SimpleXmlGeneratorParaguay
                     $w->startElement('armonizados');
                     $w->startElement('armonizado');
                     $w->writeElement('codArmonizado', htmlspecialchars(substr($tariffCode, 0, 16)));
-                    $w->writeElement('DescArmonizado', htmlspecialchars(
+                    $w->writeElement('descArmonizado', htmlspecialchars(
                         substr($bl->cargo_description ?? $firstItem->item_description ?? 'MERCADERIA', 0, 500)
                     ));
                     $w->endElement(); // armonizado
@@ -483,13 +484,13 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('codDelegacion', $codDelegacion);
 
                 // ✅ 14. EMBARCACIONES DEL TÍTULO
-                // ✅ FIX #4: Simplificado - usar leadVessel del voyage (como Roberto)
+                // ✅ FIX: Usar vessel del shipment del BL (no siempre es leadVessel)
                 $w->startElement('TitEmbarcaciones');
                 $w->startElement('TitEmbarcacion');
 
-                $leadVessel = $voyage->leadVessel;
+                $blVessel = $bl->shipment->vessel ?? $voyage->leadVessel;
                 $w->writeElement('idEmbarcacion', htmlspecialchars(
-                    substr($leadVessel->registration_number ?? 'SIN-REG', 0, 20)
+                    substr($blVessel->registration_number ?? 'SIN-REG', 0, 10)
                 ));
 
                 $w->endElement(); // TitEmbarcacion
