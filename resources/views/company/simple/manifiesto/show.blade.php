@@ -284,6 +284,8 @@
                                                 <select id="att_doc_type" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
                                                     <option value="380">380 - Factura Comercial</option>
                                                     <option value="271">271 - Packing List</option>
+                                                    <option value="705">705 - Certificado de Origen</option>
+                                                    <option value="710">710 - Certificado Fitosanitario</option>
                                                     <option value="861">861 - Certificado</option>
                                                     <option value="911">911 - Permiso</option>
                                                     <option value="999">999 - Otros</option>
@@ -333,18 +335,16 @@
                                 {{-- Enlaces descarga XML para soporte DNA --}}
                                 <div class="mt-3 pt-3 border-t border-green-200 flex gap-2 text-xs">
                                     @if($xfblTransaction->request_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfblTransaction->id, 'type' => 'request']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">
+                                        <button onclick="verXml({{ $xfblTransaction->id }}, 'request')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors cursor-pointer">
                                             📤 Request XML
-                                        </a>
+                                        </button>
                                     @endif
                                     @if($xfblTransaction->response_xml)
-                                        <a href="{{ route('company.webservices.transaction.xml', ['id' => $xfblTransaction->id, 'type' => 'response']) }}" 
-                                           target="_blank"
-                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">
+                                        <button onclick="verXml({{ $xfblTransaction->id }}, 'response')"
+                                           class="flex-1 text-center px-2 py-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors cursor-pointer">
                                             📥 Response XML
-                                        </a>
+                                        </button>
                                     @endif
                                 </div>
                             @else
