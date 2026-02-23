@@ -2473,7 +2473,8 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 : json_decode($convoyTx->success_data, true);
 
             $nroViaje = $successData['nro_viaje']
-                ?? $convoyTx->confirmation_number
+                ?? $successData['nroViaje']
+                ?? $convoyTx->external_reference
                 ?? null;
 
             // Buscar MIC/DTAs registrados por shipment

@@ -1062,10 +1062,18 @@ class ParaguayDnaService extends BaseWebserviceService
             // 6. Procesar resultado
             if ($soapResult['success']) {
                 // Marcar attachment como enviado
-                $attachment->update([
-                    'sent_to_dna' => true,
-                    'sent_to_dna_at' => now(),
-                ]);
+                // Marcar attachment según operación
+                if ($isInvalidate) {
+                    $attachment->update([
+                        'sent_to_dna' => false,
+                        'sent_to_dna_at' => null,
+                    ]);
+                } else {
+                    $attachment->update([
+                        'sent_to_dna' => true,
+                        'sent_to_dna_at' => now(),
+                    ]);
+                }
 
                 $this->logOperation('info', 'DocumentoIMG enviado exitosamente', [
                     'voyage_id' => $voyage->id,
