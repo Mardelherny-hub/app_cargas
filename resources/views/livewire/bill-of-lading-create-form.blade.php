@@ -383,8 +383,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             @foreach($transshipmentPorts as $port)
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    
                                 </option>
                             @endforeach
                         </select>
@@ -404,8 +402,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             @foreach($finalDestinationPorts as $port)
                                 <option value="{{ $port->id }}">
                                     {{ ['AR'=>'🇦🇷','PY'=>'🇵🇾','BO'=>'🇧🇴','UY'=>'🇺🇾','BR'=>'🇧🇷'][$port->country->alpha2_code] ?? '🏳️' }} {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                        🇦🇷 {{ $port->code }} - {{ $port->name }} - {{ $port->city }}
-                                    
                                 </option>
                             @endforeach
                         </select>

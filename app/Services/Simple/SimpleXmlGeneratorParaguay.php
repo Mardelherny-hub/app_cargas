@@ -86,6 +86,8 @@ class SimpleXmlGeneratorParaguay
             $voyage->load([
                 'leadVessel.flagCountry',
                 'leadVessel.vesselType',
+                'shipments.vessel.flagCountry',
+                'shipments.vessel.vesselType',
                 'originPort.country',
                 'destinationPort.country',
                 'company',
@@ -94,7 +96,7 @@ class SimpleXmlGeneratorParaguay
             // Cargar containers del voyage para el XML
             $containers = Container::whereHas('shipmentItems.billOfLading.shipment', function($q) use ($voyage) {
                 $q->where('voyage_id', $voyage->id);
-            })->with(['containerType', 'shipmentItems'])->get();
+            })->with(['containerType', 'shipmentItems.billOfLading.shipment'])->get();
 
             $w = new \XMLWriter;
             $w->openMemory();
@@ -164,101 +166,92 @@ class SimpleXmlGeneratorParaguay
             $w->endElement(); // transportista
             $w->endElement(); // transportistas
 
-            // ✅ CAMPO 6: embarcaciones (PLURAL con sub-elemento singular)
-            $w->startElement('embarcaciones');
-            $w->startElement('embarcacion');
-
-            $vessel = $voyage->leadVessel;
-
-            // codPais de la embarcación
-            $w->writeElement('codPais',
-                $vessel->flagCountry->alpha2_code
-            );
-
-            // id (matrícula/registro)
-            $w->writeElement('id', htmlspecialchars(
-                substr($vessel->registration_number ?? 'SIN-REGISTRO', 0, 20)
-            ));
-
-            // tipEmb (tipo de embarcación - BUM=Barcaza, REM=Remolcador)
-            $vesselTypeCode = 'BUM'; // Default
-            if ($vessel->vesselType) {
-                $typeMap = [
-                    'barge' => 'BUM',
-                    'tugboat' => 'REM',
-                    'push_boat' => 'REM',
-                ];
-                $vesselTypeCode = $typeMap[$vessel->vesselType->code] ?? 'BUM';
+           // ✅ CAMPO 6: embarcaciones - TODAS las del viaje (lead + barcazas de shipments)
+            $allVessels = collect();
+            if ($voyage->leadVessel) {
+                $allVessels->push($voyage->leadVessel);
             }
-            $w->writeElement('tipEmb', $vesselTypeCode);
+            foreach ($voyage->shipments as $shipment) {
+                if ($shipment->vessel && $shipment->vessel_id !== $voyage->lead_vessel_id) {
+                    $allVessels->push($shipment->vessel);
+                }
+            }
+            $allVessels = $allVessels->unique('id');
 
-            // nombreEmb (nombre de la embarcación)
-            $w->writeElement('nombreEmb', htmlspecialchars(
-                substr($vessel->name ?? 'NO ESPECIFICADO', 0, 50)
-            ));
+            $w->startElement('embarcaciones');
 
-            // indenLastre (indicador en lastre: N=con carga, S=vacío)
-            $indenLastre = ($voyage->is_empty_transport === 'S') ? 'S' : 'N';
-            $w->writeElement('indenLastre', $indenLastre);
+            foreach ($allVessels as $vessel) {
+                $w->startElement('embarcacion');
 
-            // ✅ CONTENEDORES (si hay)
-            if ($containers->isNotEmpty()) {
-                $w->startElement('contenedores');
+                $w->writeElement('codPais',
+                    $vessel->flagCountry->alpha2_code ?? 'PY'
+                );
+                $w->writeElement('id', htmlspecialchars(
+                    substr($vessel->registration_number ?? 'SIN-REGISTRO', 0, 10)
+                ));
+                $w->writeElement('tipEmb', $this->mapVesselTypeForParaguay(
+                    $vessel->vesselType->category ?? 'barge'
+                ));
+                $w->writeElement('nombreEmb', htmlspecialchars(
+                    substr($vessel->name ?? 'NO ESPECIFICADO', 0, 200)
+                ));
+                $indenLastre = ($voyage->is_empty_transport === 'S') ? 'S' : 'N';
+                $w->writeElement('indenLastre', $indenLastre);
 
-                foreach ($containers as $container) {
-                    $w->startElement('contenedor');
+                // Contenedores de ESTA embarcación específica
+                $vesselContainers = $containers->filter(function ($container) use ($vessel) {
+                    $shipmentItem = $container->shipmentItems->first();
+                    if (!$shipmentItem) return false;
+                    $bl = $shipmentItem->billOfLading;
+                    if (!$bl) return false;
+                    return $bl->shipment->vessel_id === $vessel->id;
+                });
 
-                    // condicion: H=House, P=Pier, V=Vacio, C=Correo (GDSF pág 8, error 74)
-                    if ($container->condition === 'V') {
-                        $condicion = 'V';
-                    } else {
-                        $condicion = $container->container_condition === 'H' ? 'H' : 'P';
-                    }
-                    $w->writeElement('condicion', $condicion);
-
-                    // id (número del contenedor)
-                    $w->writeElement('id', htmlspecialchars(
-                        substr($container->full_container_number ??
-                            $container->container_number ?? 'SIN-NUMERO', 0, 20)
-                    ));
-
-                    // Paraguay solo acepta: 20 o 40 (Error 75 GDSF)
-                    $lengthFeet = $container->containerType->length_feet ?? '40';
-                    $medida = in_array($lengthFeet, ['20', '40']) ? $lengthFeet : '40';
-                    $w->writeElement('medidas', $medida);
-
-                    // ✅ PRECINTOS (solo si hay al menos uno)
-                    if ($container->carrier_seal || $container->customs_seal) {
-                        $w->startElement('precintos');
-
-                        if ($container->carrier_seal) {
-                            $w->startElement('precinto');
-                            $w->writeElement('nroPrecinto', htmlspecialchars(
-                                substr($container->carrier_seal, 0, 35)
-                            ));
-                            $w->writeElement('tipPrecin', 'BC');
-                            $w->endElement(); // precinto
+                if ($vesselContainers->isNotEmpty()) {
+                    $w->startElement('contenedores');
+                    foreach ($vesselContainers as $container) {
+                        $w->startElement('contenedor');
+                        if ($container->condition === 'V') {
+                            $condicion = 'V';
+                        } else {
+                            $condicion = $container->container_condition === 'H' ? 'H' : 'P';
                         }
-
-                        if ($container->customs_seal) {
-                            $w->startElement('precinto');
-                            $w->writeElement('nroPrecinto', htmlspecialchars(
-                                substr($container->customs_seal, 0, 35)
-                            ));
-                            $w->writeElement('tipPrecin', 'BC');
-                            $w->endElement(); // precinto
+                        $w->writeElement('condicion', $condicion);
+                        $w->writeElement('id', htmlspecialchars(
+                            substr($container->full_container_number ??
+                                $container->container_number ?? 'SIN-NUMERO', 0, 20)
+                        ));
+                        $lengthFeet = $container->containerType->length_feet ?? '40';
+                        $medida = in_array($lengthFeet, ['20', '40']) ? $lengthFeet : '40';
+                        $w->writeElement('medidas', $medida);
+                        if ($container->carrier_seal || $container->customs_seal) {
+                            $w->startElement('precintos');
+                            if ($container->carrier_seal) {
+                                $w->startElement('precinto');
+                                $w->writeElement('nroPrecinto', htmlspecialchars(
+                                    substr($container->carrier_seal, 0, 35)
+                                ));
+                                $w->writeElement('tipPrecin', 'BC');
+                                $w->endElement(); // precinto
+                            }
+                            if ($container->customs_seal) {
+                                $w->startElement('precinto');
+                                $w->writeElement('nroPrecinto', htmlspecialchars(
+                                    substr($container->customs_seal, 0, 35)
+                                ));
+                                $w->writeElement('tipPrecin', 'BC');
+                                $w->endElement(); // precinto
+                            }
+                            $w->endElement(); // precintos
                         }
-
-                        $w->endElement(); // precintos
+                        $w->endElement(); // contenedor
                     }
-
-                    $w->endElement(); // contenedor
+                    $w->endElement(); // contenedores
                 }
 
-                $w->endElement(); // contenedores
+                $w->endElement(); // embarcacion
             }
 
-            $w->endElement(); // embarcacion
             $w->endElement(); // embarcaciones
 
             $w->endElement(); // MicDta
@@ -370,17 +363,18 @@ class SimpleXmlGeneratorParaguay
                 $w->endElement(); // bultos
 
                 // ARMONIZADO - Clasificación arancelaria (Manual GDSF p.12)
-                // Obligatorio si indCombustible=S, opcional en otros casos
-                // Tomamos tariff_position del primer shipment item del BL
+                // DNA espera: <armonizados><armonizado>...</armonizado></armonizados>
                 $firstItem = $bl->shipmentItems->first();
                 $tariffCode = $firstItem->tariff_position ?? null;
                 if ($tariffCode) {
-                    $w->startElement('Armonizado');
+                    $w->startElement('armonizados');
+                    $w->startElement('armonizado');
                     $w->writeElement('codArmonizado', htmlspecialchars(substr($tariffCode, 0, 16)));
                     $w->writeElement('DescArmonizado', htmlspecialchars(
                         substr($bl->cargo_description ?? $firstItem->item_description ?? 'MERCADERIA', 0, 500)
                     ));
-                    $w->endElement(); // Armonizado
+                    $w->endElement(); // armonizado
+                    $w->endElement(); // armonizados
                 }
 
                 // ✅ 2. PESO BRUTO TOTAL (fuera de bultos según Roberto)
@@ -533,8 +527,9 @@ class SimpleXmlGeneratorParaguay
                     ->get();
 
                 if ($attachments->isNotEmpty()) {
+                    $w->startElement('docAnexos');
                     foreach ($attachments as $attachment) {
-                        $w->startElement('DocAnexo');
+                        $w->startElement('docAnexo');
                         
                             $documento = $attachment->document_number ?? $attachment->original_name;
                             $w->writeElement('documento', htmlspecialchars(substr($documento, 0, 39)));
@@ -547,20 +542,20 @@ class SimpleXmlGeneratorParaguay
                                     $base64Content = $attachment->getBase64Content();
                                     $w->writeElement('archivo', $base64Content);
                                     
-                                    Log::info('DocAnexo: archivo incluido', [
+                                    Log::info('docAnexo: archivo incluido', [
                                         'attachment_id' => $attachment->id,
                                         'file_size' => $validation['file_size'],
                                         'document' => $documento,
                                     ]);
                                 } catch (\Exception $e) {
-                                    Log::warning('DocAnexo: error al cargar archivo, se envía solo referencia', [
+                                    Log::warning('docAnexo: error al cargar archivo, se envía solo referencia', [
                                         'attachment_id' => $attachment->id,
                                         'error' => $e->getMessage(),
                                         'document' => $documento,
                                     ]);
                                 }
                             } else {
-                                Log::warning('DocAnexo: archivo no incluido', [
+                                Log::warning('docAnexo: archivo no incluido', [
                                     'attachment_id' => $attachment->id,
                                     'reason' => $validation['reason'],
                                     'file_size' => $validation['file_size'] ?? null,
@@ -568,8 +563,9 @@ class SimpleXmlGeneratorParaguay
                                 ]);
                             }
                             
-                        $w->endElement(); // DocAnexo
+                        $w->endElement(); // docAnexo
                     }
+                    $w->endElement(); // docAnexos
                 }
 
                 $w->endElement(); // titTran

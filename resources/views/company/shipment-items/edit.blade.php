@@ -931,10 +931,274 @@
                                 </div>
                             </div>
                         </div>
+                    {{-- SECCIÓN: Datos AFIP / Aduaneros --}}
+                <div class="bg-white overflow-hidden shadow rounded-lg">
+                    <div class="px-4 py-5 sm:p-6">
+                        <div class="mb-6">
+                            <h3 class="text-lg font-medium leading-6 text-gray-900 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                Datos AFIP / Aduaneros
+                            </h3>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Campos requeridos para webservices AFIP y DNA Paraguay.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            {{-- Posición Arancelaria --}}
+                            <div>
+                                <label for="tariff_position" class="block text-sm font-medium text-gray-700">
+                                    Posición Arancelaria
+                                </label>
+                                <input type="text" 
+                                       name="tariff_position" 
+                                       id="tariff_position" 
+                                       value="{{ old('tariff_position', $shipmentItem->tariff_position) }}"
+                                       maxlength="15"
+                                       placeholder="1234.56.78.90"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                <p class="mt-1 text-xs text-gray-500">Mínimo 7 caracteres, máximo 15 (incluye puntos)</p>
+                                @error('tariff_position')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Razón Social Forwarder Exterior --}}
+                            <div>
+                                <label for="foreign_forwarder_name" class="block text-sm font-medium text-gray-700">
+                                    Razón Social Forwarder Exterior
+                                </label>
+                                <input type="text" 
+                                       name="foreign_forwarder_name" 
+                                       id="foreign_forwarder_name" 
+                                       value="{{ old('foreign_forwarder_name', $shipmentItem->foreign_forwarder_name) }}"
+                                       maxlength="70"
+                                       placeholder="FORWARDING COMPANY S.A."
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('foreign_forwarder_name')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Número Tributario Forwarder --}}
+                            <div>
+                                <label for="foreign_forwarder_tax_id" class="block text-sm font-medium text-gray-700">
+                                    Número Tributario Forwarder
+                                </label>
+                                <input type="text" 
+                                       name="foreign_forwarder_tax_id" 
+                                       id="foreign_forwarder_tax_id" 
+                                       value="{{ old('foreign_forwarder_tax_id', $shipmentItem->foreign_forwarder_tax_id) }}"
+                                       maxlength="35"
+                                       placeholder="Identificador tributario"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('foreign_forwarder_tax_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- País Emisor ID Tributario Forwarder --}}
+                            <div>
+                                <label for="foreign_forwarder_country" class="block text-sm font-medium text-gray-700">
+                                    País Emisor ID Tributario Forwarder
+                                </label>
+                                <input type="text" 
+                                       name="foreign_forwarder_country" 
+                                       id="foreign_forwarder_country" 
+                                       value="{{ old('foreign_forwarder_country', $shipmentItem->foreign_forwarder_country) }}"
+                                       maxlength="3"
+                                       placeholder="Código país (3 chars)"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('foreign_forwarder_country')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Condición Contenedor --}}
+                            <div>
+                                <label for="container_condition" class="block text-sm font-medium text-gray-700">
+                                    Condición Contenedor
+                                </label>
+                                <select name="container_condition" 
+                                        id="container_condition" 
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                    <option value="">Seleccione</option>
+                                    <option value="H" {{ old('container_condition', $shipmentItem->container_condition) == 'H' ? 'selected' : '' }}>H - House</option>
+                                    <option value="P" {{ old('container_condition', $shipmentItem->container_condition) == 'P' ? 'selected' : '' }}>P - Pier</option>
+                                </select>
+                                @error('container_condition')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Números de los Bultos --}}
+                            <div>
+                                <label for="package_numbers" class="block text-sm font-medium text-gray-700">
+                                    Números de los Bultos
+                                </label>
+                                <input type="text" 
+                                       name="package_numbers" 
+                                       id="package_numbers" 
+                                       value="{{ old('package_numbers', $shipmentItem->package_numbers) }}"
+                                       maxlength="100"
+                                       placeholder="Ej: 1-50"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('package_numbers')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Tipo de Embalaje Código --}}
+                            <div>
+                                <label for="packaging_type_code" class="block text-sm font-medium text-gray-700">
+                                    Tipo de Embalaje Código
+                                </label>
+                                <input type="text" 
+                                       name="packaging_type_code" 
+                                       id="packaging_type_code" 
+                                       value="{{ old('packaging_type_code', $shipmentItem->packaging_type_code) }}"
+                                       maxlength="1"
+                                       placeholder="Código (1 char)"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('packaging_type_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Código Aduana Descarga --}}
+                            <div>
+                                <label for="discharge_customs_code" class="block text-sm font-medium text-gray-700">
+                                    Código Aduana Descarga
+                                </label>
+                                <input type="text" 
+                                       name="discharge_customs_code" 
+                                       id="discharge_customs_code" 
+                                       value="{{ old('discharge_customs_code', $shipmentItem->discharge_customs_code) }}"
+                                       maxlength="3"
+                                       placeholder="Código (3 chars)"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('discharge_customs_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Código Lugar Operativo Descarga --}}
+                            <div>
+                                <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
+                                    Código Lugar Operativo Descarga
+                                </label>
+                                <input type="text" 
+                                       name="operational_discharge_code" 
+                                       id="operational_discharge_code" 
+                                       value="{{ old('operational_discharge_code', $shipmentItem->operational_discharge_code) }}"
+                                       maxlength="5"
+                                       placeholder="Código (5 chars)"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('operational_discharge_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Tipo Documento Destinatario --}}
+                            <div>
+                                <label for="consignee_document_type" class="block text-sm font-medium text-gray-700">
+                                    Tipo Documento Destinatario
+                                </label>
+                                <input type="text" 
+                                       name="consignee_document_type" 
+                                       id="consignee_document_type" 
+                                       value="{{ old('consignee_document_type', $shipmentItem->consignee_document_type) }}"
+                                       maxlength="4"
+                                       placeholder="Tipo (4 chars)"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('consignee_document_type')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- ID Tributario Destinatario --}}
+                            <div>
+                                <label for="consignee_tax_id" class="block text-sm font-medium text-gray-700">
+                                    ID Tributario Destinatario
+                                </label>
+                                <input type="text" 
+                                       name="consignee_tax_id" 
+                                       id="consignee_tax_id" 
+                                       value="{{ old('consignee_tax_id', $shipmentItem->consignee_tax_id) }}"
+                                       maxlength="11"
+                                       placeholder="CUIT/RUC"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('consignee_tax_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Comentarios --}}
+                            <div class="sm:col-span-2">
+                                <label for="comments" class="block text-sm font-medium text-gray-700">
+                                    Comentarios
+                                </label>
+                                <input type="text" 
+                                       name="comments" 
+                                       id="comments" 
+                                       value="{{ old('comments', $shipmentItem->comments) }}"
+                                       maxlength="60"
+                                       placeholder="Observaciones aduaneras"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @error('comments')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+                        {{-- Indicadores AFIP --}}
+                        <div class="mt-6 border-t border-gray-200 pt-4">
+                            <h4 class="text-sm font-medium text-gray-700 mb-3">Indicadores AFIP</h4>
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                                {{-- Operador Logístico Seguro --}}
+                                <div>
+                                    <label for="is_secure_logistics_operator" class="block text-sm font-medium text-gray-700">
+                                        Operador Logístico Seguro
+                                    </label>
+                                    <select name="is_secure_logistics_operator" 
+                                            id="is_secure_logistics_operator" 
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                        <option value="N" {{ old('is_secure_logistics_operator', $shipmentItem->is_secure_logistics_operator) == 'N' ? 'selected' : '' }}>N - No</option>
+                                        <option value="S" {{ old('is_secure_logistics_operator', $shipmentItem->is_secure_logistics_operator) == 'S' ? 'selected' : '' }}>S - Sí</option>
+                                    </select>
+                                </div>
+
+                                {{-- Tránsito Monitoreado --}}
+                                <div>
+                                    <label for="is_monitored_transit" class="block text-sm font-medium text-gray-700">
+                                        Tránsito Monitoreado
+                                    </label>
+                                    <select name="is_monitored_transit" 
+                                            id="is_monitored_transit" 
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                        <option value="N" {{ old('is_monitored_transit', $shipmentItem->is_monitored_transit) == 'N' ? 'selected' : '' }}>N - No</option>
+                                        <option value="S" {{ old('is_monitored_transit', $shipmentItem->is_monitored_transit) == 'S' ? 'selected' : '' }}>S - Sí</option>
+                                    </select>
+                                </div>
+
+                                {{-- RENAR --}}
+                                <div>
+                                    <label for="is_renar" class="block text-sm font-medium text-gray-700">
+                                        Indicador RENAR
+                                    </label>
+                                    <select name="is_renar" 
+                                            id="is_renar" 
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                        <option value="N" {{ old('is_renar', $shipmentItem->is_renar) == 'N' ? 'selected' : '' }}>N - No</option>
+                                        <option value="S" {{ old('is_renar', $shipmentItem->is_renar) == 'S' ? 'selected' : '' }}>S - Sí</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-
-                {{-- Botones de Acción --}}
                 <div class="flex justify-end space-x-3">
                     <a href="{{ route('company.shipment-items.show', $shipmentItem) }}" 
                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">
