@@ -858,10 +858,16 @@ class SimpleXmlGeneratorParaguay
     private function getDocumentTypeCode(?string $documentType): string
     {
         if (!$documentType) {
-            return '999'; // Otros
+            return '999';
         }
         
         $normalized = strtolower(trim($documentType));
+        
+        // Si ya es un código numérico EDIFACT válido, usarlo directamente
+        if (is_numeric($normalized) && strlen($normalized) <= 5) {
+            return $normalized;
+        }
+        
         return self::DOCUMENT_TYPE_CODES[$normalized] ?? '999';
     }
 
