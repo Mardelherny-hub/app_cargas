@@ -270,7 +270,6 @@
                                        id="departure_date" 
                                        value="{{ old('departure_date') }}"
                                        required
-                                       min="{{ now()->format('Y-m-d\TH:i') }}"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('departure_date') border-red-300 @enderror">
                                 @error('departure_date')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
