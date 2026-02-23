@@ -521,10 +521,9 @@ class SimpleXmlGeneratorParaguay
 
                 // ✅ 16. DOCUMENTOS ANEXOS (opcional - no presente en XML de Roberto pero soportado)
                 $attachments = \App\Models\VoyageAttachment::where('voyage_id', $voyage->id)
-                    ->where(function($q) use ($bl) {
-                        $q->where('bill_of_lading_id', $bl->id)
-                        ->orWhereNull('bill_of_lading_id');
-                    })
+                    ->where('bill_of_lading_id', $bl->id)
+                    ->whereNotNull('document_type')
+                    ->whereNotNull('document_number')
                     ->get();
 
                 if ($attachments->isNotEmpty()) {

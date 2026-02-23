@@ -1921,7 +1921,7 @@ class SimpleXmlGenerator
                     $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
                     
                     // Número de viaje (obligatorio, C(13) según manual AFIP)
-                    $nroViaje = substr((string)($rectifData['nro_viaje'] ?? ''), 0, 13);
+                    $nroViaje = substr((string)($rectifData['nro_viaje'] ?? ''), 0, 15);
                     $w->writeElement('nroViaje', $nroViaje);
                     
                     // Rectificar configuración de convoy (si se especifica)
