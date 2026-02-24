@@ -441,8 +441,8 @@ class SimpleXmlGeneratorParaguay
                 // ✅ 8. INDICADOR FINALIDAD COMERCIAL
                 $w->writeElement('indFinCom', 'S');
 
-                // ✅ 9. INDICADOR FRACCIONAMIENTO TRANSPORTE
-                $w->writeElement('indFraccTransp', $bl->is_consolidated ? 'S' : 'N');
+                // ✅ 9. INDICADOR FRACCIONAMIENTO TRANSPORTE (independiente de consolidado)
+                $w->writeElement('indFraccTransp', $bl->is_fractional ? 'S' : 'N');
 
                 // ✅ 10. REMITENTE (con nroDocIdent y tipDocIdent según Roberto)
                 // Usa dirección específica del BL si existe

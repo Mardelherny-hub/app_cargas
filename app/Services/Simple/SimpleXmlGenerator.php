@@ -179,7 +179,7 @@ class SimpleXmlGenerator
                             
                             // Indicadores
                             $w->writeElement('indFinCom', 'S');
-                            $w->writeElement('indFraccTransp', 'N');
+                            $w->writeElement('indFraccTransp', $bol->is_fractional ? 'S' : 'N');
                             $w->writeElement('indConsol', $bol->is_consolidated ? 'S' : 'N');
                             
                             // Origen
