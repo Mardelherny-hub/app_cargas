@@ -1011,17 +1011,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
 
                 <div class="space-y-6">
-                    {{-- Es Consolidado --}}
+                    {{-- Es Fraccionado --}}
                     <div class="flex items-start">
                         <div class="flex items-center h-5">
-                            <input wire:model="is_consolidated" type="checkbox" id="is_consolidated" value="1"
+                            <input wire:model="is_fractional" type="checkbox" id="is_fractional" value="1"
                                    class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
                         </div>
                         <div class="ml-3 text-sm">
-                            <label for="is_consolidated" class="font-medium text-gray-700">
-                                Es Consolidado
+                            <label for="is_fractional" class="font-medium text-gray-700">
+                                Es Fraccionado
                             </label>
-                            <p class="text-gray-500">Múltiples cargas en un conocimiento</p>
+                            <p class="text-gray-500">Carga fraccionada en múltiples transportes</p>
+                        </div>
+                    </div>
                         </div>
                     </div>
 

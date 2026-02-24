@@ -1005,10 +1005,15 @@
             <div class="px-4 py-5 sm:p-6">
                 <h3 class="text-lg font-medium leading-6 text-gray-900 mb-6">Opciones de Consolidación</h3>
 
-                <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-4">
                     <label class="flex items-center">
                         <input wire:model="is_consolidated" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
                         <span class="ml-2 text-sm text-gray-700">Carga consolidada</span>
+                    </label>
+
+                    <label class="flex items-center">
+                        <input wire:model="is_fractional" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                        <span class="ml-2 text-sm text-gray-700">Fraccionado</span>
                     </label>
 
                     <label class="flex items-center">
