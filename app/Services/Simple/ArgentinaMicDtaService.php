@@ -3457,11 +3457,32 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // 4. Crear transactionId único
             $transactionId = 'CONSULTA_MICDTA_' . time() . '_' . $voyage->id;
 
-            // 5. Generar XML con SimpleXmlGenerator
+            // 5. Crear transacción ANTES de enviar
+            $transaction = \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+                'webservice_type' => 'micdta',
+                'soap_action' => 'ConsultarMicDtaAsig',
+                'country' => 'AR',
+                'status' => 'pending',
+                'environment' => $this->config['environment'] ?? 'testing',
+                'webservice_url' => $this->getWsdlUrl(),
+                'sent_at' => now(),
+            ]);
+
+            // 6. Generar XML con SimpleXmlGenerator
             $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
             $xmlContent = $xmlGenerator->createConsultarMicDtaAsigXml($consultaData, $transactionId);
 
             if (!$xmlContent) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Error generando XML para ConsultarMicDtaAsig',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                    'response_at' => now(),
+                ]);
                 return [
                     'success' => false,
                     'error_message' => 'Error generando XML para ConsultarMicDtaAsig',
@@ -3469,7 +3490,10 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // 6. Enviar SOAP
+            // 7. Guardar XML de request
+            $transaction->update(['request_xml' => $xmlContent]);
+
+            // 8. Enviar SOAP
             $soapClient = $this->createSoapClient();
             $response = $soapClient->__doRequest(
                 $xmlContent,
@@ -3479,25 +3503,26 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 false
             );
 
-            // 7. Verificar errores SOAP
+            // 9. Guardar respuesta
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+            ]);
+
+            // 10. Verificar errores SOAP
             if (strpos($response, 'soap:Fault') !== false) {
                 $errorMsg = $this->extractSoapFaultMessage($response);
+                $transaction->update(['status' => 'error', 'error_message' => $errorMsg]);
                 throw new Exception("SOAP Fault en ConsultarMicDtaAsig: " . $errorMsg);
             }
 
             // Extraer datos de la consulta de la respuesta
             $micDtaList = $this->extractMicDtaListFromResponse($response);
 
-            // 8. Guardar transacción exitosa
-            $this->createWebserviceTransaction($voyage, [
-                'transaction_id' => $transactionId,
-                'webservice_method' => 'ConsultarMicDtaAsig',
-                'request_data' => $requestData,
-                'response_data' => [
-                    'micdta_count' => count($micDtaList),
-                    'micdta_list' => $micDtaList,
-                ],
+            // 11. Actualizar transacción como exitosa
+            $transaction->update([
                 'status' => 'success',
+                'tracking_numbers' => json_encode($micDtaList),
             ]);
 
             // 9. Logging éxito
