@@ -382,8 +382,10 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('pesoBrutoTotal', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
 
                 // ✅ 3. CONSIGNATARIO (sin nroDocIdent ni tipDocIdent según Roberto)
+                // Usa dirección específica del BL si existe
                 $w->startElement('consignatario');
                 $consignee = $bl->consignee;
+                $specificConsignee = $bl->specificContacts()->where('role', 'consignee')->where('use_specific_data', true)->first();
 
                 // Determinar tráfico para lógica de tránsito
                 $loadingCountry = $bl->loadingPort->country->alpha2_code ?? '';
@@ -394,12 +396,21 @@ class SimpleXmlGeneratorParaguay
                 $idFiscal = $isTransit ? '0' : (string) ($consignee->tax_id ?? '0');
                 $w->writeElement('idFiscal', $idFiscal);
 
+                // Nombre: específico o del cliente
+                $consigneeName = ($specificConsignee && $specificConsignee->specific_company_name)
+                    ? $specificConsignee->specific_company_name
+                    : ($consignee->legal_name ?? 'NO ESPECIFICADO');
                 $w->writeElement('nomRazSoc', htmlspecialchars(
-                    substr($consignee->legal_name ?? 'NO ESPECIFICADO', 0, 100)
+                    substr($consigneeName, 0, 100)
                 ));
 
                 $w->startElement('direccion');
-                $direccion = $consignee->address ?? null;
+                // Dirección: específica o del cliente
+                if ($specificConsignee) {
+                    $direccion = $specificConsignee->specific_address_line_1 ?? $consignee->address ?? null;
+                } else {
+                    $direccion = $consignee->address ?? null;
+                }
                 if ($isTransit && empty($direccion)) {
                     $direccion = 'EN TRANSITO INTERNACIONAL';
                 }
@@ -432,17 +443,31 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('indFraccTransp', $bl->is_consolidated ? 'S' : 'N');
 
                 // ✅ 10. REMITENTE (con nroDocIdent y tipDocIdent según Roberto)
+                // Usa dirección específica del BL si existe
                 $w->startElement('remitente');
                 $shipper = $bl->shipper;
+                $specificShipper = $bl->specificContacts()->where('role', 'shipper')->where('use_specific_data', true)->first();
+                
                 $w->writeElement('idFiscal', (string) ($shipper->tax_id ?? '0'));
+                
+                // Nombre: específico o del cliente
+                $shipperName = ($specificShipper && $specificShipper->specific_company_name)
+                    ? $specificShipper->specific_company_name
+                    : ($shipper->legal_name ?? 'NO ESPECIFICADO');
                 $w->writeElement('nomRazSoc', htmlspecialchars(
-                    substr($shipper->legal_name ?? 'NO ESPECIFICADO', 0, 100)
+                    substr($shipperName, 0, 100)
                 ));
+                
                 $w->writeElement('nroDocIdent', (string) ($shipper->tax_id ?? '0'));
                 $w->writeElement('tipDocIdent', 'CI');
+                
                 $w->startElement('direccion');
+                // Dirección: específica o del cliente
+                $shipperAddress = ($specificShipper && $specificShipper->specific_address_line_1)
+                    ? $specificShipper->specific_address_line_1
+                    : ($shipper->address ?? 'NO ESPECIFICADO');
                 $w->writeElement('nombreCalle', htmlspecialchars(
-                    substr($shipper->address ?? 'NO ESPECIFICADO', 0, 100)
+                    substr($shipperAddress, 0, 100)
                 ));
                 $w->endElement(); // direccion
                 $w->endElement(); // remitente
