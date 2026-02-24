@@ -539,14 +539,14 @@ class ParaguayDnaService extends BaseWebserviceService
     }
 
     /**
-     * 3. XFBT - Hoja de Ruta (Contenedores)
+     * 3. XFBT - Hoja de Ruta (Rutas e Itinerarios)
      * Requiere XFFM enviado previamente
      */
     public function sendXfbt(Voyage $voyage, array $options = []): array
     {
         \Log::info('🔵 XFBT - Inicio', ['voyage_id' => $voyage->id]);
 
-        $this->logOperation('info', 'Iniciando envío XFBT (Contenedores)', [
+        $this->logOperation('info', 'Iniciando envío XFBT (Hoja de Ruta)', [
             'voyage_id' => $voyage->id,
         ]);
 
@@ -561,34 +561,11 @@ class ParaguayDnaService extends BaseWebserviceService
 
             $nroViaje = $xffmTransaction->external_reference;
 
-            // 2. Validar contenedores (a través de shipmentItems)
-            $containers = $voyage->shipments
-                ->flatMap->billsOfLading
-                ->flatMap->shipmentItems
-                ->flatMap->containers
-                ->unique('id');
+            // 2. Validar que existan BLs (XFBT genera rutas por cada BL)
+            $billsOfLading = $voyage->shipments->flatMap->billsOfLading;
 
-            if ($containers->isEmpty()) {
-                $this->logOperation('warning', 'Viaje sin contenedores, saltando XFBT', [
-                    'voyage_id' => $voyage->id,
-                ]);
-
-                $this->updateWebserviceStatus($voyage, 'XFBT', [
-                    'status' => 'skipped',
-                    'additional_data' => [
-                        'skipped' => true,
-                        'reason' => 'Sin contenedores',
-                    ],
-                ]);
-
-                DB::commit();
-
-                return [
-                    'success' => true,
-                    'skipped' => true,
-                    'message' => 'XFBT omitido: viaje sin contenedores',
-                    'container_count' => 0,
-                ];
+            if ($billsOfLading->isEmpty()) {
+                throw new Exception('No hay Bills of Lading para generar XFBT');
             }
 
             // 3. Generar XML
