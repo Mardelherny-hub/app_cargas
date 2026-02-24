@@ -409,23 +409,41 @@ class SimpleXmlGenerator
 
     /**
      * Helper: Escribir sección Remitente
+     * Usa dirección específica del BL si existe, sino fallback al cliente
      */
     private function writeRemitente(\XMLWriter $w, BillOfLading $bol): void
     {
         $shipper = $bol->shipper;
         $codPais = $shipper?->country?->iso2_code ?? 'AR';
         
+        // Verificar si hay dirección específica para este BL
+        $specific = $bol->specificContacts()->where('role', 'shipper')->where('use_specific_data', true)->first();
+        
         $w->startElement('remitente');
             $w->writeElement('codPais', $codPais);
             
-            // SIEMPRE incluir nomRazSoc y domicilio (AFIP los requiere)
-            $w->writeElement('nomRazSoc', substr($shipper?->legal_name ?? $shipper?->name ?? 'REMITENTE', 0, 50));
+            // Nombre: específico o del cliente
+            $nombre = ($specific && $specific->specific_company_name) 
+                ? $specific->specific_company_name 
+                : ($shipper?->legal_name ?? $shipper?->name ?? 'REMITENTE');
+            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
+            
             $w->startElement('domicilio');
-                $w->writeElement('barrio', substr($shipper?->district ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('ciudad', substr($shipper?->city ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('codPostal', substr($shipper?->postal_code ?? 'x', 0, 8) ?: 'x');
-                $w->writeElement('estado', substr($shipper?->state ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('nombreCalle', substr($shipper?->address ?? 'x', 0, 150) ?: 'x');
+                if ($specific) {
+                    // Usar datos específicos del BL
+                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
+                } else {
+                    // Fallback: datos del cliente
+                    $w->writeElement('barrio', substr($shipper?->district ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($shipper?->city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($shipper?->postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($shipper?->state ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($shipper?->address ?? 'x', 0, 150) ?: 'x');
+                }
             $w->endElement();
             
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? $this->company->tax_id));
@@ -440,60 +458,115 @@ class SimpleXmlGenerator
 
     /**
      * Helper: Escribir sección Consignatario
+     * Usa dirección específica del BL si existe, sino fallback al cliente
      */
     private function writeConsignatario(\XMLWriter $w, BillOfLading $bol): void
     {
         $consignee = $bol->consignee;
         
+        // Verificar si hay dirección específica para este BL
+        $specific = $bol->specificContacts()->where('role', 'consignee')->where('use_specific_data', true)->first();
+        
         $w->startElement('consignatario');
-            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? $consignee?->name ?? 'CONSIGNATARIO', 0, 50));
+            // Nombre: específico o del cliente
+            $nombre = ($specific && $specific->specific_company_name) 
+                ? $specific->specific_company_name 
+                : ($consignee?->legal_name ?? $consignee?->name ?? 'CONSIGNATARIO');
+            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
+            
             $w->startElement('domicilio');
-                $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
-                $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
+                if ($specific) {
+                    // Usar datos específicos del BL
+                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
+                } else {
+                    // Fallback: datos del cliente
+                    $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
+                }
             $w->endElement();
+            
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $consignee?->tax_id ?? ''));
         $w->endElement();
     }
 
     /**
      * Helper: Escribir sección Destinatario
+     * Usa dirección específica del consignee del BL si existe, sino fallback al cliente
+     * (Destinatario normalmente es igual al consignatario)
      */
     private function writeDestinatario(\XMLWriter $w, BillOfLading $bol): void
     {
-        // Normalmente igual que consignatario
         $consignee = $bol->consignee;
         
+        // Destinatario usa los mismos datos específicos del consignee
+        $specific = $bol->specificContacts()->where('role', 'consignee')->where('use_specific_data', true)->first();
+        
         $w->startElement('destinatario');
-            $w->writeElement('nomRazSoc', substr($consignee?->legal_name ?? $consignee?->name ?? 'DESTINATARIO', 0, 50));
+            // Nombre: específico o del cliente
+            $nombre = ($specific && $specific->specific_company_name) 
+                ? $specific->specific_company_name 
+                : ($consignee?->legal_name ?? $consignee?->name ?? 'DESTINATARIO');
+            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
+            
             $w->startElement('domicilio');
-                $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
-                $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
+                if ($specific) {
+                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
+                } else {
+                    $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
+                }
             $w->endElement();
         $w->endElement();
     }
 
     /**
      * Helper: Escribir sección Notificado
+     * Usa dirección específica del BL si existe, sino fallback al cliente
      */
     private function writeNotificado(\XMLWriter $w, BillOfLading $bol): void
     {
         $notify = $bol->notifyParty ?? $bol->consignee;
         
+        // Verificar si hay dirección específica para notify_party en este BL
+        $specific = $bol->specificContacts()->where('role', 'notify_party')->where('use_specific_data', true)->first();
+        
         $w->startElement('notificado');
-            $w->writeElement('nomRazSoc', substr($notify?->legal_name ?? $notify?->name ?? 'A QUIEN CORRESPONDA', 0, 50));
+            // Nombre: específico o del cliente
+            $nombre = ($specific && $specific->specific_company_name) 
+                ? $specific->specific_company_name 
+                : ($notify?->legal_name ?? $notify?->name ?? 'A QUIEN CORRESPONDA');
+            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
+            
             $w->startElement('domicilio');
-                $w->writeElement('barrio', substr($notify?->district ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('ciudad', substr($notify?->city ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('codPostal', substr($notify?->postal_code ?? 'x', 0, 8) ?: 'x');
-                $w->writeElement('estado', substr($notify?->state ?? 'x', 0, 50) ?: 'x');
-                $w->writeElement('nombreCalle', substr($notify?->address ?? 'x', 0, 150) ?: 'x');
+                if ($specific) {
+                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
+                } else {
+                    $w->writeElement('barrio', substr($notify?->district ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('ciudad', substr($notify?->city ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('codPostal', substr($notify?->postal_code ?? 'x', 0, 8) ?: 'x');
+                    $w->writeElement('estado', substr($notify?->state ?? 'x', 0, 50) ?: 'x');
+                    $w->writeElement('nombreCalle', substr($notify?->address ?? 'x', 0, 150) ?: 'x');
+                }
             $w->endElement();
+            
             $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $notify?->tax_id ?? ''));
         $w->endElement();
     }
@@ -1889,7 +1962,7 @@ class SimpleXmlGenerator
             }
 
             // Obtener tokens WSAA
-            $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
+            $wsaa = $this->getWSAATokens('wgesregsintia2');
 
             // Crear XMLWriter
             $w = new \XMLWriter();
