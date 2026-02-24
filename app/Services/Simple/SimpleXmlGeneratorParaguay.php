@@ -305,6 +305,8 @@ class SimpleXmlGeneratorParaguay
                 'shipments.billsOfLading.consignee',
                 'shipments.billsOfLading.shipmentItems.containers',
                 'shipments.billsOfLading.loadingPort.country',
+                'shipments.billsOfLading.dischargeCustoms',
+                'shipments.billsOfLading.finalDestinationPort',
                 'shipments.billsOfLading.dischargePort.country',
                 'shipments.billsOfLading.dischargeCustoms',
                 'shipments.vessel',
@@ -641,6 +643,8 @@ class SimpleXmlGeneratorParaguay
                 'destinationCustoms',
                 'transshipmentCustoms',
                 'shipments.billsOfLading.loadingPort.country',
+                'shipments.billsOfLading.dischargeCustoms',
+                'shipments.billsOfLading.finalDestinationPort',
             ]);
 
             // Obtener todos los BLs para generar una ruta por cada uno
@@ -727,18 +731,32 @@ class SimpleXmlGeneratorParaguay
 
                 // Solo enviar aduanas si destino es Paraguay
                 if ($destCountry === 'PY') {
-                // Aduana de entrada (usar transshipment si existe, sino destino)
-                $aduanaEntrada = $voyage->transshipmentCustoms?->code 
-                            ?? $voyage->destinationCustoms?->code
-                            ?? '017'; // Default: Capital
+                    // Aduana de entrada: del puerto de descarga del BL, o del voyage
+                    $aduanaEntrada = $bl->dischargeCustoms?->code
+                                ?? $voyage->destinationCustoms?->code
+                                ?? '017'; // Default: Capital
 
-                // Aduana de destino (destino final)
-                $aduanaDestino = $voyage->destinationCustoms?->code
-                            ?? '017'; // Default: Capital
+                    // Aduana de destino: del destino final del BL (si es diferente), 
+                    // o del discharge_customs_code del BL, o igual a entrada
+                    $aduanaDestino = $bl->discharge_customs_code
+                                ?? $bl->dischargeCustoms?->code
+                                ?? $voyage->destinationCustoms?->code
+                                ?? '017'; // Default: Capital
 
-                $w->writeElement('codAduEnt', $aduanaEntrada);
-                $w->writeElement('codAduDest', $aduanaDestino);
-            }
+                    // Si el BL tiene final_destination_port con aduana diferente, usar esa como destino
+                    if ($bl->finalDestinationPort && $bl->finalDestinationPort->id !== $bl->discharge_port_id) {
+                        // El destino final es diferente al de descarga → aduana destino diferente
+                        $finalDestCustoms = \App\Models\CustomsOffice::where('port_id', $bl->finalDestinationPort->id)
+                            ->where('active', true)
+                            ->first();
+                        if ($finalDestCustoms) {
+                            $aduanaDestino = $finalDestCustoms->code;
+                        }
+                    }
+
+                    $w->writeElement('codAduEnt', $aduanaEntrada);
+                    $w->writeElement('codAduDest', $aduanaDestino);
+                }
 
                 $w->endElement(); // paisDest
 
