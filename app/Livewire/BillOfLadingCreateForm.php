@@ -64,6 +64,7 @@ class BillOfLadingCreateForm extends Component
     public $final_destination_port_id = '';
     public $loading_customs_id = '';
     public $discharge_customs_id = '';
+    public $final_destination_customs_id = '';
 
     // === MERCANCÍAS ===
     public $primary_cargo_type_id = '';
@@ -267,6 +268,7 @@ class BillOfLadingCreateForm extends Component
         'final_destination_port_id' => 'nullable|exists:ports,id',
         'loading_customs_id' => 'nullable|exists:customs_offices,id',
         'discharge_customs_id' => 'nullable|exists:customs_offices,id',
+        'final_destination_customs_id' => 'nullable|exists:customs_offices,id',
         'primary_cargo_type_id' => 'required|exists:cargo_types,id',
         'primary_packaging_type_id' => 'required|exists:packaging_types,id',
         'bill_number' => 'required|string|max:100',
@@ -785,6 +787,7 @@ public function selectForeignLocationDischarge($locationCode)
                 'final_destination_port_id' => $this->final_destination_port_id ?: null,
                 'loading_customs_id' => $this->loading_customs_id ?: null,
                 'discharge_customs_id' => $this->discharge_customs_id ?: null,
+                'final_destination_customs_id' => $this->final_destination_customs_id ?: null,
                 'primary_cargo_type_id' => $this->primary_cargo_type_id,
                 'primary_packaging_type_id' => $this->primary_packaging_type_id,
                 'bill_number' => $this->bill_number,
