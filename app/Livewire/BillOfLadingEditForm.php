@@ -70,6 +70,7 @@ class BillOfLadingEditForm extends Component
     public $final_destination_port_id = '';
     public $loading_customs_id = '';
     public $discharge_customs_id = '';
+    public $final_destination_customs_id = '';
 
     // === MERCANCÍAS ===
     public $primary_cargo_type_id = '';
@@ -448,6 +449,7 @@ class BillOfLadingEditForm extends Component
         $this->final_destination_port_id = $bl->final_destination_port_id ?? '';
         $this->loading_customs_id = $bl->loading_customs_id ?? '';
         $this->discharge_customs_id = $bl->discharge_customs_id ?? '';
+        $this->final_destination_customs_id = $bl->final_destination_customs_id ?? '';
 
         // Mercancías
         $this->primary_cargo_type_id = $bl->primary_cargo_type_id ?? '';
@@ -806,6 +808,7 @@ class BillOfLadingEditForm extends Component
                 'final_destination_port_id' => $this->final_destination_port_id ?: null,
                 'loading_customs_id' => $this->loading_customs_id ?: null,
                 'discharge_customs_id' => $this->discharge_customs_id ?: null,
+                'final_destination_customs_id' => $this->final_destination_customs_id ?: null,
                 'primary_cargo_type_id' => $this->primary_cargo_type_id,
                 'primary_packaging_type_id' => $this->primary_packaging_type_id,
                 'cargo_description' => $this->cargo_description,

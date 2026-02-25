@@ -91,6 +91,7 @@ class BillOfLading extends Model
         'origin_operative_code',
         'destination_country_code',
         'discharge_customs_code',
+        'final_destination_customs_id',
         'operational_discharge_code',
         
         // Términos comerciales
@@ -343,6 +344,11 @@ class BillOfLading extends Model
     public function dischargeCustoms(): BelongsTo
     {
         return $this->belongsTo(CustomOffice::class, 'discharge_customs_id');
+    }
+
+    public function finalDestinationCustoms()
+    {
+        return $this->belongsTo(CustomOffice::class, 'final_destination_customs_id');
     }
 
     /**

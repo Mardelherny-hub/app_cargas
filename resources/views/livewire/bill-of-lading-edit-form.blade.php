@@ -548,7 +548,20 @@
                         @enderror
                     </div>
 
-                    
+                    {{-- Aduana Destino Final (DNA Paraguay) --}}
+                    <div>
+                        <label for="final_destination_customs_id" class="block text-sm font-medium text-gray-700">
+                            Aduana Destino Final
+                        </label>
+                        <select wire:model="final_destination_customs_id" id="final_destination_customs_id"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Misma que descarga</option>
+                            @foreach(\App\Models\CustomOffice::where('active', true)->orderBy('name')->get() as $customs)
+                                <option value="{{ $customs->id }}">{{ $customs->name }} ({{ $customs->code }})</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">Solo si difiere de la aduana de descarga</p>
+                    </div>
 
                     {{-- Datos AFIP Origen/Destino --}}
                     <div class="mt-6 border-t pt-6 col-span-2">
