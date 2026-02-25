@@ -1,12 +1,12 @@
 <div>
     
     {{-- Script para evitar el mensaje de navegación --}}
-   <!-- REEMPLAZAR TODO EL SCRIPT POR: -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('BillOfLading form loaded');
-});
-</script>
+    <!-- REEMPLAZAR TODO EL SCRIPT POR: -->
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('BillOfLading form loaded');
+        });
+        </script>
 
     {{-- Formulario --}}
     <form wire:submit.prevent="submit" class="space-y-8">
@@ -183,141 +183,141 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
 
         {{-- Partes Involucradas --}}
-<div class="bg-white overflow-hidden shadow rounded-lg">
-    <div class="px-4 py-5 sm:p-6">
-        <div class="mb-6">
-            <h3 class="text-lg font-medium leading-6 text-gray-900 flex items-center">
-                <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                </svg>
-                Partes Involucradas
-            </h3>
-            <p class="mt-1 text-sm text-gray-600">Empresas y contactos relacionados con el embarque</p>
+        <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="px-4 py-5 sm:p-6">
+                <div class="mb-6">
+                    <h3 class="text-lg font-medium leading-6 text-gray-900 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                        Partes Involucradas
+                    </h3>
+                    <p class="mt-1 text-sm text-gray-600">Empresas y contactos relacionados con el embarque</p>
+                </div>
+
+                {{-- Checkbox Transporte Propio --}}
+                <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <label class="flex items-start space-x-3 cursor-pointer">
+                        <input type="checkbox" 
+                            wire:model.live="is_own_transport"
+                            class="mt-0.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                        <div>
+                            <span class="text-sm font-medium text-gray-900">Transporte propio</span>
+                            <p class="text-xs text-gray-600 mt-0.5">
+                                Activar cuando la empresa mueve sus propios contenedores (vacíos o reposicionamiento). 
+                                El cargador y consignatario serán la misma empresa.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    {{-- Cargador/Exportador --}}
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Cargador/Exportador <span class="text-red-500">*</span>
+                            </label>
+                            <button type="button" 
+                                    wire:click="openCreateClientModal('shipper')"
+                                    class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Crear nuevo
+                            </button>
+                        </div>
+                        @livewire('search-client', [
+                            'selectedClientId' => $shipper_id,
+                            'fieldName' => 'shipper_id',
+                            'required' => true,
+                            'placeholder' => 'Buscar cargador por nombre o CUIT...'
+                        ], key('shipper-search'))
+                        @error('shipper_id')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    {{-- Consignatario/Importador --}}
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Consignatario/Importador <span class="text-red-500">*</span>
+                            </label>
+                            <button type="button" 
+                                    wire:click="openCreateClientModal('consignee')"
+                                    class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Crear nuevo
+                            </button>
+                        </div>
+                        @livewire('search-client', [
+                            'selectedClientId' => $consignee_id,
+                            'fieldName' => 'consignee_id',
+                            'required' => true,
+                            'placeholder' => 'Buscar consignatario por nombre o CUIT...'
+                        ], key('consignee-search'))
+                        @error('consignee_id')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    {{-- Notificar a --}}
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Notificar a
+                            </label>
+                            <button type="button" 
+                                    wire:click="openCreateClientModal('notify')"
+                                    class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Crear nuevo
+                            </button>
+                        </div>
+                        @livewire('search-client', [
+                            'selectedClientId' => $notify_party_id,
+                            'fieldName' => 'notify_party_id',
+                            'required' => false,
+                            'placeholder' => 'Buscar parte a notificar...'
+                        ], key('notify-search'))
+                        @error('notify_party_id')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    {{-- Propietario de la Carga --}}
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Propietario de la Carga
+                            </label>
+                            <button type="button" 
+                                    wire:click="openCreateClientModal('cargo_owner')"
+                                    class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
+                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Crear nuevo
+                            </button>
+                        </div>
+                        @livewire('search-client', [
+                            'selectedClientId' => $cargo_owner_id,
+                            'fieldName' => 'cargo_owner_id',
+                            'required' => false,
+                            'placeholder' => 'Buscar propietario...'
+                        ], key('cargo-owner-search'))
+                        @error('cargo_owner_id')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
+            </div>
         </div>
-
-        {{-- Checkbox Transporte Propio --}}
-        <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <label class="flex items-start space-x-3 cursor-pointer">
-                <input type="checkbox" 
-                       wire:model.live="is_own_transport"
-                       class="mt-0.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
-                <div>
-                    <span class="text-sm font-medium text-gray-900">Transporte propio</span>
-                    <p class="text-xs text-gray-600 mt-0.5">
-                        Activar cuando la empresa mueve sus propios contenedores (vacíos o reposicionamiento). 
-                        El cargador y consignatario serán la misma empresa.
-                    </p>
-                </div>
-            </label>
-        </div>
-
-        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {{-- Cargador/Exportador --}}
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Cargador/Exportador <span class="text-red-500">*</span>
-                    </label>
-                    <button type="button" 
-                            wire:click="openCreateClientModal('shipper')"
-                            class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                        Crear nuevo
-                    </button>
-                </div>
-                @livewire('search-client', [
-                    'selectedClientId' => $shipper_id,
-                    'fieldName' => 'shipper_id',
-                    'required' => true,
-                    'placeholder' => 'Buscar cargador por nombre o CUIT...'
-                ], key('shipper-search'))
-                @error('shipper_id')
-                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                @enderror
-            </div>
-
-            {{-- Consignatario/Importador --}}
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Consignatario/Importador <span class="text-red-500">*</span>
-                    </label>
-                    <button type="button" 
-                            wire:click="openCreateClientModal('consignee')"
-                            class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                        Crear nuevo
-                    </button>
-                </div>
-                @livewire('search-client', [
-                    'selectedClientId' => $consignee_id,
-                    'fieldName' => 'consignee_id',
-                    'required' => true,
-                    'placeholder' => 'Buscar consignatario por nombre o CUIT...'
-                ], key('consignee-search'))
-                @error('consignee_id')
-                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                @enderror
-            </div>
-
-            {{-- Notificar a --}}
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Notificar a
-                    </label>
-                    <button type="button" 
-                            wire:click="openCreateClientModal('notify')"
-                            class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                        Crear nuevo
-                    </button>
-                </div>
-                @livewire('search-client', [
-                    'selectedClientId' => $notify_party_id,
-                    'fieldName' => 'notify_party_id',
-                    'required' => false,
-                    'placeholder' => 'Buscar parte a notificar...'
-                ], key('notify-search'))
-                @error('notify_party_id')
-                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                @enderror
-            </div>
-
-            {{-- Propietario de la Carga --}}
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Propietario de la Carga
-                    </label>
-                    <button type="button" 
-                            wire:click="openCreateClientModal('cargo_owner')"
-                            class="text-xs text-blue-600 hover:text-blue-800 flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                        </svg>
-                        Crear nuevo
-                    </button>
-                </div>
-                @livewire('search-client', [
-                    'selectedClientId' => $cargo_owner_id,
-                    'fieldName' => 'cargo_owner_id',
-                    'required' => false,
-                    'placeholder' => 'Buscar propietario...'
-                ], key('cargo-owner-search'))
-                @error('cargo_owner_id')
-                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                @enderror
-            </div>
-        </div>
-    </div>
-</div>
 
         {{-- Puertos y Rutas --}}
         <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -409,9 +409,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
-                </div>
 
-               {{-- Aduana Destino Final (DNA Paraguay) --}}
+
+                    {{-- Aduana Destino Final (DNA Paraguay) --}}
                     <div>
                         <label for="final_destination_customs_id" class="block text-sm font-medium text-gray-700">
                             Aduana Destino Final
@@ -425,6 +425,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </select>
                         <p class="mt-1 text-xs text-gray-500">Solo si difiere de la aduana de descarga</p>
                     </div>
+                </div>
 
                 {{-- Datos AFIP Origen/Destino --}}
                 <div class="mt-6 border-t pt-6">
@@ -1037,8 +1038,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <p class="text-gray-500">Carga fraccionada en múltiples transportes</p>
                         </div>
                     </div>
-                        </div>
-                    </div>
+                        
 
                     {{-- Es Conocimiento Maestro --}}
                     <div class="flex items-start">
@@ -1122,7 +1122,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
-                @endif
+                    @endif
                 </div>
             </div>
         </div>
@@ -1277,4 +1277,5 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
     @endif
+</div>
 </div>
