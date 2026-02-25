@@ -245,6 +245,18 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         $warningMessages = [];  // ✅ NUEVO
         
         foreach ($voyage->shipments as $shipment) {
+            // Detectar remolcador en convoy (sin carga, va en lastre) - saltear
+            if ($voyage->vessel_count > 1) {
+                $vesselCategory = $shipment->vessel?->vesselType?->category ?? '';
+                if ($vesselCategory !== 'barge' && $shipment->billsOfLading()->count() === 0) {
+                    $this->logOperation('info', 'Shipment en lastre - saltear RegistrarTitEnvios', [
+                        'shipment_id' => $shipment->id,
+                        'shipment_number' => $shipment->shipment_number,
+                    ]);
+                    continue;
+                }
+            }
+
             $result = $this->sendTitEnvios($soapClient, $shipment);
             $results[] = $result;
             
