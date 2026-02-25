@@ -2454,151 +2454,239 @@
     /**
      * Mostrar modal con resultado
      */
+    /**
+     * Helper: escapar HTML para prevenir XSS
+     */
+    function esc(str) {
+        return String(str ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    /**
+     * Mostrar modal con resultado - Versión unificada
+     * Soporta 3 estados: Error (rojo), Advertencia (amarillo), Éxito (verde)
+     * Compatible con todos los payloads del backend (RegistrarTitEnvios, MicDta, Convoy, etc.)
+     */
     function showResultModal(methodName, result, isSuccess) {
         const modal = document.getElementById('resultModal');
         const icon = document.getElementById('resultIcon');
         const title = document.getElementById('resultTitle');
         const message = document.getElementById('resultMessage');
-        
-        if (isSuccess && result.success) {
-            icon.innerHTML = '✅';
-            icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100';
-            title.textContent = `${methodName} - Exitoso`;
-            
-            let successHtml = `
-                <p class="text-sm text-gray-700">
-                    <strong>Método:</strong> ${methodName}<br>
-                    ${result.message ? `<strong>Mensaje:</strong> ${result.message}<br>` : ''}
-                    ${result.transaction_id ? `<strong>Transaction ID:</strong> ${result.transaction_id}<br>` : ''}
-                    ${result.shipments_processed ? `<strong>Shipments procesados:</strong> ${result.shipments_processed}<br>` : ''}
-                    ${result.tracks_generated ? `<strong>TRACKs generados:</strong> ${result.tracks_generated}<br>` : ''}
-                    ${result.mic_dta_id ? `<strong>MIC/DTA ID:</strong> ${result.mic_dta_id}<br>` : ''}
-                </p>
-            `;
-            
-            // Mostrar detalles de éxito (TRACKs, próximos pasos, etc.)
-            if (result.success_details && result.success_details.length > 0) {
-                successHtml += `
-                    <div class="mt-4 p-3 bg-green-50 rounded-md">
-                        <p class="text-sm font-semibold text-green-800 mb-2">Detalles:</p>
-                        <ul class="text-sm text-green-700 space-y-1">
-                            ${result.success_details.map(detail => `<li>${detail}</li>`).join('')}
-                        </ul>
-                    </div>
-                `;
-            }
-            
-            // Mostrar TRACKs por shipment si existen
-            if (result.tracks_by_shipment && Object.keys(result.tracks_by_shipment).length > 0) {
-                successHtml += `
-                    <div class="mt-3 p-3 bg-blue-50 rounded-md">
-                        <p class="text-sm font-semibold text-blue-800 mb-2">📦 TRACKs por Shipment:</p>
-                        <div class="text-sm text-blue-700 space-y-1">
-                            ${Object.entries(result.tracks_by_shipment).map(([shipment, tracks]) => 
-                                `<div><strong>${shipment}:</strong> ${tracks.join(', ')}</div>`
-                            ).join('')}
-                        </div>
-                    </div>
-                `;
-            }
 
-            // ✅ NUEVO: Mostrar mensajes AFIP (Alertas e Informativos)
-            if (result.afip_messages) {
-                // Mostrar ALERTAS de AFIP
-                if (result.afip_messages.alertas && result.afip_messages.alertas.length > 0) {
-                    successHtml += `
-                        <div class="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-md">
-                            <p class="text-sm font-semibold text-yellow-800 mb-2">⚠️ Alertas de AFIP:</p>
-                            <ul class="text-sm text-yellow-700 space-y-2">
-                                ${result.afip_messages.alertas.map(alerta => `
-                                    <li>
-                                        <strong>[${alerta.codigo}]</strong> ${alerta.descripcion}
-                                        ${alerta.shipment_number ? `<br><span class="text-xs">Shipment: ${alerta.shipment_number}</span>` : ''}
-                                        ${alerta.descripcion_detallada ? `<br><span class="text-xs italic">${alerta.descripcion_detallada}</span>` : ''}
-                                    </li>
-                                `).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
-                
-                // Mostrar MENSAJES INFORMATIVOS de AFIP
-                if (result.afip_messages.informativos && result.afip_messages.informativos.length > 0) {
-                    successHtml += `
-                        <div class="mt-3 p-3 bg-blue-50 border-l-4 border-blue-400 rounded-md">
-                            <p class="text-sm font-semibold text-blue-800 mb-2">ℹ️ Información de AFIP:</p>
-                            <ul class="text-sm text-blue-700 space-y-1">
-                                ${result.afip_messages.informativos.map(info => `
-                                    <li>
-                                        <strong>[${info.codigo}]</strong> ${info.descripcion}
-                                        ${info.shipment_number ? `<br><span class="text-xs">Shipment: ${info.shipment_number}</span>` : ''}
-                                    </li>
-                                `).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
-            }
-            
-            // ✅ NUEVO: Mostrar warnings de TRACKs faltantes
-            if (result.has_warning && result.warning_messages && result.warning_messages.length > 0) {
-                successHtml += `
-                    <div class="mt-4 p-3 bg-orange-50 border-l-4 border-orange-500 rounded-md">
-                        <p class="text-sm font-semibold text-orange-800 mb-2">⚠️ ATENCIÓN - Acción Requerida:</p>
-                        <ul class="text-sm text-orange-700 space-y-1 list-disc list-inside">
-                            ${result.warning_messages.map(warning => `<li>${warning}</li>`).join('')}
-                        </ul>
-                        <p class="text-xs text-orange-600 mt-2 italic">
-                            💡 Los TRACKs son necesarios para continuar con RegistrarMicDta. 
-                            Por favor contacte a AFIP o reintente el envío.
-                        </p>
-                    </div>
-                `;
-            }
-            
-            message.innerHTML = successHtml;
-        } else {
+        // === NORMALIZAR DATOS (backend envía en distintos formatos) ===
+        const txId = result?.transaction_id || result?.data?.transaction_id || null;
+        const ref = result?.external_reference || result?.data?.external_reference || null;
+        const mainMessage = result?.message || result?.data?.message || '';
+        const errorText =
+            result?.error || result?.data?.error ||
+            result?.error_message || result?.data?.error_message ||
+            result?.details || result?.data?.details ||
+            'Error desconocido';
+        const errorCode = result?.error_code || result?.code || null;
+        const afip = result?.afip_messages || result?.data?.afip_messages || null;
+
+        // Warnings: soportar null, string y array
+        const warningMessagesRaw = result?.warning_messages ?? result?.data?.warning_messages ?? [];
+        const warningMessages = Array.isArray(warningMessagesRaw)
+            ? warningMessagesRaw
+            : (warningMessagesRaw ? [String(warningMessagesRaw)] : []);
+        const warningMessage = result?.warning_message || result?.data?.warning_message || null;
+        const hasWarning =
+            result?.has_warning === true ||
+            result?.data?.has_warning === true ||
+            !!warningMessage ||
+            warningMessages.length > 0;
+
+        // Normalizar success (puede venir como string "true"/"false")
+        const ok = (result?.success === true) || (result?.success === 'true') ||
+                   (result?.data?.success === true) || (result?.data?.success === 'true');
+
+        // ========================================
+        // 1) ERROR (cualquier cosa que no sea success)
+        // ========================================
+        if (!(isSuccess && ok)) {
             icon.innerHTML = '❌';
             icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100';
             title.textContent = `${methodName} - Error`;
-            
-            // ✅ CONSTRUIR MENSAJE DE ERROR CON DETALLES
+
             let errorHtml = `
                 <p class="text-sm text-gray-700">
-                    <strong>Error:</strong> ${result.error || result.error_message || 'Error desconocido'}<br>
-                    ${result.details ? `<strong>Detalle:</strong> ${result.details}<br>` : ''}
-                    ${result.error_code ? `<strong>Código:</strong> ${result.error_code}<br>` : ''}
+                    <strong>Error:</strong> ${esc(errorText)}<br>
+                    ${errorCode ? `<strong>Código:</strong> ${esc(errorCode)}<br>` : ''}
+                    ${txId ? `<strong>Transaction ID:</strong> ${esc(txId)}<br>` : ''}
+                    ${ref ? `<strong>Referencia:</strong> ${esc(ref)}<br>` : ''}
                 </p>
             `;
-            
-            // ✅ AGREGAR: Lista de errores de validación
-            if (result.validation_errors && result.validation_errors.length > 0) {
+
+            // Lista de errores de validación
+            if (result?.validation_errors?.length > 0) {
                 errorHtml += `
                     <div class="mt-4 p-3 bg-red-50 rounded-md">
                         <p class="text-sm font-semibold text-red-800 mb-2">Errores encontrados:</p>
                         <ul class="text-sm text-red-700 space-y-1 list-disc list-inside">
-                            ${result.validation_errors.map(error => `<li>${error}</li>`).join('')}
+                            ${result.validation_errors.map(e => `<li>${esc(e)}</li>`).join('')}
                         </ul>
                         <p class="text-xs text-red-600 mt-2 italic">Por favor corrija estos datos antes de continuar.</p>
                     </div>
                 `;
             }
-            
-            // ✅ AGREGAR: Lista de advertencias (warnings)
-            if (result.warnings && result.warnings.length > 0) {
+
+            // Advertencias dentro del error
+            if (result?.warnings?.length > 0) {
                 errorHtml += `
                     <div class="mt-3 p-3 bg-yellow-50 rounded-md">
                         <p class="text-sm font-semibold text-yellow-800 mb-2">Advertencias:</p>
                         <ul class="text-sm text-yellow-700 space-y-1 list-disc list-inside">
-                            ${result.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                            ${result.warnings.map(w => `<li>${esc(w)}</li>`).join('')}
                         </ul>
                     </div>
                 `;
             }
-            
+
+            // Errores AFIP
+            if (afip?.errores?.length > 0) {
+                errorHtml += `
+                    <div class="mt-3 p-3 bg-red-50 border-l-4 border-red-400 rounded-md">
+                        <p class="text-sm font-semibold text-red-800 mb-2">❌ Errores AFIP:</p>
+                        <ul class="text-sm text-red-700 space-y-1">
+                            ${afip.errores.map(e => `<li><strong>[${esc(e.codigo)}]</strong> ${esc(e.descripcion)}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
             message.innerHTML = errorHtml;
+            modal.classList.remove('hidden');
+            return;
         }
-        
+
+        // ========================================
+        // 2) ÉXITO (con o sin warnings)
+        // ========================================
+
+        // Determinar icono y título según warnings
+        if (hasWarning) {
+            icon.innerHTML = '⚠️';
+            icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100';
+            title.textContent = `${methodName} - Exitoso con observaciones`;
+        } else {
+            icon.innerHTML = '✅';
+            icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100';
+            title.textContent = `${methodName} - Exitoso`;
+        }
+
+        // Datos básicos del resultado
+        let successHtml = `
+            <p class="text-sm text-gray-700">
+                <strong>Método:</strong> ${esc(methodName)}<br>
+                ${mainMessage ? `<strong>Mensaje:</strong> ${esc(mainMessage)}<br>` : ''}
+                ${txId ? `<strong>Transaction ID:</strong> ${esc(txId)}<br>` : ''}
+                ${ref ? `<strong>Referencia:</strong> ${esc(ref)}<br>` : ''}
+                ${result.shipments_processed ? `<strong>Shipments procesados:</strong> ${esc(result.shipments_processed)}<br>` : ''}
+                ${result.tracks_generated ? `<strong>TRACKs generados:</strong> ${esc(result.tracks_generated)}<br>` : ''}
+                ${result.mic_dta_id ? `<strong>MIC/DTA ID:</strong> ${esc(result.mic_dta_id)}<br>` : ''}
+            </p>
+        `;
+
+        // Detalles de éxito (TRACKs, próximos pasos)
+        if (result.success_details?.length > 0) {
+            successHtml += `
+                <div class="mt-4 p-3 bg-green-50 rounded-md">
+                    <p class="text-sm font-semibold text-green-800 mb-2">Detalles:</p>
+                    <ul class="text-sm text-green-700 space-y-1">
+                        ${result.success_details.map(d => `<li>${esc(d)}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // TRACKs por shipment
+        if (result.tracks_by_shipment && Object.keys(result.tracks_by_shipment).length > 0) {
+            successHtml += `
+                <div class="mt-3 p-3 bg-blue-50 rounded-md">
+                    <p class="text-sm font-semibold text-blue-800 mb-2">📦 TRACKs por Shipment:</p>
+                    <div class="text-sm text-blue-700 space-y-1">
+                        ${Object.entries(result.tracks_by_shipment).map(([shipment, tracks]) => {
+                            const list = Array.isArray(tracks) ? tracks : (tracks ? [String(tracks)] : []);
+                            return `<div><strong>${esc(shipment)}:</strong> ${esc(list.join(', '))}</div>`;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Mensajes AFIP: Alertas
+        if (afip?.alertas?.length > 0) {
+            successHtml += `
+                <div class="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-md">
+                    <p class="text-sm font-semibold text-yellow-800 mb-2">⚠️ Alertas de AFIP:</p>
+                    <ul class="text-sm text-yellow-700 space-y-2">
+                        ${afip.alertas.map(a => `
+                            <li>
+                                <strong>[${esc(a.codigo)}]</strong> ${esc(a.descripcion)}
+                                ${a.shipment_number ? `<br><span class="text-xs">Shipment: ${esc(a.shipment_number)}</span>` : ''}
+                                ${a.descripcion_detallada ? `<br><span class="text-xs italic">${esc(a.descripcion_detallada)}</span>` : ''}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Mensajes AFIP: Informativos
+        if (afip?.informativos?.length > 0) {
+            successHtml += `
+                <div class="mt-3 p-3 bg-blue-50 border-l-4 border-blue-400 rounded-md">
+                    <p class="text-sm font-semibold text-blue-800 mb-2">ℹ️ Información de AFIP:</p>
+                    <ul class="text-sm text-blue-700 space-y-1">
+                        ${afip.informativos.map(i => `
+                            <li>
+                                <strong>[${esc(i.codigo)}]</strong> ${esc(i.descripcion)}
+                                ${i.shipment_number ? `<br><span class="text-xs">Shipment: ${esc(i.shipment_number)}</span>` : ''}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Warnings operativos (remolcador en lastre, TRACKs faltantes, etc.)
+        if (hasWarning) {
+            let allWarnings = [...warningMessages];
+            const wm = warningMessage ? String(warningMessage).trim() : null;
+            if (wm && !allWarnings.map(x => String(x).trim()).includes(wm)) {
+                allWarnings.push(wm);
+            }
+
+            if (allWarnings.length > 0) {
+                successHtml += `
+                    <div class="mt-4 p-3 bg-orange-50 border-l-4 border-orange-500 rounded-md">
+                        <p class="text-sm font-semibold text-orange-800 mb-2">ℹ️ Información operativa:</p>
+                        <ul class="text-sm text-orange-700 space-y-1 list-disc list-inside">
+                            ${allWarnings.map(w => `<li>${esc(w)}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-recarga basada en flag del backend (no en nombre de método)
+        if (result?.reload_required || result?.data?.reload_required) {
+            successHtml += `
+                <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p class="text-sm text-yellow-800 font-semibold">
+                        ⚠️ Esta operación modificó datos críticos. Se recargará la página automáticamente.
+                    </p>
+                </div>
+            `;
+            setTimeout(() => { window.location.reload(); }, 3000);
+        }
+
+        message.innerHTML = successHtml;
         modal.classList.remove('hidden');
     }
 
