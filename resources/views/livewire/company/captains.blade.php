@@ -115,6 +115,7 @@
                                 <div><strong>Nombre:</strong> {{ $selectedCaptain->full_name }}</div>
                                 <div><strong>Email:</strong> {{ $selectedCaptain->email ?? 'No especificado' }}</div>
                                 <div><strong>Teléfono:</strong> {{ $selectedCaptain->phone ?? 'No especificado' }}</div>
+                                <div><strong>Documento:</strong> {{ ($selectedCaptain->document_type ?? 'DNI') . ': ' . ($selectedCaptain->document_number ?? 'No especificado') }}</div>
                                 <div><strong>Licencia:</strong> {{ $selectedCaptain->license_number }}</div>
                                 <div><strong>Clase:</strong> {{ ucfirst($selectedCaptain->license_class) }}</div>
                                 <div><strong>País:</strong> {{ $selectedCaptain->country->name ?? 'No especificado' }}</div>
@@ -152,6 +153,25 @@
                                     <input type="text" wire:model="phone" 
                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     @error('phone') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Tipo Documento</label>
+                                        <select wire:model="document_type" 
+                                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="DNI">DNI</option>
+                                            <option value="CI">CI</option>
+                                            <option value="PASSPORT">Pasaporte</option>
+                                            <option value="CUIT">CUIT</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Número Documento</label>
+                                        <input type="text" wire:model="document_number" 
+                                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        @error('document_number') <span class="text-red-500 text-xs">{{ $message }}</span> @enderror
+                                    </div>
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-4">
