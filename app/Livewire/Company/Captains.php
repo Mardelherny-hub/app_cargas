@@ -22,6 +22,8 @@ class Captains extends Component
     // Campos del formulario (basados en migración real)
     public $first_name = '';
     public $last_name = '';
+    public $document_type = 'DNI';
+    public $document_number = '';
     public $email = '';
     public $phone = '';
     public $license_number = '';
@@ -49,6 +51,8 @@ class Captains extends Component
     protected $rules = [
         'first_name' => 'required|string|max:100',
         'last_name' => 'required|string|max:100',
+        'document_type' => 'nullable|string|max:20',
+        'document_number' => 'nullable|string|max:50',
         'email' => 'nullable|email|max:255',
         'phone' => 'nullable|string|max:20',
         'license_number' => 'required|string|max:50',
@@ -190,7 +194,7 @@ class Captains extends Component
 
     public function closeModal()
     {
-        $this->showModal = false;
+        $this->showModal = false;        
         $this->resetForm();
     }
 
@@ -198,6 +202,8 @@ class Captains extends Component
     {
         $this->first_name = '';
         $this->last_name = '';
+        $this->document_type = 'DNI';
+        $this->document_number = '';
         $this->email = '';
         $this->phone = '';
         $this->license_number = '';
@@ -214,6 +220,8 @@ class Captains extends Component
     {
         $this->first_name = $captain->first_name;
         $this->last_name = $captain->last_name;
+        $this->document_type = $captain->document_type ?? 'DNI';
+        $this->document_number = $captain->document_number ?? '';
         $this->email = $captain->email;
         $this->phone = $captain->phone;
         $this->license_number = $captain->license_number;
