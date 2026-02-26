@@ -1046,6 +1046,9 @@ if ($shipment->requires_attention && !empty($validated['vessel_id'])) {
 
         DB::commit();
 
+        // Actualizar estadísticas del voyage (incluyendo detección convoy)
+        $this->updateVoyageStats($shipment->voyage);
+
         Log::info('Shipment actualizado', [
             'shipment_id' => $shipment->id,
             'shipment_number' => $shipment->shipment_number,
