@@ -131,6 +131,8 @@ class Captains extends Component
             'full_name' => trim($this->first_name . ' ' . $this->last_name),
             'email' => $this->email,
             'phone' => $this->phone,
+            'document_type' => $this->document_type,
+            'document_number' => $this->document_number,
             'license_number' => $this->license_number,
             'license_class' => $this->license_class,
             'country_id' => $this->country_id,
