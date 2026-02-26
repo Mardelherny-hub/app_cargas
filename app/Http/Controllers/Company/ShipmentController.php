@@ -402,6 +402,12 @@ class ShipmentController extends Controller
             SUM(cargo_capacity_tons) as total_capacity
         ')->first();
 
+        // Auto-detectar convoy por cantidad de shipments o roles
+        $shipments = $voyage->shipments()->get();
+        $shipmentCount = $shipments->count();
+        $hasConvoyRoles = $shipments->whereIn('vessel_role', ['lead', 'towed', 'pushed', 'escort'])->count() > 0;
+        $isConvoy = $shipmentCount > 1 || $hasConvoyRoles;
+
         $voyage->update([
             'total_cargo_weight_loaded' => $shipmentStats->total_weight ?? 0,
             'total_containers_loaded' => $shipmentStats->total_containers ?? 0,
@@ -409,6 +415,9 @@ class ShipmentController extends Controller
             'capacity_utilization_percentage' => $shipmentStats->total_capacity > 0 
                 ? (($shipmentStats->total_weight ?? 0) / $shipmentStats->total_capacity) * 100 
                 : 0,
+            'is_convoy' => $isConvoy,
+            'voyage_type' => $isConvoy ? 'convoy' : 'single_vessel',
+            'vessel_count' => $shipmentCount,
             'last_updated_date' => now(),
             'last_updated_by_user_id' => Auth::id()
         ]);
