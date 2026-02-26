@@ -1438,9 +1438,9 @@ class SimpleXmlGenerator
             $integraConvoy = ($tipEmb === 'BAR' || $voyage->is_convoy) ? 'S' : 'N';
             $w->writeElement('indIntegraConvoy', $integraConvoy);
             
-            // idFiscalATARemol (opcional - CUIT del remolcador si integra convoy)
-            if ($integraConvoy === 'S' && !empty($voyage->tugboat_cuit)) {
-                $w->writeElement('idFiscalATARemol', preg_replace('/[^0-9]/', '', $voyage->tugboat_cuit));
+            // idFiscalATARemol (obligatorio si integra convoy - CUIT del ATA transportista)
+            if ($integraConvoy === 'S') {
+                $w->writeElement('idFiscalATARemol', preg_replace('/[^0-9]/', '', $this->company->tax_id));
             }
             
         $w->endElement();
