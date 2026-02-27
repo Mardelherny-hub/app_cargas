@@ -442,7 +442,7 @@
 
                         {{-- 4. XFCT - Cerrar Viaje --}}
                         @php
-                            $xfctSent = $xfctTransaction && in_array($xfctTransaction->status, ['sent', 'rejected']);
+                            $xfctSent = $xfctTransaction && $xfctTransaction->status === 'sent';
                             
                             // XFCT requiere XFFM y XFBL obligatorios
                             // XFBT es opcional (solo si hay contenedores)

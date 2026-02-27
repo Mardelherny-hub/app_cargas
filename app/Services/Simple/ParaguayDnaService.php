@@ -684,6 +684,7 @@ class ParaguayDnaService extends BaseWebserviceService
 
                 $transaction->update([
                     'status' => $dnaStatus['status'],
+                    'request_xml' => $xml,
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
