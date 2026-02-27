@@ -1433,12 +1433,13 @@ class SimpleXmlGenerator
             $w->writeElement('tipEmb', $tipEmb);
             
             // indIntegraConvoy (obligatorio, S/N)
-            // AFIP: Las barcazas (BAR) siempre integran convoy
-            $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
-            $integraConvoy = ($tipEmb === 'BAR' || $voyage->is_convoy) ? 'S' : 'N';
+            // AFIP: Solo BARCAZAS integran convoy (indIntegraConvoy=S)
+            // Remolcadores/Empujadores NO integran convoy (son autopropulsados, reciben nroViaje directo)
+            $integraConvoy = ($tipEmb === 'BAR') ? 'S' : 'N';
             $w->writeElement('indIntegraConvoy', $integraConvoy);
             
-            // idFiscalATARemol (obligatorio si integra convoy - CUIT del ATA transportista)
+            // idFiscalATARemol (SOLO si integra convoy - CUIT del ATA remolcador)
+            // AFIP: "Si indIntegraConvoy=N, no debe ser informado"
             if ($integraConvoy === 'S') {
                 $w->writeElement('idFiscalATARemol', preg_replace('/[^0-9]/', '', $this->company->tax_id));
             }
