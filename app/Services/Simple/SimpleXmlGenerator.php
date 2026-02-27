@@ -967,7 +967,6 @@ class SimpleXmlGenerator
                 throw new \Exception('Voyage debe tener puertos de origen y destino');
             }
             
-            $wsaa = $this->getWSAATokens();
             $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
 
             $w = new \XMLWriter();
