@@ -1078,10 +1078,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $hasAfipAlerts = !empty($afipMessages['alertas']);
             $hasAfipInfo = !empty($afipMessages['informativos']);
 
-            // ✅ Si AFIP devolvió errores, es un error (no éxito)
-            // También si hay alertas Y no hay TRACKs (indica fallo real)
-            if ($hasAfipErrors || ($hasAfipAlerts && empty($tracks))) {
-                $mensajesAfip = $hasAfipErrors ? $afipMessages['errores'] : $afipMessages['alertas'];
+            // ✅ Si AFIP devolvió errores (Codigo != 0), es un error bloqueante (no éxito)
+            if ($hasAfipErrors) {
+                $mensajesAfip = $afipMessages['errores'];
                 $errorTexts = array_map(function($msg) {
                     return "[{$msg['codigo']}] {$msg['descripcion']}";
                 }, $mensajesAfip);
@@ -1094,7 +1093,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'request_xml' => $xml,
                     'response_at' => now(),
                     'status' => 'error',
+                    'error_code' => 'AFIP_ERROR',
                     'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
                     'completed_at' => now(),
                 ]);
                 
@@ -1501,7 +1507,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $hasAfipErrors = !empty($afipMessages['errores']);
             $hasAfipAlerts = !empty($afipMessages['alertas']);
 
-            // ✅ Si AFIP devolvió errores, es un error (no éxito)
+            // ✅ Si AFIP devolvió errores (Codigo != 0), es un error bloqueante (no éxito)
             if ($hasAfipErrors) {
                 $errorTexts = array_map(function($msg) {
                     return "[{$msg['codigo']}] {$msg['descripcion']}";
@@ -1512,7 +1518,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $transaction->update([
                     'response_xml' => $response,
                     'status' => 'error',
+                    'error_code' => 'AFIP_ERROR',
                     'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
                     'completed_at' => now(),
                 ]);
                 
@@ -1525,26 +1538,29 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // ✅ Si hay alertas sin ID MIC/DTA, también es error
+            // ✅ Si no vino idMicDta, es error (falta confirmación), aunque no haya errores AFIP
             $micDtaId = $this->extractMicDtaIdFromResponse($response);
-            if ($hasAfipAlerts && empty($micDtaId)) {
-                $alertTexts = array_map(function($msg) {
-                    return "[{$msg['codigo']}] {$msg['descripcion']}";
-                }, $afipMessages['alertas']);
-                
-                $errorMessage = 'Alerta AFIP (sin confirmación): ' . implode('; ', $alertTexts);
+            if (empty($micDtaId)) {
+                $errorMessage = 'Respuesta AFIP sin idMicDta (sin confirmación).';
                 
                 $transaction->update([
                     'response_xml' => $response,
                     'status' => 'error',
+                    'error_code' => 'MISSING_MICDTA_ID',
                     'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
                     'completed_at' => now(),
                 ]);
                 
                 return [
                     'success' => false,
                     'error_message' => $errorMessage,
-                    'error_code' => 'AFIP_ALERT',
+                    'error_code' => 'MISSING_MICDTA_ID',
                     'afip_messages' => $afipMessages,
                     'response_time_ms' => $responseTime,
                 ];
@@ -1917,33 +1933,83 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // Verificar errores AFIP
             $afipMessages = $this->extractAfipMessages($response);
             if (!empty($afipMessages['errores'])) {
-                $errorTexts = array_map(function($msg) {
-                    return "[{$msg['codigo']}] {$msg['descripcion']}";
-                }, $afipMessages['errores']);
+                // Generar mensajes técnicos Y accionables
+                $errorTexts = [];
+                $accionables = [];
+                foreach ($afipMessages['errores'] as $msg) {
+                    $errorTexts[] = "[{$msg['codigo']}] {$msg['descripcion']}";
+                    $traduccion = $this->translateAfipConvoyError($msg['codigo']);
+                    if ($traduccion) {
+                        $accionables[] = $traduccion;
+                    }
+                }
 
                 $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                $userMessage = !empty($accionables) 
+                    ? implode(' | ', $accionables) 
+                    : $errorMessage;
+
                 $transaction->update([
                     'status' => 'error',
-                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'error_message' => $userMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                        'error_tecnico' => $errorMessage,
+                        'mensajes_accionables' => $accionables,
+                    ],
+                    'is_blocking_error' => true,
                     'completed_at' => now(),
                 ]);
 
                 return [
                     'success' => false,
-                    'error_message' => $errorMessage,
+                    'error_message' => $userMessage,
                     'error_code' => 'AFIP_ERROR',
                     'afip_messages' => $afipMessages,
+                    'mensajes_accionables' => $accionables,
                 ];
             }
 
             // Extraer nroViaje de respuesta
             $nroViaje = $this->extractVoyageNumberFromResponse($response);
 
+            /**
+             * Validación de confirmación:
+             * Si no hay nroViaje, AFIP no confirmó el convoy para operar por viaje.
+             * Evitamos marcar success "optimista" que después rompe Salida ZP.
+             */
+            if (empty($nroViaje)) {
+                $errorMessage = 'Respuesta AFIP sin nroViaje (sin confirmación de convoy).';
+
+                $transaction->update([
+                    'status' => 'error',
+                    'error_code' => 'MISSING_VOYAGE_NUMBER',
+                    'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
+                    'completed_at' => now(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'MISSING_VOYAGE_NUMBER',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
             // Éxito
             $transaction->update([
                 'status' => 'success',
                 'external_reference' => $remolcadorMicDtaId,
-                'confirmation_number' => $nroViaje ?? $remolcadorMicDtaId,
+                'confirmation_number' => $nroViaje,
                 'completed_at' => now(),
                 'success_data' => [
                     'method' => 'RegistrarConvoy',
@@ -3013,8 +3079,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $nroSalidaCheck = trim($m[1]);
             }
             
-            if (($hasAfipErrors || $hasAfipAlerts) && empty($nroSalidaCheck)) {
-                $allMessages = array_merge($afipMessages['errores'] ?? [], $afipMessages['alertas'] ?? []);
+            if ($hasAfipErrors && empty($nroSalidaCheck)) {
+                $allMessages = $afipMessages['errores'] ?? [];
                 $errorTexts = array_map(function($msg) {
                     return "[{$msg['codigo']}] {$msg['descripcion']}";
                 }, $allMessages);
@@ -3036,8 +3102,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'sent_at' => now(),
                     'response_at' => now(),
                     'completed_at' => now(),
-                    'error_code' => 'AFIP_ALERT',
+                    'error_code' => 'AFIP_ERROR',
                     'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
                     'additional_metadata' => [
                         'method' => 'RegistrarSalidaZonaPrimaria',
                         'afip_messages' => $afipMessages,
@@ -3047,7 +3119,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 return [
                     'success' => false,
                     'error_message' => $errorMessage,
-                    'error_code' => 'AFIP_ALERT',
+                    'error_code' => 'AFIP_ERROR',
                 ];
             }
 
@@ -3056,6 +3128,51 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $nroPartida = null;
             if (preg_match('/<nroPartida>([^<]+)<\/nroPartida>/i', $response, $matchPartida)) {
                 $nroPartida = trim($matchPartida[1]);
+            }
+
+            /**
+             * Validación de confirmación:
+             * Si no hay nroSalida, AFIP no confirmó la salida.
+             * Evitamos marcar success "optimista".
+             */
+            if (empty($nroSalida)) {
+                $errorMessage = 'Respuesta AFIP sin nroSalida (sin confirmación de salida).';
+
+                \App\Models\WebserviceTransaction::create([
+                    'company_id' => $this->company->id,
+                    'user_id' => $this->user->id,
+                    'voyage_id' => $voyage->id,
+                    'transaction_id' => $transactionId,
+                    'webservice_type' => 'micdta',
+                    'country' => 'AR',
+                    'webservice_url' => $this->getWsdlUrl(),
+                    'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarSalidaZonaPrimaria',
+                    'status' => 'error',
+                    'environment' => $this->config['environment'],
+                    'request_xml' => $xmlContent,
+                    'response_xml' => $response,
+                    'sent_at' => now(),
+                    'response_at' => now(),
+                    'completed_at' => now(),
+                    'error_code' => 'MISSING_NRO_SALIDA',
+                    'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
+                    'additional_metadata' => [
+                        'method' => 'RegistrarSalidaZonaPrimaria',
+                        'afip_messages' => $afipMessages,
+                    ],
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'MISSING_NRO_SALIDA',
+                ];
             }
 
             // 10. Guardar transacción exitosa
@@ -3194,7 +3311,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'voyage_number' => $voyage->voyage_number,
             ]);
 
-// 2. Validación parámetros obligatorios
+            // 2. Validación parámetros obligatorios
             if (empty($data['nro_viaje'])) {
                 return [
                     'success' => false,
@@ -3528,6 +3645,39 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en ConsultarMicDtaAsig: " . $errorMsg);
             }
 
+                        // Verificar errores AFIP
+            $afipMessages = $this->extractAfipMessages($response);
+            $hasAfipErrors = !empty($afipMessages['errores']);
+
+            if ($hasAfipErrors) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+
+                $transaction->update([
+                    'status' => 'error',
+                    'error_code' => 'AFIP_ERROR',
+                    'error_message' => $errorMessage,
+                    'error_details' => [
+                        'afip' => $afipMessages['errores'] ?? [],
+                        'alertas' => $afipMessages['alertas'] ?? [],
+                        'informativos' => $afipMessages['informativos'] ?? [],
+                    ],
+                    'is_blocking_error' => true,
+                    'completed_at' => now(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                    'transaction_id' => $transactionId,
+                ];
+            }
+
             // Extraer datos de la consulta de la respuesta
             $micDtaList = $this->extractMicDtaListFromResponse($response);
 
@@ -3535,6 +3685,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $transaction->update([
                 'status' => 'success',
                 'tracking_numbers' => json_encode($micDtaList),
+                'completed_at' => now(),
             ]);
 
             // 9. Logging éxito
@@ -3895,22 +4046,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'desc_motivo' => $data['desc_motivo'],
             ];
 
-            // 4. Crear transactionId único
-            $transactionId = 'SOLICITAR_ANULAR_' . time() . '_' . $voyage->id;
-
-            // 5. Generar XML con SimpleXmlGenerator
-            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
-            $xmlContent = $xmlGenerator->createSolicitarAnularMicDtaXml($requestData, $transactionId);
-
-            if (!$xmlContent) {
-                return [
-                    'success' => false,
-                    'error_message' => 'Error generando XML para SolicitarAnularMicDta',
-                    'error_code' => 'XML_GENERATION_ERROR',
-                ];
-            }
-
-           // 6. Delegar al método completo que ya funciona con sendSolicitarAnularMicDtaSoapRequest
+           // 4. Delegar al método completo que ya funciona con sendSolicitarAnularMicDtaSoapRequest
             $result = $this->solicitarAnularMicDta($data['id_micdta'], $data['desc_motivo']);
 
             // 7. Adaptar respuesta al formato esperado por el dashboard
@@ -3922,7 +4058,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'desc_motivo' => $data['desc_motivo'],
                     'solicitud_enviada' => true,
                     'requiere_aprobacion_afip' => true,
-                    'transaction_id' => $result['transaction_id'] ?? $transactionId,
+                    'transaction_id' => $result['transaction_id'] ?? null,
                 ];
             } else {
                 return [
@@ -4553,34 +4689,35 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             
             // Procesar cada mensaje
             foreach ($listaErrores as $error) {
-                $codigo = (string)$error->Codigo;
-                $descripcion = (string)$error->Descripcion;
-                $descripcionDetallada = (string)$error->DescripcionDetallada;
-                $tipoMensaje = (string)$error->TipoMensaje; // "Error", "Alerta", "Informativo"
-                
+                $codigo = trim((string) $error->Codigo);
+                $descripcion = trim((string) $error->Descripcion);
+
+                // AFIP a veces usa DescripcionAdicional y otras Detallada (según operación)
+                $descripcionAdicional = trim((string) ($error->DescripcionAdicional ?? ''));
+                $descripcionDetallada = trim((string) ($error->DescripcionDetallada ?? ''));
+
+                $tipoMensaje = trim((string) $error->TipoMensaje); // "Error", "Alerta", "Informativo"
+
                 $mensaje = [
                     'codigo' => $codigo,
                     'descripcion' => $descripcion,
+                    'descripcion_adicional' => $descripcionAdicional,
                     'descripcion_detallada' => $descripcionDetallada,
                     'tipo' => $tipoMensaje,
                 ];
-                
-                // Clasificar según tipo
-                switch (strtolower($tipoMensaje)) {
-                    case 'error':
-                        $messages['errores'][] = $mensaje;
-                        break;
-                    case 'alerta':
-                        $messages['alertas'][] = $mensaje;
-                        break;
-                    case 'informativo':
-                    case 'información':
-                        $messages['informativos'][] = $mensaje;
-                        break;
-                    default:
-                        // Si no tiene tipo claro, considerarlo alerta
-                        $messages['alertas'][] = $mensaje;
+
+                /**
+                 * Regla clave:
+                 * - Codigo != 0 => ES BLOQUEANTE (aunque TipoMensaje sea "Alerta")
+                 * - Codigo == 0 => éxito (lo tratamos como informativo para no confundir)
+                 */
+                if ($codigo !== '' && $codigo !== '0') {
+                    $messages['errores'][] = $mensaje;
+                    continue;
                 }
+
+                // Codigo == 0 => informativo (ej: "Ejecucion exitosa.")
+                $messages['informativos'][] = $mensaje;
             }
             
         } catch (\Exception $e) {
@@ -4590,6 +4727,66 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
         }
         
         return $messages;
+    }
+
+    /**
+     * Traduce códigos de error AFIP de convoy a mensajes accionables para el operador.
+     * Cubre: RegistrarConvoy, AsignarATARemol, RectifConvoyMicDta, SalidaZonaPrimaria
+     * Referencia: Manual AFIP WGESREGSINTIA2 - Sección Códigos y Mensajes de Error
+     */
+    private function translateAfipConvoyError(string $codigo): ?string
+    {
+        $traducciones = [
+            // === RegistrarConvoy ===
+            '27102' => 'Ya existe un convoy registrado para este MIC/DTA. Consulte con ARCA si debe anular el convoy existente o rectificarlo antes de reintentar.',
+            '27195' => 'Ya existe un convoy para el MIC Remolcador. Verifique la composición del convoy en ARCA antes de reintentar.',
+            '27177' => 'Tipo de embarcación no válido como cabecera de convoy. AFIP solo acepta EMP (Empujador) o REM (Remolcador) como cabecera.',
+            '27103' => 'Tipo de embarcación a ser remolcada inválida. Verifique que las barcazas tengan tipEmb=BAR.',
+            '27262' => 'Todos los MIC/DTA del convoy deben tener la misma ruta (mismos puertos de partida y destino).',
+            '27173' => 'No existe el MIC/DTA en AFIP. Verifique que el MIC/DTA fue registrado exitosamente antes de armar el convoy.',
+            '27107' => 'El MIC/DTA no puede ser tratado, existe un evento pendiente (baja o rectificación). Espere a que se resuelva antes de reintentar.',
+            '27104' => 'El MIC/DTA no está asignado al ATA de conexión. Verifique la asignación del ATA.',
+            '27193' => 'El tipo de embarcación no tiene capitán declarado. Registre un capitán para la embarcación antes de armar el convoy.',
+            '27194' => 'Debe declarar capitán para la embarcación cabecera del convoy.',
+            '10747' => 'El MIC/DTA debe estar en estado Registrado para conformar convoy. Verifique el estado actual en ARCA.',
+
+            // === RegistrarMicDta (relacionados a convoy) ===
+            '27127' => 'El indicador indIntegraConvoy no corresponde al tipo de embarcación. Verifique la configuración de convoy del viaje.',
+            '27261' => 'El MIC/DTA fue registrado sin indicar que integra convoy (indIntegraConvoy=N). Debe anular y re-registrar el MIC/DTA.',
+
+            // === AsignarATARemol ===
+            '12311' => 'Agente de Transporte Aduanero inexistente o no habilitado. Verifique el CUIT del ATA.',
+
+            // === RegistrarSalidaZonaPrimaria ===
+            '27176' => 'No existe un convoy para el número de viaje. Registre el convoy antes de solicitar salida de zona primaria.',
+            '27175' => 'El convoy debe estar en estado Presentado para registrar salida. Presente el convoy primero.',
+            '11073' => 'El CUIT de la empresa no está asociado al número de viaje.',
+            '14003' => 'La salida solo puede efectuarse en la aduana de partida del MIC.',
+            '10716' => 'Lugar operativo de partida del MIC/DTA difiere del lugar operativo de conexión.',
+            '27192' => 'Ya se registró la salida de zona primaria para ese número de viaje.',
+            '27129' => 'Faltan declarar los precintos del medio de transporte. Agregue precintos antes de solicitar salida.',
+            '27133' => 'La rectificación solo puede realizarse antes de la salida de zona primaria.',
+
+            // === RectifConvoyMicDta ===
+            '27132' => 'Se debe informar datos del convoy o del medio de transporte para la rectificación.',
+            '21317' => 'Número de viaje inexistente en AFIP.',
+            '27134' => 'Ya existe una rectificación de convoy pendiente de presentación.',
+            '27135' => 'Se debe informar datos de rectificación del MIC/DTA del remolcador.',
+            '27105' => 'El MIC/DTA no pertenece al convoy a rectificar.',
+            '27106' => 'El MIC/DTA no pertenece al convoy.',
+            '27172' => 'Tipo de embarcación inexistente en AFIP.',
+            '27168' => 'Tipo de transportista inválido. Valores posibles: R (Regular).',
+
+            // === Genéricos (aplican a varios métodos) ===
+            '41952' => 'El identificador de transacción debe ser de hasta 20 caracteres.',
+            '41973' => 'La transacción ya se encuentra en proceso. Espere unos minutos antes de reintentar.',
+            '42034' => 'Falta un dato obligatorio en el envío. Revise que todos los campos requeridos estén completos.',
+            '27147' => 'Destinación denunciada. Contacte a ARCA para resolver.',
+            '30331' => 'Destinación bloqueada. Contacte a ARCA para resolver.',
+            '10282' => 'Tipo de documento de identidad inválido.',
+        ];
+
+        return $traducciones[$codigo] ?? null;
     }
 
     /**
@@ -6049,7 +6246,6 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             );
 
             if ($response) {
-                $result['success'] = true;
                 $result['response_data'] = $response;
                 
                 $this->logOperation('info', 'Respuesta SOAP SolicitarAnularMicDta recibida', [
@@ -6057,7 +6253,41 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
                     'response_length' => strlen($response),
                 ]);
 
-                // Actualizar transacción con respuesta
+                // Validar mensajes AFIP (ListaErrores)
+                $afipMessages = $this->extractAfipMessages($response);
+                $hasAfipErrors = !empty($afipMessages['errores']);
+
+                if ($hasAfipErrors) {
+                    $errorTexts = array_map(function($msg) {
+                        return "[{$msg['codigo']}] {$msg['descripcion']}";
+                    }, $afipMessages['errores']);
+
+                    $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+
+                    $result['success'] = false;
+                    $result['errors'][] = $errorMessage;
+
+                    $transaction->update([
+                        'response_xml' => $response,
+                        'response_at' => now(),
+                        'status' => 'error',
+                        'error_code' => 'AFIP_ERROR',
+                        'error_message' => $errorMessage,
+                        'error_details' => [
+                            'afip' => $afipMessages['errores'] ?? [],
+                            'alertas' => $afipMessages['alertas'] ?? [],
+                            'informativos' => $afipMessages['informativos'] ?? [],
+                        ],
+                        'is_blocking_error' => true,
+                        'completed_at' => now(),
+                    ]);
+
+                    return $result;
+                }
+
+                // Sin errores AFIP => enviado OK (queda "sent" porque puede requerir procesamiento posterior)
+                $result['success'] = true;
+
                 $transaction->update([
                     'response_xml' => $response,
                     'response_at' => now(),
@@ -6114,6 +6344,23 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
                     $errorMsg = $this->extractSoapFaultMessage($responseXml);
                     throw new Exception("Error AFIP: " . $errorMsg);
                 }
+            }
+
+            // Si el envío ya reportó error (AFIP o SOAP), no forzar success acá
+            if (($soapResponse['success'] ?? false) !== true) {
+                $errorMessage = implode('. ', $soapResponse['errors'] ?? ['Error en SolicitarAnularMicDta']);
+
+                $result['success'] = false;
+                $result['solicitud_procesada'] = false;
+
+                // Asegurar que quede error si no estaba seteado
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                    'completed_at' => now(),
+                ]);
+
+                return $result;
             }
 
             // Actualizar transacción con éxito

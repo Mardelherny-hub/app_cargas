@@ -1427,14 +1427,21 @@ class SimpleXmlGenerator
             // nombre (obligatorio, C50)
             $w->writeElement('nombre', substr(htmlspecialchars($vessel->name ?? 'SIN_NOMBRE'), 0, 50));
             
+            // Determinar si es convoy (más de 1 embarcación en el viaje)
+            $esConvoy = $voyage->shipments->count() > 1;
+            
             // tipEmb (obligatorio, C3 - EMP/REM/BUM/BAR)
+            // Contextual: autopropulsado (BUM) como cabecera de convoy → EMP ante AFIP
             $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+            if ($esConvoy && $tipEmb === 'BUM') {
+                $tipEmb = 'EMP';
+            }
             $w->writeElement('tipEmb', $tipEmb);
             
             // indIntegraConvoy (obligatorio, S/N)
-            // AFIP: Solo BARCAZAS integran convoy (indIntegraConvoy=S)
-            // Remolcadores/Empujadores NO integran convoy (son autopropulsados, reciben nroViaje directo)
-            $integraConvoy = ($tipEmb === 'BAR') ? 'S' : 'N';
+            // AFIP: Si el viaje tiene más de 1 embarcación, TODOS integran convoy (S)
+            // Solo autopropulsados que viajan SOLOS llevan indIntegraConvoy=N
+            $integraConvoy = $esConvoy ? 'S' : 'N';
             $w->writeElement('indIntegraConvoy', $integraConvoy);
             
             // idFiscalATARemol (SOLO si integra convoy - CUIT del ATA remolcador)
