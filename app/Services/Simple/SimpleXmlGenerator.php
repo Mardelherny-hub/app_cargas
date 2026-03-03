@@ -1017,7 +1017,9 @@ class SimpleXmlGenerator
                         if ($shipment && $voyage->vessel_count > 1 && $shipment->is_lead_vessel) {
                             $vesselCategory = $vessel->vesselType?->category ?? '';
                             if ($vesselCategory !== 'barge') {
-                                $esLastre = true; // Remolcador/empujador en convoy sin carga
+                                // Lead en convoy: lastre SOLO si no tiene BLs con carga
+                                $tieneCarga = $shipment->billsOfLading()->count() > 0;
+                                $esLastre = !$tieneCarga;
                             }
                         }
                         if (!$esLastre) {
@@ -1446,7 +1448,7 @@ class SimpleXmlGenerator
             
             // idFiscalATARemol (SOLO si integra convoy - CUIT del ATA remolcador)
             // AFIP: "Si indIntegraConvoy=N, no debe ser informado"
-            if ($integraConvoy === 'S') {
+            if ($integraConvoy === 'S' && $tipEmb === 'BAR') {
                 $w->writeElement('idFiscalATARemol', preg_replace('/[^0-9]/', '', $this->company->tax_id));
             }
             
