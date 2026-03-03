@@ -1214,6 +1214,18 @@
                                         : json_decode($lastMicDtaExitoso->success_data, true);
                                     $nroViaje = $successDataMicDta['nro_viaje'] ?? $successDataMicDta['nroViaje'] ?? null;
                                 }
+
+                                 // Si es convoy, buscar nroViaje en la transacción de RegistrarConvoy
+                                if (empty($nroViaje) && $voyage->is_convoy) {
+                                    $lastConvoyExitoso = $voyage->webserviceTransactions()
+                                        ->where('soap_action', 'like', '%RegistrarConvoy%')
+                                        ->where('status', 'success')
+                                        ->latest('created_at')
+                                        ->first();
+                                    if ($lastConvoyExitoso) {
+                                        $nroViaje = $lastConvoyExitoso->confirmation_number;
+                                    }
+                                }
                                 
                                 // Determinar si puede ejecutar
                                 $puedeEjecutarSalidaZP = $hasMicDtaRegistrado && !empty($nroViaje);
