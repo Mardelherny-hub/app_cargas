@@ -6379,7 +6379,16 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             
             $result['success'] = true;
             $result['solicitud_procesada'] = true;
-            
+
+            // Invalidar transacción original de RegistrarMicDta para permitir re-registro
+            $originalTxId = $transaction->additional_metadata['original_micdta_transaction_id'] ?? null;
+            if ($originalTxId) {
+                \App\Models\WebserviceTransaction::where('id', $originalTxId)->update([
+                    'status' => 'cancelled',
+                    'error_message' => 'MIC/DTA anulado via SolicitarAnularMicDta - requiere re-registro',
+                ]);
+            }
+
             $this->logOperation('info', 'Solicitud anulación MIC/DTA enviada exitosamente', [
                 'transaction_id' => $transaction->id,
                 'micdta_id' => $micDtaId,
