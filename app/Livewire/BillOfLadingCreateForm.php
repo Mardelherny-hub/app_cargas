@@ -90,6 +90,9 @@ class BillOfLadingCreateForm extends Component
 
     // === CONSOLIDACIÓN ===
     public $is_consolidated = false;
+    public $is_fractional = false;
+    public $partial_packages = null;
+    public $partial_weight_kg = null;
     public $is_master_bill = false;
     public $is_house_bill = false;
     public $master_bill_number = '';
@@ -825,6 +828,9 @@ public function selectForeignLocationDischarge($locationCode)
                 'requires_refrigeration' => $this->requires_refrigeration,
                 'requires_inspection' => $this->requires_inspection,
                 'is_consolidated' => $this->is_consolidated,
+                'is_fractional' => $this->is_fractional,
+                'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
+                'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,
                 'is_master_bill' => $this->is_master_bill,
                 'is_house_bill' => $this->is_house_bill,
                 'master_bill_number' => $this->is_house_bill ? $this->master_bill_number : null,
