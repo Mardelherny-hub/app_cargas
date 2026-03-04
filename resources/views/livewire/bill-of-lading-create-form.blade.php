@@ -1278,4 +1278,3 @@
     </div>
     @endif
 </div>
-</div>
