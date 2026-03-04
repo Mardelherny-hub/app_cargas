@@ -1028,7 +1028,7 @@
                     {{-- Es Fraccionado --}}
                     <div class="flex items-start">
                         <div class="flex items-center h-5">
-                            <input wire:model="is_fractional" type="checkbox" id="is_fractional" value="1"
+                            <input wire:model.live="is_fractional" type="checkbox" id="is_fractional" value="1"
                                    class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
                         </div>
                         <div class="ml-3 text-sm">
@@ -1037,6 +1037,29 @@
                             </label>
                             <p class="text-gray-500">Carga fraccionada en múltiples transportes</p>
                         </div>
+                        {{-- Campos parciales: solo visibles si es fraccionado --}}
+                        @if($is_fractional)
+                        <div class="grid grid-cols-2 gap-4 mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                            <div>
+                                <label for="partial_packages" class="block text-sm font-medium text-gray-700">
+                                    Bultos Parciales <span class="text-red-500">*</span>
+                                </label>
+                                <input wire:model="partial_packages" type="number" id="partial_packages" min="1"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <p class="mt-1 text-xs text-gray-500">Bultos de esta fracción (debe ser menor al total)</p>
+                                @error('partial_packages') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                            </div>
+                            <div>
+                                <label for="partial_weight_kg" class="block text-sm font-medium text-gray-700">
+                                    Peso Parcial (kg) <span class="text-red-500">*</span>
+                                </label>
+                                <input wire:model="partial_weight_kg" type="number" step="0.001" id="partial_weight_kg" min="0.001"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <p class="mt-1 text-xs text-gray-500">Peso de esta fracción (debe ser menor al total)</p>
+                                @error('partial_weight_kg') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                            </div>
+                        </div>
+                        @endif
                     </div>
                         
 

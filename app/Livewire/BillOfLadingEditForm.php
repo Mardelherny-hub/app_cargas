@@ -142,6 +142,8 @@ class BillOfLadingEditForm extends Component
     // === CONSOLIDACIÓN ===
     public $is_consolidated = false;
     public $is_fractional = false;
+    public $partial_packages = null;
+    public $partial_weight_kg = null;
     public $is_master_bill = false;
     public $is_house_bill = false;
     public $master_bill_number = '';
@@ -476,6 +478,8 @@ class BillOfLadingEditForm extends Component
         // Consolidación
         $this->is_consolidated = $bl->is_consolidated ?? false;
         $this->is_fractional = $bl->is_fractional ?? false;
+        $this->partial_packages = $bl->partial_packages ?? null;
+        $this->partial_weight_kg = $bl->partial_weight_kg ?? null;
         $this->is_master_bill = $bl->is_master_bill ?? false;
         $this->is_house_bill = $bl->is_house_bill ?? false;
         $this->master_bill_number = $bl->master_bill_number ?? '';
@@ -826,6 +830,8 @@ class BillOfLadingEditForm extends Component
                 'priority_level' => $this->is_priority ? 'high' : 'normal',
                 'is_consolidated' => $this->is_consolidated,
                 'is_fractional' => $this->is_fractional,
+                'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
+                'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,
                 'is_master_bill' => $this->is_master_bill,
                 'is_house_bill' => $this->is_house_bill,
                 'master_bill_number' => $this->is_house_bill ? $this->master_bill_number : null,

@@ -333,10 +333,18 @@ class SimpleXmlGeneratorParaguay
                 $w->startElement('bultos');
                 $w->startElement('bulto');
 
-                $w->writeElement('cantBultos', (string) ($bl->total_packages ?? 1));
-                $w->writeElement('cantTotalBultos', (string) ($bl->total_packages ?? 1));
-                $w->writeElement('pesoBruto', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
-                $w->writeElement('pesoTotalBruto', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
+                // Fraccionados: parcial < total. No fraccionados: parcial = total.
+                if ($bl->is_fractional && $bl->partial_packages !== null && $bl->partial_weight_kg !== null) {
+                    $w->writeElement('cantBultos', (string) $bl->partial_packages);
+                    $w->writeElement('cantTotalBultos', (string) ($bl->total_packages ?? 1));
+                    $w->writeElement('pesoBruto', number_format($bl->partial_weight_kg, 3, '.', ''));
+                    $w->writeElement('pesoTotalBruto', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
+                } else {
+                    $w->writeElement('cantBultos', (string) ($bl->total_packages ?? 1));
+                    $w->writeElement('cantTotalBultos', (string) ($bl->total_packages ?? 1));
+                    $w->writeElement('pesoBruto', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
+                    $w->writeElement('pesoTotalBruto', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
+                }
 
                 // Indicador carga suelta (S/N)
                 $isBulkCargo = $bl->primaryPackagingType?->suitable_for_bulk_cargo ?? false;

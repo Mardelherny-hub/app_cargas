@@ -102,7 +102,10 @@ class BillOfLading extends Model
         
         // Medidas y pesos - NECESARIOS para recalculación
         'total_packages',
+        'partial_packages',
         'gross_weight_kg',
+        'partial_packages' => 'integer',
+        'partial_weight_kg' => 'decimal:3',
         'net_weight_kg',
         'volume_m3',
         'measurement_unit',
