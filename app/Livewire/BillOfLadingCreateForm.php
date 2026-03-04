@@ -833,6 +833,7 @@ public function selectForeignLocationDischarge($locationCode)
                 'status' => 'draft',
                 'created_by_user_id' => auth()->id(),
                 'last_updated_by_user_id' => auth()->id(),
+                'permiso_embarque' => $this->permiso_embarque ?: null,
                 'id_decla' => $this->id_decla,
             ];
 
