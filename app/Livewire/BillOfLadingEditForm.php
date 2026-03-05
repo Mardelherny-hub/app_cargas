@@ -841,7 +841,7 @@ class BillOfLadingEditForm extends Component
                 'last_updated_by_user_id' => auth()->id(),
             ];
 
-            dd($data);
+           
 
             $this->billOfLading->update($data);
 
