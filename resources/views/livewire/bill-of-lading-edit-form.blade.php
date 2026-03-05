@@ -1044,7 +1044,7 @@
                             <label for="partial_weight_kg" class="block text-sm font-medium text-gray-700">
                                 Peso Parcial (kg) <span class="text-red-500">*</span>
                             </label>
-                            <input wire:model.live="partial_weight_kg" type="number" step="0.001" id="partial_weight_kg" min="0.001"
+                            <input wire:model="partial_weight_kg" type="number" step="0.001" id="partial_weight_kg" min="0.001"
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                             <p class="mt-1 text-xs text-gray-500">Peso de esta fracción (debe ser menor al total)</p>
                             @error('partial_weight_kg') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
