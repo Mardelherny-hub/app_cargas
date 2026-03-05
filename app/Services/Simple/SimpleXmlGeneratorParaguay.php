@@ -815,19 +815,14 @@ class SimpleXmlGeneratorParaguay
             // ❌ SIN SOAP Envelope - XML directo (siguiendo patrón de los otros 3)
             // Nota: El manual no especifica el nombre del elemento raíz para XFCT,
             // pero por consistencia usamos un patrón similar a los demás mensajes
-            $w->startElement('CerrarViaje');
-
-            // ✅ Campo obligatorio según manual
-            $w->writeElement('nroViaje', htmlspecialchars($nroViaje));
-
+            $w->startElement('XFCT');
             // ✅ Campo opcional según manual (página 18)
             if ($observaciones) {
-                $w->writeElement('Obs', htmlspecialchars(
+                $w->writeElement('obs', htmlspecialchars(
                     substr($observaciones, 0, 100)
                 ));
             }
-
-            $w->endElement(); // CerrarViaje
+            $w->endElement(); // XFCT
 
             $w->endDocument();
             $xmlContent = $w->outputMemory();
