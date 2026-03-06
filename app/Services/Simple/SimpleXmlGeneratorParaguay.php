@@ -388,7 +388,11 @@ class SimpleXmlGeneratorParaguay
                 }
 
                 // ✅ 2. PESO BRUTO TOTAL (fuera de bultos según Roberto)
-                $w->writeElement('pesoBrutoTotal', number_format($bl->gross_weight_kg ?? 0, 3, '.', ''));
+                // Para fraccionados usar peso parcial, para no fraccionados usar peso total
+                $pesoBrutoTotal = ($bl->is_fractional && $bl->partial_weight_kg !== null)
+                    ? $bl->partial_weight_kg
+                    : $bl->gross_weight_kg ?? 0;
+                $w->writeElement('pesoBrutoTotal', number_format($pesoBrutoTotal, 3, '.', ''));
 
                 // ✅ 3. CONSIGNATARIO (sin nroDocIdent ni tipDocIdent según Roberto)
                 // Usa dirección específica del BL si existe
