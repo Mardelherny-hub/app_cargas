@@ -820,12 +820,10 @@ class SimpleXmlGeneratorParaguay
             // Nota: El manual no especifica el nombre del elemento raíz para XFCT,
             // pero por consistencia usamos un patrón similar a los demás mensajes
             $w->startElement('XFCT');
-            // ✅ Campo opcional según manual (página 18)
-            if ($observaciones) {
-                $w->writeElement('obs', htmlspecialchars(
-                    substr($observaciones, 0, 100)
-                ));
-            }
+            // ✅ Campo opcional según manual (página 18) - DNA requiere obs presente
+            $w->writeElement('obs', htmlspecialchars(
+                substr($observaciones ?? 'CIERRE', 0, 100)
+            ));
             $w->endElement(); // XFCT
 
             $w->endDocument();
