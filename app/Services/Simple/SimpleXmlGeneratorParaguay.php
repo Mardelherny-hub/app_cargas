@@ -673,6 +673,9 @@ class SimpleXmlGeneratorParaguay
             // ❌ SIN SOAP Envelope - XML directo
             $w->startElement('RutasInf'); // Plural contenedor
 
+            // Una sola rutInf por número de BL (fraccionados comparten número)
+            $billsOfLading = $billsOfLading->unique('bill_number');
+
             foreach ($billsOfLading as $bl) {
                 $w->startElement('rutInf'); // Singular
 
