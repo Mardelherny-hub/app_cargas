@@ -1363,37 +1363,60 @@
                                 </div>
                             </div>
 
-                            {{-- Botón 12: AnularArriboZonaPrimaria --}}
-                            <div class="flex flex-col">
-                                <button onclick="executeAfipMethod('AnularArriboZonaPrimaria')"
-                                        class="flex flex-col items-center justify-center p-4 bg-white border-2 border-orange-300 rounded-lg hover:bg-orange-100 hover:border-orange-400 transition-colors">
-                                    <span class="text-2xl mb-2">🚫</span>
-                                    <span class="text-sm font-medium text-center">12. AnularArribo</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Anula arribo zona primaria</span>
-                                </button>
-                                
-                                {{-- Info al pie --}}
-                                <div class="mt-2 p-2 bg-white rounded border border-orange-200 text-xs">
-                                    @if($lastAnulacionArriboZP)
-                                        <div class="flex justify-between mb-1">
-                                            <span class="text-gray-600">Última anulación:</span>
-                                            <span class="text-gray-900 font-medium">{{ $lastAnulacionArriboZP->created_at->format('d/m H:i') }}</span>
+                            {{-- ========================================================================
+                                MODAL: ANULAR ARRIBO ZONA PRIMARIA (Botón 12)
+                                ======================================================================== --}}
+                            <div id="anular-arribo-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                                <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
+                                    <div class="mt-3">
+                                        <div class="flex items-center justify-between pb-3 border-b">
+                                            <h3 class="text-lg font-medium text-orange-900">
+                                                🚫 Anular Arribo Zona Primaria
+                                            </h3>
+                                            <button onclick="closeAnularArriboModal()" class="text-gray-400 hover:text-gray-500">
+                                                <span class="text-2xl">&times;</span>
+                                            </button>
                                         </div>
-                                        <div class="flex justify-between mb-1">
-                                            <span class="text-gray-600">Motivo:</span>
-                                            <span class="text-gray-700 text-xs truncate">
-                                                {{ $lastAnulacionArriboZP->success_data['motivo'] ?? 'N/A' }}
-                                            </span>
+
+                                        <div class="mt-4 space-y-4">
+                                            <div class="bg-yellow-50 border border-yellow-200 rounded p-3">
+                                                <p class="text-xs text-yellow-800">
+                                                    ⚠ Esta acción anulará el arribo registrado en AFIP para el número de viaje indicado.
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                                    Número de Viaje <span class="text-red-500">*</span>
+                                                </label>
+                                                <input type="text" id="anular-arribo-nro-viaje" maxlength="13"
+                                                    placeholder="Ej: AR202600000005C"
+                                                    class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500 font-mono">
+                                                <p class="text-xs text-gray-500 mt-1">Número de viaje asignado por AFIP al registrar el convoy.</p>
+                                            </div>
+
+                                            <div>
+                                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                                    Motivo de Anulación <span class="text-red-500">*</span>
+                                                </label>
+                                                <textarea id="anular-arribo-motivo" rows="3" maxlength="200"
+                                                        placeholder="Describa el motivo de la anulación..."
+                                                        class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-orange-500 focus:ring-orange-500"></textarea>
+                                            </div>
                                         </div>
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-600">Estado:</span>
-                                            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
-                                                Anulado
-                                            </span>
+
+                                        <div class="mt-6 flex justify-end space-x-3 border-t pt-4">
+                                            <button onclick="closeAnularArriboModal()"
+                                                    class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                                                Cancelar
+                                            </button>
+                                            <button onclick="confirmarAnularArribo()"
+                                                    id="btn-confirmar-anular-arribo"
+                                                    class="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                Confirmar Anulación
+                                            </button>
                                         </div>
-                                    @else
-                                        <p class="text-gray-500 text-center">Sin anulaciones</p>
-                                    @endif
+                                    </div>
                                 </div>
                             </div>
 
@@ -2345,6 +2368,10 @@
 
         if (methodName === 'AnularEnvios') {
             showAnularTodoModal();
+            return;
+        }
+        if (methodName === 'AnularArriboZonaPrimaria') {
+            showAnularArriboModal();
             return;
         }
 
@@ -3604,5 +3631,65 @@
     }).catch(err => {
         alert('Error al copiar: ' + err);
     });
+}
+
+function showAnularArriboModal() {
+    document.getElementById('anular-arribo-modal').classList.remove('hidden');
+}
+
+function closeAnularArriboModal() {
+    document.getElementById('anular-arribo-modal').classList.add('hidden');
+    document.getElementById('anular-arribo-nro-viaje').value = '';
+    document.getElementById('anular-arribo-motivo').value = '';
+}
+
+async function confirmarAnularArribo() {
+    const nroViaje = document.getElementById('anular-arribo-nro-viaje').value.trim();
+    const motivo = document.getElementById('anular-arribo-motivo').value.trim();
+
+    if (!nroViaje) {
+        alert('El número de viaje es obligatorio.');
+        return;
+    }
+    if (!motivo) {
+        alert('El motivo de anulación es obligatorio.');
+        return;
+    }
+
+    if (!confirm(`¿Confirma anular el arribo del viaje ${nroViaje}?`)) return;
+
+    const btn = document.getElementById('btn-confirmar-anular-arribo');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Procesando...';
+
+    try {
+        const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/anular-arribo-zona-primaria`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+            body: JSON.stringify({
+                nro_viaje: nroViaje,
+                motivo_anulacion: motivo,
+            }),
+        });
+
+        const result = await response.json();
+        closeAnularArriboModal();
+
+        if (result.success) {
+            showMethodResult('AnularArriboZonaPrimaria', true, result);
+        } else {
+            showMethodResult('AnularArriboZonaPrimaria', false, result);
+        }
+    } catch (error) {
+        closeAnularArriboModal();
+        showMethodResult('AnularArriboZonaPrimaria', false, { error_message: error.message });
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 }
 </script>
