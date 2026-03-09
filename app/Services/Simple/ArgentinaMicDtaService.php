@@ -2406,19 +2406,15 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function processRegistrarTitMicDta(Voyage $voyage, array $data): array
     {
         try {
-            // Obtener el último RegistrarMicDta exitoso (nivel voyage)
-            $lastMicDta = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
-                ->where('webservice_type', 'micdta')
+            // Obtener todos los MIC/DTA exitosos del viaje (con o sin shipment_id)
+            $micDtaTransactions = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('soap_action', 'like', '%RegistrarMicDta%')
                 ->where('status', 'success')
-                ->whereNull('shipment_id') // Solo transacciones de nivel voyage
-                ->where(function($q) {
-                    $q->where('soap_action', 'like', '%RegistrarMicDta%')
-                    ->orWhereHas('webserviceTracks'); // O que tenga tracks asociados
-                })
+                ->whereNotNull('external_reference')
                 ->latest()
-                ->first();
+                ->get();
 
-            if (!$lastMicDta) {
+            if ($micDtaTransactions->isEmpty()) {
                 return [
                     'success' => false,
                     'error_message' => 'No se encontró un MIC/DTA registrado previamente. Debe ejecutar RegistrarMicDta (botón 3) primero.',
@@ -2426,67 +2422,91 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
-            // Usar external_reference si existe, sino usar transaction_id
-            $idMicDta = $lastMicDta->external_reference ?? 
-                        'MICDTA_' . $lastMicDta->transaction_id ?? 
-                        'MICDTA_TEMP_' . $voyage->voyage_number;
+            // Usar el primer MIC/DTA encontrado
+            $lastMicDta = $micDtaTransactions->first();
+            $idMicDta = $lastMicDta->external_reference;
 
             $this->logOperation('info', 'MIC/DTA encontrado para vincular títulos', [
                 'transaction_id' => $lastMicDta->id,
-                'external_reference' => $lastMicDta->external_reference,
-                'id_micdta_usado' => $idMicDta,
+                'external_reference' => $idMicDta,
+                'total_micdta' => $micDtaTransactions->count(),
             ]);
 
-            // Obtener títulos del voyage (números de shipment)
-            $titulos = $voyage->shipments->pluck('shipment_number')->filter()->toArray();
+            // Obtener títulos del voyage (track IDs de transacciones RegistrarTitEnvios)
+            $titulosTransactions = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                ->where('status', 'success')
+                ->whereNotNull('external_reference')
+                ->get();
+
+            $titulos = $titulosTransactions->pluck('external_reference')->filter()->toArray();
 
             if (empty($titulos)) {
                 return [
                     'success' => false,
-                    'error_message' => 'No se encontraron títulos (shipments) para vincular.',
+                    'error_message' => 'No se encontraron títulos registrados. Debe ejecutar RegistrarTitEnvios (botón 1) primero.',
                     'error_code' => 'NO_TITLES_FOUND',
                 ];
             }
 
-            $this->logOperation('info', 'Ejecutando RegistrarTitMicDta', [
-                'voyage_id' => $voyage->id,
+            // Crear transactionId único (máx 15 chars para AFIP)
+            $transactionId = 'TITMIC' . time() . $voyage->id;
+            $transactionId = substr($transactionId, 0, 15);
+
+            // Generar XML
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createRegistrarTitMicDtaXml([
                 'id_micdta' => $idMicDta,
-                'titulos_count' => count($titulos),
                 'titulos' => $titulos,
-            ]);
+            ], $transactionId);
 
-            // Crear transacción
-            $transactionId = 'TITMDC_' . time() . '_' . $voyage->id;
-            $transaction = \App\Models\WebserviceTransaction::create([
-                'company_id' => $this->company->id,
-                'user_id' => $this->user->id,
-                'voyage_id' => $voyage->id,
+            if (!$xmlContent) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para RegistrarTitMicDta',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitMicDta',
+                SOAP_1_1,
+                false
+            );
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                throw new Exception("SOAP Fault en RegistrarTitMicDta: " . $errorMsg);
+            }
+
+            // Verificar errores AFIP
+            $afipErrors = $this->extractAfipErrors($response);
+            if (!empty($afipErrors)) {
+                $errorDesc = implode(', ', array_column($afipErrors, 'descripcion'));
+                return [
+                    'success' => false,
+                    'error_message' => 'Error AFIP: ' . $errorDesc,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_errors' => $afipErrors,
+                ];
+            }
+
+            // Guardar transacción
+            $this->createWebserviceTransaction($voyage, [
                 'transaction_id' => $transactionId,
-                'webservice_type' => 'micdta',
-                'country' => 'AR',
                 'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitMicDta',
-                'status' => 'pending',
-                'environment' => $this->config['environment'],
-                'webservice_url' => $this->getWsdlUrl(),
-            ]);
-
-            // TODO: Aquí iría la generación del XML y envío SOAP real
-            // Por ahora, simulamos éxito para testing
-            
-            $transaction->update([
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
                 'status' => 'success',
-                'external_reference' => $idMicDta,
-                'completed_at' => now(),
-                'response_at' => now(),
-                'success_data' => [
-                    'id_micdta' => $idMicDta,
-                    'titulos_vinculados' => $titulos,
-                    'vinculacion_exitosa' => true,
-                ],
             ]);
 
             $this->logOperation('info', 'RegistrarTitMicDta ejecutado exitosamente', [
-                'transaction_id' => $transaction->id,
+                'voyage_id' => $voyage->id,
                 'id_micdta' => $idMicDta,
                 'titulos_vinculados' => count($titulos),
             ]);
@@ -2496,7 +2516,6 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'method' => 'RegistrarTitMicDta',
                 'message' => 'Títulos vinculados exitosamente al MIC/DTA',
                 'data' => [
-                    'transaction_id' => $transaction->transaction_id,
                     'id_micdta' => $idMicDta,
                     'titulos_vinculados' => count($titulos),
                     'titulos' => $titulos,
@@ -2508,7 +2527,6 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'voyage_id' => $voyage->id,
                 'error' => $e->getMessage(),
             ]);
-
             return [
                 'success' => false,
                 'error_message' => $e->getMessage(),
@@ -3375,9 +3393,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // 8. Guardar transacción exitosa
             $this->createWebserviceTransaction($voyage, [
                 'transaction_id' => $transactionId,
-                'webservice_method' => 'RegistrarArriboZonaPrimaria',
-                'request_data' => $requestData,
-                'response_data' => ['arribo_registrado' => true],
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarArriboZonaPrimaria',
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
                 'status' => 'success',
             ]);
 
@@ -3477,9 +3495,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // 8. Guardar transacción exitosa
             $this->createWebserviceTransaction($voyage, [
                 'transaction_id' => $transactionId,
-                'webservice_method' => 'AnularArriboZonaPrimaria',
-                'request_data' => $requestData,
-                'response_data' => ['arribo_anulado' => true],
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/AnularArriboZonaPrimaria',
+                'request_xml' => $xmlContent,
+                'response_xml' => $response,
                 'status' => 'success',
             ]);
 
