@@ -4155,6 +4155,164 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * ConsultarPrecumplido - Consultar valores de precumplido de destinación
+     */
+    private function processConsultarPrecumplido(Voyage $voyage, array $data): array
+    {
+        $transactionId = 'CONSULTA_PRECUMPLIDO_' . time() . '_' . $voyage->id;
+        $transaction = null;
+
+        try {
+            $this->logOperation('info', 'Iniciando ConsultarPrecumplido', [
+                'voyage_id' => $voyage->id,
+                'voyage_number' => $voyage->voyage_number,
+            ]);
+
+            $transaction = \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+                'webservice_type' => 'micdta',
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarPrecumplido',
+                'country' => 'AR',
+                'status' => 'pending',
+                'environment' => $this->config['environment'] ?? 'testing',
+                'webservice_url' => $this->getWsdlUrl(),
+                'sent_at' => now(),
+            ]);
+
+            $consultaData = [];
+            if (!empty($data['destinacion_id'])) {
+                $consultaData['destinacion_id'] = $data['destinacion_id'];
+            }
+            if (!empty($data['codigo_aduana'])) {
+                $consultaData['codigo_aduana'] = $data['codigo_aduana'];
+            }
+
+            $xmlContent = $this->xmlSerializer->createConsultarPrecumplidoXml($consultaData, $transactionId);
+
+            if (!$xmlContent) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => 'Error generando XML para ConsultarPrecumplido',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                    'response_at' => now(),
+                ]);
+                return [
+                    'success' => false,
+                    'error_message' => 'Error generando XML para ConsultarPrecumplido',
+                    'error_code' => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            $transaction->update(['request_xml' => $xmlContent]);
+
+            $soapClient = $this->createSoapClient();
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarPrecumplido',
+                SOAP_1_1,
+                false
+            );
+
+            if ($response === null || $response === false) {
+                $errorMsg = 'SOAP response null para ConsultarPrecumplido';
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMsg,
+                    'response_at' => now(),
+                ]);
+                return [
+                    'success' => false,
+                    'error_message' => $errorMsg,
+                    'error_code' => 'SOAP_NULL_RESPONSE',
+                ];
+            }
+
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+            ]);
+
+            if ($this->parser->hasSoapFault($response)) {
+                $errorMsg = $this->parser->extractSoapFault($response);
+                $errorCode = $this->parser->extractAfipErrorCode($response);
+                $fullError = "SOAP Fault: {$errorMsg}";
+                if ($errorCode) {
+                    $fullError .= " (Código AFIP: {$errorCode})";
+                }
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $fullError,
+                    'error_code' => $errorCode,
+                ]);
+                return [
+                    'success' => false,
+                    'error_message' => $fullError,
+                    'error_code' => $errorCode ?: 'SOAP_FAULT',
+                ];
+            }
+
+            $afipMessages = $this->extractAfipMessages($response);
+
+            if (!empty($afipMessages['errores'])) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $errorMessage,
+                ]);
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
+            $transaction->update([
+                'status' => 'success',
+                'success_data' => ['response_raw' => substr($response, 0, 500)],
+            ]);
+
+            $this->logOperation('info', 'ConsultarPrecumplido exitoso', [
+                'voyage_id' => $voyage->id,
+                'transaction_id' => $transactionId,
+            ]);
+
+            return [
+                'success' => true,
+                'method' => 'ConsultarPrecumplido',
+                'afip_messages' => $afipMessages,
+                'response' => $response,
+                'transaction_id' => $transactionId,
+            ];
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error en ConsultarPrecumplido', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+            if ($transaction) {
+                $transaction->update([
+                    'status' => 'error',
+                    'error_message' => $e->getMessage(),
+                    'response_at' => now(),
+                ]);
+            }
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage() ?: 'Error desconocido en ConsultarPrecumplido',
+                'error_code' => 'CONSULTAR_PRECUMPLIDO_ERROR',
+            ];
+        }
+    }
+
+    /**
      * RESET TOTAL - Anular TODO el viaje (volver a fojas cero)
      */
     private function processResetTotal(Voyage $voyage, array $data): array
