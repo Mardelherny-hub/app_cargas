@@ -221,21 +221,8 @@ class ArgentinaAnticipatedService
             // Enviar request SOAP
             $soapResult = $this->sendSoapRequest($transaction, $soapClient, $xmlContent, 'RegistrarViaje');
 
-            // Procesar respuesta
-            // Extraer IdentificadorViaje de la respuesta XML
-            // Extraer IdentificadorViaje de la respuesta (AFIP devuelve HTML)
-            $voyageIdentifier = null;
-            if (isset($soapResult['response_data'])) {
-                $response = $soapResult['response_data'];
-                
-                // AFIP devuelve: <title></title>NUMERO_IDENTIFICADOR</head>
-                if (preg_match('/<\/title>(\d+)<\/head>/', $response, $matches)) {
-                    $voyageIdentifier = $matches[1];
-                    \Log::info("IdentificadorViaje extraído de HTML", ['identificador' => $voyageIdentifier]);
-                } else {
-                    \Log::warning("No se encontró IdentificadorViaje en respuesta", ['response' => substr($response, 0, 200)]);
-                }
-            }
+            // Usar el IdentificadorViaje ya extraído por sendSoapRequest()
+            $voyageIdentifier = $soapResult['external_reference'] ?? null;
 
             if ($soapResult['success']) {
                 $transaction->update([
@@ -393,7 +380,7 @@ class ArgentinaAnticipatedService
                     'external_reference' => $voyageIdentifier,
                 ]);
 
-                Log::info('RectificarViaje enviado exitosamente', [
+                Log::info('RegistrarTitulosCbc enviado exitosamente', [
                     'voyage_id' => $voyage->id,
                     'transaction_id' => $transaction->id,
                     'external_reference' => $voyageIdentifier,
@@ -840,7 +827,7 @@ class ArgentinaAnticipatedService
             }
 
             $soapResult = [
-                'success' => !$hasError && $externalReference !== null,
+                'success' => !$hasError,
                 'response_data' => $response,
                 'response_time_ms' => $responseTime,
                 'request_xml' => $xmlContent,
