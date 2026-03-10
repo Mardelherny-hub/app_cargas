@@ -2247,6 +2247,8 @@ class SimpleXmlGenerator
             $xml .= '<codLugOper>' . htmlspecialchars($arriboData['cod_lug_oper']) . '</codLugOper>';
             if (!empty($arriboData['desc_amarre'])) {
                 $xml .= '<descAmarre>' . htmlspecialchars($arriboData['desc_amarre']) . '</descAmarre>';
+            } else {
+                $xml .= '<descAmarre xsi:nil="true" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>';
             }
             $xml .= '<nroViaje>' . htmlspecialchars($arriboData['nro_viaje']) . '</nroViaje>';
             $xml .= '</argRegistrarArriboZonaPrimariaParam>';

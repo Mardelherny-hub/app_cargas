@@ -2583,11 +2583,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $lastMicDta = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('webservice_type', 'micdta')
                 ->where('status', 'success')
-                ->whereNull('shipment_id')
-                ->where(function($q) {
-                    $q->where('soap_action', 'like', '%RegistrarMicDta%')
-                    ->orWhereHas('webserviceTracks');
-                })
+                ->where('soap_action', 'like', '%RegistrarMicDta%')
+                ->where('soap_action', 'not like', '%RegistrarTitMicDta%')
+                ->whereNotNull('external_reference')
                 ->latest()
                 ->first();
 
