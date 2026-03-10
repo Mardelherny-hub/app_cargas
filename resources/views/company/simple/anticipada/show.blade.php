@@ -418,6 +418,9 @@
                                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Referencia
                                             </th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                XMLs
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody class="bg-white divide-y divide-gray-200">
@@ -439,6 +442,28 @@
                                                 </td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                     {{ $transaction->external_reference ?? '-' }}
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                                    <div class="flex items-center gap-2">
+                                                        @if($transaction->request_xml)
+                                                            <button type="button"
+                                                                    onclick="verXml({{ $transaction->id }}, 'request')"
+                                                                    class="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                                                📤 Request
+                                                            </button>
+                                                        @else
+                                                            <span class="text-xs text-gray-400">Sin Request</span>
+                                                        @endif
+                                                        @if($transaction->response_xml)
+                                                            <button type="button"
+                                                                    onclick="verXml({{ $transaction->id }}, 'response')"
+                                                                    class="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-700 hover:bg-green-200">
+                                                                📥 Response
+                                                            </button>
+                                                        @else
+                                                            <span class="text-xs text-gray-400">Sin Response</span>
+                                                        @endif
+                                                    </div>
                                                 </td>
                                             </tr>
                                         @endforeach
@@ -658,5 +683,66 @@
                 closeModal();
             }
         });
+    </script>
+    {{-- Modal XML Viewer --}}
+    <div id="modal-xml" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-xml-title" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="cerrarModalXml()"></div>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-xml-title">XML</h3>
+                        <button onclick="cerrarModalXml()" class="text-gray-400 hover:text-gray-500">
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="modal-xml-content" class="bg-gray-50 rounded p-4 overflow-auto max-h-96">
+                        <pre class="text-xs text-gray-800 whitespace-pre-wrap" id="modal-xml-pre"></pre>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button onclick="copiarXml()" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:ml-3 sm:w-auto sm:text-sm">
+                        📋 Copiar
+                    </button>
+                    <button onclick="cerrarModalXml()" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function verXml(transactionId, type) {
+        fetch(`/company/webservices/transaction/${transactionId}/xml/${type}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('modal-xml-title').textContent = 
+                        type === 'request' ? '📤 Request XML' : '📥 Response XML';
+                    document.getElementById('modal-xml-pre').textContent = data.xml;
+                    document.getElementById('modal-xml').classList.remove('hidden');
+                } else {
+                    alert('Error obteniendo XML: ' + (data.message || 'Error desconocido'));
+                }
+            })
+            .catch(error => {
+                alert('Error de conexión: ' + error.message);
+            });
+    }
+
+    function cerrarModalXml() {
+        document.getElementById('modal-xml').classList.add('hidden');
+        document.getElementById('modal-xml-pre').textContent = '';
+    }
+
+    function copiarXml() {
+        const text = document.getElementById('modal-xml-pre').textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            alert('XML copiado al portapapeles');
+        });
+    }
     </script>
 </x-app-layout>
