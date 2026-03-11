@@ -2350,7 +2350,7 @@ public function micDtaSend(Request $request, Voyage $voyage)
 
             // Si está vacío o es un contador, obtener del voyage
             if (empty($titulos) || is_int($titulos)) {
-                $titulos = $voyage->shipments->pluck('shipment_number')->filter()->toArray();
+                $titulos = $voyage->load('shipments')->shipments->pluck('shipment_number')->filter()->toArray();
             }
 
             return response()->json([
