@@ -2469,6 +2469,33 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
                 $idMicDta = $micDtaTx->external_reference;
 
+                // Obtener nroViaje del convoy o del propio MIC/DTA
+                $convoyTx = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                    ->where('soap_action', 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarConvoy')
+                    ->where('status', 'success')
+                    ->latest('id')
+                    ->first();
+
+                $nroViaje = null;
+                if ($convoyTx) {
+                    $nroViaje = $convoyTx->external_reference
+                        ?? ($convoyTx->success_data['nro_viaje'] ?? null)
+                        ?? ($convoyTx->success_data['nroViaje'] ?? null);
+                }
+                if (empty($nroViaje)) {
+                    $nroViaje = $micDtaTx->success_data['nro_viaje'] ?? null;
+                }
+                $nroViaje = trim((string) $nroViaje);
+
+                if (empty($nroViaje)) {
+                    $errors[] = [
+                        'shipment' => $shipment->shipment_number,
+                        'error' => 'No se encontró nroViaje. Ejecute RegistrarConvoy o RegistrarMicDta primero.',
+                        'error_code' => 'NRO_VIAJE_NOT_FOUND',
+                    ];
+                    continue;
+                }
+
                 // Verificar si ya se vinculó exactamente este conjunto de títulos
                 $txVinculada = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
                     ->where('shipment_id', $shipment->id)
@@ -2507,6 +2534,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $xmlContent = $xmlGenerator->createRegistrarTitMicDtaXml([
                     'id_micdta' => $idMicDta,
                     'titulos' => $titulos,
+                    'nro_viaje' => $nroViaje,
                 ], $transactionId);
 
                 if (!$xmlContent) {

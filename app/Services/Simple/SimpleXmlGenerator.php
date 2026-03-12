@@ -2348,6 +2348,10 @@ class SimpleXmlGenerator
                 throw new Exception('Lista de títulos obligatoria');
             }
 
+            if (empty($vinculacionData['nro_viaje'])) {
+                throw new Exception('Número de viaje (nroViaje) obligatorio');
+            }
+
             // Validar longitudes según AFIP
             if (strlen($vinculacionData['id_micdta']) > 16) {
                 throw new Exception('ID MIC/DTA no puede exceder 16 caracteres');
@@ -2385,23 +2389,22 @@ class SimpleXmlGenerator
 
                 // Parámetros específicos del método
                 $w->startElement('argRegistrarTitMicDtaParam');
-                    
-                    // ID Transacción (obligatorio)
+
                     $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
-                    
-                    // ID MIC/DTA al cual vincular títulos (obligatorio)
-                    $w->writeElement('idMicDta', htmlspecialchars($vinculacionData['id_micdta']));
-                    
-                    // Lista de títulos de transporte a vincular
-                    $w->startElement('idTitTrans');
+                    $w->writeElement('nroViaje', htmlspecialchars($vinculacionData['nro_viaje']));
+
+                    $w->startElement('titMicDtas');
                     foreach ($vinculacionData['titulos'] as $titulo) {
                         $tituloId = is_array($titulo) ? ($titulo['id'] ?? $titulo['id_titulo'] ?? '') : (string)$titulo;
                         if (!empty($tituloId)) {
-                            $w->writeElement('string', htmlspecialchars(substr($tituloId, 0, 36)));
+                            $w->startElement('TitMicDta');
+                                $w->writeElement('idMicDta', htmlspecialchars($vinculacionData['id_micdta']));
+                                $w->writeElement('idTitTrans', htmlspecialchars(substr($tituloId, 0, 36)));
+                            $w->endElement(); // TitMicDta
                         }
                     }
-                    $w->endElement(); // idTitTrans
-                    
+                    $w->endElement(); // titMicDtas
+
                 $w->endElement(); // argRegistrarTitMicDtaParam
                 $w->endElement(); // RegistrarTitMicDta
             $w->endElement(); // Body
