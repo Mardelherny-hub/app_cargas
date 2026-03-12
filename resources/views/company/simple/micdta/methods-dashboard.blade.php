@@ -249,8 +249,17 @@
                 
                 // Contar títulos actualmente vinculados
                 $countTitulosVinculados = 0;
-                if ($titulosVinculados && isset($titulosVinculados->success_data['titulos_vinculados'])) {
-                    $countTitulosVinculados = count($titulosVinculados->success_data['titulos_vinculados']);
+                if ($titulosVinculados) {
+                    $sd = $titulosVinculados->success_data ?? [];
+                    if (!empty($sd['contenedores_con_carga'])) {
+                        $countTitulosVinculados = count($sd['contenedores_con_carga']);
+                    } elseif (!empty($sd['cargas_sueltas_tracks'])) {
+                        $countTitulosVinculados = count($sd['cargas_sueltas_tracks']);
+                    } elseif (!empty($sd['titulos_vinculados'])) {
+                        $countTitulosVinculados = count($sd['titulos_vinculados']);
+                    } elseif (isset($sd['vinculado']) && $sd['vinculado']) {
+                        $countTitulosVinculados = 1;
+                    }
                 }
                 
                 // Última desvinculación (DesvincularTitMicDta)
