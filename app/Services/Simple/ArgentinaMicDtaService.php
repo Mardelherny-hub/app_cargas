@@ -2568,7 +2568,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'nro_viaje' => $nroViaje,
                     'contenedores_con_carga' => $contenedoresConCarga,
                     'cargas_sueltas_tracks' => $cargasSueltasIdTrack,
-                ], $transactionId);
+                ], $transactionId, $voyage);
 
                 if (!$xmlContent) {
                     $errors[] = [
@@ -2625,17 +2625,18 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'country' => 'AR',
                     'status' => 'success',
                     'environment' => $this->config['environment'] ?? 'testing',
+                    'webservice_url' => $this->getWsdlUrl(),
                     'request_xml' => $xmlContent,
                     'response_xml' => $response,
                     'external_reference' => $idMicDta,
                     'success_data' => [
                         'id_micdta' => $idMicDta,
-                        'titulos' => $titulos,
+                        'contenedores_con_carga' => $contenedoresConCarga,
+                        'cargas_sueltas_tracks' => $cargasSueltasIdTrack,
                         'vinculado' => true,
                     ],
                     'sent_at' => now(),
                     'response_at' => now(),
-                    'completed_at' => now(),
                 ]);
 
                 $results[] = [

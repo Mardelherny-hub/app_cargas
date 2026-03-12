@@ -2336,7 +2336,7 @@ class SimpleXmlGenerator
      * @param string $transactionId ID único de transacción (máx 15 chars)
      * @return string|null XML completo o null si error
      */
-    public function createRegistrarTitMicDtaXml(array $vinculacionData, string $transactionId): ?string
+    public function createRegistrarTitMicDtaXml(array $vinculacionData, string $transactionId, Voyage $voyage): ?string
     {
         try {
             // Validar datos obligatorios
@@ -2407,6 +2407,7 @@ class SimpleXmlGenerator
                                 }
                                 $w->endElement(); // cargasSueltasIdTrack
                             }
+                        $this->writeRutasInf($w, $voyage);
                         $w->endElement(); // TitMicDta
                     $w->endElement(); // titMicDtas
                 $w->endElement(); // argRegistrarTitMicDtaParam
