@@ -2344,10 +2344,9 @@ class SimpleXmlGenerator
                 throw new Exception('ID MIC/DTA obligatorio');
             }
             
-            if (empty($vinculacionData['titulos']) || !is_array($vinculacionData['titulos'])) {
-                throw new Exception('Lista de títulos obligatoria');
+            if (empty($vinculacionData['contenedores_con_carga']) && empty($vinculacionData['cargas_sueltas_tracks'])) {
+                throw new Exception('Se requiere al menos contenedores con carga o TRACKs de carga suelta');
             }
-
             if (empty($vinculacionData['nro_viaje'])) {
                 throw new Exception('Número de viaje (nroViaje) obligatorio');
             }
@@ -2389,21 +2388,28 @@ class SimpleXmlGenerator
 
                 // Parámetros específicos del método
                 $w->startElement('argRegistrarTitMicDtaParam');
-
                     $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
                     $w->writeElement('nroViaje', htmlspecialchars($vinculacionData['nro_viaje']));
-
                     $w->startElement('titMicDtas');
-                    foreach ($vinculacionData['titulos'] as $titulo) {
-                        $tituloId = is_array($titulo) ? ($titulo['id'] ?? $titulo['id_titulo'] ?? '') : (string)$titulo;
-                        if (!empty($tituloId)) {
-                            $w->startElement('TitMicDta');
-                                $w->writeElement('idMicDta', htmlspecialchars($vinculacionData['id_micdta']));
-                                $w->writeElement('idTitTrans', htmlspecialchars(substr($tituloId, 0, 36)));
-                            $w->endElement(); // TitMicDta
-                        }
-                    }
+                        $w->startElement('TitMicDta');
+                            $w->writeElement('idMicDta', htmlspecialchars($vinculacionData['id_micdta']));
+                            if (!empty($vinculacionData['contenedores_con_carga'])) {
+                                $w->startElement('contenedoresConCarga');
+                                foreach ($vinculacionData['contenedores_con_carga'] as $idCont) {
+                                    $w->writeElement('idCont', htmlspecialchars($idCont));
+                                }
+                                $w->endElement(); // contenedoresConCarga
+                            }
+                            if (!empty($vinculacionData['cargas_sueltas_tracks'])) {
+                                $w->startElement('cargasSueltasIdTrack');
+                                foreach ($vinculacionData['cargas_sueltas_tracks'] as $track) {
+                                    $w->writeElement('cargaSueltaIdTrack', htmlspecialchars($track));
+                                }
+                                $w->endElement(); // cargasSueltasIdTrack
+                            }
+                        $w->endElement(); // TitMicDta
                     $w->endElement(); // titMicDtas
+                $w->endElement(); // argRegistrarTitMicDtaParam
 
                 $w->endElement(); // argRegistrarTitMicDtaParam
                 $w->endElement(); // RegistrarTitMicDta
