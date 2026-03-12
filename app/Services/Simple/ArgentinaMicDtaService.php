@@ -2519,22 +2519,55 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     }
                 }
 
-                $this->logOperation('info', 'Vinculando títulos a MIC/DTA por shipment', [
+                $this->logOperation('info', 'Vinculando carga a MIC/DTA por shipment', [
                     'shipment_id' => $shipment->id,
                     'shipment_number' => $shipment->shipment_number,
                     'id_micdta' => $idMicDta,
-                    'titulos' => $titulos,
                 ]);
+                // Recolectar contenedores y tracks según tipo de carga del shipment
+                $contenedoresConCarga = [];
+                $cargasSueltasIdTrack = [];
 
+                $shipment->load('billsOfLading.shipmentItems.containers');
+                foreach ($shipment->billsOfLading as $bl) {
+                    foreach ($bl->shipmentItems as $item) {
+                        if ($item->cargo_type_id == 9) {
+                            foreach ($item->containers as $container) {
+                                if (!empty($container->container_number)) {
+                                    $contenedoresConCarga[] = $container->container_number;
+                                }
+                            }
+                        } else {
+                            $tracks = \App\Models\WebserviceTrack::where('shipment_id', $shipment->id)
+                                ->whereNotNull('track_number')
+                                ->pluck('track_number')
+                                ->unique()
+                                ->values()
+                                ->toArray();
+                            $cargasSueltasIdTrack = array_merge($cargasSueltasIdTrack, $tracks);
+                        }
+                    }
+                }
+                $contenedoresConCarga = array_unique($contenedoresConCarga);
+                $cargasSueltasIdTrack = array_unique($cargasSueltasIdTrack);
+
+                if (empty($contenedoresConCarga) && empty($cargasSueltasIdTrack)) {
+                    $errors[] = [
+                        'shipment' => $shipment->shipment_number,
+                        'error' => 'No se encontraron contenedores ni TRACKs para vincular al MIC/DTA.',
+                        'error_code' => 'NO_CARGO_FOUND',
+                    ];
+                    continue;
+                }
                 // Crear transactionId único (máx 15 chars para AFIP)
                 $transactionId = 'TM' . time() . '_' . $shipment->id;
-
                 // Generar XML
                 $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
                 $xmlContent = $xmlGenerator->createRegistrarTitMicDtaXml([
                     'id_micdta' => $idMicDta,
-                    'titulos' => $titulos,
                     'nro_viaje' => $nroViaje,
+                    'contenedores_con_carga' => $contenedoresConCarga,
+                    'cargas_sueltas_tracks' => $cargasSueltasIdTrack,
                 ], $transactionId);
 
                 if (!$xmlContent) {
