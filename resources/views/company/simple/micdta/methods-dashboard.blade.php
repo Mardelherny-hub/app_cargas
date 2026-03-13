@@ -1799,6 +1799,9 @@
                         </div>
 
                         <div class="mt-4 flex items-center">
+                            <div class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                                <p class="text-xs text-yellow-800">⚠️ Esta operación desvincula el título del MIC/DTA en AFIP.</p>
+                            </div>
                             <input type="checkbox" id="select-all-titulos" class="h-4 w-4 text-blue-600 rounded" onchange="toggleSelectAllTitulos()">
                             <label for="select-all-titulos" class="ml-2 text-sm text-gray-700">
                                 Seleccionar todos
@@ -1855,7 +1858,7 @@
 
                     <div id="registrar-tit-content" class="hidden">
                         <p class="text-sm text-gray-600 mb-4">
-                            Seleccioná los shipments que querés vincular al MIC/DTA:
+                            Seleccioná los títulos que querés agregar al MIC/DTA:
                         </p>
 
                         <div class="max-h-96 overflow-y-auto border border-gray-200 rounded-md p-4">
@@ -3704,17 +3707,20 @@
         container.innerHTML = '';
         
         titulos.forEach((titulo, index) => {
+            const idTitTrans = titulo.id_tit_trans ?? titulo;
+            const billNumber = titulo.bill_number ?? '';
             const div = document.createElement('div');
             div.className = 'flex items-center p-3 hover:bg-gray-50 rounded border border-gray-200 cursor-pointer';
-            div.onclick = function() { selectTituloAnular(titulo, div); };
+            div.onclick = function() { selectTituloAnular(idTitTrans, div); };
             div.innerHTML = `
                 <input type="radio" 
                     name="titulo-anular" 
                     id="titulo-anular-${index}" 
-                    value="${titulo}" 
+                    value="${idTitTrans}" 
                     class="h-4 w-4 text-red-600">
                 <label for="titulo-anular-${index}" class="ml-3 text-sm text-gray-900 font-mono flex-1 cursor-pointer">
-                    ${titulo}
+                    ${idTitTrans}
+                    ${billNumber ? `<span class="text-xs text-gray-500 ml-2">${billNumber}</span>` : ''}
                 </label>
             `;
             container.appendChild(div);
