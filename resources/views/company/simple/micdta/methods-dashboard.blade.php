@@ -1824,6 +1824,73 @@
     </div>
 
     {{-- ========================================================================
+    MODAL: REGISTRAR TIT MICDTA (Botón 7)
+    ======================================================================== --}}
+    <div id="registrar-tit-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                {{-- Header --}}
+                <div class="flex items-center justify-between pb-3 border-b">
+                    <h3 class="text-lg font-medium text-gray-900">
+                        📝 Vincular Títulos a MIC/DTA
+                    </h3>
+                    <button onclick="closeRegistrarTitModal()" class="text-gray-400 hover:text-gray-500">
+                        <span class="text-2xl">&times;</span>
+                    </button>
+                </div>
+
+                {{-- Body --}}
+                <div class="mt-4">
+                    <div id="registrar-tit-loading" class="text-center py-8">
+                        <svg class="animate-spin h-8 w-8 mx-auto text-blue-600" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="mt-2 text-sm text-gray-600">Cargando shipments disponibles...</p>
+                    </div>
+
+                    <div id="registrar-tit-error" class="hidden mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                        <p class="text-sm text-red-700"></p>
+                    </div>
+
+                    <div id="registrar-tit-content" class="hidden">
+                        <p class="text-sm text-gray-600 mb-4">
+                            Seleccioná los shipments que querés vincular al MIC/DTA:
+                        </p>
+
+                        <div class="max-h-96 overflow-y-auto border border-gray-200 rounded-md p-4">
+                            <div id="shipments-list" class="space-y-2">
+                                {{-- Se llenará dinámicamente --}}
+                            </div>
+                        </div>
+
+                        <div class="mt-4 flex items-center">
+                            <input type="checkbox" id="select-all-shipments" class="h-4 w-4 text-blue-600 rounded" onchange="toggleSelectAllShipments()">
+                            <label for="select-all-shipments" class="ml-2 text-sm text-gray-700">
+                                Seleccionar todos
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Footer --}}
+                <div class="mt-6 flex justify-end space-x-3 border-t pt-4">
+                    <button onclick="closeRegistrarTitModal()"
+                            class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                        Cancelar
+                    </button>
+                    <button onclick="confirmarRegistrarTit()"
+                            id="btn-confirmar-registrar-tit"
+                            disabled
+                            class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Vincular Seleccionados
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ========================================================================
         MODAL: SOLICITAR ANULAR MIC/DTA (Botón 16)
         ======================================================================== --}}
     <div id="anular-micdta-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -2401,6 +2468,11 @@
      */
     async function executeAfipMethod(methodName) {
 
+        if (methodName === 'RegistrarTitMicDta') {
+            showRegistrarTitModal();
+            return;
+        }
+
         if (methodName === 'DesvincularTitMicDta') {
             showDesvincularModal();
             return;
@@ -2826,6 +2898,134 @@
             errorDiv.classList.remove('hidden');
             errorDiv.querySelector('p').textContent = error.message || 'Error al cargar títulos vinculados';
         }
+    }
+
+    // ========================================================================
+    // MODAL REGISTRAR TIT MICDTA (Botón 7)
+    // ========================================================================
+
+    async function showRegistrarTitModal() {
+        const modal = document.getElementById('registrar-tit-modal');
+        const loading = document.getElementById('registrar-tit-loading');
+        const content = document.getElementById('registrar-tit-content');
+        const errorDiv = document.getElementById('registrar-tit-error');
+
+        modal.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        content.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/shipments-disponibles`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (result.success && result.shipments && result.shipments.length > 0) {
+                renderShipmentsList(result.shipments);
+                loading.classList.add('hidden');
+                content.classList.remove('hidden');
+            } else {
+                throw new Error(result.error || 'No hay shipments disponibles para vincular');
+            }
+
+        } catch (error) {
+            loading.classList.add('hidden');
+            errorDiv.classList.remove('hidden');
+            errorDiv.querySelector('p').textContent = error.message || 'Error al cargar shipments';
+        }
+    }
+
+    function renderShipmentsList(shipments) {
+        const container = document.getElementById('shipments-list');
+        container.innerHTML = '';
+
+        shipments.forEach((shipment, index) => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center p-2 hover:bg-gray-50 rounded';
+            div.innerHTML = `
+                <input type="checkbox"
+                    id="shipment-${index}"
+                    value="${shipment.id}"
+                    class="shipment-checkbox h-4 w-4 text-green-600 rounded"
+                    onchange="updateRegistrarTitButton()">
+                <label for="shipment-${index}" class="ml-2 text-sm text-gray-900 font-mono cursor-pointer flex-1">
+                    ${shipment.shipment_number}
+                </label>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function toggleSelectAllShipments() {
+        const selectAll = document.getElementById('select-all-shipments');
+        document.querySelectorAll('.shipment-checkbox').forEach(cb => {
+            cb.checked = selectAll.checked;
+        });
+        updateRegistrarTitButton();
+    }
+
+    function updateRegistrarTitButton() {
+        const checked = document.querySelectorAll('.shipment-checkbox:checked');
+        const button = document.getElementById('btn-confirmar-registrar-tit');
+        button.disabled = checked.length === 0;
+        button.textContent = checked.length > 0
+            ? `Vincular ${checked.length} Shipment(s)`
+            : 'Vincular Seleccionados';
+    }
+
+    async function confirmarRegistrarTit() {
+        const checked = document.querySelectorAll('.shipment-checkbox:checked');
+        const shipmentIds = Array.from(checked).map(cb => parseInt(cb.value));
+
+        if (shipmentIds.length === 0) {
+            alert('Debe seleccionar al menos un shipment');
+            return;
+        }
+
+        if (!confirm(`¿Confirma vincular ${shipmentIds.length} shipment(s) al MIC/DTA?`)) {
+            return;
+        }
+
+        const button = document.getElementById('btn-confirmar-registrar-tit');
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.innerHTML = `<svg class="animate-spin h-5 w-5 mx-auto" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>`;
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/registrar-tit-micdta`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ shipment_ids: shipmentIds })
+            });
+
+            const result = await response.json();
+            closeRegistrarTitModal();
+            showResultModal('RegistrarTitMicDta', result, response.ok);
+
+            if (result.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+
+        } catch (error) {
+            showResultModal('RegistrarTitMicDta', { error: 'Error de comunicación: ' + error.message }, false);
+        } finally {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+
+    function closeRegistrarTitModal() {
+        document.getElementById('registrar-tit-modal').classList.add('hidden');
     }
 
     function renderTitulosList(titulos) {

@@ -2375,6 +2375,72 @@ public function micDtaSend(Request $request, Voyage $voyage)
     }
 
     /**
+     * Obtener shipments disponibles para vincular a MIC/DTA (AJAX)
+     *
+     * Ruta: GET /webservices/micdta/{voyage}/shipments-disponibles
+     *
+     * @param Voyage $voyage
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getShipmentsDisponibles(Voyage $voyage)
+    {
+        try {
+            $company = $this->getUserCompany();
+            if ($voyage->company_id !== $company->id) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No autorizado'
+                ], 403);
+            }
+
+            // Shipments con RegistrarTitEnvios exitoso
+            $shipmentIds = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                ->where('status', 'success')
+                ->whereNotNull('shipment_id')
+                ->pluck('shipment_id')
+                ->unique()
+                ->values();
+
+            if ($shipmentIds->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No hay shipments con RegistrarTitEnvios exitoso',
+                    'shipments' => []
+                ]);
+            }
+
+            $shipments = $voyage->shipments
+                ->whereIn('id', $shipmentIds->toArray())
+                ->map(function ($shipment) {
+                    return [
+                        'id'               => $shipment->id,
+                        'shipment_number'  => $shipment->shipment_number,
+                    ];
+                })
+                ->values();
+
+            return response()->json([
+                'success'  => true,
+                'shipments' => $shipments,
+                'count'    => $shipments->count(),
+            ]);
+
+        } catch (Exception $e) {
+            \Log::error('Error en getShipmentsDisponibles', [
+                'voyage_id' => $voyage->id,
+                'error'     => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error'   => 'Error interno del servidor'
+            ], 500);
+        }
+    }
+
+    /**
      * Obtener títulos registrados en AFIP (AJAX)
      * 
      * Ruta: GET /webservices/micdta/{voyage}/titulos-registrados
