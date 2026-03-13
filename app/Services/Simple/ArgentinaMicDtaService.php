@@ -2423,7 +2423,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $results = [];
             $errors = [];
 
-            foreach ($voyage->shipments as $shipment) {
+            $shipmentsAProcesar = $voyage->shipments;
+            if (!empty($data['shipment_ids']) && is_array($data['shipment_ids'])) {
+                $shipmentsAProcesar = $shipmentsAProcesar->filter(function ($shipment) use ($data) {
+                    return in_array($shipment->id, $data['shipment_ids']);
+                });
+            }
+
+            foreach ($shipmentsAProcesar as $shipment) {
 
                 // Buscar títulos exitosos de RegistrarTitEnvios de este shipment
                 $titulosTx = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
@@ -2631,6 +2638,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'external_reference' => $idMicDta,
                     'success_data' => [
                         'id_micdta' => $idMicDta,
+                        'titulos' => $titulos,
                         'contenedores_con_carga' => $contenedoresConCarga,
                         'cargas_sueltas_tracks' => $cargasSueltasIdTrack,
                         'vinculado' => true,
@@ -2834,19 +2842,79 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'webservice_url' => $this->getWsdlUrl(),
             ]);
 
-            // TODO: Aquí iría la generación del XML y envío SOAP real
-            // Por ahora, simulamos éxito para testing
-            
+            // Generar XML
+            $xmlGenerator = new \App\Services\Simple\SimpleXmlGenerator($voyage->company);
+            $xmlContent = $xmlGenerator->createDesvincularTitMicDtaXml([
+                'id_micdta' => $idMicDta,
+                'titulos'   => $titulosADesvincular,
+            ], substr($transactionId, 0, 15));
+
+            if (!$xmlContent) {
+                $transaction->update(['status' => 'error', 'error_message' => 'Error generando XML', 'completed_at' => now()]);
+                return [
+                    'success'       => false,
+                    'error_message' => 'Error generando XML DesvincularTitMicDta',
+                    'error_code'    => 'XML_GENERATION_ERROR',
+                ];
+            }
+
+            // Actualizar transacción con request XML
             $transaction->update([
-                'status' => 'success',
+                'status'      => 'sending',
+                'request_xml' => $xmlContent,
+                'sent_at'     => now(),
+            ]);
+
+            // Enviar SOAP
+            $soapClient = $this->createSoapClient();
+            $response = $soapClient->__doRequest(
+                $xmlContent,
+                $this->getWsdlUrl(),
+                'Ar.Gob.Afip.Dga.wgesregsintia2/DesvincularTitMicDta',
+                SOAP_1_1,
+                false
+            );
+
+            // Guardar response_xml siempre
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at'  => now(),
+            ]);
+
+            // Verificar errores SOAP
+            if (strpos($response, 'soap:Fault') !== false) {
+                $errorMsg = $this->extractSoapFaultMessage($response);
+                $transaction->update(['status' => 'error', 'error_message' => $errorMsg, 'completed_at' => now()]);
+                return [
+                    'success'       => false,
+                    'error_message' => "Error AFIP: {$errorMsg}",
+                    'error_code'    => 'SOAP_FAULT',
+                ];
+            }
+
+            // Verificar errores AFIP
+            $afipErrors = $this->extractAfipErrors($response);
+            if (!empty($afipErrors)) {
+                $errorDesc = implode(', ', array_column($afipErrors, 'descripcion'));
+                $transaction->update(['status' => 'error', 'error_message' => $errorDesc, 'completed_at' => now()]);
+                return [
+                    'success'       => false,
+                    'error_message' => "Error AFIP: {$errorDesc}",
+                    'error_code'    => 'AFIP_ERROR',
+                    'afip_errors'   => $afipErrors,
+                ];
+            }
+
+            // Éxito — actualizar transacción
+            $transaction->update([
+                'status'             => 'success',
                 'external_reference' => $idMicDta,
-                'completed_at' => now(),
-                'response_at' => now(),
-                'success_data' => [
-                    'id_micdta' => $idMicDta,
-                    'titulos_desvinculados' => $titulosADesvincular,
+                'completed_at'       => now(),
+                'success_data'       => [
+                    'id_micdta'              => $idMicDta,
+                    'titulos_desvinculados'  => $titulosADesvincular,
                     'desvinculacion_exitosa' => true,
-                    'tipo_desvinculacion' => isset($data['titulos']) ? 'selectiva' : 'total',
+                    'tipo_desvinculacion'    => isset($data['titulos']) ? 'selectiva' : 'total',
                 ],
             ]);
 

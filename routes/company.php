@@ -880,6 +880,11 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/{voyage}/titulos-registrados', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'getTitulosRegistrados'])
             ->name('titulos-registrados')
             ->whereNumber('voyage');
+
+        // Ruta para obtener shipments disponibles para vincular (AJAX)
+        Route::get('/{voyage}/shipments-disponibles', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'getShipmentsDisponibles'])
+            ->name('shipments-disponibles')
+            ->whereNumber('voyage');
     });
 
     // ====================================
