@@ -180,8 +180,9 @@ class VoyageController extends Controller
             //'userInfo' => $this->getUserInfo(),
         ]);
     }
+
     /**
-     * Almacenar nuevo viaje - MÉTODO CORREGIDO
+     * Almacenar nuevo viaje
      */
     public function store(Request $request)
     {
@@ -202,54 +203,40 @@ class VoyageController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // 3. Mapeo de valores del formulario a ENUM de BD
-        $voyageTypeMapping = [
-            'regular' => 'single_vessel',
-            'charter' => 'convoy',
-            'emergency' => 'fleet'
-        ];
-
-        $cargoTypeMapping = [
-            'containers' => 'export',
-            'bulk' => 'import', 
-            'general' => 'transit',
-            'liquid' => 'transshipment'
-        ];
-
-        // 4. Validar datos con valores ENUM correctos
+        // 3. Validar — valores directos de BD, sin mapeo intermedio
         $request->validate([
-            'voyage_number' => 'required|string|max:50|unique:voyages,voyage_number',
-            'internal_reference' => 'nullable|string|max:100',
-            'lead_vessel_id' => 'required|exists:vessels,id',
-            'captain_id' => 'nullable|exists:captains,id',
-            'origin_country_id' => 'required|exists:countries,id',
-            'origin_port_id' => 'required|exists:ports,id',
+            'voyage_number'          => 'required|string|max:50|unique:voyages,voyage_number',
+            'internal_reference'     => 'nullable|string|max:100',
+            'lead_vessel_id'         => 'required|exists:vessels,id',
+            'captain_id'             => 'nullable|exists:captains,id',
+            'origin_country_id'      => 'required|exists:countries,id',
+            'origin_port_id'         => 'required|exists:ports,id',
             'destination_country_id' => 'required|exists:countries,id',
-            'destination_port_id' => 'required|exists:ports,id',
-            'departure_date' => 'required|date',
+            'destination_port_id'    => 'required|exists:ports,id',
+            'departure_date'         => 'required|date',
             'estimated_arrival_date' => 'required|date|after:departure_date',
-            'voyage_type' => 'required|in:regular,charter,emergency',
-            'cargo_type' => 'required|in:containers,bulk,general,liquid',
+            'voyage_type'            => 'required|in:single_vessel,convoy,fleet',
+            'cargo_type'             => 'required|in:export,import,transit,transshipment,cabotage',
+            'is_empty_transport'     => 'nullable|in:S,N',
+            'has_cargo_onboard'      => 'nullable|in:S,N',
         ], [
-            // Mensajes personalizados
-            'voyage_number.unique' => 'Ya existe un viaje con este número.',
-            'lead_vessel_id.exists' => 'La embarcación seleccionada no existe.',
-            'captain_id.exists' => 'El capitán seleccionado no existe.',
-            'origin_port_id.exists' => 'El puerto de origen seleccionado no existe.',
-            'destination_port_id.exists' => 'El puerto de destino seleccionado no existe.',
-            'departure_date.after' => 'La fecha de salida debe ser posterior a la fecha actual.',
+            'voyage_number.unique'         => 'Ya existe un viaje con este número.',
+            'lead_vessel_id.exists'        => 'La embarcación seleccionada no existe.',
+            'captain_id.exists'            => 'El capitán seleccionado no existe.',
+            'origin_port_id.exists'        => 'El puerto de origen seleccionado no existe.',
+            'destination_port_id.exists'   => 'El puerto de destino seleccionado no existe.',
             'estimated_arrival_date.after' => 'La fecha de llegada debe ser posterior a la fecha de salida.',
         ]);
 
-        // 5. Validaciones de ownership y coherencia
+        // 4. Validaciones de ownership y coherencia
         try {
             DB::beginTransaction();
 
             // Verificar que la embarcación pertenece a la empresa
             $vessel = Vessel::where('id', $request->lead_vessel_id)
-                        ->where('company_id', $company->id)
-                        ->where('active', true)
-                        ->first();
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->first();
 
             if (!$vessel) {
                 throw new \Exception('La embarcación seleccionada no pertenece a su empresa o no está disponible.');
@@ -258,10 +245,10 @@ class VoyageController extends Controller
             // Verificar capitán disponible (si se seleccionó)
             if ($request->captain_id) {
                 $captain = Captain::where('id', $request->captain_id)
-                                ->where('active', true)
-                                ->where('available_for_hire', true)
-                                ->where('license_status', 'valid')
-                                ->first();
+                    ->where('active', true)
+                    ->where('available_for_hire', true)
+                    ->where('license_status', 'valid')
+                    ->first();
 
                 if (!$captain) {
                     throw new \Exception('El capitán seleccionado no está disponible o no tiene licencia válida.');
@@ -270,9 +257,9 @@ class VoyageController extends Controller
 
             // Verificar coherencia puerto-país (origen)
             $originPort = Port::where('id', $request->origin_port_id)
-                            ->where('country_id', $request->origin_country_id)
-                            ->where('active', true)
-                            ->first();
+                ->where('country_id', $request->origin_country_id)
+                ->where('active', true)
+                ->first();
 
             if (!$originPort) {
                 throw new \Exception('El puerto de origen no corresponde al país seleccionado.');
@@ -280,9 +267,9 @@ class VoyageController extends Controller
 
             // Verificar coherencia puerto-país (destino)
             $destinationPort = Port::where('id', $request->destination_port_id)
-                                ->where('country_id', $request->destination_country_id)
-                                ->where('active', true)
-                                ->first();
+                ->where('country_id', $request->destination_country_id)
+                ->where('active', true)
+                ->first();
 
             if (!$destinationPort) {
                 throw new \Exception('El puerto de destino no corresponde al país seleccionado.');
@@ -293,26 +280,26 @@ class VoyageController extends Controller
                 throw new \Exception('El puerto de origen y destino no pueden ser el mismo.');
             }
 
-            // 6. Crear el viaje con valores correctos
+            // 5. Crear el viaje
             $voyage = Voyage::create([
-                'company_id' => $company->id,
-                'voyage_number' => $request->voyage_number,
-                'internal_reference' => $request->internal_reference,
-                'lead_vessel_id' => $request->lead_vessel_id,
-                'captain_id' => $request->captain_id,
-                'origin_country_id' => $request->origin_country_id,
-                'origin_port_id' => $request->origin_port_id,
+                'company_id'             => $company->id,
+                'voyage_number'          => $request->voyage_number,
+                'internal_reference'     => $request->internal_reference,
+                'lead_vessel_id'         => $request->lead_vessel_id,
+                'captain_id'             => $request->captain_id,
+                'origin_country_id'      => $request->origin_country_id,
+                'origin_port_id'         => $request->origin_port_id,
                 'destination_country_id' => $request->destination_country_id,
-                'destination_port_id' => $request->destination_port_id,
-                'departure_date' => $request->departure_date,
+                'destination_port_id'    => $request->destination_port_id,
+                'departure_date'         => $request->departure_date,
                 'estimated_arrival_date' => $request->estimated_arrival_date,
-                // Mapear valores del formulario a ENUM de BD
-                'voyage_type' => $voyageTypeMapping[$request->voyage_type],
-                'is_convoy' => ($voyageTypeMapping[$request->voyage_type] === 'convoy'),
-                'cargo_type' => $cargoTypeMapping[$request->cargo_type],
-                'status' => 'planning',
-                'created_by_user_id' => Auth::id(),
-                // REMOVIDO 'created_date' - Laravel maneja created_at automáticamente
+                'voyage_type'            => $request->voyage_type,
+                'is_convoy'              => ($request->voyage_type === 'convoy'),
+                'cargo_type'             => $request->cargo_type,
+                'is_empty_transport'     => $request->input('is_empty_transport', 'N'),
+                'has_cargo_onboard'      => $request->input('has_cargo_onboard', 'S'),
+                'status'                 => 'planning',
+                'created_by_user_id'     => Auth::id(),
             ]);
 
             DB::commit();
@@ -322,13 +309,11 @@ class VoyageController extends Controller
 
         } catch (\Exception $e) {
             DB::rollback();
-            
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Error al crear el viaje: ' . $e->getMessage());
         }
     }
-
     /**
      * Mostrar detalles del viaje.
      */
@@ -443,7 +428,7 @@ class VoyageController extends Controller
     }
 
     /**
-     * CORRECCIÓN DEFINITIVA - Método update()
+     * Actualizar viaje
      */
     public function update(Request $request, Voyage $voyage)
     {
@@ -460,30 +445,29 @@ class VoyageController extends Controller
             abort(403, 'No tiene permisos para editar este viaje.');
         }
 
-        // 2. Validar datos - EXACTOS según ENUM de BD
-        // Validación dinámica según el estado del viaje
+        // 2. Validar — mismos nombres de campo que store()
         $rules = [
-            'voyage_number' => 'required|string|max:50',
-            'internal_reference' => 'nullable|string|max:100',
-            'status' => 'required|in:draft,planning,loading,in_progress,arrived,completed,cancelled',
-            'vessel_id' => 'required|exists:vessels,id',
-            'captain_id' => 'required|exists:captains,id',
-            'origin_country_id' => 'required|exists:countries,id',
-            'origin_port_id' => 'required|exists:ports,id',
-            'destination_country_id' => 'required|exists:countries,id',
-            'destination_port_id' => 'required|exists:ports,id|different:origin_port_id',
+            'voyage_number'            => 'required|string|max:50',
+            'internal_reference'       => 'nullable|string|max:100',
+            'status'                   => 'required|in:draft,planning,loading,in_progress,arrived,completed,cancelled',
+            'lead_vessel_id'           => 'required|exists:vessels,id',
+            'captain_id'               => 'required|exists:captains,id',
+            'origin_country_id'        => 'required|exists:countries,id',
+            'origin_port_id'           => 'required|exists:ports,id',
+            'destination_country_id'   => 'required|exists:countries,id',
+            'destination_port_id'      => 'required|exists:ports,id|different:origin_port_id',
             'estimated_duration_hours' => 'nullable|numeric|min:0.5|max:720',
-            'is_empty_transport' => 'nullable|in:S,N',
-            'has_cargo_onboard' => 'nullable|in:S,N',
+            'is_empty_transport'       => 'nullable|in:S,N',
+            'has_cargo_onboard'        => 'nullable|in:S,N',
         ];
 
-        // Las fechas solo son obligatorias para estados avanzados
+        // Fechas obligatorias solo para estados avanzados
         if (in_array($request->status, ['loading', 'in_progress', 'arrived', 'completed'])) {
-            $rules['planned_departure_date'] = 'required|date';
-            $rules['planned_arrival_date'] = 'required|date|after:planned_departure_date';
+            $rules['departure_date']         = 'required|date';
+            $rules['estimated_arrival_date'] = 'required|date|after:departure_date';
         } else {
-            $rules['planned_departure_date'] = 'nullable|date';
-            $rules['planned_arrival_date'] = 'nullable|date|after:planned_departure_date';
+            $rules['departure_date']         = 'nullable|date';
+            $rules['estimated_arrival_date'] = 'nullable|date|after:departure_date';
         }
 
         $request->validate($rules);
@@ -491,23 +475,23 @@ class VoyageController extends Controller
         try {
             DB::beginTransaction();
 
-            // 3. Actualizar con campos EXACTOS de la migración
             $voyage->update([
-                'voyage_number' => $request->voyage_number,
-                'internal_reference' => $request->internal_reference,
-                'status' => $request->status,
-                'lead_vessel_id' => $request->vessel_id,
-                'captain_id' => $request->captain_id,
-                'origin_country_id' => $request->origin_country_id,
-                'origin_port_id' => $request->origin_port_id,
+                'voyage_number'          => $request->voyage_number,
+                'internal_reference'     => $request->internal_reference,
+                'status'                 => $request->status,
+                'lead_vessel_id'         => $request->lead_vessel_id,
+                'captain_id'             => $request->captain_id,
+                'origin_country_id'      => $request->origin_country_id,
+                'origin_port_id'         => $request->origin_port_id,
                 'destination_country_id' => $request->destination_country_id,
-                'destination_port_id' => $request->destination_port_id,
-                'departure_date' => $request->planned_departure_date,
-                'estimated_arrival_date' => $request->planned_arrival_date,
-                'is_empty_transport' => $request->input('is_empty_transport', 'N'),
-                'has_cargo_onboard' => $request->input('has_cargo_onboard', 'S'),
+                'destination_port_id'    => $request->destination_port_id,
+                'departure_date'         => $request->departure_date,
+                'estimated_arrival_date' => $request->estimated_arrival_date,
+                'estimated_duration_hours' => $request->estimated_duration_hours,
+                'is_empty_transport'     => $request->input('is_empty_transport', 'N'),
+                'has_cargo_onboard'      => $request->input('has_cargo_onboard', 'S'),
                 'last_updated_by_user_id' => Auth::id(),
-                'last_updated_date' => now(),
+                'last_updated_date'      => now(),
             ]);
 
             DB::commit();
@@ -524,69 +508,69 @@ class VoyageController extends Controller
     }
 
     /**
- * CORRECCIÓN DEFINITIVA - getFormData() optimizado
- * Aplicando EXACTAMENTE la misma solución que en BillOfLading
- */
-private function getFormData()
-{
-    // LIMITAR TAMAÑOS INICIALES para colecciones pequeñas
-    $LIMIT = 10;
-    
-    $company = $this->getUserCompany();
+     * CORRECCIÓN DEFINITIVA - getFormData() optimizado
+     * Aplicando EXACTAMENTE la misma solución que en BillOfLading
+     */
+    private function getFormData()
+    {
+        // LIMITAR TAMAÑOS INICIALES para colecciones pequeñas
+        $LIMIT = 10;
+        
+        $company = $this->getUserCompany();
 
-    // --- EMBARCACIONES (activas de la compañía) - LIMITADAS
-    $vessels = \App\Models\Vessel::where('company_id', $company->id)
-        ->where('active', true)
-        ->select('id', 'name', 'imo_number', 'cargo_capacity_tons')
-        ->orderBy('name')
-        ->limit($LIMIT)
-        ->get();
-    
-    // --- CAPITANES (activos) - AMPLIADA: empresa + freelance + disponibles
-    $captains = \App\Models\Captain::where('active', true)
-        ->where('available_for_hire', true)
-        ->where(function($query) use ($company) {
-            $query->where('primary_company_id', $company->id)  // De la empresa
-                ->orWhereNull('primary_company_id')           // Freelance
-                ->orWhere('employment_status', 'freelance');  // Disponibles
-        })
-        ->select('id', 'full_name', 'license_number', 'employment_status')
-        ->orderBy('full_name')
-        ->limit($LIMIT)
-        ->get();
-    
-    // --- OPERADORES (activos de la compañía) - LIMITADOS
-    $operators = \App\Models\Operator::where('company_id', $company->id)
-        ->where('active', true)
-        ->selectRaw('id, CONCAT(first_name, " ", last_name) as full_name, position')
-        ->orderBy('first_name')
-        ->limit($LIMIT)
-        ->get();
-    
-    // --- PAÍSES (activos) - Solo Argentina y Paraguay como en BL
-    $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
+        // --- EMBARCACIONES (activas de la compañía) - LIMITADAS
+        $vessels = \App\Models\Vessel::where('company_id', $company->id)
+            ->where('active', true)
+            ->select('id', 'name', 'imo_number', 'cargo_capacity_tons')
+            ->orderBy('name')
+            ->limit($LIMIT)
+            ->get();
+        
+        // --- CAPITANES (activos) - AMPLIADA: empresa + freelance + disponibles
+        $captains = \App\Models\Captain::where('active', true)
+            ->where('available_for_hire', true)
+            ->where(function($query) use ($company) {
+                $query->where('primary_company_id', $company->id)  // De la empresa
+                    ->orWhereNull('primary_company_id')           // Freelance
+                    ->orWhere('employment_status', 'freelance');  // Disponibles
+            })
+            ->select('id', 'full_name', 'license_number', 'employment_status')
+            ->orderBy('full_name')
+            ->limit($LIMIT)
+            ->get();
+        
+        // --- OPERADORES (activos de la compañía) - LIMITADOS
+        $operators = \App\Models\Operator::where('company_id', $company->id)
+            ->where('active', true)
+            ->selectRaw('id, CONCAT(first_name, " ", last_name) as full_name, position')
+            ->orderBy('first_name')
+            ->limit($LIMIT)
+            ->get();
+        
+        // --- PAÍSES (activos) - Solo Argentina y Paraguay como en BL
+        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
-    $countries = \App\Models\Country::where('active', true)
-        ->whereIn('id', $countryIds)
-        ->select('id', 'name', 'alpha2_code')
-        ->orderBy('name')
-        ->get();
-    
-    // --- PUERTOS (activos) - TODOS los de Argentina y Paraguay (como en BL)
-    $ports = \App\Models\Port::where('active', true)
-        ->whereIn('country_id', $countryIds)
-        ->select('id', 'name', 'code', 'city', 'country_id')
-        ->orderBy('name')
-        ->get();
+        $countries = \App\Models\Country::where('active', true)
+            ->whereIn('id', $countryIds)
+            ->select('id', 'name', 'alpha2_code')
+            ->orderBy('name')
+            ->get();
+        
+        // --- PUERTOS (activos) - TODOS los de Argentina y Paraguay (como en BL)
+        $ports = \App\Models\Port::where('active', true)
+            ->whereIn('country_id', $countryIds)
+            ->select('id', 'name', 'code', 'city', 'country_id')
+            ->orderBy('name')
+            ->get();
 
-    return [
-        'vessels' => $vessels,
-        'captains' => $captains,
-        'operators' => $operators,
-        'countries' => $countries,
-        'ports' => $ports,
-    ];
-}
+        return [
+            'vessels' => $vessels,
+            'captains' => $captains,
+            'operators' => $operators,
+            'countries' => $countries,
+            'ports' => $ports,
+        ];
+    }
 
     /**
      * Eliminar viaje - VERSIÓN CORREGIDA

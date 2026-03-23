@@ -2468,11 +2468,23 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 ->pluck('shipment_id')
                 ->unique();
 
-            $titulosRegistrados = \App\Models\BillOfLading::whereIn('shipment_id', $shipmentIds)
-                ->whereNotNull('bill_number')
-                ->where('bill_number', '!=', '')
-                ->pluck('bill_number')
-                ->unique()
+            $titulosRegistrados = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                ->whereIn('status', ['success', 'sent'])
+                ->whereNotNull('shipment_id')
+                ->whereNotNull('external_reference')
+                ->get()
+                ->map(function ($tx) {
+                    $billNumber = \App\Models\BillOfLading::where('shipment_id', $tx->shipment_id)
+                        ->whereNotNull('bill_number')
+                        ->value('bill_number');
+                    return [
+                        'id_tit_trans' => $tx->external_reference,
+                        'bill_number'  => $billNumber ?? '',
+                    ];
+                })
+                ->unique('id_tit_trans')
                 ->values();
 
             // Obtener MIC/DTAs registrados (para modal SolicitarAnularMicDta)
