@@ -13,7 +13,7 @@
             </div>
 
             <div class="flex items-center space-x-2">
-                @if($voyage->status === 'planning')
+                @if($userPermissions['can_edit'] ?? false)
                     <a href="{{ route('company.voyages.edit', $voyage) }}" 
                        class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -71,12 +71,16 @@
 
                         <div>
                             <dt class="text-sm font-medium text-gray-500">Tipo de Viaje</dt>
-                            <dd class="mt-1 text-sm text-gray-900">{{ $voyage->voyage_type ?? 'No especificado' }}</dd>
+                            <dd class="mt-1 text-sm text-gray-900">{{
+                                ['single_vessel' => 'Embarcación Única', 'convoy' => 'Convoy', 'fleet' => 'Flota'][$voyage->voyage_type] ?? $voyage->voyage_type ?? 'No especificado'
+                            }}</dd>
                         </div>
 
                         <div>
                             <dt class="text-sm font-medium text-gray-500">Tipo de Carga</dt>
-                            <dd class="mt-1 text-sm text-gray-900">{{ $voyage->cargo_type ?? 'No especificado' }}</dd>
+                            <dd class="mt-1 text-sm text-gray-900">{{
+                                ['export' => 'Exportación', 'import' => 'Importación', 'transit' => 'Tránsito', 'transshipment' => 'Trasbordo', 'cabotage' => 'Cabotaje'][$voyage->cargo_type] ?? $voyage->cargo_type ?? 'No especificado'
+                            }}</dd>
                         </div>
 
                         <div>
@@ -111,6 +115,21 @@
                             <dd class="mt-1 text-sm text-gray-900">{{ $voyage->vessel_count }}</dd>
                         </div>
                         @endif
+
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">Estado de Carga</dt>
+                            <dd class="mt-1">
+                                @if($voyage->is_empty_transport === 'S')
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                        En lastre / Sin carga
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                        Con carga a bordo
+                                    </span>
+                                @endif
+                            </dd>
+                        </div>
                     </dl>
                 </div>
             </div>
@@ -209,7 +228,7 @@
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             Cargas Asociadas ({{ $voyage->shipments->count() }})
                         </h3>
-                        @if($voyage->status === 'planning')
+                        @if($userPermissions['can_edit'] ?? false)
                             <div class="flex items-center space-x-3">
                                 <!-- Botón Gestionar Shipments -->
                                 <a href="{{ route('company.shipments.create', ['voyage_id' => $voyage->id]) }}"
@@ -367,26 +386,16 @@
             </div>
 
             <!-- Información Adicional -->
-            @if($voyage->special_instructions || $voyage->operational_notes)
+            @if($voyage->voyage_notes)
             <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">
                     <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
                         Información Adicional
                     </h3>
-
-                    @if($voyage->special_instructions)
-                    <div class="mb-4">
-                        <dt class="text-sm font-medium text-gray-500 mb-1">Instrucciones Especiales</dt>
-                        <dd class="text-sm text-gray-900 bg-yellow-50 p-3 rounded-md">{{ $voyage->special_instructions }}</dd>
-                    </div>
-                    @endif
-
-                    @if($voyage->operational_notes)
                     <div>
-                        <dt class="text-sm font-medium text-gray-500 mb-1">Notas Operacionales</dt>
-                        <dd class="text-sm text-gray-900 bg-gray-50 p-3 rounded-md">{{ $voyage->operational_notes }}</dd>
+                        <dt class="text-sm font-medium text-gray-500 mb-1">Observaciones</dt>
+                        <dd class="text-sm text-gray-900 bg-gray-50 p-3 rounded-md">{{ $voyage->voyage_notes }}</dd>
                     </div>
-                    @endif
                 </div>
             </div>
             @endif
