@@ -104,16 +104,16 @@ class BillOfLadingCreateForm extends Component
     public $requires_inspection = false;
 
     // Colecciones para selectores
-    public $clients;
-    public $availableShipments;
-    public $loadingPorts;
-    public $dischargePorts;
-    public $transshipmentPorts;
-    public $finalDestinationPorts;
-    public $customsOffices;
-    public $cargoTypes;
-    public $packagingTypes;
-    public $countries;
+    public $clients = [];
+    public $availableShipments = [];
+    public $loadingPorts = [];
+    public $dischargePorts = [];
+    public $transshipmentPorts = [];
+    public $finalDestinationPorts = [];
+    public $customsOffices = [];
+    public $cargoTypes = [];
+    public $packagingTypes = [];
+    public $countries = [];
 
     // manejo de BL padre/hijo
     public $availableMasterBills = [];
