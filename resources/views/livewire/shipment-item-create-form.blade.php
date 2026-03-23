@@ -74,465 +74,536 @@
 
     {{-- STEP 1: Configuración del Bill of Lading --}}
     @if($step == 1 && $needsToCreateBL)
-        <div class="bg-white shadow rounded-lg">
-            <div class="px-4 py-5 sm:p-6">
-                <div class="mb-4">
-                    <h3 class="text-lg font-medium text-gray-900">Configurar Bill of Lading</h3>
-                    <p class="mt-1 text-sm text-gray-600">
-                        Complete los datos básicos para crearlo automáticamente.
-                    </p>
-                </div>
+        <form wire:submit="createBillOfLading" class="space-y-4">
 
-                <form wire:submit="createBillOfLading" class="mt-6 space-y-6">
-                    {{-- Partes Involucradas --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Partes Involucradas</h4>
-                        
-                        {{-- Grid con los 3 selectores MODIFICADOS --}}
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {{-- CARGADOR/EXPORTADOR - NUEVO BUSCADOR --}}
-                            <div>
-                                <label for="shipper_search" class="block text-sm font-medium text-gray-700">
-                                    Cargador/Exportador <span class="text-red-500">*</span>
-                                </label>
-                                <div class="relative mt-1">
-                                    <input 
-                                        wire:model.live.debounce.300ms="shipperSearch" 
-                                        type="text" 
-                                        id="shipper_search"
-                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-10"
-                                        placeholder="Buscar por nombre o CUIT..."
-                                        autocomplete="off"
-                                    >
-                                    <button 
-                                        type="button"
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            {{-- SECCIÓN PRINCIPAL — Datos obligatorios para WS          --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            <div class="bg-white shadow rounded-lg border-l-4 border-blue-500">
+                <div class="px-6 py-4 border-b border-gray-100">
+                    <h3 class="text-base font-semibold text-gray-900">Datos del Conocimiento de Embarque</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">Campos requeridos por AFIP y DNA Paraguay</p>
+                </div>
+                <div class="px-6 py-5 space-y-5">
+
+                    {{-- Cargador + Consignatario --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        {{-- CARGADOR/EXPORTADOR --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Cargador / Exportador <span class="text-red-500">*</span>
+                            </label>
+                            <div class="relative">
+                                <input wire:model.live.debounce.300ms="shipperSearch"
+                                       type="text"
+                                       id="shipper_search"
+                                       class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-10 sm:text-sm"
+                                       placeholder="Buscar por nombre o CUIT..."
+                                       autocomplete="off">
+                                <button type="button"
                                         wire:click="openClientModal('bl_shipper_id')"
                                         class="absolute inset-y-0 right-0 flex items-center pr-3 text-blue-600 hover:text-blue-800"
-                                        title="Crear nuevo cliente"
-                                    >
-                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                        </svg>
-                                    </button>
+                                        title="Crear nuevo cliente">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            @if(count($filteredShippers) > 0)
+                                <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm">
+                                    @foreach($filteredShippers as $client)
+                                        <div wire:click="selectShipper({{ $client['id'] }})"
+                                             class="cursor-pointer py-2 pl-3 pr-9 hover:bg-blue-50">
+                                            <span class="block truncate font-medium">{{ $client['legal_name'] }}</span>
+                                            <span class="text-gray-400 text-xs">{{ $client['tax_id'] }}</span>
+                                        </div>
+                                    @endforeach
                                 </div>
-                                
-                                {{-- Dropdown de resultados --}}
-                                @if(count($filteredShippers) > 0)
-                                    <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-                                        @foreach($filteredShippers as $client)
-                                            <div 
-                                                wire:click="selectShipper({{ $client['id'] }})"
-                                                class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50"
-                                            >
-                                                <div class="flex items-center">
-                                                    <span class="font-normal block truncate">{{ $client['legal_name'] }}</span>
-                                                    <span class="text-gray-500 ml-2 text-sm">{{ $client['tax_id'] }}</span>
-                                                </div>
-                                            </div>
-                                        @endforeach
+                            @endif
+                            @if($bl_shipper_id)
+                                @php $selectedShipper = $clients->find($bl_shipper_id); @endphp
+                                @if($selectedShipper)
+                                    <div class="mt-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        ✓ {{ $selectedShipper->legal_name }} — {{ $selectedShipper->tax_id }}
                                     </div>
                                 @endif
-                                
-                                {{-- Mostrar seleccionado --}}
-                                @if($bl_shipper_id)
-                                    @php 
-                                        $selectedShipper = $clients->find($bl_shipper_id);
-                                    @endphp
-                                    @if($selectedShipper)
-                                        <div class="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            {{ $selectedShipper->legal_name }} - {{ $selectedShipper->tax_id }}
-                                        </div>
-                                    @endif
-                                @endif
-                                
-                                @error('bl_shipper_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                            @endif
+                            @error('bl_shipper_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
 
-                            {{-- CONSIGNATARIO/IMPORTADOR - NUEVO BUSCADOR --}}
-                            <div>
-                                <label for="consignee_search" class="block text-sm font-medium text-gray-700">
-                                    Consignatario/Importador <span class="text-red-500">*</span>
-                                </label>
-                                <div class="relative mt-1">
-                                    <input 
-                                        wire:model.live.debounce.300ms="consigneeSearch" 
-                                        type="text" 
-                                        id="consignee_search"
-                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-10"
-                                        placeholder="Buscar por nombre o CUIT..."
-                                        autocomplete="off"
-                                    >
-                                    <button 
-                                        type="button"
+                        {{-- CONSIGNATARIO/IMPORTADOR --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Consignatario / Importador <span class="text-red-500">*</span>
+                            </label>
+                            <div class="relative">
+                                <input wire:model.live.debounce.300ms="consigneeSearch"
+                                       type="text"
+                                       id="consignee_search"
+                                       class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-10 sm:text-sm"
+                                       placeholder="Buscar por nombre o CUIT..."
+                                       autocomplete="off">
+                                <button type="button"
                                         wire:click="openClientModal('bl_consignee_id')"
                                         class="absolute inset-y-0 right-0 flex items-center pr-3 text-blue-600 hover:text-blue-800"
-                                        title="Crear nuevo cliente"
-                                    >
-                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                        </svg>
-                                    </button>
+                                        title="Crear nuevo cliente">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            @if(count($filteredConsignees) > 0)
+                                <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm">
+                                    @foreach($filteredConsignees as $client)
+                                        <div wire:click="selectConsignee({{ $client['id'] }})"
+                                             class="cursor-pointer py-2 pl-3 pr-9 hover:bg-blue-50">
+                                            <span class="block truncate font-medium">{{ $client['legal_name'] }}</span>
+                                            <span class="text-gray-400 text-xs">{{ $client['tax_id'] }}</span>
+                                        </div>
+                                    @endforeach
                                 </div>
-                                
-                                {{-- Dropdown de resultados --}}
-                                @if(count($filteredConsignees) > 0)
-                                    <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-                                        @foreach($filteredConsignees as $client)
-                                            <div 
-                                                wire:click="selectConsignee({{ $client['id'] }})"
-                                                class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50"
-                                            >
-                                                <div class="flex items-center">
-                                                    <span class="font-normal block truncate">{{ $client['legal_name'] }}</span>
-                                                    <span class="text-gray-500 ml-2 text-sm">{{ $client['tax_id'] }}</span>
-                                                </div>
-                                            </div>
-                                        @endforeach
+                            @endif
+                            @if($bl_consignee_id)
+                                @php $selectedConsignee = $clients->find($bl_consignee_id); @endphp
+                                @if($selectedConsignee)
+                                    <div class="mt-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        ✓ {{ $selectedConsignee->legal_name }} — {{ $selectedConsignee->tax_id }}
                                     </div>
                                 @endif
-                                
-                                {{-- Mostrar seleccionado --}}
-                                @if($bl_consignee_id)
-                                    @php 
-                                        $selectedConsignee = $clients->find($bl_consignee_id);
-                                    @endphp
-                                    @if($selectedConsignee)
-                                        <div class="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            {{ $selectedConsignee->legal_name }} - {{ $selectedConsignee->tax_id }}
-                                        </div>
-                                    @endif
-                                @endif
-                                
-                                @error('bl_consignee_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @endif
+                            @error('bl_consignee_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+
+                    {{-- Puertos --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="bl_loading_port_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                Puerto de Carga <span class="text-red-500">*</span>
+                            </label>
+                            <select wire:model="bl_loading_port_id"
+                                    id="bl_loading_port_id"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_loading_port_id') border-red-300 @enderror">
+                                <option value="">Seleccionar puerto</option>
+                                @foreach($ports as $port)
+                                    <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country->name }})</option>
+                                @endforeach
+                            </select>
+                            @error('bl_loading_port_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label for="bl_discharge_port_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                Puerto de Descarga <span class="text-red-500">*</span>
+                            </label>
+                            <select wire:model="bl_discharge_port_id"
+                                    id="bl_discharge_port_id"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_discharge_port_id') border-red-300 @enderror">
+                                <option value="">Seleccionar puerto</option>
+                                @foreach($ports as $port)
+                                    <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country->name }})</option>
+                                @endforeach
+                            </select>
+                            @error('bl_discharge_port_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+
+                    {{-- Número BL + Fecha de Carga --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="bl_bill_number" class="block text-sm font-medium text-gray-700 mb-1">
+                                Número de Conocimiento <span class="text-red-500">*</span>
+                            </label>
+                            <input wire:model="bl_bill_number"
+                                   type="text"
+                                   id="bl_bill_number"
+                                   class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_bill_number') border-red-300 @enderror"
+                                   placeholder="Ej: BL-2025-001234">
+                            @error('bl_bill_number')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label for="bl_loading_date" class="block text-sm font-medium text-gray-700 mb-1">
+                                Fecha de Carga <span class="text-red-500">*</span>
+                            </label>
+                            <input wire:model="bl_loading_date"
+                                   type="date"
+                                   id="bl_loading_date"
+                                   class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_loading_date') border-red-300 @enderror">
+                            @error('bl_loading_date')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+
+                    {{-- Tipo de Carga + Tipo de Embalaje --}}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="bl_primary_cargo_type_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                Tipo de Carga Principal <span class="text-red-500">*</span>
+                            </label>
+                            <select wire:model="bl_primary_cargo_type_id"
+                                    id="bl_primary_cargo_type_id"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_primary_cargo_type_id') border-red-300 @enderror">
+                                <option value="">Seleccionar tipo</option>
+                                @foreach($cargoTypes as $cargoType)
+                                    <option value="{{ $cargoType->id }}">{{ $cargoType->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('bl_primary_cargo_type_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label for="bl_primary_packaging_type_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                Tipo de Embalaje Principal <span class="text-red-500">*</span>
+                            </label>
+                            <select wire:model="bl_primary_packaging_type_id"
+                                    id="bl_primary_packaging_type_id"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_primary_packaging_type_id') border-red-300 @enderror">
+                                <option value="">Seleccionar tipo</option>
+                                @foreach($packagingTypes as $packagingType)
+                                    <option value="{{ $packagingType->id }}">{{ $packagingType->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('bl_primary_packaging_type_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+
+                {{-- Descripción de Carga + Pesos + Indicadores WS --}}
+                    <div class="px-6 pb-5 space-y-4">
+                        <div>
+                            <label for="bl_cargo_description" class="block text-sm font-medium text-gray-700 mb-1">
+                                Descripción de la Carga <span class="text-red-500">*</span>
+                            </label>
+                            <textarea wire:model="bl_cargo_description" id="bl_cargo_description" rows="3"
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_cargo_description') border-red-300 @enderror"
+                                placeholder="Descripción detallada de la mercadería..."></textarea>
+                            <p class="mt-1 text-xs text-gray-500">AFIP: obsDeclaAduInter</p>
+                            @error('bl_cargo_description')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="bl_total_packages" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Total de Bultos <span class="text-red-500">*</span>
+                                </label>
+                                <input wire:model="bl_total_packages" type="number" id="bl_total_packages" min="1"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_total_packages') border-red-300 @enderror">
+                                @error('bl_total_packages')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
-
-                            {{-- NOTIFICAR A - NUEVO BUSCADOR --}}
                             <div>
-                                <label for="notify_search" class="block text-sm font-medium text-gray-700">
-                                    Notificar a (Opcional)
+                                <label for="bl_gross_weight_kg" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Peso Bruto (kg) <span class="text-red-500">*</span>
                                 </label>
-                                <div class="relative mt-1">
-                                    <input 
-                                        wire:model.live.debounce.300ms="notifyPartySearch" 
-                                        type="text" 
-                                        id="notify_search"
-                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-10"
-                                        placeholder="Buscar por nombre o CUIT..."
-                                        autocomplete="off"
-                                    >
-                                    <button 
-                                        type="button"
+                                <input wire:model="bl_gross_weight_kg" type="number" step="0.01" min="0.01" id="bl_gross_weight_kg"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_gross_weight_kg') border-red-300 @enderror">
+                                @error('bl_gross_weight_kg')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            <div>
+                                <label for="bl_id_decla" class="block text-sm font-medium text-gray-700 mb-1">
+                                    ID Destinación AFIP
+                                    <span class="text-xs text-gray-500 ml-1">(idDecla)</span>
+                                </label>
+                                <input wire:model="bl_id_decla" type="text" id="bl_id_decla"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    placeholder="Ej: 24033TRB3000225E" maxlength="16">
+                                <p class="mt-1 text-xs text-gray-500">Requerido para RegistrarEnvios MIC/DTA</p>
+                                @error('bl_id_decla')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            <div>
+                                <label for="bl_cargo_marks" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Marcas de la Mercadería
+                                </label>
+                                <textarea wire:model="bl_cargo_marks" id="bl_cargo_marks" rows="2"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                    placeholder="SOJA ARG 2025 | HANDLE WITH CARE"></textarea>
+                                <p class="mt-1 text-xs text-gray-500">Anticipada: MarcaBultos</p>
+                                @error('bl_cargo_marks')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-6 pt-1">
+                            <label class="inline-flex items-center">
+                                <input wire:model="bl_is_consolidated" type="checkbox" id="bl_is_consolidated"
+                                    class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                <span class="ml-2 text-sm text-gray-700">Consolidado</span>
+                                <span class="ml-1 text-xs text-gray-400">(indConsol)</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input wire:model="bl_is_fractional" type="checkbox" id="bl_is_fractional"
+                                    class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                <span class="ml-2 text-sm text-gray-700">Fraccionado</span>
+                                <span class="ml-1 text-xs text-gray-400">(indFraccTransp)</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input wire:model="bl_is_transit_transshipment" type="checkbox" id="bl_is_transit_transshipment"
+                                    class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                <span class="ml-2 text-sm text-gray-700">Tránsito/Trasbordo</span>
+                                <span class="ml-1 text-xs text-gray-400">(IndicadorTransitoTrasbordo)</span>
+                            </label>
+                        </div>
+                    </div>
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            <div class="bg-white shadow rounded-lg"
+                 x-data="{ open: {{ $bl_notify_party_id || $bl_shipper_use_specific || $bl_consignee_use_specific || $bl_notify_use_specific ? 'true' : 'false' }} }">
+                <button type="button"
+                        @click="open = !open"
+                        class="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 rounded-lg transition-colors">
+                    <div>
+                        <h3 class="text-base font-semibold text-gray-900">Notificado y Domicilios Específicos</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Tercero a notificar y domicilios particulares por BL (opcional)</p>
+                    </div>
+                    <svg class="w-5 h-5 text-gray-400 transition-transform" :class="{ 'rotate-180': open }"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" class="border-t border-gray-100">
+                    <div class="px-6 py-5 space-y-4">
+
+                        {{-- NOTIFICAR A --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Notificar a
+                            </label>
+                            <div class="relative">
+                                <input wire:model.live.debounce.300ms="notifyPartySearch"
+                                       type="text"
+                                       id="notify_search"
+                                       class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 pr-10 sm:text-sm"
+                                       placeholder="Buscar por nombre o CUIT..."
+                                       autocomplete="off">
+                                <button type="button"
                                         wire:click="openClientModal('bl_notify_party_id')"
                                         class="absolute inset-y-0 right-0 flex items-center pr-3 text-blue-600 hover:text-blue-800"
-                                        title="Crear nuevo cliente"
-                                    >
-                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                        </svg>
-                                    </button>
+                                        title="Crear nuevo cliente">
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            @if(count($filteredNotifyParties) > 0)
+                                <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto sm:text-sm">
+                                    @foreach($filteredNotifyParties as $client)
+                                        <div wire:click="selectNotifyParty({{ $client['id'] }})"
+                                             class="cursor-pointer py-2 pl-3 pr-9 hover:bg-blue-50">
+                                            <span class="block truncate font-medium">{{ $client['legal_name'] }}</span>
+                                            <span class="text-gray-400 text-xs">{{ $client['tax_id'] }}</span>
+                                        </div>
+                                    @endforeach
                                 </div>
-                                
-                                {{-- Dropdown de resultados --}}
-                                @if(count($filteredNotifyParties) > 0)
-                                    <div class="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-                                        @foreach($filteredNotifyParties as $client)
-                                            <div 
-                                                wire:click="selectNotifyParty({{ $client['id'] }})"
-                                                class="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50"
-                                            >
-                                                <div class="flex items-center">
-                                                    <span class="font-normal block truncate">{{ $client['legal_name'] }}</span>
-                                                    <span class="text-gray-500 ml-2 text-sm">{{ $client['tax_id'] }}</span>
-                                                </div>
-                                            </div>
-                                        @endforeach
+                            @endif
+                            @if($bl_notify_party_id)
+                                @php $selectedNotify = $clients->find($bl_notify_party_id); @endphp
+                                @if($selectedNotify)
+                                    <div class="mt-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        ✓ {{ $selectedNotify->legal_name }} — {{ $selectedNotify->tax_id }}
                                     </div>
                                 @endif
-                                
-                                {{-- Mostrar seleccionado --}}
-                                @if($bl_notify_party_id)
-                                    @php 
-                                        $selectedNotify = $clients->find($bl_notify_party_id);
-                                    @endphp
-                                    @if($selectedNotify)
-                                        <div class="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                            {{ $selectedNotify->legal_name }} - {{ $selectedNotify->tax_id }}
-                                        </div>
-                                    @endif
-                                @endif
-                                
-                                @error('bl_notify_party_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
+                            @endif
+                            @error('bl_notify_party_id')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
                         </div>
 
-                        {{-- SECCIONES DE DIRECCIONES ESPECÍFICAS --}}
-                        {{-- Dirección específica del cargador --}}
+                        {{-- Dirección específica del Cargador --}}
                         @if($bl_shipper_id)
-                            <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                            <div class="p-4 bg-gray-50 border border-gray-200 rounded-md">
                                 <div class="flex items-center justify-between mb-2">
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Dirección del Cargador para este Conocimiento
-                                    </label>
+                                    <p class="text-sm font-medium text-gray-700">Domicilio del Cargador para este BL</p>
                                     <label class="inline-flex items-center">
-                                        <input wire:model.live="bl_shipper_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
-                                        <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+                                        <input wire:model.live="bl_shipper_use_specific" type="checkbox"
+                                               class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                        <span class="ml-2 text-xs text-gray-600">Usar domicilio específico</span>
                                     </label>
                                 </div>
-                                
                                 @if($bl_shipper_use_specific)
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                                        <div>
-                                            <input wire:model="bl_shipper_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_shipper_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_shipper_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_shipper_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
+                                        <input wire:model="bl_shipper_address_1" type="text" placeholder="Dirección línea 1"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_shipper_address_2" type="text" placeholder="Dirección línea 2 (opcional)"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_shipper_city" type="text" placeholder="Ciudad"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_shipper_state" type="text" placeholder="Provincia/Estado"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 @endif
                             </div>
                         @endif
 
-                        {{-- Dirección específica del consignatario --}}
+                        {{-- Dirección específica del Consignatario --}}
                         @if($bl_consignee_id)
-                            <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                            <div class="p-4 bg-gray-50 border border-gray-200 rounded-md">
                                 <div class="flex items-center justify-between mb-2">
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Dirección del Consignatario para este Conocimiento
-                                    </label>
+                                    <p class="text-sm font-medium text-gray-700">Domicilio del Consignatario para este BL</p>
                                     <label class="inline-flex items-center">
-                                        <input wire:model.live="bl_consignee_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
-                                        <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+                                        <input wire:model.live="bl_consignee_use_specific" type="checkbox"
+                                               class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                        <span class="ml-2 text-xs text-gray-600">Usar domicilio específico</span>
                                     </label>
                                 </div>
-                                
                                 @if($bl_consignee_use_specific)
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                                        <div>
-                                            <input wire:model="bl_consignee_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_consignee_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_consignee_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_consignee_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
+                                        <input wire:model="bl_consignee_address_1" type="text" placeholder="Dirección línea 1"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_consignee_address_2" type="text" placeholder="Dirección línea 2 (opcional)"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_consignee_city" type="text" placeholder="Ciudad"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_consignee_state" type="text" placeholder="Provincia/Estado"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 @endif
                             </div>
                         @endif
 
-                        {{-- Dirección específica del notify party --}}
+                        {{-- Dirección específica del Notificado --}}
                         @if($bl_notify_party_id)
-                            <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                            <div class="p-4 bg-gray-50 border border-gray-200 rounded-md">
                                 <div class="flex items-center justify-between mb-2">
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Dirección de Notificación para este Conocimiento
-                                    </label>
+                                    <p class="text-sm font-medium text-gray-700">Domicilio del Notificado para este BL</p>
                                     <label class="inline-flex items-center">
-                                        <input wire:model.live="bl_notify_use_specific" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
-                                        <span class="ml-2 text-sm text-gray-600">Usar dirección específica</span>
+                                        <input wire:model.live="bl_notify_use_specific" type="checkbox"
+                                               class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                                        <span class="ml-2 text-xs text-gray-600">Usar domicilio específico</span>
                                     </label>
                                 </div>
-                                
                                 @if($bl_notify_use_specific)
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                                        <div>
-                                            <input wire:model="bl_notify_address_1" type="text" placeholder="Dirección línea 1" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_notify_address_2" type="text" placeholder="Dirección línea 2 (opcional)" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_notify_city" type="text" placeholder="Ciudad" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
-                                        <div>
-                                            <input wire:model="bl_notify_state" type="text" placeholder="Provincia/Estado" class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                        </div>
+                                        <input wire:model="bl_notify_address_1" type="text" placeholder="Dirección línea 1"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_notify_address_2" type="text" placeholder="Dirección línea 2 (opcional)"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_notify_city" type="text" placeholder="Ciudad"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <input wire:model="bl_notify_state" type="text" placeholder="Provincia/Estado"
+                                               class="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 @endif
                             </div>
                         @endif
+
                     </div>
+                </div>
+            </div>
 
-                    {{-- Resto de campos del BL (SIN MODIFICAR) --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            {{-- COLAPSABLE 2 — Términos Comerciales                    --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            <div class="bg-white shadow rounded-lg"
+                 x-data="{ open: false }">
+                <button type="button"
+                        @click="open = !open"
+                        class="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 rounded-lg transition-colors">
                     <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Datos del Transporte</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label for="bl_loading_port_id" class="block text-sm font-medium text-gray-700">
-                                    Puerto de Carga <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="bl_loading_port_id" id="bl_loading_port_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar puerto</option>
-                                    @foreach($ports as $port)
-                                        <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country->name }})</option>
-                                    @endforeach
-                                </select>
-                                @error('bl_loading_port_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="bl_discharge_port_id" class="block text-sm font-medium text-gray-700">
-                                    Puerto de Descarga <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="bl_discharge_port_id" id="bl_discharge_port_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar puerto</option>
-                                    @foreach($ports as $port)
-                                        <option value="{{ $port->id }}">{{ $port->name }} ({{ $port->country->name }})</option>
-                                    @endforeach
-                                </select>
-                                @error('bl_discharge_port_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
+                        <h3 class="text-base font-semibold text-gray-900">Términos Comerciales</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">
+                            Flete: <strong>{{ $bl_freight_terms === 'prepaid' ? 'Prepaid' : 'Collect' }}</strong>
+                            · Pago: <strong>{{ ucfirst($bl_payment_terms) }}</strong>
+                            · Moneda: <strong>{{ $bl_currency_code }}</strong>
+                            · Fecha BL: <strong>{{ $bl_bill_date ?: 'No definida' }}</strong>
+                        </p>
                     </div>
-
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Datos del Conocimiento</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <svg class="w-5 h-5 text-gray-400 transition-transform" :class="{ 'rotate-180': open }"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+                <div x-show="open" class="border-t border-gray-100">
+                    <div class="px-6 py-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                             <div>
-                                <label for="bl_bill_number" class="block text-sm font-medium text-gray-700">
-                                    Número de Conocimiento <span class="text-red-500">*</span>
+                                <label for="bl_freight_terms" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Términos de Flete
                                 </label>
-                                <input wire:model="bl_bill_number" type="text" id="bl_bill_number" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                @error('bl_bill_number')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="bl_bill_date" class="block text-sm font-medium text-gray-700">
-                                    Fecha del Conocimiento <span class="text-red-500">*</span>
-                                </label>
-                                <input wire:model="bl_bill_date" type="date" id="bl_bill_date" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                @error('bl_bill_date')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="bl_loading_date" class="block text-sm font-medium text-gray-700">
-                                    Fecha de Carga <span class="text-red-500">*</span>
-                                </label>
-                                <input wire:model="bl_loading_date" type="date" id="bl_loading_date" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                @error('bl_loading_date')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Tipos de Carga</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label for="bl_primary_cargo_type_id" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Carga Principal <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="bl_primary_cargo_type_id" id="bl_primary_cargo_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar tipo</option>
-                                    @foreach($cargoTypes as $cargoType)
-                                        <option value="{{ $cargoType->id }}">{{ $cargoType->name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('bl_primary_cargo_type_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="bl_primary_packaging_type_id" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Embalaje Principal <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="bl_primary_packaging_type_id" id="bl_primary_packaging_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar tipo</option>
-                                    @foreach($packagingTypes as $packagingType)
-                                        <option value="{{ $packagingType->id }}">{{ $packagingType->name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('bl_primary_packaging_type_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Términos Comerciales</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label for="bl_freight_terms" class="block text-sm font-medium text-gray-700">
-                                    Términos de Flete <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="bl_freight_terms" id="bl_freight_terms" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select wire:model="bl_freight_terms"
+                                        id="bl_freight_terms"
+                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                     <option value="prepaid">Prepaid (Pagado)</option>
                                     <option value="collect">Collect (Por cobrar)</option>
                                 </select>
-                                @error('bl_freight_terms')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
                             </div>
-
                             <div>
-                                <label for="bl_payment_terms" class="block text-sm font-medium text-gray-700">
-                                    Términos de Pago <span class="text-red-500">*</span>
+                                <label for="bl_payment_terms" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Términos de Pago
                                 </label>
-                                <select wire:model="bl_payment_terms" id="bl_payment_terms" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <select wire:model="bl_payment_terms"
+                                        id="bl_payment_terms"
+                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                                     <option value="cash">Cash (Efectivo)</option>
                                     <option value="credit">Credit (Crédito)</option>
                                     <option value="advance">Advance (Adelanto)</option>
                                 </select>
-                                @error('bl_payment_terms')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
                             </div>
-
                             <div>
-                                <label for="bl_currency_code" class="block text-sm font-medium text-gray-700">
-                                    Moneda <span class="text-red-500">*</span>
+                                <label for="bl_currency_code" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Moneda
                                 </label>
-                                <select wire:model="bl_currency_code" id="bl_currency_code" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="USD">USD - Dólar Estadounidense</option>
-                                    <option value="ARS">ARS - Peso Argentino</option>
-                                    <option value="EUR">EUR - Euro</option>
+                                <select wire:model="bl_currency_code"
+                                        id="bl_currency_code"
+                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                    <option value="USD">USD — Dólar</option>
+                                    <option value="ARS">ARS — Peso Argentino</option>
+                                    <option value="EUR">EUR — Euro</option>
                                 </select>
-                                @error('bl_currency_code')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            </div>
+                            <div>
+                                <label for="bl_bill_date" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Fecha del Conocimiento
+                                </label>
+                                <input wire:model="bl_bill_date"
+                                       type="date"
+                                       id="bl_bill_date"
+                                       class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                @error('bl_bill_date')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
                         </div>
                     </div>
-
-                    <div class="flex justify-end space-x-3">
-                        <button type="button" wire:click="goToStep(2)" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                            Omitir BL
-                        </button>
-                        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
-                            <span wire:loading.remove wire:target="createBillOfLading">Crear Bill of Lading</span>
-                            <span wire:loading wire:target="createBillOfLading">Creando...</span>
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
-        </div>
+
+            {{-- Botones --}}
+            <div class="flex justify-between items-center pt-2">
+                <button type="button"
+                        wire:click="goToStep(2)"
+                        class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-500 bg-white hover:bg-gray-50">
+                    Omitir BL
+                </button>
+                <button type="submit"
+                        class="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <svg wire:loading wire:target="createBillOfLading" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span wire:loading.remove wire:target="createBillOfLading">Crear Conocimiento de Embarque</span>
+                    <span wire:loading wire:target="createBillOfLading">Creando...</span>
+                </button>
+            </div>
+
+        </form>
     @endif
 
     {{-- STEP 2: Agregar Items (SIN MODIFICAR) --}}
@@ -541,918 +612,829 @@
             <div class="px-4 py-5 sm:p-6">
                 <h3 class="text-lg font-medium text-gray-900 mb-6">Agregar Carga</h3>
 
+                @if(session()->has('message'))
+                    <div class="mb-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                        <p class="text-sm text-green-800">{{ session('message') }}</p>
+                    </div>
+                @endif
+
                 <form wire:submit="createShipmentItem" class="space-y-6">
-                    {{-- Identificación del Item --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Identificación del Item</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    {{-- ══════════════════════════════════════════════════════
+                         SECCIÓN PRINCIPAL — Campos requeridos por WS
+                         Borde azul = obligatorio para AFIP/DNA
+                    ══════════════════════════════════════════════════════ --}}
+                    <div class="border-l-4 border-blue-500 pl-4 space-y-6">
+
+                        <div>
+                            <h4 class="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-4">
+                                Datos obligatorios webservice
+                            </h4>
+
+                            {{-- Descripción --}}
                             <div>
-                                <label for="item_reference" class="block text-sm font-medium text-gray-700">
-                                    Referencia del Item <span class="text-red-500">*</span>
+                                <label for="item_description" class="block text-sm font-medium text-gray-700">
+                                    Descripción de la Mercadería <span class="text-red-500">*</span>
                                 </label>
-                                <input wire:model="item_reference" type="text" id="item_reference" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="SOJA-2025-001">
-                                @error('item_reference')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Número de Línea
-                                </label>
-                                <input type="text" value="{{ $nextLineNumber }}" disabled class="mt-1 block w-full border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-500">
-                                <p class="mt-1 text-xs text-gray-500">Asignado automáticamente</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Descripción --}}
-                    <div>
-                        <label for="item_description" class="block text-sm font-medium text-gray-700">
-                            Descripción del Item <span class="text-red-500">*</span>
-                        </label>
-                        <textarea wire:model="item_description" id="item_description" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="Descripción detallada de la mercadería..."></textarea>
-                        @error('item_description')
-                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    {{-- Clasificación de la Carga --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Clasificación de la Carga</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label for="cargo_type_id" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Carga <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model.live="cargo_type_id" id="cargo_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar tipo</option>
-                                    @foreach($cargoTypes as $cargoType)
-                                        <option value="{{ $cargoType->id }}">{{ $cargoType->name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('cargo_type_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="packaging_type_id" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Embalaje <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="packaging_type_id" id="packaging_type_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar tipo</option>
-                                    @foreach($packagingTypes as $packagingType)
-                                        <option value="{{ $packagingType->id }}">{{ $packagingType->name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('packaging_type_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Campos de Contenedor (si es necesario) --}}
-                    {{-- SECCIÓN DE CONTENEDORES MODIFICADA --}}
-@if($showContainerFields)
-    <div>
-        <div class="flex justify-between items-center mb-4">
-            <h4 class="text-lg font-medium text-gray-900">Información de Contenedores</h4>
-            <button type="button" wire:click="addContainer" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200">
-                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                </svg>
-                Agregar Contenedor
-            </button>
-        </div>
-
-        {{-- Lista de contenedores --}}
-        @if(!empty($containers))
-            <div class="space-y-4">
-                @foreach($containers as $index => $container)
-                    <div class="p-4 border border-gray-200 rounded-lg bg-gray-50" wire:key="container-{{ $container['id'] }}">
-                        <div class="flex justify-between items-center mb-3">
-                            <h5 class="text-md font-medium text-gray-900">Contenedor {{ $index + 1 }}</h5>
-                            @if(count($containers) > 1)
-                                <button type="button" wire:click="removeContainer({{ $index }})" class="text-red-600 hover:text-red-800">
-                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                    </svg>
-                                </button>
-                            @endif
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {{-- Número de Contenedor --}}
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Número de Contenedor <span class="text-red-500">*</span>
-                                </label>
-                                <input 
-                                    wire:model="containers.{{ $index }}.container_number" 
-                                    type="text" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="MSCU1234567"
-                                >
-                                @error("container_{$index}")
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- Tipo de Contenedor --}}
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Tipo de Contenedor <span class="text-red-500">*</span>
-                                </label>
-                                <select 
-                                    wire:model="containers.{{ $index }}.container_type_id" 
+                                <textarea wire:model="item_description" id="item_description" rows="3"
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                    <option value="">Seleccionar tipo</option>
-                                    @foreach($containerTypes as $containerType)
-                                        <option value="{{ $containerType->id }}">{{ $containerType->name }}</option>
-                                    @endforeach
-                                </select>
+                                    placeholder="Descripción detallada de la mercadería..."></textarea>
+                                @error('item_description')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
                             </div>
 
-                            {{-- Condición del Contenedor (AFIP) --}}
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Condición <span class="text-red-500">*</span>
-                                </label>
-                                <select 
-                                    wire:model="containers.{{ $index }}.container_condition" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                    <option value="">Seleccionar</option>
-                                    <option value="H">H - Casa a Casa</option>
-                                    <option value="P">P - Muelle a Muelle</option>
-                                </select>
-                                <p class="mt-1 text-xs text-gray-500">Campo AFIP obligatorio</p>
-                            </div>
-                            {{-- Estado del Contenedor --}}
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Estado <span class="text-red-500">*</span>
-                                </label>
-                                <select 
-                                    wire:model="containers.{{ $index }}.condition" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                    <option value="L">L - Lleno (con carga)</option>
-                                    <option value="V">V - Vacío</option>
-                                </select>
-                                <p class="mt-1 text-xs text-gray-500">Vacío para contenedores sin mercadería</p>
-                            </div>
-
-                           {{-- Números de Precinto --}}
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Números de Precinto
-                                </label>
-                                <input 
-                                    wire:model="containers.{{ $index }}.seal_number" 
-                                    type="text" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="SL123456, SL123457, SL123458"
-                                >
-                                <p class="mt-1 text-xs text-gray-500">
-                                    💡 Ingrese múltiples precintos separados por comas si es necesario
-                                </p>
-                            </div>
-
-                            {{-- Peso de Tara --}}
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Peso de Tara (kg)
-                                </label>
-                                <input 
-                                    wire:model="containers.{{ $index }}.tare_weight" 
-                                    type="number" 
-                                    step="0.01" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="2300"
-                                >
-                            </div>
-
-                            
-                        </div>
-
-                        {{-- Distribución de la carga en este contenedor --}}
-                        <div class="mt-4 pt-4 border-t border-gray-200">
-                            <h6 class="text-sm font-medium text-gray-700 mb-3">Distribución de Carga en este Contenedor</h6>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {{-- Cantidad de Bultos --}}
+                            {{-- Cantidad, Peso Bruto --}}
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">
+                                    <label for="package_quantity" class="block text-sm font-medium text-gray-700">
                                         Cantidad de Bultos <span class="text-red-500">*</span>
                                     </label>
-                                    <input 
-                                        wire:model="containers.{{ $index }}.package_quantity" 
-                                        type="number" 
-                                        min="1" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="20"
-                                    >
+                                    <input wire:model="package_quantity" type="number" min="1" id="package_quantity"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="40">
+                                    @error('package_quantity')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
 
-                                {{-- Peso Bruto --}}
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">
+                                    <label for="gross_weight_kg" class="block text-sm font-medium text-gray-700">
                                         Peso Bruto (kg) <span class="text-red-500">*</span>
                                     </label>
-                                    <input 
-                                        wire:model="containers.{{ $index }}.gross_weight_kg" 
-                                        type="number" 
-                                        step="0.01" 
-                                        min="0.01" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="1000.00"
-                                    >
-                                </div>
-
-                                {{-- Peso Neto --}}
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Peso Neto (kg)
-                                    </label>
-                                    <input 
-                                        wire:model="containers.{{ $index }}.net_weight_kg" 
-                                        type="number" 
-                                        step="0.01" 
-                                        min="0" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="990.00"
-                                    >
-                                </div>
-
-                                {{-- Volumen --}}
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Volumen (m³)
-                                    </label>
-                                    <input 
-                                        wire:model="containers.{{ $index }}.volume_m3" 
-                                        type="number" 
-                                        step="0.001" 
-                                        min="0" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="1.250"
-                                    >
+                                    <input wire:model="gross_weight_kg" type="number" step="0.01" min="0.01" id="gross_weight_kg"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="2000.00">
+                                    @error('gross_weight_kg')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
 
-                            {{-- Campos adicionales --}}
+                            {{-- Tipo de Carga, Tipo de Embalaje --}}
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                {{-- Secuencia de Carga --}}
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Secuencia de Carga
+                                    <label for="cargo_type_id" class="block text-sm font-medium text-gray-700">
+                                        Tipo de Carga <span class="text-red-500">*</span>
                                     </label>
-                                    <input 
-                                        wire:model="containers.{{ $index }}.loading_sequence" 
-                                        type="text" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="A1, B2, etc."
-                                    >
-                                    <p class="mt-1 text-xs text-gray-500">Orden o posición en el contenedor</p>
+                                    <select wire:model.live="cargo_type_id" id="cargo_type_id"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccionar tipo</option>
+                                        @foreach($cargoTypes as $cargoType)
+                                            <option value="{{ $cargoType->id }}">{{ $cargoType->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('cargo_type_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
 
-                                {{-- Notas --}}
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700">
-                                        Notas
+                                    <label for="packaging_type_id" class="block text-sm font-medium text-gray-700">
+                                        Tipo de Embalaje <span class="text-red-500">*</span>
                                     </label>
-                                    <input 
-                                        wire:model="containers.{{ $index }}.notes" 
-                                        type="text" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="Notas adicionales..."
-                                    >
+                                    <select wire:model="packaging_type_id" id="packaging_type_id"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccionar tipo</option>
+                                        @foreach($packagingTypes as $packagingType)
+                                            <option value="{{ $packagingType->id }}">{{ $packagingType->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('packaging_type_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
 
-            {{-- Validación de Totales --}}
-            <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-                <h6 class="text-sm font-medium text-blue-900 mb-2">Validación de Totales</h6>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                        <span class="text-blue-700">Bultos Contenedores:</span>
-                        <span class="font-medium">
-                            {{ collect($containers)->sum('package_quantity') }} / {{ $package_quantity }}
-                        </span>
-                        @if(collect($containers)->sum('package_quantity') != $package_quantity)
-                            <span class="text-red-600 ml-1">⚠️</span>
-                        @else
-                            <span class="text-green-600 ml-1">✓</span>
-                        @endif
-                    </div>
-                    <div>
-                        <span class="text-blue-700">Peso Bruto:</span>
-                        <span class="font-medium">
-                            {{ number_format(collect($containers)->sum('gross_weight_kg'), 2) }} / {{ number_format($gross_weight_kg ?: 0, 2) }} kg
-                        </span>
-                        @if(abs(collect($containers)->sum('gross_weight_kg') - ($gross_weight_kg ?: 0)) > 0.01)
-                            <span class="text-red-600 ml-1">⚠️</span>
-                        @else
-                            <span class="text-green-600 ml-1">✓</span>
-                        @endif
-                    </div>
-                    <div>
-                        <span class="text-blue-700">Peso Neto:</span>
-                        <span class="font-medium">
-                            {{ number_format(collect($containers)->sum('net_weight_kg'), 2) }} / {{ number_format($net_weight_kg ?: 0, 2) }} kg
-                        </span>
-                    </div>
-                    <div>
-                        <span class="text-blue-700">Volumen:</span>
-                        <span class="font-medium">
-                            {{ number_format(collect($containers)->sum('volume_m3'), 3) }} / {{ number_format($volume_m3 ?: 0, 3) }} m³
-                        </span>
-                    </div>
-                </div>
-                
-                @error('containers_total')
-                    <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
-                @enderror
-            </div>
+                            {{-- País de Origen, Posición Arancelaria --}}
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div>
+                                    <label for="country_of_origin" class="block text-sm font-medium text-gray-700">
+                                        País de Origen <span class="text-red-500">*</span>
+                                    </label>
+                                    <select wire:model="country_of_origin" id="country_of_origin"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccionar país</option>
+                                        @foreach($countries as $country)
+                                            <option value="{{ $country->alpha2_code }}">{{ $country->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('country_of_origin')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
 
-        @else
-            {{-- Botón para agregar primer contenedor --}}
-            <div class="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
-                <p class="text-gray-500 mb-3">No se han agregado contenedores</p>
-                <button type="button" wire:click="addContainer" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                    <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                    </svg>
-                    Agregar Primer Contenedor
-                </button>
-            </div>
-        @endif
-    </div>
-@endif
-
-                    {{-- Cantidades y Medidas --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Cantidades y Medidas</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                            <div>
-                                <label for="package_quantity" class="block text-sm font-medium text-gray-700">
-                                    Cantidad de Bultos <span class="text-red-500">*</span>
-                                </label>
-                                <input wire:model="package_quantity" type="number" min="1" id="package_quantity" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="40">
-                                @error('package_quantity')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
+                                <div>
+                                    <label for="tariff_position" class="block text-sm font-medium text-gray-700">
+                                        Posición Arancelaria <span class="text-red-500">*</span>
+                                    </label>
+                                    <input wire:model="tariff_position" type="text" id="tariff_position"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="1234.56.78.90" maxlength="15">
+                                    <p class="mt-1 text-xs text-gray-500">Mín. 7 caracteres, máx. 15</p>
+                                    @error('tariff_position')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
                             </div>
 
-                            <div>
-                                <label for="gross_weight_kg" class="block text-sm font-medium text-gray-700">
-                                    Peso Bruto (kg) <span class="text-red-500">*</span>
-                                </label>
-                                <input wire:model="gross_weight_kg" type="number" step="0.01" min="0.01" id="gross_weight_kg" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="2000.00">
-                                @error('gross_weight_kg')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="net_weight_kg" class="block text-sm font-medium text-gray-700">
-                                    Peso Neto (kg)
-                                </label>
-                                <input wire:model="net_weight_kg" type="number" step="0.01" min="0" id="net_weight_kg" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="1980.00">
-                                @error('net_weight_kg')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="volume_m3" class="block text-sm font-medium text-gray-700">
-                                    Volumen (m³)
-                                </label>
-                                <input wire:model="volume_m3" type="number" step="0.001" min="0" id="volume_m3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="2.500">
-                                @error('volume_m3')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="declared_value" class="block text-sm font-medium text-gray-700">
-                                    Valor Declarado (USD)
-                                </label>
-                                <input wire:model="declared_value" type="number" step="0.01" min="0" id="declared_value" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="1200.00">
-                                @error('declared_value')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Origen y Clasificación --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Origen y Clasificación</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div>
-                                <label for="country_of_origin" class="block text-sm font-medium text-gray-700">
-                                    País de Origen <span class="text-red-500">*</span>
-                                </label>
-                                <select wire:model="country_of_origin" id="country_of_origin" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="">Seleccionar país</option>
-                                    @foreach($countries as $country)
-                                        <option value="{{ $country->alpha2_code }}">{{ $country->name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('country_of_origin')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="hs_code" class="block text-sm font-medium text-gray-700">
-                                    Código HS
-                                </label>
-                                <input wire:model="hs_code" type="text" id="hs_code" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="120100">
-                                @error('hs_code')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="commodity_code" class="block text-sm font-medium text-gray-700">
-                                    Código de Mercadería
-                                </label>
-                                <input wire:model="commodity_code" type="text" id="commodity_code" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="SOJA001">
-                                @error('commodity_code')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div>
-                                <label for="brand_model" class="block text-sm font-medium text-gray-700">
-                                    Marca/Modelo
-                                </label>
-                                <input wire:model="brand_model" type="text" id="brand_model" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="SOJA ARGENTINA">
-                                @error('brand_model')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Datos AFIP / Aduaneros --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Datos AFIP / Aduaneros</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {{-- Posición Arancelaria --}}
-                            <div>
-                                <label for="tariff_position" class="block text-sm font-medium text-gray-700">
-                                    Posición Arancelaria <span class="text-red-500">*</span>
-                                </label>
-                                <input 
-                                    wire:model="tariff_position" 
-                                    type="text" 
-                                    id="tariff_position" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="1234.56.78.90"
-                                    maxlength="15"
-                                >
-                                <p class="mt-1 text-xs text-gray-500">Mínimo 7 caracteres, máximo 15 (incluye puntos)</p>
-                                @error('tariff_position')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- Razón Social Forwarder --}}
-                            <div>
+                            {{-- Forwarder Exterior --}}
+                            <div class="mt-4">
                                 <label for="foreign_forwarder_name" class="block text-sm font-medium text-gray-700">
                                     Razón Social Forwarder Exterior <span class="text-red-500">*</span>
                                 </label>
-                                <input 
-                                    wire:model="foreign_forwarder_name" 
-                                    type="text" 
-                                    id="foreign_forwarder_name" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="FORWARDING COMPANY SA"
-                                    maxlength="70"
-                                >
+                                <input wire:model="foreign_forwarder_name" type="text" id="foreign_forwarder_name"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="FORWARDING COMPANY SA" maxlength="70">
                                 @error('foreign_forwarder_name')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            {{-- Número Tributario Forwarder --}}
-                            <div>
-                                <label for="foreign_forwarder_tax_id" class="block text-sm font-medium text-gray-700">
-                                    Número Tributario Forwarder
-                                </label>
-                                <input 
-                                    wire:model="foreign_forwarder_tax_id" 
-                                    type="text" 
-                                    id="foreign_forwarder_tax_id" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="12345678901234567890"
-                                    maxlength="35"
-                                >
-                                <p class="mt-1 text-xs text-gray-500">Opcional - Máximo 35 caracteres</p>
-                                @error('foreign_forwarder_tax_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- País Forwarder --}}
-                            <div>
-                                <label for="foreign_forwarder_country" class="block text-sm font-medium text-gray-700">
-                                    País Emisor ID Tributario Forwarder
-                                </label>
-                                <select 
-                                    wire:model="foreign_forwarder_country" 
-                                    id="foreign_forwarder_country" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                    <option value="">Seleccionar país</option>
-                                    @foreach($countries as $country)
-                                        <option value="{{ $country->iso_code }}">{{ $country->name }}</option>
-                                    @endforeach
-                                </select>
-                                <p class="mt-1 text-xs text-gray-500">Código ISO de 3 caracteres</p>
-                                @error('foreign_forwarder_country')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-                        </div>
-
-                        {{-- Campos adicionales AFIP (generales) --}}
-                        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {{-- Números de Bultos --}}
-                            <div>
-                                <label for="package_numbers" class="block text-sm font-medium text-gray-700">
-                                    Números de los Bultos
-                                </label>
-                                <input 
-                                    wire:model="package_numbers" 
-                                    type="text" 
-                                    id="package_numbers" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="1-100, 101-200"
-                                    maxlength="100"
-                                >
-                                <p class="mt-1 text-xs text-gray-500">Números individuales de bultos (máx 100 caracteres)</p>
-                                @error('package_numbers')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            {{-- Tipo de Embalaje (Código AFIP) --}}
-                            <div>
-                                <label for="packaging_type_code" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Embalaje (Código)
-                                </label>
-                                <input 
-                                    wire:model="packaging_type_code" 
-                                    type="text" 
-                                    id="packaging_type_code" 
-                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                    placeholder="1"
-                                    maxlength="1"
-                                >
-                                <p class="mt-1 text-xs text-gray-500">No informar si código de embalaje es 05 (contenedor)</p>
-                                @error('packaging_type_code')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
-                        </div>
-
-                        {{-- Códigos Aduaneros AFIP --}}
-                        <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                            <h5 class="text-sm font-medium text-gray-900 mb-3">Códigos Aduaneros</h5>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {{-- Código Aduana de Descarga --}}
+                            {{-- Códigos Aduaneros --}}
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                 <div>
                                     <label for="discharge_customs_code" class="block text-sm font-medium text-gray-700">
                                         Código Aduana Descarga <span class="text-red-500">*</span>
                                     </label>
-                                    <input 
-                                        wire:model="discharge_customs_code" 
-                                        type="text" 
-                                        id="discharge_customs_code" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="001"
-                                        maxlength="3"
-                                    >
+                                    <input wire:model="discharge_customs_code" type="text" id="discharge_customs_code"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="001" maxlength="3">
                                     <p class="mt-1 text-xs text-gray-500">Código AFIP de 3 caracteres</p>
                                     @error('discharge_customs_code')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
 
-                                {{-- Código Lugar Operativo --}}
                                 <div>
                                     <label for="operational_discharge_code" class="block text-sm font-medium text-gray-700">
                                         Código Lugar Operativo <span class="text-red-500">*</span>
                                     </label>
-                                    <input 
-                                        wire:model="operational_discharge_code" 
-                                        type="text" 
-                                        id="operational_discharge_code" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="USAHU"
-                                        maxlength="5"
-                                    >
+                                    <input wire:model="operational_discharge_code" type="text" id="operational_discharge_code"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="USAHU" maxlength="5">
                                     <p class="mt-1 text-xs text-gray-500">Código de lugar operativo de descarga</p>
                                     @error('operational_discharge_code')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
                             </div>
-                        </div>
 
-                        {{-- Destinatario de Mercadería (Opcional) --}}
-                        <div class="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                            <h5 class="text-sm font-medium text-gray-900 mb-3">Destinatario de Mercadería (Opcional)</h5>
+                            {{-- Indicadores AFIP --}}
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                                <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Operador Logístico Seguro <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex space-x-4">
+                                        <label class="inline-flex items-center">
+                                            <input wire:model="is_secure_logistics_operator" type="radio" value="S" class="form-radio text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                        </label>
+                                        <label class="inline-flex items-center">
+                                            <input wire:model="is_secure_logistics_operator" type="radio" value="N" class="form-radio text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700">No</span>
+                                        </label>
+                                    </div>
+                                    @error('is_secure_logistics_operator')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tránsito Monitoreado <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex space-x-4">
+                                        <label class="inline-flex items-center">
+                                            <input wire:model="is_monitored_transit" type="radio" value="S" class="form-radio text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                        </label>
+                                        <label class="inline-flex items-center">
+                                            <input wire:model="is_monitored_transit" type="radio" value="N" class="form-radio text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700">No</span>
+                                        </label>
+                                    </div>
+                                    @error('is_monitored_transit')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Sujeto a RENAR <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex space-x-4">
+                                        <label class="inline-flex items-center">
+                                            <input wire:model="is_renar" type="radio" value="S" class="form-radio text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                        </label>
+                                        <label class="inline-flex items-center">
+                                            <input wire:model="is_renar" type="radio" value="N" class="form-radio text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700">No</span>
+                                        </label>
+                                    </div>
+                                    @error('is_renar')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- ══════════════════════════════════════════════════════
+                         SECCIÓN CONTENEDORES (condicional, sin modificar)
+                    ══════════════════════════════════════════════════════ --}}
+                    @if($showContainerFields)
+                        <div>
+                            <div class="flex justify-between items-center mb-4">
+                                <h4 class="text-lg font-medium text-gray-900">Información de Contenedores</h4>
+                                <button type="button" wire:click="addContainer"
+                                    class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200">
+                                    <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                    Agregar Contenedor
+                                </button>
+                            </div>
+
+                            @if(!empty($containers))
+                                <div class="space-y-4">
+                                    @foreach($containers as $index => $container)
+                                        <div class="p-4 border border-gray-200 rounded-lg bg-gray-50" wire:key="container-{{ $container['id'] }}">
+                                            <div class="flex justify-between items-center mb-3">
+                                                <h5 class="text-md font-medium text-gray-900">Contenedor {{ $index + 1 }}</h5>
+                                                @if(count($containers) > 1)
+                                                    <button type="button" wire:click="removeContainer({{ $index }})" class="text-red-600 hover:text-red-800">
+                                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                        </svg>
+                                                    </button>
+                                                @endif
+                                            </div>
+
+                                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700">
+                                                        Número de Contenedor <span class="text-red-500">*</span>
+                                                    </label>
+                                                    <input wire:model="containers.{{ $index }}.container_number" type="text"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                        placeholder="MSCU1234567">
+                                                    @error("container_{$index}")
+                                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                                    @enderror
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700">
+                                                        Tipo de Contenedor <span class="text-red-500">*</span>
+                                                    </label>
+                                                    <select wire:model="containers.{{ $index }}.container_type_id"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                                        <option value="">Seleccionar tipo</option>
+                                                        @foreach($containerTypes as $containerType)
+                                                            <option value="{{ $containerType->id }}">{{ $containerType->name }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700">
+                                                        Condición <span class="text-red-500">*</span>
+                                                    </label>
+                                                    <select wire:model="containers.{{ $index }}.container_condition"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                                        <option value="">Seleccionar</option>
+                                                        <option value="H">H - Casa a Casa</option>
+                                                        <option value="P">P - Muelle a Muelle</option>
+                                                    </select>
+                                                    <p class="mt-1 text-xs text-gray-500">Campo AFIP obligatorio</p>
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700">
+                                                        Estado <span class="text-red-500">*</span>
+                                                    </label>
+                                                    <select wire:model="containers.{{ $index }}.condition"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                                        <option value="L">L - Lleno (con carga)</option>
+                                                        <option value="V">V - Vacío</option>
+                                                    </select>
+                                                    <p class="mt-1 text-xs text-gray-500">Vacío para contenedores sin mercadería</p>
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700">
+                                                        Números de Precinto
+                                                    </label>
+                                                    <input wire:model="containers.{{ $index }}.seal_number" type="text"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                        placeholder="SL123456, SL123457">
+                                                    <p class="mt-1 text-xs text-gray-500">Separar múltiples con comas</p>
+                                                </div>
+
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700">
+                                                        Peso de Tara (kg)
+                                                    </label>
+                                                    <input wire:model="containers.{{ $index }}.tare_weight" type="number" step="0.01"
+                                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                        placeholder="2300">
+                                                </div>
+                                            </div>
+
+                                            <div class="mt-4 pt-4 border-t border-gray-200">
+                                                <h6 class="text-sm font-medium text-gray-700 mb-3">Distribución de Carga en este Contenedor</h6>
+                                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700">
+                                                            Cantidad de Bultos <span class="text-red-500">*</span>
+                                                        </label>
+                                                        <input wire:model="containers.{{ $index }}.package_quantity" type="number" min="1"
+                                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                            placeholder="20">
+                                                    </div>
+
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700">
+                                                            Peso Bruto (kg) <span class="text-red-500">*</span>
+                                                        </label>
+                                                        <input wire:model="containers.{{ $index }}.gross_weight_kg" type="number" step="0.01" min="0.01"
+                                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                            placeholder="1000.00">
+                                                    </div>
+
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700">
+                                                            Peso Neto (kg)
+                                                        </label>
+                                                        <input wire:model="containers.{{ $index }}.net_weight_kg" type="number" step="0.01" min="0"
+                                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                            placeholder="990.00">
+                                                    </div>
+
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700">
+                                                            Volumen (m³)
+                                                        </label>
+                                                        <input wire:model="containers.{{ $index }}.volume_m3" type="number" step="0.001" min="0"
+                                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                            placeholder="1.250">
+                                                    </div>
+                                                </div>
+
+                                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700">
+                                                            Secuencia de Carga
+                                                        </label>
+                                                        <input wire:model="containers.{{ $index }}.loading_sequence" type="text"
+                                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                            placeholder="A1, B2, etc.">
+                                                    </div>
+
+                                                    <div>
+                                                        <label class="block text-sm font-medium text-gray-700">
+                                                            Notas
+                                                        </label>
+                                                        <input wire:model="containers.{{ $index }}.notes" type="text"
+                                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                                            placeholder="Notas adicionales...">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+
+                                {{-- Validación de Totales --}}
+                                <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                                    <h6 class="text-sm font-medium text-blue-900 mb-2">Validación de Totales</h6>
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                                        <div>
+                                            <span class="text-blue-700">Bultos:</span>
+                                            <span class="font-medium">{{ collect($containers)->sum('package_quantity') }} / {{ $package_quantity }}</span>
+                                            @if(collect($containers)->sum('package_quantity') != $package_quantity)
+                                                <span class="text-red-600 ml-1">⚠️</span>
+                                            @else
+                                                <span class="text-green-600 ml-1">✓</span>
+                                            @endif
+                                        </div>
+                                        <div>
+                                            <span class="text-blue-700">Peso Bruto:</span>
+                                            <span class="font-medium">{{ number_format(collect($containers)->sum('gross_weight_kg'), 2) }} / {{ number_format($gross_weight_kg ?: 0, 2) }} kg</span>
+                                            @if(abs(collect($containers)->sum('gross_weight_kg') - ($gross_weight_kg ?: 0)) > 0.01)
+                                                <span class="text-red-600 ml-1">⚠️</span>
+                                            @else
+                                                <span class="text-green-600 ml-1">✓</span>
+                                            @endif
+                                        </div>
+                                        <div>
+                                            <span class="text-blue-700">Peso Neto:</span>
+                                            <span class="font-medium">{{ number_format(collect($containers)->sum('net_weight_kg'), 2) }} / {{ number_format($net_weight_kg ?: 0, 2) }} kg</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-blue-700">Volumen:</span>
+                                            <span class="font-medium">{{ number_format(collect($containers)->sum('volume_m3'), 3) }} / {{ number_format($volume_m3 ?: 0, 3) }} m³</span>
+                                        </div>
+                                    </div>
+                                    @error('containers_total')
+                                        <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                            @else
+                                <div class="text-center py-6 border-2 border-dashed border-gray-300 rounded-lg">
+                                    <p class="text-gray-500 mb-3">No se han agregado contenedores</p>
+                                    <button type="button" wire:click="addContainer"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                                        <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                        </svg>
+                                        Agregar Primer Contenedor
+                                    </button>
+                                </div>
+                            @endif
+                        </div>
+                    @endif
+
+                    {{-- ══════════════════════════════════════════════════════
+                         COLAPSABLE 1 — Datos aduaneros adicionales
+                    ══════════════════════════════════════════════════════ --}}
+                    <div x-data="{ open: false }" class="border border-gray-200 rounded-lg">
+                        <button type="button" @click="open = !open"
+                            class="w-full flex justify-between items-center px-4 py-3 text-left bg-gray-50 hover:bg-gray-100 rounded-lg">
+                            <span class="text-sm font-medium text-gray-700">Datos aduaneros adicionales</span>
+                            <svg :class="open ? 'rotate-180' : ''" class="h-5 w-5 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div x-show="open" class="px-4 py-4 space-y-4">
+
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {{-- Tipo de Documento --}}
+                                <div>
+                                    <label for="foreign_forwarder_tax_id" class="block text-sm font-medium text-gray-700">
+                                        Número Tributario Forwarder
+                                    </label>
+                                    <input wire:model="foreign_forwarder_tax_id" type="text" id="foreign_forwarder_tax_id"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="12345678901234567890" maxlength="35">
+                                    <p class="mt-1 text-xs text-gray-500">Opcional — máx. 35 caracteres</p>
+                                    @error('foreign_forwarder_tax_id')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="foreign_forwarder_country" class="block text-sm font-medium text-gray-700">
+                                        País Emisor ID Tributario Forwarder
+                                    </label>
+                                    <select wire:model="foreign_forwarder_country" id="foreign_forwarder_country"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Seleccionar país</option>
+                                        @foreach($countries as $country)
+                                            <option value="{{ $country->iso_code }}">{{ $country->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">Código ISO de 3 caracteres</p>
+                                    @error('foreign_forwarder_country')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="declared_value" class="block text-sm font-medium text-gray-700">
+                                        Valor Declarado (USD)
+                                    </label>
+                                    <input wire:model="declared_value" type="number" step="0.01" min="0" id="declared_value"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="1200.00">
+                                    @error('declared_value')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="cargo_marks" class="block text-sm font-medium text-gray-700">
+                                        Marcas de la Mercadería
+                                    </label>
+                                    <textarea wire:model="cargo_marks" id="cargo_marks" rows="2"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="SOJA ARG 2025 | HANDLE WITH CARE"></textarea>
+                                    @error('cargo_marks')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label for="consignee_document_type" class="block text-sm font-medium text-gray-700">
-                                        Tipo de Documento
+                                        Tipo Doc. Destinatario
                                     </label>
-                                    <select 
-                                        wire:model="consignee_document_type" 
-                                        id="consignee_document_type" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                    >
+                                    <select wire:model="consignee_document_type" id="consignee_document_type"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                         <option value="">Seleccionar</option>
                                         <option value="CUIL">CUIL</option>
                                         <option value="CDI">CDI</option>
                                         <option value="DNI">DNI</option>
                                         <option value="PASS">Pasaporte</option>
                                     </select>
-                                    <p class="mt-1 text-xs text-gray-500">Máximo 4 caracteres</p>
+                                    <p class="mt-1 text-xs text-gray-500">Máx. 4 caracteres</p>
                                     @error('consignee_document_type')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
 
-                                {{-- Identificador Tributario --}}
                                 <div>
                                     <label for="consignee_tax_id" class="block text-sm font-medium text-gray-700">
-                                        Identificador Tributario
+                                        Identificador Tributario Destinatario
                                     </label>
-                                    <input 
-                                        wire:model="consignee_tax_id" 
-                                        type="text" 
-                                        id="consignee_tax_id" 
-                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                        placeholder="20123456789"
-                                        maxlength="11"
-                                    >
+                                    <input wire:model="consignee_tax_id" type="text" id="consignee_tax_id"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="20123456789" maxlength="11">
                                     <p class="mt-1 text-xs text-gray-500">CUIL/CDI del destinatario (11 caracteres)</p>
                                     @error('consignee_tax_id')
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
                             </div>
-                        </div>
 
-                        {{-- Comentarios Adicionales --}}
-                        <div class="mt-4">
-                            <label for="comments" class="block text-sm font-medium text-gray-700">
-                                Comentarios Adicionales
-                            </label>
-                            <textarea 
-                                wire:model="comments" 
-                                id="comments" 
-                                rows="2" 
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" 
-                                placeholder="Comentarios adicionales sobre la mercadería..."
-                                maxlength="60"
-                            ></textarea>
-                            <p class="mt-1 text-xs text-gray-500">Máximo 60 caracteres</p>
-                            @error('comments')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
                         </div>
+                    </div>
 
-                        {{-- Indicadores AFIP en una fila --}}
-                        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {{-- Operador Logístico Seguro --}}
-                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    Operador Logístico Seguro <span class="text-red-500">*</span>
-                                </label>
-                                <div class="space-y-2">
-                                    <label class="inline-flex items-center">
-                                        <input 
-                                            wire:model="is_secure_logistics_operator" 
-                                            type="radio" 
-                                            value="S" 
-                                            class="form-radio text-blue-600"
-                                        >
-                                        <span class="ml-2 text-sm text-gray-700">Sí</span>
+                    {{-- ══════════════════════════════════════════════════════
+                         COLAPSABLE 2 — Información comercial
+                    ══════════════════════════════════════════════════════ --}}
+                    <div x-data="{ open: false }" class="border border-gray-200 rounded-lg">
+                        <button type="button" @click="open = !open"
+                            class="w-full flex justify-between items-center px-4 py-3 text-left bg-gray-50 hover:bg-gray-100 rounded-lg">
+                            <span class="text-sm font-medium text-gray-700">Información comercial</span>
+                            <svg :class="open ? 'rotate-180' : ''" class="h-5 w-5 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div x-show="open" class="px-4 py-4 space-y-4">
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="item_reference" class="block text-sm font-medium text-gray-700">
+                                        Referencia del Item
                                     </label>
-                                    <label class="inline-flex items-center ml-4">
-                                        <input 
-                                            wire:model="is_secure_logistics_operator" 
-                                            type="radio" 
-                                            value="N" 
-                                            class="form-radio text-blue-600"
-                                        >
-                                        <span class="ml-2 text-sm text-gray-700">No</span>
-                                    </label>
+                                    <input wire:model="item_reference" type="text" id="item_reference"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="SOJA-2025-001">
+                                    @error('item_reference')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
-                                @error('is_secure_logistics_operator')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
 
-                            {{-- Tránsito Monitoreado --}}
-                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    Tránsito Monitoreado <span class="text-red-500">*</span>
-                                </label>
-                                <div class="space-y-2">
-                                    <label class="inline-flex items-center">
-                                        <input 
-                                            wire:model="is_monitored_transit" 
-                                            type="radio" 
-                                            value="S" 
-                                            class="form-radio text-blue-600"
-                                        >
-                                        <span class="ml-2 text-sm text-gray-700">Sí</span>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Número de Línea
                                     </label>
-                                    <label class="inline-flex items-center ml-4">
-                                        <input 
-                                            wire:model="is_monitored_transit" 
-                                            type="radio" 
-                                            value="N" 
-                                            class="form-radio text-blue-600"
-                                        >
-                                        <span class="ml-2 text-sm text-gray-700">No</span>
-                                    </label>
+                                    <input type="text" value="{{ $nextLineNumber }}" disabled
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-500">
+                                    <p class="mt-1 text-xs text-gray-500">Asignado automáticamente</p>
                                 </div>
-                                @error('is_monitored_transit')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
                             </div>
 
-                            {{-- RENAR --}}
-                            <div class="p-3 bg-gray-50 border border-gray-200 rounded-md">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    Sujeto a RENAR <span class="text-red-500">*</span>
-                                </label>
-                                <div class="space-y-2">
-                                    <label class="inline-flex items-center">
-                                        <input 
-                                            wire:model="is_renar" 
-                                            type="radio" 
-                                            value="S" 
-                                            class="form-radio text-blue-600"
-                                        >
-                                        <span class="ml-2 text-sm text-gray-700">Sí</span>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="net_weight_kg" class="block text-sm font-medium text-gray-700">
+                                        Peso Neto (kg)
                                     </label>
-                                    <label class="inline-flex items-center ml-4">
-                                        <input 
-                                            wire:model="is_renar" 
-                                            type="radio" 
-                                            value="N" 
-                                            class="form-radio text-blue-600"
-                                        >
-                                        <span class="ml-2 text-sm text-gray-700">No</span>
-                                    </label>
+                                    <input wire:model="net_weight_kg" type="number" step="0.01" min="0" id="net_weight_kg"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="1980.00">
+                                    @error('net_weight_kg')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
                                 </div>
-                                @error('is_renar')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
+
+                                <div>
+                                    <label for="volume_m3" class="block text-sm font-medium text-gray-700">
+                                        Volumen (m³)
+                                    </label>
+                                    <input wire:model="volume_m3" type="number" step="0.001" min="0" id="volume_m3"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="2.500">
+                                    @error('volume_m3')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="brand_model" class="block text-sm font-medium text-gray-700">
+                                        Marca/Modelo
+                                    </label>
+                                    <input wire:model="brand_model" type="text" id="brand_model"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="SOJA ARGENTINA">
+                                    @error('brand_model')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
                             </div>
-                        </div>
 
-                        {{-- Información explicativa --}}
-                        <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                            <p class="text-xs text-blue-800">
-                                <strong>Campos obligatorios AFIP:</strong> Estos datos son requeridos para declaraciones aduaneras electrónicas.
-                            </p>
-                        </div>
-                    
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="lot_number" class="block text-sm font-medium text-gray-700">
+                                        Número de Lote
+                                    </label>
+                                    <input wire:model="lot_number" type="text" id="lot_number"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="LT240801">
+                                    @error('lot_number')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
 
-                    {{-- Marcas y Embalaje --}}
-                    <div class="mt-6">
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Marcas y Embalaje</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="package_description" class="block text-sm font-medium text-gray-700">
+                                        Descripción del Embalaje
+                                    </label>
+                                    <textarea wire:model="package_description" id="package_description" rows="2"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Sacos de polipropileno de 50kg"></textarea>
+                                    @error('package_description')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="package_numbers" class="block text-sm font-medium text-gray-700">
+                                        Números de los Bultos
+                                    </label>
+                                    <input wire:model="package_numbers" type="text" id="package_numbers"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="1-100, 101-200" maxlength="100">
+                                    @error('package_numbers')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="hs_code" class="block text-sm font-medium text-gray-700">
+                                        Código HS
+                                    </label>
+                                    <input wire:model="hs_code" type="text" id="hs_code"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="120100">
+                                    @error('hs_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="commodity_code" class="block text-sm font-medium text-gray-700">
+                                        Código de Mercadería
+                                    </label>
+                                    <input wire:model="commodity_code" type="text" id="commodity_code"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="SOJA001">
+                                    @error('commodity_code')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+
                             <div>
-                                <label for="cargo_marks" class="block text-sm font-medium text-gray-700">
-                                    Marcas de la Mercadería
+                                <label for="packaging_type_code" class="block text-sm font-medium text-gray-700">
+                                    Tipo de Embalaje (Código AFIP)
                                 </label>
-                                <textarea wire:model="cargo_marks" id="cargo_marks" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="SOJA ARG 2025 | HANDLE WITH CARE | KEEP DRY"></textarea>
-                                @error('cargo_marks')
+                                <input wire:model="packaging_type_code" type="text" id="packaging_type_code"
+                                    class="mt-1 block w-full md:w-1/4 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="1" maxlength="1">
+                                <p class="mt-1 text-xs text-gray-500">No informar si código de embalaje es 05 (contenedor)</p>
+                                @error('packaging_type_code')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            <div>
-                                <label for="package_description" class="block text-sm font-medium text-gray-700">
-                                    Descripción del Embalaje
-                                </label>
-                                <textarea wire:model="package_description" id="package_description" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="Sacos de polipropileno de 50kg"></textarea>
-                                @error('package_description')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
                         </div>
                     </div>
 
-                    {{-- Información Adicional --}}
-                    <div class="mt-6">
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Información Adicional</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label for="lot_number" class="block text-sm font-medium text-gray-700">
-                                    Número de Lote
+                    {{-- ══════════════════════════════════════════════════════
+                         COLAPSABLE 3 — Características especiales
+                    ══════════════════════════════════════════════════════ --}}
+                    <div x-data="{ open: false }" class="border border-gray-200 rounded-lg">
+                        <button type="button" @click="open = !open"
+                            class="w-full flex justify-between items-center px-4 py-3 text-left bg-gray-50 hover:bg-gray-100 rounded-lg">
+                            <span class="text-sm font-medium text-gray-700">Características especiales</span>
+                            <svg :class="open ? 'rotate-180' : ''" class="h-5 w-5 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div x-show="open" class="px-4 py-4 space-y-4">
+
+                            <div class="flex flex-wrap gap-6">
+                                <label class="inline-flex items-center">
+                                    <input wire:model="is_dangerous_goods" type="checkbox" id="is_dangerous_goods"
+                                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                    <span class="ml-2 text-sm text-gray-700">Mercancía peligrosa</span>
                                 </label>
-                                <input wire:model="lot_number" type="text" id="lot_number" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="LT240801">
-                                @error('lot_number')
+                                <label class="inline-flex items-center">
+                                    <input wire:model="is_perishable" type="checkbox" id="is_perishable"
+                                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                    <span class="ml-2 text-sm text-gray-700">Mercancía perecedera</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input wire:model="requires_refrigeration" type="checkbox" id="requires_refrigeration"
+                                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                                    <span class="ml-2 text-sm text-gray-700">Requiere refrigeración</span>
+                                </label>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="expiry_date" class="block text-sm font-medium text-gray-700">
+                                        Fecha de Vencimiento
+                                    </label>
+                                    <input wire:model="expiry_date" type="date" id="expiry_date"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    @error('expiry_date')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div>
+                                    <label for="comments" class="block text-sm font-medium text-gray-700">
+                                        Comentarios
+                                    </label>
+                                    <textarea wire:model="comments" id="comments" rows="2"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Comentarios adicionales..." maxlength="60"></textarea>
+                                    <p class="mt-1 text-xs text-gray-500">Máx. 60 caracteres</p>
+                                    @error('comments')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="special_instructions" class="block text-sm font-medium text-gray-700">
+                                    Instrucciones Especiales
+                                </label>
+                                <textarea wire:model="special_instructions" id="special_instructions" rows="2"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="Instrucciones para el manejo de la carga..."></textarea>
+                                @error('special_instructions')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            <div>
-                                <label for="expiry_date" class="block text-sm font-medium text-gray-700">
-                                    Fecha de Vencimiento
-                                </label>
-                                <input wire:model="expiry_date" type="date" id="expiry_date" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                                @error('expiry_date')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
-                            </div>
                         </div>
                     </div>
 
-                    {{-- Características Especiales --}}
-                    <div>
-                        <h4 class="text-lg font-medium text-gray-900 mb-4">Características Especiales</h4>
-                        <div class="space-y-3">
-                            <div class="flex items-center">
-                                <input wire:model="is_dangerous_goods" type="checkbox" id="is_dangerous_goods" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                <label for="is_dangerous_goods" class="ml-2 text-sm text-gray-700">Mercancía peligrosa</label>
-                            </div>
+                    {{-- ══════════════════════════════════════════════════════
+                         BOTONES DE ACCIÓN
+                    ══════════════════════════════════════════════════════ --}}
+                    <div class="flex justify-between items-center pt-4 border-t border-gray-200">
 
-                            <div class="flex items-center">
-                                <input wire:model="is_perishable" type="checkbox" id="is_perishable" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                <label for="is_perishable" class="ml-2 text-sm text-gray-700">Mercancía perecedera</label>
-                            </div>
-
-                            <div class="flex items-center">
-                                <input wire:model="requires_refrigeration" type="checkbox" id="requires_refrigeration" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                <label for="requires_refrigeration" class="ml-2 text-sm text-gray-700">Requiere refrigeración</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    {{-- Instrucciones Especiales --}}
-                    <div>
-                        <label for="special_instructions" class="block text-sm font-medium text-gray-700">
-                            Instrucciones Especiales
-                        </label>
-                        <textarea wire:model="special_instructions" id="special_instructions" rows="2" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="Instrucciones especiales para el manejo de la carga..."></textarea>
-                        @error('special_instructions')
-                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    {{-- Botones de acción --}}
-                    <div class="flex justify-between">
-                        {{-- Botón CANCELAR - Navegación directa --}}
-                        <a href="{{ route('company.shipments.show', $shipment) }}" 
+                        {{-- Cancelar sin guardar --}}
+                        <a href="{{ route('company.shipments.show', $shipment) }}"
                             class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                            <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
                             </svg>
-                            Cancelar
+                            Cancelar sin guardar
                         </a>
-                        
+
                         <div class="flex space-x-3">
-                            {{-- Botón AGREGAR ITEM - Submit normal --}}
-                            <button type="submit" 
-                                    wire:click="$set('continueAdding', true)"
-                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
-                                <span wire:loading.remove wire:target="createShipmentItem">Agregar Item</span>
-                                <span wire:loading wire:target="createShipmentItem">Agregando...</span>
+                            {{-- Guardar y agregar otro --}}
+                            <button type="submit"
+                                wire:click="$set('continueAdding', true)"
+                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
+                                <span wire:loading.remove wire:target="createShipmentItem">
+                                    <svg class="-ml-1 mr-2 h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                    Guardar y agregar otro
+                                </span>
+                                <span wire:loading wire:target="createShipmentItem">Guardando...</span>
                             </button>
 
-                            {{-- Botón TERMINAR - Link directo al shipment --}}
-                            <a href="{{ route('company.shipments.show', $shipment) }}"
-                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
-                                <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                </svg>
-                                Terminar
-                            </a>
+                            {{-- Guardar y terminar --}}
+                            <button type="submit"
+                                wire:click="$set('continueAdding', false)"
+                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                                <span wire:loading.remove wire:target="createShipmentItem">
+                                    <svg class="-ml-1 mr-2 h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    Guardar y terminar
+                                </span>
+                                <span wire:loading wire:target="createShipmentItem">Guardando...</span>
+                            </button>
                         </div>
                     </div>
+
                 </form>
             </div>
         </div>

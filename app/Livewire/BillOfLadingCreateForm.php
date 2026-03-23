@@ -95,6 +95,7 @@ class BillOfLadingCreateForm extends Component
     public $partial_weight_kg = null;
     public $is_master_bill = false;
     public $is_house_bill = false;
+    public $is_transit_transshipment = false;
     public $master_bill_number = '';
 
     // === DOCUMENTACIÓN ===
@@ -306,6 +307,7 @@ class BillOfLadingCreateForm extends Component
         'is_priority' => 'boolean',
         'requires_inspection' => 'boolean',
         'is_consolidated' => 'boolean',
+        'is_transit_transshipment' => 'boolean',
         'is_master_bill' => 'boolean',
         'is_house_bill' => 'boolean',
         'master_bill_number' => 'nullable|string|max:50|required_if:is_house_bill,true',
@@ -828,6 +830,7 @@ public function selectForeignLocationDischarge($locationCode)
                 'requires_refrigeration' => $this->requires_refrigeration,
                 'requires_inspection' => $this->requires_inspection,
                 'is_consolidated' => $this->is_consolidated,
+                'is_transit_transshipment' => $this->is_transit_transshipment,
                 'is_fractional' => $this->is_fractional,
                 'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
                 'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,

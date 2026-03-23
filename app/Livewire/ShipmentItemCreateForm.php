@@ -134,6 +134,18 @@ class ShipmentItemCreateForm extends Component
     #[Validate('required|in:USD,ARS,EUR')]
     public $bl_currency_code = 'USD';
 
+    // === CAMPOS BL ADICIONALES WS ===
+    public $bl_cargo_description = '';
+    public $bl_cargo_marks = '';
+    public $bl_is_consolidated = false;
+    public $bl_is_fractional = false;
+    public $bl_is_transit_transshipment = false;
+    public $bl_id_decla = '';
+    public $bl_total_packages = 1;
+    public $bl_gross_weight_kg = '';
+    public $bl_origin_customs_code = '';
+    public $bl_origin_operative_code = '';
+
     // === TRANSPORTE PROPIO ===
     public $is_own_transport = false;
 
@@ -157,7 +169,7 @@ class ShipmentItemCreateForm extends Component
     public $bl_notify_state = '';
 
     // Datos del Shipment Item (sección 2)
-    #[Validate('required|string|max:100')]
+    #[Validate('nullable|string|max:100')]
     public $item_reference = '';
 
     #[Validate('required|string|max:2000')]
@@ -546,9 +558,13 @@ class ShipmentItemCreateForm extends Component
             $this->comments = '';
             $this->consignee_document_type = '';
             $this->consignee_tax_id = '';
-        }
+            }
 
-        if (!$this->needsToCreateBL) {
+            // Pre-llenar item con tipo de carga y embalaje del BL
+            $this->cargo_type_id = $this->bl_primary_cargo_type_id ?? $this->billOfLading?->primary_cargo_type_id;
+            $this->packaging_type_id = $this->bl_primary_packaging_type_id ?? $this->billOfLading?->primary_packaging_type_id;
+
+            if (!$this->needsToCreateBL) {   // ← línea 551
             $this->step = 2;
         }
 
@@ -588,8 +604,8 @@ class ShipmentItemCreateForm extends Component
         // Reset otros campos del item
         $this->item_reference = '';
         $this->item_description = '';
-        $this->cargo_type_id = null;
-        $this->packaging_type_id = null;
+        $this->cargo_type_id = $this->bl_primary_cargo_type_id;
+        $this->packaging_type_id = $this->bl_primary_packaging_type_id;
         $this->package_quantity = 1;
         $this->gross_weight_kg = '';
         $this->net_weight_kg = '';
@@ -795,6 +811,9 @@ class ShipmentItemCreateForm extends Component
                 'bl_freight_terms' => 'required|in:prepaid,collect',
                 'bl_payment_terms' => 'required|in:cash,credit,advance',
                 'bl_currency_code' => 'required|in:USD,ARS,EUR',
+                'bl_cargo_description' => 'required|string|max:2000',
+                'bl_total_packages' => 'required|integer|min:1',
+                'bl_gross_weight_kg' => 'required|numeric|min:0.01',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->dispatch('scroll-to-error');
@@ -818,6 +837,16 @@ class ShipmentItemCreateForm extends Component
                 'freight_terms' => $this->bl_freight_terms,
                 'payment_terms' => $this->bl_payment_terms,
                 'currency_code' => $this->bl_currency_code,
+                'cargo_description' => $this->bl_cargo_description,
+                'cargo_marks' => $this->bl_cargo_marks ?: null,
+                'is_consolidated' => $this->bl_is_consolidated,
+                'is_fractional' => $this->bl_is_fractional,
+                'is_transit_transshipment' => $this->bl_is_transit_transshipment,
+                'id_decla' => $this->bl_id_decla ?: null,
+                'total_packages' => $this->bl_total_packages,
+                'gross_weight_kg' => $this->bl_gross_weight_kg,
+                'origin_customs_code' => $this->bl_origin_customs_code ?: null,
+                'origin_operative_code' => $this->bl_origin_operative_code ?: null,
             ];
 
             $controller = new ShipmentItemController();
@@ -860,7 +889,7 @@ class ShipmentItemCreateForm extends Component
         // Validar campos del item
         try {
             $this->validate([
-                'item_reference' => 'required|string|max:100',
+                'item_reference' => 'nullable|string|max:100',
                 'item_description' => 'required|string|max:2000',
                 'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
                 'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
