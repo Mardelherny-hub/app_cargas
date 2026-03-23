@@ -1025,6 +1025,29 @@
                 </div>
 
                 <div class="space-y-6">
+                    {{-- Consolidado --}}
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input wire:model="is_consolidated" type="checkbox" id="is_consolidated" value="1"
+                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                        </div>
+                        <div class="ml-3 text-sm">
+                            <label for="is_consolidated" class="font-medium text-gray-700">Consolidado</label>
+                            <p class="text-gray-500">Carga consolidada (indConsol)</p>
+                        </div>
+                    </div>
+
+                    {{-- Tránsito/Trasbordo --}}
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input wire:model="is_transit_transshipment" type="checkbox" id="is_transit_transshipment" value="1"
+                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                        </div>
+                        <div class="ml-3 text-sm">
+                            <label for="is_transit_transshipment" class="font-medium text-gray-700">Tránsito / Trasbordo</label>
+                            <p class="text-gray-500">Indicador tránsito/trasbordo (IndicadorTransitoTrasbordo)</p>
+                        </div>
+                    </div>
                     {{-- Es Fraccionado --}}
                     <div class="flex items-start">
                         <div class="flex items-center h-5">

@@ -1053,6 +1053,11 @@
                     @endif
 
                     <label class="flex items-center">
+                        <input wire:model="is_transit_transshipment" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                        <span class="ml-2 text-sm text-gray-700">Tránsito / Trasbordo</span>
+                    </label>
+
+                    <label class="flex items-center">
                         <input wire:model.live="is_master_bill" type="checkbox" class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
                         <span class="ml-2 text-sm text-gray-700">Conocimiento maestro</span>
                     </label>
