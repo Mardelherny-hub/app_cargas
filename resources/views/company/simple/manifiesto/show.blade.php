@@ -235,7 +235,8 @@
                       {{-- 2. XFBL - Conocimientos --}}
                         @php
                             $xffmSent = $xffmTransaction && $xffmTransaction->status === 'sent';
-                            $xfblSent = $xfblTransaction && in_array($xfblTransaction->status, ['sent', 'rejected']);
+                            $xfblSent = $xfblTransaction && $xfblTransaction->status === 'sent';
+                            $xfblRejected = $xfblTransaction && $xfblTransaction->status === 'rejected';
                         @endphp
 
                         <div class="border-2 rounded-lg p-5 {{ $xfblSent ? 'border-green-400 bg-green-50' : ($xffmSent ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300 bg-gray-100') }}">
@@ -251,6 +252,10 @@
                                 @if($xfblSent)
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
                                         ✓ ENVIADO
+                                    </span>
+                                @elseif($xfblRejected)
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-600 text-white">
+                                        ✗ RECHAZADO
                                     </span>
                                 @endif
                             </div>
@@ -330,6 +335,18 @@
                                         class="px-4 py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors"
                                         title="Reenviar con datos corregidos">
                                         🔄 Rectificar
+                                    </button>
+                                </div>
+                            @elseif($xfblRejected)
+                                <div class="flex gap-2">
+                                    <button disabled class="flex-1 px-4 py-2.5 bg-red-100 text-red-800 text-sm font-semibold rounded-lg cursor-not-allowed">
+                                        ✗ XFBL Rechazado
+                                    </button>
+                                    <button 
+                                        onclick="enviarMetodo('XFBL')" 
+                                        class="px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors"
+                                        title="Reenviar con datos corregidos">
+                                        🔄 Reenviar
                                     </button>
                                 </div>
                                 {{-- Enlaces descarga XML para soporte DNA --}}
