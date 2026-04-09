@@ -326,6 +326,7 @@ class SimpleXmlGeneratorParaguay
             // ❌ SIN SOAP Envelope - XML directo
             $w->startElement('titTrans'); // Plural contenedor
 
+            $billsOfLading = $billsOfLading->unique('bill_number');
             foreach ($billsOfLading as $bl) {
                 $w->startElement('titTran'); // Singular
 
@@ -526,10 +527,21 @@ class SimpleXmlGeneratorParaguay
                 $w->startElement('TitEmbarcaciones');
                 $w->startElement('TitEmbarcacion');
 
-                $blVessel = $bl->shipment->vessel ?? $voyage->leadVessel;
-                $w->writeElement('idEmbarcacion', htmlspecialchars(
-                    substr($blVessel->registration_number ?? 'SIN-REG', 0, 10)
-                ));
+                if ($bl->is_fractional) {
+                    // Fraccionado: todas las embarcaciones del viaje dentro de un único TitEmbarcacion
+                    foreach ($voyage->shipments as $shipment) {
+                        $vesselReg = $shipment->vessel->registration_number ?? null;
+                        if ($vesselReg) {
+                            $w->writeElement('idEmbarcacion', htmlspecialchars(substr($vesselReg, 0, 10)));
+                        }
+                    }
+                } else {
+                    // No fraccionado: solo la embarcación del shipment de este BL
+                    $blVessel = $bl->shipment->vessel ?? $voyage->leadVessel;
+                    $w->writeElement('idEmbarcacion', htmlspecialchars(
+                        substr($blVessel->registration_number ?? 'SIN-REG', 0, 10)
+                    ));
+                }
 
                 $w->endElement(); // TitEmbarcacion
                 $w->endElement(); // TitEmbarcaciones
