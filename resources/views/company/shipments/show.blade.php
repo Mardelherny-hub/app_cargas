@@ -295,58 +295,18 @@
                             </div>
 
                             @if($stats['total_items'] > 0)
-                                {{-- Tabla Compacta --}}
-                                <div class="overflow-x-auto">
-                                    <table class="min-w-full divide-y divide-gray-200">
-                                        <thead class="bg-gray-50">
-                                            <tr>
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Línea</th>
-                                                {{-- <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th> --}}
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo de Carga</th>
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Bultos</th>
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Peso (kg)</th>
-                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="bg-white divide-y divide-gray-200">
-                                            @foreach($shipment->shipmentItems as $item)
-                                                <tr class="hover:bg-gray-50">
-                                                    <td class="px-4 py-2 text-sm font-medium text-gray-900">{{ $item->line_number }}</td>
-                                                    {{-- <td class="px-4 py-2 text-sm text-gray-900">
-                                                        <div class="font-medium">{{ $item->item_description }}</div>
-                                                        @if($item->is_dangerous_goods)
-                                                            <span class="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">⚠️ Peligroso</span>
-                                                        @endif
-                                                    </td> --}}
-                                                    <td class="px-4 py-2 text-sm text-gray-900">{{ $item->cargoType->name ?? 'Contenedores' }}</td>
-                                                    <td class="px-4 py-2 text-sm text-gray-900">
-                                                        {{ number_format($item->package_quantity) }}
-                                                        <div class="text-xs text-gray-500">{{ $item->packagingType->name ?? 'Cajas de Cartón Corrugado' }}</div>
-                                                    </td>
-                                                    <td class="px-4 py-2 text-sm text-gray-900">
-                                                        <div>Bruto: <strong>{{ number_format($item->gross_weight_kg) }}</strong></div>
-                                                        <div class="text-xs text-gray-500">Neto: {{ number_format($item->net_weight_kg) }}</div>
-                                                    </td>
-                                                    <td class="px-4 py-2 text-sm font-medium">
-                                                        <div class="flex space-x-2">
-                                                            <a href="{{ route('company.shipment-items.edit', $item) }}" 
-                                                               class="text-yellow-600 hover:text-yellow-900" title="Editar">
-                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                                                                </svg>
-                                                            </a>
-                                                            <button onclick="deleteItem({{ $item->id }}, '{{ $item->item_description }}')" 
-                                                                    class="text-red-600 hover:text-red-900" title="Eliminar">
-                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                                                </svg>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
+                                <div class="flex items-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <svg class="w-8 h-8 text-blue-400 mr-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                                    </svg>
+                                    <div>
+                                        <p class="text-sm font-medium text-blue-900">
+                                            Este shipment tiene <strong>{{ $stats['total_items'] }} {{ $stats['total_items'] == 1 ? 'item' : 'items' }}</strong> de carga registrados.
+                                        </p>
+                                        <p class="text-xs text-blue-700 mt-1">
+                                            Para ver o gestionar los items, accedé al conocimiento (BL) correspondiente.
+                                        </p>
+                                    </div>
                                 </div>
                             @else
                                 {{-- Estado Vacío --}}
