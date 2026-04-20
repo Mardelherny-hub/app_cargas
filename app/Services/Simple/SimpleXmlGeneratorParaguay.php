@@ -439,8 +439,8 @@ class SimpleXmlGeneratorParaguay
                     substr($bl->cargo_description ?? 'MERCADERIA GENERAL', 0, 500)
                 ));
 
-                // ✅ 5. ID MIC/DTA PRIMERA FRACCIÓN (vacío si no aplica)
-                $w->writeElement('idMicDtaPriFracc', '');
+                // ✅ 5. ID MIC/DTA PRIMERA FRACCIÓN
+                $w->writeElement('idMicDtaPriFracc', $bl->id_mic_dta_pri_fracc ?? '');
 
                 // ✅ 6. ID TÍTULO TRANSPORTE (número de BL)
                 $w->writeElement('idTitTrans', htmlspecialchars(
