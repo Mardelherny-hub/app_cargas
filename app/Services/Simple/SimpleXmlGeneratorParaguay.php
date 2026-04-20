@@ -686,7 +686,11 @@ class SimpleXmlGeneratorParaguay
             $w->startElement('RutasInf'); // Plural contenedor
 
             // Una sola rutInf por número de BL (fraccionados comparten número)
-            $billsOfLading = $billsOfLading->unique('bill_number');
+            $billsOfLading = $billsOfLading->groupBy('bill_number')->map(function($group) {
+                // Si hay fracción con idMicDtaPriFracc cargado, enviar esa (fracción secundaria)
+                $secondary = $group->first(fn($bl) => !empty($bl->id_mic_dta_pri_fracc));
+                return $secondary ?? $group->first();
+            })->values();
 
             foreach ($billsOfLading as $bl) {
                 $w->startElement('rutInf'); // Singular
