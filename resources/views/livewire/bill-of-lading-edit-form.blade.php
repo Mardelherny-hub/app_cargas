@@ -1049,6 +1049,23 @@
                             <p class="mt-1 text-xs text-gray-500">Peso de esta fracción (debe ser menor al total)</p>
                             @error('partial_weight_kg') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
                         </div>
+                        {{-- ID Manifiesto Fracción Primaria (DNA Paraguay) --}}
+                        <div>
+                            <label for="id_mic_dta_pri_fracc" class="block text-sm font-medium text-gray-700">
+                                ID Manifiesto Fracción Primaria
+                                <span class="text-xs text-gray-500 ml-1">(DNA Paraguay)</span>
+                            </label>
+                            <input type="text"
+                                id="id_mic_dta_pri_fracc"
+                                wire:model.defer="id_mic_dta_pri_fracc"
+                                placeholder="Ej: 26017MANI000004N"
+                                maxlength="20"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 uppercase @error('id_mic_dta_pri_fracc') border-red-300 @enderror">
+                            @error('id_mic_dta_pri_fracc')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                            <p class="mt-1 text-xs text-gray-500">Número de manifiesto devuelto por DNA al procesar la primera fracción (máx. 20 caracteres)</p>
+                        </div>
                     </div>
                     @endif
 

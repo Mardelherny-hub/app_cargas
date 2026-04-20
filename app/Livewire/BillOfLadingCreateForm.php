@@ -93,6 +93,7 @@ class BillOfLadingCreateForm extends Component
     public $is_fractional = false;
     public $partial_packages = null;
     public $partial_weight_kg = null;
+    public $id_mic_dta_pri_fracc = '';
     public $is_master_bill = false;
     public $is_house_bill = false;
     public $is_transit_transshipment = false;
@@ -109,7 +110,7 @@ class BillOfLadingCreateForm extends Component
     public $loadingPorts = [];
     public $dischargePorts = [];
     public $transshipmentPorts = [];
-    public $finalDestinationPorts = [];
+    public $finalDestinationPorts = [];/*  */
     public $customsOffices = [];
     public $cargoTypes = [];
     public $packagingTypes = [];
@@ -834,6 +835,7 @@ public function selectForeignLocationDischarge($locationCode)
                 'is_fractional' => $this->is_fractional,
                 'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
                 'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,
+                'id_mic_dta_pri_fracc' => $this->is_fractional ? ($this->id_mic_dta_pri_fracc ?: null) : null,
                 'is_master_bill' => $this->is_master_bill,
                 'is_house_bill' => $this->is_house_bill,
                 'master_bill_number' => $this->is_house_bill ? $this->master_bill_number : null,

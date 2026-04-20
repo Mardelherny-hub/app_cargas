@@ -149,7 +149,7 @@ class BillOfLading extends Model
         'is_consolidated',
         'is_transit_transshipment',
 
-
+        'id_mic_dta_pri_fracc',
     ];
 
     /**

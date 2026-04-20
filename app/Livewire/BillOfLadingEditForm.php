@@ -144,6 +144,7 @@ class BillOfLadingEditForm extends Component
     public $is_fractional = false;
     public $partial_packages = null;
     public $partial_weight_kg = null;
+    public $id_mic_dta_pri_fracc = '';
     public $is_master_bill = false;
     public $is_house_bill = false;
     public $master_bill_number = '';
@@ -480,6 +481,7 @@ class BillOfLadingEditForm extends Component
         $this->is_fractional = $bl->is_fractional ?? false;
         $this->partial_packages = $bl->partial_packages ?? null;
         $this->partial_weight_kg = $bl->partial_weight_kg ?? null;
+        $this->id_mic_dta_pri_fracc = $bl->id_mic_dta_pri_fracc ?? '';
         $this->is_master_bill = $bl->is_master_bill ?? false;
         $this->is_house_bill = $bl->is_house_bill ?? false;
         $this->master_bill_number = $bl->master_bill_number ?? '';
@@ -832,6 +834,7 @@ class BillOfLadingEditForm extends Component
                 'is_fractional' => $this->is_fractional,
                 'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
                 'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,
+                'id_mic_dta_pri_fracc' => $this->is_fractional ? ($this->id_mic_dta_pri_fracc ?: null) : null,
                 'is_master_bill' => $this->is_master_bill,
                 'is_house_bill' => $this->is_house_bill,
                 'master_bill_number' => $this->is_house_bill ? $this->master_bill_number : null,
