@@ -925,6 +925,9 @@ class SimpleManifestController extends Controller
         $xfbtStatus = $xfbtTransaction && $xfbtTransaction->status === 'sent' ? 'sent' : 'pending';
         $xfctStatus = $xfctTransaction && $xfctTransaction->status === 'sent' ? 'sent' : 'pending';
 
+        // Detectar si el viaje fue cerrado por XFCT procesado (DNA aceptó el cierre)
+        $voyageClosedByXfct = $service->isVoyageClosedByXfct($voyage);
+
         // Contar BLs y contenedores
         $blCount = $voyage->shipments->flatMap->billsOfLading->count();
         // Contar BLs y contenedores
@@ -957,7 +960,8 @@ class SimpleManifestController extends Controller
             'xfctStatus',
             'blCount',
             'containerCount',
-            'send_route'
+            'send_route',
+            'voyageClosedByXfct'
         ));
     }
 

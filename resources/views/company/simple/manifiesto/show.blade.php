@@ -78,6 +78,29 @@
                     </div>
                 @endif
 
+            @endif
+
+            {{-- Aviso: viaje cerrado en DNA por XFCT procesado --}}
+            @if(!empty($voyageClosedByXfct))
+                <div class="bg-gray-100 border-l-4 border-gray-500 p-4 rounded">
+                    <div class="flex">
+                        <svg class="h-5 w-5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
+                        </svg>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-gray-800">Viaje cerrado en DNA</h3>
+                            <p class="mt-1 text-sm text-gray-700">
+                                Este viaje ya tiene un XFCT procesado correctamente por DNA el
+                                <strong>{{ $voyageClosedByXfct->created_at->format('d/m/Y H:i') }}</strong>
+                                (transacción #{{ $voyageClosedByXfct->id }}).
+                                No se pueden enviar nuevos XFBL, XFBT, XISP, XRSP ni un nuevo XFCT sobre este viaje.
+                                Para nuevas pruebas debe iniciarse un viaje nuevo.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
                 {{-- Estado General XFFM --}}
                 @if($xffmTransaction)
                 <div class="bg-white shadow rounded-lg overflow-hidden mb-6">
@@ -1623,4 +1646,27 @@ function invalidateDocument(attachmentId, docNumber) {
         <pre id="xml-modal-content" class="mt-3 text-sm text-green-400 whitespace-pre-wrap font-mono bg-black p-4 rounded max-h-[70vh] overflow-auto"></pre>
     </div>
 </div>
+
+@if(!empty($voyageClosedByXfct))
+<script>
+    // Viaje cerrado por XFCT procesado: deshabilitar todas las acciones de envío
+    document.addEventListener('DOMContentLoaded', function() {
+        var msg = 'Viaje cerrado en DNA. No se pueden enviar nuevos mensajes.';
+        var selectors = [
+            '[onclick*="enviarMetodo("]',
+            '[onclick*="rectificarMetodo("]',
+            '[onclick*="enviarXisp("]',
+            '[onclick*="enviarXrsp("]'
+        ];
+        document.querySelectorAll(selectors.join(',')).forEach(function(btn) {
+            btn.disabled = true;
+            btn.title = msg;
+            btn.classList.remove('hover:bg-blue-700','hover:bg-green-700','hover:bg-red-700','hover:bg-orange-700','hover:bg-yellow-700','hover:bg-purple-700');
+            btn.classList.add('opacity-50','cursor-not-allowed');
+            btn.removeAttribute('onclick');
+        });
+    });
+</script>
+@endif
+
 </x-app-layout>

@@ -416,6 +416,15 @@ class ParaguayDnaService extends BaseWebserviceService
             'voyage_id' => $voyage->id,
         ]);
 
+        // Guard: bloquear si el viaje ya fue cerrado por XFCT procesado
+        if ($xfctClosed = $this->isVoyageClosedByXfct($voyage)) {
+            throw new Exception(
+                "El viaje ya fue cerrado en DNA mediante XFCT procesado el "
+                . $xfctClosed->created_at->format('d/m/Y H:i')
+                . " (transacción #{$xfctClosed->id}). No se pueden enviar nuevos mensajes sobre este viaje."
+            );
+        }
+
         DB::beginTransaction();
 
         try {
@@ -542,13 +551,21 @@ class ParaguayDnaService extends BaseWebserviceService
      * 3. XFBT - Hoja de Ruta (Rutas e Itinerarios)
      * Requiere XFFM enviado previamente
      */
-    public function sendXfbt(Voyage $voyage, array $options = []): array
+public function sendXfbt(Voyage $voyage, array $options = []): array
     {
         \Log::info('🔵 XFBT - Inicio', ['voyage_id' => $voyage->id]);
-
         $this->logOperation('info', 'Iniciando envío XFBT (Hoja de Ruta)', [
             'voyage_id' => $voyage->id,
         ]);
+
+        // Guard: bloquear si el viaje ya fue cerrado por XFCT procesado
+        if ($xfctClosed = $this->isVoyageClosedByXfct($voyage)) {
+            throw new Exception(
+                "El viaje ya fue cerrado en DNA mediante XFCT procesado el "
+                . $xfctClosed->created_at->format('d/m/Y H:i')
+                . " (transacción #{$xfctClosed->id}). No se pueden enviar nuevos mensajes sobre este viaje."
+            );
+        }
 
         DB::beginTransaction();
 
@@ -641,11 +658,20 @@ class ParaguayDnaService extends BaseWebserviceService
      * 4. XFCT - Cerrar Viaje
      * Último paso - Cierra el nroViaje cuando todo está completo
      */
-    public function sendXfct(Voyage $voyage, array $options = []): array
+public function sendXfct(Voyage $voyage, array $options = []): array
     {
         $this->logOperation('info', 'Iniciando envío XFCT (Cerrar Viaje)', [
             'voyage_id' => $voyage->id,
         ]);
+
+        // Guard: bloquear si el viaje ya fue cerrado por XFCT procesado
+        if ($xfctClosed = $this->isVoyageClosedByXfct($voyage)) {
+            throw new Exception(
+                "El viaje ya fue cerrado en DNA mediante XFCT procesado el "
+                . $xfctClosed->created_at->format('d/m/Y H:i')
+                . " (transacción #{$xfctClosed->id}). No se pueden enviar nuevos mensajes sobre este viaje."
+            );
+        }
 
         DB::beginTransaction();
 
@@ -744,6 +770,15 @@ class ParaguayDnaService extends BaseWebserviceService
             'vessel_id' => $vessel->id,
             'vessel_name' => $vessel->name,
         ]);
+
+        // Guard: bloquear si el viaje ya fue cerrado por XFCT procesado
+        if ($xfctClosed = $this->isVoyageClosedByXfct($voyage)) {
+            throw new Exception(
+                "El viaje ya fue cerrado en DNA mediante XFCT procesado el "
+                . $xfctClosed->created_at->format('d/m/Y H:i')
+                . " (transacción #{$xfctClosed->id}). No se pueden enviar nuevos mensajes sobre este viaje."
+            );
+        }
 
         DB::beginTransaction();
 
@@ -852,13 +887,22 @@ class ParaguayDnaService extends BaseWebserviceService
      * @param array $options force_resend (bool)
      * @return array Resultado
      */
-    public function sendXrsp(Voyage $voyage, $vessel, array $options = []): array
+public function sendXrsp(Voyage $voyage, $vessel, array $options = []): array
     {
         $this->logOperation('info', 'Iniciando envío XRSP (Desvincular Embarcación)', [
             'voyage_id' => $voyage->id,
             'vessel_id' => $vessel->id,
             'vessel_name' => $vessel->name,
         ]);
+
+        // Guard: bloquear si el viaje ya fue cerrado por XFCT procesado
+        if ($xfctClosed = $this->isVoyageClosedByXfct($voyage)) {
+            throw new Exception(
+                "El viaje ya fue cerrado en DNA mediante XFCT procesado el "
+                . $xfctClosed->created_at->format('d/m/Y H:i')
+                . " (transacción #{$xfctClosed->id}). No se pueden enviar nuevos mensajes sobre este viaje."
+            );
+        }
 
         DB::beginTransaction();
 
@@ -1773,6 +1817,35 @@ XML;
             ->whereJsonContains('additional_metadata->tipo_mensaje', $tipoMensaje)
             ->orderBy('created_at', 'desc')
             ->first();
+    }
+
+    /**
+     * Detecta si el viaje ya fue cerrado correctamente en DNA mediante XFCT.
+     *
+     * Paraguay guarda las respuestas aceptadas con status "sent".
+     * Además, la respuesta XML de DNA viene dentro del SOAP escapada como HTML:
+     *     &lt;StatusCode&gt;PROCESSED&lt;/StatusCode&gt;
+     *
+     * Por eso primero decodificamos response_xml antes de buscar StatusCode/ReasonCode.
+     */
+    public function isVoyageClosedByXfct(Voyage $voyage): ?WebserviceTransaction
+    {
+        return WebserviceTransaction::where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'manifiesto')
+            ->where('country', 'PY')
+            ->where('status', 'sent')
+            ->whereJsonContains('additional_metadata->tipo_mensaje', 'XFCT')
+            ->orderByDesc('id')
+            ->get()
+            ->first(function ($transaction) {
+                $xml = html_entity_decode(
+                    $transaction->response_xml ?? '',
+                    ENT_QUOTES | ENT_XML1,
+                    'UTF-8'
+                );
+                return str_contains($xml, '<StatusCode>PROCESSED</StatusCode>')
+                    && str_contains($xml, '<ReasonCode>00</ReasonCode>');
+            });
     }
 
     /**
