@@ -182,7 +182,6 @@
                     </div>
                 </div>
                 @endif
-            @endif
 
             {{-- Botones de Envío GDSF --}}
             <div class="bg-white shadow rounded-lg overflow-hidden">
