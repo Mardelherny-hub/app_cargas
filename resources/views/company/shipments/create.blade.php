@@ -162,9 +162,10 @@
                                     </div>
                                 </div>
                             </div>
+                            {{-- En viajes single el vessel_id viene del voyage (el controlador igual lo sobrescribe) --}}
+                            <input type="hidden" name="vessel_id" value="{{ $voyage->lead_vessel_id }}">
                         @endif
-                        {{-- Ocultos — el controlador los sobreescribe con los del voyage --}}
-                        <input type="hidden" name="vessel_id"  value="{{ $voyage->lead_vessel_id }}">
+                        {{-- captain_id siempre del voyage — el controlador lo sobrescribe en ambos casos --}}
                         <input type="hidden" name="captain_id" value="{{ $voyage->captain_id }}">
 
                         {{-- Estado --}}
