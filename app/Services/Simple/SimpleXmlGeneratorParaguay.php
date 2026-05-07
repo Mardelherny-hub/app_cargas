@@ -522,14 +522,24 @@ class SimpleXmlGeneratorParaguay
                 $w->writeElement('codDelegacion', $codDelegacion);
 
                 // ✅ 14. EMBARCACIONES DEL TÍTULO
-                // Cada titTran (fracción) lleva SOLO la embarcación de su shipment.
-                // La coherencia con XFFM se garantiza porque XFFM declara todas las embarcaciones del voyage.
+                // Cada titTran (fracción) lleva TODAS las embarcaciones asociadas al
+                // mismo bill_number en el voyage, dentro de un único <TitEmbarcacion>.
+                // Replica la estructura aceptada por DNA en XFBL 407 (voyage 31) y
+                // mantiene la asociación BL ↔ embarcaciones completa para que el XFBT
+                // siguiente no rechace por "embarcación sin conocimiento asociado".
+                $blVessels = $billsOfLading
+                    ->where('bill_number', $bl->bill_number)
+                    ->map(fn($b) => $b->shipment->vessel ?? $voyage->leadVessel)
+                    ->filter()
+                    ->unique('id');
+
                 $w->startElement('TitEmbarcaciones');
                 $w->startElement('TitEmbarcacion');
-                $blVessel = $bl->shipment->vessel ?? $voyage->leadVessel;
-                $w->writeElement('idEmbarcacion', htmlspecialchars(
-                    substr($blVessel->registration_number ?? 'SIN-REG', 0, 10)
-                ));
+                foreach ($blVessels as $vessel) {
+                    $w->writeElement('idEmbarcacion', htmlspecialchars(
+                        substr($vessel->registration_number ?? 'SIN-REG', 0, 10)
+                    ));
+                }
                 $w->endElement(); // TitEmbarcacion
                 $w->endElement(); // TitEmbarcaciones
 
