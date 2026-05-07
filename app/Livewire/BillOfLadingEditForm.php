@@ -25,6 +25,7 @@ class BillOfLadingEditForm extends Component
 
     public $billOfLading;
     public $loading = false;
+    public $hasItems = false;
 
     // === DATOS BÁSICOS ===
     public $shipment_id = '';
@@ -302,6 +303,7 @@ class BillOfLadingEditForm extends Component
         \Log::info('MOUNT START');
         
         $this->billOfLading = $billOfLading;
+        $this->hasItems = $billOfLading->shipmentItems()->exists();
         \Log::info('MOUNT - billOfLading set');
         
         $this->loadBillOfLadingData();
@@ -850,6 +852,12 @@ class BillOfLadingEditForm extends Component
 
             // Actualizar direcciones específicas
             $this->updateSpecificContacts();
+
+            // Si el BL tiene items, los totales se calculan desde items.
+            // Pisamos los valores manuales con la suma real para mantener consistencia.
+            if ($this->billOfLading->shipmentItems()->exists()) {
+                $this->billOfLading->fresh()->recalculateItemStats();
+            }
 
             DB::commit();
 

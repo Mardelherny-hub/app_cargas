@@ -848,6 +848,17 @@
                     <p class="mt-1 text-sm text-gray-600">Cantidades, pesos y volúmenes</p>
                 </div>
 
+                <div class="mb-6 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div class="flex items-start">
+                        <svg class="h-5 w-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-sm text-yellow-800">
+                            Si luego agregás items al conocimiento, estos totales se recalcularán automáticamente desde el detalle de los items.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
                     {{-- Total de Bultos --}}
                     <div>
