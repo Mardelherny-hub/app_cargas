@@ -884,6 +884,23 @@
             <div class="px-4 py-5 sm:p-6">
                 <h3 class="text-lg font-medium leading-6 text-gray-900 mb-6">Cantidades y Pesos</h3>
 
+                @if($hasItems)
+                    <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                        <div class="flex items-start">
+                            <svg class="h-5 w-5 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <div class="text-sm text-blue-800">
+                                Estos totales se calculan automáticamente desde los items.
+                                Para modificarlos, editá los items del conocimiento desde la
+                                <a href="{{ route('company.bills-of-lading.show', $billOfLading) }}#items" class="font-medium underline hover:text-blue-900">
+                                    sección de items
+                                </a>.
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
                     {{-- Total de Bultos --}}
                     <div>
@@ -891,7 +908,11 @@
                             Total de Bultos <span class="text-red-500">*</span>
                         </label>
                         <input wire:model="total_packages" type="number" id="total_packages" min="1" required
-                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('total_packages') border-red-300 @enderror">
+                               @readonly($hasItems)
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('total_packages') border-red-300 @enderror">
+                        @if($hasItems)
+                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                        @endif
                         @error('total_packages')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
@@ -903,7 +924,11 @@
                             Peso Bruto (kg) <span class="text-red-500">*</span>
                         </label>
                         <input wire:model="gross_weight_kg" type="number" step="0.01" id="gross_weight_kg" min="0" required
-                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('gross_weight_kg') border-red-300 @enderror">
+                               @readonly($hasItems)
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('gross_weight_kg') border-red-300 @enderror">
+                        @if($hasItems)
+                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                        @endif
                         @error('gross_weight_kg')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
@@ -915,7 +940,11 @@
                             Peso Neto (kg)
                         </label>
                         <input wire:model="net_weight_kg" type="number" step="0.01" id="net_weight_kg" min="0"
-                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('net_weight_kg') border-red-300 @enderror">
+                               @readonly($hasItems)
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('net_weight_kg') border-red-300 @enderror">
+                        @if($hasItems)
+                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                        @endif
                         @error('net_weight_kg')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
@@ -927,7 +956,11 @@
                             Volumen (m³)
                         </label>
                         <input wire:model="volume_m3" type="number" step="0.01" id="volume_m3" min="0"
-                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('volume_m3') border-red-300 @enderror">
+                               @readonly($hasItems)
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('volume_m3') border-red-300 @enderror">
+                        @if($hasItems)
+                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                        @endif
                         @error('volume_m3')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
