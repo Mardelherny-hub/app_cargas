@@ -159,24 +159,15 @@ class CaptainsTable extends Component
      */
     public function getCaptainsProperty()
     {
-        $company = $this->getUserCompany();
-        if (!$company) {
-            return collect();
-        }
-
+        // Capitanes globales: cualquier empresa ve todos los capitanes del sistema.
+        // El campo primary_company_id se mantiene como auditoría (ver primaryCompany en eager load)
+        // pero ya no filtra el acceso.
         $query = Captain::query()
             ->with([
                 'country:id,name,alpha2_code',
                 'licenseCountry:id,name,alpha2_code', 
                 'primaryCompany:id,legal_name'
-            ])
-            ->where(function($q) use ($company) {
-                // Capitanes relacionados con la empresa
-                $q->where('primary_company_id', $company->id)
-                  ->orWhereHas('voyages', function($subQ) use ($company) {
-                      $subQ->where('company_id', $company->id);
-                  });
-            });
+            ]);
 
         // Aplicar filtros
         if ($this->search) {
