@@ -75,14 +75,10 @@ class Captains extends Component
 
     public function getCaptainsProperty()
     {
-        $company = $this->getUserCompany();
-        
-        return Captain::where(function($query) use ($company) {
-            $query->where('primary_company_id', $company->id)
-                  ->orWhereHas('voyages', function($q) use ($company) {
-                      $q->where('company_id', $company->id);
-                  });
-        })
+        // Capitanes globales: cualquier empresa ve todos los capitanes activos del sistema.
+        // El campo primary_company_id se mantiene como auditoría de quién creó originalmente
+        // al capitán, pero ya no filtra el acceso.
+        return Captain::query()
         ->when($this->search, function($query) {
             $query->where(function($q) {
                 $q->where('full_name', 'like', '%' . $this->search . '%')

@@ -526,13 +526,14 @@ class VoyageController extends Controller
             ->limit($LIMIT)
             ->get();
         
-        // --- CAPITANES (activos) - AMPLIADA: empresa + freelance + disponibles
+        // --- CAPITANES (activos) - GLOBALES: cualquier empresa puede asignar cualquier capitán activo
+        // Mismo criterio que el form de creación (línea 122) para evitar inconsistencias.
         $captains = \App\Models\Captain::where('active', true)
             ->where('available_for_hire', true)
-            ->where(function($query) use ($company) {
-                $query->where('primary_company_id', $company->id)  // De la empresa
-                    ->orWhereNull('primary_company_id')           // Freelance
-                    ->orWhere('employment_status', 'freelance');  // Disponibles
+            ->where('license_status', 'valid')
+            ->where(function($query) {
+                $query->whereNull('license_expires_at')
+                    ->orWhere('license_expires_at', '>', now());
             })
             ->select('id', 'full_name', 'license_number', 'employment_status')
             ->orderBy('full_name')
