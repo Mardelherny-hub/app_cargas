@@ -150,16 +150,25 @@ class GuaranExcelParser implements ManifestParserInterface
             $containers = [];
 
             foreach ($groupedByBL as $blNumber => $blRows) {
-                $bill = $this->createBillOfLading($shipment, $blRows[0]);
+                // Pasamos todas las filas del BL para que pueda contar contenedores únicos
+                $bill = $this->createBillOfLading($shipment, $blRows);
                 $bills[] = $bill;
-                
+
                 foreach ($blRows as $row) {
+                    // Crear contenedor si la fila lo trae
+                    $container = null;
                     if (!empty($row['CONTAINER_NUMBER'])) {
                         $container = $this->createContainer($row);
                         if ($container) $containers[] = $container;
                     }
-                    
-                    $this->createShipmentItem($bill, $row);
+
+                    // Crear el item y guardarlo en variable para vincular
+                    $item = $this->createShipmentItem($bill, $row);
+
+                    // Si hay contenedor y se creó el item, vincular en la tabla pivot
+                    if ($container && $item) {
+                        $this->attachContainerToItem($container, $item);
+                    }
                 }
             }
 
@@ -416,7 +425,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'voyage_id' => $voyage->id,
             'vessel_id' => $voyage->lead_vessel_id,
             'shipment_number'     => $this->generateShipmentNumber($voyage, $sequence),
-            'sequence_in_voyage' => 1,
+            'sequence_in_voyage' => $sequence,
             'departure_time' => $voyage->departure_date,
             'estimated_arrival_time' => $voyage->estimated_arrival_date,
             'status' => 'planning',
@@ -458,8 +467,11 @@ class GuaranExcelParser implements ManifestParserInterface
     /**
      * Crear BillOfLading - SOLO DATOS REALES
      */
-    protected function createBillOfLading(Shipment $shipment, array $row): BillOfLading
+    protected function createBillOfLading(Shipment $shipment, array $blRows): BillOfLading
     {
+        // Tomamos la primera fila para los datos de cabecera (shipper/consignee/notify/fechas)
+        $row = $blRows[0];
+
         $shipper = $this->findOrCreateClient($this->extractClientData($row, 'SHIPPER'));
         $consignee = $this->findOrCreateClient($this->extractClientData($row, 'CONSIGNEE'));
         $notifyParty = $this->findOrCreateClient($this->extractClientData($row, 'NOTIFY_PARTY'));
@@ -469,6 +481,42 @@ class GuaranExcelParser implements ManifestParserInterface
             throw new Exception('BL_DATE inválida: ' . $row['BL_DATE']);
         }
 
+        // Detectar si el BL es contenedorizado: alguna fila trae CONTAINER_NUMBER
+        $containerNumbers = [];
+        foreach ($blRows as $r) {
+            if (!empty($r['CONTAINER_NUMBER'])) {
+                $containerNumbers[] = $r['CONTAINER_NUMBER'];
+            }
+        }
+        $uniqueContainers = array_unique($containerNumbers);
+        $isContainerized = !empty($uniqueContainers);
+
+        // Si es contenedorizado:
+        //   - primary_cargo_type_id = 9 (CONTENEDORES, criterio aprobado QA)
+        //   - primary_packaging_type_id = 4 (CONTENEDOR, criterio aprobado QA)
+        //   - total_packages = cantidad de contenedores únicos del BL
+        // Si NO es contenedorizado: mantener lógica original por NCM y PACK_TYPE
+        $primaryCargoTypeId = $isContainerized ? 9 : $this->findCargoTypeByNCM($row['NCM']);
+        $primaryPackagingTypeId = $isContainerized ? 4 : $this->findPackagingTypeByName($row['PACK_TYPE']);
+        $totalPackages = $isContainerized
+            ? count($uniqueContainers)
+            : (int) ($row['NUMBER_OF_PACKAGES'] ?? 0);
+
+        // Si el BL es contenedorizado, los totales del BL se calculan sumando todas las filas
+        // (cada fila Excel representa un contenedor con su propio peso/volumen).
+        // Si NO es contenedorizado, mantener el comportamiento original (solo primera fila).
+        $totalGrossWeight = $isContainerized
+            ? array_sum(array_map(fn($r) => $this->parseWeight($r['GROSS_WEIGHT'] ?? null), $blRows))
+            : $this->parseWeight($row['GROSS_WEIGHT']);
+
+        $totalNetWeight = $isContainerized
+            ? array_sum(array_map(fn($r) => $this->parseWeight($r['NET_WEIGHT'] ?? null), $blRows))
+            : $this->parseWeight($row['NET_WEIGHT']);
+
+        $totalVolume = $isContainerized
+            ? array_sum(array_map(fn($r) => (float) ($r['VOLUME'] ?? 0), $blRows))
+            : (float) ($row['VOLUME'] ?? 0);
+
         return BillOfLading::create([
             'shipment_id' => $shipment->id,
             'shipper_id' => $shipper->id,
@@ -476,16 +524,16 @@ class GuaranExcelParser implements ManifestParserInterface
             'notify_party_id' => $notifyParty?->id,
             'loading_port_id' => $shipment->voyage->origin_port_id,
             'discharge_port_id' => $shipment->voyage->destination_port_id,
-            'primary_cargo_type_id' => $this->findCargoTypeByNCM($row['NCM']),
-            'primary_packaging_type_id' => $this->findPackagingTypeByName($row['PACK_TYPE']),
+            'primary_cargo_type_id' => $primaryCargoTypeId,
+            'primary_packaging_type_id' => $primaryPackagingTypeId,
             'bill_number' => $row['BL_NUMBER'],
             'bill_date' => $blDate,
             'loading_date' => $blDate,
             'freight_terms' => $this->mapFreightTerms($row['FREIGHT_TERMS']),
-            'total_packages' => (int) ($row['NUMBER_OF_PACKAGES'] ?? 0),
-            'gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
-            'net_weight_kg' => $this->parseWeight($row['NET_WEIGHT']),
-            'volume_m3' => (float) ($row['VOLUME'] ?? 0),
+            'total_packages' => $totalPackages,
+            'gross_weight_kg' => $totalGrossWeight,
+            'net_weight_kg' => $totalNetWeight,
+            'volume_m3' => $totalVolume,
             'cargo_description' => $this->buildCargoDescription($row),
             'contains_dangerous_goods' => !empty($row['UN_NUMBER']),
             'requires_refrigeration' => $this->requiresRefrigeration($row),
@@ -503,28 +551,33 @@ class GuaranExcelParser implements ManifestParserInterface
     {
         $blId = $bill->id;
 
-        // Si tu archivo trae un nro de línea, intentamos usarlo; si no, usamos el siguiente libre
-        $desired = (int)($lineData['line_number'] ?? 0);
-        $lineNumber = $desired > 0 ? $desired : $this->nextItemLineNumber($blId);
+        // Siempre tomar el siguiente line_number libre dentro del BL
+        $lineNumber = $this->nextItemLineNumber($blId);
 
-        // Si ya existe ese (bill_of_lading_id, line_number), tomamos el siguiente libre
-        $exists = ShipmentItem::where('bill_of_lading_id', $blId)->where('line_number', $lineNumber)->exists();
-        if ($exists) {
-            $lineNumber = $this->nextItemLineNumber($blId);
-        }
+        // Detectar si la fila trae contenedor para determinar cargo_type y packaging_type
+        $isContainerized = !empty($row['CONTAINER_NUMBER']);
+
+        // Si es contenedorizado: item representa la carga DENTRO del contenedor
+        //   - cargo_type_id = 5 (OTRA CARGA NO CONTENEDORIZADA, criterio aprobado QA)
+        //   - packaging_type_id = 2 (NO RETORNABLE, criterio aprobado QA)
+        // Si NO es contenedorizado: mantener lógica original por NCM y PACK_TYPE
+        $cargoTypeId = $isContainerized ? 5 : $this->findCargoTypeByNCM($row['NCM']);
+        $packagingTypeId = $isContainerized ? 2 : $this->findPackagingTypeByName($row['PACK_TYPE']);
 
         return ShipmentItem::create([
             'shipment_id' => $bill->shipment_id,
             'bill_of_lading_id' => $bill->id,
             'line_number' => $lineNumber,
             'item_description' => $this->buildCargoDescription($row),
-            'cargo_type_id' => $this->findCargoTypeByNCM($row['NCM']),
-            'packaging_type_id' => $this->findPackagingTypeByName($row['PACK_TYPE']),
+            'cargo_type_id' => $cargoTypeId,
+            'packaging_type_id' => $packagingTypeId,
             'package_quantity' => (int) ($row['NUMBER_OF_PACKAGES'] ?? 1),
             'gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
             'net_weight_kg' => $this->parseWeight($row['NET_WEIGHT']),
             'volume_m3' => (float) ($row['VOLUME'] ?? 0),
             'commodity_code' => $row['NCM'] ?: null,
+            'tariff_position' => $row['NCM'] ?: null,
+            'cargo_marks' => !empty($row['MARKS_DESCRIPTION']) ? $row['MARKS_DESCRIPTION'] : 'SM',
             'country_of_origin_id' => $this->determineOriginCountry($row),
             'is_dangerous_goods' => !empty($row['UN_NUMBER']),
             'requires_refrigeration' => $this->requiresRefrigeration($row),
@@ -1042,4 +1095,35 @@ class GuaranExcelParser implements ManifestParserInterface
         return ($max ?? 0) + 1;
     }
 
+    /**
+     * Vincular un Container con un ShipmentItem usando la tabla pivot
+     * container_shipment_item. Replica los valores cantidad/peso/volumen
+     * del item al pivot (1 contenedor = 1 item en Guaran).
+     */
+    protected function attachContainerToItem(Container $container, ShipmentItem $item): void
+    {
+        // Evitar duplicar la relación si ya existe
+        $exists = DB::table('container_shipment_item')
+            ->where('container_id', $container->id)
+            ->where('shipment_item_id', $item->id)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        DB::table('container_shipment_item')->insert([
+            'container_id' => $container->id,
+            'shipment_item_id' => $item->id,
+            'package_quantity' => $item->package_quantity,
+            'gross_weight_kg' => $item->gross_weight_kg,
+            'net_weight_kg' => $item->net_weight_kg,
+            'volume_m3' => $item->volume_m3,
+            'status' => 'loaded',
+            'created_date' => now(),
+            'created_by_user_id' => auth()->id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
 }
