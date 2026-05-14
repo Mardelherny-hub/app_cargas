@@ -330,8 +330,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     $records[] = ['bl' => $currentBl, 'data' => $currentData];
                     $currentData = [];
                 }
-                // CORREGIDO: Limpiar bill_number para evitar problemas de BD
-                $currentBl = $this->cleanBillNumber($content);
+                // FIX bug #2: BLNOREC no tiene seq number; el BL empieza en pos 7.
+                // Los tipos K-Line son de 7 chars; el resto del parser usa offset 8
+                // deliberadamente para sub-clasificar por primer dígito del seq.
+                $blContent = trim(substr($line, 7));
+                $currentBl = $this->cleanBillNumber($blContent);
             }
 
             // CORREGIDO: agregar datos solo si hay un BL actual
@@ -553,15 +556,21 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'bill_number'       => $blNumber,
             'bill_date'         => $dates['bl_date'] ?? now(),
             'loading_date'      => $dates['etd'] ?? now()->addDays(1),
-            'cargo_description' => 'Mercadería general importada desde KLine DAT',
+            // FIX bug #5: usar descripción real extraída de DESCREC en lugar de leyenda fija
+            'cargo_description' => implode(' / ', $this->extractCargoDescriptions($data)) ?: 'Mercadería según manifiesto KLine',
             'status'            => 'draft',
             'master_bl_number'  => $this->extractMasterBL($data),
-            'primary_cargo_type_id'     => 1,
-            'primary_packaging_type_id' => 1,
-            'gross_weight_kg'   => 0,
-            'net_weight_kg'     => 0,
-            'total_packages'    => 1,
-            'volume_m3'         => 0,
+            // FIX bugs #3, #4: cargo y packaging correctos para K-Line (carga no contenedorizada)
+            'primary_cargo_type_id'     => 5,  // OTRA CARGA NO CONTENEDORIZADA
+            'primary_packaging_type_id' => 2,  // NO RETORNABLE
+            // FIX bug #6b: BL no estaba recibiendo cargo_marks (quedaba vacío en BD)
+            'cargo_marks'               => $this->extractCargoMarks($data),
+            // FIX QA #5: sincronizar totales del BL desde los datos reales del archivo
+            // (antes quedaban en 0/1 hardcoded aunque los items sí tuvieran datos)
+            'gross_weight_kg'   => ($blMeasurements = $this->extractRealMeasurements($data))['gross_weight_kg'],
+            'net_weight_kg'     => $blMeasurements['net_weight_kg'],
+            'total_packages'    => $blMeasurements['package_quantity'],
+            'volume_m3'         => $blMeasurements['volume_m3'],
             'created_by_user_id'=> auth()->id(),
         ];
 
@@ -634,8 +643,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 'bill_of_lading_id' => $bill->id,
                 'line_number' => $lineNumber,
                 'item_description' => $description,
-                'cargo_type_id' => 1, // TODO: Determinar basado en tipo de carga
-                'packaging_type_id' => 1, // TODO: Determinar basado en embalaje
+                // FIX bugs #3, #4: K-Line no contenedorizado
+                'cargo_type_id' => 5,     // OTRA CARGA NO CONTENEDORIZADA
+                'packaging_type_id' => 2, // NO RETORNABLE
                 'package_quantity' => $realMeasurements['package_quantity'], // REAL
                 'gross_weight_kg' => $realMeasurements['gross_weight_kg'], // REAL
                 'net_weight_kg' => $realMeasurements['net_weight_kg'], // REAL
@@ -829,7 +839,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 $cleanLine = trim($line);
                 
                 // PATRÓN GENÉRICO: PTYIREC000XSH para Shipper
-                if (preg_match('/^(\d+)SH\s+(.+)$/', $cleanLine, $matches)) {
+                // FIX bug #1: K-Line pega el tax_id al código SH/CN sin espacios (ej: "0001SHCO2325138    NOMBRE..."). \S*\s+ consume el tax_id pegado antes del nombre.
+                if (preg_match('/^(\d+)SH\S*\s+(.+)$/', $cleanLine, $matches)) {
                     $shipperName = $this->extractCompanyNameFromLine($matches[2]);
                     $shipperTaxId = $this->extractTaxIdFromLine($matches[2]); // AGREGAR
                     if ($shipperName) {
@@ -838,7 +849,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     }
                 }
                 // PATRÓN GENÉRICO: PTYIREC000XCN para Consignee
-                elseif (preg_match('/^(\d+)CN\s+(.+)$/', $cleanLine, $matches)) {
+                elseif (preg_match('/^(\d+)CN\S*\s+(.+)$/', $cleanLine, $matches)) {
                     $consigneeName = $this->extractCompanyNameFromLine($matches[2]);
                     $consigneeTaxId = $this->extractTaxIdFromLine($matches[2]); // AGREGAR
                     if ($consigneeName) {
@@ -860,8 +871,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     foreach ($data[$recordType] as $line) {
                         $cleanLine = trim($line);
                         
-                        // PATRÓN GENÉRICO: PTYIREC000XSH para Shipper
-                        if (preg_match('/^(\d+)SH\s+(.+)$/', $cleanLine, $matches)) {
+                        // FIX bug #1: \S*\s+ consume tax_id pegado al código
+                        if (preg_match('/^(\d+)SH\S*\s+(.+)$/', $cleanLine, $matches)) {
                             $shipperName = $this->extractCompanyNameFromLine($matches[2]);
                             $shipperTaxId = $this->extractTaxIdFromLine($matches[2]); // NUEVO
                             if ($shipperName) {
@@ -870,7 +881,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                             }
                         }
                         // PATRÓN GENÉRICO: PTYIREC000XCN para Consignee  
-                        elseif (preg_match('/^(\d+)CN\s+(.+)$/', $cleanLine, $matches)) {
+                        elseif (preg_match('/^(\d+)CN\S*\s+(.+)$/', $cleanLine, $matches)) {
                             $consigneeName = $this->extractCompanyNameFromLine($matches[2]);
                             $consigneeTaxId = $this->extractTaxIdFromLine($matches[2]); // NUEVO
                             if ($consigneeName) {
@@ -971,19 +982,19 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             }
         }
         
-        // Si no hay marcas útiles, retornar "S/M" (Sin Marcas)
+        // FIX bug #6a: si no hay marcas útiles, retornar "SM" (sin barra, como pidió Roberto)
         if (empty($marks)) {
-            return 'S/M';
+            return 'SM';
         }
         
         // Unir marcas encontradas
         $marksText = implode(' / ', array_unique($marks));
         
-        // Si solo encontramos códigos o información técnica, usar S/M
+        // FIX bug #6a: si las marcas son solo códigos técnicos, también "SM"
         if (strlen($marksText) < 5 || 
             str_contains($marksText, 'HS CODE') || 
             str_contains($marksText, 'NCM')) {
-            return 'S/M';
+            return 'SM';
         }
         
         return $marksText;
@@ -1088,8 +1099,12 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 // Patrón: NAUT00000572VEHICLES...06661940000KGS006743880M3
                 if (preg_match('/NAUT(\d+).*?(\d+)KGS(\d+)M3/', $line, $matches)) {
                     $measurements['package_quantity'] = intval(ltrim($matches[1], '0')) ?: 1;
-                    $measurements['gross_weight_kg'] = floatval($matches[2]) / 1000; // Convertir a KG
-                    $measurements['volume_m3'] = floatval($matches[3]) / 1000000; // Convertir a M3
+                    // FIX bug #7: K-Line EDI usa 4 decimales fijos para peso (no 3)
+                    // Archivo CMMDREC: "00595580000KGS" = 59558.0000 KG
+                    $measurements['gross_weight_kg'] = floatval($matches[2]) / 10000;
+                    // FIX escala volumen: K-Line EDI usa 3 decimales fijos (no 6)
+                    // Archivo CMMDREC: "000580070M3" = 580.070 M3
+                    $measurements['volume_m3'] = floatval($matches[3]) / 1000;
                 }
             }
         }
@@ -1161,23 +1176,28 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 
                 if (empty($cleanLine)) continue;
                 
+                // FIX bug QA #3: el content de DESCREC viene con prefijo numérico
+                // de 6 chars (3 del seq + 3 del sub-seq) por el offset 8 del groupBy.
+                // Ej: "DESCREC000100116 VEHICULOS..." -> content "00100116 VEHICULOS..."
+                // Sin limpiar, "00100116" se interpretaba como cantidad en lugar de "16".
+                $cleanLine = preg_replace('/^\d{6}/', '', $cleanLine);
+                $cleanLine = trim($cleanLine);
+                if (empty($cleanLine)) continue;
+                
                 // Extraer cantidad y tipo de vehículos
+                // FIX QA #6: sumar cantidades cuando hay múltiples grupos en el mismo BL
+                // (este DAT tiene "16 VEHICULOS" + "27 VEHICULOS" = 43 total)
                 if (preg_match('/^(\d+)\s+(VEHICULOS?.*?)(?:\s+MARCA\s+(.+?))?(?:\s+-\s*)?$/i', $cleanLine, $matches)) {
-                    $quantity = $matches[1];
+                    $quantity = (int)$quantity + (int)$matches[1];
                     $cargoType = trim($matches[2]);
                     if (isset($matches[3])) {
                         $brand = trim($matches[3]);
                     }
                 }
-                // Extraer modelo específico  
-                elseif (preg_match('/^([A-Z0-9]+(?:\s+[A-Z0-9]+)*)\s*,?\s*$/i', $cleanLine, $matches) && 
-                        !str_contains($cleanLine, 'FLETE') && 
-                        !str_contains($cleanLine, 'HS CODE') &&
-                        !str_contains($cleanLine, 'KGS') &&
-                        strlen($matches[1]) > 3) {
-                    $model = trim($matches[1]);
-                    break; // Tomar el primer modelo encontrado
-                }
+                // FIX QA #6: se quitó la extracción de "modelo específico" porque tomaba
+                // líneas documentales como "EMISION DE ORIGINALES EN DESTINO" o "SEA WAYBILL"
+                // como modelo. Los modelos reales (ej "HJD5M2DAMY DUSTER ICONIC 1.3T 4X4")
+                // contienen puntos y no matcheaban el regex de todas formas.
             }
             
             // Construir descripción específica
@@ -1186,10 +1206,6 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 
                 if ($brand) {
                     $description .= ' ' . $brand;
-                }
-                
-                if ($model) {
-                    $description .= ' ' . $model;
                 }
                 
                 $descriptions[] = $description;
@@ -1401,6 +1417,11 @@ protected function extractPortInfo(array $data): array
     foreach ($data as $recordType => $lines) {
         if (!is_array($lines)) continue;
 
+        // FIX QA: solo procesar registros del manifiesto (GNRLREC tiene los puertos
+        // reales del viaje). Antes detectaba puertos en HEADREC (RIO DE JANEIRO falso
+        // positivo) y en PTYIREC (BUENOS AIRES de direcciones de partes).
+        if (!str_starts_with($recordType, 'GNRLREC')) continue;
+
         foreach ($lines as $line) {
             $u = ' ' . strtoupper((string)$line);
 
@@ -1429,8 +1450,12 @@ protected function extractPortInfo(array $data): array
     // Únicos y en orden
     $foundCodes = array_values(array_unique($foundCodes));
 
-    // 2) Fallback por NOMBRE (alias) si no se detectó ningún código
-    if (empty($foundCodes)) {
+    // 2) Fallback por NOMBRE (alias) si no encontramos suficientes códigos UN/LOCODE.
+    // FIX QA #2: antes solo corría si $foundCodes estaba vacío, lo que dejaba afuera
+    // casos como K-Line donde COCTG (Cartagena) era válido pero "DELTA DOCK"/AR00F
+    // no se detectaba (AR00F es descartado por anti-falsos UN/LOCODE).
+    // Ahora corre siempre que falte algún puerto (origen o destino).
+    if (count($foundCodes) < 2) {
         // Alias de la ZONA (podés ajustar el puerto destino del alias si querés)
         $aliasMap = [
             'DELTA DOCK'      => 'ARCAM',   // Campana (Delta Dock - Lima)
@@ -1444,6 +1469,10 @@ protected function extractPortInfo(array $data): array
 
         foreach ($data as $recordType => $lines) {
             if (!is_array($lines)) continue;
+
+            // FIX QA: idem arriba — solo GNRLREC (evita BUENOS AIRES/RIO DE JANEIRO
+            // de direcciones de partes o de la cabecera del archivo).
+            if (!str_starts_with($recordType, 'GNRLREC')) continue;
 
             foreach ($lines as $line) {
                 $u = ' ' . strtoupper((string)$line);
@@ -1493,17 +1522,20 @@ protected function extractPortInfo(array $data): array
     }
     $candidates = array_merge($inDb, $notInDb);
 
-    // 4) Asignación con prioridad local (AR/PY como origen si conviven con BR/UY)
-    $preferOrigin = ['AR', 'PY'];
+    // 4) Asignación con prioridad local: K-Line es importación inbound,
+    // así que AR/PY es DESTINO (puerto de descarga), no origen.
+    // FIX QA: la regla anterior preferOrigin=['AR','PY'] estaba pensada para
+    // exportaciones (carga que sale de AR/PY). Para K-Line es al revés.
+    $preferDestination = ['AR', 'PY'];
     $origin = null; $destination = null;
 
     foreach ($candidates as $code) {
-        if (in_array(substr($code, 0, 2), $preferOrigin, true)) { $origin = $code; break; }
+        if (in_array(substr($code, 0, 2), $preferDestination, true)) { $destination = $code; break; }
     }
-    if (!$origin) $origin = $candidates[0];
+    if (!$destination) $destination = $candidates[0];
 
     foreach ($candidates as $code) {
-        if ($code !== $origin) { $destination = $code; break; }
+        if ($code !== $destination) { $origin = $code; break; }
     }
 
     $portInfo['origin']      = $origin;
@@ -1805,19 +1837,19 @@ protected function extractPortInfo(array $data): array
         $lines = $data['PTYIREC0'] ?? [];
         if (!is_array($lines)) $lines = [];
 
-        $current = null;
+        // FIX bug #1: K-Line usa códigos SH/CN/NP pegados al seq (ej: "0001SH...").
+        // No usa los textos "SHIPPER" o "CONSIGNEE" que esperaba la versión anterior.
         foreach ($lines as $raw) {
-            $u = strtoupper((string)$raw);
+            $trim = trim((string)$raw);
+            if ($trim === '') continue;
 
-            // arranques típicos de bloque
-            if (str_starts_with($u, 'SHIPPER') || str_contains($u, ' SHIPPER')) {
-                $current = 'S'; continue;
+            // Detectar código de parte después del seq numérico
+            if (preg_match('/^(\d+)SH\S*\s+(.+)$/', $trim, $m)) {
+                $shipper[] = $m[2];
+            } elseif (preg_match('/^(\d+)CN\S*\s+(.+)$/', $trim, $m)) {
+                $consignee[] = $m[2];
             }
-            if (str_starts_with($u, 'CONSIGNEE') || str_contains($u, ' CONSIGNEE')) {
-                $current = 'C'; continue;
-            }
-            if ($current === 'S') { $shipper[] = (string)$raw; }
-            if ($current === 'C') { $consignee[] = (string)$raw; }
+            // NP (notify party) no se usa en createBillOfLading actualmente
         }
 
         return [$shipper, $consignee];
@@ -1837,19 +1869,26 @@ protected function extractPortInfo(array $data): array
                 $email = $m[0];
             }
 
-            // CUIT/Tax (muy básico)
+            // FIX bug QA #4: usar extractTaxIdFromLine que ya detecta NIT/CUIT/CNPJ/RUC.
+            // Antes solo detectaba CUIT argentino (\d{2}-\d{8}-\d) y NIT colombiano "860.025.792-3" quedaba afuera.
             if (!$tax) {
-                if (preg_match('/\b\d{2}-?\d{8}-?\d\b/', $trim, $m)) $tax = preg_replace('/\D+/', '', $m[0]); // CUIT
-                elseif (preg_match('/\bRUC[:\s]*([0-9\-\.]+)/i', $trim, $m)) $tax = preg_replace('/\D+/', '', $m[1]); // RUC PY
+                $candidateTax = $this->extractTaxIdFromLine($trim);
+                if ($candidateTax) {
+                    $tax = $candidateTax;
+                }
             }
 
-            // primer línea no vacía que no sea encabezado la tomo como nombre
-            if (!$name && !preg_match('/^(SHIPPER|CONSIGNEE|ADDRESS|DIR|ATTN|TEL|PHONE|EMAIL)/i', $trim)) {
-                $name = $trim;
+            // FIX bug QA #4: usar extractCompanyNameFromLine que separa el nombre de la empresa
+            // de la dirección y del NIT/CUIT. Antes guardaba la línea entera concatenada.
+            if (!$name) {
+                $candidate = $this->extractCompanyNameFromLine($trim);
+                if ($candidate) {
+                    $name = $candidate;
+                }
             }
         }
 
-        // address = todo junto (si sirve, lo guardás)
+        // address = todo junto (para guardar dirección si sirve)
         $address = null;
         if (!empty($lines)) {
             $address = trim(implode(' ', array_map('trim', $lines)));
