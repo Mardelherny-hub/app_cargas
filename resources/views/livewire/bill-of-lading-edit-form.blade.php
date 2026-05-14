@@ -909,7 +909,10 @@
                         </label>
                         <input wire:model="total_packages" type="number" id="total_packages" min="1" required
                                @readonly($hasItems)
-                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('total_packages') border-red-300 @enderror">
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 
+                               @if($hasItems) bg-gray-100 cursor-not-allowed 
+                               @endif
+                               @error('total_packages') border-red-300 @enderror">
                         @if($hasItems)
                             <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
                         @endif
