@@ -216,34 +216,88 @@ class GuaranExcelParser implements ManifestParserInterface
     }
 
     /**
-     * Extraer datos del worksheet (desde fila 7)
+     * Extraer datos del worksheet (desde fila 7).
+     * Aplica validación previa por fila. Si alguna fila tiene campos
+     * críticos faltantes o BL_DATE inválida, aborta antes de tocar BD
+     * con un mensaje legible que lista todos los errores encontrados.
      */
     protected function extractDataFromWorksheet($worksheet): array
     {
         // 🔍 DEBUG: Ver qué contiene la fila 7
         Log::info('DEBUG: Contenido de fila 7', [
             'A7' => $worksheet->getCell('A7')->getCalculatedValue(),
-            'O7' => $worksheet->getCell('O7')->getCalculatedValue(), 
+            'O7' => $worksheet->getCell('O7')->getCalculatedValue(),
             'AX7' => $worksheet->getCell('AX7')->getCalculatedValue()
         ]);
         $data = [];
+        $errors = [];
         $highestRow = $worksheet->getHighestRow();
-        
+
         for ($row = 7; $row <= $highestRow; $row++) {
-            // Verificar si tiene BL_NUMBER (columna O)
+            // Saltar filas con BL_NUMBER vacío (filas en blanco al final del archivo).
             $blNumber = trim($worksheet->getCell('O' . $row)->getCalculatedValue());
             if (empty($blNumber)) continue;
-            
+
             $rowData = [];
             foreach ($this->columnMapping as $column => $fieldName) {
                 $cellValue = $worksheet->getCell($column . $row)->getCalculatedValue();
                 $rowData[$fieldName] = $this->cleanCellValue($cellValue);
             }
-            
+
+            // Validación previa: acumular errores sin abortar para reportar
+            // todos los problemas del archivo en una sola pasada.
+            $rowErrors = $this->validateRow($rowData, $row);
+            if (!empty($rowErrors)) {
+                $errors = array_merge($errors, $rowErrors);
+                continue;
+            }
+
             $data[] = $rowData;
         }
-        
+
+        // Si cualquier fila tuvo errores, abortar con mensaje amigable
+        // antes de crear voyage, shipment, clients, BLs, items o containers.
+        if (!empty($errors)) {
+            throw new Exception("Archivo GUARAN inválido:\n" . implode("\n", $errors));
+        }
+
         return $data;
+    }
+
+    /**
+     * Validar campos críticos de una fila. Retorna array de errores legibles.
+     * Array vacío significa fila válida.
+     * Los campos críticos cubren los datos mínimos necesarios para crear
+     * voyage, vessel, ports, clients y bill of lading sin SQL crudo expuesto.
+     */
+    protected function validateRow(array $rowData, int $excelRow): array
+    {
+        $errors = [];
+
+        $required = [
+            'BL_NUMBER',
+            'BL_DATE',
+            'SHIPPER_NAME',
+            'CONSIGNEE_NAME',
+            'VOYAGE_NO',
+            'BARGE_NAME',
+            'POL',
+            'POD',
+        ];
+
+        foreach ($required as $field) {
+            if ($rowData[$field] === null || $rowData[$field] === '') {
+                $errors[] = "Fila {$excelRow}: campo obligatorio faltante: {$field}.";
+            }
+        }
+
+        // Si BL_DATE está presente, verificar que parseDate() pueda procesarla.
+        // Si está vacía ya quedó registrada arriba.
+        if (!empty($rowData['BL_DATE']) && !$this->parseDate($rowData['BL_DATE'])) {
+            $errors[] = "Fila {$excelRow}: BL_DATE inválida: {$rowData['BL_DATE']}.";
+        }
+
+        return $errors;
     }
 
     protected function cleanCellValue($value): ?string
