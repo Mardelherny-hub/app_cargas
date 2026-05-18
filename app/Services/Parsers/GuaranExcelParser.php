@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Models\ManifestImport;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -696,14 +697,50 @@ class GuaranExcelParser implements ManifestParserInterface
         return $date ? $date->copy()->addDays(3) : now()->addDays(3);
     }
 
-    protected function parseDate(?string $date): ?Carbon
+    protected function parseDate($date): ?Carbon
     {
-        if (!$date) return null;
-        
+        if ($date === null || $date === '') {
+            return null;
+        }
+        $value = trim((string) $date);
+        if ($value === '') {
+            return null;
+        }
         try {
-            return Carbon::createFromFormat('d/m/Y', trim($date));
-        } catch (Exception $e) {
+            // Excel puede entregar fechas como serial numérico.
+            // Ejemplo: 46145. Se usa PhpSpreadsheet para evitar conversiones manuales.
+            if (is_numeric($value)) {
+                $serial = (float) $value;
+                // Rango defensivo para fechas Excel razonables.
+                // Evita interpretar valores tipo 20260504 como serial Excel.
+                if ($serial >= 20000 && $serial <= 60000) {
+                    return Carbon::instance(
+                        ExcelDate::excelToDateTimeObject($serial)
+                    )->startOfDay();
+                }
+            }
+            $formats = [
+                'd/m/Y',
+                'Y-m-d',
+                'd-m-Y',
+            ];
+            foreach ($formats as $format) {
+                try {
+                    $parsed = Carbon::createFromFormat($format, $value);
+                    if ($parsed && $parsed->format($format) === $value) {
+                        return $parsed->startOfDay();
+                    }
+                } catch (\Throwable $e) {
+                    // Probar siguiente formato.
+                }
+            }
             Log::warning('Error parsing date', ['date' => $date]);
+            return null;
+        } catch (\Throwable $e) {
+            Log::warning('Error parsing date', [
+                'date' => $date,
+                'error' => $e->getMessage(),
+            ]);
             return null;
         }
     }
