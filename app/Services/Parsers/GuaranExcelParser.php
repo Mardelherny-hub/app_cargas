@@ -745,12 +745,60 @@ class GuaranExcelParser implements ManifestParserInterface
         }
     }
 
-    protected function parseWeight(?string $weight): float
+    protected function parseWeight($weight): float
     {
-        if (!$weight) return 0.0;
-        
-        $cleaned = str_replace(['.', ' '], '', $weight);
-        $cleaned = str_replace(',', '.', $cleaned);
+        if ($weight === null || $weight === '') {
+            return 0.0;
+        }
+
+        // Numérico nativo (int/float): usar tal cual.
+        // Excel puede entregar valores numéricos directamente y no debemos manipularlos.
+        if (is_int($weight) || is_float($weight)) {
+            return (float) $weight;
+        }
+
+        $cleaned = trim((string) $weight);
+        if ($cleaned === '') {
+            return 0.0;
+        }
+
+        // Quitar espacios internos por si vinieran (p.ej. "33 536,67").
+        $cleaned = str_replace(' ', '', $cleaned);
+
+        $hasComma = strpos($cleaned, ',') !== false;
+        $hasDot = strpos($cleaned, '.') !== false;
+
+        if ($hasComma && $hasDot) {
+            // Ambos separadores: el ÚLTIMO en aparecer es el decimal.
+            // Europeo: "33.536,670" -> coma decimal, puntos miles.
+            // US:      "33,536.67"  -> punto decimal, comas miles.
+            $lastComma = strrpos($cleaned, ',');
+            $lastDot = strrpos($cleaned, '.');
+            if ($lastComma > $lastDot) {
+                $cleaned = str_replace('.', '', $cleaned);
+                $cleaned = str_replace(',', '.', $cleaned);
+            } else {
+                $cleaned = str_replace(',', '', $cleaned);
+            }
+        } elseif ($hasComma) {
+            // Sólo coma. Una sola -> decimal europeo simplificado ("33536,67").
+            // Varias -> separadores de miles US sin decimal ("33,536,000").
+            if (substr_count($cleaned, ',') === 1) {
+                $cleaned = str_replace(',', '.', $cleaned);
+            } else {
+                $cleaned = str_replace(',', '', $cleaned);
+            }
+        } elseif ($hasDot) {
+            // Sólo punto. Si hay varios, los anteriores son miles y el último es decimal.
+            // Un solo punto -> decimal estándar (compatible con PHP cast (string) de float).
+            if (substr_count($cleaned, '.') > 1) {
+                $lastDot = strrpos($cleaned, '.');
+                $intPart = str_replace('.', '', substr($cleaned, 0, $lastDot));
+                $decPart = substr($cleaned, $lastDot + 1);
+                $cleaned = $intPart . '.' . $decPart;
+            }
+        }
+
         return (float) $cleaned;
     }
 
