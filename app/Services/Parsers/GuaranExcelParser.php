@@ -1006,7 +1006,8 @@ class GuaranExcelParser implements ManifestParserInterface
             '1502' => 'food'      // Grasas bovinas
         ];
         
-        $cargoName = $ncmMap[substr($ncm, 0, 4)] ?? 'general';
+        $ncmKey = str_pad((string) $ncm, 4, '0', STR_PAD_LEFT);
+        $cargoName = $ncmMap[substr($ncmKey, 0, 4)] ?? 'general';
         
         $type = DB::table('cargo_types')
             ->whereRaw('UPPER(name) LIKE ?', ['%' . strtoupper($cargoName) . '%'])
