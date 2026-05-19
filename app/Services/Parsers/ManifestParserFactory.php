@@ -155,8 +155,7 @@ class ManifestParserFactory
             try {
                 $parser = new $parserClass();
                 
-                if ($parser instanceof ManifestParserInterface) {
-                    // Para parsers por extensión, asumir que puede procesar
+                if ($parser instanceof ManifestParserInterface && $parser->canParse($filePath)) {
                     Log::debug('Using parser based on extension', [
                         'parser_class' => $parserClass,
                         'extension' => $extension,
