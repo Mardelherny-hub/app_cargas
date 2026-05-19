@@ -117,28 +117,15 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         return $port;
     }
 
-    // 4) Resolver country_id por alpha2 (debe existir en tabla countries)
-    $countryId = Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->value('id');
-
-    // 5) Si tu tabla ports tiene country_id NOT NULL y no pudimos resolver, no creamos
-    if (Schema::hasColumn('ports', 'country_id') && empty($countryId)) {
-        throw new \DomainException(
-            "No se puede crear puerto {$code}: país {$alpha2} no existe en 'countries'. " .
-            "Agregá el país y reintentá."
-        );
-    }
-
-    // 6) Crear con mínimos seguros (solo columnas que existan)
-    $attrs = ['code' => $code];
-    $vals  = [];
-
-    if (Schema::hasColumn('ports', 'name'))       $vals['name']       = $defaultName ?: $code;
-    if (Schema::hasColumn('ports', 'country_id')) $vals['country_id'] = $countryId;
-    if (Schema::hasColumn('ports', 'active'))     $vals['active']     = false;
-    if (Schema::hasColumn('ports', 'status'))     $vals['status']     = 'pending';
-    if (Schema::hasColumn('ports', 'city'))       $vals['city']       = $defaultName ?: 'Puerto';
-
-    return Port::updateOrCreate($attrs, $vals);
+    // 4) Si no existe, abortar con mensaje descriptivo.
+    // Política del proyecto: los parsers NUNCA crean puertos automáticamente.
+    // El catálogo (~17.500 puertos) está alineado con UN/LOCODE + códigos AFIP/DNA.
+    // Crear un puerto sintético invalidaría las transmisiones a aduana.
+    throw new \DomainException(
+        "Código de puerto '{$code}' no existe en el catálogo. " .
+        "Si es un puerto válido que falta cargar, contactar al administrador. " .
+        "Si es un error en el archivo origen, corregirlo antes de reintentar."
+    );
 }
 
 
