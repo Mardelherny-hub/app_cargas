@@ -45,7 +45,8 @@ class TfpTextParser implements ManifestParserInterface
         }
 
         $head = @file_get_contents($filePath, false, null, 0, 4096) ?: '';
-        return (strpos($head, '**BL**') !== false) || (strpos($head, 'BLNUMERO:') !== false);
+        return strpos($head, 'BLNUMERO:') !== false
+            && strpos($head, 'BLMARITIMONUMERO:') !== false;
     }
 
     public function parse(string $filePath): ManifestParseResult
