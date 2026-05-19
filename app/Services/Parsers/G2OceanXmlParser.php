@@ -572,7 +572,10 @@ class G2OceanXmlParser implements ManifestParserInterface
         $shipper = $this->findOrCreateClient($blData['shipper'], $companyId, $loadingPort);
         $consignee = $this->findOrCreateClient($blData['consignee'], $companyId, $dischargePort);
         $notify = null;
-        if (!empty($blData['notify']['name']) && $blData['notify']['name'] !== '(NF) SAME AS CONSIGNEE') {
+        $notifyName = strtoupper(trim((string) ($blData['notify']['name'] ?? '')));
+        if ($notifyName === '(NF) SAME AS CONSIGNEE') {
+            $notify = $consignee;
+        } elseif ($notifyName !== '') {
             $notify = $this->findOrCreateClient($blData['notify'], $companyId, $dischargePort);
         }
 
@@ -591,8 +594,8 @@ class G2OceanXmlParser implements ManifestParserInterface
             'notify_party_id' => $notify?->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
-            'primary_cargo_type_id' => $this->getDefaultCargoTypeId(),
-            'primary_packaging_type_id' => $this->getDefaultPackagingTypeId(),
+            'primary_cargo_type_id' => $this->resolveCargoTypeByPkgType($blData['cargo_items'][0]['package_type'] ?? ''),
+            'primary_packaging_type_id' => $this->resolvePackagingTypeByPkgType($blData['cargo_items'][0]['package_type'] ?? ''),
             'total_packages' => max($totalPackages, 1),
             'gross_weight_kg' => $totalWeight * 1000, // MT a KG
             'net_weight_kg' => $totalWeight * 1000 * 0.9, // Estimación 90%
@@ -616,8 +619,8 @@ class G2OceanXmlParser implements ManifestParserInterface
                 'bill_of_lading_id' => $bill->id,
                 'line_number' => $cargoItem['item_number'],
                 'item_description' => $cargoItem['description'],
-                'cargo_type_id' => $this->getDefaultCargoTypeId(),
-                'packaging_type_id' => $this->getPackagingTypeByName($cargoItem['package_type']),
+                'cargo_type_id' => $this->resolveCargoTypeByPkgType($cargoItem['package_type'] ?? ''),
+                'packaging_type_id' => $this->resolvePackagingTypeByPkgType($cargoItem['package_type'] ?? ''),
                 'package_quantity' => $cargoItem['packages'],
                 'gross_weight_kg' => $cargoItem['weight_mt'] * 1000, // MT a KG
                 'net_weight_kg' => $cargoItem['weight_mt'] * 1000 * 0.9, // Estimación
@@ -640,7 +643,7 @@ class G2OceanXmlParser implements ManifestParserInterface
     protected function findOrCreatePort(string $portCode): Port
     {
         if (empty($portCode)) {
-            throw new Exception("Código de puerto no puede estar vacío");
+            throw new \InvalidArgumentException("Código de puerto no puede estar vacío");
         }
 
         $code = strtoupper(trim($portCode));
@@ -651,22 +654,22 @@ class G2OceanXmlParser implements ManifestParserInterface
             return $port;
         }
 
-        // Verificar que el país existe
+        // Verificar que el país existe (validación defensiva, igualmente NO crearemos)
         $alpha2 = substr($code, 0, 2);
-        $countryId = Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->value('id');
-        
-        if (!$countryId) {
-            throw new Exception("No se encontró país para código {$alpha2}");
+        $countryExists = Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->exists();
+        if (!$countryExists) {
+            throw new \DomainException("Código de puerto {$code} rechazado: país {$alpha2} no existe en base de datos.");
         }
 
-        // Crear puerto
-        return Port::create([
-            'code' => $code,
-            'name' => $this->getPortNameFromCode($code),
-            'country_id' => $countryId,
-            'active' => true,
-            'city' => $this->getCityFromCode($code)
-        ]);
+        // No existe en catálogo → no crear, abortar con mensaje descriptivo.
+        // Política del proyecto: los parsers NUNCA crean puertos automáticamente.
+        // El catálogo (~17.500 puertos) está alineado con UN/LOCODE + códigos AFIP/DNA.
+        // Crear un puerto sintético invalidaría las transmisiones a aduana.
+        throw new \DomainException(
+            "Código de puerto '{$code}' no existe en el catálogo. " .
+            "Si es un puerto válido que falta cargar, contactar al administrador. " .
+            "Si es un error en el archivo origen, corregirlo antes de reintentar."
+        );
     }
 
     /**
@@ -731,6 +734,36 @@ class G2OceanXmlParser implements ManifestParserInterface
         return CargoType::where('active', true)->first()?->id ?? 1;
     }
 
+    /**
+     * Resolver CargoType a partir del pkgType del XML G2Ocean.
+     * Mapeo basado en valores reales observados en archivos de muestra.
+     */
+    protected function resolveCargoTypeByPkgType(string $pkgType): int
+    {
+        $key = strtoupper(trim($pkgType));
+
+        $map = [
+            'PACKAGES'   => 10,  // BREAKBULK
+            'BUNDLES'    => 10,  // BREAKBULK
+            'COILS'      => 10,  // BREAKBULK
+            'PIECES'     => 10,  // BREAKBULK
+            'CARTONS'    => 10,  // BREAKBULK
+            'BOXES'      => 10,  // BREAKBULK
+            'CONTAINER'  => 9,   // CONTENEDORES
+            'CONTAINERS' => 9,   // CONTENEDORES
+            'PALLETS'    => 8,   // PALETIZADAS
+            'PALETS'     => 8,   // PALETIZADAS
+            'BULK'       => 5,   // OTRA CARGA NO CONTENEDORIZADA
+        ];
+
+        if (isset($map[$key])) {
+            return $map[$key];
+        }
+
+        // Fallback: OTRA CARGA NO CONTENEDORIZADA (no "ENVIOS DE BAJO VALOR")
+        return CargoType::where('id', 5)->where('active', true)->value('id') ?? $this->getDefaultCargoTypeId();
+    }
+
     protected function getDefaultPackagingTypeId(): int
     {
         return PackagingType::where('active', true)->first()?->id ?? 1;
@@ -743,6 +776,28 @@ class G2OceanXmlParser implements ManifestParserInterface
                             ->first();
         
         return $type?->id ?? $this->getDefaultPackagingTypeId();
+    }
+
+    /**
+     * Resolver PackagingType a partir del pkgType del XML G2Ocean.
+     * Mapeo basado en valores reales observados en archivos de muestra.
+     */
+    protected function resolvePackagingTypeByPkgType(string $pkgType): int
+    {
+        $key = strtoupper(trim($pkgType));
+
+        $map = [
+            'CONTAINER'  => 4,  // CONTENEDOR
+            'CONTAINERS' => 4,  // CONTENEDOR
+            'BULK'       => 1,  // A GRANEL
+        ];
+
+        if (isset($map[$key])) {
+            return $map[$key];
+        }
+
+        // Fallback: NO RETORNABLE (envases de uso unico, no "A GRANEL")
+        return PackagingType::where('id', 2)->where('active', true)->value('id') ?? $this->getDefaultPackagingTypeId();
     }
 
     protected function buildCargoDescription(array $cargoItems): string
