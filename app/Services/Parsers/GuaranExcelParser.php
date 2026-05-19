@@ -448,22 +448,36 @@ class GuaranExcelParser implements ManifestParserInterface
     /**
      * Buscar/crear puerto - SOLO DATOS REALES
      */
-    protected function findOrCreatePort(?string $code): Port
+protected function findOrCreatePort(?string $code): Port
     {
-        if (!$code) {
-            throw new Exception("Código de puerto es requerido");
+        if (empty($code)) {
+            throw new \InvalidArgumentException("Código de puerto no puede estar vacío");
         }
 
-        $port = Port::where('code', $code)->first();
-        if ($port) return $port;
+        $normalized = strtoupper(trim($code));
 
-        return Port::create([
-            'code' => $code,
-            'name' => $this->generatePortName($code),
-            'country_id' => $this->getCountryIdFromPortCode($code),
-            'port_type' => 'river',
-            'active' => true
-        ]);
+        // Buscar existente
+        $port = Port::where('code', $normalized)->first();
+        if ($port) {
+            return $port;
+        }
+
+        // Verificar que el país existe (validación defensiva, igualmente NO crearemos)
+        $alpha2 = substr($normalized, 0, 2);
+        $countryExists = Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->exists();
+        if (!$countryExists) {
+            throw new \DomainException("Código de puerto {$normalized} rechazado: país {$alpha2} no existe en base de datos.");
+        }
+
+        // No existe en catálogo → no crear, abortar con mensaje descriptivo.
+        // Política del proyecto: los parsers NUNCA crean puertos automáticamente.
+        // El catálogo (~17.500 puertos) está alineado con UN/LOCODE + códigos AFIP/DNA.
+        // Crear un puerto sintético invalidaría las transmisiones a aduana.
+        throw new \DomainException(
+            "Código de puerto '{$normalized}' no existe en el catálogo. " .
+            "Si es un puerto válido que falta cargar, contactar al administrador. " .
+            "Si es un error en el archivo origen, corregirlo antes de reintentar."
+        );
     }
 
     /**
