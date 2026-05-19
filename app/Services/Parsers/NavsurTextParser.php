@@ -62,10 +62,8 @@ class NavsurTextParser implements ManifestParserInterface
                 
                 $line = trim($line);
                 
-                // Buscar marcadores específicos de Navsur
-                if (strpos($line, '**BL**') !== false ||
-                    strpos($line, 'NUMEROBL:') !== false ||
-                    strpos($line, '/*') !== false && strpos($line, '*/') !== false) {
+                // Buscar marcador distintivo de Navsur (NUMEROBL es el campo propio del formato)
+                if (strpos($line, 'NUMEROBL:') !== false) {
                     $foundNavsurPattern = true;
                     break;
                 }
