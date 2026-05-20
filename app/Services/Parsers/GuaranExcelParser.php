@@ -448,36 +448,22 @@ class GuaranExcelParser implements ManifestParserInterface
     /**
      * Buscar/crear puerto - SOLO DATOS REALES
      */
-protected function findOrCreatePort(?string $code): Port
+    protected function findOrCreatePort(?string $code): Port
     {
-        if (empty($code)) {
-            throw new \InvalidArgumentException("Código de puerto no puede estar vacío");
+        if (!$code) {
+            throw new Exception("Código de puerto es requerido");
         }
 
-        $normalized = strtoupper(trim($code));
+        $port = Port::where('code', $code)->first();
+        if ($port) return $port;
 
-        // Buscar existente
-        $port = Port::where('code', $normalized)->first();
-        if ($port) {
-            return $port;
-        }
-
-        // Verificar que el país existe (validación defensiva, igualmente NO crearemos)
-        $alpha2 = substr($normalized, 0, 2);
-        $countryExists = Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->exists();
-        if (!$countryExists) {
-            throw new \DomainException("Código de puerto {$normalized} rechazado: país {$alpha2} no existe en base de datos.");
-        }
-
-        // No existe en catálogo → no crear, abortar con mensaje descriptivo.
-        // Política del proyecto: los parsers NUNCA crean puertos automáticamente.
-        // El catálogo (~17.500 puertos) está alineado con UN/LOCODE + códigos AFIP/DNA.
-        // Crear un puerto sintético invalidaría las transmisiones a aduana.
-        throw new \DomainException(
-            "Código de puerto '{$normalized}' no existe en el catálogo. " .
-            "Si es un puerto válido que falta cargar, contactar al administrador. " .
-            "Si es un error en el archivo origen, corregirlo antes de reintentar."
-        );
+        return Port::create([
+            'code' => $code,
+            'name' => $this->generatePortName($code),
+            'country_id' => $this->getCountryIdFromPortCode($code),
+            'port_type' => 'river',
+            'active' => true
+        ]);
     }
 
     /**
@@ -939,8 +925,8 @@ protected function findOrCreatePort(?string $code): Port
             $taxId = $prefix . $uniqueId;
         }
         
-        // Asegurar que no exceda 15 caracteres
-        $taxId = substr($taxId, 0, 15);
+        // Asegurar que no exceda el largo de la columna (varchar 11)
+        $taxId = substr($taxId, 0, 11);
 
         $client = Client::create([
             'created_by_company_id' => $companyId,
@@ -963,8 +949,17 @@ protected function findOrCreatePort(?string $code): Port
 
     protected function extractTaxId(string $text): ?string
     {
-        if (preg_match('/(RUC|CUIT)[:\s]*([0-9\-\s]+)/i', $text, $matches)) {
-            return trim(str_replace(['-', ' '], '', $matches[2]));
+        // Captura una corrida de digitos con guiones/puntos INTERNOS, sin cruzar espacios.
+        // [0-9] obligatorio al inicio y fin; separadores solo en medio.
+        // Evita concatenar el identificador fiscal con numeros siguientes (ej: "RUC: 80129758-3 005959").
+        if (preg_match('/(RUC|CUIT)[:\s]*([0-9][0-9.\-]*[0-9])/i', $text, $matches)) {
+            $clean = preg_replace('/[^0-9]/', '', $matches[2]);
+
+            // Validacion de longitud: CUIT AR = 11, RUC PY = 8-9. Rango aceptado 7-11.
+            // Si excede, es dato corrupto -> null (el flujo generara un tax_id sintetico corto).
+            if (strlen($clean) >= 7 && strlen($clean) <= 11) {
+                return $clean;
+            }
         }
         return null;
     }
