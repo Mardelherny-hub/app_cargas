@@ -71,6 +71,11 @@ class LoginXmlParser implements ManifestParserInterface
     // Contenedores creados durante la importación actual (evita duplicados)
     protected array $createdContainersInImport = [];
 
+    // Cache de catálogos para evitar queries repetidas en el loop de BLs/contenedores.
+    protected ?CargoType $cachedCargoType = null;
+    protected ?PackagingType $cachedPackagingType = null;
+    protected array $cachedContainerTypes = [];
+
     /**
      * Verificar si el parser puede procesar el archivo XML
      */
@@ -198,10 +203,16 @@ class LoginXmlParser implements ManifestParserInterface
         try {
             DB::beginTransaction();
 
+            // Red de seguridad: archivos Login grandes (100+ BLs) requieren mas memoria.
+            @ini_set('memory_limit', '1024M');
+
             $startTime = microtime(true);
 
              // Reset container tracking for this import
             $this->createdContainersInImport = [];
+            $this->cachedCargoType = null;
+            $this->cachedPackagingType = null;
+            $this->cachedContainerTypes = [];
             
             // Crear registro de importación
             $importRecord = $this->createImportRecord($filePath, $context);
@@ -227,17 +238,22 @@ class LoginXmlParser implements ManifestParserInterface
             $shipment = $this->createShipment($transformedData, $voyage, $context);
             
             // 6. Crear MÚLTIPLES BillOfLading con sus items
-            $allBillsOfLading = [];
-            $allShipmentItems = [];
+            // Acumulamos solo IDs (no objetos Eloquent) para minimizar memoria
+            // en archivos grandes (100+ BLs, cientos de contenedores).
+            $allBillIds = [];
+            $allItemIds = [];
             
             foreach ($transformedData['bills_of_lading'] as $blData) {
                 $billOfLading = $this->createBillOfLadingFromData($blData, $shipment, $context);
-                $allBillsOfLading[] = $billOfLading;
+                $allBillIds[] = $billOfLading->id;
                 
-                $items = $this->createShipmentItemsFromData($blData['containers'], $billOfLading, $context);
-                $allShipmentItems = array_merge($allShipmentItems, $items);
+                $itemIds = $this->createShipmentItemsFromData($blData['containers'], $billOfLading, $context);
+                foreach ($itemIds as $iid) {
+                    $allItemIds[] = $iid;
+                }
                 
-                Log::debug("BL creado: {$billOfLading->bill_number} con " . count($items) . " items");
+                // Liberar el objeto BL de memoria tras usar su id
+                unset($billOfLading);
             }
             
             DB::commit();
@@ -245,21 +261,21 @@ class LoginXmlParser implements ManifestParserInterface
             Log::info('Login XML parseado exitosamente', [
                 'voyage_id' => $voyage->id,
                 'shipment_id' => $shipment->id,
-                'bills_of_lading_count' => count($allBillsOfLading),
-                'items_created' => count($allShipmentItems)
+                'bills_of_lading_count' => count($allBillIds),
+                'items_created' => count($allItemIds)
             ]);
 
-            // Completar registro de importación
-            $this->completeImportRecord($importRecord, $voyage, [$shipment], $allBillsOfLading, $allShipmentItems, $startTime);
+            // Completar registro de importación (recibe IDs directamente)
+            $this->completeImportRecord($importRecord, $voyage, [$shipment->id], $allBillIds, $allItemIds, $startTime);
 
             return ManifestParseResult::success(
                 voyage: $voyage,
                 shipments: [$shipment],
-                billsOfLading: $allBillsOfLading,
+                billsOfLading: [],
                 containers: [],
                 statistics: [
                     'format' => 'Login XML',
-                    'bills_of_lading' => count($allBillsOfLading),
+                    'bills_of_lading' => count($allBillIds),
                     'containers' => count($transformedData['containers']),
                     'total_weight_kg' => array_sum(array_column($transformedData['containers'], 'gross_weight_kg')),
                     'shipper' => 'Multiple shippers',
@@ -773,8 +789,12 @@ class LoginXmlParser implements ManifestParserInterface
             if (isset($this->createdContainersInImport[$containerNumber])) {
                 $container = $this->createdContainersInImport[$containerNumber];
             } else {
-                $containerType = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
-                                ?? ContainerType::first();
+                $ctKey = $containerData['container_type'] ?: '_default';
+                if (!isset($this->cachedContainerTypes[$ctKey])) {
+                    $this->cachedContainerTypes[$ctKey] = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
+                                    ?? ContainerType::first();
+                }
+                $containerType = $this->cachedContainerTypes[$ctKey];
 
                 $container = Container::firstOrCreate(
                     ['container_number' => $containerNumber],
@@ -871,11 +891,19 @@ class LoginXmlParser implements ManifestParserInterface
      */
     protected function createShipmentItemsFromData(array $containers, BillOfLading $billOfLading, array $context): array
     {
-        $items = [];
-        $cargoType = CargoType::where('name', 'LIKE', '%container%')->first() 
-                     ?? CargoType::first();
-        $packagingType = PackagingType::where('name', 'LIKE', '%container%')->first() 
-                         ?? PackagingType::first();
+        $itemIds = [];
+
+        // Catálogos resueltos una sola vez por importación (cache de instancia).
+        if ($this->cachedCargoType === null) {
+            $this->cachedCargoType = CargoType::where('name', 'LIKE', '%container%')->first()
+                         ?? CargoType::first();
+        }
+        if ($this->cachedPackagingType === null) {
+            $this->cachedPackagingType = PackagingType::where('name', 'LIKE', '%container%')->first()
+                             ?? PackagingType::first();
+        }
+        $cargoType = $this->cachedCargoType;
+        $packagingType = $this->cachedPackagingType;
 
         foreach ($containers as $containerData) {
             $containerNumber = $containerData['container_number'];
@@ -903,8 +931,12 @@ class LoginXmlParser implements ManifestParserInterface
             if (isset($this->createdContainersInImport[$containerNumber])) {
                 $container = $this->createdContainersInImport[$containerNumber];
             } else {
-                $containerType = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
-                                ?? ContainerType::first();
+                $ctKey = $containerData['container_type'] ?: '_default';
+                if (!isset($this->cachedContainerTypes[$ctKey])) {
+                    $this->cachedContainerTypes[$ctKey] = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
+                                    ?? ContainerType::first();
+                }
+                $containerType = $this->cachedContainerTypes[$ctKey];
 
                 $container = Container::firstOrCreate(
                     ['container_number' => $containerNumber],
@@ -935,10 +967,12 @@ class LoginXmlParser implements ManifestParserInterface
                 'created_by_user_id' => $context['user_id']
             ]);
 
-            $items[] = $item;
+            $itemIds[] = $item->id;
+            // Liberar objetos Eloquent de la iteracion
+            unset($item, $container);
         }
 
-        return $items;
+        return $itemIds;
     }
 
 
@@ -1249,18 +1283,18 @@ class LoginXmlParser implements ManifestParserInterface
     protected function completeImportRecord(
         ManifestImport $importRecord,
         Voyage $voyage,
-        array $shipments,
-        array $billsOfLading,
-        array $shipmentItems,
+        array $shipmentIds,
+        array $billIds,
+        array $itemIds,
         float $startTime
     ): void {
         $processingTime = microtime(true) - $startTime;
         
         $createdObjects = [
             'voyages' => [$voyage->id],
-            'shipments' => array_map(fn($s) => $s->id, $shipments),
-            'bills' => array_map(fn($b) => $b->id, $billsOfLading),
-            'items' => array_map(fn($i) => $i->id, $shipmentItems)
+            'shipments' => $shipmentIds,
+            'bills' => $billIds,
+            'items' => $itemIds
         ];
         
         $importRecord->recordCreatedObjects($createdObjects);
