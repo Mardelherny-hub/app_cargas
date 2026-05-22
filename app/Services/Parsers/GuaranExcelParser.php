@@ -654,9 +654,14 @@ class GuaranExcelParser implements ManifestParserInterface
         $existing = Container::where('container_number', $containerNumber)->first();
         if ($existing) return $existing;
 
-        $sealNumbers = [];
-        if ($row['SEAL_NO']) {
-            $sealNumbers = array_map('trim', explode(',', $row['SEAL_NO']));
+        // Precintos: el SEAL_NO de Guaran puede traer varios separados por coma.
+        // Se guardan en shipper_seal (varchar 50) que es el campo que lee el
+        // serializer AFIP (SimpleXmlGenerator). Antes se guardaba en 'seal_numbers',
+        // un campo inexistente en la tabla containers -> el precinto nunca llegaba al XML.
+        $shipperSeal = null;
+        if (!empty($row['SEAL_NO'])) {
+            $seals = array_filter(array_map('trim', explode(',', $row['SEAL_NO'])));
+            $shipperSeal = substr(implode(', ', $seals), 0, 50);
         }
 
         // Validar límite VARCHAR(15)
@@ -673,7 +678,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'condition' => $this->mapContainerConditionToEnum($row['CONTAINER_STATUS']), // ✅ ENUM válido
             'size_feet' => $this->extractContainerSize($row['CONTAINER_TYPE']),
             'container_condition' => 'P', // HARDCODED: Webservice requiere 'H' o 'P'.
-            'seal_numbers' => $sealNumbers,
+            'shipper_seal' => $shipperSeal,
             'tare_weight_kg' => $this->parseWeight($row['TARE_WEIGHT']),
             'current_status' => 'loaded',
             'temperature_min' => $this->parseTemperature($row['TEMP_MIN']),
