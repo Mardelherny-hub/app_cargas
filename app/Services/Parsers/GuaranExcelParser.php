@@ -581,6 +581,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'discharge_port_id' => $shipment->voyage->destination_port_id,
             'primary_cargo_type_id' => $primaryCargoTypeId,
             'primary_packaging_type_id' => $primaryPackagingTypeId,
+            'origin_operative_code' => '10073', // Guaran: lugar operativo origen siempre 10073 (Roberto 22/05). Confirmado contra carga manual (BL 32/31). Serializer lee origin_operative_code para codLugOper origen.
             'bill_number' => $row['BL_NUMBER'],
             'bill_date' => $blDate,
             'loading_date' => $blDate,
@@ -678,7 +679,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'container_type_id' => $this->findContainerTypeByCode($row['CONTAINER_TYPE']), // ✅ ID real
             'condition' => $this->mapContainerConditionToEnum($row['CONTAINER_STATUS']), // ✅ ENUM válido
             'size_feet' => $this->extractContainerSize($row['CONTAINER_TYPE']),
-            'container_condition' => 'P', // HARDCODED: Webservice requiere 'H' o 'P'.
+            'container_condition' => 'H', // Guaran: siempre House (Roberto 22/05). Serializer lee este campo para <condicion> AFIP (SimpleXmlGenerator L377/907).
             'shipper_seal' => $shipperSeal,
             'tare_weight_kg' => $this->parseWeight($row['TARE_WEIGHT']),
             'current_status' => 'loaded',
