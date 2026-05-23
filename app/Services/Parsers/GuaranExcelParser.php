@@ -627,6 +627,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'cargo_type_id' => $cargoTypeId,
             'packaging_type_id' => $packagingTypeId,
             'package_quantity' => (int) ($row['NUMBER_OF_PACKAGES'] ?? 1),
+            'unit_of_measure' => 'KG', // Guaran exporta peso en kg (Roberto 22/05). Sin esto, la columna usa su default 'PCS'.
             'gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
             'net_weight_kg' => $this->parseWeight($row['NET_WEIGHT']),
             'volume_m3' => (float) ($row['VOLUME'] ?? 0),
