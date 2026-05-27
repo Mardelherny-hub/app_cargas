@@ -83,8 +83,8 @@ readonly class ManifestParseResult
             'bills_count' => count($this->billsOfLading),
             'errors_count' => count($this->errors),
             'warnings_count' => count($this->warnings),
-            'processed_items' => $this->statistics['processed'] ?? 0,
-            'failed_items' => $this->statistics['errors'] ?? 0
+            'processed_items' => $this->statistics['processed_items'] ?? $this->statistics['processed'] ?? 0,
+            'failed_items' => $this->statistics['failed_items'] ?? $this->statistics['errors'] ?? 0
         ];
     }
 
