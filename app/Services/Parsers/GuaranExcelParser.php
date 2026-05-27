@@ -421,15 +421,26 @@ class GuaranExcelParser implements ManifestParserInterface
             throw new Exception("BARGE_NAME es requerido en el archivo");
         }
 
+        // La matricula (registration_number, desde BARGE_ID) es la clave unica REAL
+        // y es global (indice uk_vessels_registration, sin company_id). Una misma
+        // barcaza fluvial existe una sola vez aunque la operen distintas empresas.
+        // Buscar por matricula evita el INSERT duplicado (SQLSTATE 23000).
+        $registrationNumber = $voyageData['vessel_id'] ?? 'REG-' . uniqid();
+
+        // 1. Buscar por matricula (clave unica global)
+        $vessel = Vessel::where('registration_number', $registrationNumber)->first();
+        if ($vessel) return $vessel;
+
+        // 2. Fallback: buscar por nombre dentro de la empresa (compatibilidad)
         $vessel = Vessel::where('name', $voyageData['vessel_name'])
             ->where('company_id', $companyId)
             ->first();
-            
         if ($vessel) return $vessel;
 
+        // 3. No existe: crear
         return Vessel::create([
             'name' => $voyageData['vessel_name'],
-            'registration_number' => $voyageData['vessel_id'] ?? 'REG-' . uniqid(),
+            'registration_number' => $registrationNumber,
             'company_id' => $companyId,
             'vessel_type_id' => $this->findVesselTypeByName($voyageData['vessel_name']),
             'flag_country_id' => $this->mapCountryName($voyageData['agent_country']),
