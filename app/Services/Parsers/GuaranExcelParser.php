@@ -708,25 +708,52 @@ class GuaranExcelParser implements ManifestParserInterface
      */
     protected function findContainerTypeByCode(?string $code): int
     {
-        if (!$code) return 3; // Default
-
+        if (!$code) {
+            return $this->containerTypeFallbackBySize(null);
+        }
+        $code = strtoupper(trim($code));
+        // Mapeo comercial Guaran -> ISO 6346 (confirmado QA 23/05).
+        // 20TN -> 22T1 es mapeo default para tanque 20' generico.
+        $comercialToIso = [
+            '40HC' => '45G1', '40RH' => '45R1', '20DV' => '22G1',
+            '20GP' => '22G1', '40GP' => '42G1', '40DV' => '42G1',
+            '20RF' => '22R1', '20OT' => '22U1', '20TN' => '22T1',
+        ];
+        $isoCode = $comercialToIso[$code] ?? $code;
+        // Buscar en catalogo agrupando el OR correctamente con active.
         $containerType = DB::table('container_types')
-            ->where('iso_code', $code)
-            ->orWhere('code', $code)
             ->where('active', true)
+            ->where(function ($q) use ($isoCode, $code) {
+                $q->where('iso_code', $isoCode)
+                  ->orWhere('code', $code)
+                  ->orWhere('iso_code', $code);
+            })
             ->first();
-
         if ($containerType) {
             return $containerType->id;
         }
-
-        // Mapeo fallback
-        $commonTypes = [
-            '40HC' => 3, '40RH' => 4, '20DV' => 1, 
-            '20RF' => 2, '40DV' => 3
-        ];
-
-        return $commonTypes[$code] ?? 3;
+        // Fallback que respeta el tamaño (no confunde 40' con 20').
+        return $this->containerTypeFallbackBySize($code);
+    }
+    /**
+     * Fallback que elige container_type respetando el tamaño del codigo (20 vs 40 pies).
+     */
+    protected function containerTypeFallbackBySize(?string $code): int
+    {
+        $is40 = $code && str_starts_with($code, '40');
+        $iso = $is40 ? '42G1' : '22G1';
+        $ct = DB::table('container_types')
+            ->where('active', true)
+            ->where('iso_code', $iso)
+            ->first();
+        if ($ct) {
+            return $ct->id;
+        }
+        Log::warning('findContainerTypeByCode sin match ni fallback ISO', [
+            'code' => $code, 'iso_buscado' => $iso,
+        ]);
+        $any = DB::table('container_types')->where('active', true)->first();
+        return $any->id ?? 1;
     }
 
     /**
