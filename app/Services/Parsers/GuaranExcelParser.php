@@ -929,40 +929,51 @@ class GuaranExcelParser implements ManifestParserInterface
         $user = auth()->user();
         $companyId = ($user->userable_type === 'App\Models\Company' ? $user->userable_id : null);
 
-        $client = Client::where('legal_name', $data['name'])
-            ->where('created_by_company_id', $companyId)
-            ->first();
-
-        if (!$client) {
+        // Extraer tax_id y pais ANTES de buscar, porque la clave unica real es
+        // (tax_id, country_id) global -indice uk_clients_tax_country-, no el nombre.
+        // Un cliente con ese tax_id+pais existe una sola vez aunque lo hayan cargado
+        // distintas empresas. Buscar por nombre+company no lo encontraba y el INSERT
+        // chocaba con la unique (SQLSTATE 23000).
         $taxId = $this->extractTaxId($data['address'] ?? '');
-        
-        // Generar un tax_id corto y único si no existe
+
+        // Generar un tax_id corto y unico si no existe
         if (!$taxId) {
             $prefix = substr(strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['name'])), 0, 4);
             $uniqueId = substr(uniqid(), -4);
             $taxId = $prefix . $uniqueId;
         }
-        
         // Asegurar que no exceda el largo de la columna (varchar 11)
         $taxId = substr($taxId, 0, 11);
 
-        $client = Client::create([
+        $countryId = $this->mapCountryName($data['country']);
+
+        // 1. Buscar por la clave unica real (tax_id + country_id), global
+        $client = Client::where('tax_id', $taxId)
+            ->where('country_id', $countryId)
+            ->first();
+        if ($client) return $client;
+
+        // 2. Fallback: buscar por nombre dentro de la empresa (compatibilidad)
+        $client = Client::where('legal_name', $data['name'])
+            ->where('created_by_company_id', $companyId)
+            ->first();
+        if ($client) return $client;
+
+        // 3. No existe: crear
+        return Client::create([
             'created_by_company_id' => $companyId,
             'legal_name' => $data['name'],
             'commercial_name' => $data['name'],
             'tax_id' => $taxId,
-                'client_type' => 'business',
-                'status' => 'active',
-                'address_line_1' => $data['address'],
-                'city' => $data['city'],
-                'phone' => $data['phone'],
-                'country_id' => $this->mapCountryName($data['country']),
-                'document_type_id' => $taxId ? 1 : 5, // 1=RUC/CUIT, 5=Otro
-                'created_by_user_id' => auth()->id()
-            ]);
-        }
-
-        return $client;
+            'client_type' => 'business',
+            'status' => 'active',
+            'address_line_1' => $data['address'],
+            'city' => $data['city'],
+            'phone' => $data['phone'],
+            'country_id' => $countryId,
+            'document_type_id' => $taxId ? 1 : 5, // 1=RUC/CUIT, 5=Otro
+            'created_by_user_id' => auth()->id()
+        ]);
     }
 
     protected function extractTaxId(string $text): ?string
