@@ -209,6 +209,14 @@ class GuaranExcelParser implements ManifestParserInterface
                 'line' => $e->getLine()
             ]);
 
+            // Archivo ya importado: el viaje y su envío ya existen (choca el índice
+            // único voyage_id + vessel_id). Mensaje amable en lugar del error SQL.
+            if (strpos($e->getMessage(), 'uk_shipments_voyage_vessel') !== false) {
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ]);
+            }
+
             return ManifestParseResult::failure([
                 'Error procesando archivo GUARAN: ' . $e->getMessage()
             ]);
