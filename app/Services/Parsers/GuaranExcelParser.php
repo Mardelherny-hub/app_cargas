@@ -726,6 +726,7 @@ class GuaranExcelParser implements ManifestParserInterface
             '40HC' => '45G1', '40RH' => '45R1', '20DV' => '22G1',
             '20GP' => '22G1', '40GP' => '42G1', '40DV' => '42G1',
             '20RF' => '22R1', '20OT' => '22U1', '20TN' => '22T1',
+            '40JU' => '45G1', // Jumbo 40' = High Cube (confirmado Roberto 01/06)
         ];
         $isoCode = $comercialToIso[$code] ?? $code;
         // Buscar en catalogo agrupando el OR correctamente con active.
