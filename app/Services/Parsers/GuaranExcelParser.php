@@ -15,6 +15,7 @@ use App\Models\Country;
 use App\Models\Vessel;
 use App\Models\User;
 use App\Models\ManifestImport;
+use Illuminate\Database\Eloquent\Model;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
@@ -150,27 +151,35 @@ class GuaranExcelParser implements ManifestParserInterface
             $bills = [];
             $containers = [];
 
-            foreach ($groupedByBL as $blNumber => $blRows) {
-                // Pasamos todas las filas del BL para que pueda contar contenedores únicos
-                $bill = $this->createBillOfLading($shipment, $blRows);
-                $bills[] = $bill;
-
-                foreach ($blRows as $row) {
-                    // Crear contenedor si la fila lo trae
-                    $container = null;
-                    if (!empty($row['CONTAINER_NUMBER'])) {
-                        $container = $this->createContainer($row);
-                        if ($container) $containers[] = $container;
-                    }
-
-                    // Crear el item y guardarlo en variable para vincular
-                    $item = $this->createShipmentItem($bill, $row);
-
-                    // Si hay contenedor y se creó el item, vincular en la tabla pivot
-                    if ($container && $item) {
-                        $this->attachContainerToItem($container, $item);
+            // Importación masiva: silenciar los eventos de modelo (hooks saved/saving)
+            // durante la creación para evitar recálculos en cascada por cada item,
+            // que en manifiestos grandes agotan tiempo/memoria (HTTP 500).
+            Model::withoutEvents(function () use ($groupedByBL, $shipment, &$bills, &$containers) {
+                foreach ($groupedByBL as $blNumber => $blRows) {
+                    // Pasamos todas las filas del BL para que pueda contar contenedores únicos
+                    $bill = $this->createBillOfLading($shipment, $blRows);
+                    $bills[] = $bill;
+                    foreach ($blRows as $row) {
+                        // Crear contenedor si la fila lo trae
+                        $container = null;
+                        if (!empty($row['CONTAINER_NUMBER'])) {
+                            $container = $this->createContainer($row);
+                            if ($container) $containers[] = $container;
+                        }
+                        // Crear el item y guardarlo en variable para vincular
+                        $item = $this->createShipmentItem($bill, $row);
+                        // Si hay contenedor y se creó el item, vincular en la tabla pivot
+                        if ($container && $item) {
+                            $this->attachContainerToItem($container, $item);
+                        }
                     }
                 }
+            });
+
+            // Recalcular estadísticas UNA sola vez por cada BL (con los items ya insertados),
+            // en lugar de una vez por item dentro del loop.
+            foreach ($bills as $bill) {
+                $bill->recalculateItemStats();
             }
 
             // Completar importación
