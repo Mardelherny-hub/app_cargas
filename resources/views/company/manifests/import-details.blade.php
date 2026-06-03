@@ -115,15 +115,15 @@
                         </div>
                         <div class="bg-gray-50 rounded-md p-4 text-center">
                             <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">BLs</dt>
-                            <dd class="mt-1 text-2xl font-semibold text-blue-600">{{ $import->created_bills }}</dd>
+                            <dd class="mt-1 text-2xl font-semibold text-blue-600">{{ $import->bills_count }}</dd>
                         </div>
                         <div class="bg-gray-50 rounded-md p-4 text-center">
                             <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Items</dt>
-                            <dd class="mt-1 text-2xl font-semibold text-green-600">{{ $import->created_items }}</dd>
+                            <dd class="mt-1 text-2xl font-semibold text-green-600">{{ $import->items_count }}</dd>
                         </div>
                         <div class="bg-gray-50 rounded-md p-4 text-center">
                             <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Contenedores</dt>
-                            <dd class="mt-1 text-2xl font-semibold text-indigo-600">{{ $import->created_containers }}</dd>
+                            <dd class="mt-1 text-2xl font-semibold text-indigo-600">{{ $import->containers_count }}</dd>
                         </div>
                         <div class="bg-gray-50 rounded-md p-4 text-center">
                             <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Clientes</dt>
