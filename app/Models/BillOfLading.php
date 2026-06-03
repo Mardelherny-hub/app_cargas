@@ -402,6 +402,19 @@ class BillOfLading extends Model
         return $this->hasMany(\App\Models\ShipmentItem::class, 'bill_of_lading_id');
     }
 
+    /**
+     * Cantidad de contenedores únicos del BL (vía pivot container_shipment_item).
+     * El BL llega a los contenedores a través de sus items, no por relación directa.
+     */
+    public function getContainersCountAttribute(): int
+    {
+        return \DB::table('container_shipment_item')
+            ->join('shipment_items', 'container_shipment_item.shipment_item_id', '=', 'shipment_items.id')
+            ->where('shipment_items.bill_of_lading_id', $this->id)
+            ->distinct('container_shipment_item.container_id')
+            ->count('container_shipment_item.container_id');
+    }
+
     public function specificContacts()
     {
         return $this->hasMany(BillOfLadingContact::class);

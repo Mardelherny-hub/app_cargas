@@ -969,6 +969,18 @@
                         @enderror
                     </div>
 
+                    {{-- Total de Contenedores (calculado desde el pivot, solo lectura) --}}
+                    @if($billOfLading->containers_count > 0)
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Total de Contenedores
+                        </label>
+                        <input type="number" value="{{ $billOfLading->containers_count }}" readonly
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed">
+                        <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                    </div>
+                    @endif
+
                     {{-- Unidad de Medida --}}
                     <div>
                         <label for="measurement_unit" class="block text-sm font-medium text-gray-700">
