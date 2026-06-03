@@ -303,6 +303,25 @@ class ManifestImport extends Model
         return empty($summary) ? 'Ningún objeto creado' : implode(', ', $summary);
     }
 
+    /**
+     * Conteos reales desde la base (no dependen de que el parser complete
+     * created_bills/created_items/created_containers, que algunos dejan null).
+     */
+    public function getBillsCountAttribute(): int
+    {
+        return count($this->getAllCreatedObjectIds()['bills']);
+    }
+
+    public function getItemsCountAttribute(): int
+    {
+        return count($this->getAllCreatedObjectIds()['items']);
+    }
+
+    public function getContainersCountAttribute(): int
+    {
+        return count($this->getAllCreatedObjectIds()['containers']);
+    }
+
     // =============================================================================
     // METHODS
     // =============================================================================
