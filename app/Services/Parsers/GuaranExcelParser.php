@@ -657,6 +657,11 @@ class GuaranExcelParser implements ManifestParserInterface
             'packaging_type_id' => $packagingTypeId,
             'package_quantity' => (int) ($row['NUMBER_OF_PACKAGES'] ?? 1),
             'unit_of_measure' => 'KG', // Guaran exporta peso en kg (Roberto 22/05). Sin esto, la columna usa su default 'PCS'.
+            // Campos AFIP/visualización a nivel item (los lee la pantalla del conocimiento
+            // y el serializer). El parser los completa con el mismo criterio que la carga manual.
+            'cargo_marks' => !empty($row['MARKS_DESCRIPTION']) ? $row['MARKS_DESCRIPTION'] : 'SM',
+            'container_condition' => 'H', // Guaran: siempre House (Roberto 22/05), igual que el Container.
+            'operational_discharge_code' => '10073', // Guaran: lugar operativo descarga 10073 (Roberto 02/06).
             'gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
             'net_weight_kg' => $this->parseWeight($row['NET_WEIGHT']),
             'volume_m3' => (float) ($row['VOLUME'] ?? 0),
