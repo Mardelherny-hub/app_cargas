@@ -286,21 +286,20 @@ class ManifestImport extends Model
      */
     public function getCreatedObjectsSummaryAttribute(): string
     {
-        $summary = [];
-        
-        if ($this->created_bills > 0) {
-            $summary[] = "{$this->created_bills} conocimientos";
-        }
-        if ($this->created_items > 0) {
-            $summary[] = "{$this->created_items} items";
-        }
-        if ($this->created_containers > 0) {
-            $summary[] = "{$this->created_containers} contenedores";
-        }
-        if ($this->created_clients > 0) {
-            $summary[] = "{$this->created_clients} clientes";
-        }
+        // Contar desde la base (fuente de verdad), no desde campos que algún
+        // parser puede dejar sin completar (ej: Login no escribe created_bills).
+        $ids = $this->getAllCreatedObjectIds();
 
+        $summary = [];
+        if (count($ids['bills']) > 0) {
+            $summary[] = count($ids['bills']) . " conocimientos";
+        }
+        if (count($ids['items']) > 0) {
+            $summary[] = count($ids['items']) . " items";
+        }
+        if (count($ids['containers']) > 0) {
+            $summary[] = count($ids['containers']) . " contenedores";
+        }
         return empty($summary) ? 'Ningún objeto creado' : implode(', ', $summary);
     }
 
