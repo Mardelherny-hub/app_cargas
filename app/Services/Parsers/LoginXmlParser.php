@@ -549,6 +549,8 @@ class LoginXmlParser implements ManifestParserInterface
                 'shipper_cuit' => $bl['shipper_cuit'] ?? null,
                 'consignee_name' => $bl['consignee_name'],
                 'notify_party_name' => $bl['notify_party_name'],
+                'loading_port' => $bl['loading_port'] ?? null,
+                'discharge_port' => $bl['discharge_port'] ?? null,
                 'bill_date' => $this->parseDate($bl['bill_date'] ?? null),
                 'loading_date' => $this->parseDate($bl['loading_date'] ?? null),
                 'cargo_description' => $bl['cargo_description'] ?? 'Login XML Import',
@@ -847,7 +849,8 @@ class LoginXmlParser implements ManifestParserInterface
         $consignee = $this->findOrCreateClient(
             $blData['consignee_name'], 
             'consignee',
-            $context
+            $context,
+            $this->extractTaxIdFromText($blData['consignee_name'] ?? '')
         );
         
         $notifyParty = null;
@@ -855,12 +858,22 @@ class LoginXmlParser implements ManifestParserInterface
             $notifyParty = $this->findOrCreateClient(
                 $blData['notify_party_name'], 
                 'notify_party',
-                $context
+                $context,
+                $this->extractTaxIdFromText($blData['notify_party_name'])
             );
         }
 
-        $cargoType = CargoType::where('active', true)->first();
-        $packagingType = PackagingType::where('active', true)->first();
+        // Login es siempre carga contenedorizada
+        $cargoType = CargoType::find(9);        // CONTENEDORES
+        $packagingType = PackagingType::find(4); // CONTENEDOR
+
+        // Puerto propio del BL; si no viene o no está en catálogo, cae al del voyage
+        $blLoadingPort = !empty($blData['loading_port'])
+            ? $this->findPortByName($blData['loading_port'])
+            : null;
+        $blDischargePort = !empty($blData['discharge_port'])
+            ? $this->findPortByName($blData['discharge_port'])
+            : null;
 
         return BillOfLading::create([
             'shipment_id' => $shipment->id,
@@ -868,8 +881,8 @@ class LoginXmlParser implements ManifestParserInterface
             'shipper_id' => $shipper?->id,
             'consignee_id' => $consignee?->id,
             'notify_party_id' => $notifyParty?->id,
-            'loading_port_id' => $shipment->voyage->origin_port_id,
-            'discharge_port_id' => $shipment->voyage->destination_port_id,
+            'loading_port_id' => $blLoadingPort?->id ?? $shipment->voyage->origin_port_id,
+            'discharge_port_id' => $blDischargePort?->id ?? $shipment->voyage->destination_port_id,
             'primary_cargo_type_id' => $cargoType?->id ?? 1,        
             'primary_packaging_type_id' => $packagingType?->id ?? 1,
             'bill_date' => $blData['bill_date'] ?? now(),
@@ -894,13 +907,12 @@ class LoginXmlParser implements ManifestParserInterface
         $itemIds = [];
 
         // Catálogos resueltos una sola vez por importación (cache de instancia).
+        // Login es siempre carga contenedorizada: CONTENEDORES (9) / CONTENEDOR (4)
         if ($this->cachedCargoType === null) {
-            $this->cachedCargoType = CargoType::where('name', 'LIKE', '%container%')->first()
-                         ?? CargoType::first();
+            $this->cachedCargoType = CargoType::find(9);
         }
         if ($this->cachedPackagingType === null) {
-            $this->cachedPackagingType = PackagingType::where('name', 'LIKE', '%container%')->first()
-                             ?? PackagingType::first();
+            $this->cachedPackagingType = PackagingType::find(4);
         }
         $cargoType = $this->cachedCargoType;
         $packagingType = $this->cachedPackagingType;
@@ -911,17 +923,19 @@ class LoginXmlParser implements ManifestParserInterface
             // Crear ShipmentItem
             $item = ShipmentItem::create([
                 'bill_of_lading_id' => $billOfLading->id,
-                'line_number' => $containerData['line_number'],
+                'line_number' => $containerData['line_number'] ?: 1,
                 'item_reference' => 'LGN-' . $containerNumber,
                 'item_description' => $containerData['package_description'],
                 'cargo_type_id' => $cargoType?->id,
                 'packaging_type_id' => $packagingType?->id,
                 'package_quantity' => 1,
+                'unit_of_measure' => 'KG',
                 'gross_weight_kg' => $containerData['gross_weight_kg'],
                 'net_weight_kg' => $containerData['net_weight_kg'],
                 'country_of_origin' => $containerData['country_of_origin'],
                 'commodity_code' => $containerData['commodity_code'],
-                'cargo_marks' => $containerData['seals'] ? "Seals: {$containerData['seals']}" : null,
+                'tariff_position' => $containerData['commodity_code'] ?: null,
+                'cargo_marks' => $containerData['seals'] ? "Seals: {$containerData['seals']}" : 'SM',
                 'package_type_description' => $containerData['package_description'],
                 'created_date' => now(),
                 'created_by_user_id' => $context['user_id']
