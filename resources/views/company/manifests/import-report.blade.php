@@ -43,7 +43,7 @@
                     </div>
                     <div class="text-right">
                         <div class="text-3xl font-bold">
-                            {{ count($createdRecords['billsOfLading'] ?? []) }}
+                            {{ $counts['billsOfLading'] ?? count($createdRecords['billsOfLading'] ?? []) }}
                         </div>
                         <div class="text-green-100 text-sm uppercase tracking-wide">
                             Conocimientos
@@ -196,7 +196,7 @@
                             </svg>
                         </div>
                         <div>
-                            <p class="text-2xl font-bold text-gray-900">{{ count($createdRecords['billsOfLading'] ?? []) }}</p>
+                            <p class="text-2xl font-bold text-gray-900">{{ $counts['billsOfLading'] ?? count($createdRecords['billsOfLading'] ?? []) }}</p>
                             <p class="text-gray-600 text-sm">Conocimientos de Embarque</p>
                         </div>
                     </div>
@@ -210,7 +210,7 @@
                             </svg>
                         </div>
                         <div>
-                            <p class="text-2xl font-bold text-gray-900">{{ count($createdRecords['containers'] ?? []) }}</p>
+                            <p class="text-2xl font-bold text-gray-900">{{ $counts['containers'] ?? count($createdRecords['containers'] ?? []) }}</p>
                             <p class="text-gray-600 text-sm">Contenedores</p>
                         </div>
                     </div>
