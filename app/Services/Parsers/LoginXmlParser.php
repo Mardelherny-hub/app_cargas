@@ -917,13 +917,13 @@ class LoginXmlParser implements ManifestParserInterface
         $cargoType = $this->cachedCargoType;
         $packagingType = $this->cachedPackagingType;
 
-        foreach ($containers as $containerData) {
+        foreach ($containers as $index => $containerData) {
             $containerNumber = $containerData['container_number'];
             
             // Crear ShipmentItem
             $item = ShipmentItem::create([
                 'bill_of_lading_id' => $billOfLading->id,
-                'line_number' => $containerData['line_number'] ?: 1,
+                'line_number' => $index + 1,
                 'item_reference' => 'LGN-' . $containerNumber,
                 'item_description' => $containerData['package_description'],
                 'cargo_type_id' => $cargoType?->id,
@@ -1159,7 +1159,12 @@ class LoginXmlParser implements ManifestParserInterface
         $port = Port::where('code', strtoupper($portName))->first();
         if ($port) return $port;
         
-        // Buscar por nombre exacto
+        // Buscar por nombre exacto (prioridad sobre LIKE para evitar
+        // matches erróneos: SALVADOR->San Salvador, VITORIA->Praia Mole/Vitória)
+        $port = Port::where('name', $portName)->first();
+        if ($port) return $port;
+        
+        // Buscar por nombre parcial solo si no hubo coincidencia exacta
         $port = Port::where('name', 'LIKE', "%{$portName}%")->first();
         if ($port) return $port;
         

@@ -414,6 +414,13 @@ class ManifestImportController extends Controller
             'containers' => $this->formatContainers($result->containers ?? []),
         ];
 
+        // Conteos confiables: parsers que vacían los arrays por memoria (ej. Login)
+        // exponen los totales en statistics. Si no, se cae al count de los arrays.
+        $reportData['counts'] = [
+            'billsOfLading' => $result->statistics['bills_of_lading'] ?? count($reportData['createdRecords']['billsOfLading']),
+            'containers' => $result->statistics['containers'] ?? count($reportData['createdRecords']['containers']),
+        ];
+
         return $reportData;
     }
 
