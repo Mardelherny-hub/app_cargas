@@ -51,6 +51,19 @@
                       class="px-6 py-4 space-y-6">
                     @csrf
 
+                    {{-- Overlay de espera durante la importación --}}
+                    <div id="import-overlay"
+                         style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(17,24,39,0.75); align-items:center; justify-content:center;">
+                        <div style="background:#fff; border-radius:0.75rem; padding:2rem 2.5rem; max-width:24rem; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.3);">
+                            <svg class="animate-spin" style="height:2.5rem; width:2.5rem; margin:0 auto 1rem; color:#2563eb;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p style="font-weight:600; color:#111827; margin-bottom:0.5rem;">Importando manifiesto…</p>
+                            <p style="font-size:0.875rem; color:#6b7280;">Esto puede tardar varios minutos en archivos grandes.<br><strong>No cierre ni recargue esta página.</strong></p>
+                        </div>
+                    </div>
+
                     <!-- Selección de archivo -->
                     <div>
                         <label for="manifest_file" class="block text-sm font-medium text-gray-700 mb-2">
@@ -180,63 +193,39 @@
             </div>
         </div>
     </div>
-
-    @push('scripts')
+@push('scripts')
     <script>
-        // Agregar indicador de progreso al formulario
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = `
-                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Procesando...
-            `;
-        });
-        
-        // Información del archivo seleccionado
-        document.getElementById('manifest_file').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                console.log('Archivo seleccionado:', file.name, 'Tamaño:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
-            }
-        });
+        (function () {
+            const form = document.querySelector('form[action="{{ route('company.manifests.import.store') }}"]');
+            if (!form) return;
 
-        // Agregar indicador de progreso al formulario
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            const btnText = submitBtn.querySelector('span') || submitBtn;
-            
-            // Prevenir múltiples envíos
-            if (submitBtn.disabled) {
-                e.preventDefault();
-                return false;
-            }
-            
-            // Deshabilitar botón y mostrar spinner
-            submitBtn.disabled = true;
-            submitBtn.style.opacity = '0.7';
-            
-            // Usar el spinner SVG que ya tienes en Tailwind
-            btnText.innerHTML = `
-                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Procesando archivo...
-            `;
-        });
+            const overlay = document.getElementById('import-overlay');
+            const submitBtn = form.querySelector('button[type="submit"]');
 
-        // Información del archivo seleccionado
-        document.getElementById('manifest_file').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                console.log('Archivo seleccionado:', file.name, 'Tamaño:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
-            }
-        });
+            form.addEventListener('submit', function (e) {
+                // Evitar doble envío
+                if (submitBtn.disabled) {
+                    e.preventDefault();
+                    return false;
+                }
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.7';
+                if (overlay) {
+                    overlay.style.display = 'flex';
+                }
+            });
 
+            // Info de archivo seleccionado (solo consola, diagnóstico)
+            const fileInput = document.getElementById('manifest_file');
+            if (fileInput) {
+                fileInput.addEventListener('change', function (e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        console.log('Archivo:', file.name, (file.size / 1024 / 1024).toFixed(2) + 'MB');
+                    }
+                });
+            }
+        })();
     </script>
     @endpush
 </x-app-layout>
