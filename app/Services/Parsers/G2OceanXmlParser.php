@@ -300,6 +300,9 @@ class G2OceanXmlParser implements ManifestParserInterface
         }
 
         $name = (string)($partyInfo->organizationName1 ?? '');
+        // Quitar prefijo de rol del XML G2Ocean: "(CO) " consignee, "(NF) " notify.
+        // Solo al inicio, para no tocar paréntesis legítimos del nombre (ej: "(H.K.)").
+        $name = preg_replace('/^\((?:CO|NF)\)\s*/i', '', trim($name));
         $address = $this->buildAddress($partyInfo->addressInfo ?? null);
         $taxId = $this->extractTaxId($name . ' ' . $address);
 
@@ -358,7 +361,13 @@ class G2OceanXmlParser implements ManifestParserInterface
     protected function extractCargoDetail(SimpleXMLElement $detail): array
     {
         $description = $this->extractCargoDescription($detail);
-        
+        // Una sola extracción del NCM/HS (cobertura completa de variantes).
+        // tariff_position conserva el formato con puntos; commodity_code = mismo valor despuntado.
+        $tariffPosition = $this->extractTariffPosition($description);
+        $commodityCode = $tariffPosition
+            ? (substr(preg_replace('/[^0-9]/', '', $tariffPosition), 0, 8) ?: null)
+            : null;
+
         return [
             'item_number' => (int)($detail->itemSNo ?? 1),
             'description' => $description,
@@ -369,8 +378,10 @@ class G2OceanXmlParser implements ManifestParserInterface
             'volume' => (float)($detail->measure ?? 0),
             'volume_unit' => (string)($detail->measureUOM ?? 'M³'),
             'marks' => (string)($detail->marks ?? 'S/M'),
-            // Extraer NCM/HS del texto de descripción
-            'commodity_code' => $this->extractCommodityCode($description),
+            // NCM/HS despuntado (informativo)
+            'commodity_code' => $commodityCode,
+            // Posición arancelaria AFIP (con formato de puntos)
+            'tariff_position' => $tariffPosition,
         ];
     }
 
@@ -416,6 +427,33 @@ class G2OceanXmlParser implements ManifestParserInterface
                 // Retornar máximo 8 dígitos (formato NCM estándar)
                 return substr($code, 0, 8) ?: null;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extraer posición arancelaria (NCM/HS) PRESERVANDO el formato original.
+     * A diferencia de extractCommodityCode() (que despunta y deja solo dígitos),
+     * aquí se conserva el valor tal como aparece (ej: 8705.10.30), porque
+     * tariff_position alimenta el campo AFIP que admite puntos (min 7, max 15).
+     *
+     * Variantes reales cubiertas (archivo G2Ocean):
+     *   NCM: 8705.10.30 / NCM 8705.10.30 / NCM NO.: 7213.91
+     *   HS CODE 7214.99 / HS CODE: 7213.99.00 / HS-CODE:7213910000
+     *   TARIFF NUMBER: 7208.51 / TARIFF CODE: 7208.51 & 7208.52
+     *   HARMONIZED TARIFF CODE: 84213990
+     */
+    protected function extractTariffPosition(string $description): ?string
+    {
+        $labels = '(?:NCM(?:\s+NO\.?)?|HS[\s\-]?CODE|TARIFF\s+(?:NUMBER|CODE)|HARMONIZED\s+TARIFF\s+CODE)';
+        $code   = '([0-9]{4}\.[0-9]{2}(?:\.[0-9]{2})?(?:\.[0-9]{3}[A-Z]?)?|[0-9]{8,10})';
+        $pattern = '/' . $labels . '[:\s]*' . $code . '/i';
+
+        if (preg_match($pattern, $description, $matches)) {
+            $value = trim($matches[1]);
+            // Respetar el límite del campo AFIP (max 15, incluye puntos)
+            return substr($value, 0, 15) ?: null;
         }
 
         return null;
@@ -573,9 +611,9 @@ class G2OceanXmlParser implements ManifestParserInterface
         $consignee = $this->findOrCreateClient($blData['consignee'], $companyId, $dischargePort);
         $notify = null;
         $notifyName = strtoupper(trim((string) ($blData['notify']['name'] ?? '')));
-        if ($notifyName === '(NF) SAME AS CONSIGNEE') {
-            $notify = $consignee;
-        } elseif ($notifyName !== '') {
+        // "SAME AS CONSIGNEE" NO genera notify: el campo queda vacío (optativo en ATA),
+        // para no duplicar el consignatario. Los notify reales sí se crean.
+        if ($notifyName !== '' && $notifyName !== 'SAME AS CONSIGNEE') {
             $notify = $this->findOrCreateClient($blData['notify'], $companyId, $dischargePort);
         }
 
@@ -628,6 +666,8 @@ class G2OceanXmlParser implements ManifestParserInterface
                 'cargo_marks' => $cargoItem['marks'] ?: 'S/M',
                 // Campo NCM/HS extraído de la descripción
                 'commodity_code' => $cargoItem['commodity_code'] ?? null,
+                // Posición arancelaria AFIP (mismo NCM, con formato de puntos)
+                'tariff_position' => $cargoItem['tariff_position'] ?? null,
                 'created_by_user_id' => auth()->id()
             ]);
             
