@@ -178,7 +178,12 @@ class Client extends Model
 
     public function getFormattedTaxId(): string
     {
-        if ($this->country && $this->country->alpha2_code === 'AR') {
+        // Sin identificador declarado: no hay nada que formatear.
+        if (empty($this->tax_id)) {
+            return '';
+        }
+
+        if ($this->country && $this->country->alpha2_code === 'AR' && strlen($this->tax_id) === 11) {
             // Formato CUIT argentino: XX-XXXXXXXX-X
             return substr($this->tax_id, 0, 2) . '-' . 
                    substr($this->tax_id, 2, 8) . '-' . 
