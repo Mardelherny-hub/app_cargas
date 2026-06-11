@@ -394,6 +394,14 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
 
+                        {{-- Notificatario declarado como texto en el conocimiento (ej. "SAME AS CONSIGNEE") --}}
+                        @if($billOfLading->notify_party_text)
+                            <p class="mt-2 text-sm text-gray-700 bg-yellow-50 border border-yellow-200 rounded-md p-2">
+                                Notificatario según el conocimiento:
+                                <span class="font-medium">{{ $billOfLading->notify_party_text }}</span>
+                            </p>
+                        @endif
+
                         {{-- Dirección específica para Notify --}}
                         <div class="mt-4">
                             <label class="flex items-center">

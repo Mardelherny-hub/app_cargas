@@ -292,6 +292,13 @@ if ($user) {
                                 </a>
                             </div>
                         </div>
+                        {{-- Notificatario declarado como texto literal en el conocimiento --}}
+                        @elseif($billOfLading->notify_party_text)
+                        <div class="border-l-4 border-yellow-500 pl-4">
+                            <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide">Parte a Notificar</h4>
+                            <p class="text-lg font-semibold text-gray-900 mt-1">{{ $billOfLading->notify_party_text }}</p>
+                            <p class="text-sm text-gray-600">Según lo declarado en el conocimiento</p>
+                        </div>
                         @endif
 
                         {{-- Propietario de Carga --}}
