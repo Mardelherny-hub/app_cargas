@@ -714,26 +714,35 @@ class G2OceanXmlParser implements ManifestParserInterface
      */
     protected function findOrCreateClient(array $clientData, int $companyId, Port $defaultPort): Client
     {
-        $name = $clientData['name'] ?? 'Cliente Desconocido';
-        $taxId = $clientData['tax_id'];
+        $name      = $clientData['name'] ?? 'Cliente Desconocido';
+        $taxId     = $clientData['tax_id'] ?: null;   // NULL si el documento no lo declara
+        $countryId = $defaultPort->country_id;
 
         // Buscar existente
         if ($taxId) {
-            $client = Client::where('tax_id', $taxId)->first();
+            // Con identificador: por (tax_id, country_id), coherente con el índice único
+            $client = Client::where('tax_id', $taxId)
+                ->where('country_id', $countryId)
+                ->first();
+            if ($client) {
+                return $client;
+            }
+        } else {
+            // Sin identificador: deduplicar por legal_name normalizado + country_id.
+            // NO se mezcla con clientes que sí tienen tax_id real aunque compartan nombre.
+            $client = Client::whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->whereRaw('UPPER(TRIM(legal_name)) = ?', [mb_strtoupper(trim($name))])
+                ->first();
             if ($client) {
                 return $client;
             }
         }
 
-        $client = Client::where('legal_name', $name)->first();
-        if ($client) {
-            return $client;
-        }
-
-        // Crear nuevo
+        // Crear nuevo. tax_id = NULL si no vino declarado. NUNCA se fabrica.
         return Client::create([
-            'tax_id' => $taxId ?: $this->generateUniqueValidTaxId($name),
-            'country_id' => $defaultPort->country_id,
+            'tax_id' => $taxId,
+            'country_id' => $countryId,
             'document_type_id' => 1,
             'legal_name' => $name,
             'commercial_name' => $name,
@@ -843,18 +852,6 @@ class G2OceanXmlParser implements ManifestParserInterface
         return implode('; ', array_unique($descriptions)) ?: 'Mercadería general según manifiesto G2Ocean';
     }
 
-    protected function generateUniqueValidTaxId(string $clientName): string
-    {
-        $base = preg_replace('/[^0-9]/', '', $clientName);
-        if (strlen($base) < 3) {
-            $base = str_pad($base, 3, '0');
-        }
-        
-        $timestamp = substr(time(), -5);
-        $random = str_pad(mt_rand(0, 999), 3, '0', STR_PAD_LEFT);
-        
-        return substr($base . $timestamp . $random, 0, 11);
-    }
 
     protected function createImportRecord(string $filePath, array $options): ManifestImport
     {
