@@ -425,10 +425,9 @@ class G2OceanXmlParser implements ManifestParserInterface
                 // Limpiar y normalizar: quitar puntos y letras finales
                 $code = preg_replace('/[^0-9]/', '', $matches[1]);
                 // Retornar máximo 8 dígitos (formato NCM estándar)
-                return substr($code, 0, 8) ?: null;
+            return substr($code, 0, 8) ?: null;
             }
         }
-
         return null;
     }
 
@@ -437,12 +436,6 @@ class G2OceanXmlParser implements ManifestParserInterface
      * A diferencia de extractCommodityCode() (que despunta y deja solo dígitos),
      * aquí se conserva el valor tal como aparece (ej: 8705.10.30), porque
      * tariff_position alimenta el campo AFIP que admite puntos (min 7, max 15).
-     *
-     * Variantes reales cubiertas (archivo G2Ocean):
-     *   NCM: 8705.10.30 / NCM 8705.10.30 / NCM NO.: 7213.91
-     *   HS CODE 7214.99 / HS CODE: 7213.99.00 / HS-CODE:7213910000
-     *   TARIFF NUMBER: 7208.51 / TARIFF CODE: 7208.51 & 7208.52
-     *   HARMONIZED TARIFF CODE: 84213990
      */
     protected function extractTariffPosition(string $description): ?string
     {
@@ -610,10 +603,13 @@ class G2OceanXmlParser implements ManifestParserInterface
         $shipper = $this->findOrCreateClient($blData['shipper'], $companyId, $loadingPort);
         $consignee = $this->findOrCreateClient($blData['consignee'], $companyId, $dischargePort);
         $notify = null;
+        $notifyText = null;
         $notifyName = strtoupper(trim((string) ($blData['notify']['name'] ?? '')));
-        // "SAME AS CONSIGNEE" NO genera notify: el campo queda vacío (optativo en ATA),
-        // para no duplicar el consignatario. Los notify reales sí se crean.
-        if ($notifyName !== '' && $notifyName !== 'SAME AS CONSIGNEE') {
+        // "SAME AS CONSIGNEE" se preserva como texto literal (lo declarado en el
+        // conocimiento), sin crear cliente. Los notify reales se crean como Client.
+        if ($notifyName === 'SAME AS CONSIGNEE') {
+            $notifyText = 'SAME AS CONSIGNEE';
+        } elseif ($notifyName !== '') {
             $notify = $this->findOrCreateClient($blData['notify'], $companyId, $dischargePort);
         }
 
@@ -630,6 +626,7 @@ class G2OceanXmlParser implements ManifestParserInterface
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
             'notify_party_id' => $notify?->id,
+            'notify_party_text' => $notifyText,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
             'primary_cargo_type_id' => $this->resolveCargoTypeByPkgType($blData['cargo_items'][0]['package_type'] ?? ''),

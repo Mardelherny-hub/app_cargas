@@ -53,6 +53,7 @@ class BillOfLading extends Model
         'shipper_id',
         'consignee_id',
         'notify_party_id',
+        'notify_party_text',
         'cargo_owner_id',
         
         // Puertos y aduanas
@@ -1164,6 +1165,12 @@ class BillOfLading extends Model
             return $specificContact->specific_company_name;
         }
         
+        // Notificatario declarado como texto literal (ej. "SAME AS CONSIGNEE"):
+        // se respeta lo declarado en el conocimiento, con prioridad sobre la relación.
+        if (!empty($this->notify_party_text)) {
+            return $this->notify_party_text;
+        }
+
         if ($this->notify_party_id) {
             return $this->notifyParty?->legal_name ?? 'Sin cliente asignado';
         }
