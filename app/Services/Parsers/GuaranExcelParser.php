@@ -986,22 +986,18 @@ class GuaranExcelParser implements ManifestParserInterface
         // chocaba con la unique (SQLSTATE 23000).
         $taxId = $this->extractTaxId($data['address'] ?? '');
 
-        // Generar un tax_id corto y unico si no existe
-        if (!$taxId) {
-            $prefix = substr(strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $data['name'])), 0, 4);
-            $uniqueId = substr(uniqid(), -4);
-            $taxId = $prefix . $uniqueId;
-        }
-        // Asegurar que no exceda el largo de la columna (varchar 11)
-        $taxId = substr($taxId, 0, 11);
+        // No fabricar: si el documento no declara RUC/CUIT, el tax_id queda null.
+        $taxId = $taxId ? substr($taxId, 0, 11) : null;
 
         $countryId = $this->mapCountryName($data['country']);
 
-        // 1. Buscar por la clave unica real (tax_id + country_id), global
-        $client = Client::where('tax_id', $taxId)
-            ->where('country_id', $countryId)
-            ->first();
-        if ($client) return $client;
+        // 1. Buscar por la clave unica real (tax_id + country_id), solo si hay tax_id real
+        if ($taxId) {
+            $client = Client::where('tax_id', $taxId)
+                ->where('country_id', $countryId)
+                ->first();
+            if ($client) return $client;
+        }
 
         // 2. Fallback: buscar por nombre dentro de la empresa (compatibilidad)
         $client = Client::where('legal_name', $data['name'])

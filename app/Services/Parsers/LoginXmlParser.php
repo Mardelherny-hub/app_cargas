@@ -1026,23 +1026,38 @@ class LoginXmlParser implements ManifestParserInterface
             return $client;
         }
 
-        $company = \App\Models\Company::find($context['company_id']);
+        $cleanTaxId = $taxId ? preg_replace('/[^0-9]/', '', $taxId) : null;
 
-        // Crear nuevo cliente con datos del XML
-        return Client::firstOrCreate(
-            [
-                'tax_id' => $taxId ? preg_replace('/[^0-9]/', '', $taxId) : $company->tax_id,
-                'country_id' => 1,
-            ],
-            [
-                'legal_name' => $cleanName,
-                'document_type_id' => 1, 
-                'status' => 'active',
-                'created_by_company_id' => $context['company_id'],
-                'verified_at' => now(),
-                'created_by_user_id' => $context['user_id']
-            ]
-        );
+        // Crear nuevo cliente con datos del XML.
+        // Con tax_id real: deduplicar por (tax_id, country). Sin tax_id: crear con null,
+        // NO usar el CUIT de la empresa importadora ni fabricar uno.
+        if ($cleanTaxId) {
+            return Client::firstOrCreate(
+                [
+                    'tax_id' => $cleanTaxId,
+                    'country_id' => 1,
+                ],
+                [
+                    'legal_name' => $cleanName,
+                    'document_type_id' => 1,
+                    'status' => 'active',
+                    'created_by_company_id' => $context['company_id'],
+                    'verified_at' => now(),
+                    'created_by_user_id' => $context['user_id']
+                ]
+            );
+        }
+
+        return Client::create([
+            'tax_id' => null,
+            'country_id' => 1,
+            'legal_name' => $cleanName,
+            'document_type_id' => 1,
+            'status' => 'active',
+            'created_by_company_id' => $context['company_id'],
+            'verified_at' => now(),
+            'created_by_user_id' => $context['user_id']
+        ]);
     }
 
     /**

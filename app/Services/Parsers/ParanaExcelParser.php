@@ -750,29 +750,30 @@ class ParanaExcelParser implements ManifestParserInterface
             'company_id' => $companyId
         ]);
 
-        // Buscar cliente existente por nombre
-        $taxId = $this->generateValidTaxId($clientData['name']);
-
         // Determinar país del cliente ANTES de buscar
         $clientCountryId = $this->determineClientCountry($clientData, $companyId);
 
-        $client = Client::where('tax_id', $taxId)
-                        ->where('country_id', $clientCountryId)  // ✅ País dinámico
-                        ->first();
+        // Respetar el identificador declarado (RUC/CUIT) si vino en el documento.
+        // Normalizar a solo dígitos; null si no se declara. NO se fabrica.
+        $normTaxId = !empty($clientData['tax_id'])
+            ? preg_replace('/\D+/', '', $clientData['tax_id'])
+            : null;
 
-        // Si no existe por tax_id, buscar por nombre como fallback
-        if (!$client) {
-            $client = Client::where('legal_name', $clientData['name'])
-                            ->where('country_id', $clientCountryId)  // ✅ País dinámico
+        // 1) Buscar por tax_id + país, solo si hay identificador real
+        $client = null;
+        if ($normTaxId) {
+            $client = Client::where('tax_id', $normTaxId)
+                            ->where('country_id', $clientCountryId)
                             ->first();
         }
-        
-        if ($client) {
-            Log::info('Cliente existente encontrado', ['client_id' => $client->id]);
-            return $client;
+
+        // 2) Fallback: buscar por legal_name + país
+        if (!$client) {
+            $client = Client::where('legal_name', $clientData['name'])
+                            ->where('country_id', $clientCountryId)
+                            ->first();
         }
 
-        // Si encontramos cliente existente, usarlo
         if ($client) {
             Log::info('Cliente existente encontrado', [
                 'client_id' => $client->id,
@@ -781,13 +782,11 @@ class ParanaExcelParser implements ManifestParserInterface
             return $client;
         }
 
-        // CORREGIDO: Generar tax_id de máximo 11 caracteres
-        $taxId = $this->generateValidTaxId($clientData['name']);
-
+        // 3) Crear nuevo cliente con el tax_id real o null (sin fabricar)
         $client = Client::create([
             'legal_name' => $clientData['name'],
             'commercial_name' => $clientData['name'],
-            'tax_id' => $taxId, // CORREGIDO: máximo 11 caracteres
+            'tax_id' => $normTaxId,
             'country_id' => $clientCountryId,
             'document_type_id' => 1, // Tipo por defecto
             'status' => 'active',
@@ -803,21 +802,6 @@ class ParanaExcelParser implements ManifestParserInterface
         ]);
 
         return $client;
-    }
-
-    protected function generateValidTaxId(string $clientName): string
-    {
-        // Generar tax_id único de máximo 11 caracteres
-        $base = preg_replace('/[^0-9]/', '', $clientName); // Solo números del nombre
-        if (strlen($base) < 5) {
-            $base = str_pad($base, 5, '0'); // Rellenar con ceros
-        }
-        
-        $timestamp = substr(time(), -6); // Últimos 6 dígitos del timestamp
-        $taxId = $base . $timestamp;
-        
-        // Asegurar máximo 11 caracteres
-        return substr($taxId, 0, 11);
     }
 
     protected function parseWeight(?string $weight): float

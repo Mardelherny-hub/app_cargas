@@ -168,10 +168,13 @@ class TfpTextParser implements ManifestParserInterface
             'consolidado' => 'CONSOLIDADO:',
             'consignatario' => 'CONSIGNATARIO:',
             'consignatario_domicilio' => 'CONSIGNATARIODOMICILIO:',
+            'consignatario_ruc' => 'CONSIGNATARIORUC:',
             'cargador' => 'CARGADOR:',
             'cargador_domicilio' => 'CARGADORDOMICILIO:',
+            'cargador_ruc' => 'CARGADORRUC:',
             'notificatario' => 'NOTIFICATARIO:',
             'notificatario_domicilio' => 'NOTIFICATARIODOMICILIO:',
+            'notificatario_ruc' => 'NOTIFICATARIORUC:',
             'medio_transp' => 'MEDIOTRANSP:',
             'cod_puerto_carga' => 'CODPUERTOCARGA:',
             'puerto_carga' => 'PUERTOCARGA:',
@@ -360,9 +363,9 @@ class TfpTextParser implements ManifestParserInterface
 
     protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
     {
-        $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper');
-        $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee');
-        $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify');
+        $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null);
+        $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null);
+        $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null);
 
         $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
         $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
@@ -436,7 +439,7 @@ class TfpTextParser implements ManifestParserInterface
         ]);
     }
 
-    protected function findOrCreateClient(string $name, string $type): Client
+    protected function findOrCreateClient(string $name, string $type, ?string $taxId = null): Client
     {
         $user = auth()->user();
         $companyId = $user->userable_type === 'App\Models\Company' ? $user->userable_id : 
@@ -445,23 +448,23 @@ class TfpTextParser implements ManifestParserInterface
         $name = trim($name);
         if (empty($name)) $name = 'Cliente TFP';
 
+        // RUC declarado (CARGADORRUC/CONSIGNATARIORUC/NOTIFICATARIORUC).
+        // Normalizar a solo dígitos; null si viene vacío. No se fabrica.
+        $normTaxId = $taxId ? preg_replace('/\D+/', '', $taxId) : null;
+        if ($normTaxId === '') $normTaxId = null;
+
+        // 1) Buscar por tax_id real (si hay)
+        if ($normTaxId) {
+            $client = Client::where('tax_id', $normTaxId)->first();
+            if ($client) return $client;
+        }
+
+        // 2) Buscar por nombre
         $client = Client::where('legal_name', $name)->first();
         if ($client) return $client;
 
-        $tempTaxId = 'P' . strtoupper(substr(md5($name), 0, 6));
-        $counter = 1;
-        $originalTaxId = $tempTaxId;
-        while (Client::where('tax_id', $tempTaxId)->exists()) {
-            $tempTaxId = $originalTaxId . $counter;
-            $counter++;
-            if (strlen($tempTaxId) > 11 || $counter > 99) {
-                $tempTaxId = 'P' . substr(md5($name . time()), 0, 10);
-                break;
-            }
-        }
-
         return Client::create([
-            'tax_id' => $tempTaxId,
+            'tax_id' => $normTaxId,
             'country_id' => 1,
             'document_type_id' => 1,
             'legal_name' => $name,
