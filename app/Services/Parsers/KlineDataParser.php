@@ -1539,9 +1539,6 @@ protected function extractPortInfo(array $data): array
      */
     protected function findOrCreateClient(array $clientData, int $companyId, array $partyLines = [], ?Port $originPort = null): Client
     {
-        $name = $clientData['name'] ?? 'Cliente Desconocido';
-        $taxId = $clientData['tax_id'] ?? null;
-        
         $name  = trim($clientData['name'] ?? 'Cliente Desconocido');
         $taxId = $clientData['tax_id'] ?? null;
 
@@ -1564,7 +1561,6 @@ protected function extractPortInfo(array $data): array
 
         
         // 3. Crear nuevo cliente con campos REALES de la tabla
-        $newTaxId = $taxId ?: $this->generateUniqueValidTaxId($name);
 
        $countryId = null;
         if (!empty($partyLines) && $originPort) {
@@ -1584,7 +1580,7 @@ protected function extractPortInfo(array $data): array
 
         $client = Client::create([
             // Obligatorios según tu migración
-            'tax_id'               => $normTaxId ?: $this->generateUniqueValidTaxId($name),
+            'tax_id'               => $normTaxId,
             'country_id'           => $countryId,
             'document_type_id'     => 1, // si 1 = CUIT/Doc local (mantengo tu default)
             'legal_name'           => $name,
@@ -1651,40 +1647,6 @@ protected function extractPortInfo(array $data): array
             'total_count' => $totalBills,
             'existing_numbers' => $existingNumbers
         ];
-    }
-    protected function generateUniqueValidTaxId(string $clientName): string
-    {
-        $maxAttempts = 10;
-        $attempt = 0;
-        
-        do {
-            // Generar base desde nombre del cliente
-            $nameNumbers = preg_replace('/[^0-9]/', '', $clientName);
-            if (strlen($nameNumbers) < 3) {
-                $nameNumbers = str_pad($nameNumbers, 3, '0');
-            }
-            
-            // Agregar timestamp y intento para unicidad
-            $timestamp = substr(time() + $attempt, -5);
-            $random = str_pad(mt_rand(0, 999), 3, '0', STR_PAD_LEFT);
-            
-            $taxId = substr($nameNumbers . $timestamp . $random, 0, 11);
-            
-            // CRÍTICO: Verificar que no exista en BD
-            $exists = Client::where('tax_id', $taxId)->exists();
-            
-            if (!$exists) {
-                Log::info('Tax ID único generado', ['tax_id' => $taxId, 'attempt' => $attempt + 1]);
-                return $taxId;
-            }
-            
-            $attempt++;
-        } while ($attempt < $maxAttempts);
-        
-        // Fallback: usar timestamp completo + random
-        $fallbackId = substr(time() . mt_rand(1000, 9999), 0, 11);
-        Log::warning('Usando tax_id fallback', ['tax_id' => $fallbackId]);
-        return $fallbackId;
     }
 
     // Resuelve UN/LOCODE a partir de un nombre de puerto/ciudad usando la BD.

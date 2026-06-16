@@ -752,27 +752,9 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
             $countryId = 2; // Paraguay
         }
 
-        // CORREGIDO: Generar tax_id temporal más corto (máximo 11 caracteres)
-        // Usar solo 6 caracteres del hash para cumplir con límite de varchar(11)
-        $tempTaxId = 'P' . strtoupper(substr(md5($name), 0, 6)); // P + 6 chars = 7 total
-        
-        // Si ya existe, agregar número secuencial
-        $counter = 1;
-        $originalTaxId = $tempTaxId;
-        while (Client::where('tax_id', $tempTaxId)->exists()) {
-            $tempTaxId = $originalTaxId . $counter; // P + 6 chars + 1-2 digits
-            $counter++;
-            
-            // Protección contra loop infinito y límite de longitud
-            if (strlen($tempTaxId) > 11 || $counter > 99) {
-                $tempTaxId = 'P' . substr(md5($name . time()), 0, 10); // P + 10 chars = 11 total
-                break;
-            }
-        }
-
-        // Crear cliente
+        // Crear cliente (sin fabricar tax_id: queda null si el documento no lo declara)
         $client = Client::create([
-            'tax_id' => $tempTaxId, // CORREGIDO: máximo 11 caracteres
+            'tax_id' => null,
             'country_id' => $countryId,
             'document_type_id' => $countryId == 1 ? 1 : 2, // CUIT o RUC
             'legal_name' => $name,
@@ -782,7 +764,7 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
             'verified_at' => now() // Agregar timestamp de verificación
         ]);
 
-        $this->stats['warnings'][] = "Cliente '{$name}' creado con tax_id temporal: {$tempTaxId}";
+        $this->stats['warnings'][] = "Cliente '{$name}' creado sin tax_id declarado.";
 
         return $client;
     }

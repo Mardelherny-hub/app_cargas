@@ -1086,28 +1086,12 @@ class CmspEdiParser implements ManifestParserInterface
             return $client;
         }
     
-        // 2. Generar y buscar por tax_id
-        $taxId = substr(strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $partyData['name'])), 0, 4) . 
-                 substr(uniqid(), -4);
-    
-        $clientByTax = Client::where('tax_id', $taxId)
-            ->where('country_id', 1)
-            ->first();
-    
-        if ($clientByTax) {
-            Log::info('Cliente encontrado por tax_id', [
-                'tax_id' => $taxId,
-                'client_id' => $clientByTax->id
-            ]);
-            return $clientByTax;
-        }
-    
-        // 3. Si no existe, crear nuevo cliente
+        // 2. Si no existe, crear nuevo cliente sin fabricar tax_id (null si el documento no lo declara)
             $client = Client::create([
                 'created_by_company_id' => $companyId,
                 'legal_name' => $partyData['name'],
                 'commercial_name' => $partyData['name'],
-                'tax_id' => $taxId,
+                'tax_id' => null,
                 'country_id' => 1,
                 'document_type_id' => 1,
             ]);
