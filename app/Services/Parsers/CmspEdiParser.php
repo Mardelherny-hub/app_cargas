@@ -15,6 +15,7 @@ use App\Models\Vessel;
 use App\Models\ContainerType;
 use App\Models\CargoType;
 use App\Models\PackagingType;
+use App\Models\ManifestImport;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -105,12 +106,17 @@ class CmspEdiParser implements ManifestParserInterface
      */
     public function parse(string $filePath): ManifestParseResult
     {
+        $startTime = microtime(true);
+
         Log::info('Starting CMSP EDI parsing', [
             'file_path' => $filePath,
             'file_size' => filesize($filePath)
         ]);
 
         try {
+            // 0. Registrar la importación (con dup-check por hash)
+            $importRecord = $this->createImportRecord($filePath);
+
             // 1. Leer y parsear segmentos EDI
             $this->parseEdiFile($filePath);
 
@@ -127,10 +133,15 @@ class CmspEdiParser implements ManifestParserInterface
             $standardData = $this->transform($this->parsedData);
 
             // 5. Crear objetos de modelo
-            return $this->createModelObjects($standardData);
+            return $this->createModelObjects($standardData, $importRecord, $startTime);
 
         } catch (Exception $e) {
             $this->stats['errors']++;
+            if (isset($importRecord)) {
+                $importRecord->markAsFailed([$e->getMessage()], [
+                    'import_statistics' => $this->stats,
+                ]);
+            }
             Log::error('CMSP EDI parsing failed', [
                 'file_path' => $filePath,
                 'error' => $e->getMessage(),
@@ -551,11 +562,52 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Registrar la importación en ManifestImport (con dup-check por hash).
+     */
+    protected function createImportRecord(string $filePath): ManifestImport
+    {
+        $user = auth()->user();
+        if (!$user) {
+            throw new Exception('Usuario no autenticado para crear registro de importación');
+        }
+
+        $fileName = basename($filePath);
+        $fileSize = file_exists($filePath) ? filesize($filePath) : null;
+        $fileHash = file_exists($filePath) ? ManifestImport::generateFileHash($filePath) : null;
+
+        $companyId = null;
+        if ($user->company_id) {
+            $companyId = $user->company_id;
+        } elseif ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+            $companyId = (int) $user->userable_id;
+        }
+
+        if ($fileHash && $companyId) {
+            $existing = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
+            if ($existing) {
+                throw new Exception("Este archivo ya fue importado anteriormente (ID: {$existing->id})");
+            }
+        }
+
+        return ManifestImport::createForImport([
+            'company_id'      => $companyId,
+            'user_id'         => $user->id,
+            'file_name'       => $fileName,
+            'file_format'     => 'cmsp',
+            'file_size_bytes' => $fileSize,
+            'file_hash'       => $fileHash,
+            'parser_config'   => [
+                'parser_class' => self::class,
+            ],
+        ]);
+    }
+
+    /**
      * Crear objetos de modelo
      */
-    protected function createModelObjects(array $data): ManifestParseResult
+    protected function createModelObjects(array $data, ?ManifestImport $importRecord = null, ?float $startTime = null): ManifestParseResult
     {
-        return DB::transaction(function () use ($data) {
+        return DB::transaction(function () use ($data, $importRecord, $startTime) {
             $voyage = $this->createVoyage($data);
             $shipment = $this->createShipment($voyage, $data);
             
@@ -583,6 +635,36 @@ class CmspEdiParser implements ManifestParserInterface
                 'bills_created' => count($billsOfLading),
                 'stats' => $this->stats
             ]);
+
+            // Registrar objetos creados y completar el registro de importación.
+            // El revert reconstruye items/containers (incluido el pivote) desde el voyage_id.
+            if ($importRecord) {
+                $billIds = array_map(fn($bl) => $bl->id, $billsOfLading);
+
+                $itemIds = [];
+                foreach ($billsOfLading as $bl) {
+                    $itemIds = array_merge($itemIds, $bl->shipmentItems()->pluck('id')->all());
+                }
+
+                // No se trackean container_ids a propósito: getCreatedContainers busca por
+                // número de forma global y podría incluir containers de otros viajes; el
+                // revert los reconstruye de forma segura por el pivote.
+                $importRecord->recordCreatedObjects([
+                    'voyage'   => [$voyage->id],
+                    'shipment' => [$shipment->id],
+                    'bill'     => $billIds,
+                    'item'     => $itemIds,
+                ]);
+
+                $importRecord->markAsCompleted([
+                    'voyage_id'               => $voyage->id,
+                    'created_bills'           => count($billIds),
+                    'created_items'           => count($itemIds),
+                    'processing_time_seconds' => $startTime ? round(microtime(true) - $startTime, 2) : null,
+                    'import_statistics'       => $this->stats,
+                    'notes'                   => 'Importación CMSP EDI completada',
+                ]);
+            }
 
             return ManifestParseResult::success(
                 voyage: $voyage,
