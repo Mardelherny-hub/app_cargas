@@ -15,6 +15,7 @@ use App\Models\Vessel;
 use App\Models\ContainerType;
 use App\Models\CargoType;
 use App\Models\PackagingType;
+use App\Models\ManifestImport;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -51,8 +52,13 @@ class TfpTextParser implements ManifestParserInterface
 
     public function parse(string $filePath): ManifestParseResult
     {
+        $startTime = microtime(true);
+
         try {
             Log::info('Starting TFP parse', ['file' => $filePath]);
+
+            // Registrar la importación (con dup-check por hash)
+            $importRecord = $this->createImportRecord($filePath);
 
             $content = @file_get_contents($filePath);
             if ($content === false || $content === '') {
@@ -67,7 +73,7 @@ class TfpTextParser implements ManifestParserInterface
             }
 
             // Transacción para persistir todo
-            $result = DB::transaction(function () use ($blBlocks) {
+            $result = DB::transaction(function () use ($blBlocks, $importRecord, $startTime) {
                 // Crear voyage único
                 $voyageData = $this->extractVoyageData($blBlocks[0]);
                 $voyage = $this->findOrCreateVoyage($voyageData);
@@ -91,27 +97,68 @@ class TfpTextParser implements ManifestParserInterface
                     }
 
                     // Crear BillOfLading
-                    $bill = $this->createBillOfLading($shipment, $header);
+                    $bill = $this->createBillOfLading($shipment, $header, !empty($containers));
                     $allBills[] = $bill;
                     $this->stats['processed_bls']++;
                     
                     // Crear contenedores
+                    $billContainers = [];
                     foreach ($containers as $containerData) {
                         $container = $this->createContainer($bill, $containerData);
                         if ($container) {
                             $allContainers[] = $container;
+                            $billContainers[] = $container;
                             $this->stats['processed_containers']++;
                         }
                     }
                     
                     // Crear items
+                    $billItems = [];
                     foreach ($lines as $lineData) {
                         $item = $this->createShipmentItem($bill, $lineData);
                         if ($item) {
                             $allItems[] = $item;
+                            $billItems[] = $item;
                             $this->stats['processed_items']++;
                         }
                     }
+
+                    // Vincular los contenedores del BL con su ítem (pivote container_shipment_item).
+                    if (!empty($billItems) && !empty($billContainers)) {
+                        foreach ($billContainers as $c) {
+                            $this->attachContainerToItem($c, $billItems[0]);
+                        }
+                    }
+
+                    // Consignar en el BL la descripción y la posición arancelaria
+                    // tomadas del primer ítem (en TFP hay un ítem por BL).
+                    if (!empty($billItems)) {
+                        $firstItem = $billItems[0];
+                        $bill->update([
+                            'cargo_description' => $firstItem->item_description ?: $bill->cargo_description,
+                            'commodity_code'    => $firstItem->commodity_code ?: null,
+                            'tariff_position'   => $firstItem->tariff_position ?: null,
+                        ]);
+                    }
+                }
+
+                // Registrar objetos creados y completar el registro de importación.
+                // El revert reconstruye items/containers (incluido el pivote) desde el voyage_id.
+                if ($importRecord) {
+                    $importRecord->recordCreatedObjects([
+                        'voyage'   => [$voyage->id],
+                        'shipment' => [$shipment->id],
+                        'bill'     => array_map(fn($b) => $b->id, $allBills),
+                        'item'     => array_map(fn($i) => $i->id, $allItems),
+                    ]);
+                    $importRecord->markAsCompleted([
+                        'voyage_id'               => $voyage->id,
+                        'created_bills'           => count($allBills),
+                        'created_items'           => count($allItems),
+                        'processing_time_seconds' => round(microtime(true) - $startTime, 2),
+                        'import_statistics'       => $this->stats,
+                        'notes'                   => 'Importación TFP completada',
+                    ]);
                 }
 
                 return [
@@ -135,11 +182,15 @@ class TfpTextParser implements ManifestParserInterface
             );
 
         } catch (Exception $e) {
+            if (isset($importRecord)) {
+                $importRecord->markAsFailed([$e->getMessage()], [
+                    'import_statistics' => $this->stats,
+                ]);
+            }
             Log::error('TFP parsing failed', [
                 'file' => $filePath,
                 'error' => $e->getMessage()
             ]);
-
             return ManifestParseResult::failure(
                 [$e->getMessage()],
                 $this->stats['warnings'],
@@ -164,6 +215,7 @@ class TfpTextParser implements ManifestParserInterface
         $fields = [
             'bl_numero' => 'BLNUMERO:',
             'bl_maritimo_numero' => 'BLMARITIMONUMERO:',
+            'trb' => 'TRB:',
             'buque' => 'BUQUE:',
             'consolidado' => 'CONSOLIDADO:',
             'consignatario' => 'CONSIGNATARIO:',
@@ -255,14 +307,15 @@ class TfpTextParser implements ManifestParserInterface
             'peso_total_bultos' => $this->extractValue($block, 'PESOTOTALBULTOS:'),
             'tipo_embalaje' => $this->extractValue($block, 'TIPOEMBALAJE:'),
             'cod_armonizado' => $this->extractValue($block, 'CODARMONIZADO:'),
+            'volumen_total' => $this->extractValue($block, 'VOLUMENTOTAL:'),
         ];
 
         return (empty(array_filter($row, fn($v) => $v !== null && $v !== ''))) ? [] : [$row];
     }
 
-    protected function extractValue(string $scope, string $label): ?string
+protected function extractValue(string $scope, string $label): ?string
     {
-        $pattern = '/' . preg_quote($label, '/') . '\s*\/\*(.*?)\*\//i';
+        $pattern = '/' . preg_quote($label, '/') . '\s*\/\*(.*?)\*\//is';
         if (preg_match($pattern, $scope, $m)) {
             return trim($m[1]);
         }
@@ -361,7 +414,7 @@ class TfpTextParser implements ManifestParserInterface
         ]);
     }
 
-    protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
+    protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false): BillOfLading
     {
         $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null);
         $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null);
@@ -380,10 +433,13 @@ class TfpTextParser implements ManifestParserInterface
             'notify_party_id' => $notify->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
+            'permiso_embarque' => $data['trb'] ?? null,
             'freight_terms' => 'prepaid',
             'status' => 'draft',
-            'primary_cargo_type_id' => 1,
-            'primary_packaging_type_id' => 1,
+            // Si el BL trae contenedores: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR).
+            // Si no, se mantiene el default (1 = DOCUMENTOS / A GRANEL).
+            'primary_cargo_type_id' => $hasContainers ? 9 : 1,
+            'primary_packaging_type_id' => $hasContainers ? 4 : 1,
             'gross_weight_kg' => 0,
             'net_weight_kg' => 0,
             'total_packages' => 1,
@@ -400,7 +456,9 @@ class TfpTextParser implements ManifestParserInterface
 
         $existing = Container::where('container_number', $data['numero'])->first();
         if ($existing) {
-            $this->stats['warnings'][] = "Contenedor {$data['numero']} ya existe";
+            // Reutilizar un contenedor existente es normal: el contenedor es un activo
+            // físico que se repite entre viajes. No se expone como advertencia al usuario.
+            Log::info('Contenedor reutilizado', ['container_number' => $data['numero']]);
             return $existing;
         }
 
@@ -432,10 +490,82 @@ class TfpTextParser implements ManifestParserInterface
             'package_quantity' => intval($data['cant_total_bultos'] ?? 1),
             'gross_weight_kg' => floatval($data['peso_total_bultos'] ?? 0),
             'net_weight_kg' => floatval($data['peso_total_bultos'] ?? 0) * 0.95,
+            'volume_m3' => floatval($data['volumen_total'] ?? 0),
             'cargo_type_id' => 1,
             'packaging_type_id' => 1,
             'commodity_code' => $data['cod_armonizado'] ?? null,
+            'tariff_position' => $data['cod_armonizado'] ?: null,
             'created_by_user_id' => auth()->id()
+        ]);
+    }
+
+    /**
+     * Vincular un Container con un ShipmentItem en el pivote container_shipment_item.
+     */
+    protected function attachContainerToItem(Container $container, ShipmentItem $item): void
+    {
+        $exists = DB::table('container_shipment_item')
+            ->where('container_id', $container->id)
+            ->where('shipment_item_id', $item->id)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        DB::table('container_shipment_item')->insert([
+            'container_id' => $container->id,
+            'shipment_item_id' => $item->id,
+            'package_quantity' => $item->package_quantity,
+            'gross_weight_kg' => $item->gross_weight_kg,
+            'net_weight_kg' => $item->net_weight_kg,
+            'volume_m3' => $item->volume_m3,
+            'status' => 'loaded',
+            'created_date' => now(),
+            'created_by_user_id' => auth()->id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * Registrar la importación en ManifestImport (con dup-check por hash).
+     */
+    protected function createImportRecord(string $filePath): ManifestImport
+    {
+        $user = auth()->user();
+        if (!$user) {
+            throw new Exception('Usuario no autenticado para crear registro de importación');
+        }
+
+        $fileName = basename($filePath);
+        $fileSize = file_exists($filePath) ? filesize($filePath) : null;
+        $fileHash = file_exists($filePath) ? ManifestImport::generateFileHash($filePath) : null;
+
+        $companyId = null;
+        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+            $companyId = (int) $user->userable_id;
+        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
+            $companyId = $user->userable->company_id;
+        }
+
+        if ($fileHash && $companyId) {
+            $existing = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
+            if ($existing) {
+                throw new Exception("Este archivo ya fue importado anteriormente (ID: {$existing->id})");
+            }
+        }
+
+        return ManifestImport::createForImport([
+            'company_id'      => $companyId,
+            'user_id'         => $user->id,
+            'file_name'       => $fileName,
+            'file_format'     => 'tfp',
+            'file_size_bytes' => $fileSize,
+            'file_hash'       => $fileHash,
+            'parser_config'   => [
+                'parser_class' => self::class,
+            ],
         ]);
     }
 
