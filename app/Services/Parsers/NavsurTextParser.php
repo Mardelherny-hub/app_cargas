@@ -13,6 +13,7 @@ use App\Models\Client;
 use App\Models\Port;
 use App\Models\Vessel;
 use App\Models\ContainerType;
+use App\Models\ManifestImport;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -84,12 +85,23 @@ class NavsurTextParser implements ManifestParserInterface
      */
     public function parse(string $filePath): ManifestParseResult
     {
+        $startTime = microtime(true);
+
         try {
             Log::info('Starting Navsur TXT parse', ['file' => $filePath]);
+
+            // Registrar la importación (con dup-check por hash)
+            $importRecord = $this->createImportRecord($filePath);
 
             $content = file_get_contents($filePath);
             if (!$content) {
                 throw new Exception('No se pudo leer el archivo');
+            }
+
+            // Navsur viene en ISO-8859-1 (latin1). Convertir a UTF-8 para que las
+            // descripciones con acentos se guarden y serialicen correctamente.
+            if (!mb_check_encoding($content, 'UTF-8')) {
+                $content = mb_convert_encoding($content, 'UTF-8', 'ISO-8859-1');
             }
 
             // Parsear estructura del archivo
@@ -100,7 +112,7 @@ class NavsurTextParser implements ManifestParserInterface
             }
 
             // Procesar en transacción
-            $result = DB::transaction(function () use ($bls) {
+            $result = DB::transaction(function () use ($bls, $importRecord, $startTime) {
                 // Crear voyage único para todos los BLs
                 $voyageData = $this->extractVoyageData($bls[0]);
                 $voyage = $this->findOrCreateVoyage($voyageData);
@@ -135,11 +147,34 @@ class NavsurTextParser implements ManifestParserInterface
                                     if ($item) {
                                         $allItems[] = $item;
                                         $this->stats['processed_items']++;
+                                        // Vincular este contenedor con su ítem (pivote container_shipment_item)
+                                        if ($container) {
+                                            $this->attachContainerToItem($container, $item);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+
+                // Registrar objetos creados y completar el registro de importación.
+                // El revert reconstruye items/containers (incluido el pivote) desde el voyage_id.
+                if ($importRecord) {
+                    $importRecord->recordCreatedObjects([
+                        'voyage'   => [$voyage->id],
+                        'shipment' => [$shipment->id],
+                        'bill'     => array_map(fn($b) => $b->id, $allBills),
+                        'item'     => array_map(fn($i) => $i->id, $allItems),
+                    ]);
+                    $importRecord->markAsCompleted([
+                        'voyage_id'               => $voyage->id,
+                        'created_bills'           => count($allBills),
+                        'created_items'           => count($allItems),
+                        'processing_time_seconds' => round(microtime(true) - $startTime, 2),
+                        'import_statistics'       => $this->stats,
+                        'notes'                   => 'Importación Navsur completada',
+                    ]);
                 }
 
                 return [
@@ -163,6 +198,11 @@ class NavsurTextParser implements ManifestParserInterface
             );
 
         } catch (Exception $e) {
+            if (isset($importRecord)) {
+                $importRecord->markAsFailed([$e->getMessage()], [
+                    'import_statistics' => $this->stats,
+                ]);
+            }
             Log::error('Navsur parsing failed', [
                 'file' => $filePath,
                 'error' => $e->getMessage(),
@@ -242,36 +282,47 @@ class NavsurTextParser implements ManifestParserInterface
     }
 
     /**
-     * Extraer secciones de contenedores
+     * Extraer secciones de contenedores.
+     *
+     * Nota de formato Navsur: dentro de un BL, solo el primer contenedor abre con
+     * **CONTENEDORES**; los siguientes vienen sin apertura pero todos cierran con
+     * **FIN CONTENEDORES**. Por eso NO se usa el par apertura/cierre. En su lugar:
+     * cada contenedor es el bloque que TERMINA en **FIN CONTENEDORES**, y sus
+     * mercaderías son el bloque **MERCADERIAS**...**FIN MERCADERIAS** que lo sigue.
      */
     protected function extractContainerSections(string $section): array
     {
         $containers = [];
-        
-        // Buscar patrones de contenedores
-        $pattern = '/\*\*CONTENEDORES\*\*(.*?)\*\*FIN CONTENEDORES\*\*/s';
-        preg_match_all($pattern, $section, $matches);
-        
-        if (!empty($matches[1])) {
-            foreach ($matches[1] as $containerBlock) {
-                // Encontrar las mercaderías asociadas
-                $nextContainerPos = strpos($section, '**CONTENEDORES**', strpos($section, $containerBlock));
-                $mercaderiasPattern = '/\*\*MERCADERIAS\*\*(.*?)\*\*FIN MERCADERIAS\*\*/s';
-                
-                // Buscar mercaderías después de este contenedor
-                $searchStart = strpos($section, $containerBlock) + strlen($containerBlock);
-                $searchEnd = $nextContainerPos !== false ? $nextContainerPos : strlen($section);
-                $searchArea = substr($section, $searchStart, $searchEnd - $searchStart);
-                
-                preg_match($mercaderiasPattern, $searchArea, $mercaderiasMatch);
-                
-                $containers[] = [
-                    'container' => $containerBlock,
-                    'items' => isset($mercaderiasMatch[1]) ? $mercaderiasMatch[1] : ''
-                ];
+
+        // 1) Cada bloque de contenedor: todo lo que precede a un **FIN CONTENEDORES**.
+        //    Se parte por ese cierre y se descarta lo que no tenga CODCONTENEDOR.
+        $contParts = preg_split('/\*\*FIN CONTENEDORES\*\*/', $section);
+
+        // 2) Cada bloque de mercaderías, en orden de aparición.
+        preg_match_all('/\*\*MERCADERIAS\*\*(.*?)\*\*FIN MERCADERIAS\*\*/s', $section, $mercMatches);
+        $mercaderiasBloques = $mercMatches[1] ?? [];
+
+        $idx = 0;
+        foreach ($contParts as $part) {
+            if (strpos($part, 'CODCONTENEDOR:') === false) {
+                continue;
             }
+
+            // Quitar cualquier resto de un **MERCADERIAS** previo que haya quedado al inicio.
+            $cleanPos = strrpos($part, '**FIN MERCADERIAS**');
+            if ($cleanPos !== false) {
+                $part = substr($part, $cleanPos + strlen('**FIN MERCADERIAS**'));
+            }
+            // Quitar la apertura **CONTENEDORES** si está presente (solo en el primero).
+            $part = str_replace('**CONTENEDORES**', '', $part);
+
+            $containers[] = [
+                'container' => $part,
+                'items'     => $mercaderiasBloques[$idx] ?? '',
+            ];
+            $idx++;
         }
-        
+
         return $containers;
     }
 
@@ -310,58 +361,37 @@ class NavsurTextParser implements ManifestParserInterface
     protected function parseItemsSection(string $section): array
     {
         $items = [];
-        
-        // Dividir por ITEM:
-        $lines = explode("\n", $section);
-        $currentItem = null;
-        
-        foreach ($lines as $line) {
-            $line = trim($line);
-            
-            if (strpos($line, 'ITEM:') !== false) {
-                if ($currentItem !== null && !empty($currentItem['mercaderia'])) {
-                    $items[] = $currentItem;
-                }
-                $currentItem = [
-                    'item' => $this->extractValue($line, 'ITEM:'),
-                    'titulo' => '',
-                    'embalaje' => '',
-                    'mercaderia' => '',
-                    'cantidad' => 0,
-                    'peso_neto' => 0,
-                    'peso_bruto' => 0,
-                    'cubitaje' => 0,
-                    'imo' => '',
-                    'partida_arancelaria' => ''
-                ];
-            } elseif ($currentItem !== null) {
-                if (strpos($line, 'TITULO:') !== false) {
-                    $currentItem['titulo'] = $this->extractValue($line, 'TITULO:');
-                } elseif (strpos($line, 'EMBALAJE:') !== false) {
-                    $currentItem['embalaje'] = $this->extractValue($line, 'EMBALAJE:');
-                } elseif (strpos($line, 'MERCADERIA:') !== false) {
-                    $currentItem['mercaderia'] = $this->extractValue($line, 'MERCADERIA:');
-                } elseif (strpos($line, 'CANTIDAD:') !== false) {
-                    $currentItem['cantidad'] = intval($this->extractValue($line, 'CANTIDAD:'));
-                } elseif (strpos($line, 'PESONETO:') !== false) {
-                    $currentItem['peso_neto'] = floatval($this->extractValue($line, 'PESONETO:'));
-                } elseif (strpos($line, 'PESOBRUTO:') !== false) {
-                    $currentItem['peso_bruto'] = floatval($this->extractValue($line, 'PESOBRUTO:'));
-                } elseif (strpos($line, 'CUBITAJE:') !== false) {
-                    $currentItem['cubitaje'] = floatval($this->extractValue($line, 'CUBITAJE:'));
-                } elseif (strpos($line, 'IMO:') !== false) {
-                    $currentItem['imo'] = $this->extractValue($line, 'IMO:');
-                } elseif (strpos($line, 'PARTIDAARANCELARIA:') !== false) {
-                    $currentItem['partida_arancelaria'] = $this->extractValue($line, 'PARTIDAARANCELARIA:');
-                }
+
+        // Separar cada ítem: cada uno arranca en "ITEM:" y termina donde empieza el siguiente.
+        // Se usa lookahead para no consumir el "ITEM:" del próximo bloque.
+        $chunks = preg_split('/(?=ITEM:\s*\/\*)/', $section);
+
+        foreach ($chunks as $chunk) {
+            if (strpos($chunk, 'ITEM:') === false) {
+                continue;
             }
+
+            $mercaderia = $this->extractValue($chunk, 'MERCADERIA:');
+
+            // Sin descripción de mercadería no hay ítem válido.
+            if (empty($mercaderia)) {
+                continue;
+            }
+
+            $items[] = [
+                'item'                => $this->extractValue($chunk, 'ITEM:'),
+                'titulo'              => $this->extractValue($chunk, 'TITULO:') ?? '',
+                'embalaje'            => $this->extractValue($chunk, 'EMBALAJE:') ?? '',
+                'mercaderia'          => $mercaderia,
+                'cantidad'            => intval($this->extractValue($chunk, 'CANTIDAD:') ?? 0),
+                'peso_neto'           => floatval($this->extractValue($chunk, 'PESONETO:') ?? 0),
+                'peso_bruto'          => floatval($this->extractValue($chunk, 'PESOBRUTO:') ?? 0),
+                'cubitaje'            => floatval($this->extractValue($chunk, 'CUBITAJE:') ?? 0),
+                'imo'                 => $this->extractValue($chunk, 'IMO:') ?? '',
+                'partida_arancelaria' => $this->extractValue($chunk, 'PARTIDAARANCELARIA:') ?? '',
+            ];
         }
-        
-        // Agregar último item
-        if ($currentItem !== null && !empty($currentItem['mercaderia'])) {
-            $items[] = $currentItem;
-        }
-        
+
         return $items;
     }
 
@@ -370,7 +400,7 @@ class NavsurTextParser implements ManifestParserInterface
      */
     protected function extractValue(string $text, string $field): ?string
     {
-        $pattern = '/' . preg_quote($field, '/') . '\s*\/\*(.*?)\*\//';
+        $pattern = '/' . preg_quote($field, '/') . '\s*\/\*(.*?)\*\//s';
         if (preg_match($pattern, $text, $matches)) {
             return trim($matches[1]);
         }
@@ -516,112 +546,182 @@ class NavsurTextParser implements ManifestParserInterface
         return $shipment;
     }
 
-/**
- * Crear BillOfLading
- */
-protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
-{
-    // Obtener o crear clientes
-    $shipper = $this->findOrCreateClient($data['cargador_nombre'], 'shipper');
-    $consignee = $this->findOrCreateClient($data['consignatario_nombre'], 'consignee');
-    $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
+    /**
+     * Registrar la importación en ManifestImport (con dup-check por hash).
+     */
+    protected function createImportRecord(string $filePath): ManifestImport
+    {
+        $user = auth()->user();
+        if (!$user) {
+            throw new Exception('Usuario no autenticado para crear registro de importación');
+        }
 
-    // Obtener puertos
-    $loadingPort = $this->findOrCreatePort($data['puerto_carga']);
-    $dischargePort = $this->findOrCreatePort($data['puerto_descarga']);
-    $finalPort = !empty($data['destino_final']) 
-        ? $this->findOrCreatePort($data['destino_final'])
-        : $dischargePort;
+        $fileName = basename($filePath);
+        $fileSize = file_exists($filePath) ? filesize($filePath) : null;
+        $fileHash = file_exists($filePath) ? ManifestImport::generateFileHash($filePath) : null;
 
-    // AGREGAR: Fechas obligatorias con valores por defecto
-    //$billDate = null; // Fecha actual como fallback
-    //$loadingDate = null->addDays(1); // Un día después para loading
+        // Obtener company_id (mismo criterio que el resto del parser)
+        $companyId = null;
+        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+            $companyId = (int) $user->userable_id;
+        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
+            $companyId = $user->userable->company_id;
+        }
 
-    // ✅ NAVSUR no incluye fechas - usar fecha actual como última opción
-    Log::warning('⚠️ NAVSUR.TXT no contiene fechas específicas - usando fecha actual');
-    $billDate = now();
-    $loadingDate = now()->addDays(1);
+        if ($fileHash && $companyId) {
+            $existing = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
+            if ($existing) {
+                throw new Exception("Este archivo ya fue importado anteriormente (ID: {$existing->id})");
+            }
+        }
 
-    // Crear BL con campos obligatorios CORREGIDOS
-    $bill = BillOfLading::create([
-        'shipment_id' => $shipment->id,
-        'bill_number' => $data['numero_bl'],
-        'master_bill_number' => $data['cod_booking'] ?? null,
-        'internal_reference' => $data['cod_programacion'] ?? null,
-        
-        // AGREGADO: Campos de fecha obligatorios
-        'bill_date' => $billDate,
-        'loading_date' => $loadingDate,
-        
-        // Clientes
-        'shipper_id' => $shipper->id,
-        'consignee_id' => $consignee->id,
-        'notify_party_id' => $notify?->id,
-        
-        // Puertos
-        'loading_port_id' => $loadingPort->id,
-        'discharge_port_id' => $dischargePort->id,
-        'final_destination_port_id' => $finalPort->id,
-        
-        // Términos y estado
-        'freight_terms' => $this->mapFreightTerms($data['condicion_flete'] ?? 'PREPAID'),
-        'status' => 'draft',
-        
-        // Tipos obligatorios con valores por defecto
-        'primary_cargo_type_id' => $this->validateCargoTypeId($data),
-        'primary_packaging_type_id' => $this->validatePackagingTypeId($data), // Bags/Bultos
-        
-        // AGREGADO: Campos de peso obligatorios con valores por defecto
-        'gross_weight_kg' => floatval($data['peso_bruto'] ?? 0),
-        'net_weight_kg' => floatval($data['peso_neto'] ?? 0),
-        'total_packages' => intval($data['cantidad_bultos'] ?? 1),
-        'volume_m3' => floatval($data['cubitaje'] ?? 0),
-        
-        // CORREGIDO: campo cargo_description es obligatorio
-        'cargo_description' => $this->validateCargoDescription($data),
-        'special_instructions' => !empty($data['instrucciones']) ? [$data['instrucciones']] : null,
-        'internal_notes' => 'Importado desde archivo Navsur'
-    ]);
-
-    Log::info('BillOfLading creado desde Navsur', [
-        'bill_id' => $bill->id,
-        'bill_number' => $bill->bill_number,
-        'bill_date' => $bill->bill_date->toDateString(),
-        'loading_date' => $bill->loading_date->toDateString()
-    ]);
-
-    return $bill;
-}
-
-protected function validateCargoTypeId(array $data): int
-{
-    // ✅ NAVSUR no tiene cargo_type_id - usar tipo general por defecto
-    Log::warning('⚠️ NAVSUR.TXT no contiene cargo_type_id - usando tipo general');
-    return 1; // General cargo como último recurso
-}
-
-/**
- * NUEVO MÉTODO: Mapear términos de flete
- */
-protected function mapFreightTerms(string $terms): string
-{
-    $terms = strtoupper(trim(str_replace(['/*', '*/'], '', $terms)));
-    
-    if (str_contains($terms, 'PREPAID') || str_contains($terms, 'PREPAGADO')) {
-        return 'prepaid';
+        return ManifestImport::createForImport([
+            'company_id'      => $companyId,
+            'user_id'         => $user->id,
+            'file_name'       => $fileName,
+            'file_format'     => 'navsur',
+            'file_size_bytes' => $fileSize,
+            'file_hash'       => $fileHash,
+            'parser_config'   => [
+                'parser_class' => self::class,
+            ],
+        ]);
     }
-    
-    if (str_contains($terms, 'COLLECT') || str_contains($terms, 'COBRAR')) {
-        return 'collect';
+
+    /**
+     * Crear BillOfLading
+     */
+    protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
+    {
+        // Obtener o crear clientes
+        $shipper = $this->findOrCreateClient($data['cargador_nombre'], 'shipper');
+        $consignee = $this->findOrCreateClient($data['consignatario_nombre'], 'consignee');
+        $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
+
+        // Obtener puertos
+        $loadingPort = $this->findOrCreatePort($data['puerto_carga']);
+        $dischargePort = $this->findOrCreatePort($data['puerto_descarga']);
+        $finalPort = !empty($data['destino_final']) 
+            ? $this->findOrCreatePort($data['destino_final'])
+            : $dischargePort;
+
+        // AGREGAR: Fechas obligatorias con valores por defecto
+        //$billDate = null; // Fecha actual como fallback
+        //$loadingDate = null->addDays(1); // Un día después para loading
+
+        // ✅ NAVSUR no incluye fechas - usar fecha actual como última opción
+        Log::warning('⚠️ NAVSUR.TXT no contiene fechas específicas - usando fecha actual');
+        $billDate = now();
+        $loadingDate = now()->addDays(1);
+
+        // Crear BL con campos obligatorios CORREGIDOS
+        $bill = BillOfLading::create([
+            'shipment_id' => $shipment->id,
+            'bill_number' => $data['numero_bl'],
+            'master_bill_number' => $data['cod_booking'] ?? null,
+            'internal_reference' => $data['cod_programacion'] ?? null,
+            
+            // AGREGADO: Campos de fecha obligatorios
+            'bill_date' => $billDate,
+            'loading_date' => $loadingDate,
+            
+            // Clientes
+            'shipper_id' => $shipper->id,
+            'consignee_id' => $consignee->id,
+            'notify_party_id' => $notify?->id,
+            
+            // Puertos
+            'loading_port_id' => $loadingPort->id,
+            'discharge_port_id' => $dischargePort->id,
+            'final_destination_port_id' => $finalPort->id,
+            
+            // Términos y estado
+            'freight_terms' => $this->mapFreightTerms($data['condicion_flete'] ?? 'PREPAID'),
+            'status' => 'draft',
+            
+            // Tipos obligatorios con valores por defecto
+            'primary_cargo_type_id' => $this->validateCargoTypeId($data),
+            'primary_packaging_type_id' => $this->validatePackagingTypeId($data), // Bags/Bultos
+            
+            // AGREGADO: Campos de peso obligatorios con valores por defecto
+            'gross_weight_kg' => floatval($data['peso_bruto'] ?? 0),
+            'net_weight_kg' => floatval($data['peso_neto'] ?? 0),
+            'total_packages' => intval($data['cantidad_bultos'] ?? 1),
+            'volume_m3' => floatval($data['cubitaje'] ?? 0),
+            
+            // CORREGIDO: campo cargo_description es obligatorio
+            'cargo_description' => $this->validateCargoDescription($data),
+            'special_instructions' => !empty($data['instrucciones']) ? [$data['instrucciones']] : null,
+            'internal_notes' => 'Importado desde archivo Navsur'
+        ]);
+
+        Log::info('BillOfLading creado desde Navsur', [
+            'bill_id' => $bill->id,
+            'bill_number' => $bill->bill_number,
+            'bill_date' => $bill->bill_date->toDateString(),
+            'loading_date' => $bill->loading_date->toDateString()
+        ]);
+
+        return $bill;
     }
-    
-    if (str_contains($terms, 'THIRD') || str_contains($terms, 'TERCERO')) {
-        return 'third_party';
+
+    protected function validateCargoTypeId(array $data): int
+    {
+        // ✅ NAVSUR no tiene cargo_type_id - usar tipo general por defecto
+        Log::warning('⚠️ NAVSUR.TXT no contiene cargo_type_id - usando tipo general');
+        return 1; // General cargo como último recurso
     }
-    
-    return 'prepaid'; // Default
-}
+
+    /**
+     * NUEVO MÉTODO: Mapear términos de flete
+     */
+    protected function mapFreightTerms(string $terms): string
+    {
+        $terms = strtoupper(trim(str_replace(['/*', '*/'], '', $terms)));
+        
+        if (str_contains($terms, 'PREPAID') || str_contains($terms, 'PREPAGADO')) {
+            return 'prepaid';
+        }
+        
+        if (str_contains($terms, 'COLLECT') || str_contains($terms, 'COBRAR')) {
+            return 'collect';
+        }
+        
+        if (str_contains($terms, 'THIRD') || str_contains($terms, 'TERCERO')) {
+            return 'third_party';
+        }
+        
+        return 'prepaid'; // Default
+    }
  
+    /**
+     * Vincular un Container con un ShipmentItem en el pivote container_shipment_item.
+     */
+    protected function attachContainerToItem(Container $container, ShipmentItem $item): void
+    {
+        $exists = DB::table('container_shipment_item')
+            ->where('container_id', $container->id)
+            ->where('shipment_item_id', $item->id)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        DB::table('container_shipment_item')->insert([
+            'container_id' => $container->id,
+            'shipment_item_id' => $item->id,
+            'package_quantity' => $item->package_quantity,
+            'gross_weight_kg' => $item->gross_weight_kg,
+            'net_weight_kg' => $item->net_weight_kg,
+            'volume_m3' => $item->volume_m3,
+            'status' => 'loaded',
+            'created_date' => now(),
+            'created_by_user_id' => auth()->id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
 
 /**
  * Crear Container
@@ -683,9 +783,13 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
             $hsCode = $matches[1];
         }
 
+        // line_number correlativo dentro del BL: el "ITEM:" del archivo reinicia en cada
+        // contenedor (1,2,3...), pero la BD exige line_number único por bill_of_lading.
+        $lineNumber = ShipmentItem::where('bill_of_lading_id', $bill->id)->count() + 1;
+
         $item = ShipmentItem::create([
             'bill_of_lading_id' => $bill->id,
-            'line_number' => intval($data['item'] ?? 1),
+            'line_number' => $lineNumber,
             'cargo_type_id' => 1,
             'packaging_type_id' => $this->mapPackagingType($data['embalaje'] ?? 'BAGS'),
             'package_quantity' => intval($data['cantidad'] ?? 1),
