@@ -611,7 +611,7 @@ Route::prefix('settings')->name('company.settings.')->group(function () {
 
 // Importación de archivos KLine.DAT
 Route::get('/imports/kline', [ImporterController::class, 'showForm'])->name('company.imports.kline');
-Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline');
+Route::post('/imports/kline', [ImporterController::class, 'import'])->name('company.imports.kline.import');
 
 
 

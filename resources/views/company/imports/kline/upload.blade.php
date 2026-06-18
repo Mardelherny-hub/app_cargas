@@ -21,7 +21,7 @@
             @endif
 
             <div class="bg-white shadow rounded-lg p-6">
-                <form action="{{ route('company.imports.kline') }}" method="POST" enctype="multipart/form-data">
+                <form action="{{ route('company.imports.kline.import') }}" method="POST" enctype="multipart/form-data">
                     @csrf
 
                     <div class="mb-4">
