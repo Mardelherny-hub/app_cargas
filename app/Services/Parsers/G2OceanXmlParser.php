@@ -12,6 +12,7 @@ use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Models\ManifestImport;
 use App\Models\CargoType;
 use App\Models\PackagingType;
@@ -36,6 +37,8 @@ use Carbon\Carbon;
  */
 class G2OceanXmlParser implements ManifestParserInterface
 {
+    use ExtractsEmbeddedTaxId;
+
     protected array $stats = [
         'processed' => 0,
         'errors' => 0,
@@ -304,7 +307,8 @@ class G2OceanXmlParser implements ManifestParserInterface
         // Solo al inicio, para no tocar paréntesis legítimos del nombre (ej: "(H.K.)").
         $name = preg_replace('/^\((?:CO|NF)\)\s*/i', '', trim($name));
         $address = $this->buildAddress($partyInfo->addressInfo ?? null);
-        $taxId = $this->extractTaxId($name . ' ' . $address);
+        // Helper común: cubre CUIT, CUIT NBR, RUC, CNPJ, NIT (busca en nombre y dirección).
+        $taxId = $this->resolveTaxId(null, $name, $address);
 
         return [
             'name' => $name ?: 'Desconocido',

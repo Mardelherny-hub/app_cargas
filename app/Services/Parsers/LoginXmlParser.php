@@ -20,6 +20,7 @@ use App\Models\Vessel;
 use App\Models\VesselType;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -45,6 +46,7 @@ use SimpleXMLElement;
  */
 class LoginXmlParser implements ManifestParserInterface
 {
+    use ExtractsEmbeddedTaxId;
     // Mapeo de tipos de contenedor del XML a tipos del sistema
     protected array $containerTypeMapping = [
         '40RH' => 'Reefer High Cube 40ft',
@@ -1001,6 +1003,9 @@ class LoginXmlParser implements ManifestParserInterface
 
         // Limpiar el nombre
         $cleanName = $this->cleanClientName($name);
+
+        // Resolver tax: estructurado > embebido en el nombre. Sin dato real -> null (no fabrica).
+        $taxId = $this->resolveTaxId($taxId, $name);
 
         Log::debug('findOrCreateClient - Búsqueda', [
             'name' => $name,

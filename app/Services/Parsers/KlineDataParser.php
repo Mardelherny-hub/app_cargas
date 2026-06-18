@@ -12,6 +12,7 @@ use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,8 @@ use Carbon\Carbon;
  */
 class KlineDataParser implements ManifestParserInterface
 {
+    use ExtractsEmbeddedTaxId;
+
     protected array $lines;
     protected array $stats = [
         'processed' => 0,
@@ -926,27 +929,10 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
      */
     protected function extractTaxIdFromLine(string $line): ?string
     {
-        $cleanLine = trim($line);
-        
-        // Buscar patrones de documentos fiscales
-        $patterns = [
-            '/(?:NIT[:\s]+)([0-9\.\-\/]+)/',        // NIT 860.025.792-3
-            '/(?:CUIT[:\s]+)([0-9\-]+)/',           // CUIT 30-50331781-4  
-            '/(?:CNPJ[:\s]+)([0-9\.\-\/]+)/',       // CNPJ 00.913.443/0001-73
-            '/(?:RUC[:\s]+)([0-9\-]+)/',            // RUC genérico
-        ];
-        
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $cleanLine, $matches)) {
-                $taxId = trim($matches[1]);
-                // Validar que tiene formato válido (al menos 8 caracteres con números)
-                if (strlen($taxId) >= 8 && preg_match('/[0-9]/', $taxId)) {
-                    return $taxId;
-                }
-            }
-        }
-        
-        return null;
+        // Delega en el helper común (cubre NIT/CUIT/CUIT NBR/CNPJ/RUC/TAX ID,
+        // normaliza a solo dígitos y rechaza ceros). Se aplica sobre el segmento
+        // de la parte ya aislado por la lógica posicional de Kline, no sobre el archivo.
+        return $this->extractEmbeddedTaxId($line);
     }
 
     /**
