@@ -16,6 +16,7 @@ use App\Models\ContainerType;
 use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\ManifestImport;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -31,6 +32,8 @@ use Exception;
  */
 class TfpTextParser implements ManifestParserInterface
 {
+    use ExtractsEmbeddedTaxId;
+
     protected array $stats = [
         'processed_bls' => 0,
         'processed_containers' => 0,
@@ -578,10 +581,9 @@ protected function extractValue(string $scope, string $label): ?string
         $name = trim($name);
         if (empty($name)) $name = 'Cliente TFP';
 
-        // RUC declarado (CARGADORRUC/CONSIGNATARIORUC/NOTIFICATARIORUC).
-        // Normalizar a solo dígitos; null si viene vacío. No se fabrica.
-        $normTaxId = $taxId ? preg_replace('/\D+/', '', $taxId) : null;
-        if ($normTaxId === '') $normTaxId = null;
+        // Prioridad: RUC declarado (CARGADORRUC/CONSIGNATARIORUC/NOTIFICATARIORUC) >
+        // tax embebido en el nombre (ej. "TECNOMOTOR S.A. TAX ID 80002427-3"). No se fabrica.
+        $normTaxId = $this->resolveTaxId($taxId, $name);
 
         // 1) Buscar por tax_id real (si hay)
         if ($normTaxId) {

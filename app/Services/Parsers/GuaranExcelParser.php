@@ -13,6 +13,7 @@ use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Models\User;
 use App\Models\ManifestImport;
 use Illuminate\Database\Eloquent\Model;
@@ -45,6 +46,7 @@ use Exception;
  */
 class GuaranExcelParser implements ManifestParserInterface
 {
+    use ExtractsEmbeddedTaxId;
     /**
      * Mapeo columnas A-BT basado en análisis real del archivo
      */
@@ -220,7 +222,8 @@ class GuaranExcelParser implements ManifestParserInterface
 
             // Archivo ya importado: el viaje y su envío ya existen (choca el índice
             // único voyage_id + vessel_id). Mensaje amable en lugar del error SQL.
-            if (strpos($e->getMessage(), 'uk_shipments_voyage_vessel') !== false) {
+            if (strpos($e->getMessage(), 'uk_shipments_voyage_vessel') !== false
+                || strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
                 return ManifestParseResult::failure([
                     'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
                 ]);
@@ -366,11 +369,10 @@ class GuaranExcelParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($voyageData['pol']);
         $destPort = $this->findOrCreatePort($voyageData['pod']);
 
-        // Verificar si existe
-        $existing = Voyage::where('voyage_number', $voyageData['voyage_number'])
-            ->where('company_id', $companyId)
-            ->first();
-            
+        // Verificar si existe. La unique es solo sobre voyage_number (global, sin company),
+        // así que se busca igual para no chocar el índice al intentar crear un duplicado.
+        $existing = Voyage::where('voyage_number', $voyageData['voyage_number'])->first();
+
         if ($existing) {
             return $existing;
         }
@@ -984,10 +986,9 @@ class GuaranExcelParser implements ManifestParserInterface
         // Un cliente con ese tax_id+pais existe una sola vez aunque lo hayan cargado
         // distintas empresas. Buscar por nombre+company no lo encontraba y el INSERT
         // chocaba con la unique (SQLSTATE 23000).
-        $taxId = $this->extractTaxId($data['address'] ?? '');
-
-        // No fabricar: si el documento no declara RUC/CUIT, el tax_id queda null.
-        $taxId = $taxId ? substr($taxId, 0, 11) : null;
+        // Tax desde dirección o nombre (helper común: cubre RUC/CUIT/TAXID/CNPJ/NIT).
+        // No fabricar: si no hay dato real, queda null.
+        $taxId = $this->resolveTaxId(null, $data['name'] ?? null, $data['address'] ?? null);
 
         $countryId = $this->mapCountryName($data['country']);
 

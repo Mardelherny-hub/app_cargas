@@ -12,6 +12,7 @@ use App\Models\Container;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\Vessel;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Models\ContainerType;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +33,8 @@ use Exception;
  */
 class ParanaExcelParser implements ManifestParserInterface
 {
+    use ExtractsEmbeddedTaxId;
+
     // Mapeo exacto de columnas según análisis real
     protected array $columnMap = [
         // Información de la empresa
@@ -454,22 +457,23 @@ class ParanaExcelParser implements ManifestParserInterface
         // Obtener o crear clientes
         $shipper = $this->findOrCreateClient([
             'name' => $data['SHIPPER_NAME'] ?? 'Shipper Unknown',
-            'address' => $data['SHIPPER_ADDRESS1'] ?? null,  // CORREGIDO: era SHIPPER_ADDRESS
-            'phone' => $data['SHIPPER_PHONE'] ?? null
+            'address' => $data['SHIPPER_ADDRESS1'] ?? null,
+            'phone' => $data['SHIPPER_PHONE'] ?? null,
+            // El CUIT/RUC viene embebido en la dirección (no hay campo estructurado).
+            'tax_id' => $this->resolveTaxId(null, $data['SHIPPER_NAME'] ?? null, $data['SHIPPER_ADDRESS1'] ?? null),
         ], $shipment->voyage->company_id);
 
-        // MEJORADO: Parsear datos mezclados del consignatario
         $consigneeData = [
-            'name' => $data['CONSIGNEE_NAME'] ?? 'Consignee Unknown', 
+            'name' => $data['CONSIGNEE_NAME'] ?? 'Consignee Unknown',
             'address' => $data['CONSIGNEE_ADDRESS1'] ?? null,
-            'phone' => $data['CONSIGNEE_PHONE'] ?? null
+            'phone' => $data['CONSIGNEE_PHONE'] ?? null,
+            // CUIT/RUC embebido en nombre o dirección (sin campo estructurado).
+            'tax_id' => $this->resolveTaxId(
+                null,
+                $data['CONSIGNEE_NAME'] ?? null,
+                $data['CONSIGNEE_ADDRESS1'] ?? null
+            ),
         ];
-
-        // Si la dirección es muy larga, probablemente tiene datos mezclados
-        if (isset($consigneeData['address']) && strlen($consigneeData['address']) > 100) {
-            $parsed = $this->parseConsigneeMixedData($consigneeData['address']);
-            $consigneeData = array_merge($consigneeData, $parsed);
-        }
 
         $consignee = $this->findOrCreateClient($consigneeData, $shipment->voyage->company_id);
 
