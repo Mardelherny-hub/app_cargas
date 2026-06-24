@@ -246,6 +246,7 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    window.location.href = result.download_url;
                     showSuccessMessage(result.message, result.download_url);
                 } else {
                     showErrorMessage(result.error || 'Error generando archivo MANE');
@@ -278,6 +279,7 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    window.location.href = result.download_url;
                     showSuccessMessage(result.message, result.download_url);
                     clearSelection();
                 } else {
