@@ -54,6 +54,7 @@ class SettingsController extends Controller
                 'city' => $company->city,
                 'state' => $company->state,
                 'postal_code' => $company->postal_code,
+                'id_maria' => $company->id_maria,
             ],
             'webservices' => [
                 'ws_environment' => $company->ws_environment,
@@ -62,6 +63,7 @@ class SettingsController extends Controller
             ],
             'argentina' => $company->getArgentinaConfig(),    // ← AGREGAR ESTO
             'paraguay' => $company->getParaguayConfig(),      // ← AGREGAR ESTO
+            'business_roles' => $company->company_roles,
         ];
 
         // Estadísticas de configuración
