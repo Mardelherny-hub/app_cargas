@@ -959,7 +959,7 @@
                                        maxlength="15"
                                        placeholder="1234.56.78.90"
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
-                                <p class="mt-1 text-xs text-gray-500">Mínimo 7 caracteres, máximo 15 (incluye puntos)</p>
+                                <p class="mt-1 text-xs text-gray-500">Máximo 10 caracteres (incluye puntos)</p>
                                 @error('tariff_position')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror

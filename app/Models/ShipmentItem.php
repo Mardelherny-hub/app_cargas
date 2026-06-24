@@ -169,6 +169,7 @@ class ShipmentItem extends Model
         'foreign_forwarder_name',
         'foreign_forwarder_tax_id',
         'foreign_forwarder_country',
+        'container_condition',
         'discharge_customs_code',
         'operational_discharge_code',
         'comments',
