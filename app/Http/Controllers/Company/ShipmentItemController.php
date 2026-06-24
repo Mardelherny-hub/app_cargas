@@ -708,7 +708,7 @@ return view('company.shipment-items.edit', compact(
             'inspection_type' => 'nullable|in:customs,quality,sanitary,security,environmental',
             
             // Campos AFIP / Aduaneros
-            'tariff_position' => 'nullable|string|min:7|max:15',
+            'tariff_position' => 'nullable|string|max:10',
             'is_secure_logistics_operator' => 'nullable|in:S,N',
             'is_monitored_transit' => 'nullable|in:S,N',
             'is_renar' => 'nullable|in:S,N',
