@@ -1444,7 +1444,7 @@ protected function extractPortInfo(array $data): array
     if (count($foundCodes) < 2) {
         // Alias de la ZONA (podés ajustar el puerto destino del alias si querés)
         $aliasMap = [
-            'DELTA DOCK'      => 'ARCAM',   // Campana (Delta Dock - Lima)
+            'DELTA DOCK'      => 'ARBUE',   // Delta Dock = terminal; se informa Buenos Aires (confirmado Roberto 24/06)
             'RIO DE JANEIRO'  => 'BRRIO',   // Rio de Janeiro
             'BUENOS AIRES'    => 'ARBUE',   // Puerto de Buenos Aires
             'ASUNCION'        => 'PYASU',   // Asunción
