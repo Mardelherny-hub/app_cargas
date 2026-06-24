@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
-use App\Services\FileGeneration\ManeFileGeneratorService;
+use App\Services\Webservice\ManeFileGeneratorService;
 use App\Models\Voyage;
 use App\Traits\UserHelper;
 use Illuminate\Http\Request;
