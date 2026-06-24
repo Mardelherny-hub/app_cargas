@@ -137,6 +137,17 @@ class CmspEdiParser implements ManifestParserInterface
 
         } catch (Exception $e) {
             $this->stats['errors']++;
+
+            // Archivo ya importado: el viaje y su envío ya existen (choca el índice
+            // único voyage_id + vessel_id). Mensaje amable en lugar del error SQL.
+            if (strpos($e->getMessage(), 'uk_shipments_voyage_vessel') !== false
+                || strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false
+                || strpos($e->getMessage(), 'ya fue importado anteriormente') !== false) {
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ]);
+            }
+
             if (isset($importRecord)) {
                 $importRecord->markAsFailed([$e->getMessage()], [
                     'import_statistics' => $this->stats,
@@ -722,6 +733,14 @@ class CmspEdiParser implements ManifestParserInterface
         $dischargePort = $data['ports']['discharge'] ?? 'PYASU';
         
         $cargoType = $this->determineCargTypeFromPorts($loadingPort, $dischargePort);
+
+        // Verificar si existe. La unique es solo sobre voyage_number (global, sin company),
+        // así que se busca igual para no chocar el índice al intentar crear un duplicado.
+        $existing = Voyage::where('voyage_number', $voyageNumber)->first();
+
+        if ($existing) {
+            return $existing;
+        }
 
         return Voyage::create([
             'company_id' => $companyId,

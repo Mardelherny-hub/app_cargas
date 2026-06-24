@@ -1422,12 +1422,25 @@ protected function extractPortInfo(array $data): array
 
     // Únicos y en orden
     $foundCodes = array_values(array_unique($foundCodes));
-
-    // 2) Fallback por NOMBRE (alias) si no encontramos suficientes códigos UN/LOCODE.
-    // FIX QA #2: antes solo corría si $foundCodes estaba vacío, lo que dejaba afuera
-    // casos como K-Line donde COCTG (Cartagena) era válido pero "DELTA DOCK"/AR00F
-    // no se detectaba (AR00F es descartado por anti-falsos UN/LOCODE).
-    // Ahora corre siempre que falte algún puerto (origen o destino).
+    // OPCIÓN B (QA): validar candidatos sintácticos contra el catálogo ports.
+    // Los falsos positivos con forma LOCODE (p.ej. "DELTA" de "DELTA DOCK" = DE+LTA)
+    // no existen en ports y se descartan acá, de forma genérica y sin excepciones
+    // puntuales. Conservamos los crudos para debug. Los alias curados (abajo) sí
+    // pasan al resolver estricto aunque falten en catálogo, para surfacear el error.
+    $rawSyntactic = $foundCodes;
+    $dbSet = array_flip(
+        \App\Models\Port::query()
+            ->pluck('code')
+            ->map(fn ($c) => strtoupper($c))
+            ->all()
+    );
+    $foundCodes = array_values(array_filter(
+        $foundCodes,
+        fn ($c) => isset($dbSet[$c])
+    ));
+    // 2) Fallback por NOMBRE (alias): corre solo cuando NO hay suficientes puertos
+    // VÁLIDOS en catálogo (antes contaba candidatos sin validar, y un falso positivo
+    // como "DELTA" inflaba el conteo a 2 y bloqueaba este fallback).
     if (count($foundCodes) < 2) {
         // Alias de la ZONA (podés ajustar el puerto destino del alias si querés)
         $aliasMap = [
@@ -1472,19 +1485,20 @@ protected function extractPortInfo(array $data): array
         $foundCodes = array_values(array_unique($foundCodes));
     }
 
-    // Si aún no hay candidatos, devolvemos null/null (validará aguas arriba)
+    // Si no quedan candidatos resolubles, logueamos los crudos detectados para
+    // distinguir un falso positivo de un hueco real de catálogo, y devolvemos
+    // null/null (la validación aguas arriba reportará la falta de puertos).
     if (empty($foundCodes)) {
+        Log::warning('KLine extractPortInfo: sin puertos resolubles', [
+            'raw_syntactic' => $rawSyntactic ?? [],
+        ]);
         return $portInfo;
     }
 
-    // 3) Preferir puertos ya existentes en BD
-    $dbSet = array_flip(
-        \App\Models\Port::query()
-            ->pluck('code')
-            ->map(fn ($c) => strtoupper($c))
-            ->all()
-    );
-
+    // 3) Ordenar: puertos en catálogo primero (reusa $dbSet ya consultado arriba).
+    // $foundCodes acá = sintácticos validados + alias curados; un alias que resuelva
+    // a un código ausente (p.ej. ARCAM) queda en $notInDb y pasa igual al resolver
+    // estricto, que tirará el error claro "no existe en catálogo".
     $inDb = []; $notInDb = [];
     foreach ($foundCodes as $code) {
         if (isset($dbSet[$code])) {
