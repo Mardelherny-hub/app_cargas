@@ -21,6 +21,7 @@ use App\Models\VesselType;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -47,6 +48,7 @@ use SimpleXMLElement;
 class LoginXmlParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use EnsuresUniqueVoyageNumber;
     // Mapeo de tipos de contenedor del XML a tipos del sistema
     protected array $containerTypeMapping = [
         '40RH' => 'Reefer High Cube 40ft',
@@ -650,6 +652,10 @@ class LoginXmlParser implements ManifestParserInterface
         // Crear o encontrar embarcación líder
         $vesselName = $data['voyage']['vessel_name'] ?? 'Login Vessel';
         $leadVessel = $this->findOrCreateVessel($vesselName, $company->id);
+
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de chocar el índice.
+        $this->guardVoyageNumberIsFree($data['voyage']['voyage_number']);
 
         return Voyage::create([
             'voyage_number' => $data['voyage']['voyage_number'],
