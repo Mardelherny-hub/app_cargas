@@ -19,7 +19,6 @@ use App\ValueObjects\ManifestParseResult;
  * IMPLEMENTACIONES DISPONIBLES:
  * - KlineDataParser: Archivos .DAT de K-Line
  * - ParanaExcelParser: Excel MAERSK (.xlsx)
- * - GuaranCsvParser: CSV consolidado multi-línea
  * - LoginXmlParser: XML anidado completo
  * - TfpTextParser: Formato jerárquico con delimitadores
  * - CmspEdiParser: EDI CUSCAR estándar
