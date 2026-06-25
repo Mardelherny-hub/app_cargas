@@ -14,6 +14,7 @@ use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Models\User;
 use App\Models\ManifestImport;
 use Illuminate\Database\Eloquent\Model;
@@ -47,6 +48,7 @@ use Exception;
 class GuaranExcelParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use EnsuresUniqueVoyageNumber;
     /**
      * Mapeo columnas A-BT basado en análisis real del archivo
      */
@@ -369,13 +371,9 @@ class GuaranExcelParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($voyageData['pol']);
         $destPort = $this->findOrCreatePort($voyageData['pod']);
 
-        // Verificar si existe. La unique es solo sobre voyage_number (global, sin company),
-        // así que se busca igual para no chocar el índice al intentar crear un duplicado.
-        $existing = Voyage::where('voyage_number', $voyageData['voyage_number'])->first();
-
-        if ($existing) {
-            return $existing;
-        }
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de reusar el viaje.
+        $this->guardVoyageNumberIsFree($voyageData['voyage_number']);
 
         // Crear con datos reales
         return Voyage::create([
