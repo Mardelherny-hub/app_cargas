@@ -143,6 +143,13 @@ class CmspEdiParser implements ManifestParserInterface
             if (strpos($e->getMessage(), 'uk_shipments_voyage_vessel') !== false
                 || strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false
                 || strpos($e->getMessage(), 'ya fue importado anteriormente') !== false) {
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([
+                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
+                    ], [
+                        'import_statistics' => $this->stats,
+                    ]);
+                }
                 return ManifestParseResult::failure([
                     'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
                 ]);
