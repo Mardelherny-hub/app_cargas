@@ -5,6 +5,7 @@ namespace App\Services\Parsers;
 use App\Contracts\ManifestParserInterface;
 use App\ValueObjects\ManifestParseResult;
 use App\Models\Voyage;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\Container;
@@ -40,6 +41,8 @@ use Exception;
  */
 class CmspEdiParser implements ManifestParserInterface
 {
+    use EnsuresUniqueVoyageNumber;
+
     protected array $stats = [
         'processed_containers' => 0,
         'processed_items' => 0,
@@ -741,13 +744,9 @@ class CmspEdiParser implements ManifestParserInterface
         
         $cargoType = $this->determineCargTypeFromPorts($loadingPort, $dischargePort);
 
-        // Verificar si existe. La unique es solo sobre voyage_number (global, sin company),
-        // así que se busca igual para no chocar el índice al intentar crear un duplicado.
-        $existing = Voyage::where('voyage_number', $voyageNumber)->first();
-
-        if ($existing) {
-            return $existing;
-        }
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de reusar el viaje.
+        $this->guardVoyageNumberIsFree($voyageNumber);
 
         return Voyage::create([
             'company_id' => $companyId,
