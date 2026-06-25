@@ -13,6 +13,7 @@ use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Models\ManifestImport;
 use App\Models\CargoType;
 use App\Models\PackagingType;
@@ -38,6 +39,7 @@ use Carbon\Carbon;
 class G2OceanXmlParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use EnsuresUniqueVoyageNumber;
 
     protected array $stats = [
         'processed' => 0,
@@ -213,6 +215,18 @@ class G2OceanXmlParser implements ManifestParserInterface
             });
 
         } catch (Exception $e) {
+            // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
+            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([
+                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
+                    ], ['errors_count' => 1]);
+                }
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ], [], $this->stats);
+            }
+
             Log::error('Critical error in G2Ocean parser', [
                 'file_path' => $filePath,
                 'error' => $e->getMessage(),
@@ -531,14 +545,9 @@ class G2OceanXmlParser implements ManifestParserInterface
         // Generar voyage number
         $voyageNumber = 'G2O-' . ($blData['vessel_name'] ?? 'VESSEL') . '-' . ($blData['voyage_number'] ?? date('Ymd'));
 
-        // Verificar duplicado
-        $existingVoyage = Voyage::where('voyage_number', $voyageNumber)
-            ->where('company_id', $companyId)
-            ->first();
-
-        if ($existingVoyage) {
-            return $existingVoyage;
-        }
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de reusar el viaje.
+        $this->guardVoyageNumberIsFree($voyageNumber);
 
         // Fechas
         $etd = $blData['loading_date'] ?: Carbon::now()->addDays(7);
