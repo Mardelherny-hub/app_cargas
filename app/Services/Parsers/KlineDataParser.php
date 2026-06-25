@@ -13,6 +13,7 @@ use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +38,7 @@ use Carbon\Carbon;
 class KlineDataParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use EnsuresUniqueVoyageNumber;
 
     protected array $lines;
     protected array $stats = [
@@ -270,6 +272,18 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             });
 
         } catch (Exception $e) {
+            // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
+            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([
+                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
+                    ], ['errors_count' => 1]);
+                }
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ], [], $this->stats);
+            }
+
             Log::error('Critical error in KLine parser', [
                 'file_path' => $filePath,
                 'error' => $e->getMessage(),
@@ -395,15 +409,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
         $voyageNumber = 'KLINE-' . ($voyageInfo['voyage_number'] ?? date('YmdHis'));
 
-        // CORREGIDO: Verificar duplicado voyage sin throw Exception
-        $existingVoyage = Voyage::where('voyage_number', $voyageNumber)
-            ->where('company_id', $companyId)
-            ->first();
-
-        if ($existingVoyage) {
-            Log::info('Voyage ya existe, reutilizando', ['voyage_id' => $existingVoyage->id]);
-            return $existingVoyage;
-        }
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de reusar el viaje.
+        $this->guardVoyageNumberIsFree($voyageNumber);
 
         // Fechas estimadas desde el .DAT (si existen) o fallback
         $dates = $this->extractDates($firstBL['data'] ?? $data ?? []); // si ya lo tenés, reutilizalo
