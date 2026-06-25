@@ -13,6 +13,7 @@ use App\Models\Client;
 use App\Models\Port;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Models\ContainerType;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -34,6 +35,7 @@ use Exception;
 class ParanaExcelParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use EnsuresUniqueVoyageNumber;
 
     // Mapeo exacto de columnas según análisis real
     protected array $columnMap = [
@@ -248,6 +250,18 @@ class ParanaExcelParser implements ManifestParserInterface
             );
 
         } catch (Exception $e) {
+            // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
+            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([
+                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
+                    ], ['errors_count' => 1]);
+                }
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ]);
+            }
+
             Log::error('PARANA parsing failed', [
                 'file' => $filePath,
                 'error' => $e->getMessage()
@@ -344,13 +358,15 @@ class ParanaExcelParser implements ManifestParserInterface
             $vessel = $this->findOrCreateVessel($data['barge_name'] ?? 'PAR13001', $companyId);
         }
 
-        $voyageNumber = 'PARANA-' . now()->format('YmdHis') . '-' . uniqid();
+        // Usar el número de viaje real del archivo (celda N). Antes se generaba uno
+        // sintético con uniqid() — parche temporal de testing (06/08/2025) que rompía
+        // la detección de duplicados. El voyage_number es único global; el guard avisa
+        // si ya existe.
+        $voyageNumber = $data['voyage_number'];
 
-        // VALIDACIÓN: Verificar si ya existe Viaje con este número
-        $existingVoyage = Voyage::where('voyage_number', $voyageNumber)->first();
-        if ($existingVoyage) {
-            throw new \Exception("Ya existe un viaje con número: {$voyageNumber}.");
-        }
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de chocar el índice.
+        $this->guardVoyageNumberIsFree($voyageNumber);
 
         return Voyage::create([
             'company_id' => $companyId,
