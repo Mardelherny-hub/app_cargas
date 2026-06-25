@@ -14,6 +14,7 @@ use App\Models\Port;
 use App\Models\Vessel;
 use App\Models\ContainerType;
 use App\Models\ManifestImport;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -29,6 +30,8 @@ use Exception;
  */
 class NavsurTextParser implements ManifestParserInterface
 {
+    use EnsuresUniqueVoyageNumber;
+
     protected array $stats = [
         'processed_bls' => 0,
         'processed_containers' => 0,
@@ -198,6 +201,18 @@ class NavsurTextParser implements ManifestParserInterface
             );
 
         } catch (Exception $e) {
+            // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
+            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([
+                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
+                    ], ['import_statistics' => $this->stats]);
+                }
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ], $this->stats['warnings'], $this->stats);
+            }
+
             if (isset($importRecord)) {
                 $importRecord->markAsFailed([$e->getMessage()], [
                     'import_statistics' => $this->stats,
@@ -440,13 +455,9 @@ class NavsurTextParser implements ManifestParserInterface
             throw new \Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
         }
 
-        $voyage = Voyage::where('voyage_number', $data['voyage_number'])
-            ->where('company_id', $companyId)
-            ->first();
-
-        if ($voyage) {
-            return $voyage;
-        }
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de reusar el viaje.
+        $this->guardVoyageNumberIsFree($data['voyage_number']);
 
         // Buscar o crear vessel con campos obligatorios correctos
         $vesselName = $data['vessel_name'] ?? 'NAVSUR VESSEL';
