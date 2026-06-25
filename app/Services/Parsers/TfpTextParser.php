@@ -17,6 +17,7 @@ use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -33,6 +34,7 @@ use Exception;
 class TfpTextParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use EnsuresUniqueVoyageNumber;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -185,6 +187,18 @@ class TfpTextParser implements ManifestParserInterface
             );
 
         } catch (Exception $e) {
+            // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
+            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([
+                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
+                    ], ['import_statistics' => $this->stats]);
+                }
+                return ManifestParseResult::failure([
+                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
+                ], $this->stats['warnings'], $this->stats);
+            }
+
             if (isset($importRecord)) {
                 $importRecord->markAsFailed([$e->getMessage()], [
                     'import_statistics' => $this->stats,
@@ -378,6 +392,10 @@ protected function extractValue(string $scope, string $label): ?string
 
         $originPort = $this->findOrCreatePort($data['pol']);
         $destPort = $this->findOrCreatePort($data['pod']);
+
+        // El voyage_number es único global. Si ya existe (en cualquier empresa),
+        // se bloquea la importación con un error claro en lugar de chocar el índice.
+        $this->guardVoyageNumberIsFree($data['voyage_number']);
 
         $voyage = Voyage::create([
             'voyage_number' => $data['voyage_number'],
