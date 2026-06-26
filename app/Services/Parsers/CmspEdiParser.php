@@ -6,6 +6,7 @@ use App\Contracts\ManifestParserInterface;
 use App\ValueObjects\ManifestParseResult;
 use App\Models\Voyage;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\Container;
@@ -42,6 +43,7 @@ use Exception;
 class CmspEdiParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
+    use ExtractsEmbeddedTaxId;
 
     protected array $stats = [
         'processed_containers' => 0,
@@ -1180,11 +1182,24 @@ class CmspEdiParser implements ManifestParserInterface
             throw new Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
         }
     
-        // 1. Buscar por nombre legal
-        $client = Client::where('legal_name', $partyData['name'])
-            ->where('created_by_company_id', $companyId)
-            ->first();
-    
+        // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
+        $taxId = $this->resolveTaxId(null, $partyData['name'] ?? null);
+
+        // 1. Buscar por tax_id de forma GLOBAL (mismo CUIT = mismo cliente, sin importar empresa)
+        if ($taxId) {
+            $client = Client::where('tax_id', $taxId)->first();
+            if ($client) {
+                Log::info('Cliente encontrado por tax_id', [
+                    'tax_id' => $taxId,
+                    'client_id' => $client->id
+                ]);
+                return $client;
+            }
+        }
+
+        // 2. Si no se encontró por tax_id, buscar por nombre legal (global)
+        $client = Client::where('legal_name', $partyData['name'])->first();
+
         if ($client) {
             Log::info('Cliente encontrado por nombre legal', [
                 'name' => $partyData['name'],
@@ -1192,16 +1207,16 @@ class CmspEdiParser implements ManifestParserInterface
             ]);
             return $client;
         }
-    
-        // 2. Si no existe, crear nuevo cliente sin fabricar tax_id (null si el documento no lo declara)
-            $client = Client::create([
-                'created_by_company_id' => $companyId,
-                'legal_name' => $partyData['name'],
-                'commercial_name' => $partyData['name'],
-                'tax_id' => null,
-                'country_id' => 1,
-                'document_type_id' => 1,
-            ]);
+
+        // 3. Si no existe ni por tax_id ni por nombre, crear (tax_id real o null, sin fabricar)
+        $client = Client::create([
+            'created_by_company_id' => $companyId,
+            'legal_name' => $partyData['name'],
+            'commercial_name' => $partyData['name'],
+            'tax_id' => $taxId,
+            'country_id' => 1,
+            'document_type_id' => 1,
+        ]);
     
             Log::info('Cliente creado automáticamente', [
                 'name' => $partyData['name'],
