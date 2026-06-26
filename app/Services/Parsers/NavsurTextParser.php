@@ -15,6 +15,7 @@ use App\Models\Vessel;
 use App\Models\ContainerType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -31,6 +32,7 @@ use Exception;
 class NavsurTextParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
+    use ExtractsEmbeddedTaxId;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -832,7 +834,22 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
             return null;
         }
 
-        // Buscar existente
+        // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
+        $taxId = $this->resolveTaxId(null, $name);
+
+        // 1. Buscar por tax_id de forma GLOBAL (mismo CUIT = mismo cliente, sin importar empresa)
+        if ($taxId) {
+            $client = Client::where('tax_id', $taxId)->first();
+            if ($client) {
+                Log::info('Cliente encontrado por tax_id', [
+                    'tax_id' => $taxId,
+                    'client_id' => $client->id
+                ]);
+                return $client;
+            }
+        }
+
+        // 2. Si no se encontró por tax_id, buscar por nombre (global)
         $client = Client::where('legal_name', $name)
             ->orWhere('commercial_name', $name)
             ->first();
@@ -867,9 +884,9 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
             $countryId = 2; // Paraguay
         }
 
-        // Crear cliente (sin fabricar tax_id: queda null si el documento no lo declara)
+        // Crear cliente (tax_id real si vino embebido; null si no, sin fabricar)
         $client = Client::create([
-            'tax_id' => null,
+            'tax_id' => $taxId,
             'country_id' => $countryId,
             'document_type_id' => $countryId == 1 ? 1 : 2, // CUIT o RUC
             'legal_name' => $name,
@@ -879,7 +896,9 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
             'verified_at' => now() // Agregar timestamp de verificación
         ]);
 
-        $this->stats['warnings'][] = "Cliente '{$name}' creado sin tax_id declarado.";
+        if (!$taxId) {
+            $this->stats['warnings'][] = "Cliente '{$name}' creado sin tax_id declarado.";
+        }
 
         return $client;
     }
