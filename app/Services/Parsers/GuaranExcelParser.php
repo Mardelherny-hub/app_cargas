@@ -15,6 +15,7 @@ use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Models\User;
 use App\Models\ManifestImport;
 use Illuminate\Database\Eloquent\Model;
@@ -49,6 +50,7 @@ class GuaranExcelParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use ResolvesClientAddresses;
     /**
      * Mapeo columnas A-BT basado en análisis real del archivo
      */
@@ -600,7 +602,7 @@ class GuaranExcelParser implements ManifestParserInterface
             ? array_sum(array_map(fn($r) => (float) ($r['VOLUME'] ?? 0), $blRows))
             : (float) ($row['VOLUME'] ?? 0);
 
-        return BillOfLading::create([
+        $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
@@ -626,6 +628,27 @@ class GuaranExcelParser implements ManifestParserInterface
             'permiso_embarque' => $row['MLO_BL_NR'] ?: null,
             'created_by_user_id' => auth()->id()
         ]);
+
+        // Direcciones de las partes (Guaran trae dirección limpia en columnas).
+        // Etapa 1: si el cliente no tiene dirección en ficha, se la registra.
+        // Etapa 2: si ya tiene una distinta, se guarda como dirección específica
+        // de ESTE conocimiento, en su rol (no se pisa el padrón del cliente).
+        $partes = [
+            ['client' => $shipper,     'addr' => $row['SHIPPER_ADDRESS1']      ?? null, 'role' => 'shipper'],
+            ['client' => $consignee,   'addr' => $row['CONSIGNEE_ADDRESS1']    ?? null, 'role' => 'consignee'],
+            ['client' => $notifyParty, 'addr' => $row['NOTIFY_PARTY_ADDRESS1'] ?? null, 'role' => 'notify_party'],
+        ];
+
+        foreach ($partes as $parte) {
+            $this->persistClientAddress($parte['client'], $parte['addr']);
+
+            $specific = $this->resolveSpecificAddress($parte['client'], $parte['addr'], $parte['role']);
+            if ($specific) {
+                $bill->specificContacts()->create($specific);
+            }
+        }
+
+        return $bill;
     }
 
     /**
@@ -990,6 +1013,35 @@ class GuaranExcelParser implements ManifestParserInterface
 
         $countryId = $this->mapCountryName($data['country']);
 
+        // Inferencia de pais por longitud del tax_id (criterio aprobado QA 29/06).
+        // El Excel de Guaran NO trae la columna _COUNTRY (viene vacia), por lo que
+        // mapCountryName() cae siempre al default. Se refina aca usando la estructura
+        // del identificador fiscal ya resuelto, que es deterministica:
+        //   - 11 digitos  => CUIT argentino  => Argentina (id 11)
+        //   - 7 a 9 digitos => RUC paraguayo  => Paraguay  (id 174)
+        // IDs verificados contra la tabla countries (AR=11, PY=174).
+        // Solo afecta clientes NUEVOS: si el cliente ya existe, las busquedas de abajo
+        // lo devuelven sin modificar (no se pisa el pais de un cliente existente).
+        if ($taxId) {
+            $taxLen = strlen($taxId); // resolveTaxId ya devuelve solo digitos
+            if ($taxLen === 11) {
+                $countryId = 11;  // Argentina
+                Log::info('Guaran: pais inferido por tax_id', ['tax_id' => $taxId, 'len' => $taxLen, 'country_id' => 11, 'pais' => 'Argentina']);
+            } elseif ($taxLen >= 7 && $taxLen <= 9) {
+                $countryId = 174; // Paraguay
+                Log::info('Guaran: pais inferido por tax_id', ['tax_id' => $taxId, 'len' => $taxLen, 'country_id' => 174, 'pais' => 'Paraguay']);
+            }
+            // Longitudes fuera de 7-9 y distintas de 11: no se infiere, queda lo de mapCountryName.
+        } else {
+            // Sin tax_id confiable: no se infiere pais. Queda lo que devolvio mapCountryName
+            // (en Guaran, por columna vacia, sera el default). Se marca para revision:
+            // QA no aprueba "default Paraguay" como regla, pero la DB exige country_id NOT NULL.
+            Log::warning('Guaran: cliente sin tax_id, pais NO confiable (revisar)', [
+                'name'       => $data['name'] ?? null,
+                'country_id' => $countryId,
+            ]);
+        }
+
         // 1. Buscar por la clave unica real (tax_id + country_id), solo si hay tax_id real
         if ($taxId) {
             $client = Client::where('tax_id', $taxId)
@@ -1016,7 +1068,16 @@ class GuaranExcelParser implements ManifestParserInterface
             'city' => $data['city'],
             'phone' => $data['phone'],
             'country_id' => $countryId,
-            'document_type_id' => $taxId ? 1 : 5, // 1=RUC/CUIT, 5=Otro
+            // Tipo de documento segun el pais real del cliente (verificado en document_types):
+            // Argentina(11)->CUIT(1), Paraguay(174)->RUC(3). El numero (tax_id) puede ir null,
+            // pero el TIPO siempre corresponde al pais. Default RUC para el resto (Guaran es PY->AR).
+            'document_type_id' => $countryId === 11 ? 1 : 3,
+            // verified_at explicito: la creacion ocurre dentro de Model::withoutEvents()
+            // (en parse(), para evitar recalculos en cascada), por lo que el hook 'creating'
+            // del modelo Client -que normalmente setea verified_at- no se dispara. Sin esto,
+            // el cliente queda con verified_at=NULL y el listado (whereNotNull('verified_at'))
+            // no lo muestra aunque exista y este activo.
+            'verified_at' => now(),
             'created_by_user_id' => auth()->id()
         ]);
     }
@@ -1040,14 +1101,16 @@ class GuaranExcelParser implements ManifestParserInterface
 
     protected function mapCountryName(?string $name): int
     {
-        if (!$name) return 2; // Paraguay default
-        
+        // IDs reales de la tabla countries (verificado): AR=11, BR=32, PY=174, UY=238.
+        // Guaran es PY->AR, por eso Paraguay queda como default.
+        if (!$name) return 174; // Paraguay default
+
         return match(strtolower($name)) {
-            'argentina' => 1,
-            'paraguay' => 2,
-            'brasil', 'brazil' => 3,
-            'uruguay' => 4,
-            default => 2
+            'argentina' => 11,
+            'paraguay' => 174,
+            'brasil', 'brazil' => 32,
+            'uruguay' => 238,
+            default => 174
         };
     }
 
