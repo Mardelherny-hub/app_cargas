@@ -173,6 +173,18 @@
                                            maxlength="10"
                                            class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm w-full">
                                 </div>
+                                <div>
+                                    <label for="codigo_afip" class="block text-sm font-medium text-gray-700 mb-1">
+                                        Código AFIP de país (MANE)
+                                    </label>
+                                    <p class="text-xs text-gray-400 mb-1">Código de país propio de AFIP para el archivo MANE. Ej: Argentina 200, Paraguay 221.</p>
+                                    <input type="text" 
+                                           id="codigo_afip" 
+                                           name="codigo_afip"
+                                           value="{{ old('codigo_afip') }}"
+                                           maxlength="3"
+                                           class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm w-full">
+                                </div>
 
                                 <div>
                                     <label for="senasa_code" class="block text-sm font-medium text-gray-700 mb-1">

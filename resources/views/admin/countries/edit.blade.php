@@ -216,6 +216,23 @@
                                     @enderror
                                 </div>
 
+                                <!-- Código AFIP (país) — usado en archivo MANE/SIM -->
+                                <div>
+                                    <label for="codigo_afip" class="block text-sm font-medium text-gray-700">
+                                        Código AFIP de país (MANE)
+                                    </label>
+                                    <p class="text-xs text-gray-400 mb-1">Código de país propio de AFIP para el archivo MANE. Ej: Argentina 200, Paraguay 221.</p>
+                                    <input type="text" 
+                                           name="codigo_afip" 
+                                           id="codigo_afip" 
+                                           value="{{ old('codigo_afip', $country->codigo_afip) }}"
+                                           maxlength="3"
+                                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('codigo_afip') border-red-300 @enderror">
+                                    @error('codigo_afip')
+                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
                                 <!-- Código SENASA -->
                                 <div>
                                     <label for="senasa_code" class="block text-sm font-medium text-gray-700">
@@ -323,6 +340,7 @@
                                     <input id="allows_import" 
                                            name="allows_import" 
                                            type="checkbox" 
+                                           value="1" 
                                            {{ old('allows_import', $country->allows_import) ? 'checked' : '' }}
                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                                     <label for="allows_import" class="ml-2 text-sm font-medium text-gray-700">
@@ -335,6 +353,7 @@
                                     <input id="allows_export" 
                                            name="allows_export" 
                                            type="checkbox" 
+                                           value="1" 
                                            {{ old('allows_export', $country->allows_export) ? 'checked' : '' }}
                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                                     <label for="allows_export" class="ml-2 text-sm font-medium text-gray-700">
@@ -347,6 +366,7 @@
                                     <input id="allows_transit" 
                                            name="allows_transit" 
                                            type="checkbox" 
+                                           value="1" 
                                            {{ old('allows_transit', $country->allows_transit) ? 'checked' : '' }}
                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                                     <label for="allows_transit" class="ml-2 text-sm font-medium text-gray-700">
@@ -359,6 +379,7 @@
                                     <input id="requires_visa" 
                                            name="requires_visa" 
                                            type="checkbox" 
+                                           value="1" 
                                            {{ old('requires_visa', $country->requires_visa) ? 'checked' : '' }}
                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                                     <label for="requires_visa" class="ml-2 text-sm font-medium text-gray-700">
@@ -378,6 +399,7 @@
                                     <input id="active" 
                                            name="active" 
                                            type="checkbox" 
+                                           value="1"
                                            {{ old('active', $country->active) ? 'checked' : '' }}
                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                                     <label for="active" class="ml-2 text-sm font-medium text-gray-700">
@@ -391,6 +413,7 @@
                                     <input id="is_primary" 
                                            name="is_primary" 
                                            type="checkbox" 
+                                           value="1"
                                            {{ old('is_primary', $country->is_primary) ? 'checked' : '' }}
                                            class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                                     <label for="is_primary" class="ml-2 text-sm font-medium text-gray-700">

@@ -20,6 +20,7 @@ use App\Models\Vessel;
 use App\Models\VoyageWebserviceStatus;
 use App\Models\Port;
 use App\Models\Country;
+use App\Models\Giro;
 use App\Models\Captain;
 use App\Models\Container;
 use App\Models\BillOfLading;
@@ -147,6 +148,7 @@ class Voyage extends Model
         'transshipment_port_id',
         'origin_customs_id',
         'destination_customs_id',
+        'giro_id',
         'transshipment_customs_id',
 
         // Voyage dates
@@ -386,6 +388,13 @@ class Voyage extends Model
     public function shipments(): HasMany
     {
         return $this->hasMany(Shipment::class);
+    }
+    /**
+     * Lugar de giro de Aduana del viaje (campo 13 del archivo MANE/SIM).
+     */
+    public function giro(): BelongsTo
+    {
+        return $this->belongsTo(Giro::class, 'giro_id');
     }
     /**
      * Transacciones de webservice relacionadas con el viaje

@@ -407,10 +407,10 @@ class VoyageController extends Controller
                 $query->select('id', 'name', 'code');
             },
             'originCountry' => function($query) {
-                $query->select('id', 'name', 'iso_code');
+                $query->select('id', 'name', 'iso_code', 'codigo_afip');
             },
             'destinationCountry' => function($query) {
-                $query->select('id', 'name', 'iso_code');
+                $query->select('id', 'name', 'iso_code', 'codigo_afip');
             }
         ]);
 
@@ -459,6 +459,9 @@ class VoyageController extends Controller
             'estimated_duration_hours' => 'nullable|numeric|min:0.5|max:720',
             'is_empty_transport'       => 'nullable|in:S,N',
             'has_cargo_onboard'        => 'nullable|in:S,N',
+            'giro_id'                  => ['nullable', 'string'],
+            'nuevo_giro_codigo'        => 'required_if:giro_id,__nuevo__|nullable|string|max:3',
+            'nuevo_giro_descripcion'   => 'required_if:giro_id,__nuevo__|nullable|string|max:100',
         ];
 
         // Fechas obligatorias solo para estados avanzados
@@ -475,6 +478,27 @@ class VoyageController extends Controller
         try {
             DB::beginTransaction();
 
+            // Resolver giro_id: ID existente, alta rápida (__nuevo__) o null.
+            // Nunca se pasa "__nuevo__" al update; se resuelve a un ID real o null.
+            $giroId = null;
+            $giroInput = $request->input('giro_id');
+
+            if ($giroInput === '__nuevo__') {
+                // Alta rápida: reutiliza el giro si el código ya existe (no pisa su descripción),
+                // o lo crea. codigo es unique en la tabla giros.
+                $giro = \App\Models\Giro::firstOrCreate(
+                    ['codigo' => $request->input('nuevo_giro_codigo')],
+                    [
+                        'descripcion' => $request->input('nuevo_giro_descripcion'),
+                        'activo'      => true,
+                    ]
+                );
+                $giroId = $giro->id;
+            } elseif (!empty($giroInput)) {
+                // ID existente: se valida contra la tabla antes de asignar.
+                $giroId = \App\Models\Giro::where('id', $giroInput)->value('id');
+            }
+
             $voyage->update([
                 'voyage_number'          => $request->voyage_number,
                 'internal_reference'     => $request->internal_reference,
@@ -490,6 +514,7 @@ class VoyageController extends Controller
                 'estimated_duration_hours' => $request->estimated_duration_hours,
                 'is_empty_transport'     => $request->input('is_empty_transport', 'N'),
                 'has_cargo_onboard'      => $request->input('has_cargo_onboard', 'S'),
+                'giro_id'                => $giroId,
                 'last_updated_by_user_id' => Auth::id(),
                 'last_updated_date'      => now(),
             ]);
@@ -564,12 +589,20 @@ class VoyageController extends Controller
             ->orderBy('name')
             ->get();
 
+        // --- GIROS (activos) - LIMITADOS. Catálogo global; el resto se maneja con alta rápida.
+        $giros = \App\Models\Giro::where('activo', true)
+            ->select('id', 'codigo', 'descripcion')
+            ->orderBy('codigo')
+            ->limit($LIMIT)
+            ->get();
+
         return [
             'vessels' => $vessels,
             'captains' => $captains,
             'operators' => $operators,
             'countries' => $countries,
             'ports' => $ports,
+            'giros' => $giros,
         ];
     }
 
