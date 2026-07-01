@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Voyage;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
+use App\Models\ShipmentItem;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
@@ -456,29 +457,60 @@ class ManeFileGeneratorService
      */
     private function buildFileContent(Voyage $voyage, Collection $shipments): string
     {
+        // Formato SIM (@-delimitado, CRLF, sin CRLF final).
+        $lines = $this->buildVoyageRecords($voyage);
+
+        return implode("\r\n", $lines);
+    }
+
+    /**
+     * Arma las líneas SIM de un viaje en el orden jerárquico correcto:
+     * R1 (carátula) y, por cada BL: R2 + R3 (por ítem) + R5 (contenedores) + R6.
+     * Devuelve un array de líneas sin CRLF.
+     */
+    private function buildVoyageRecords(Voyage $voyage): array
+    {
+        // Cargar relaciones necesarias para todos los records.
+        $voyage->load([
+            'destinationCountry',
+            'originCountry',
+            'leadVessel.flagCountry',
+            'giro',
+            'originCustoms',
+            'billsOfLading.loadingPort',
+            'billsOfLading.consignee',
+            'billsOfLading.notifyParty',
+            'billsOfLading.shipmentItems.packagingType',
+            'billsOfLading.shipmentItems.containers.containerType',
+        ]);
+
         $lines = [];
-        
-        // LÍNEA 1: ID MARÍA (OBLIGATORIO)
-        $lines[] = $this->company->id_maria;
-        
-        // LÍNEA 2: Información del viaje
-        $lines[] = $this->buildVoyageHeader($voyage);
-        
-        // LÍNEAS 3+: Información de shipments y conocimientos
-        foreach ($shipments as $shipment) {
-            // Línea de shipment
-            $lines[] = $this->buildShipmentLine($shipment);
-            
-            // Líneas de conocimientos de embarque
-            foreach ($shipment->billsOfLading as $bill) {
-                $lines[] = $this->buildBillOfLadingLine($bill, $shipment);
+
+        // R1 - Carátula (una por viaje).
+        $lines[] = $this->record1($voyage);
+
+        // Por cada BL del viaje.
+        foreach ($voyage->billsOfLading as $bill) {
+            // R2 - Conocimiento (uno por BL).
+            $lines[] = $this->record2($bill);
+
+            // R3 - Línea de mercadería (una por ítem del BL).
+            foreach ($bill->shipmentItems->sortBy('line_number') as $item) {
+                $lines[] = $this->record3($bill, $item);
+            }
+
+            // R5 - Contenedor/Conocimiento (uno por contenedor distinto).
+            foreach ($this->record5Lines($bill) as $line) {
+                $lines[] = $line;
+            }
+
+            // R6 - Permiso de embarque (si el BL tiene permiso).
+            foreach ($this->record6Lines($bill) as $line) {
+                $lines[] = $line;
             }
         }
-        
-        // LÍNEA FINAL: Totales
-        $lines[] = $this->buildTotalsLine($voyage, $shipments);
-        
-        return implode($this->config['line_ending'], $lines);
+
+        return $lines;
     }
 
     /**
@@ -486,38 +518,17 @@ class ManeFileGeneratorService
      */
     private function buildConsolidatedContent(Collection $voyages): string
     {
-        $lines = [];
-        
-        // LÍNEA 1: ID MARÍA (OBLIGATORIO)
-        $lines[] = $this->company->id_maria;
-        
-        // LÍNEA 2: Header consolidado
-        $lines[] = $this->buildConsolidatedHeader($voyages);
-        
-        // Procesar cada viaje
-        foreach ($voyages as $voyage) {
-            $voyage->load(['originPort', 'destinationPort', 'leadVessel', 'shipments.billsOfLading']);
-            
-            // Línea separadora de viaje
-            $lines[] = $this->buildVoyageSeparator($voyage);
-            
-            // Información del viaje
-            $lines[] = $this->buildVoyageHeader($voyage);
-            
-            // Shipments del viaje
-            foreach ($voyage->shipments as $shipment) {
-                $lines[] = $this->buildShipmentLine($shipment);
-                
-                foreach ($shipment->billsOfLading as $bill) {
-                    $lines[] = $this->buildBillOfLadingLine($bill, $shipment);
-                }
-            }
+        // El formato SIM/MANE admite un solo viaje por archivo (una carátula @1@),
+        // verificado contra el archivo real. No hay referencia de multi-viaje,
+        // por lo que no se genera: se exige un único viaje.
+        if ($voyages->count() !== 1) {
+            throw new Exception('El archivo MANE admite un solo viaje por archivo. Seleccione un único viaje.');
         }
-        
-        // LÍNEA FINAL: Totales consolidados
-        $lines[] = $this->buildConsolidatedTotalsLine($voyages);
-        
-        return implode($this->config['line_ending'], $lines);
+
+        // Formato SIM (@-delimitado, CRLF, sin CRLF final) — reutiliza el circuito por viaje.
+        $lines = $this->buildVoyageRecords($voyages->first());
+
+        return implode("\r\n", $lines);
     }
 
     /**
@@ -657,7 +668,7 @@ class ManeFileGeneratorService
         $timestamp = Carbon::now()->format('Ymd_His');
         $voyageNumber = preg_replace('/[^A-Za-z0-9_-]/', '_', $voyage->voyage_number);
         
-        return "MANE_{$this->company->id_maria}_{$voyageNumber}_{$timestamp}.txt";
+        return "MANE_{$this->company->id_maria}_{$voyageNumber}_{$timestamp}.mar";
     }
 
     /**
@@ -690,5 +701,191 @@ class ManeFileGeneratorService
         if (!$company->active) {
             throw new Exception('La empresa debe estar activa para generar archivos MANE.');
         }
+    }
+
+    // ── Helpers de armado del archivo SIM (formato @-delimitado, ASCII, CRLF) ──
+
+    /**
+     * Normaliza un valor para un campo del archivo SIM:
+     * pasa a ASCII, quita saltos de línea y el separador '@', recorta a maxLen.
+     */
+    private function field($value, int $maxLen): string
+    {
+        $s = (string) ($value ?? '');
+        $s = @iconv('UTF-8', 'ASCII//TRANSLIT', $s) ?: $s;
+        $s = str_replace(["\r", "\n", "@"], ' ', $s);
+        $s = trim($s);
+        return mb_substr($s, 0, $maxLen);
+    }
+
+    /**
+     * Une los campos con '@', con '@' al inicio y al final: @c1@c2@...@cN@
+     * (formato confirmado contra el archivo real t11o4498.mar).
+     */
+    private function buildLine(array $fields): string
+    {
+        return '@' . implode('@', $fields) . '@';
+    }
+
+    /**
+     * Registro tipo 1 - Carátula (15 campos). Devuelve la línea sin CRLF.
+     * Campos verificados contra modelos reales.
+     */
+    private function record1(Voyage $voyage): string
+    {
+        $company = $this->company;
+
+        // Imp/Exp: export -> 'E', import -> 'I'
+        $impExp = $voyage->cargo_type === 'export' ? 'E' : 'I';
+
+        // País extranjero (campo 8): destino si export, origen si import
+        $foreignCountry = $voyage->cargo_type === 'export'
+            ? $voyage->destinationCountry
+            : $voyage->originCountry;
+
+        return $this->buildLine([
+            $this->field('1', 1),                                                              // 1  tipo registro
+            $this->field('A', 1),                                                              // 2  tipo operación
+            $this->field($company->id_maria, 4),                                               // 3  código habilitado
+            $this->field($impExp, 1),                                                          // 4  imp/exp
+            $this->field(optional($voyage->estimated_arrival_date)->format('Ymd'), 8),         // 5  fecha arribo
+            $this->field($voyage->is_empty_transport, 1),                                      // 6  transporte vacío
+            $this->field($voyage->has_cargo_onboard, 1),                                       // 7  mercadería a bordo
+            $this->field(optional($foreignCountry)->codigo_afip, 3),                           // 8  país proc/destino
+            $this->field($company->legal_name, 35),                                            // 9  designación transportista
+            $this->field(optional(optional($voyage->leadVessel)->flagCountry)->codigo_afip, 3),// 10 país transportista (bandera) *pendiente Roberto
+            $this->field(optional(optional($voyage->leadVessel)->flagCountry)->codigo_afip, 3),// 11 nac. medio transporte (bandera)
+            $this->field(optional($voyage->leadVessel)->name, 20),                             // 12 nombre buque
+            $this->field(optional($voyage->giro)->codigo, 3),                                  // 13 lugar de giro
+            $this->field('', 60),                                                              // 14 comentario
+            $this->field(optional($voyage->originCustoms)->code, 3),                           // 15 código aduana
+        ]);
+    }
+
+    /**
+     * Convierte un valor 0/1 (o bool) a 'S'/'N'. Para campos que en la base
+     * vienen como entero (ej. is_consolidated).
+     */
+    private function sn($value): string
+    {
+        return ($value === 1 || $value === true || $value === '1') ? 'S' : 'N';
+    }
+
+    /**
+     * Registro tipo 2 - Conocimiento (17 campos = 16 spec + RENAR).
+     * Un registro por Bill of Lading. Devuelve la línea sin CRLF.
+     * Campos verificados contra modelos reales.
+     */
+    private function record2(BillOfLading $bill): string
+    {
+        // Ítem primario del BL: menor line_number.
+        $item = $bill->shipmentItems->sortBy('line_number')->first();
+
+        return $this->buildLine([
+            $this->field('2', 1),                                              // 1  tipo registro
+            $this->field('A', 1),                                              // 2  tipo operación
+            $this->field(optional($bill->loadingPort)->code, 5),               // 3  puerto embarque
+            $this->field($bill->bill_number, 18),                              // 4  número de conocimiento
+            $this->field($bill->cargo_marks, 80),                              // 5  marca de los bultos
+            $this->field(optional($bill->consignee)->legal_name, 80),          // 6  consignatario
+            $this->field(optional($bill->notifyParty)->legal_name ?: $bill->notify_party_text, 35), // 7 notificar a
+            $this->field($this->sn($bill->is_consolidated), 1),                // 8  ind. consolidado (0/1 -> S/N)
+            $this->field($bill->is_transit_transshipment, 1),                  // 9  ind. transito/transbordo (S/N) *pendiente validacion Roberto
+            $this->field('', 60),                                              // 10 comentario
+            $this->field(optional($item)->consignee_document_type, 4),         // 11 tipo doc destinatario
+            $this->field(optional($item)->consignee_tax_id, 11),               // 12 id destinatario
+            $this->field('', 3),                                               // 13 pais pasaporte (sin fuente en app; facultativo)
+            $this->field(optional($item)->tariff_position, 16),                // 14 posicion arancelaria
+            $this->field(optional($item)->is_secure_logistics_operator, 1),    // 15 op. logistico seguro (S/N)
+            $this->field(optional($item)->is_monitored_transit, 1),            // 16 transito monitoreado (S/N)
+            $this->field(optional($item)->is_renar, 1),                        // 17 RENAR (S/N)
+        ]);
+    }
+
+    /**
+     * Registro tipo 3 - Línea de Mercadería (12 campos).
+     * Un registro por ShipmentItem. Devuelve la línea sin CRLF.
+     * Campos verificados contra modelos reales.
+     */
+    private function record3(BillOfLading $bill, ShipmentItem $item): string
+    {
+        // Campo 3: id doc transporte = puerto de embarque + número de conocimiento (tal cual, sin normalizar).
+        $idDocTransporte = optional($bill->loadingPort)->code . $bill->bill_number;
+
+        return $this->buildLine([
+            $this->field('3', 1),                                    // 1  tipo registro
+            $this->field('A', 1),                                    // 2  tipo operación
+            $this->field($idDocTransporte, 23),                      // 3  id doc transporte (Pto+Conocim)
+            $this->field($item->line_number, 3),                     // 4  número de línea
+            $this->field(optional($item->packagingType)->code, 2),   // 5  código de embalaje
+            $this->field('', 1),                                     // 6  tipo de embalaje (sin fuente en app; facultativo)
+            $this->field($item->container_condition, 1),             // 7  condición del contenedor
+            $this->field($item->package_quantity, 9),                // 8  cantidad total manifestada
+            $this->field($item->gross_weight_kg, 12),                // 9  peso / volumen manifestado
+            $this->field($item->item_description, 80),               // 10 descripción de la mercadería
+            $this->field($item->package_numbers, 100),               // 11 número de los bultos
+            $this->field('', 60),                                    // 12 comentario
+        ]);
+    }
+
+    /**
+     * Registro tipo 5 - Relación Contenedor/Conocimiento (7 campos).
+     * Un registro por CONTENEDOR DISTINTO del BL (dedup por id vía el pivot
+     * container_shipment_item). Devuelve un array de líneas (sin CRLF).
+     * Campos verificados contra modelos reales.
+     */
+    private function record5Lines(BillOfLading $bill): array
+    {
+        // Dedup: juntar contenedores distintos de todos los items del BL, indexados por id.
+        $containers = collect();
+        foreach ($bill->shipmentItems as $item) {
+            foreach ($item->containers as $c) {
+                $containers->put($c->id, $c);
+            }
+        }
+
+        // Campo 4: id doc transporte = puerto de embarque + número de conocimiento (misma regla que R3).
+        $idDocTransporte = optional($bill->loadingPort)->code . $bill->bill_number;
+
+        $lines = [];
+        foreach ($containers as $c) {
+            $lines[] = $this->buildLine([
+                $this->field('5', 1),                                          // 1  tipo registro
+                $this->field('A', 1),                                          // 2  tipo operación
+                $this->field(optional($c->containerType)->length_feet, 2),     // 3  medidas contenedor (20/40)
+                $this->field($idDocTransporte, 23),                            // 4  id doc transporte (Pto+Conocim)
+                $this->field($c->container_number, 20),                        // 5  número del contenedor
+                $this->field($c->container_condition, 1),                      // 6  condición del contenedor
+                $this->field('', 60),                                          // 7  comentario
+            ]);
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Registro tipo 6 - Permiso de Embarque (4 campos).
+     * Un registro por BL que tenga permiso_embarque cargado. Si no lo tiene,
+     * no se emite. Devuelve un array de líneas (sin CRLF).
+     * Campos verificados contra modelos reales.
+     */
+    private function record6Lines(BillOfLading $bill): array
+    {
+        // Sin permiso de embarque no se emite el registro.
+        if (empty($bill->permiso_embarque)) {
+            return [];
+        }
+
+        // Campo 3: id doc transporte = puerto de embarque + número de conocimiento (misma regla que R3/R5).
+        $idDocTransporte = optional($bill->loadingPort)->code . $bill->bill_number;
+
+        return [
+            $this->buildLine([
+                $this->field('6', 1),                          // 1  tipo registro
+                $this->field('A', 1),                          // 2  tipo operación
+                $this->field($idDocTransporte, 23),            // 3  id doc transporte (Pto+Conocim)
+                $this->field($bill->permiso_embarque, 16),     // 4  permiso de embarque
+            ]),
+        ];
     }
 }

@@ -90,7 +90,7 @@
                                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                                         </svg>
-                                                        Generar Individual
+                                                        Generar 
                                                     </button>
                                                 </div>
                                             </div>
@@ -104,6 +104,7 @@
                                 @endforeach
                             </div>
 
+                            @if(false) {{-- Exportación consolidada/múltiple desactivada: el formato SIM admite un solo viaje por archivo. Usar el botón por viaje. Se conserva el markup para retomar si se define multi-viaje. --}}
                             <!-- Botones de acción para archivos consolidados -->
                             <div class="mt-6 flex items-center justify-between">
                                 <div>
@@ -117,17 +118,21 @@
                                         Limpiar selección
                                     </button>
                                 </div>
+                                {{-- DESACTIVADO: exportación consolidada/múltiple. El formato SIM admite un solo viaje por archivo.
+                                     Usar el botón "por viaje". Se conserva comentado para retomar si se define multi-viaje.
                                 <button type="button" 
                                         onclick="generateConsolidated()"
                                         id="consolidatedBtn"
                                         disabled
-                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-mediumrounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
                                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                     </svg>
                                     Generar Archivo Consolidado
                                 </button>
+                                --}}
                             </div>
+                            @endif
                         </form>
 
                         <!-- Paginación -->
@@ -256,7 +261,8 @@
             }
         }
 
-        // Generar archivo consolidado
+        // Generar archivo consolidado — DESACTIVADO (SIM admite un solo viaje por archivo). Se conserva por si se retoma multi-viaje.
+        /*
         async function generateConsolidated() {
             const checkedBoxes = document.querySelectorAll('.voyage-checkbox:checked');
             if (checkedBoxes.length === 0) {
@@ -289,6 +295,7 @@
                 showErrorMessage('Error de conexión: ' + error.message);
             }
         }
+        */
 
         // Mostrar mensajes
         function showSuccessMessage(message, downloadUrl) {
