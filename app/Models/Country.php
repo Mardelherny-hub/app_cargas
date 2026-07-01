@@ -19,6 +19,7 @@ class Country extends Model
         'official_name',
         'nationality',
         'customs_code',
+        'codigo_afip',
         'senasa_code',
         'document_format',
         'currency_code',

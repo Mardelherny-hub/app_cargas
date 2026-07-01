@@ -200,6 +200,94 @@
                             </div>
                         </div>
 
+                        {{-- Lugar de giro (Aduana) — dato para archivo MANE (AFIP). Facultativo. --}}
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                             x-data="{ giroSel: '{{ old('giro_id', $voyage->giro_id) }}' }">
+                            <div>
+                                <label for="giro_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Lugar de giro <span class="text-xs text-gray-400">(para archivo MANE)</span>
+                                </label>
+                                <select name="giro_id"
+                                        id="giro_id"
+                                        x-model="giroSel"
+                                        @if(!$userPermissions['can_edit']) disabled @endif
+                                        class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm @error('giro_id') border-red-300 @enderror @if(!$userPermissions['can_edit']) bg-gray-100 @endif">
+                                    <option value="">Sin giro asignado</option>
+                                    @foreach($formData['giros'] as $giro)
+                                        <option value="{{ $giro->id }}" {{ old('giro_id', $voyage->giro_id) == $giro->id ? 'selected' : '' }}>
+                                            {{ $giro->codigo }} — {{ $giro->descripcion }}
+                                        </option>
+                                    @endforeach
+                                    <option value="__nuevo__" {{ old('giro_id') === '__nuevo__' ? 'selected' : '' }}>
+                                        ➕ El código no existe — cargar uno nuevo…
+                                    </option>
+                                </select>
+                                @error('giro_id')
+                                    <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- Alta rápida: visible solo si se eligió "cargar nuevo" --}}
+                            <div x-show="giroSel === '__nuevo__'" x-cloak
+                                 class="grid grid-cols-3 gap-2 items-end">
+                                <div>
+                                    <label for="nuevo_giro_codigo" class="block text-sm font-medium text-gray-700 mb-1">
+                                        Código <span class="text-red-500">*</span>
+                                    </label>
+                                    <input type="text"
+                                           name="nuevo_giro_codigo"
+                                           id="nuevo_giro_codigo"
+                                           maxlength="3"
+                                           value="{{ old('nuevo_giro_codigo') }}"
+                                           @if(!$userPermissions['can_edit']) disabled @endif
+                                           class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm @error('nuevo_giro_codigo') border-red-300 @enderror">
+                                    @error('nuevo_giro_codigo')
+                                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                                <div class="col-span-2">
+                                    <label for="nuevo_giro_descripcion" class="block text-sm font-medium text-gray-700 mb-1">
+                                        Descripción
+                                    </label>
+                                    <input type="text"
+                                           name="nuevo_giro_descripcion"
+                                           id="nuevo_giro_descripcion"
+                                           maxlength="100"
+                                           value="{{ old('nuevo_giro_descripcion') }}"
+                                           @if(!$userPermissions['can_edit']) disabled @endif
+                                           class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm @error('nuevo_giro_descripcion') border-red-300 @enderror">
+                                    @error('nuevo_giro_descripcion')
+                                        <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Códigos AFIP para archivo MANE (solo lectura). Se cargan en Países (superadmin). --}}
+                        <div class="rounded-md bg-blue-50 border border-blue-100 p-3">
+                            <p class="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">
+                                Datos para archivo MANE (AFIP)
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <span class="text-gray-500">Código AFIP país origen:</span>
+                                    @if($voyage->originCountry && $voyage->originCountry->codigo_afip)
+                                        <span class="font-medium text-gray-800">{{ $voyage->originCountry->codigo_afip }} ({{ $voyage->originCountry->name }})</span>
+                                    @else
+                                        <span class="font-medium text-red-600">Sin código AFIP cargado</span>
+                                    @endif
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Código AFIP país destino:</span>
+                                    @if($voyage->destinationCountry && $voyage->destinationCountry->codigo_afip)
+                                        <span class="font-medium text-gray-800">{{ $voyage->destinationCountry->codigo_afip }} ({{ $voyage->destinationCountry->name }})</span>
+                                    @else
+                                        <span class="font-medium text-red-600">Sin código AFIP cargado</span>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+
                         {{-- Ruta: Origen --}}
                         <div>
                             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Origen</p>
