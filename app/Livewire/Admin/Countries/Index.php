@@ -32,7 +32,7 @@ class Index extends Component
 
     public function sortBy(string $field): void
     {
-        $sortable = ['name','official_name','iso_code','alpha_code','numeric_code'];
+        $sortable = ['name','official_name','iso_code','alpha2_code','numeric_code'];
         if (!in_array($field, $sortable, true)) return;
 
         if ($this->sortField === $field) {
@@ -62,7 +62,7 @@ class Index extends Component
             // Si es exactamente 2 o 3 letras mayúsculas, buscar códigos primero
             if (preg_match('/^[A-Z]{2,3}$/', $searchTerm)) {
                 $q->where('iso_code', '=', $searchTerm)
-                  ->orWhere('alpha_code', '=', $searchTerm);
+                  ->orWhere('alpha2_code', '=', $searchTerm);
             }
             
             // Si es solo números, buscar código numérico
@@ -75,14 +75,14 @@ class Index extends Component
             $q->orWhere('name', 'like', $likePattern)
               ->orWhere('official_name', 'like', $likePattern)
               ->orWhere('iso_code', 'like', $likePattern)
-              ->orWhere('alpha_code', 'like', $likePattern)
+              ->orWhere('alpha2_code', 'like', $likePattern)
               ->orWhere('numeric_code', 'like', $likePattern);
         });
     }
 
     public function getCountriesProperty()
     {
-        $sortable = ['name','official_name','iso_code','alpha_code','numeric_code'];
+        $sortable = ['name','official_name','iso_code','alpha2_code','numeric_code'];
         $field = in_array($this->sortField, $sortable, true) ? $this->sortField : 'name';
 
         return $this->baseQuery()
