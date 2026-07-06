@@ -1340,7 +1340,7 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
         }
 
         // Solo se pueden eliminar viajes en estados iniciales
-        $deletableStatuses = ['draft', 'planned', 'confirmed', 'cancelled'];
+        $deletableStatuses = ['planning', 'cancelled'];
         
         if (!in_array($this->status, $deletableStatuses)) {
             return false;
