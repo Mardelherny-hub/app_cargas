@@ -23,7 +23,7 @@ trait ExtractsEmbeddedTaxId
 
         // Prefijos conocidos. Los más específicos van primero
         // (RUC / TAX ID antes que RUC suelto).
-        $prefixes = 'RUC\s*\/\s*TAX\s?ID|TAX\s?ID|TAXID|R\.U\.C\.|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        $prefixes = 'RUT\s*\/\s*VAT|RUC\s*\/\s*TAX\s?ID|TAX\s?ID|TAXID|R\.U\.C\.|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
 
         // prefijo + separador opcional (: # espacios) + dígitos con . - /
         $pattern = '/(?:' . $prefixes . ')\s*[:#.]?\s*([0-9][0-9.\-\/]{5,})/i';
