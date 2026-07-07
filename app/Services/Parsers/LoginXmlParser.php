@@ -63,6 +63,20 @@ class LoginXmlParser implements ManifestParserInterface
         '20OT' => 'Open Top 20ft'
     ];
 
+    /**
+     * Alias de nomenclatura propios del formato Login hacia el `code` real
+     * del catálogo container_types. Login usa "DC" (Dry Container) donde el
+     * catálogo usa "GP" (General Purpose), y "TK" (tanque genérico) donde el
+     * catálogo usa "TN". Equivalencias verificadas contra las filas reales
+     * 20GP/40GP/20TN. Los 20TK del archivo son tanques vacíos; la peligrosidad,
+     * si existiera, viaja por Un/Classe a nivel de línea, no por el tipo.
+     */
+    protected array $loginContainerAliases = [
+        '20DC' => '20GP',
+        '40DC' => '40GP',
+        '20TK' => '20TN',
+    ];
+
     // Mapeo de países por código NCM/origen
     protected array $countryMapping = [
         'default' => 'ARG', // Argentina por defecto para Login
@@ -502,6 +516,10 @@ class LoginXmlParser implements ManifestParserInterface
 
                 if (empty($container['container_type'])) {
                     $errors[] = "Tipo de contenedor requerido en {$lineRef}";
+                } elseif ($this->resolveContainerType($container['container_type']) === null) {
+                    $errors[] = "Tipo de contenedor desconocido \"" . strtoupper(trim((string)$container['container_type']))
+                        . "\" en el contenedor " . ($container['container_number'] ?? 's/n')
+                        . " ({$lineRef}). Debe agregarse su correspondencia al catálogo antes de importar.";
                 }
 
                 if ($container['gross_weight_kg'] <= 0) {
@@ -535,7 +553,7 @@ class LoginXmlParser implements ManifestParserInterface
                 return [
                     'line_number' => $container['line_number'],
                     'container_number' => $container['container_number'],
-                    'container_type' => $this->mapContainerType($container['container_type']),
+                    'container_type' => strtoupper(trim((string)$container['container_type'])),
                     'tare_weight_kg' => $container['tare_weight_kg'],
                     'net_weight_kg' => $container['net_weight_kg'],
                     'gross_weight_kg' => $container['gross_weight_kg'],
@@ -590,6 +608,30 @@ class LoginXmlParser implements ManifestParserInterface
     protected function mapContainerType(string $xmlType): string
     {
         return $this->containerTypeMapping[$xmlType] ?? $xmlType;
+    }
+
+    /**
+     * Resuelve el ContainerType real a partir del código crudo del XML Login.
+     * Flujo: normaliza (trim + mayúsculas) -> aplica alias específicos de Login
+     * -> busca exacto por container_types.code. Devuelve null si no hay match
+     * (NO cae a ContainerType::first()): el llamador decide el corte.
+     */
+    protected function resolveContainerType(?string $rawType): ?ContainerType
+    {
+        if ($rawType === null || trim($rawType) === '') {
+            return null;
+        }
+
+        $code = strtoupper(trim($rawType));
+        $code = $this->loginContainerAliases[$code] ?? $code;
+
+        // Cache por code (incluye resultados null): array_key_exists, no isset,
+        // porque isset() trata null como ausente y repetiría el query.
+        if (!array_key_exists($code, $this->cachedContainerTypes)) {
+            $this->cachedContainerTypes[$code] = ContainerType::where('code', $code)->first();
+        }
+
+        return $this->cachedContainerTypes[$code];
     }
 
     /**
@@ -799,17 +841,20 @@ class LoginXmlParser implements ManifestParserInterface
             if (isset($this->createdContainersInImport[$containerNumber])) {
                 $container = $this->createdContainersInImport[$containerNumber];
             } else {
-                $ctKey = $containerData['container_type'] ?: '_default';
-                if (!isset($this->cachedContainerTypes[$ctKey])) {
-                    $this->cachedContainerTypes[$ctKey] = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
-                                    ?? ContainerType::first();
+                $containerType = $this->resolveContainerType($containerData['container_type']);
+                if ($containerType === null) {
+                    throw new Exception(
+                        'Tipo de contenedor no resuelto: "'
+                        . strtoupper(trim((string)$containerData['container_type']))
+                        . '" en el contenedor ' . $containerNumber
+                        . '. La importación se detuvo para no persistir un contenedor sin tipo válido.'
+                    );
                 }
-                $containerType = $this->cachedContainerTypes[$ctKey];
 
                 $container = Container::firstOrCreate(
                     ['container_number' => $containerNumber],
                     [
-                        'container_type_id' => $containerType?->id,
+                        'container_type_id' => $containerType->id,
                         'tare_weight_kg' => $containerData['tare_weight_kg'],
                         'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
                         'current_gross_weight_kg' => $containerData['gross_weight_kg'],
@@ -953,17 +998,20 @@ class LoginXmlParser implements ManifestParserInterface
             if (isset($this->createdContainersInImport[$containerNumber])) {
                 $container = $this->createdContainersInImport[$containerNumber];
             } else {
-                $ctKey = $containerData['container_type'] ?: '_default';
-                if (!isset($this->cachedContainerTypes[$ctKey])) {
-                    $this->cachedContainerTypes[$ctKey] = ContainerType::where('name', 'LIKE', '%' . $containerData['container_type'] . '%')->first()
-                                    ?? ContainerType::first();
+                $containerType = $this->resolveContainerType($containerData['container_type']);
+                if ($containerType === null) {
+                    throw new Exception(
+                        'Tipo de contenedor no resuelto: "'
+                        . strtoupper(trim((string)$containerData['container_type']))
+                        . '" en el contenedor ' . $containerNumber
+                        . '. La importación se detuvo para no persistir un contenedor sin tipo válido.'
+                    );
                 }
-                $containerType = $this->cachedContainerTypes[$ctKey];
 
                 $container = Container::firstOrCreate(
                     ['container_number' => $containerNumber],
                     [
-                        'container_type_id' => $containerType?->id,
+                        'container_type_id' => $containerType->id,
                         'tare_weight_kg' => $containerData['tare_weight_kg'],
                         'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
                         'current_gross_weight_kg' => $containerData['gross_weight_kg'],
