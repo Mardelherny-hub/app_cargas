@@ -278,7 +278,32 @@ if ($request->hasFile('certificate')) {
                 try {
                     $certFile = $request->file('certificate');
                     $keyFile = $request->file('private_key');
-                    
+
+                    // Verificar que la clave privada corresponda al certificado.
+                    // Sin esto se puede subir el certificado de un ambiente con la
+                    // clave de otro: la carga "funciona" y el error recién aparece
+                    // al enviar a DNA, lejos de la causa.
+                    $certPem = file_get_contents($certFile->getRealPath());
+                    $keyPem = file_get_contents($keyFile->getRealPath());
+
+                    if (! openssl_x509_read($certPem)) {
+                        return back()->withErrors([
+                            'certificate' => 'El archivo de certificado no es un certificado válido (.pem).',
+                        ])->withInput();
+                    }
+
+                    if (! openssl_pkey_get_private($keyPem)) {
+                        return back()->withErrors([
+                            'private_key' => 'El archivo de clave privada no es una clave válida (.pem).',
+                        ])->withInput();
+                    }
+
+                    if (! openssl_x509_check_private_key($certPem, $keyPem)) {
+                        return back()->withErrors([
+                            'private_key' => 'La clave privada no corresponde al certificado. Verifique que ambos archivos sean del mismo trámite (homologación o producción).',
+                        ])->withInput();
+                    }
+
                     $certFilename = uniqid() . '_cert.pem';
                     $keyFilename = uniqid() . '_key.pem';
                     
