@@ -72,18 +72,37 @@ class ParaguayDnaService extends BaseWebserviceService
     }
 
     /**
+     * Ambiente canónico de DNA. Fuente única para URL y certificado del servidor:
+     * si ambos no salen de acá, pueden desincronizarse (URL de producción con
+     * certificado de testing). Acepta 'test' como sinónimo histórico de 'testing'.
+     * Cualquier otro valor es un error de configuración, no un default silencioso.
+     */
+    protected function resolveDnaEnvironment(): string
+    {
+        $raw = $this->company->ws_environment;
+
+        return match ($raw) {
+            'test', 'testing' => 'testing',
+            'production' => 'production',
+            default => throw new Exception(
+                'Ambiente de webservice DNA inválido para la empresa: ' . var_export($raw, true)
+            ),
+        };
+    }
+
+    /**
      * URL del WSDL
      */
     protected function getWsdlUrl(): string
     {
-        $environment = $this->company->ws_environment ?? 'testing';
+        $environment = $this->resolveDnaEnvironment();
 
         $urls = [
             'testing' => 'https://securetest.aduana.gov.py/gdsf/serviciogdsf?wsdl',
             'production' => 'https://secure.aduana.gov.py/wsdl/gdsf/serviciogdsf',
         ];
 
-        return $urls[$environment] ?? $urls['testing'];
+        return $urls[$environment];
     }
 
     /**
@@ -2052,30 +2071,13 @@ XML;
             throw new Exception('Certificado digital Paraguay inválido. Verifique los archivos .pem.');
         }
 
-        $dnaCertificatePath = storage_path('app/private/DNA/gdsfws.pem');
-        $dnaCertificatePath = $this->resolveCertificatePath($dnaCertificatePath);
-
-        if (! $dnaCertificatePath || ! is_readable($dnaCertificatePath)) {
-            throw new Exception('Certificado público de la DNA Paraguay no encontrado o sin permisos de lectura.');
-        }
-
+        // Certificado público del servidor DNA, según el ambiente de la empresa.
+        $dnaCertificatePath = $this->resolveDnaCertificatePath();
         $dnaCertificate = file_get_contents($dnaCertificatePath);
+
         if (! $dnaCertificate) {
             throw new Exception('No se pudo leer el certificado público de la DNA Paraguay.');
         }
-
-        // Certificado del servidor DNA para encriptar
-        $dnaCertPath = storage_path('app/private/DNA/gdsfws.pem');
-        if (!file_exists($dnaCertPath)) {
-            throw new \Exception("Certificado del servidor DNA no encontrado: {$dnaCertPath}");
-        }
-        $dnaCertificate = file_get_contents($dnaCertPath);
-
-        $securityBuilder = new ParaguayWSSecurityBuilder(
-            $certData['cert'],
-            $certData['pkey'],
-            $dnaCertificate
-        );
 
         $securityBuilder = new ParaguayWSSecurityBuilder(
             $certData['cert'],
@@ -2104,17 +2106,46 @@ XML;
         if (! $path) {
             return null;
         }
-
         if (is_readable($path)) {
             return $path;
         }
-
         $basePath = base_path($path);
         if (is_readable($basePath)) {
             return $basePath;
         }
-
         return null;
+    }
+
+    /**
+     * Certificado público del servidor DNA (tercer argumento de
+     * ParaguayWSSecurityBuilder, usado para el WS-Security del request).
+     * Testing y producción son certificados distintos, emitidos por CA distintas
+     * (SIFRootCA2048 vs DNARootCA). NUNCA se usa uno en el ambiente del otro:
+     * si falta el del ambiente activo, se corta con error.
+     */
+    private function resolveDnaCertificatePath(): string
+    {
+        $environment = $this->resolveDnaEnvironment();
+
+        $files = [
+            'testing' => 'gdsfws_testing.pem',
+            'production' => 'gdsfws_production.pem',
+        ];
+
+        $path = storage_path('app/private/DNA/' . $files[$environment]);
+
+        if (! is_readable($path)) {
+            \Log::error('Certificado del servidor DNA no disponible', [
+                'environment' => $environment,
+                'path' => $path,
+            ]);
+
+            throw new Exception(
+                "No está configurado el certificado de DNA para el ambiente {$environment}."
+            );
+        }
+
+        return $path;
     }
     
     /**
