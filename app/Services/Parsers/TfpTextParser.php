@@ -446,7 +446,26 @@ protected function extractValue(string $scope, string $label): ?string
     {
         $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null);
         $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null);
-        $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null);
+
+        // Algunos generadores TFP emiten NOTIFICATARIO como "nombre del consignatario + dirección"
+        // pegados (verificado contra archivo real 13/07/2026). Si el notificatario empieza con el
+        // nombre del consignatario del MISMO BL y le sobra texto, es el mismo cliente y el
+        // sobrante es dirección: se evita crear un duplicado con nombre basura.
+        $notifyName = trim($data['notificatario'] ?? '');
+        $consigneeName = trim($data['consignatario'] ?? '');
+        $notifyExtraAddr = null;
+        if ($notifyName !== '' && $consigneeName !== ''
+            && $notifyName !== $consigneeName
+            && str_starts_with($notifyName, $consigneeName)) {
+            $notifyExtraAddr = trim(substr($notifyName, strlen($consigneeName)));
+            $notify = $consignee;
+            Log::info('TFP: notificatario = consignatario + dirección pegada', [
+                'notificatario_archivo' => $notifyName,
+                'direccion_extraida' => $notifyExtraAddr,
+            ]);
+        } else {
+            $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null);
+        }
 
         $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
         $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
@@ -480,7 +499,7 @@ protected function extractValue(string $scope, string $label): ?string
         foreach ([
             ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper'],
             ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee'],
-            ['client' => $notify,    'addr' => $data['notificatario_domicilio'] ?? null, 'role' => 'notify'],
+            ['client' => $notify,    'addr' => $data['notificatario_domicilio'] ?? $notifyExtraAddr, 'role' => 'notify'],
         ] as $p) {
             $this->persistClientAddress($p['client'], $p['addr']);
             if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
