@@ -14,6 +14,7 @@ use App\Models\Port;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Models\ContainerType;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -36,6 +37,7 @@ class ParanaExcelParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use ResolvesClientAddresses;
 
     // Mapeo exacto de columnas según análisis real
     protected array $columnMap = [
@@ -547,6 +549,20 @@ class ParanaExcelParser implements ManifestParserInterface
             'bill_date' => $bill->bill_date->toDateString(),
             'loading_date' => $bill->loading_date->toDateString()
         ]);
+
+        // Dirección del cliente: persistir en ficha (cliente nuevo/sin dirección)
+        // o guardar dirección específica del conocimiento (cliente existente con dirección distinta).
+        $shipperAddr = $data['SHIPPER_ADDRESS1'] ?? null;
+        $this->persistClientAddress($shipper, $shipperAddr);
+        if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper')) {
+            $bill->specificContacts()->create($c);
+        }
+
+        $consigneeAddr = $data['CONSIGNEE_ADDRESS1'] ?? null;
+        $this->persistClientAddress($consignee, $consigneeAddr);
+        if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee')) {
+            $bill->specificContacts()->create($c);
+        }
 
         return $bill;
     }

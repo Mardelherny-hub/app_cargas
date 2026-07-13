@@ -43,6 +43,7 @@ trait ResolvesClientAddresses
         if (!$client) {
             return false;
         }
+        $fileAddress = $this->cleanFileAddress($fileAddress);
         if ($this->normalizeAddress($fileAddress) === '') {
             return false;
         }
@@ -82,6 +83,7 @@ trait ResolvesClientAddresses
         if (!$client) {
             return null;
         }
+        $fileAddress = $this->cleanFileAddress($fileAddress);
         $fileNorm = $this->normalizeAddress($fileAddress);
         if ($fileNorm === '') {
             return null;
@@ -124,5 +126,47 @@ trait ResolvesClientAddresses
             $line1 = $client->contactData()->value('address_line_1');
         }
         return $this->normalizeAddress($line1);
+    }
+
+    /**
+     * Limpia la dirección cruda del archivo: quita marcadores de identificación
+     * fiscal con su número (RUC, R.U.C., CUIT, TAX ID, RUT, VAT), corta la cola
+     * de contacto (TEL/PH/PHONE/FAX/CEL/ATTN/EMAIL/MAIL), quita emails sueltos
+     * y etiquetas iniciales (ADD:/ADDRESS:), colapsa restos y recorta a 255.
+     * Devuelve null si tras limpiar no queda dirección (ej. celda que solo
+     * traía "CUIT: 30688415531"). Una dirección ya limpia pasa intacta.
+     * Validado contra celdas reales de PARANA.xlsx y TFP (13/07/2026).
+     */
+    protected function cleanFileAddress(?string $raw): ?string
+    {
+        if ($raw === null || trim($raw) === '') {
+            return null;
+        }
+
+        // Multilínea a una sola línea (TFP trae domicilios con saltos)
+        $s = str_replace(["\r\n", "\r", "\n"], ' ', $raw);
+
+        // 0. Ruido temprano (*, #) ANTES de los patrones, para que "RUC#123" y "* ADDRESS:" matcheen
+        $s = preg_replace('/[*#]+/', ' ', $s) ?? $s;
+
+        // 1. Marcadores fiscales + su número: RUC, R.U.C., CUIT, TAX ID, TAXID, RUT, VAT NO,
+        //    RUC / TAX ID, ID.FISCAL, RUC NUMBER/NRO/NO. Separadores: : espacio - + =
+        $s = preg_replace('/(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NRO\.?|NO\.?)?\s*[:\s\-+=]\s*[0-9][0-9\-\.\s]*/i', ' ', $s) ?? $s;
+
+        // 2. Cortar la cola desde el primer marcador de contacto (incluye variantes ATN/ATT/CTC)
+        $s = preg_replace('/\b(TEL|PH|PHONE|FAX|CEL|ATTN|ATN|ATT|CTC|E-?MAIL|MAIL|CONTACTO?)\b\s*[:.]?.*$/i', '', $s) ?? $s;
+
+        // 3. Bloques <email o nombre> completos, y emails sueltos remanentes
+        $s = preg_replace('/<[^>]*>/', ' ', $s) ?? $s;
+        $s = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', ' ', $s) ?? $s;
+
+        // 4. Etiqueta inicial de dirección (con variantes cortas y typos vistos en archivos reales)
+        $s = preg_replace('/^\s*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIR|DOMICILIO)\s*:\s*/i', '', $s) ?? $s;
+
+        // 5. Espacios múltiples y separadores colgantes
+        $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+        $s = trim($s, " ,;:-'");
+
+        return $s === '' ? null : mb_substr($s, 0, 255);
     }
 }
