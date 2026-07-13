@@ -17,6 +17,7 @@ use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,7 @@ class TfpTextParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use ResolvesClientAddresses;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -68,6 +70,11 @@ class TfpTextParser implements ManifestParserInterface
             $content = @file_get_contents($filePath);
             if ($content === false || $content === '') {
                 throw new Exception('No se pudo leer el archivo o está vacío.');
+            }
+
+            // Tolerar archivos en ISO-8859-1/Latin-1 (algunos generadores TFP no emiten UTF-8)
+            if (!mb_check_encoding($content, 'UTF-8')) {
+                $content = mb_convert_encoding($content, 'UTF-8', 'ISO-8859-1');
             }
 
             $content = str_replace(["\r\n", "\r"], "\n", $content);
@@ -444,7 +451,7 @@ protected function extractValue(string $scope, string $label): ?string
         $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
         $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
 
-        return BillOfLading::create([
+        $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['bl_numero'],
             'bill_date' => now(),
@@ -467,6 +474,21 @@ protected function extractValue(string $scope, string $label): ?string
             'cargo_description' => 'Mercadería importada desde TFP',
             'is_consolidated' => strtoupper($data['consolidado'] ?? 'N') === 'S',
         ]);
+
+        // Dirección del cliente: persistir en ficha (cliente nuevo/sin dirección)
+        // o guardar dirección específica del conocimiento (cliente existente con dirección distinta).
+        foreach ([
+            ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper'],
+            ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee'],
+            ['client' => $notify,    'addr' => $data['notificatario_domicilio'] ?? null, 'role' => 'notify'],
+        ] as $p) {
+            $this->persistClientAddress($p['client'], $p['addr']);
+            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
+                $bill->specificContacts()->create($c);
+            }
+        }
+
+        return $bill;
     }
 
     protected function createContainer(BillOfLading $bill, array $data): ?Container
@@ -614,10 +636,32 @@ protected function extractValue(string $scope, string $label): ?string
         $client = Client::where('legal_name', $name)->first();
         if ($client) return $client;
 
+        // País inferido por longitud del tax_id (regla QA 30/06, misma que Guaran). Solo afecta
+        // clientes NUEVOS (los existentes ya retornaron arriba sin tocar su país).
+        // 11 dígitos -> Argentina (11); 7-9 -> Paraguay (174). Sin tax o longitud atípica:
+        // default Paraguay 174 (TFP es tráfico AR->PY) con warning para revisión, porque
+        // country_id es NOT NULL y no hay columna de país en el archivo TFP.
+        $countryId = 174;
+        if ($normTaxId) {
+            $taxLen = strlen($normTaxId);
+            if ($taxLen === 11) {
+                $countryId = 11;
+                Log::info('TFP: pais inferido por tax_id', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => 11, 'pais' => 'Argentina']);
+            } elseif ($taxLen >= 7 && $taxLen <= 9) {
+                $countryId = 174;
+                Log::info('TFP: pais inferido por tax_id', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => 174, 'pais' => 'Paraguay']);
+            } else {
+                Log::warning('TFP: longitud de tax_id atipica, pais default (revisar)', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => $countryId]);
+            }
+        } else {
+            Log::warning('TFP: cliente sin tax_id, pais NO confiable (revisar)', ['name' => $name, 'country_id' => $countryId]);
+        }
+
         return Client::create([
             'tax_id' => $normTaxId,
-            'country_id' => 1,
-            'document_type_id' => 1,
+            // Argentina(11)->CUIT(1), Paraguay(174)->RUC(3). El TIPO siempre corresponde al país.
+            'country_id' => $countryId,
+            'document_type_id' => $countryId === 11 ? 1 : 3,
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
