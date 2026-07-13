@@ -14,6 +14,7 @@ use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class KlineDataParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use ResolvesClientAddresses;
 
     protected array $lines;
     protected array $stats = [
@@ -598,7 +600,25 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
 
         // 8) Crear BL (merge correcto con flete)
-        return BillOfLading::create(array_merge($blAttrs, $freightAttrs));
+        $bill = BillOfLading::create(array_merge($blAttrs, $freightAttrs));
+
+        // 9) Direcciones de las partes (regla 18/6): ficha si no tiene (Etapa 1),
+        //    específica del BL si difiere (Etapa 2). NP no se procesa: Kline no
+        //    crea notify en el BL (en archivos vistos NP = consignee siempre).
+        $shipperAddr   = $this->buildAddressFromPartyLines($shipperLines);
+        $consigneeAddr = $this->buildAddressFromPartyLines($consigneeLines);
+
+        $this->persistClientAddress($shipper, $shipperAddr);
+        if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper')) {
+            $bill->specificContacts()->create($c);
+        }
+
+        $this->persistClientAddress($consignee, $consigneeAddr);
+        if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee')) {
+            $bill->specificContacts()->create($c);
+        }
+
+        return $bill;
     }
 
 
@@ -919,6 +939,12 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             $parts = preg_split('/\s{3,}/', $cleanLine, 2);
             $companyName = trim($parts[0]);
         }
+
+        // FIX: formato de ancho fijo -> el nombre es el primer segmento de columna.
+        // Si el marcador fiscal (ej. CUIT) viene DESPUES de la direccion, $matches[1]
+        // arrastra la corrida de espacios + direccion, supera los 100 chars y el
+        // metodo devolvia null ("Cliente Desconocido"). Cortar en 2+ espacios lo evita.
+        $companyName = trim(preg_split('/\s{2,}/', $companyName, 2)[0]);
         
         // Validar que parece un nombre de empresa válido
         if (strlen($companyName) < 3 || strlen($companyName) > 100) {
@@ -1845,12 +1871,9 @@ protected function extractPortInfo(array $data): array
             }
         }
 
-        // address = todo junto (para guardar dirección si sirve)
-        $address = null;
-        if (!empty($lines)) {
-            $address = trim(implode(' ', array_map('trim', $lines)));
-            $address = $address !== '' ? $address : null;
-        }
+        // address: dirección limpia de la parte (segmentos sin el nombre, por cleanFileAddress).
+        // Antes se guardaba el bloque entero concatenado (nombre + fiscal + contacto).
+        $address = $this->buildAddressFromPartyLines($lines);
 
         return [
             'name'    => $name ?? 'Cliente Desconocido',
@@ -1858,6 +1881,33 @@ protected function extractPortInfo(array $data): array
             'email'   => $email,
             'address' => $address,
         ];
+    }
+
+    /**
+     * Arma la dirección de una parte Kline a partir de sus líneas PTYIREC.
+     * Las líneas son de ancho fijo: los campos se separan por corridas de 2+
+     * espacios. El primer segmento de la primera línea es el nombre de la
+     * empresa y se descarta; el resto pasa por cleanFileAddress (que quita
+     * la línea fiscal NIT/CUIT/CNPJ y corta la cola ATN/ATENCION/TEL).
+     * Validado contra los 11 bloques reales de Kline.DAT (13/07/2026).
+     */
+    protected function buildAddressFromPartyLines(array $lines): ?string
+    {
+        $parts = [];
+        foreach (array_values($lines) as $i => $line) {
+            $segs = preg_split('/\s{2,}/', trim((string) $line), -1, PREG_SPLIT_NO_EMPTY);
+            if (!is_array($segs) || empty($segs)) {
+                continue;
+            }
+            if ($i === 0) {
+                array_shift($segs); // primer segmento de la primera línea = nombre
+            }
+            if (!empty($segs)) {
+                $parts[] = implode(' ', array_map('trim', $segs));
+            }
+        }
+
+        return $this->cleanFileAddress(implode(' ', $parts));
     }
 
 }
