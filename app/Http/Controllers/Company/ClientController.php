@@ -273,7 +273,7 @@ class ClientController extends Controller
                 ]];
             }
                 
-                $this->updateClientContacts($client, $request->contacts);
+                $this->updateClientContacts($client, $contactsPayload);
             
             DB::commit();
 
