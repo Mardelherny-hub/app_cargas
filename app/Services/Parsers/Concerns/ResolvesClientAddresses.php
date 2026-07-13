@@ -161,7 +161,7 @@ trait ResolvesClientAddresses
         $s = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', ' ', $s) ?? $s;
 
         // 4. Etiqueta inicial de dirección (con variantes cortas y typos vistos en archivos reales)
-        $s = preg_replace('/^\s*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIR|DOMICILIO)\s*:\s*/i', '', $s) ?? $s;
+        $s = preg_replace('/^\s*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIRECCION|DIR|DOMICILIO)\s*:\s*/i', '', $s) ?? $s;
 
         // 5. Espacios múltiples y separadores colgantes
         $s = preg_replace('/\s+/', ' ', $s) ?? $s;
