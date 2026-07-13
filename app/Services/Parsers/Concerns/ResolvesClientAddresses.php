@@ -146,22 +146,33 @@ trait ResolvesClientAddresses
         // Multilínea a una sola línea (TFP trae domicilios con saltos)
         $s = str_replace(["\r\n", "\r", "\n"], ' ', $raw);
 
+        // Dos puntos fullwidth (U+FF1A) de archivos de origen chino -> ASCII
+        $s = str_replace('：', ':', $s);
+
         // 0. Ruido temprano (*, #) ANTES de los patrones, para que "RUC#123" y "* ADDRESS:" matcheen
         $s = preg_replace('/[*#]+/', ' ', $s) ?? $s;
 
         // 1. Marcadores fiscales + su número: RUC, R.U.C., CUIT, TAX ID, TAXID, RUT, VAT NO,
         //    RUC / TAX ID, ID.FISCAL, RUC NUMBER/NRO/NO. Separadores: : espacio - + =
-        $s = preg_replace('/(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|CNPJ|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NRO\.?|NO\.?)?\s*[:\s\-+=]\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
+        $s = preg_replace('/\b(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|CNPJ|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NBR\.?|NRO\.?|NO\.?)?\s*[:\s\-+=\.]\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
+
+        // 1b. TAX NUMBER / VAT con prefijo alfabetico de pais (ej. "TAX NUMBER:DE 120151991").
+        //     Acotada a estos marcadores: un prefijo alfa generico se comeria calles ("RUTA 2").
+        $s = preg_replace('/\b(TAX\s*NUMBER|VAT(\s*NO\.?)?)\s*[:\s\-+=\.]\s*[A-Z]{1,3}\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
 
         // 2. Cortar la cola desde el primer marcador de contacto (incluye variantes ATN/ATT/CTC)
-        $s = preg_replace('/\b(TEL|PH|PHONE|FAX|CEL|ATTN|ATN|ATT|ATENCION|CTC|E-?MAIL|MAIL|CONTACTO?)\b\s*[:.]?.*$/i', '', $s) ?? $s;
+        $s = preg_replace('/\b(TEL|PH|PHONE|FAX|CEL|ATTN|ATN|ATTE|ATT|ATENCION|CTC|E-?MAIL|MAIL|CONTACTO?)\b\s*[:.]?.*$/i', '', $s) ?? $s;
 
         // 3. Bloques <email o nombre> completos, y emails sueltos remanentes
         $s = preg_replace('/<[^>]*>/', ' ', $s) ?? $s;
         $s = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', ' ', $s) ?? $s;
 
         // 4. Etiqueta inicial de dirección (con variantes cortas y typos vistos en archivos reales)
-        $s = preg_replace('/^\s*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIRECCION|DIR|DOMICILIO)\s*:\s*/i', '', $s) ?? $s;
+        $s = preg_replace('/^[\s,;.\-]*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIRECCI[OÓ]N|DIR|DOMICILIO)\s*:\s*/iu', '', $s) ?? $s;
+
+        // Telefono sin marcador al final (queda tras quitar emails). Exige 8+ DIGITOS
+        // para no comerse codigos postales tipo CEP "83.070-90" (7 digitos).
+        $s = preg_replace('/[,;\s]*(?=(?:\D*\d){8,})\+?[\d(][\d\s\-()\/.]*\d\)?$/', '', $s) ?? $s;
 
         // 5. Espacios múltiples y separadores colgantes
         $s = preg_replace('/\s+/', ' ', $s) ?? $s;
