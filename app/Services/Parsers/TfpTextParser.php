@@ -120,7 +120,7 @@ class TfpTextParser implements ManifestParserInterface
                     // Crear items
                     $billItems = [];
                     foreach ($lines as $lineData) {
-                        $item = $this->createShipmentItem($bill, $lineData);
+                        $item = $this->createShipmentItem($bill, $lineData, !empty($containers));
                         if ($item) {
                             $allItems[] = $item;
                             $billItems[] = $item;
@@ -499,7 +499,7 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    protected function createShipmentItem(BillOfLading $bill, array $data): ?ShipmentItem
+    protected function createShipmentItem(BillOfLading $bill, array $data, bool $hasContainers = false): ?ShipmentItem
     {
         $lineNumber = ShipmentItem::where('bill_of_lading_id', $bill->id)->max('line_number') ?? 0;
         $lineNumber++;
@@ -512,8 +512,9 @@ protected function extractValue(string $scope, string $label): ?string
             'gross_weight_kg' => floatval($data['peso_total_bultos'] ?? 0),
             'net_weight_kg' => floatval($data['peso_total_bultos'] ?? 0) * 0.95,
             'volume_m3' => floatval($data['volumen_total'] ?? 0),
-            'cargo_type_id' => 1,
-            'packaging_type_id' => 1,
+            // Mismo criterio que el BL: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR) si hay contenedores.
+            'cargo_type_id' => $hasContainers ? 9 : 1,
+            'packaging_type_id' => $hasContainers ? 4 : 1,
             'commodity_code' => $data['cod_armonizado'] ?? null,
             'tariff_position' => $data['cod_armonizado'] ?: null,
             'created_by_user_id' => auth()->id()

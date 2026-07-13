@@ -74,7 +74,11 @@ class ArgentinaAnticipatedService
     {
         $this->company = $company;
         $this->user = $user;
-        $this->config = array_merge(self::ANTICIPATED_CONFIG, $config);
+        $this->config = array_merge(
+            self::ANTICIPATED_CONFIG,
+            ['environment' => $company->ws_environment ?? 'testing'],
+            $config
+        );
 
         // Inicializar servicios integrados
         $this->soapClient = new SoapClientService($company);
