@@ -151,10 +151,10 @@ trait ResolvesClientAddresses
 
         // 1. Marcadores fiscales + su número: RUC, R.U.C., CUIT, TAX ID, TAXID, RUT, VAT NO,
         //    RUC / TAX ID, ID.FISCAL, RUC NUMBER/NRO/NO. Separadores: : espacio - + =
-        $s = preg_replace('/(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NRO\.?|NO\.?)?\s*[:\s\-+=]\s*[0-9][0-9\-\.\s]*/i', ' ', $s) ?? $s;
+        $s = preg_replace('/(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|CNPJ|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NRO\.?|NO\.?)?\s*[:\s\-+=]\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
 
         // 2. Cortar la cola desde el primer marcador de contacto (incluye variantes ATN/ATT/CTC)
-        $s = preg_replace('/\b(TEL|PH|PHONE|FAX|CEL|ATTN|ATN|ATT|CTC|E-?MAIL|MAIL|CONTACTO?)\b\s*[:.]?.*$/i', '', $s) ?? $s;
+        $s = preg_replace('/\b(TEL|PH|PHONE|FAX|CEL|ATTN|ATN|ATT|ATENCION|CTC|E-?MAIL|MAIL|CONTACTO?)\b\s*[:.]?.*$/i', '', $s) ?? $s;
 
         // 3. Bloques <email o nombre> completos, y emails sueltos remanentes
         $s = preg_replace('/<[^>]*>/', ' ', $s) ?? $s;
