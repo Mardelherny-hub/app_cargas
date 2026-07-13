@@ -14,6 +14,7 @@ use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Models\ManifestImport;
 use App\Models\CargoType;
 use App\Models\PackagingType;
@@ -40,6 +41,7 @@ class G2OceanXmlParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use ResolvesClientAddresses;
 
     protected array $stats = [
         'processed' => 0,
@@ -631,7 +633,7 @@ class G2OceanXmlParser implements ManifestParserInterface
         $totalWeight = array_sum(array_column($blData['cargo_items'], 'weight_mt'));
         $totalVolume = array_sum(array_column($blData['cargo_items'], 'volume'));
 
-        return BillOfLading::create([
+        $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $blData['bl_number'],
             'bill_date' => $blData['issue_date'] ?: now(),
@@ -653,6 +655,28 @@ class G2OceanXmlParser implements ManifestParserInterface
             'status' => 'draft',
             'created_by_user_id' => auth()->id()
         ]);
+
+        // Direcciones de las partes (regla 18/6): ficha si no tiene (Etapa 1),
+        // especifica del BL si difiere (Etapa 2). El notify solo cuando es un
+        // cliente real (no "SAME AS CONSIGNEE", que queda como texto).
+        $this->persistClientAddress($shipper, $blData['shipper']['address'] ?? null);
+        if ($c = $this->resolveSpecificAddress($shipper, $blData['shipper']['address'] ?? null, 'shipper')) {
+            $bill->specificContacts()->create($c);
+        }
+
+        $this->persistClientAddress($consignee, $blData['consignee']['address'] ?? null);
+        if ($c = $this->resolveSpecificAddress($consignee, $blData['consignee']['address'] ?? null, 'consignee')) {
+            $bill->specificContacts()->create($c);
+        }
+
+        if ($notify) {
+            $this->persistClientAddress($notify, $blData['notify']['address'] ?? null);
+            if ($c = $this->resolveSpecificAddress($notify, $blData['notify']['address'] ?? null, 'notify_party')) {
+                $bill->specificContacts()->create($c);
+            }
+        }
+
+        return $bill;
     }
 
     /**
