@@ -670,35 +670,38 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
+    /**
+     * Resolver puerto por código. NUNCA auto-crea puertos (política del proyecto:
+     * el catálogo tiene ~17.500; un código desconocido debe dar error claro).
+     * Los generadores TFP usan códigos propios que no son UN/LOCODE; se mapean
+     * con aliases verificados contra archivos reales (13/07/2026):
+     *   ARBAI ("BUENOS AIRES") -> ARBUE | PYTV ("TERPORT-VILLETA") -> PYTVT
+     *   PYSEF ("PUERTO SEGURO FLUVIAL") -> PYPSE (alta deliberada en catálogo)
+     */
     protected function findOrCreatePort(string $code): Port
     {
-        if (empty($code)) $code = 'UNKNOWN';
         $code = strtoupper(trim($code));
 
-        $port = Port::where('code', $code)->first();
-        if ($port) return $port;
+        $aliases = [
+            'ARBAI' => 'ARBUE',
+            'PYTV'  => 'PYTVT',
+            'PYSEF' => 'PYPSE',
+        ];
+        $resolved = $aliases[$code] ?? $code;
 
-        $countryId = 1;
-        $cityName = 'Ciudad Desconocida';
-
-        if (str_starts_with($code, 'PY')) {
-            $countryId = 2;
-            $cityName = 'Asunción';
-        } elseif (str_starts_with($code, 'BR')) {
-            $countryId = 3;
-            $cityName = 'Porto Alegre';
-        } else {
-            $cityName = 'Buenos Aires';
+        $port = Port::where('code', $resolved)->first();
+        if ($port) {
+            if ($resolved !== $code) {
+                Log::info('TFP: puerto mapeado por alias', ['codigo_archivo' => $code, 'codigo_resuelto' => $resolved]);
+            }
+            return $port;
         }
 
-        return Port::create([
-            'code' => $code,
-            'name' => 'Puerto ' . $code,
-            'city' => $cityName,
-            'country_id' => $countryId,
-            'port_type' => 'river',
-            'active' => true,
-        ]);
+        throw new Exception(
+            "Puerto desconocido en el archivo TFP: '{$code}'. " .
+            "No existe en el catálogo de puertos y no se crean puertos automáticamente. " .
+            "Verifique el código o solicite el alta del puerto al administrador."
+        );
     }
 
     protected function findOrCreateContainerType(string $code): ContainerType
