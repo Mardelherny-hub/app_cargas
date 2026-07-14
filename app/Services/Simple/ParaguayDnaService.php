@@ -1220,7 +1220,7 @@ public function sendXrsp(Voyage $voyage, $vessel, array $options = []): array
         // BYPASS INTELIGENTE
         // ========================================
         $shouldBypass = $this->company->shouldBypassTesting('paraguay');
-        $environment = $this->config['environment'] ?? 'testing';
+        $environment = $this->resolveDnaEnvironment();
 
         if ($shouldBypass) {
             $this->logOperation('info', '🔄 BYPASS DocumentoIMG - Simulando respuesta', [
@@ -1315,7 +1315,7 @@ public function sendXrsp(Voyage $voyage, $vessel, array $options = []): array
         // ========================================
 
         $shouldBypass = $this->company->shouldBypassTesting('paraguay');
-        $environment = $this->config['environment'] ?? 'testing';
+        $environment = $this->resolveDnaEnvironment();
         //$auth = $this->config['auth'];
 
         // Verificar si debe usar bypass
