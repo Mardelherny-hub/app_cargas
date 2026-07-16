@@ -310,11 +310,10 @@
                                                 <label class="block text-xs font-medium text-gray-600 mb-1">Tipo Documento</label>
                                                 <select id="att_doc_type" class="w-full text-xs border-gray-300 rounded-md shadow-sm">
                                                     <option value="380">380 - Factura Comercial</option>
-                                                    <option value="271">271 - Packing List</option>
-                                                    <option value="705">705 - Certificado de Origen</option>
-                                                    <option value="710">710 - Certificado Fitosanitario</option>
-                                                    <option value="861">861 - Certificado</option>
-                                                    <option value="911">911 - Permiso</option>
+                                                    <option value="705">705 - Conocimiento de Embarque</option>
+                                                    <option value="710">710 - Carta de Porte Marítimo</option>
+                                                    <option value="714">714 - Conocimiento de Embarque Desconsolidación</option>
+                                                    <option value="146">146 - Orden de Embarco del Buque de Carga</option>
                                                     <option value="999">999 - Otros</option>
                                                 </select>
                                             </div>
