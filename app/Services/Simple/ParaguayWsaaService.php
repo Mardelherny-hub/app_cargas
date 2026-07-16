@@ -46,7 +46,7 @@ class ParaguayWsaaService
 
     private const WSAA_DESTINATION = [
         'testing' => 'C=py, O=dna, OU=sofia, CN=wsaatest',
-        'production' => 'C=py, O=dna, OU=sofia, CN=wsaa',
+        'production' => 'C=py, O=aduana, OU=sofia, CN=wsaa',
     ];
 
     /**
