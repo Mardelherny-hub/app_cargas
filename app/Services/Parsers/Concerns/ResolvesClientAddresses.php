@@ -154,7 +154,7 @@ trait ResolvesClientAddresses
 
         // 1. Marcadores fiscales + su número: RUC, R.U.C., CUIT, TAX ID, TAXID, RUT, VAT NO,
         //    RUC / TAX ID, ID.FISCAL, RUC NUMBER/NRO/NO. Separadores: : espacio - + =
-        $s = preg_replace('/\b(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|CNPJ|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NBR\.?|NRO\.?|NO\.?)?\s*[:\s\-+=\.]\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
+        $s = preg_replace('/\b(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|C[NP]{2}J|TAX\s*ID|TAXID|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NBR\.?|NRO\.?|NO\.?)?\s*[:\s\-+=\.]\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
 
         // 1b. TAX NUMBER / VAT con prefijo alfabetico de pais (ej. "TAX NUMBER:DE 120151991").
         //     Acotada a estos marcadores: un prefijo alfa generico se comeria calles ("RUTA 2").
@@ -168,7 +168,7 @@ trait ResolvesClientAddresses
         $s = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', ' ', $s) ?? $s;
 
         // 4. Etiqueta inicial de dirección (con variantes cortas y typos vistos en archivos reales)
-        $s = preg_replace('/^[\s,;.\-]*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIRECCI[OÓ]N|DIR|DOMICILIO)\s*:\s*/iu', '', $s) ?? $s;
+        $s = preg_replace('/^[\s,;.\-]*(ADDRESS|ADRRESS|ADRESS|ADD|AD|DIRECCI[OÓ]N|DIR|DOMICILIO|ENDERE[Çç]O)\s*:\s*/iu', '', $s) ?? $s;
 
         // Telefono sin marcador al final (queda tras quitar emails). Exige 8+ DIGITOS
         // para no comerse codigos postales tipo CEP "83.070-90" (7 digitos).

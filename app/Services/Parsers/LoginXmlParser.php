@@ -22,6 +22,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -49,6 +50,7 @@ class LoginXmlParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use ResolvesClientAddresses;
     // Mapeo de tipos de contenedor del XML a tipos del sistema
     protected array $containerTypeMapping = [
         '40RH' => 'Reefer High Cube 40ft',
@@ -887,6 +889,25 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
+     * Dirección del cliente en Login: viene mezclada dentro del nodo de la parte
+     * (línea 1 = nombre, líneas siguientes = dirección, última = CUIT/CNPJ).
+     * Devuelve todo menos la primera línea; el trait limpia el resto con cleanFileAddress().
+     */
+    protected function extractAddressFromNode(?string $node): ?string
+    {
+        if ($node === null || trim($node) === '') {
+            return null;
+        }
+        $lines = preg_split('/\r\n|\r|\n/', $node);
+        if (count($lines) < 2) {
+            return null; // solo el nombre, sin dirección
+        }
+        array_shift($lines); // descartar la primera línea (el nombre)
+        $rest = trim(implode(' ', $lines));
+        return $rest === '' ? null : $rest;
+    }
+
+    /**
      * Crear Bill of Lading desde datos transformados de un BL individual
      */
     protected function createBillOfLadingFromData(array $blData, Shipment $shipment, array $context): BillOfLading
@@ -928,7 +949,7 @@ class LoginXmlParser implements ManifestParserInterface
             ? $this->findPortByName($blData['discharge_port'])
             : null;
 
-        return BillOfLading::create([
+        $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $blData['bill_number'],
             'shipper_id' => $shipper?->id,
@@ -950,6 +971,22 @@ class LoginXmlParser implements ManifestParserInterface
             'is_consolidated' => false,
             'created_by_user_id' => $context['user_id']
         ]);
+
+        // Dirección del cliente: Login la trae mezclada en el nodo de cada parte.
+        // Etapa 1: persistir en la ficha si el cliente no tiene dirección.
+        // Etapa 2: si difiere de la registrada, guardarla como dirección específica del BL.
+        foreach ([
+            ['client' => $shipper,     'addr' => $this->extractAddressFromNode($blData['shipper_name'] ?? null),      'role' => 'shipper'],
+            ['client' => $consignee,   'addr' => $this->extractAddressFromNode($blData['consignee_name'] ?? null),    'role' => 'consignee'],
+            ['client' => $notifyParty, 'addr' => $this->extractAddressFromNode($blData['notify_party_name'] ?? null), 'role' => 'notify_party'],
+        ] as $p) {
+            $this->persistClientAddress($p['client'], $p['addr']);
+            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
+                $bill->specificContacts()->create($c);
+            }
+        }
+
+        return $bill;
     }
 
     /**
