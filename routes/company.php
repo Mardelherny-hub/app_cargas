@@ -468,6 +468,9 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::post('/', [ManifestImportController::class, 'store'])->name('store');
         Route::get('/history', [ManifestImportController::class, 'history'])->name('history');
         Route::get('/report', [ManifestImportController::class, 'showReport'])->name('report');
+        // Seguimiento de importación encolada (pantalla de espera + polling JSON)
+        Route::get('/processing/{uuid}', [ManifestImportController::class, 'processing'])->name('processing');
+        Route::get('/status/{uuid}', [ManifestImportController::class, 'importStatus'])->name('status');
         Route::get('/history/{import}', [ManifestImportController::class, 'showImport'])->name('show');
         Route::post('/{import}/revert', [ManifestImportController::class, 'revert'])->name('revert');
     });
