@@ -13,7 +13,22 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            
+
+            {{-- Mensajes de resultado (importación encolada / errores) --}}
+            @if (session('success'))
+                <div class="bg-green-50 border border-green-200 text-green-800 rounded-md p-4 mb-6">
+                    {{ session('success') }}
+                    <a href="{{ route('company.manifests.import.history') }}" class="underline font-medium ml-1">
+                        Ver historial →
+                    </a>
+                </div>
+            @endif
+            @if (session('error'))
+                <div class="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 mb-6">
+                    {{ session('error') }}
+                </div>
+            @endif
+
             <!-- Información de formatos soportados -->
             <div class="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
                 <div class="flex">
@@ -59,8 +74,8 @@
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            <p style="font-weight:600; color:#111827; margin-bottom:0.5rem;">Importando manifiesto…</p>
-                            <p style="font-size:0.875rem; color:#6b7280;">Esto puede tardar varios minutos en archivos grandes.<br><strong>No cierre ni recargue esta página.</strong></p>
+                            <p style="font-weight:600; color:#111827; margin-bottom:0.5rem;">Enviando archivo…</p>
+                            <p style="font-size:0.875rem; color:#6b7280;">Se está poniendo en cola para procesar.<br>En un momento vas a ver el resultado.</p>
                         </div>
                     </div>
 

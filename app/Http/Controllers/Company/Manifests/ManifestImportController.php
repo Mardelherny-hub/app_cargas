@@ -116,25 +116,43 @@ class ManifestImportController extends Controller
         ]);
 
         try {
-            // ✅ MEJORADO: Auto-detectar parser con información adicional
-            $parser = $this->parserFactory->getParser($fullPath);
-            
-            Log::info('Parser detected for import', [
-                'parser_class' => get_class($parser),
+            // Registro de seguimiento: existe desde el encolado, lo sigue el spinner.
+            // Independiente de si el parser llega a crear su ManifestImport.
+            $tracking = \App\Models\ImportTracking::create([
+                'company_id'    => $company->id,
+                'user_id'       => auth()->id(),
+                'vessel_id'     => $vessel->id,
                 'original_name' => $originalName,
-                'detected_extension' => pathinfo($fullPath, PATHINFO_EXTENSION),
-                'file_format' => $parser->getFormatInfo()['name'] ?? 'Unknown'
+                'stored_path'   => $path,
+                'status'        => \App\Models\ImportTracking::STATUS_QUEUED,
             ]);
 
-            // Procesar archivo SIN transacción externa (los parsers manejan sus propias transacciones)
-            $result = $parser->parse($fullPath, ['vessel_id' => $vessel->id]);
+            // Encolar: el parseo pesado corre en el worker de la cola 'imports',
+            // fuera del request (evita crashes de memoria y no bloquea la web).
+            // El Job reautentica, llama al mismo parse() de siempre y actualiza el
+            // tracking según el resultado. Los parsers no se tocan.
+            \App\Jobs\ProcessManifestImportJob::dispatch(
+                $tracking->id,
+                $path,
+                $vessel->id,
+                auth()->id(),
+                $originalName
+            );
 
-            // Limpiar archivo temporal
-            Storage::delete($path);
+            Log::info('Manifest import encolado', [
+                'tracking_id'   => $tracking->id,
+                'tracking_uuid' => $tracking->uuid,
+                'original_name' => $originalName,
+                'stored_path'   => $path,
+                'vessel_id'     => $vessel->id,
+                'user_id'       => auth()->id(),
+                'company_id'    => $company->id,
+            ]);
 
-            // Manejar resultado según éxito/fallo
-            return $this->handleImportResult($result, $originalName);
-
+            // Pantalla de espera con spinner (polling por uuid hasta que el worker termine).
+            return redirect()->route('company.manifests.import.processing', [
+                'uuid' => $tracking->uuid,
+            ]);
         } catch (Exception $e) {
             // Limpiar archivo temporal en caso de error
             Storage::delete($path);
@@ -464,22 +482,152 @@ class ManifestImportController extends Controller
     }
 
     /**
+     * Pantalla de espera de una importación encolada. Muestra el spinner que
+     * hace polling a importStatus() y redirige al reporte cuando termina.
+     */
+    public function processing(Request $request, string $uuid)
+    {
+        $company = auth()->user()->company;
+        $tracking = \App\Models\ImportTracking::where('uuid', $uuid)
+            ->where('company_id', $company->id)
+            ->firstOrFail();
+
+        return view('company.manifests.import-processing', [
+            'uuid'     => $tracking->uuid,
+            'fileName' => $tracking->original_name,
+        ]);
+    }
+
+    /**
+     * Estado de una importación encolada (para polling desde la pantalla de espera).
+     * Busca el ManifestImport por file_hash creado a partir del encolado ($qt),
+     * para no confundirlo con una importación previa del mismo archivo.
+     */
+    public function importStatus(Request $request, string $uuid)
+    {
+        $company = auth()->user()->company;
+
+        $tracking = \App\Models\ImportTracking::where('uuid', $uuid)
+            ->where('company_id', $company->id)
+            ->first();
+
+        if (!$tracking) {
+            return response()->json(['state' => 'queued']);
+        }
+
+        switch ($tracking->status) {
+            case \App\Models\ImportTracking::STATUS_COMPLETED:
+            case \App\Models\ImportTracking::STATUS_WARNINGS:
+                // Si el parser creó su ManifestImport, redirigimos al reporte;
+                // si no (raro en éxito), caemos al historial.
+                $redirect = $tracking->manifest_import_id
+                    ? route('company.manifests.import.report', ['import' => $tracking->manifest_import_id])
+                    : route('company.manifests.import.history');
+
+                return response()->json([
+                    'state'        => 'completed',
+                    'voyage_id'    => $tracking->voyage_id,
+                    'redirect_url' => $redirect,
+                ]);
+
+            case \App\Models\ImportTracking::STATUS_FAILED:
+                return response()->json([
+                    'state'  => 'failed',
+                    'errors' => [$tracking->error_message ?? 'La importación falló.'],
+                ]);
+
+            default: // queued / processing
+                return response()->json([
+                    'state' => $tracking->status === \App\Models\ImportTracking::STATUS_PROCESSING
+                        ? 'processing'
+                        : 'queued',
+                ]);
+        }
+    }
+
+    /**
      * Mostrar reporte detallado de importación
      */
-    public function showReport(Request $request)
+public function showReport(Request $request)
     {
-        // Verificar que venimos de una importación exitosa
+        // Flujo asíncrono: el polling redirige acá con ?import=ID. Se arma el
+        // reporte desde el ManifestImport (el worker no puede escribir en sesión).
+        if ($request->filled('import')) {
+            $company = auth()->user()->company;
+            $import = ManifestImport::where('id', $request->query('import'))
+                ->where('company_id', $company->id)
+                ->first();
+
+            if (!$import) {
+                return redirect()->route('company.manifests.import.index')
+                    ->with('error', 'No se encontró la importación solicitada.');
+            }
+
+            return view('company.manifests.import-report', $this->buildReportDataFromImport($import));
+        }
+
+        // Compatibilidad: flujo viejo por sesión flash.
         if (!$request->session()->has('import_report_data')) {
             return redirect()->route('company.manifests.import.index')
                 ->with('error', 'No hay datos de importación para mostrar.');
         }
-
         $reportData = $request->session()->get('import_report_data');
-        
+
         // Limpiar datos de sesión después de obtenerlos
         $request->session()->forget('import_report_data');
-
         return view('company.manifests.import-report', $reportData);
+    }
+
+    /**
+     * Arma los datos del reporte desde un ManifestImport (flujo asíncrono).
+     * Usa los conteos y datos ya persistidos por el parser, sin depender de
+     * $result. Misma estructura que prepareReportData para reusar la vista.
+     */
+    protected function buildReportDataFromImport(ManifestImport $import): array
+    {
+        $import->loadMissing(['user', 'voyage', 'voyage.vessel', 'voyage.originPort', 'voyage.destinationPort']);
+
+        $isSuccess  = in_array($import->status, ['completed', 'completed_with_warnings']);
+        $hasWarnings = $import->status === 'completed_with_warnings';
+
+        $reportData = [
+            'importResult' => [
+                'success'     => $isSuccess,
+                'hasWarnings' => $hasWarnings,
+            ],
+            'fileInfo' => [
+                'name'        => $import->file_name,
+                'imported_at' => optional($import->created_at)->format('d/m/Y H:i:s'),
+                'imported_by' => $import->user->name ?? 'Usuario',
+            ],
+            'stats'    => [],
+            'voyage'   => null,
+            'createdRecords' => [
+                'billsOfLading' => [],
+                'containers'    => [],
+            ],
+            'counts' => [
+                'billsOfLading' => $import->created_bills ?? 0,
+                'containers'    => $import->created_containers ?? 0,
+            ],
+            'warnings' => $import->warnings ?? [],
+            'errors'   => $import->errors ?? [],
+        ];
+
+        if ($import->voyage) {
+            $reportData['voyage'] = [
+                'id'               => $import->voyage->id,
+                'voyage_number'    => $import->voyage->voyage_number,
+                'status'           => $import->voyage->status ?? 'planning',
+                'vessel_name'      => $import->voyage->vessel->name ?? null,
+                'origin_port'      => $import->voyage->originPort->name ?? null,
+                'destination_port' => $import->voyage->destinationPort->name ?? null,
+                'departure_date'   => $import->voyage->departure_date
+                    ? $import->voyage->departure_date->format('d/m/Y') : null,
+            ];
+        }
+
+        return $reportData;
     }
 
     /**
