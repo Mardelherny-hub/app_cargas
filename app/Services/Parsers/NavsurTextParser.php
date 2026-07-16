@@ -16,6 +16,7 @@ use App\Models\ContainerType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -33,6 +34,7 @@ class NavsurTextParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
+    use ResolvesClientAddresses;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -283,6 +285,9 @@ class NavsurTextParser implements ManifestParserInterface
             'cargador_nombre' => $this->extractValue($section, 'CARGADORNOMBRE:'),
             'consignatario_nombre' => $this->extractValue($section, 'CONSIGNATARIONOMBRE:'),
             'notificatario1_nombre' => $this->extractValue($section, 'NOTIFICATARIO1NOMBRE:'),
+            'cargador_domicilio' => $this->extractValue($section, 'CARGADORDOMICILIO:'),
+            'consignatario_domicilio' => $this->extractValue($section, 'CONSIGNATARIODOMICILIO:'),
+            'notificatario1_domicilio' => $this->extractValue($section, 'NOTIFICATARIO1DOMICILIO:'),
             'containers' => []
         ];
         
@@ -674,6 +679,21 @@ class NavsurTextParser implements ManifestParserInterface
             'bill_date' => $bill->bill_date->toDateString(),
             'loading_date' => $bill->loading_date->toDateString()
         ]);
+
+        // Dirección del cliente: Navsur trae los campos *DOMICILIO (vacíos en algunos
+        // archivos). Con dato -> Etapa 1 persiste en la ficha si el cliente no tiene
+        // dirección; Etapa 2 la guarda como específica del BL si difiere. Vacío -> el
+        // trait no hace nada y el BL usa la dirección por defecto del cliente.
+        foreach ([
+            ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,       'role' => 'shipper'],
+            ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null,  'role' => 'consignee'],
+            ['client' => $notify,    'addr' => $data['notificatario1_domicilio'] ?? null, 'role' => 'notify_party'],
+        ] as $p) {
+            $this->persistClientAddress($p['client'], $p['addr']);
+            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
+                $bill->specificContacts()->create($c);
+            }
+        }
 
         return $bill;
     }
