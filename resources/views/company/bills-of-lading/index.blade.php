@@ -308,6 +308,38 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                                                    class="text-red-600 hover:text-red-900 text-sm font-medium">
                                                     PDF
                                                 </a>
+                                                @if(in_array('Cargas', $companyRoles))
+                                                    @if($bill->canBeDeleted())
+                                                        <form action="{{ route('company.bills-of-lading.destroy', $bill) }}" 
+                                                              method="POST" 
+                                                              onsubmit="return confirm('¿Eliminar el conocimiento {{ $bill->bill_number }}?\n\nEsta acción no se puede deshacer.');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" 
+                                                                    class="text-red-700 hover:text-red-900 text-sm font-medium">
+                                                                Eliminar
+                                                            </button>
+                                                        </form>
+                                                    @else
+                                                        @php
+                                                            $itemsCount = $bill->shipmentItems()->count();
+                                                            if ($itemsCount > 0) {
+                                                                $motivo = "Este conocimiento tiene {$itemsCount} item(s) asociados.\n\nElimine primero todos los items desde la vista del conocimiento.";
+                                                            } elseif ($bill->status !== 'draft') {
+                                                                $motivo = "Solo se pueden eliminar conocimientos en estado borrador.";
+                                                            } elseif ($bill->webservice_sent_at || $bill->argentina_sent_at || $bill->paraguay_sent_at) {
+                                                                $motivo = "Este conocimiento ya fue enviado a la Aduana y no puede eliminarse.";
+                                                            } else {
+                                                                $motivo = "Este conocimiento no puede eliminarse.";
+                                                            }
+                                                        @endphp
+                                                        <button type="button" 
+                                                                onclick="alert(@js($motivo))"
+                                                                class="text-gray-400 hover:text-gray-600 text-sm font-medium cursor-help">
+                                                            Eliminar
+                                                        </button>
+                                                    @endif
+                                                @endif
                                             </div>
                                         </div>
                                     </div>

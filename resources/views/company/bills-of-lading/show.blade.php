@@ -28,6 +28,38 @@ if ($user) {
                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 PDF
             </a>
+            @if(in_array('Cargas', $companyRoles))
+                @if($billOfLading->canBeDeleted())
+                    <form action="{{ route('company.bills-of-lading.destroy', $billOfLading) }}" 
+                          method="POST" 
+                          onsubmit="return confirm('¿Eliminar el conocimiento {{ $billOfLading->bill_number }}?\n\nEsta acción no se puede deshacer.');">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" 
+                                class="bg-red-800 hover:bg-red-900 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                            Eliminar
+                        </button>
+                    </form>
+                @else
+                    @php
+                        $itemsCount = $billOfLading->shipmentItems()->count();
+                        if ($itemsCount > 0) {
+                            $motivo = "Este conocimiento tiene {$itemsCount} item(s) asociados.\n\nElimine primero todos los items desde la sección de items de este conocimiento.";
+                        } elseif ($billOfLading->status !== 'draft') {
+                            $motivo = "Solo se pueden eliminar conocimientos en estado borrador.";
+                        } elseif ($billOfLading->webservice_sent_at || $billOfLading->argentina_sent_at || $billOfLading->paraguay_sent_at) {
+                            $motivo = "Este conocimiento ya fue enviado a la Aduana y no puede eliminarse.";
+                        } else {
+                            $motivo = "Este conocimiento no puede eliminarse.";
+                        }
+                    @endphp
+                    <button type="button" 
+                            onclick="alert(@js($motivo))"
+                            class="bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium cursor-help">
+                        Eliminar
+                    </button>
+                @endif
+            @endif
         </div>
     </div>
 </x-slot>
