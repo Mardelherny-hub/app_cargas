@@ -1074,6 +1074,80 @@ private function removeAllContainers(ShipmentItem $shipmentItem)
     }
 
     /**
+     * Eliminar múltiples items seleccionados.
+     */
+    public function bulkDestroy(Request $request)
+    {
+        // Mismos permisos que destroy()
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para eliminar items de shipments.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
+        if (!$this->isCompanyAdmin()) {
+            abort(403, 'Solo el administrador de empresa puede eliminar items.');
+        }
+
+        $validated = $request->validate([
+            'item_ids'   => 'required|array|min:1',
+            'item_ids.*' => 'integer|exists:shipment_items,id',
+        ]);
+
+        $items = ShipmentItem::whereIn('id', $validated['item_ids'])->get();
+
+        if ($items->isEmpty()) {
+            return back()->with('error', 'No se encontraron items para eliminar.');
+        }
+
+        // Verificar acceso y estado de TODOS antes de borrar nada
+        foreach ($items as $item) {
+            if (!$this->canAccessCompany($item->shipment->voyage->company_id)) {
+                abort(403, 'No tiene permisos para eliminar uno de los items seleccionados.');
+            }
+
+            if (!$this->canManageShipmentItems($item->shipment)) {
+                return back()->with('error', 'No puede eliminar items de este shipment en su estado actual.');
+            }
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $shipments = $items->pluck('shipment')->unique('id');
+            $deleted   = 0;
+
+            foreach ($items as $item) {
+                $item->delete();
+                $deleted++;
+            }
+
+            // Recalcular estadísticas una sola vez por shipment afectado
+            foreach ($shipments as $shipment) {
+                $shipment->recalculateItemStats();
+            }
+
+            DB::commit();
+
+            Log::info('Items eliminados en lote', [
+                'count'    => $deleted,
+                'item_ids' => $validated['item_ids'],
+                'user_id'  => Auth::id(),
+            ]);
+
+            return back()->with('success', "Se eliminaron {$deleted} item(s) exitosamente.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error eliminando items en lote: ' . $e->getMessage());
+
+            return back()->with('error', 'Error al eliminar los items. Intente nuevamente.');
+        }
+    }
+
+    /**
      * Duplicar item.
      */
     public function duplicate(ShipmentItem $shipmentItem)
