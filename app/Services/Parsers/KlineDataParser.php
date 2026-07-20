@@ -193,15 +193,13 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     );
                 }
 
+                // Puertos del viaje: se resuelven una vez desde el primer BL y
+                // sirven de referencia general del viaje y de fallback por BL.
                 $originPort      = $this->findOrCreatePort($portInfo['origin']);
                 $destinationPort = $this->findOrCreatePort($portInfo['destination']);
 
-                $dates      = $this->extractDates($firstBL['data']); // ← NUEVO
+                $dates      = $this->extractDates($firstBL['data']);
                 $voyageInfo = $this->extractVoyageInfo($firstBL['data']);
-
-                // Crear puertos
-                $originPort = $this->findOrCreatePort($portInfo['origin'], 'Buenos Aires');
-                $destinationPort = $this->findOrCreatePort($portInfo['destination'], 'Terminal Villeta');
 
                 // CORREGIDO: Crear voyage usando $options
                 $voyage = $this->createVoyage($voyageInfo, $originPort, $destinationPort, $options);
@@ -224,8 +222,35 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                             continue;
                         }
 
+                        // Puertos propios del BL. Cada BLNOREC trae su propio
+                        // GNRLREC con los puertos reales de ese conocimiento.
+                        // Antes se usaban los del viaje (extraídos una sola vez
+                        // del primer BL) y todos los conocimientos quedaban con
+                        // el mismo puerto de carga: verificado sobre Kline.DAT,
+                        // 4 BLs cargan en COCTG y 3 en BRPNG, y los 7 quedaban
+                        // en COCTG. Fallback al puerto del viaje si el BL no
+                        // resuelve o el código no está en el catálogo.
+                        $blOriginPort      = $originPort;
+                        $blDestinationPort = $destinationPort;
+
+                        try {
+                            $blPortInfo = $this->extractPortInfo($blData['data']);
+
+                            if (!empty($blPortInfo['origin']) && !empty($blPortInfo['destination'])) {
+                                $blOriginPort      = $this->findOrCreatePort($blPortInfo['origin']);
+                                $blDestinationPort = $this->findOrCreatePort($blPortInfo['destination']);
+                            }
+                        } catch (\Throwable $e) {
+                            $blOriginPort      = $originPort;
+                            $blDestinationPort = $destinationPort;
+                            Log::warning('KLine: no se pudieron resolver puertos del BL, se usan los del viaje', [
+                                'bl'    => $blNumber,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+
                         // Crear BillOfLading
-                        $bill = $this->createBillOfLading($shipment, $blNumber, $blData['data'], $originPort, $destinationPort);
+                        $bill = $this->createBillOfLading($shipment, $blNumber, $blData['data'], $blOriginPort, $blDestinationPort);
                         $createdBills[] = $bill;
 
                         // CORREGIDO: Crear ShipmentItems con campos obligatorios

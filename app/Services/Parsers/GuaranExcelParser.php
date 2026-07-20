@@ -497,6 +497,31 @@ class GuaranExcelParser implements ManifestParserInterface
     }
 
     /**
+     * Resolver puerto por código - LOOKUP ESTRICTO, nunca crea puertos.
+     *
+     * Se usa a nivel conocimiento. El archivo Guaran puede traer distintos POL
+     * en el mismo manifiesto (PYASU y PYVLL conviven; verificado sobre archivo
+     * real: 115 filas PYASU + 120 filas PYVLL). Devuelve null si el código está
+     * vacío o no existe en `ports`; el llamador decide el fallback.
+     */
+    protected function resolvePortIdByCode(?string $code): ?int
+    {
+        $code = strtoupper(trim((string) $code));
+
+        if ($code === '') {
+            return null;
+        }
+
+        $portId = Port::where('code', $code)->where('active', true)->value('id');
+
+        if (!$portId) {
+            Log::warning('Guaran: código de puerto no encontrado en ports', ['code' => $code]);
+        }
+
+        return $portId;
+    }
+
+    /**
      * Crear shipment
      */
     protected function createShipment(Voyage $voyage, array $voyageData): Shipment
@@ -607,8 +632,16 @@ class GuaranExcelParser implements ManifestParserInterface
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
             'notify_party_id' => $notifyParty?->id,
-            'loading_port_id' => $shipment->voyage->origin_port_id,
-            'discharge_port_id' => $shipment->voyage->destination_port_id,
+            // Puertos del conocimiento: se resuelven por el POL/POD de la propia
+            // fila del archivo, NO por el del Voyage. Antes heredaban el puerto
+            // del viaje (armado con la primera fila del Excel) y todos los BLs
+            // quedaban con Asunción aunque cargaran en Villeta (Roberto 20/07).
+            // Fallback al puerto del viaje si el código del archivo no resuelve,
+            // para no dejar el BL sin puerto.
+            'loading_port_id' => $this->resolvePortIdByCode($row['POL'] ?? null)
+                ?? $shipment->voyage->origin_port_id,
+            'discharge_port_id' => $this->resolvePortIdByCode($row['POD'] ?? null)
+                ?? $shipment->voyage->destination_port_id,
             'primary_cargo_type_id' => $primaryCargoTypeId,
             'primary_packaging_type_id' => $primaryPackagingTypeId,
             'origin_operative_code' => '10073', // Guaran: lugar operativo origen siempre 10073 (Roberto 22/05). Confirmado contra carga manual (BL 32/31). Serializer lee origin_operative_code para codLugOper origen.
