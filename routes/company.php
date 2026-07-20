@@ -80,6 +80,9 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
 
 // Gestión de Items de Cargas
 Route::prefix('shipment-items')->name('company.shipment-items.')->group(function () {
+    // IMPORTANTE: debe ir ANTES de las rutas con {shipmentItem}
+    Route::delete('/bulk-destroy', [ShipmentItemController::class, 'bulkDestroy'])->name('bulk-destroy');
+
     Route::get('/create', [ShipmentItemController::class, 'create'])->name('create');
     Route::post('/', [ShipmentItemController::class, 'store'])->name('store');
     Route::get('/{shipmentItem}', [ShipmentItemController::class, 'show'])->name('show');

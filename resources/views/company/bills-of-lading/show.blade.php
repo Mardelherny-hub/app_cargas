@@ -577,9 +577,26 @@ if ($user) {
                     {{-- Tabla de Items --}}
                     <div class="overflow-x-auto">
                         @if($itemsCount > 0)
+                            @php
+                                $canBulkDelete = auth()->user()?->isCompanyAdmin() && in_array('Cargas', $companyRoles);
+                            @endphp
+                            <form id="bulkDeleteForm" 
+                                  action="{{ route('company.shipment-items.bulk-destroy') }}" 
+                                  method="POST"
+                                  onsubmit="return confirmBulkDelete();">
+                                @csrf
+                                @method('DELETE')
                             <table class="w-full divide-y divide-gray-200" id="itemsTable">
                                 <thead class="bg-gray-50">
                                     <tr>
+                                        @if($canBulkDelete)
+                                            <th class="px-4 py-3 text-left">
+                                                <input type="checkbox" id="selectAllItems" 
+                                                       onclick="toggleAllItems(this)"
+                                                       class="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                                       title="Seleccionar todos">
+                                            </th>
+                                        @endif
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Línea</th>
                                         {{-- <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th> --}}
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
@@ -592,6 +609,13 @@ if ($user) {
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     @foreach($itemsToShow as $item)
                                         <tr class="hover:bg-gray-50 item-row" data-search="{{ strtolower($item->item_description . ' ' . $item->item_reference . ' ' . ($item->cargoType->name ?? '')) }}">
+                                            @if($canBulkDelete)
+                                                <td class="px-4 py-3">
+                                                    <input type="checkbox" name="item_ids[]" value="{{ $item->id }}" 
+                                                           class="item-checkbox rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                                           onchange="updateBulkCount()">
+                                                </td>
+                                            @endif
                                             <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ $item->line_number }}</td>
                                             {{-- <td class="px-4 py-3">
                                                 <div class="text-sm font-medium text-gray-900">{{ $item->item_description }}</div>
@@ -623,6 +647,36 @@ if ($user) {
                                     @endforeach
                                 </tbody>
                             </table>
+
+                            @if($canBulkDelete)
+                                <div class="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                                    <span id="bulkCountLabel" class="text-sm text-gray-600">Ningún item seleccionado</span>
+                                    <button type="submit" id="bulkDeleteBtn" disabled
+                                            class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                                        Eliminar seleccionados
+                                    </button>
+                                </div>
+                            @endif
+                            </form>
+
+                            <script>
+                            function toggleAllItems(source) {
+                                document.querySelectorAll('.item-checkbox').forEach(cb => cb.checked = source.checked);
+                                updateBulkCount();
+                            }
+                            function updateBulkCount() {
+                                const n = document.querySelectorAll('.item-checkbox:checked').length;
+                                const btn = document.getElementById('bulkDeleteBtn');
+                                const lbl = document.getElementById('bulkCountLabel');
+                                if (btn) btn.disabled = (n === 0);
+                                if (lbl) lbl.textContent = n === 0 ? 'Ningún item seleccionado' : n + ' item(s) seleccionado(s)';
+                            }
+                            function confirmBulkDelete() {
+                                const n = document.querySelectorAll('.item-checkbox:checked').length;
+                                if (n === 0) return false;
+                                return confirm('¿Eliminar ' + n + ' item(s) seleccionado(s)?\n\nEsta acción no se puede deshacer.');
+                            }
+                            </script>
                             
                             {{-- Indicador de items adicionales --}}
                             @if(!$showFullTable && $itemsCount > 8)
