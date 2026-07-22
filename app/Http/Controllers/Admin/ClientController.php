@@ -250,8 +250,8 @@ class ClientController extends Controller
         
 
         try {
-            dd($client);
-            DB::beginTransaction();
+
+        DB::beginTransaction();
 
             $validatedData = $request->validated();
             $clientData = collect($validatedData)->except('contacts')->toArray();
