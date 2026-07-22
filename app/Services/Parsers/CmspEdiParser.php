@@ -225,11 +225,15 @@ class CmspEdiParser implements ManifestParserInterface
             'ports' => [],
             'containers' => [],
             'items' => [],
-            'parties' => []
+            'parties' => [],
+            // Indice de contenedores declarados en bloques EQD, por numero.
+            // No siempre existe: 250-22_316S-CUSCAR.EDI trae 178, CMSP.EDI ninguno.
+            'equipment' => []
         ];
 
         $currentContainer = null;
         $currentItem = null;
+        $currentEquipment = null;
         $allItems = []; // Coleccionar todos los items
 
         foreach ($this->ediSegments as $segment) {
@@ -259,13 +263,20 @@ class CmspEdiParser implements ManifestParserInterface
                     if ($currentContainer !== null && !empty($currentContainer['items'])) {
                         $this->parsedData['containers'][] = $currentContainer;
                     }
-                    
+
+                    // Los bloques EQD terminaron: sin esto $currentEquipment queda
+                    // apuntando al ultimo contenedor durante todo el conocimiento.
+                    $currentEquipment = null;
+
                     // Crear nuevo contenedor
                     $currentContainer = [
                         'sequence' => $segment['elements'][0] ?? '',
                         'containers' => [],
                         'items' => [],
-                        'references' => []
+                        'references' => [],
+                        // Peso bruto del conocimiento (MEA+AAX). Unico peso real
+                        // del archivo: ver comentario en parseMeasurements().
+                        'gross_weight_kg' => 0,
                     ];
                     break;
 
@@ -274,6 +285,20 @@ class CmspEdiParser implements ManifestParserInterface
                     break;
 
                 case 'MEA':
+                    // MEA+AAE+T+KGM:2080 dentro de un bloque EQD es la tara real
+                    // del contenedor. Hasta ahora se descartaba porque no habia
+                    // item activo. Las taras del archivo van de 2080 a 3940 kg,
+                    // contra el 2200 fijo que usaba createContainer().
+                    if ($currentEquipment !== null
+                        && ($segment['elements'][0] ?? '') === 'AAE'
+                        && ($segment['elements'][1] ?? '') === 'T') {
+                        $mea = explode(':', $segment['elements'][2] ?? '');
+                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1])) {
+                            $this->parsedData['equipment'][$currentEquipment]['tare_weight_kg'] = (float) $mea[1];
+                        }
+                        break;
+                    }
+
                     $this->parseMeasurements($segment, $currentContainer, $currentItem);
                     break;
 
@@ -321,6 +346,36 @@ class CmspEdiParser implements ManifestParserInterface
                         $containerNumber = $segment['elements'][0] ?? '';
                         if (!empty($containerNumber)) {
                             $currentItem['containers'][] = $containerNumber;
+                        }
+                    }
+                    break;
+
+                // EQD+CN+SEGU3691219+22G1::5+2+3+4
+                // Los bloques EQD vienen ANTES del primer CNI y declaran cada
+                // contenedor con su codigo ISO y su tara real. Se indexan por
+                // numero y createContainer() los cruza con los SGP de cada
+                // conocimiento. Si el archivo no trae EQD (caso CMSP.EDI), el
+                // indice queda vacio y todo se comporta como antes.
+                case 'EQD':
+                    $equipmentNumber = $segment['elements'][1] ?? '';
+                    if (!empty($equipmentNumber)) {
+                        $this->parsedData['equipment'][$equipmentNumber] = [
+                            'iso_code'       => explode(':', $segment['elements'][2] ?? '')[0] ?? '',
+                            'tare_weight_kg' => null,
+                            'shipper_seal'   => null,
+                        ];
+                        $currentEquipment = $equipmentNumber;
+                    } else {
+                        $currentEquipment = null;
+                    }
+                    break;
+
+                // SEL+4527767 TY115894+SH  → precinto del cargador
+                case 'SEL':
+                    if ($currentEquipment !== null) {
+                        $seal = trim($segment['elements'][0] ?? '');
+                        if ($seal !== '') {
+                            $this->parsedData['equipment'][$currentEquipment]['shipper_seal'] = $seal;
                         }
                     }
                     break;
@@ -492,16 +547,23 @@ class CmspEdiParser implements ManifestParserInterface
             $unit = $weightData[0] ?? '';
             $value = $weightData[1] ?? '';
 
-            if ($currentItem && $unit === 'KGM') {
-                if ($measureType === 'AAX') {
-                    $currentItem['gross_weight_kg'] = (float) $value;
-                } elseif ($measureType === 'AAY') {
-                    $currentItem['tare_weight_kg'] = (float) $value;
-                }
+            // MEA+AAX+G+KGM a nivel CNI: peso bruto del conocimiento. Aparece
+            // entre el GIS y el primer GID, o sea sin item activo, y hasta ahora
+            // se descartaba entero.
+            //
+            // Los AAE y AAY por item NO se mapean: verificado sobre los dos
+            // archivos de muestra (15 conocimientos, emisores y anios distintos),
+            // el emisor escribe el total del conocimiento en cada item. En
+            // SEGBUE26P102907 los 93 items dicen 340230, igual que el AAX.
+            // Tomarlos como peso por item multiplicaria el conocimiento por 93.
+            if (!$currentItem && $currentContainer !== null
+                && $measureType === 'AAX' && $unit === 'KGM') {
+                $currentContainer['gross_weight_kg'] = $this->normalizeDecimal($value);
+                return;
             }
 
             if ($currentItem && $unit === 'MTQ' && $measureType === 'AAE') {
-                $currentItem['volume_m3'] = (float) $value;
+                $currentItem['volume_m3'] = $this->normalizeDecimal($value);
             }
         }
     }
@@ -686,7 +748,7 @@ class CmspEdiParser implements ManifestParserInterface
                     ?? $data['message']['document_number'] . '-' . ($containerGroup['sequence'] ?? uniqid());
                 
                 // Crear BL para este grupo
-                $billOfLading = $this->createBillOfLadingForGroup($shipment, $data, $billNumber);
+                $billOfLading = $this->createBillOfLadingForGroup($shipment, $data, $billNumber, $containerGroup);
                 $billsOfLading[] = $billOfLading;
                 
                 // Crear items y contenedores solo para este BL
@@ -966,7 +1028,7 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Crear BL para un grupo específico de CNI
      */
-    protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber): BillOfLading
+    protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
     {
         $shipper     = $this->findOrCreateClient($data['parties']['shipper'] ?? null);
         $consignee   = $this->findOrCreateClient($data['parties']['consignee'] ?? null);
@@ -999,7 +1061,8 @@ class CmspEdiParser implements ManifestParserInterface
             'customs_cleared'           => false,
             'cargo_description'         => 'Según detalle',
             'total_packages'            => 0,
-            'gross_weight_kg'           => 0,
+            // Peso bruto del conocimiento tomado del MEA+AAX del CNI.
+            'gross_weight_kg'           => $containerGroup['gross_weight_kg'] ?? 0,
             'net_weight_kg'             => 0,
             'volume_m3'                 => 0,
             'status'                    => 'draft',
@@ -1098,10 +1161,18 @@ class CmspEdiParser implements ManifestParserInterface
         'line_number' => $lineNumber,
         'cargo_type_id' => $this->getDefaultCargoTypeId(),
         'packaging_type_id' => $this->getDefaultPackagingTypeId(),
-        'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
+        // El GID trae "820:BG" en los 15 conocimientos de ambos archivos, incluso
+        // en los de un solo item: es una constante del emisor, no una cantidad.
+        // El CNT+8 del conocimiento tambien dice 820 siempre. Sin dato confiable
+        // se deja en 0 (la columna es NOT NULL).
+        'package_quantity' => 0,
         'item_description' => $cleanDescription,
-        'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
-        'net_weight_kg' => ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 0),
+        // El peso real vive en el conocimiento (MEA+AAX). El emisor no informa
+        // peso por item. gross_weight_kg es NOT NULL, asi que va 0.
+        'gross_weight_kg' => 0,
+        // net_weight_kg acepta NULL y no se transmite a ningun webservice activo.
+        // NULL se lee como "no informado"; antes salia bruto - tara y daba negativo.
+        'net_weight_kg' => null,
         'volume_m3' => $itemData['volume_m3'] ?? 0,
         // Campos DGS (mercadería peligrosa)
         'is_dangerous_goods' => $itemData['is_dangerous_goods'] ?? false,
@@ -1128,8 +1199,8 @@ class CmspEdiParser implements ManifestParserInterface
         if (!$shipmentItem->containers->contains($container->id)) {
             $shipmentItem->containers()->attach($container->id, [
                 'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
-                'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
-                'net_weight_kg' => ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 0),
+                'gross_weight_kg' => 0,
+                'net_weight_kg' => null,
                 'volume_m3' => $itemData['volume_m3'] ?? 0
             ]);
         }
@@ -1138,8 +1209,21 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     // CONTENEDOR NO EXISTE, CREARLO
-    $containerType = ContainerType::where('active', true)->where('is_standard', true)->first();
-    
+    // Datos declarados en el bloque EQD, si el archivo los trae.
+    $equipment = $this->parsedData['equipment'][$containerNumber] ?? null;
+
+    $containerType = null;
+    if ($equipment && !empty($equipment['iso_code'])) {
+        $typeCode = $this->mapIsoContainerType($equipment['iso_code']);
+        if ($typeCode) {
+            $containerType = ContainerType::where('code', $typeCode)->where('active', true)->first();
+        }
+    }
+
+    if (!$containerType) {
+        $containerType = ContainerType::where('active', true)->where('is_standard', true)->first();
+    }
+
     if (!$containerType) {
         $this->stats['warnings'][] = "Tipo de contenedor no encontrado: {$containerNumber}";
         return;
@@ -1151,10 +1235,12 @@ class CmspEdiParser implements ManifestParserInterface
         'container_number' => $containerNumber,
         'container_type_id' => $containerType->id,
         'condition' => $condition,
-        'tare_weight_kg' => $itemData['tare_weight_kg'] ?? 2200,
+        'shipper_seal' => $equipment['shipper_seal'] ?? null,
+        'tare_weight_kg' => $equipment['tare_weight_kg'] ?? $itemData['tare_weight_kg'] ?? 2200,
         'max_gross_weight_kg' => 30000,
-        'current_gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
-        'cargo_weight_kg' => ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 2200),
+        // Sin peso bruto real, la resta daba cargo_weight negativo (0 - tara).
+        'current_gross_weight_kg' => 0,
+        'cargo_weight_kg' => 0,
         'operational_status' => 'loaded',
         'active' => true,
         'created_by_user_id' => auth()->id()
@@ -1169,6 +1255,30 @@ class CmspEdiParser implements ManifestParserInterface
 
     $this->stats['processed_containers']++;
 }
+
+    /**
+     * Mapear codigo ISO 6346 del EQD al code de container_types.
+     *
+     * En ISO 6346 el primer caracter es el largo (2 = 20 pies, 4 = 40 pies) y el
+     * segundo la altura (2 = estandar, 5 = high cube). El archivo de Roberto trae
+     * solo 45G1 (138 veces) y 22G1 (40); el resto se incluye por equivalencia con
+     * los tipos ya cargados en container_types. Codigo desconocido -> null, y el
+     * llamador cae al tipo estandar por defecto.
+     */
+    protected function mapIsoContainerType(string $isoCode): ?string
+    {
+        $map = [
+            '22G1' => '20GP',
+            '42G1' => '40GP',
+            '45G1' => '40HC',
+            '22R1' => '20RF',
+            '45R1' => '40RH',
+            '22T1' => '20TN',
+            '22U1' => '20OT',
+        ];
+
+        return $map[strtoupper(trim($isoCode))] ?? null;
+    }
 
     /**
      * Buscar o crear puerto
@@ -1442,6 +1552,35 @@ class CmspEdiParser implements ManifestParserInterface
         // ISO-like o cualquier cosa que strtotime entienda
         $ts = strtotime($raw);
         return $ts ? date('Y-m-d', $ts) : null;
+    }
+
+    /**
+     * Convertir un valor numerico EDI a float tolerando ambos separadores.
+     *
+     * El archivo mezcla los dos formatos dentro del mismo conocimiento: en
+     * TER2BUE26P102900 el AAX viene "92408.75" y los items "92408,75". Ni el cast
+     * directo ni toFloat() sirven: (float)"92408,75" da 92408 y pierde decimales,
+     * y toFloat() trata el punto como separador de miles y convertiria
+     * "222750.00" en 22275000.
+     */
+    protected function normalizeDecimal(?string $value): float
+    {
+        if ($value === null || trim($value) === '') {
+            return 0.0;
+        }
+
+        $v = trim($value);
+        $hasComma = strpos($v, ',') !== false;
+        $hasDot   = strpos($v, '.') !== false;
+
+        if ($hasComma && $hasDot) {
+            // Formato europeo: punto miles, coma decimal.
+            $v = str_replace(['.', ','], ['', '.'], $v);
+        } elseif ($hasComma) {
+            $v = str_replace(',', '.', $v);
+        }
+
+        return (float) $v;
     }
 
     protected function toFloat($v): float
