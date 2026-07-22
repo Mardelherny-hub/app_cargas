@@ -504,7 +504,15 @@ class CmspEdiParser implements ManifestParserInterface
     {
         if (count($segment['elements']) >= 3) {
             $partyType = $segment['elements'][0] ?? '';
-            $partyName = $segment['elements'][2] ?? '';
+
+            // El nombre se parte cuando el dato contiene '+' sin escapar: en el
+            // archivo de MSC los telefonos vienen como "PHONE; +54 115300 7300",
+            // y el explode('+') de la linea 201 corta ahi. Por eso el cliente 733
+            // quedo guardado como "...C1098AAQ - PHONE; ". Se reconstruye uniendo
+            // todos los elementos desde el tercero en adelante.
+            $partyName = $this->cleanEdifactText(
+                implode('+', array_slice($segment['elements'], 2))
+            );
 
             // Roles EDIFACT (verificado contra CMSP.EDI y 250-22_316S-CUSCAR.EDI,
             // y confirmado por Roberto 20/07):
@@ -529,6 +537,26 @@ class CmspEdiParser implements ManifestParserInterface
                 ];
             }
         }
+    }
+
+    /**
+     * Limpiar texto EDIFACT: aplica el caracter de escape y normaliza espacios.
+     *
+     * En UN/EDIFACT '?' libera al caracter siguiente. El emisor lo usa dentro del
+     * nombre ("CUIT:? 30-69318494-7"), y eso rompia la extraccion del identificador
+     * fiscal: el patron de ExtractsEmbeddedTaxId acepta un solo separador despues
+     * del prefijo, y ahi habia dos (':' y '?'). Por eso el cliente 733 quedo con
+     * tax_id null teniendo el CUIT escrito en el propio nombre.
+     */
+    protected function cleanEdifactText(?string $text): string
+    {
+        if ($text === null) {
+            return '';
+        }
+
+        $clean = preg_replace('/\?(.)/', '$1', $text);
+
+        return trim(preg_replace('/\s+/', ' ', $clean));
     }
 
     /**
@@ -1218,13 +1246,34 @@ class CmspEdiParser implements ManifestParserInterface
         }
 
         // 3. Si no existe ni por tax_id ni por nombre, crear (tax_id real o null, sin fabricar)
+        // Inferencia de pais por longitud del tax_id (mismo criterio aprobado por
+        // QA 29/06 y ya aplicado en GuaranExcelParser):
+        //   11 digitos  => CUIT argentino => Argentina (11), document_type 1
+        //   7 a 9       => RUC paraguayo  => Paraguay  (174), document_type 3
+        // IDs verificados contra countries y document_types.
+        // Antes estaba fijo en country_id=1, que es Afghanistan.
+        $countryId = 174;        // Paraguay: emisor y puertos de carga del CUSCAR
+        $documentTypeId = 3;     // RUC
+
+        if ($taxId) {
+            $taxLen = strlen($taxId); // resolveTaxId devuelve solo digitos
+            if ($taxLen === 11) {
+                $countryId = 11;
+                $documentTypeId = 1;
+            }
+        } else {
+            Log::warning('CMSP: parte sin identificacion fiscal, pais NO confiable (revisar)', [
+                'name' => $partyData['name'],
+            ]);
+        }
+
         $client = Client::create([
             'created_by_company_id' => $companyId,
             'legal_name' => $partyData['name'],
             'commercial_name' => $partyData['name'],
             'tax_id' => $taxId,
-            'country_id' => 1,
-            'document_type_id' => 1,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
         ]);
     
             Log::info('Cliente creado automáticamente', [
