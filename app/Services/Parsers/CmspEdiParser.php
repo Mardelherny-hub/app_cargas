@@ -506,17 +506,23 @@ class CmspEdiParser implements ManifestParserInterface
             $partyType = $segment['elements'][0] ?? '';
             $partyName = $segment['elements'][2] ?? '';
 
+            // Roles EDIFACT (verificado contra CMSP.EDI y 250-22_316S-CUSCAR.EDI,
+            // y confirmado por Roberto 20/07):
+            //   CN = consignatario  |  CZ = cargador  |  CX = notificatario
+            // Antes estaban rotados (CN→shipper, CX→consignee, CZ→notify), por eso
+            // el cargador mostraba lo mismo que el consignatario: en los dos archivos
+            // CN y CX son la misma empresa y CZ es la distinta.
             if ($partyType === 'CN') {
-                $this->parsedData['parties']['shipper'] = [
-                    'name' => $partyName,
-                    'type' => 'shipper'
-                ];
-            } elseif ($partyType === 'CX') {
                 $this->parsedData['parties']['consignee'] = [
                     'name' => $partyName,
                     'type' => 'consignee'
                 ];
             } elseif ($partyType === 'CZ') {
+                $this->parsedData['parties']['shipper'] = [
+                    'name' => $partyName,
+                    'type' => 'shipper'
+                ];
+            } elseif ($partyType === 'CX') {
                 $this->parsedData['parties']['notify'] = [
                     'name' => $partyName,
                     'type' => 'notify'
@@ -925,8 +931,9 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber): BillOfLading
     {
-        $shipper   = $this->findOrCreateClient($data['parties']['shipper'] ?? null);
-        $consignee = $this->findOrCreateClient($data['parties']['consignee'] ?? null);
+        $shipper     = $this->findOrCreateClient($data['parties']['shipper'] ?? null);
+        $consignee   = $this->findOrCreateClient($data['parties']['consignee'] ?? null);
+        $notifyParty = $this->findOrCreateClient($data['parties']['notify'] ?? null);
 
         $billDate = $this->extractBillDate($data) ?? now()->toDateString();
         $loadingDate = $this->extractLoadingDate($data)
@@ -938,6 +945,8 @@ class CmspEdiParser implements ManifestParserInterface
             'bill_number'               => (string) $billNumber,
             'shipper_id'                => $shipper?->id,
             'consignee_id'              => $consignee?->id,
+            // El notificatario nunca se persistía: se parseaba y se descartaba.
+            'notify_party_id'           => $notifyParty?->id,
             'loading_port_id'           => $shipment->voyage->origin_port_id,
             'discharge_port_id'         => $shipment->voyage->destination_port_id,
             'bill_type'                 => 'house',
