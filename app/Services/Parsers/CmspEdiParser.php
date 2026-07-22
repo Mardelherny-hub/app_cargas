@@ -282,6 +282,15 @@ class CmspEdiParser implements ManifestParserInterface
                     break;
 
                 case 'GID':
+                    // Romper el alias antes de reasignar. Las dos lineas de abajo
+                    // guardan &$currentItem, o sea referencias a la variable y no
+                    // copias del array. Sin este unset, la reasignacion de la vuelta
+                    // siguiente escribe A TRAVES de esos alias y pisa el item anterior:
+                    // los 178 GID del archivo de Roberto terminaban siendo todos el
+                    // ultimo, con un solo contenedor entre los 13 conocimientos.
+                    // Verificado en PHP 8.3: sin unset da 3,3,3; con unset da 1,2,3.
+                    unset($currentItem);
+
                     $currentItem = [
                         'sequence' => $segment['elements'][0] ?? '',
                         'package_info' => $segment['elements'][1] ?? '',
