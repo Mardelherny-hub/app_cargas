@@ -556,14 +556,31 @@ class CmspEdiParser implements ManifestParserInterface
             // el emisor escribe el total del conocimiento en cada item. En
             // SEGBUE26P102907 los 93 items dicen 340230, igual que el AAX.
             // Tomarlos como peso por item multiplicaria el conocimiento por 93.
+            $attribute = $segment['elements'][1] ?? '';
+
+            // MEA+AAX+G+KGM a nivel CNI: peso bruto declarado del conocimiento.
+            // Aparece entre el GIS y el primer GID, o sea sin item activo. Es un
+            // dato propio del conocimiento, independiente de lo que traigan los
+            // items, y por eso se conserva aunque los items tambien tengan peso.
             if (!$currentItem && $currentContainer !== null
                 && $measureType === 'AAX' && $unit === 'KGM') {
                 $currentContainer['gross_weight_kg'] = $this->normalizeDecimal($value);
                 return;
             }
 
-            if ($currentItem && $unit === 'MTQ' && $measureType === 'AAE') {
-                $currentItem['volume_m3'] = $this->normalizeDecimal($value);
+            if ($currentItem) {
+                // Los pesos del item se cargan TAL CUAL vienen en el archivo
+                // (criterio de Roberto 22/07): algunos emisores los mandan bien y
+                // otros repiten el total del conocimiento. Normalizarlos aca
+                // obligaria a carga manual incluso cuando el dato viene correcto.
+                // El operador corrige los que vengan mal.
+                if ($measureType === 'AAE' && $attribute === 'G' && $unit === 'KGM') {
+                    $currentItem['gross_weight_kg'] = $this->normalizeDecimal($value);
+                } elseif ($measureType === 'AAY' && $unit === 'KGM') {
+                    $currentItem['tare_weight_kg'] = $this->normalizeDecimal($value);
+                } elseif ($measureType === 'AAE' && $unit === 'MTQ') {
+                    $currentItem['volume_m3'] = $this->normalizeDecimal($value);
+                }
             }
         }
     }
@@ -1161,17 +1178,13 @@ class CmspEdiParser implements ManifestParserInterface
         'line_number' => $lineNumber,
         'cargo_type_id' => $this->getDefaultCargoTypeId(),
         'packaging_type_id' => $this->getDefaultPackagingTypeId(),
-        // El GID trae "820:BG" en los 15 conocimientos de ambos archivos, incluso
-        // en los de un solo item: es una constante del emisor, no una cantidad.
-        // El CNT+8 del conocimiento tambien dice 820 siempre. Sin dato confiable
-        // se deja en 0 (la columna es NOT NULL).
-        'package_quantity' => 0,
+        'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
         'item_description' => $cleanDescription,
-        // El peso real vive en el conocimiento (MEA+AAX). El emisor no informa
-        // peso por item. gross_weight_kg es NOT NULL, asi que va 0.
-        'gross_weight_kg' => 0,
-        // net_weight_kg acepta NULL y no se transmite a ningun webservice activo.
-        // NULL se lee como "no informado"; antes salia bruto - tara y daba negativo.
+        // Peso tal cual viene en el archivo (MEA+AAE+G+KGM del GID).
+        'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
+        // net_weight_kg no viene en el archivo y no se transmite a ningun
+        // webservice activo. Se deja en NULL ("no informado") en lugar de
+        // calcular bruto - tara, que es lo que daba los negativos.
         'net_weight_kg' => null,
         'volume_m3' => $itemData['volume_m3'] ?? 0,
         // Campos DGS (mercadería peligrosa)
@@ -1199,7 +1212,8 @@ class CmspEdiParser implements ManifestParserInterface
         if (!$shipmentItem->containers->contains($container->id)) {
             $shipmentItem->containers()->attach($container->id, [
                 'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
-                'gross_weight_kg' => 0,
+                'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
+                // No viene en el archivo: NULL ("no informado"), igual que en el item.
                 'net_weight_kg' => null,
                 'volume_m3' => $itemData['volume_m3'] ?? 0
             ]);
@@ -1238,9 +1252,9 @@ class CmspEdiParser implements ManifestParserInterface
         'shipper_seal' => $equipment['shipper_seal'] ?? null,
         'tare_weight_kg' => $equipment['tare_weight_kg'] ?? $itemData['tare_weight_kg'] ?? 2200,
         'max_gross_weight_kg' => 30000,
-        // Sin peso bruto real, la resta daba cargo_weight negativo (0 - tara).
-        'current_gross_weight_kg' => 0,
-        'cargo_weight_kg' => 0,
+        'current_gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
+        // La guarda evita el negativo cuando el emisor manda tara sin peso bruto.
+        'cargo_weight_kg' => max(0.0, ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 2200)),
         'operational_status' => 'loaded',
         'active' => true,
         'created_by_user_id' => auth()->id()
