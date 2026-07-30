@@ -1295,44 +1295,43 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Buscar o crear puerto
+     * Resolver puerto por código. NUNCA auto-crea puertos (política del proyecto:
+     * el catálogo tiene ~17.500; un código desconocido debe dar error claro).
+     * Los generadores CMSP/EDI usan códigos propios que no son UN/LOCODE; se mapean
+     * con aliases verificados contra el catálogo real:
+     *   PYSEF ("PUERTO SEGURO FLUVIAL") -> PYPSE (id 17599, Villeta, country_id 174)
      */
     protected function findOrCreatePort(string $portCode): Port
     {
-        if (empty($portCode)) {
+        $code = strtoupper(trim($portCode));
+
+        if ($code === '') {
             throw new Exception('Código de puerto vacío');
         }
 
-        $port = Port::where('code', $portCode)->first();
+        $aliases = [
+            'PYSEF' => 'PYPSE',
+        ];
+        $resolved = $aliases[$code] ?? $code;
 
-        if (!$port) {
-            $portData = [
-                'ARBUE' => ['name' => 'Buenos Aires', 'country_id' => 1],
-                'PYASU' => ['name' => 'Asunción', 'country_id' => 2],
-                'FNX' => ['name' => 'Puerto FNX', 'country_id' => 2]
-            ];
+        $port = Port::where('code', $resolved)->first();
 
-            $data = $portData[$portCode] ?? [
-                'name' => "Puerto {$portCode}",
-                'country_id' => 2
-            ];
-
-            $port = Port::create([
-                'code' => $portCode,
-                'name' => $portNames[$portCode] ?? "Puerto {$portCode}",
-                'country_id' => $portCode === 'ARBUE' ? 1 : 2,
-                'port_type' => 'river',
-                'active' => true,
-                'created_by_user_id' => auth()->id()
-            ]);
-
-            Log::info('Puerto creado automáticamente', [
-                'port_code' => $portCode,
-                'port_id' => $port->id
-            ]);
+        if ($port) {
+            if ($resolved !== $code) {
+                Log::info('CMSP: puerto mapeado por alias', [
+                    'codigo_archivo'  => $code,
+                    'codigo_resuelto' => $resolved,
+                    'port_id'         => $port->id,
+                ]);
+            }
+            return $port;
         }
 
-        return $port;
+        throw new Exception(
+            "Puerto desconocido en el archivo EDI: '{$code}'. " .
+            "No existe en el catálogo de puertos y no se crean puertos automáticamente. " .
+            "Verifique el código o solicite el alta del puerto al administrador."
+        );
     }
 
     /**
