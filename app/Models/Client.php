@@ -34,7 +34,6 @@ class Client extends Model
         'commercial_name',
         'primary_port_id',
         'customs_offices_id',
-        'primary_contact_data_id',
         'status',
         'created_by_company_id',
         'verified_at',
@@ -94,9 +93,15 @@ class Client extends Model
         return $this->hasMany(ClientContactData::class);
     }
 
-    public function primaryContact(): BelongsTo
+    /**
+     * Contacto principal del cliente.
+     * La fuente de verdad es client_contact_data.is_primary (índice idx_client_primary_contact),
+     * cuya unicidad por cliente garantiza el hook saving() de ClientContactData.
+     * NO existe la columna clients.primary_contact_data_id.
+     */
+    public function primaryContact(): HasOne
     {
-        return $this->belongsTo(ClientContactData::class, 'primary_contact_data_id');
+        return $this->hasOne(ClientContactData::class)->where('is_primary', true);
     }
 
     public function activeContacts(): HasMany
