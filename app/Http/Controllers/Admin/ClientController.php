@@ -178,9 +178,8 @@ class ClientController extends Controller
 
             // Crear múltiples contactos si se proporcionan
             if ($request->has('contacts') && is_array($request->contacts)) {
-                $primaryContactId = $this->createMultipleContacts($client, $request->contacts);
-                $client->primary_contact_data_id = $primaryContactId;
-                $client->save();
+                // El contacto primario queda marcado con is_primary dentro de createMultipleContacts()
+                $this->createMultipleContacts($client, $request->contacts);
             }
 
             DB::commit();
@@ -264,16 +263,10 @@ class ClientController extends Controller
             // Actualizar cliente
             $client->update($clientData);
 
-            // Actualizar contactos si se proporcionan y vincular el principal
-            $primaryContactId = $client->primary_contact_data_id; // Mantener el actual por defecto
+            // Actualizar contactos si se proporcionan.
+            // El contacto primario queda marcado con is_primary dentro de updateMultipleContacts()
             if ($request->has('contacts') && is_array($request->contacts)) {
-                $primaryContactId = $this->updateMultipleContacts($client, $request->contacts);
-            }
-
-            // Si el ID del contacto principal cambió, actualizarlo en el cliente
-            if ($client->primary_contact_data_id != $primaryContactId) {
-                $client->primary_contact_data_id = $primaryContactId;
-                $client->save();
+                $this->updateMultipleContacts($client, $request->contacts);
             }
 
             DB::commit();
