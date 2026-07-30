@@ -1299,6 +1299,7 @@ class CmspEdiParser implements ManifestParserInterface
      * el catálogo tiene ~17.500; un código desconocido debe dar error claro).
      * Los generadores CMSP/EDI usan códigos propios que no son UN/LOCODE; se mapean
      * con aliases verificados contra el catálogo real:
+     *   ARBAI ("BUENOS AIRES") -> ARBUE | PYTV ("TERPORT-VILLETA") -> PYTVT
      *   PYSEF ("PUERTO SEGURO FLUVIAL") -> PYPSE (id 17599, Villeta, country_id 174)
      */
     protected function findOrCreatePort(string $portCode): Port
@@ -1309,8 +1310,13 @@ class CmspEdiParser implements ManifestParserInterface
             throw new Exception('Código de puerto vacío');
         }
 
+        // Códigos propios de los generadores (no son UN/LOCODE). Mapa compartido con
+        // TfpTextParser: ambos formatos usan la misma codificación de la casa.
+        // Verificados contra archivos reales (TFP 13/07/2026, CMSP 30/07/2026).
         $aliases = [
-            'PYSEF' => 'PYPSE',
+            'ARBAI' => 'ARBUE',   // "BUENOS AIRES"
+            'PYTV'  => 'PYTVT',   // "TERPORT-VILLETA"
+            'PYSEF' => 'PYPSE',   // "PUERTO SEGURO FLUVIAL"
         ];
         $resolved = $aliases[$code] ?? $code;
 
