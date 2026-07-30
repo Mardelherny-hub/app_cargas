@@ -184,6 +184,13 @@ class CmspEdiParser implements ManifestParserInterface
             throw new Exception('No se pudo leer el archivo EDI');
         }
 
+        // Los EDIFACT de esta naviera vienen en ISO-8859-1 (verificado 30/07/2026:
+        // "Rep\xFAblica", "Asunci\xF3n"). Sin normalizar, los acentos son bytes
+        // invalidos en UTF-8 y rompen cualquier guardado JSON aguas abajo.
+        if (!mb_check_encoding($content, 'UTF-8')) {
+            $content = mb_convert_encoding($content, 'UTF-8', 'ISO-8859-1');
+        }
+
         // Separar por segmentos (cada línea o por separador ')
         $lines = preg_split("/[\r\n']+/", $content);
         $this->ediSegments = [];
