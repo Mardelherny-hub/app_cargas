@@ -1123,6 +1123,24 @@ class CmspEdiParser implements ManifestParserInterface
         return PackagingType::where('active', true)->where('is_common', true)->first()?->id ?? 1;
     }
 
+    /**
+     * Tipos para carga contenedorizada. Verificados en produccion 31/07/2026:
+     * CargoType CON001 = CONTENEDORES (id 9), PackagingType T = CONTENEDOR (id 4).
+     * Mismo criterio que LoginXmlParser. Se busca por code y no por id porque el
+     * code es estable entre entornos. Si no existe, cae al default de siempre.
+     */
+    protected function getContainerCargoTypeId(): int
+    {
+        return CargoType::where('code', 'CON001')->where('active', true)->value('id')
+            ?? $this->getDefaultCargoTypeId();
+    }
+
+    protected function getContainerPackagingTypeId(): int
+    {
+        return PackagingType::where('code', 'T')->where('active', true)->value('id')
+            ?? $this->getDefaultPackagingTypeId();
+    }
+
     protected function extractBillDate(array $data): ?string
     {
         // Ejemplo: $data['message']['prepared_at'] podría venir del EDI (UNB/DTM)
@@ -1183,8 +1201,14 @@ class CmspEdiParser implements ManifestParserInterface
     return ShipmentItem::create([
         'bill_of_lading_id' => $billOfLading->id,
         'line_number' => $lineNumber,
-        'cargo_type_id' => $this->getDefaultCargoTypeId(),
-        'packaging_type_id' => $this->getDefaultPackagingTypeId(),
+        // Si el item trae contenedores del archivo es carga contenedorizada.
+        // La lista ya viene armada cuando se llama aca (ver lineas 1106 y 1156).
+        'cargo_type_id' => !empty($itemData['containers'])
+            ? $this->getContainerCargoTypeId()
+            : $this->getDefaultCargoTypeId(),
+        'packaging_type_id' => !empty($itemData['containers'])
+            ? $this->getContainerPackagingTypeId()
+            : $this->getDefaultPackagingTypeId(),
         'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
         'item_description' => $cleanDescription,
         // Peso tal cual viene en el archivo (MEA+AAE+G+KGM del GID).
