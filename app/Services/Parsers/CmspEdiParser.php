@@ -1183,6 +1183,38 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Recupera la NCM escrita dentro del texto libre de la descripcion, para
+     * los emisores que no mandan el segmento CST.
+     *
+     * Formas verificadas contra el archivo real (voyage 95, 31/07/2026):
+     *   "NCM?: 1006.30"   "NCM?: 1006.30.00"   "NCM?: 12079990"
+     *   "NCM 12079990"    "NCM 1701141020"     "NCM CODE?: 1207.99.90"
+     *   "NCM /HS Code?: 170199"
+     *
+     * El [^0-9] entre la etiqueta y el numero impide saltear un digito y
+     * tomar un valor ajeno (ej. el peso en "...20.500,00 KGS. NCM CODE?: ...").
+     * Tolera el "?" de escape EDIFACT este presente o no, asi sigue andando
+     * cuando se aplique cleanEdifactText() a las descripciones.
+     *
+     * El codigo se guarda tal como viene, sin puntos y sin completar ni
+     * recortar el largo: no se fabrican posiciones arancelarias.
+     */
+    protected function extractNcmFromText(?string $text): ?string
+    {
+        if (empty($text)) {
+            return null;
+        }
+
+        if (!preg_match('/NCM[^0-9]{0,15}([0-9][0-9.]{4,12})/i', $text, $m)) {
+            return null;
+        }
+
+        $code = str_replace('.', '', $m[1]);
+
+        return $code !== '' ? mb_substr($code, 0, 20) : null;
+    }
+
+    /**
      * Crear shipment item
      */
     protected function createShipmentItem(BillOfLading $billOfLading, array $itemData): ShipmentItem
@@ -1197,6 +1229,14 @@ class CmspEdiParser implements ManifestParserInterface
     $cleanDescription = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
     $cleanDescription = preg_replace('/[^\x20-\x7E\xC0-\xFF]/', '', $cleanDescription); // Remover caracteres problemáticos
     $cleanDescription = mb_substr($cleanDescription, 0, 1000); // Limitar longitud
+
+    // La NCM viene en el segmento CST cuando el emisor lo manda. Si no, esta
+    // escrita dentro del texto libre. Se busca sobre $description (el texto
+    // completo) y no sobre $cleanDescription, que ya viene truncado a 1000.
+    $commodityCode = $itemData['commodity_code'] ?? null;
+    if (empty($commodityCode)) {
+        $commodityCode = $this->extractNcmFromText($description);
+    }
 
     return ShipmentItem::create([
         'bill_of_lading_id' => $billOfLading->id,
@@ -1222,8 +1262,8 @@ class CmspEdiParser implements ManifestParserInterface
         'is_dangerous_goods' => $itemData['is_dangerous_goods'] ?? false,
         'imdg_class' => $itemData['imdg_class'] ?? null,
         'un_number' => $itemData['un_number'] ?? null,
-        // Campo CST (código arancelario)
-        'commodity_code' => $itemData['commodity_code'] ?? null,
+        // Codigo arancelario: segmento CST, o extraido de la descripcion.
+        'commodity_code' => $commodityCode,
         'created_by_user_id' => auth()->id()
     ]);
 }
