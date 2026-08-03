@@ -404,8 +404,10 @@ class CmspEdiParser implements ManifestParserInterface
                     // CST+1+9999.00+:169 → código arancelario
                     if ($currentItem !== null && !empty($segment['elements'][1])) {
                         $commodity = explode(':', $segment['elements'][1])[0] ?? '';
-                        $commodity = str_replace('.', '', $commodity); // 9999.00 → 999900
-                        if (!empty($commodity) && $commodity !== '0') {
+                        // Mismo formato que la NCM extraida de la descripcion,
+                        // para que el campo no quede con dos formas distintas.
+                        $commodity = $this->normalizeNcm($commodity);
+                        if ($commodity !== null) {
                             $currentItem['commodity_code'] = $commodity;
                         }
                     }
@@ -1209,9 +1211,31 @@ class CmspEdiParser implements ManifestParserInterface
             return null;
         }
 
-        $code = str_replace('.', '', $m[1]);
+        return $this->normalizeNcm($m[1]);
+    }
 
-        return $code !== '' ? mb_substr($code, 0, 20) : null;
+    /**
+     * Formato de NCM definido por Roberto (03/08/2026): 4 digitos, punto y 2
+     * decimales. Si vienen mas digitos se descartan los sobrantes; si vienen
+     * 4 o 5 quedan los primeros 4 sin decimales; con menos de 4 se descarta.
+     *
+     * Verificado contra las 7 formas del archivo real (voyage 95):
+     *   1006.30 -> 1006.30    1006.30.00 -> 1006.30    12079990 -> 1207.99
+     *   1207.99.90 -> 1207.99  170199 -> 1701.99   1701141020 -> 1701.14
+     */
+    protected function normalizeNcm(?string $raw): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $raw);
+
+        if (strlen($digits) >= 6) {
+            return substr($digits, 0, 4) . '.' . substr($digits, 4, 2);
+        }
+
+        if (strlen($digits) >= 4) {
+            return substr($digits, 0, 4);
+        }
+
+        return null;
     }
 
     /**
