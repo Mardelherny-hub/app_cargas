@@ -1060,6 +1060,16 @@ class CmspEdiParser implements ManifestParserInterface
         $consignee   = $this->findOrCreateClient($data['parties']['consignee'] ?? null);
         $notifyParty = $this->findOrCreateClient($data['parties']['notify'] ?? null);
 
+        // Si alguna linea del grupo trae contenedores, el conocimiento es
+        // contenedorizado. Mismo criterio que en createShipmentItem().
+        $tieneContenedores = false;
+        foreach ($containerGroup['items'] ?? [] as $itemDelGrupo) {
+            if (!empty($itemDelGrupo['containers'])) {
+                $tieneContenedores = true;
+                break;
+            }
+        }
+
         $billDate = $this->extractBillDate($data) ?? now()->toDateString();
         $loadingDate = $this->extractLoadingDate($data)
             ?? optional($shipment->voyage)->departure_date
@@ -1079,8 +1089,12 @@ class CmspEdiParser implements ManifestParserInterface
             'destination_country_id'    => $shipment->voyage->destination_country_id,
             'loading_customs_id'        => null,
             'discharge_customs_id'      => null,
-            'primary_cargo_type_id'     => $this->getDefaultCargoTypeId(),
-            'primary_packaging_type_id' => $this->getDefaultPackagingTypeId(),
+            'primary_cargo_type_id'     => $tieneContenedores
+                ? $this->getContainerCargoTypeId()
+                : $this->getDefaultCargoTypeId(),
+            'primary_packaging_type_id' => $tieneContenedores
+                ? $this->getContainerPackagingTypeId()
+                : $this->getDefaultPackagingTypeId(),
             'freight_terms'             => 'prepaid',
             'is_consolidated'           => false,
             'documentation_complete'    => false,
