@@ -7,6 +7,7 @@ use App\ValueObjects\ManifestParseResult;
 use App\Models\Voyage;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\Container;
@@ -44,6 +45,7 @@ class CmspEdiParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
+    use ResolvesClientAddresses;
 
     protected array $stats = [
         'processed_containers' => 0,
@@ -613,9 +615,29 @@ class CmspEdiParser implements ManifestParserInterface
             // y el explode('+') de la linea 201 corta ahi. Por eso el cliente 733
             // quedo guardado como "...C1098AAQ - PHONE; ". Se reconstruye uniendo
             // todos los elementos desde el tercero en adelante.
-            $partyName = $this->cleanEdifactText(
-                implode('+', array_slice($segment['elements'], 2))
+            $partyRaw = implode('+', array_slice($segment['elements'], 2));
+
+            // ':' es separador de componentes EDIFACT: el primero es la razon
+            // social y el resto el domicilio. Se parte ANTES de cleanEdifactText
+            // porque esa funcion quita el '?' de escape, y ahi un ':' literal
+            // quedaria igual que un separador y cortaria donde no corresponde.
+            $partyParts = preg_split('/(?<!\?):/', $partyRaw);
+
+            $partyName = $this->cleanEdifactText($partyParts[0] ?? '');
+
+            // Marca de "a la atencion de" pegada al final del nombre
+            // ("MAERSK AS - ATA: WEBER..."). Solo al final y como palabra
+            // completa, para no tocar razones sociales tipo "ATACAMA S.A.".
+            $partyName = preg_replace(
+                '/[\s\-,;]*\b(?:ATTN|ATTE|ATT|ATN|ATA|ATENCION|C\/O|CARE\s+OF)\b[\s\-,;]*$/iu',
+                '',
+                $partyName
             );
+            $partyName = preg_replace('/[\s\-,;]+$/u', '', $partyName);
+
+            $partyAddress = count($partyParts) > 1
+                ? $this->cleanEdifactText(implode(' ', array_slice($partyParts, 1)))
+                : null;
 
             // Roles EDIFACT (verificado contra CMSP.EDI y 250-22_316S-CUSCAR.EDI,
             // y confirmado por Roberto 20/07):
@@ -626,16 +648,19 @@ class CmspEdiParser implements ManifestParserInterface
             if ($partyType === 'CN') {
                 $this->parsedData['parties']['consignee'] = [
                     'name' => $partyName,
+                    'address' => $partyAddress,
                     'type' => 'consignee'
                 ];
             } elseif ($partyType === 'CZ') {
                 $this->parsedData['parties']['shipper'] = [
                     'name' => $partyName,
+                    'address' => $partyAddress,
                     'type' => 'shipper'
                 ];
             } elseif ($partyType === 'CX') {
                 $this->parsedData['parties']['notify'] = [
                     'name' => $partyName,
+                    'address' => $partyAddress,
                     'type' => 'notify'
                 ];
             }
@@ -658,6 +683,10 @@ class CmspEdiParser implements ManifestParserInterface
         }
 
         $clean = preg_replace('/\?(.)/', '$1', $text);
+
+        // Espacio duro (U+00A0). trim() y \s no lo consideran espacio blanco,
+        // por eso quedaba colgado al final de "MAERSK LINE ARGENTINA SA".
+        $clean = str_replace("\xC2\xA0", ' ', $clean);
 
         return trim(preg_replace('/\s+/', ' ', $clean));
     }
@@ -1473,7 +1502,13 @@ class CmspEdiParser implements ManifestParserInterface
         }
     
         // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
-        $taxId = $this->resolveTaxId(null, $partyData['name'] ?? null);
+        // La direccion va como tercer argumento: al cortar el nombre por ':',
+        // el CUIT/RUC que el emisor escribe en la cola queda de ese lado.
+        $taxId = $this->resolveTaxId(
+            null,
+            $partyData['name'] ?? null,
+            $partyData['address'] ?? null
+        );
 
         // 1. Buscar por tax_id de forma GLOBAL (mismo CUIT = mismo cliente, sin importar empresa)
         if ($taxId) {
@@ -1483,6 +1518,7 @@ class CmspEdiParser implements ManifestParserInterface
                     'tax_id' => $taxId,
                     'client_id' => $client->id
                 ]);
+                $this->persistClientAddress($client, $partyData['address'] ?? null);
                 return $client;
             }
         }
@@ -1495,6 +1531,7 @@ class CmspEdiParser implements ManifestParserInterface
                 'name' => $partyData['name'],
                 'client_id' => $client->id
             ]);
+            $this->persistClientAddress($client, $partyData['address'] ?? null);
             return $client;
         }
 
@@ -1533,7 +1570,9 @@ class CmspEdiParser implements ManifestParserInterface
                 'name' => $partyData['name'],
                 'client_id' => $client->id
             ]);
-    
+
+            $this->persistClientAddress($client, $partyData['address'] ?? null);
+
             return $client;
         }
 
