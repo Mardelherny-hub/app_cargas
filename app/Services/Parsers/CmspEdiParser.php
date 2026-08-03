@@ -184,11 +184,17 @@ class CmspEdiParser implements ManifestParserInterface
             throw new Exception('No se pudo leer el archivo EDI');
         }
 
-        // Los EDIFACT de esta naviera vienen en ISO-8859-1 (verificado 30/07/2026:
-        // "Rep\xFAblica", "Asunci\xF3n"). Sin normalizar, los acentos son bytes
-        // invalidos en UTF-8 y rompen cualquier guardado JSON aguas abajo.
+        // Los EDIFACT de esta naviera vienen en Windows-1252 (verificado 03/08/2026).
+        // Sin normalizar, los acentos son bytes invalidos en UTF-8 y rompen
+        // cualquier guardado JSON aguas abajo.
+        //
+        // Windows-1252 y no ISO-8859-1: las vocales acentuadas coinciden, pero el
+        // rango 0x80-0x9F difiere. El byte 0x96 del nombre "MAERSK AS ? ATA:" es
+        // guion medio en Windows-1252 y caracter de control invisible en
+        // ISO-8859-1, que es el cuadradito que se veia en pantalla. Mismo caso
+        // para comillas y apostrofes tipograficos.
         if (!mb_check_encoding($content, 'UTF-8')) {
-            $content = mb_convert_encoding($content, 'UTF-8', 'ISO-8859-1');
+            $content = mb_convert_encoding($content, 'UTF-8', 'Windows-1252');
         }
 
         // Separar por segmentos (cada línea o por separador ')
