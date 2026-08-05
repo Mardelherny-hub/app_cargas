@@ -628,12 +628,16 @@ class CmspEdiParser implements ManifestParserInterface
             // Marca de "a la atencion de" pegada al final del nombre
             // ("MAERSK AS - ATA: WEBER..."). Solo al final y como palabra
             // completa, para no tocar razones sociales tipo "ATACAMA S.A.".
+            //
+            // La clase incluye guion medio (U+2013) y largo (U+2014) ademas del
+            // ASCII: el archivo trae 0x96, que en Windows-1252 es guion medio.
+            // Sin eso quedaba "MAERSK AS -" con el guion colgando.
             $partyName = preg_replace(
-                '/[\s\-,;]*\b(?:ATTN|ATTE|ATT|ATN|ATA|ATENCION|C\/O|CARE\s+OF)\b[\s\-,;]*$/iu',
+                '/[\s\-\x{2013}\x{2014},;]*\b(?:ATTN|ATTE|ATT|ATN|ATA|ATENCION|C\/O|CARE\s+OF)\b[\s\-\x{2013}\x{2014},;]*$/iu',
                 '',
                 $partyName
             );
-            $partyName = preg_replace('/[\s\-,;]+$/u', '', $partyName);
+            $partyName = preg_replace('/[\s\-\x{2013}\x{2014},;]+$/u', '', $partyName);
 
             $partyAddress = count($partyParts) > 1
                 ? $this->cleanEdifactText(implode(' ', array_slice($partyParts, 1)))
