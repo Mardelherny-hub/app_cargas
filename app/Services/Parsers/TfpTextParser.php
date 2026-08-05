@@ -499,7 +499,7 @@ protected function extractValue(string $scope, string $label): ?string
         foreach ([
             ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper'],
             ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee'],
-            ['client' => $notify,    'addr' => $data['notificatario_domicilio'] ?? $notifyExtraAddr, 'role' => 'notify'],
+            ['client' => $notify,    'addr' => $data['notificatario_domicilio'] ?? $notifyExtraAddr, 'role' => 'notify_party'],
         ] as $p) {
             $this->persistClientAddress($p['client'], $p['addr']);
             if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
@@ -533,11 +533,45 @@ protected function extractValue(string $scope, string $label): ?string
             'max_gross_weight_kg' => 30000,
             'current_gross_weight_kg' => floatval($data['peso'] ?? 0),
             'cargo_weight_kg' => floatval($data['peso'] ?? 0),
-            'condition' => strtoupper($data['condicion'] ?? 'L'),
+            'condition' => $this->mapTfpCondition($data['condicion'] ?? null)['condition'],
+            'container_condition' => $this->mapTfpCondition($data['condicion'] ?? null)['container_condition'],
             'shipper_seal' => $data['nro_precinta'] ?? null,
             'operational_status' => 'loaded',
             'active' => true,
         ]);
+    }
+
+    /**
+     * El campo CONDICION del formato TFP no tiene un unico significado: distintos
+     * emisores lo usan para cosas distintas. Verificado 05/08/2026 contra archivos
+     * reales en produccion:
+     *   - "P" en contenedores 20DV con 23.529 kg y 23 bultos, o sea llenos: no puede
+     *     ser "Parcial" del enum condition, es "muelle a muelle" del catalogo AFIP.
+     *   - "H" (casa a casa, AFIP) rompia la importacion: no existe en condition.
+     *   - "V" aparece en otros archivos y solo tiene sentido como vacio.
+     *
+     * Por eso no se elige un significado: cada valor va a la columna donde ese
+     * valor es valido. container_condition es el que el serializador transmite a
+     * AFIP como <condicion> (ver GuaranExcelParser L771).
+     *
+     * @return array{condition: string, container_condition: string}
+     */
+    protected function mapTfpCondition(?string $raw): array
+    {
+        $valor = strtoupper(trim((string) $raw));
+
+        // Catalogo AFIP casa/muelle -> container_condition
+        if (in_array($valor, ['H', 'P'], true)) {
+            return ['condition' => 'L', 'container_condition' => $valor];
+        }
+
+        // Catalogo de estado del contenedor -> condition
+        if (in_array($valor, ['V', 'D', 'S', 'L', 'R'], true)) {
+            return ['condition' => $valor, 'container_condition' => 'P'];
+        }
+
+        // Desconocido o vacio: defaults de siempre, no se inventa nada.
+        return ['condition' => 'L', 'container_condition' => 'P'];
     }
 
     protected function createShipmentItem(BillOfLading $bill, array $data, bool $hasContainers = false): ?ShipmentItem
