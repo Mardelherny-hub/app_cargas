@@ -71,17 +71,23 @@ trait ExtractsEmbeddedTaxId
 
     /**
      * Longitud plausible y no compuesto solo por ceros.
-     * RUC PY (8-9), CUIT AR (11), CNPJ BR (14), NIT CO (9-10).
+     * RUC PY (7-9), NIT CO (9-10), CUIT AR (11), CNPJ BR (14).
+     *
+     * Antes aceptaba cualquier largo entre 7 y 15, con lo cual un texto como
+     * "CUIT 33-70504237-32" pasaba como valido (12 digitos) por captura
+     * codiciosa del patron. Un identificador de largo imposible es peor que
+     * ninguno: viaja a la aduana y nadie lo nota. Sin forma valida -> null,
+     * y el operador lo completa a mano.
+     *
+     * El 7 se incluye porque la inferencia de pais de los parsers ya trata
+     * 7-9 digitos como RUC paraguayo (GuaranExcelParser L1063).
      */
     private function isPlausibleTaxId(string $digits): bool
     {
-        $len = strlen($digits);
-        if ($len < 7 || $len > 15) {
+        if (preg_match('/^0*$/', $digits)) {
             return false;
         }
-        if (preg_match('/^0+$/', $digits)) {
-            return false;
-        }
-        return true;
+
+        return in_array(strlen($digits), [7, 8, 9, 10, 11, 14], true);
     }
 }
