@@ -73,6 +73,10 @@ class ProcessManifestImportJob implements ShouldQueue
             'file_exists'   => is_file($fullPath),
         ]);
 
+        // El archivo solo se borra si la importacion termino bien. Si fallo, se
+        // conserva para que soporte pueda diagnosticar sin pedirselo al cliente.
+        $importacionExitosa = false;
+
         try {
             $parser = (new ManifestParserFactory())->getParser($fullPath);
 
@@ -96,6 +100,8 @@ class ProcessManifestImportJob implements ShouldQueue
                     'voyage_id'   => $voyageId,
                     'warnings'    => $result->hasWarnings(),
                 ]);
+
+                $importacionExitosa = true;
             } else {
                 // El parser devolvió failure (ej. voyage duplicado). NO es éxito.
                 $message = $result->getFirstError() ?? 'La importación no pudo completarse.';
@@ -116,7 +122,15 @@ class ProcessManifestImportJob implements ShouldQueue
             // Relanzar para que quede registro en failed_jobs también.
             throw $e;
         } finally {
-            Storage::delete($this->storedPath);
+            if ($importacionExitosa) {
+                Storage::delete($this->storedPath);
+            } else {
+                Log::info('ProcessManifestImportJob: archivo conservado para diagnostico', [
+                    'tracking_id' => $this->trackingId,
+                    'stored_path' => $this->storedPath,
+                ]);
+                $this->limpiarImportacionesViejas();
+            }
         }
     }
 
@@ -135,15 +149,47 @@ class ProcessManifestImportJob implements ShouldQueue
             ->latest('id')
             ->value('id');
     }
+    /**
+     * Los archivos solo se acumulan cuando una importacion falla (las exitosas
+     * borran el suyo), asi que la limpieza se dispara en ese mismo momento: no
+     * hace falta cron y se ejecuta exactamente cuando el directorio crecio.
+     *
+     * Nunca interrumpe el flujo: si la limpieza falla se loguea y se sigue. Es
+     * mantenimiento, y no puede tapar el error real de la importacion.
+     */
+    protected function limpiarImportacionesViejas(int $dias = 30): void
+    {
+        try {
+            $limite = now()->subDays($dias)->getTimestamp();
+            $borrados = 0;
+
+            foreach (Storage::files('imports/manifests') as $archivo) {
+                if (Storage::lastModified($archivo) < $limite) {
+                    Storage::delete($archivo);
+                    $borrados++;
+                }
+            }
+
+            if ($borrados > 0) {
+                Log::info('ProcessManifestImportJob: limpieza de importaciones viejas', [
+                    'borrados' => $borrados,
+                    'dias'     => $dias,
+                ]);
+            }
+        } catch (Throwable $e) {
+            Log::warning('ProcessManifestImportJob: fallo la limpieza de archivos viejos', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 
     /**
-     * Fallo duro (excepción no atrapada / timeout / OOM parcial): limpia el
-     * archivo y marca el tracking como failed si el finally no llegó.
+     * Fallo duro (excepción no atrapada / timeout / OOM parcial): marca el
+     * tracking como failed si el finally no llegó. El archivo NO se borra:
+     * un job que muere asi es justo el caso donde mas se necesita.
      */
     public function failed(Throwable $exception): void
     {
-        Storage::delete($this->storedPath);
-
         $tracking = ImportTracking::find($this->trackingId);
         if ($tracking && !$tracking->isFinished()) {
             $tracking->markFailed('La importación falló: ' . $exception->getMessage());
