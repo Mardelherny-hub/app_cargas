@@ -739,6 +739,7 @@ protected function extractValue(string $scope, string $label): ?string
             'ARBAI' => 'ARBUE',
             'PYTV'  => 'PYTVT',
             'PYSEF' => 'PYPSE',
+            'PYTVI' => 'PYTVT',   // "TERPORT VILLETA" (verificado 06/08/2026 contra archivo VICKY B)
         ];
         $resolved = $aliases[$code] ?? $code;
 
