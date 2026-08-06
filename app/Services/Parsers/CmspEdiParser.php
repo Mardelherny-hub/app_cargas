@@ -47,6 +47,12 @@ class CmspEdiParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use ResolvesClientAddresses;
 
+    /**
+     * Rol de la ultima parte leida, para asociarle el RFF+ADZ que viene
+     * inmediatamente despues (ver parseReference).
+     */
+    protected ?string $lastPartyRole = null;
+
     protected array $stats = [
         'processed_containers' => 0,
         'processed_items' => 0,
@@ -541,6 +547,18 @@ class CmspEdiParser implements ManifestParserInterface
             $refType = explode(':', $segment['elements'][0] ?? '')[0] ?? '';
             $refValue = explode(':', $segment['elements'][0] ?? '')[1] ?? '';
 
+            // ADZ = identificador fiscal de la parte anterior, en su campo propio.
+            // Verificado 06/08/2026 sobre 250-22_316S-CUSCAR: aparece en los 13 de
+            // 13 NAD+CN del archivo. Preferirlo al texto del nombre evita depender
+            // de como cada emisor lo escriba ("... S.A. CUIT:? 30-69318494-7 ...").
+            // Los roles CZ y CX no lo traen: para esos sigue el texto libre.
+            if ($refType === 'ADZ' && $this->lastPartyRole !== null) {
+                if (isset($this->parsedData['parties'][$this->lastPartyRole])) {
+                    $this->parsedData['parties'][$this->lastPartyRole]['tax_id'] = $refValue;
+                }
+                $this->lastPartyRole = null;
+            }
+
             if ($currentContainer) {
                 if ($refType === 'BM') {
                     // BM = Bill of Lading number (número de conocimiento)
@@ -597,7 +615,7 @@ class CmspEdiParser implements ManifestParserInterface
                     $currentItem['tare_weight_kg'] = $this->normalizeDecimal($value);
                 } elseif ($measureType === 'AAE' && $unit === 'MTQ') {
                     // Este emisor copia el peso en el campo de volumen: manda
-                    // MEA+AAE+G+KGM:222750 y MEA+AAE+AAW+MTQ:222750, el mismo
+                    // MEA+AAE+G+KGM:222750 y MEA+AAE+AAW+MTQ:222750, el mismoFV
                     // numero (verificado 06/08/2026 sobre 250-22_316S-CUSCAR:
                     // ocurre en los 93/93, 34/34 y 139/139 grupos del archivo).
                     // 222.750 m3 para 820 bolsas es fisicamente imposible.
@@ -683,6 +701,13 @@ class CmspEdiParser implements ManifestParserInterface
                     'type' => 'notify'
                 ];
             }
+
+            $this->lastPartyRole = match ($partyType) {
+                'CN' => 'consignee',
+                'CZ' => 'shipper',
+                'CX' => 'notify',
+                default => null,
+            };
         }
     }
 
@@ -1523,8 +1548,10 @@ class CmspEdiParser implements ManifestParserInterface
         // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
         // La direccion va como tercer argumento: al cortar el nombre por ':',
         // el CUIT/RUC que el emisor escribe en la cola queda de ese lado.
+        // El campo estructurado (RFF+ADZ) tiene prioridad; resolveTaxId cae al
+        // texto del nombre o la direccion solo si no vino o no es plausible.
         $taxId = $this->resolveTaxId(
-            null,
+            $partyData['tax_id'] ?? null,
             $partyData['name'] ?? null,
             $partyData['address'] ?? null
         );
