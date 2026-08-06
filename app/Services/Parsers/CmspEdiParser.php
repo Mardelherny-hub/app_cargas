@@ -1345,11 +1345,11 @@ class CmspEdiParser implements ManifestParserInterface
     $description = $itemData['description'] ?: 'Mercadería según manifiesto EDI';
     $cleanDescription = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
     $cleanDescription = preg_replace('/[^\x20-\x7E\xC0-\xFF]/', '', $cleanDescription); // Remover caracteres problemáticos
-    $cleanDescription = mb_substr($cleanDescription, 0, 1000); // Limitar longitud
+    $cleanDescription = mb_substr($cleanDescription, 0, 2000); // Limitar longitud
 
     // La NCM viene en el segmento CST cuando el emisor lo manda. Si no, esta
     // escrita dentro del texto libre. Se busca sobre $description (el texto
-    // completo) y no sobre $cleanDescription, que ya viene truncado a 1000.
+    // completo) y no sobre $cleanDescription, que ya viene truncado a 2000.
     $commodityCode = $itemData['commodity_code'] ?? null;
     if (empty($commodityCode)) {
         $commodityCode = $this->extractNcmFromText($description);
@@ -1829,7 +1829,7 @@ class CmspEdiParser implements ManifestParserInterface
     return ShipmentItem::create([
         'bill_of_lading_id'   => $bl->id,
         'sequence_number'         => $lineNumber,
-        'description'    => mb_substr($desc, 0, 1000),
+        'description'    => mb_substr($desc, 0, 2000),
         'cargo_type_id'       => $bl->primary_cargo_type_id ?? 1,
         'packaging_type_id'   => $bl->primary_packaging_type_id ?? 1,
         'package_quantity'    => max(0, $qty),       // ← CLAVE PARA TU ERROR
@@ -1862,7 +1862,7 @@ class CmspEdiParser implements ManifestParserInterface
         ShipmentItem::create([
             'bill_of_lading_id' => $bl->id,
             'sequence_number'   => $lineNumber,
-            'description'       => mb_substr($desc, 0, 1000),
+            'description'       => mb_substr($desc, 0, 2000),
             'cargo_type_id'     => $bl->primary_cargo_type_id ?? 1,
             'packaging_type_id' => $bl->primary_packaging_type_id ?? 1,
             'package_count'     => max(0, $qty),     // ← CLAVE
