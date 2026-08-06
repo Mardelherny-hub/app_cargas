@@ -596,7 +596,22 @@ class CmspEdiParser implements ManifestParserInterface
                 } elseif ($measureType === 'AAY' && $unit === 'KGM') {
                     $currentItem['tare_weight_kg'] = $this->normalizeDecimal($value);
                 } elseif ($measureType === 'AAE' && $unit === 'MTQ') {
-                    $currentItem['volume_m3'] = $this->normalizeDecimal($value);
+                    // Este emisor copia el peso en el campo de volumen: manda
+                    // MEA+AAE+G+KGM:222750 y MEA+AAE+AAW+MTQ:222750, el mismo
+                    // numero (verificado 06/08/2026 sobre 250-22_316S-CUSCAR:
+                    // ocurre en los 93/93, 34/34 y 139/139 grupos del archivo).
+                    // 222.750 m3 para 820 bolsas es fisicamente imposible.
+                    //
+                    // Cuando el volumen coincide exacto con el peso bruto del
+                    // mismo item se descarta: queda 0 = "no declarado", que es
+                    // la verdad. No se recorta al maximo de la columna porque
+                    // eso seria fabricar un dato.
+                    $volumen = $this->normalizeDecimal($value);
+                    $bruto   = $currentItem['gross_weight_kg'] ?? null;
+
+                    $currentItem['volume_m3'] = ($bruto !== null && abs($volumen - $bruto) < 0.001)
+                        ? 0
+                        : $volumen;
                 }
             }
         }
