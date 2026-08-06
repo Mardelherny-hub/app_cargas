@@ -583,7 +583,14 @@ protected function extractValue(string $scope, string $label): ?string
             'bill_of_lading_id' => $bill->id,
             'line_number' => $lineNumber,
             'item_description' => $data['naturaleza_mercaderia'] ?? 'Mercadería general',
-            'package_quantity' => intval($data['cant_total_bultos'] ?? 1),
+            // CANTTOTALBULTOS viene vacio en parte de los contenedores (50 de 119
+            // en ASUNCION B, verificado 06/08/2026). extractValue devuelve '' y no
+            // null en ese caso, asi que el ?? no se activaba e intval('') daba 0:
+            // el item quedaba sin bultos y el total del conocimiento en cero.
+            // Criterio de Roberto (05/08): sin bultos declarados, 1 por contenedor.
+            // El total del conocimiento se recalcula desde los items, con lo cual
+            // termina siendo la cantidad de contenedores, como el pidio.
+            'package_quantity' => max(1, intval($data['cant_total_bultos'] ?? 0)),
             'gross_weight_kg' => floatval($data['peso_total_bultos'] ?? 0),
             'net_weight_kg' => floatval($data['peso_total_bultos'] ?? 0) * 0.95,
             'volume_m3' => floatval($data['volumen_total'] ?? 0),
