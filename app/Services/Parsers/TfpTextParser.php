@@ -167,6 +167,7 @@ class TfpTextParser implements ManifestParserInterface
                         'voyage_id'               => $voyage->id,
                         'created_bills'           => count($allBills),
                         'created_items'           => count($allItems),
+                        'created_containers'      => count($allContainers),
                         'processing_time_seconds' => round(microtime(true) - $startTime, 2),
                         'import_statistics'       => $this->stats,
                         'notes'                   => 'Importación TFP completada',
@@ -278,6 +279,8 @@ class TfpTextParser implements ManifestParserInterface
         $containers = [];
         $current = [];
 
+        // TARA, TEMPERATURA y OBS existen en la variante del formato que no trae
+        // PESO ni CANTIDAD (verificado 06/08/2026 sobre ASUNCION B y VICKY B).
         $map = [
             'condicion' => 'CONDICION:',
             'tipo' => 'TIPO:',
@@ -286,11 +289,25 @@ class TfpTextParser implements ManifestParserInterface
             'numero' => 'NUMERO:',
             'peso' => 'PESO:',
             'cantidad' => 'CANTIDAD:',
+            'tara' => 'TARA:',
+            'temperatura' => 'TEMPERATURA:',
+            'obs' => 'OBS:',
         ];
 
         foreach ($lines as $rawLine) {
             $line = trim($rawLine);
             if ($line === '') continue;
+
+            // Un contenedor nuevo empieza en CONDICION:, que es el primer campo
+            // de cada bloque. Antes se cerraba al ver CANTIDAD:, que es opcional:
+            // en los archivos que no lo traen (ASUNCION B, VICKY B) no se cerraba
+            // ninguno y cada contenedor pisaba al anterior, quedando solo el
+            // ultimo. Delimitar por el campo de apertura no depende de que
+            // existan los opcionales.
+            if (stripos($line, 'CONDICION:') !== false && !empty($current)) {
+                $containers[] = $current;
+                $current = [];
+            }
 
             foreach ($map as $k => $label) {
                 if (stripos($line, $label) !== false) {
@@ -299,13 +316,6 @@ class TfpTextParser implements ManifestParserInterface
                         $current[$k] = $val;
                     }
                     break;
-                }
-            }
-
-            if (stripos($line, 'CANTIDAD:') !== false) {
-                if (!empty($current)) {
-                    $containers[] = $current;
-                    $current = [];
                 }
             }
         }
@@ -317,24 +327,56 @@ class TfpTextParser implements ManifestParserInterface
         return $containers;
     }
 
+    /**
+     * Cada mercaderia del conocimiento es su propio bloque **LINEAS**...**FIN
+     * LINEAS**. Hasta 07/08/2026 se usaba preg_match (singular), que devuelve
+     * solo la primera coincidencia: de las 119 mercaderias de ASUNCION B se
+     * leian 52, una por conocimiento, y el resto se perdia en silencio.
+     */
     protected function parseLines(string $section): array
     {
-        if (!preg_match('/\*\*LINEAS\*\*(.*?)\*\*FIN LINEAS\*\*/is', $section, $m)) {
+        if (!preg_match_all('/\*\*LINEAS\*\*(.*?)\*\*FIN LINEAS\*\*/is', $section, $m)) {
             return [];
         }
 
-        $block = $m[1];
+        $rows = [];
 
-        $row = [
-            'cant_total_bultos' => $this->extractValue($block, 'CANTTOTALBULTOS:'),
-            'naturaleza_mercaderia' => $this->extractValue($block, 'NATURALEZAMERCADERIA:'),
-            'peso_total_bultos' => $this->extractValue($block, 'PESOTOTALBULTOS:'),
-            'tipo_embalaje' => $this->extractValue($block, 'TIPOEMBALAJE:'),
-            'cod_armonizado' => $this->extractValue($block, 'CODARMONIZADO:'),
-            'volumen_total' => $this->extractValue($block, 'VOLUMENTOTAL:'),
-        ];
+        foreach ($m[1] as $block) {
+            // Un bloque LINEAS puede contener VARIAS mercaderias, no una.
+            // Verificado 07/08/2026 sobre ASUNCION B: 52 bloques con 119
+            // mercaderias en total; uno solo tiene 50. Como extractValue toma
+            // la primera coincidencia del bloque, se leia una por conocimiento
+            // y el resto se perdia en silencio.
+            //
+            // Cada mercaderia abre en CANTPARCIALBULTOS:, que es su primer
+            // campo. Se corta ahi y cada fragmento se lee por separado.
+            $fragmentos = preg_split('/(?=CANTPARCIALBULTOS:)/i', $block);
 
-        return (empty(array_filter($row, fn($v) => $v !== null && $v !== ''))) ? [] : [$row];
+            foreach ($fragmentos as $frag) {
+                if (stripos($frag, 'CANTPARCIALBULTOS:') === false) {
+                    continue;
+                }
+
+                $row = [
+                    'cant_total_bultos' => $this->extractValue($frag, 'CANTTOTALBULTOS:'),
+                    'naturaleza_mercaderia' => $this->extractValue($frag, 'NATURALEZAMERCADERIA:'),
+                    'peso_total_bultos' => $this->extractValue($frag, 'PESOTOTALBULTOS:'),
+                    'tipo_embalaje' => $this->extractValue($frag, 'TIPOEMBALAJE:'),
+                    'cod_armonizado' => $this->extractValue($frag, 'CODARMONIZADO:'),
+                    'volumen_total' => $this->extractValue($frag, 'VOLUMENTOTAL:'),
+                    // CONTENEDOR vincula la mercaderia con su contenedor; OBS trae
+                    // el permiso de embarque en este formato.
+                    'contenedor' => $this->extractValue($frag, 'CONTENEDOR:'),
+                    'obs' => $this->extractValue($frag, 'OBS:'),
+                ];
+
+                if (!empty(array_filter($row, fn($v) => $v !== null && $v !== ''))) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        return $rows;
     }
 
 protected function extractValue(string $scope, string $label): ?string
@@ -444,8 +486,8 @@ protected function extractValue(string $scope, string $label): ?string
 
     protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false): BillOfLading
     {
-        $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null);
-        $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null);
+        $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null, $data['cargador_domicilio'] ?? null);
+        $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null, $data['consignatario_domicilio'] ?? null);
 
         // Algunos generadores TFP emiten NOTIFICATARIO como "nombre del consignatario + dirección"
         // pegados (verificado contra archivo real 13/07/2026). Si el notificatario empieza con el
@@ -464,7 +506,7 @@ protected function extractValue(string $scope, string $label): ?string
                 'direccion_extraida' => $notifyExtraAddr,
             ]);
         } else {
-            $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null);
+            $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null, $data['notificatario_domicilio'] ?? null);
         }
 
         $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
@@ -673,7 +715,7 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    protected function findOrCreateClient(string $name, string $type, ?string $taxId = null): Client
+    protected function findOrCreateClient(string $name, string $type, ?string $taxId = null, ?string $address = null): Client
     {
         $user = auth()->user();
         $companyId = $user->userable_type === 'App\Models\Company' ? $user->userable_id : 
@@ -683,8 +725,14 @@ protected function extractValue(string $scope, string $label): ?string
         if (empty($name)) $name = 'Cliente TFP';
 
         // Prioridad: RUC declarado (CARGADORRUC/CONSIGNATARIORUC/NOTIFICATARIORUC) >
-        // tax embebido en el nombre (ej. "TECNOMOTOR S.A. TAX ID 80002427-3"). No se fabrica.
-        $normTaxId = $this->resolveTaxId($taxId, $name);
+        // tax embebido en el nombre > tax embebido en el domicilio. No se fabrica.
+        //
+        // El domicilio se agrego el 07/08/2026: los campos *RUC vienen vacios en
+        // buena parte de los archivos y el emisor escribe el identificador dentro
+        // de *DOMICILIO ("RUC: 80094634-0 CALLE ROQUE CENTURION...", "CHILE 801
+        // ... CUIT 30-69318494-7"). Sin mirarlo ahi se daba de alta un cliente
+        // nuevo por cada importacion del mismo (reportado por Roberto 06/08).
+        $normTaxId = $this->resolveTaxId($taxId, $name, $address);
 
         // 1) Buscar por tax_id real (si hay)
         if ($normTaxId) {
