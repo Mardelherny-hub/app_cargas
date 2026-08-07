@@ -109,7 +109,7 @@ class TfpTextParser implements ManifestParserInterface
                     }
 
                     // Crear BillOfLading
-                    $bill = $this->createBillOfLading($shipment, $header, !empty($containers));
+                    $bill = $this->createBillOfLading($shipment, $header, !empty($containers), $containers);
                     $allBills[] = $bill;
                     $this->stats['processed_bls']++;
                     
@@ -119,7 +119,10 @@ class TfpTextParser implements ManifestParserInterface
                         $container = $this->createContainer($bill, $containerData);
                         if ($container) {
                             $allContainers[] = $container;
-                            $billContainers[] = $container;
+                            // Se guarda junto al dato del archivo: PESO y CANTIDAD
+                            // son propios de cada contenedor y hacen falta para el
+                            // pivote (ver attachContainerToItem).
+                            $billContainers[] = ['model' => $container, 'data' => $containerData];
                             $this->stats['processed_containers']++;
                         }
                     }
@@ -130,22 +133,52 @@ class TfpTextParser implements ManifestParserInterface
                         $item = $this->createShipmentItem($bill, $lineData, !empty($containers));
                         if ($item) {
                             $allItems[] = $item;
-                            $billItems[] = $item;
+                            // Se guarda con su dato de archivo: el campo CONTENEDOR
+                            // de cada bloque LINEAS dice a que contenedor pertenece
+                            // esa mercaderia.
+                            $billItems[] = ['model' => $item, 'data' => $lineData];
                             $this->stats['processed_items']++;
                         }
                     }
 
                     // Vincular los contenedores del BL con su ítem (pivote container_shipment_item).
+                    // Cada contenedor se vincula con SU mercaderia, buscando por el
+                    // campo CONTENEDOR del bloque LINEAS. Antes se usaba siempre
+                    // $billItems[0] y todos los contenedores del conocimiento
+                    // recibian los bultos y el peso de la primera mercaderia
+                    // (reportado por Roberto 07/08/2026: TGBU8924639 mostraba
+                    // 21983,15 cuando su linea declara 21096).
                     if (!empty($billItems) && !empty($billContainers)) {
                         foreach ($billContainers as $c) {
-                            $this->attachContainerToItem($c, $billItems[0]);
+                            $numero = $c['model']->container_number;
+
+                            $propio = null;
+                            foreach ($billItems as $bi) {
+                                if (strcasecmp(trim($bi['data']['contenedor'] ?? ''), $numero) === 0) {
+                                    $propio = $bi;
+                                    break;
+                                }
+                            }
+
+                            // Sin coincidencia (el archivo no declara CONTENEDOR en
+                            // LINEAS) se mantiene el comportamiento anterior.
+                            $elegido = $propio ?? $billItems[0];
+
+                            $this->attachContainerToItem(
+                                $c['model'],
+                                $elegido['model'],
+                                $c['data'] + [
+                                    'peso'     => $c['data']['peso']     ?? $elegido['data']['peso_total_bultos']  ?? null,
+                                    'cantidad' => $c['data']['cantidad'] ?? $elegido['data']['cant_total_bultos'] ?? null,
+                                ]
+                            );
                         }
                     }
 
                     // Consignar en el BL la descripción y la posición arancelaria
                     // tomadas del primer ítem (en TFP hay un ítem por BL).
                     if (!empty($billItems)) {
-                        $firstItem = $billItems[0];
+                        $firstItem = $billItems[0]['model'];
                         $bill->update([
                             'cargo_description' => $firstItem->item_description ?: $bill->cargo_description,
                             'commodity_code'    => $firstItem->commodity_code ?: null,
@@ -484,7 +517,7 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false): BillOfLading
+    protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false, array $containers = []): BillOfLading
     {
         $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null, $data['cargador_domicilio'] ?? null);
         $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null, $data['consignatario_domicilio'] ?? null);
@@ -512,6 +545,20 @@ protected function extractValue(string $scope, string $label): ?string
         $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
         $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
 
+        // El permiso de embarque viene en el OBS de los contenedores, repetido en
+        // cada uno pero unico por conocimiento: verificado 07/08/2026 sobre
+        // DTY260626N (184 conocimientos, 370 OBS con dato, ninguno con dos
+        // permisos distintos). Formato "26001TRB3011733H". Se toma el primero
+        // que lo declare. La columna es string(100).
+        $permisoEmbarque = null;
+        foreach ($containers as $c) {
+            $obs = trim($c['obs'] ?? '');
+            if ($obs !== '') {
+                $permisoEmbarque = mb_substr($obs, 0, 100);
+                break;
+            }
+        }
+
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['bl_numero'],
@@ -522,7 +569,9 @@ protected function extractValue(string $scope, string $label): ?string
             'notify_party_id' => $notify->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
-            'permiso_embarque' => $data['trb'] ?? null,
+            // Prioridad: campo TRB de la cabecera; si no viene, el OBS de los
+            // contenedores (ver arriba). Este archivo lo trae solo en OBS.
+            'permiso_embarque' => !empty($data['trb']) ? $data['trb'] : $permisoEmbarque,
             'freight_terms' => 'prepaid',
             'status' => 'draft',
             // Si el BL trae contenedores: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR).
@@ -648,7 +697,7 @@ protected function extractValue(string $scope, string $label): ?string
     /**
      * Vincular un Container con un ShipmentItem en el pivote container_shipment_item.
      */
-    protected function attachContainerToItem(Container $container, ShipmentItem $item): void
+    protected function attachContainerToItem(Container $container, ShipmentItem $item, array $containerData = []): void
     {
         $exists = DB::table('container_shipment_item')
             ->where('container_id', $container->id)
@@ -662,8 +711,18 @@ protected function extractValue(string $scope, string $label): ?string
         DB::table('container_shipment_item')->insert([
             'container_id' => $container->id,
             'shipment_item_id' => $item->id,
-            'package_quantity' => $item->package_quantity,
-            'gross_weight_kg' => $item->gross_weight_kg,
+            // PESO y CANTIDAD del propio contenedor cuando el archivo los declara.
+            // Antes se copiaban los totales del item a CADA contenedor: con dos
+            // contenedores de 1100 y 1048 bultos, los dos quedaban en 2148 y la
+            // validacion del formulario rechazaba la edicion porque la suma (4296)
+            // no coincidia con el total del item (reportado por Roberto 07/08/2026).
+            // Si el archivo no los trae, se cae al total del item como antes.
+            'package_quantity' => isset($containerData['cantidad']) && $containerData['cantidad'] !== ''
+                ? (int) floatval($containerData['cantidad'])
+                : $item->package_quantity,
+            'gross_weight_kg' => isset($containerData['peso']) && $containerData['peso'] !== ''
+                ? floatval($containerData['peso'])
+                : $item->gross_weight_kg,
             'net_weight_kg' => $item->net_weight_kg,
             'volume_m3' => $item->volume_m3,
             'status' => 'loaded',
