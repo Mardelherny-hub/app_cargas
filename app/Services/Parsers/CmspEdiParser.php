@@ -69,9 +69,16 @@ class CmspEdiParser implements ManifestParserInterface
      */
     public function canParse(string $filePath): bool
     {
-        // Verificar extensión EDI
+        // La extension no decide: se descartan solo los formatos que sabemos que
+        // no son EDIFACT, y el resto se resuelve mirando el contenido.
+        //
+        // Verificado 07/08/2026: el archivo de Hapag-Lloyd
+        // "2047270O_CUSCAR.593698204.7091255943.1" termina en ".1" y es un CUSCAR
+        // valido (UNA:+.? / UNB+UNOA / UNH+1+CUSCAR:D:96B:UN). Exigir extension
+        // "edi" lo rechazaba sin abrirlo. Los marcadores de abajo son especificos
+        // de EDIFACT, asi que la deteccion por contenido alcanza.
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        if ($extension !== 'edi') {
+        if (in_array($extension, ['xlsx', 'xls', 'xml', 'csv', 'pdf', 'zip'], true)) {
             return false;
         }
 
@@ -668,6 +675,15 @@ class CmspEdiParser implements ManifestParserInterface
             // quedaria igual que un separador y cortaria donde no corresponde.
             $partyParts = preg_split('/(?<!\?):/', $partyRaw);
 
+            // El identificador fiscal se busca sobre el texto COMPLETO, antes de
+            // partir. El archivo escribe "... S.A. CUIT:? 30-69318494-7 ...": el
+            // ':' separador cae entre la etiqueta y el numero, con lo cual al
+            // partir la etiqueta queda en el nombre y los digitos en el domicilio,
+            // y el extractor (que necesita las dos cosas juntas) no encuentra
+            // nada. Regresion introducida el 05/08/2026 al agregar el corte;
+            // reportada por Roberto el 06/08 como clientes duplicados sin CUIT.
+            $partyTaxId = $this->extractEmbeddedTaxId($this->cleanEdifactText($partyRaw));
+
             $partyName = $this->cleanEdifactText($partyParts[0] ?? '');
 
             // Marca de "a la atencion de" pegada al final del nombre
@@ -677,12 +693,27 @@ class CmspEdiParser implements ManifestParserInterface
             // La clase incluye guion medio (U+2013) y largo (U+2014) ademas del
             // ASCII: el archivo trae 0x96, que en Windows-1252 es guion medio.
             // Sin eso quedaba "MAERSK AS -" con el guion colgando.
-            $partyName = preg_replace(
-                '/[\s\-\x{2013}\x{2014},;]*\b(?:ATTN|ATTE|ATT|ATN|ATA|ATENCION|C\/O|CARE\s+OF)\b[\s\-\x{2013}\x{2014},;]*$/iu',
-                '',
-                $partyName
-            );
-            $partyName = preg_replace('/[\s\-\x{2013}\x{2014},;]+$/u', '', $partyName);
+            // Se recorta en bucle porque pueden venir encadenadas: en
+            // "AGENCIA MARITIMA INTERNACIONAL SA CUIT 30-58534342-7 DIRECCION"
+            // primero cae DIRECCION y recien ahi queda el CUIT al final.
+            // El numero solo se borra si lo precede una etiqueta, para no tocar
+            // razones sociales tipo "NAVIERA DEL SUR 2000 S.A.".
+            $marcas    = '(?:ATTN|ATTE|ATT|ATN|ATA|ATENCION|C\/O|CARE\s+OF)';
+            $etiquetas = '(?:RUT\s*\/\s*VAT|RUC\s*\/\s*TAX\s?ID|TAX\s?ID|TAXID|R\.U\.C\.|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT|DIRECCION|DIRECCI\x{00D3}N|PAIS|PA\x{00CD}S)';
+            $sep       = '[\s\-\x{2013}\x{2014},;]';
+
+            for ($i = 0; $i < 5; $i++) {
+                $previo = $partyName;
+
+                $partyName = preg_replace('/[\s\-\x{2013}\x{2014},;:.]*\b' . $marcas . '\b[\s\-\x{2013}\x{2014},;:.]*$/iu', '', $partyName);
+                $partyName = preg_replace('/' . $sep . '*\b' . $etiquetas . '\b[\s:.\-]*[0-9][0-9.\-\/]*$/iu', '', $partyName);
+                $partyName = preg_replace('/' . $sep . '*\b' . $etiquetas . '\b[\s\-\x{2013}\x{2014},;:]*$/iu', '', $partyName);
+                $partyName = preg_replace('/' . $sep . '+$/u', '', $partyName);
+
+                if ($partyName === $previo) {
+                    break;
+                }
+            }
 
             $partyAddress = count($partyParts) > 1
                 ? $this->cleanEdifactText(implode(' ', array_slice($partyParts, 1)))
@@ -708,6 +739,8 @@ class CmspEdiParser implements ManifestParserInterface
                     'name' => $partyName,
                     'address' => $partyAddress,
                     'type' => $rol,
+                    // Del texto completo. El RFF+ADZ lo pisa despues si viene.
+                    'tax_id' => $partyTaxId,
                 ];
 
                 if ($currentContainer !== null) {
@@ -908,6 +941,7 @@ class CmspEdiParser implements ManifestParserInterface
                     'voyage_id'               => $voyage->id,
                     'created_bills'           => count($billIds),
                     'created_items'           => count($itemIds),
+                    'created_containers'      => $this->stats['processed_containers'] ?? 0,
                     'processing_time_seconds' => $startTime ? round(microtime(true) - $startTime, 2) : null,
                     'import_statistics'       => $this->stats,
                     'notes'                   => 'Importación CMSP EDI completada',
@@ -1366,11 +1400,13 @@ class CmspEdiParser implements ManifestParserInterface
     $description = $itemData['description'] ?: 'Mercadería según manifiesto EDI';
     $cleanDescription = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
     $cleanDescription = preg_replace('/[^\x20-\x7E\xC0-\xFF]/', '', $cleanDescription); // Remover caracteres problemáticos
-    $cleanDescription = mb_substr($cleanDescription, 0, 2000); // Limitar longitud
+    // 5000: el maximo real medido en archivos TFP es 2075 (ASUNCION B, 07/08/2026),
+    // con parrafos legales completos que pueden crecer segun el emisor.
+    $cleanDescription = mb_substr($cleanDescription, 0, 5000); // Limitar longitud
 
     // La NCM viene en el segmento CST cuando el emisor lo manda. Si no, esta
     // escrita dentro del texto libre. Se busca sobre $description (el texto
-    // completo) y no sobre $cleanDescription, que ya viene truncado a 2000.
+    // completo) y no sobre $cleanDescription, que ya viene truncado a 5000.
     $commodityCode = $itemData['commodity_code'] ?? null;
     if (empty($commodityCode)) {
         $commodityCode = $this->extractNcmFromText($description);
@@ -1850,7 +1886,7 @@ class CmspEdiParser implements ManifestParserInterface
     return ShipmentItem::create([
         'bill_of_lading_id'   => $bl->id,
         'sequence_number'         => $lineNumber,
-        'description'    => mb_substr($desc, 0, 2000),
+        'description'    => mb_substr($desc, 0, 5000),
         'cargo_type_id'       => $bl->primary_cargo_type_id ?? 1,
         'packaging_type_id'   => $bl->primary_packaging_type_id ?? 1,
         'package_quantity'    => max(0, $qty),       // ← CLAVE PARA TU ERROR
@@ -1883,7 +1919,7 @@ class CmspEdiParser implements ManifestParserInterface
         ShipmentItem::create([
             'bill_of_lading_id' => $bl->id,
             'sequence_number'   => $lineNumber,
-            'description'       => mb_substr($desc, 0, 2000),
+            'description'       => mb_substr($desc, 0, 5000),
             'cargo_type_id'     => $bl->primary_cargo_type_id ?? 1,
             'packaging_type_id' => $bl->primary_packaging_type_id ?? 1,
             'package_count'     => max(0, $qty),     // ← CLAVE
