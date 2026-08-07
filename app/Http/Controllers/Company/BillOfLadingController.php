@@ -2130,7 +2130,7 @@ private function createShipmentItemFromData(array $data, BillOfLading $billOfLad
     $validator = Validator::make($data, [
         'bill_of_lading_id' => 'required|exists:bills_of_lading,id',
         'line_number' => 'required|integer|min:1',
-        'item_description' => 'required|string|max:2000',
+        'item_description' => 'required|string|max:5000',
         'cargo_type_id' => 'required|exists:cargo_types,id',
         'packaging_type_id' => 'required|exists:packaging_types,id',
         'package_quantity' => 'required|integer|min:1',

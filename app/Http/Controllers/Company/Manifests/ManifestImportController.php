@@ -437,6 +437,7 @@ class ManifestImportController extends Controller
         $reportData['counts'] = [
             'billsOfLading' => $result->statistics['bills_of_lading'] ?? count($reportData['createdRecords']['billsOfLading']),
             'containers' => $result->statistics['containers'] ?? count($reportData['createdRecords']['containers']),
+            'items' => $result->statistics['items'] ?? $result->statistics['processed_items'] ?? 0,
         ];
 
         return $reportData;
@@ -609,6 +610,7 @@ public function showReport(Request $request)
             'counts' => [
                 'billsOfLading' => $import->created_bills ?? 0,
                 'containers'    => $import->created_containers ?? 0,
+                'items'         => $import->created_items ?? 0,
             ],
             'warnings' => $import->warnings ?? [],
             'errors'   => $import->errors ?? [],

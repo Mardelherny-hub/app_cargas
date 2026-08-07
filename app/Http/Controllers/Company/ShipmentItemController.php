@@ -236,7 +236,7 @@ class ShipmentItemController extends Controller
                 'volume_m3' => 'nullable|numeric|min:0',
                 'declared_value' => 'nullable|numeric|min:0',
                 'currency_code' => 'required|string|size:3',
-                'item_description' => 'required|string|max:2000',
+                'item_description' => 'required|string|max:5000',
                 'cargo_marks' => 'nullable|string|max:500',
                 'commodity_code' => 'nullable|string|max:20',
                 'commodity_description' => 'nullable|string|max:255',
@@ -671,7 +671,7 @@ return view('company.shipment-items.edit', compact(
         $rules = [
             'line_number' => 'required|integer|min:1',
             'item_reference' => 'nullable|string|max:100',
-            'item_description' => 'required|string|max:2000',
+            'item_description' => 'required|string|max:5000',
             'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
             'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
             'package_quantity' => 'required|integer|min:1',
