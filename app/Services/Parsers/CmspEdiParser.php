@@ -324,7 +324,7 @@ class CmspEdiParser implements ManifestParserInterface
                     break;
 
                 case 'NAD':
-                    $this->parseParty($segment);
+                    $this->parseParty($segment, $currentContainer);
                     break;
 
                 case 'GID':
@@ -553,7 +553,10 @@ class CmspEdiParser implements ManifestParserInterface
             // de como cada emisor lo escriba ("... S.A. CUIT:? 30-69318494-7 ...").
             // Los roles CZ y CX no lo traen: para esos sigue el texto libre.
             if ($refType === 'ADZ' && $this->lastPartyRole !== null) {
-                if (isset($this->parsedData['parties'][$this->lastPartyRole])) {
+                if ($currentContainer !== null
+                    && isset($currentContainer['parties'][$this->lastPartyRole])) {
+                    $currentContainer['parties'][$this->lastPartyRole]['tax_id'] = $refValue;
+                } elseif (isset($this->parsedData['parties'][$this->lastPartyRole])) {
                     $this->parsedData['parties'][$this->lastPartyRole]['tax_id'] = $refValue;
                 }
                 $this->lastPartyRole = null;
@@ -638,7 +641,16 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Parsear partes (shipper, consignee, etc.)
      */
-    protected function parseParty(array $segment): void
+    /**
+     * Las partes pertenecen al conocimiento (CNI), no al archivo. Cada CNI trae
+     * su NAD+CN / NAD+CZ / NAD+CX y hasta 06/08/2026 todos se guardaban en un
+     * unico casillero global: el ultimo pisaba a los anteriores y los 51
+     * conocimientos del archivo terminaban con las mismas partes.
+     *
+     * Si no hay CNI abierto (NAD de cabecera) se conservan en parsedData como
+     * respaldo para los conocimientos que no declaren las suyas.
+     */
+    protected function parseParty(array $segment, ?array &$currentContainer = null): void
     {
         if (count($segment['elements']) >= 3) {
             $partyType = $segment['elements'][0] ?? '';
@@ -682,24 +694,27 @@ class CmspEdiParser implements ManifestParserInterface
             // Antes estaban rotados (CN→shipper, CX→consignee, CZ→notify), por eso
             // el cargador mostraba lo mismo que el consignatario: en los dos archivos
             // CN y CX son la misma empresa y CZ es la distinta.
-            if ($partyType === 'CN') {
-                $this->parsedData['parties']['consignee'] = [
+            // N1 lo usa Hapag-Lloyd para el notificatario en lugar de CX
+            // (verificado 06/08/2026 sobre 2047270O_CUSCAR: 51 NAD+N1).
+            $rol = match ($partyType) {
+                'CN' => 'consignee',
+                'CZ' => 'shipper',
+                'CX', 'N1' => 'notify',
+                default => null,
+            };
+
+            if ($rol !== null) {
+                $parte = [
                     'name' => $partyName,
                     'address' => $partyAddress,
-                    'type' => 'consignee'
+                    'type' => $rol,
                 ];
-            } elseif ($partyType === 'CZ') {
-                $this->parsedData['parties']['shipper'] = [
-                    'name' => $partyName,
-                    'address' => $partyAddress,
-                    'type' => 'shipper'
-                ];
-            } elseif ($partyType === 'CX') {
-                $this->parsedData['parties']['notify'] = [
-                    'name' => $partyName,
-                    'address' => $partyAddress,
-                    'type' => 'notify'
-                ];
+
+                if ($currentContainer !== null) {
+                    $currentContainer['parties'][$rol] = $parte;
+                } else {
+                    $this->parsedData['parties'][$rol] = $parte;
+                }
             }
 
             $this->lastPartyRole = match ($partyType) {
@@ -1135,9 +1150,15 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
     {
-        $shipper     = $this->findOrCreateClient($data['parties']['shipper'] ?? null);
-        $consignee   = $this->findOrCreateClient($data['parties']['consignee'] ?? null);
-        $notifyParty = $this->findOrCreateClient($data['parties']['notify'] ?? null);
+        // Partes propias del conocimiento. Las de $data son de cabecera y solo
+        // sirven de respaldo para los CNI que no declaren las suyas: usarlas
+        // siempre hacia que los 51 conocimientos del archivo compartieran las
+        // mismas partes (reportado por Roberto 06/08/2026).
+        $partesDelGrupo = $containerGroup['parties'] ?? [];
+
+        $shipper     = $this->findOrCreateClient($partesDelGrupo['shipper']   ?? $data['parties']['shipper']   ?? null);
+        $consignee   = $this->findOrCreateClient($partesDelGrupo['consignee'] ?? $data['parties']['consignee'] ?? null);
+        $notifyParty = $this->findOrCreateClient($partesDelGrupo['notify']    ?? $data['parties']['notify']    ?? null);
 
         // Si alguna linea del grupo trae contenedores, el conocimiento es
         // contenedorizado. Mismo criterio que en createShipmentItem().
