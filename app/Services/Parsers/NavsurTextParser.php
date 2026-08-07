@@ -17,6 +17,7 @@ use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesPorts;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -35,6 +36,7 @@ class NavsurTextParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
     use ResolvesClientAddresses;
+    use ResolvesPorts;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -487,8 +489,8 @@ class NavsurTextParser implements ManifestParserInterface
         );
 
         // Buscar puertos
-        $originPort = $this->findOrCreatePort($data['pol']);
-        $destPort = $this->findOrCreatePort($data['pod']);
+        $originPort = $this->resolvePortStrict($data['pol']);
+        $destPort = $this->resolvePortStrict($data['pod']);
 
         // Crear voyage con valores enum CORREGIDOS
         $voyage = Voyage::create([
@@ -617,10 +619,12 @@ class NavsurTextParser implements ManifestParserInterface
         $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
 
         // Obtener puertos
-        $loadingPort = $this->findOrCreatePort($data['puerto_carga']);
-        $dischargePort = $this->findOrCreatePort($data['puerto_descarga']);
-        $finalPort = !empty($data['destino_final']) 
-            ? $this->findOrCreatePort($data['destino_final'])
+        $loadingPort = $this->resolvePortStrict($data['puerto_carga']);
+        $dischargePort = $this->resolvePortStrict($data['puerto_descarga']);
+        // Destino final es opcional: si no se puede resolver no aborta la
+        // importacion, se usa el puerto de descarga.
+        $finalPort = !empty($data['destino_final'])
+            ? ($this->resolvePortOrNull($data['destino_final']) ?? $dischargePort)
             : $dischargePort;
 
         // AGREGAR: Fechas obligatorias con valores por defecto

@@ -16,6 +16,7 @@ use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Models\ContainerType;
+use App\Services\Parsers\Concerns\ResolvesPorts;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +39,7 @@ class ParanaExcelParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesPorts;
 
     // Mapeo exacto de columnas según análisis real
     protected array $columnMap = [
@@ -344,8 +346,8 @@ class ParanaExcelParser implements ManifestParserInterface
 
         // Crear/buscar puertos PRIMERO para obtener country_ids
 
-        $originPort = $this->findOrCreatePort($data['POL'], 'Buenos Aires');
-        $destPort = $this->findOrCreatePort($data['POD'], 'Terminal Villeta');
+        $originPort = $this->resolvePortStrict($data['POL']);
+        $destPort = $this->resolvePortStrict($data['POD']);
         
         // CORREGIDO: Buscar o crear vessel con campos obligatorios
         // USAR vessel seleccionado en lugar de crear fake
@@ -496,8 +498,8 @@ class ParanaExcelParser implements ManifestParserInterface
         $consignee = $this->findOrCreateClient($consigneeData, $shipment->voyage->company_id);
 
         // Obtener puertos
-        $loadingPort = $this->findOrCreatePort($data['POL'] ?? 'ARBUE', 'Buenos Aires');
-        $dischargePort = $this->findOrCreatePort($data['POD'] ?? 'PYTVT', 'Villeta');
+        $loadingPort = $this->resolvePortStrict($data['POL'] ?? 'ARBUE');
+        $dischargePort = $this->resolvePortStrict($data['POD'] ?? 'PYTVT');
 
         // VALIDACIÓN: Verificar si ya existe bill of lading con este número
         $billNumber = $data['BL_NUMBER'];
