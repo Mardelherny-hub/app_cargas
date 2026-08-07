@@ -224,7 +224,7 @@
                             </svg>
                         </div>
                         <div>
-                            <p class="text-2xl font-bold text-gray-900">{{ $stats['processed_items'] ?? count($createdRecords['billsOfLading'] ?? []) }}</p>
+                            <p class="text-2xl font-bold text-gray-900">{{ $counts['items'] ?? $stats['processed_items'] ?? 0 }}</p>
                             <p class="text-gray-600 text-sm">Items Procesados</p>
                         </div>
                     </div>
