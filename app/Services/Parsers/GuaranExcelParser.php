@@ -18,6 +18,7 @@ use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Models\User;
 use App\Models\ManifestImport;
+use App\Services\Parsers\Concerns\ResolvesPorts;
 use Illuminate\Database\Eloquent\Model;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -51,6 +52,7 @@ class GuaranExcelParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesPorts;
     /**
      * Mapeo columnas A-BT basado en análisis real del archivo
      */
@@ -370,8 +372,8 @@ class GuaranExcelParser implements ManifestParserInterface
         }
 
         $vessel = $this->findOrCreateVessel($voyageData, $companyId);
-        $originPort = $this->findOrCreatePort($voyageData['pol']);
-        $destPort = $this->findOrCreatePort($voyageData['pod']);
+        $originPort = $this->resolvePortStrict($voyageData['pol']);
+        $destPort = $this->resolvePortStrict($voyageData['pod']);
 
         // El voyage_number es único global. Si ya existe (en cualquier empresa),
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
