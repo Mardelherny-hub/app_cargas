@@ -327,6 +327,21 @@ class CmspEdiParser implements ManifestParserInterface
                         break;
                     }
 
+                    // MEA+AAE+VGM+KGM:22350 es el peso verificado del contenedor
+                    // (SOLAS). Es el unico peso real por contenedor del archivo:
+                    // el MEA+AAE+G repite el total del conocimiento en cada item.
+                    // Roberto lo senalo el 07/08/2026. A veces viene en 0, y en
+                    // ese caso no se pisa nada.
+                    if ($currentEquipment !== null
+                        && ($segment['elements'][0] ?? '') === 'AAE'
+                        && ($segment['elements'][1] ?? '') === 'VGM') {
+                        $mea = explode(':', $segment['elements'][2] ?? '');
+                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1]) && (float) $mea[1] > 0) {
+                            $this->parsedData['equipment'][$currentEquipment]['vgm_weight_kg'] = (float) $mea[1];
+                        }
+                        break;
+                    }
+
                     $this->parseMeasurements($segment, $currentContainer, $currentItem);
                     break;
 
@@ -1404,6 +1419,11 @@ class CmspEdiParser implements ManifestParserInterface
     // con parrafos legales completos que pueden crecer segun el emisor.
     $cleanDescription = mb_substr($cleanDescription, 0, 5000); // Limitar longitud
 
+    // Un contenedor vacio no lleva mercaderia: bultos, peso y volumen en cero
+    // aunque el archivo los declare (Roberto 07/08/2026). Mismo criterio que
+    // createContainer para la condicion V.
+    $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
+
     // La NCM viene en el segmento CST cuando el emisor lo manda. Si no, esta
     // escrita dentro del texto libre. Se busca sobre $description (el texto
     // completo) y no sobre $cleanDescription, que ya viene truncado a 5000.
@@ -1423,15 +1443,20 @@ class CmspEdiParser implements ManifestParserInterface
         'packaging_type_id' => !empty($itemData['containers'])
             ? $this->getContainerPackagingTypeId()
             : $this->getDefaultPackagingTypeId(),
-        'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
+        // Un contenedor vacio no lleva mercaderia: bultos y peso en cero aunque
+        // el archivo los declare (Roberto 07/08/2026). La descripcion se conserva
+        // para que se vea que es un reposicionamiento de vacios.
+        'package_quantity' => $esVacio
+            ? 0
+            : $this->extractPackageCount($itemData['package_info'] ?? ''),
         'item_description' => $cleanDescription,
         // Peso tal cual viene en el archivo (MEA+AAE+G+KGM del GID).
-        'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
+        'gross_weight_kg' => $esVacio ? 0 : ($itemData['gross_weight_kg'] ?? 0),
         // net_weight_kg no viene en el archivo y no se transmite a ningun
         // webservice activo. Se deja en NULL ("no informado") en lugar de
         // calcular bruto - tara, que es lo que daba los negativos.
         'net_weight_kg' => null,
-        'volume_m3' => $itemData['volume_m3'] ?? 0,
+        'volume_m3' => $esVacio ? 0 : ($itemData['volume_m3'] ?? 0),
         // Campos DGS (mercadería peligrosa)
         'is_dangerous_goods' => $itemData['is_dangerous_goods'] ?? false,
         'imdg_class' => $itemData['imdg_class'] ?? null,
@@ -1456,8 +1481,13 @@ class CmspEdiParser implements ManifestParserInterface
         // Contenedor existe, solo hacer el attach
         if (!$shipmentItem->containers->contains($container->id)) {
             $shipmentItem->containers()->attach($container->id, [
-                'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
-                'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
+                'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
+                    ? 0
+                    : $this->extractPackageCount($itemData['package_info'] ?? ''),
+                // VGM (peso verificado del contenedor) si el archivo lo declara.
+                // El gross del item repite el total del conocimiento en cada uno.
+                'gross_weight_kg' => $this->parsedData['equipment'][$containerNumber]['vgm_weight_kg']
+                    ?? $itemData['gross_weight_kg'] ?? 0,
                 // No viene en el archivo: NULL ("no informado"), igual que en el item.
                 'net_weight_kg' => null,
                 'volume_m3' => $itemData['volume_m3'] ?? 0
@@ -1505,10 +1535,16 @@ class CmspEdiParser implements ManifestParserInterface
         'created_by_user_id' => auth()->id()
     ]);
 
+    // VGM (peso verificado del contenedor) si el archivo lo declara.
+    $pesoContenedor = $this->parsedData['equipment'][$containerNumber]['vgm_weight_kg']
+        ?? $itemData['gross_weight_kg'] ?? 0;
+
     $shipmentItem->containers()->attach($container->id, [
-        'package_quantity' => $this->extractPackageCount($itemData['package_info'] ?? ''),
-        'gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
-        'net_weight_kg' => ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 0),
+        'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
+            ? 0
+            : $this->extractPackageCount($itemData['package_info'] ?? ''),
+        'gross_weight_kg' => $pesoContenedor,
+        'net_weight_kg' => $pesoContenedor - ($equipment['tare_weight_kg'] ?? $itemData['tare_weight_kg'] ?? 0),
         'volume_m3' => $itemData['volume_m3'] ?? 0
     ]);
 
