@@ -53,6 +53,12 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected ?string $lastPartyRole = null;
 
+    /**
+     * True cuando el conocimiento en curso repite el mismo peso en todos sus
+     * items (es el total del conocimiento, no el peso de cada contenedor).
+     */
+    protected bool $pesoItemEsTotalRepetido = false;
+
     protected array $stats = [
         'processed_containers' => 0,
         'processed_items' => 0,
@@ -1267,6 +1273,22 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function createContainersAndItemsForGroup(BillOfLading $billOfLading, array $containerGroup): void
     {
+        // El MEA+AAE+G+KGM es el peso correcto del contenedor cuando el emisor lo
+        // declara bien. Algunos repiten el total del conocimiento en cada item:
+        // ahi hay que usar el VGM (Roberto 07/08/2026).
+        //
+        // La firma es que TODOS los items del conocimiento traigan el mismo valor
+        // teniendo mas de uno. Verificado sobre 250-22_316S-CUSCAR: 8 de 13
+        // conocimientos repiten (340230 en 93 items, 222750 en 22), y 5 traen
+        // valores propios (26150 en un conocimiento de un solo contenedor).
+        $pesos = [];
+        foreach ($containerGroup['items'] as $it) {
+            if (isset($it['gross_weight_kg'])) {
+                $pesos[] = (string) $it['gross_weight_kg'];
+            }
+        }
+        $this->pesoItemEsTotalRepetido = count($pesos) > 1 && count(array_unique($pesos)) === 1;
+
         foreach ($containerGroup['items'] as $item) {
             $shipmentItem = $this->createShipmentItem($billOfLading, $item);
 
@@ -1276,6 +1298,32 @@ class CmspEdiParser implements ManifestParserInterface
 
             $this->stats['processed_items']++;
         }
+    }
+
+    /**
+     * Peso del contenedor: el declarado en el item (MEA+AAE+G+KGM), salvo que el
+     * conocimiento repita el mismo valor en todos sus items, en cuyo caso ese
+     * numero es el total del conocimiento y se usa el VGM. Si el VGM viene en 0
+     * (contenedores vacios) se deja el del item.
+     */
+    protected function pesoContenedor(string $containerNumber, array $itemData): float
+    {
+        // Un contenedor vacio no lleva mercaderia: el peso de la carga es 0,
+        // igual que en el item (ver createShipmentItem). Sin esto el pivote
+        // conservaba el total del conocimiento (340230 en 93 vacios).
+        if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
+            return 0;
+        }
+
+        $delItem = (float) ($itemData['gross_weight_kg'] ?? 0);
+
+        if (!$this->pesoItemEsTotalRepetido) {
+            return $delItem;
+        }
+
+        $vgm = (float) ($this->parsedData['equipment'][$containerNumber]['vgm_weight_kg'] ?? 0);
+
+        return $vgm > 0 ? $vgm : $delItem;
     }
 
     protected function getDefaultCargoTypeId(): int
@@ -1486,8 +1534,7 @@ class CmspEdiParser implements ManifestParserInterface
                     : $this->extractPackageCount($itemData['package_info'] ?? ''),
                 // VGM (peso verificado del contenedor) si el archivo lo declara.
                 // El gross del item repite el total del conocimiento en cada uno.
-                'gross_weight_kg' => $this->parsedData['equipment'][$containerNumber]['vgm_weight_kg']
-                    ?? $itemData['gross_weight_kg'] ?? 0,
+                'gross_weight_kg' => $this->pesoContenedor($containerNumber, $itemData),
                 // No viene en el archivo: NULL ("no informado"), igual que en el item.
                 'net_weight_kg' => null,
                 'volume_m3' => $itemData['volume_m3'] ?? 0
@@ -1536,8 +1583,7 @@ class CmspEdiParser implements ManifestParserInterface
     ]);
 
     // VGM (peso verificado del contenedor) si el archivo lo declara.
-    $pesoContenedor = $this->parsedData['equipment'][$containerNumber]['vgm_weight_kg']
-        ?? $itemData['gross_weight_kg'] ?? 0;
+    $pesoContenedor = $this->pesoContenedor($containerNumber, $itemData);
 
     $shipmentItem->containers()->attach($container->id, [
         'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
