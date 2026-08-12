@@ -24,6 +24,7 @@ trait ResolvesPorts
         'PYTV'  => 'PYTVT',   // "TERPORT-VILLETA"
         'PYTVI' => 'PYTVT',   // "TERPORT VILLETA"
         'PYSEF' => 'PYPSE',   // "PUERTO SEGURO FLUVIAL"
+        'PYNNV' => 'PYVLL',   // "ANNP VILLETA" = puerto publico de Villeta (verificado 11/08/2026 contra BM ROSA V.468)
     ];
 
 /**
