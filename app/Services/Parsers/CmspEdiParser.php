@@ -333,6 +333,20 @@ class CmspEdiParser implements ManifestParserInterface
                         break;
                     }
 
+                    // MEA+WT+T+KGM:3700 -> tara cuando el emisor no usa AAE+T
+                    // (Roberto 11/08/2026, archivo con EQD+CN+FFAU2866044). Solo
+                    // como respaldo: si AAE+T ya la cargo, no se pisa.
+                    if ($currentEquipment !== null
+                        && ($segment['elements'][0] ?? '') === 'WT'
+                        && ($segment['elements'][1] ?? '') === 'T'
+                        && !isset($this->parsedData['equipment'][$currentEquipment]['tare_weight_kg'])) {
+                        $mea = explode(':', $segment['elements'][2] ?? '');
+                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1])) {
+                            $this->parsedData['equipment'][$currentEquipment]['tare_weight_kg'] = (float) $mea[1];
+                        }
+                        break;
+                    }
+
                     // MEA+AAE+VGM+KGM:22350 es el peso verificado del contenedor
                     // (SOLAS). Es el unico peso real por contenedor del archivo:
                     // el MEA+AAE+G repite el total del conocimiento en cada item.
@@ -642,8 +656,14 @@ class CmspEdiParser implements ManifestParserInterface
                 // El operador corrige los que vengan mal.
                 if ($measureType === 'AAE' && $attribute === 'G' && $unit === 'KGM') {
                     $currentItem['gross_weight_kg'] = $this->normalizeDecimal($value);
-                } elseif ($measureType === 'AAY' && $unit === 'KGM') {
-                    $currentItem['tare_weight_kg'] = $this->normalizeDecimal($value);
+                } elseif ($measureType === 'AAY' && $attribute === 'G' && $unit === 'KGM') {
+                    // AAY+G es peso bruto VERIFICADO, respaldo cuando no vino
+                    // AAE+G (Roberto 11/08/2026). Hasta hoy se guardaba como
+                    // tara: en el archivo de FFAU2866044 dejo tara=11217 (el
+                    // bruto) y neto negativo. AAE+G tiene prioridad.
+                    if (!isset($currentItem['gross_weight_kg'])) {
+                        $currentItem['gross_weight_kg'] = $this->normalizeDecimal($value);
+                    }
                 } elseif ($measureType === 'AAE' && $unit === 'MTQ') {
                     // Este emisor copia el peso en el campo de volumen: manda
                     // MEA+AAE+G+KGM:222750 y MEA+AAE+AAW+MTQ:222750, el mismoFV
@@ -1644,6 +1664,7 @@ class CmspEdiParser implements ManifestParserInterface
             'ARBAI' => 'ARBUE',   // "BUENOS AIRES"
             'PYTV'  => 'PYTVT',   // "TERPORT-VILLETA"
             'PYSEF' => 'PYPSE',   // "PUERTO SEGURO FLUVIAL"
+        'PYNNV' => 'PYVLL',   // "ANNP VILLETA" = puerto publico de Villeta (verificado 11/08/2026 contra BM ROSA V.468)
         ];
         $resolved = $aliases[$code] ?? $code;
 
