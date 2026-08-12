@@ -109,7 +109,7 @@ class TfpTextParser implements ManifestParserInterface
                     }
 
                     // Crear BillOfLading
-                    $bill = $this->createBillOfLading($shipment, $header, !empty($containers), $containers);
+                    $bill = $this->createBillOfLading($shipment, $header, !empty($containers), $containers, $lines);
                     $allBills[] = $bill;
                     $this->stats['processed_bls']++;
                     
@@ -517,7 +517,7 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false, array $containers = []): BillOfLading
+    protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false, array $containers = [], array $lines = []): BillOfLading
     {
         $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null, $data['cargador_domicilio'] ?? null);
         $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null, $data['consignatario_domicilio'] ?? null);
@@ -556,6 +556,20 @@ protected function extractValue(string $scope, string $label): ?string
             if ($obs !== '') {
                 $permisoEmbarque = mb_substr($obs, 0, 100);
                 break;
+            }
+        }
+
+        // Respaldo: OBS del bloque LINEAS (Roberto 11/08/2026, BM ROSA lo trae
+        // ahi: "26001TRB3013247J"). Ese OBS tambien puede traer texto libre
+        // ("CARGOS IN TRANSIT TO VILLETA..."), asi que solo se acepta si tiene
+        // forma de permiso: digitos+letras+digitos, sin espacios.
+        if ($permisoEmbarque === null) {
+            foreach ($lines as $l) {
+                $obs = trim($l['obs'] ?? '');
+                if ($obs !== '' && preg_match('/^\d{4,5}[A-Z]{2,4}\d{5,9}[A-Z]?$/i', $obs)) {
+                    $permisoEmbarque = $obs;
+                    break;
+                }
             }
         }
 
@@ -688,7 +702,12 @@ protected function extractValue(string $scope, string $label): ?string
             // Mismo criterio que el BL: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR) si hay contenedores.
             'cargo_type_id' => $hasContainers ? 9 : 1,
             'packaging_type_id' => $hasContainers ? 4 : 1,
-            'commodity_code' => $data['cod_armonizado'] ?? null,
+            // CODARMONIZADO normalizado a NNNN.NN; si viene vacio, se busca
+            // dentro de la descripcion ("NCM NO.: 3808.92.99" - Roberto
+            // 11/08/2026). Mismo criterio que CMSP.
+            'commodity_code' => !empty($data['cod_armonizado'])
+                ? $this->normalizeNcm($data['cod_armonizado'])
+                : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
             'tariff_position' => $data['cod_armonizado'] ?: null,
             'created_by_user_id' => auth()->id()
         ]);
@@ -854,6 +873,7 @@ protected function extractValue(string $scope, string $label): ?string
             'PYTV'  => 'PYTVT',
             'PYSEF' => 'PYPSE',
             'PYTVI' => 'PYTVT',   // "TERPORT VILLETA" (verificado 06/08/2026 contra archivo VICKY B)
+            'PYNNV' => 'PYVLL',   // "ANNP VILLETA" = puerto publico de Villeta (verificado 11/08/2026 contra BM ROSA V.468)
         ];
         $resolved = $aliases[$code] ?? $code;
 
@@ -925,5 +945,43 @@ protected function extractValue(string $scope, string $label): ?string
             'markers' => ['**BL**', '**FIN BL**', '**CONTENEDORES**', '**LINEAS**'],
             'notes' => 'Valores entre /* ... */'
         ];
+    }
+
+    // =====================================================================
+    // Copiados de CmspEdiParser (L1415). Si se toca uno, tocar el otro.
+    // Deuda anotada 11/08/2026: unificar en un concern compartido.
+    // =====================================================================
+
+    protected function extractNcmFromText(?string $text): ?string
+    {
+        if (empty($text)) {
+            return null;
+        }
+
+        if (!preg_match('/NCM[^0-9]{0,15}([0-9][0-9.]{4,12})/i', $text, $m)) {
+            return null;
+        }
+
+        return $this->normalizeNcm($m[1]);
+    }
+
+    /**
+     * Formato de NCM definido por Roberto (03/08/2026): 4 digitos, punto y 2
+     * decimales. Si vienen mas digitos se descartan los sobrantes; si vienen
+     * 4 o 5 quedan los primeros 4 sin decimales; con menos de 4 se descarta.
+     */
+    protected function normalizeNcm(?string $raw): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $raw);
+
+        if (strlen($digits) >= 6) {
+            return substr($digits, 0, 4) . '.' . substr($digits, 4, 2);
+        }
+
+        if (strlen($digits) >= 4) {
+            return substr($digits, 0, 4);
+        }
+
+        return null;
     }
 }
