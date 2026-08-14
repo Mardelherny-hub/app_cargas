@@ -374,14 +374,21 @@ class SimpleXmlGeneratorParaguay
 
                 // ARMONIZADO - Clasificación arancelaria (Manual GDSF p.12)
                 // DNA espera: <armonizados><armonizado>...</armonizado></armonizados>
+                //
+                // commodity_code es el campo general NCM/HS del ShipmentItem.
+                // tariff_position es específico para AFIP y se conserva solamente
+                // como respaldo para registros anteriores que no tengan commodity_code.
                 $firstItem = $bl->shipmentItems->first();
-                $tariffCode = $firstItem->tariff_position ?? null;
+
+                $tariffCode = $firstItem?->commodity_code
+                    ?: $firstItem?->tariff_position;
+
                 if ($tariffCode) {
                     $w->startElement('armonizados');
                     $w->startElement('armonizado');
                     $w->writeElement('codArmonizado', htmlspecialchars(substr($tariffCode, 0, 16)));
                     $w->writeElement('descArmonizado', htmlspecialchars(
-                        substr($bl->cargo_description ?? $firstItem->item_description ?? 'MERCADERIA', 0, 500)
+                        substr($bl->cargo_description ?? $firstItem?->item_description ?? 'MERCADERIA', 0, 500)
                     ));
                     $w->endElement(); // armonizado
                     $w->endElement(); // armonizados

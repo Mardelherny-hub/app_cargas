@@ -175,6 +175,7 @@ class ShipmentItem extends Model
         'comments',
         'consignee_document_type',
         'consignee_tax_id',
+        'consignee_passport_country_code',
     ];
 
     /**

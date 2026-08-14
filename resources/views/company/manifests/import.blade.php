@@ -124,6 +124,28 @@
                         </p>
                     </div>
 
+                    <!-- Fecha/hora de salida -->
+                    <div>
+                        <label for="departure_date" class="block text-sm font-medium text-gray-700 mb-2">
+                            📅 Fecha y hora de salida
+                        </label>
+
+                        <input type="datetime-local"
+                               id="departure_date"
+                               name="departure_date"
+                               value="{{ old('departure_date') }}"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('departure_date')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Complete este dato cuando el archivo no informe la fecha de salida.
+                            Para archivos CUSCAR será obligatorio si el EDI no la contiene.
+                        </p>
+                    </div>
+
                     <!-- Botón de importación -->
                     <div class="flex items-center justify-between">
                         <div class="text-sm text-gray-600">

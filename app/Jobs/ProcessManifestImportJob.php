@@ -45,6 +45,7 @@ class ProcessManifestImportJob implements ShouldQueue
         public int $vesselId,
         public int $userId,
         public string $originalName,
+        public ?string $departureDate = null,
     ) {
         $this->onQueue('imports');
     }
@@ -81,7 +82,10 @@ class ProcessManifestImportJob implements ShouldQueue
             $parser = (new ManifestParserFactory())->getParser($fullPath);
 
             /** @var ManifestParseResult $result */
-            $result = $parser->parse($fullPath, ['vessel_id' => $this->vesselId]);
+            $result = $parser->parse($fullPath, [
+                'vessel_id' => $this->vesselId,
+                'departure_date' => $this->departureDate,
+            ]);
 
             if ($result->isSuccessful()) {
                 // Import OK (con o sin advertencias). Guardamos voyage_id y el

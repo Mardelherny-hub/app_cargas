@@ -130,7 +130,7 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Parsear el archivo EDI y retornar resultado
      */
-    public function parse(string $filePath): ManifestParseResult
+    public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $startTime = microtime(true);
 
@@ -159,7 +159,7 @@ class CmspEdiParser implements ManifestParserInterface
             $standardData = $this->transform($this->parsedData);
 
             // 5. Crear objetos de modelo
-            return $this->createModelObjects($standardData, $importRecord, $startTime);
+            return $this->createModelObjects($standardData, $importRecord, $startTime, $options);
 
         } catch (Exception $e) {
             $this->stats['errors']++;
@@ -218,11 +218,56 @@ class CmspEdiParser implements ManifestParserInterface
             $content = mb_convert_encoding($content, 'UTF-8', 'Windows-1252');
         }
 
-        // Separar por segmentos (cada línea o por separador ')
-        $lines = preg_split("/[\r\n']+/", $content);
+        /*
+         * Separar segmentos respetando el carácter de escape EDIFACT.
+         *
+         * En UN/EDIFACT '?' libera al carácter siguiente. Por lo tanto,
+         * un apóstrofe precedido por '?' pertenece al contenido y NO
+         * termina el segmento.
+         *
+         * Ejemplos reales Hapag-Lloyd:
+         *   PCI++BATCH NO?'S?: ...
+         *   FTX+AAA+++1X40?' HC CONTAINER:...
+         */
+        $rawSegments = [];
+        $buffer = '';
+        $released = false;
+        $length = strlen($content);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $content[$i];
+
+            if ($released) {
+                $buffer .= $char;
+                $released = false;
+                continue;
+            }
+
+            if ($char === '?') {
+                $buffer .= $char;
+                $released = true;
+                continue;
+            }
+
+            if ($char === "'") {
+                if (trim($buffer) !== '') {
+                    $rawSegments[] = $buffer;
+                }
+
+                $buffer = '';
+                continue;
+            }
+
+            $buffer .= $char;
+        }
+
+        if (trim($buffer) !== '') {
+            $rawSegments[] = $buffer;
+        }
+
         $this->ediSegments = [];
 
-        foreach ($lines as $line) {
+        foreach ($rawSegments as $line) {
             $line = trim($line);
             if (empty($line)) continue;
 
@@ -231,8 +276,17 @@ class CmspEdiParser implements ManifestParserInterface
                 $segmentTag = $matches[1];
                 $segmentData = $matches[2];
 
-                // Separar elementos por +
-                $elements = explode('+', $segmentData);
+                /*
+                 * Separar elementos respetando el release character EDIFACT.
+                 *
+                 * '?+' representa un signo + literal dentro del dato y no un
+                 * separador de elemento.
+                 *
+                 * En los archivos reales auditados no aparece la secuencia '??',
+                 * por lo que esta separación cubre los casos efectivamente
+                 * utilizados por ambos emisores CUSCAR recibidos.
+                 */
+                $elements = preg_split('/(?<!\?)\+/', $segmentData);
 
                 $this->ediSegments[] = [
                     'tag' => $segmentTag,
@@ -257,6 +311,7 @@ class CmspEdiParser implements ManifestParserInterface
             'message' => [],
             'vessel' => [],
             'ports' => [],
+            'dates' => [],
             'containers' => [],
             'items' => [],
             'parties' => [],
@@ -286,6 +341,10 @@ class CmspEdiParser implements ManifestParserInterface
 
                 case 'TDT':
                     $this->parseTransportDetails($segment);
+                    break;
+
+                case 'DTM':
+                    $this->parseCuscarDateTime($segment);
                     break;
 
                 case 'LOC':
@@ -391,6 +450,10 @@ class CmspEdiParser implements ManifestParserInterface
                         'is_dangerous_goods' => false,
                         'imdg_class' => null,
                         'un_number' => null,
+
+                        // PCI/C210: marcas declaradas para los bultos.
+                        'cargo_marks' => null,
+
                         // Campo CST (código arancelario)
                         'commodity_code' => null,
                     ];
@@ -423,9 +486,13 @@ class CmspEdiParser implements ManifestParserInterface
                     $equipmentNumber = $segment['elements'][1] ?? '';
                     if (!empty($equipmentNumber)) {
                         $this->parsedData['equipment'][$equipmentNumber] = [
-                            'iso_code'       => explode(':', $segment['elements'][2] ?? '')[0] ?? '',
-                            'tare_weight_kg' => null,
-                            'shipper_seal'   => null,
+                            'iso_code'                => explode(':', $segment['elements'][2] ?? '')[0] ?? '',
+                            'tare_weight_kg'          => null,
+                            'shipper_seal'            => null,
+                            'customs_seal'            => null,
+                            'carrier_seal'            => null,
+                            'additional_seals'        => [],
+                            'transport_temperature_c' => null,
                         ];
                         $currentEquipment = $equipmentNumber;
                     } else {
@@ -433,18 +500,101 @@ class CmspEdiParser implements ManifestParserInterface
                     }
                     break;
 
-                // SEL+4527767 TY115894+SH  → precinto del cargador
+                // SEL:
+                //   SH = cargador
+                //   CU = Aduana
+                //   CA = transportista
+                //   AB = emisor desconocido
                 case 'SEL':
                     if ($currentEquipment !== null) {
                         $seal = trim($segment['elements'][0] ?? '');
+
+                        $issuerParts = explode(':', $segment['elements'][1] ?? '');
+                        $issuerCode = strtoupper(trim($issuerParts[0] ?? ''));
+
                         if ($seal !== '') {
-                            $this->parsedData['equipment'][$currentEquipment]['shipper_seal'] = $seal;
+                            $sealField = match ($issuerCode) {
+                                'SH' => 'shipper_seal',
+                                'CU' => 'customs_seal',
+                                'CA' => 'carrier_seal',
+                                default => null,
+                            };
+
+                            // Los campos específicos admiten un precinto.
+                            // Si ya existe otro del mismo tipo, conservar el
+                            // siguiente en additional_seals en vez de pisarlo.
+                            if ($sealField !== null
+                                && empty($this->parsedData['equipment'][$currentEquipment][$sealField])) {
+                                $this->parsedData['equipment'][$currentEquipment][$sealField] = $seal;
+                            } else {
+                                $this->parsedData['equipment'][$currentEquipment]['additional_seals'][] = [
+                                    'seal_number' => $seal,
+                                    'issuer_code' => $issuerCode !== '' ? $issuerCode : null,
+                                ];
+                            }
+                        }
+                    }
+                    break;
+
+                case 'TMP':
+                    /*
+                     * TMP+2 = temperatura de transporte.
+                     *
+                     * Ejemplos reales Hapag-Lloyd:
+                     *   TMP+2+-003:CEL
+                     *   TMP+2+018:CEL
+                     *   TMP+2+020:CEL
+                     *
+                     * El TMP pertenece al EQD actualmente activo.
+                     * Sólo se guarda cuando el emisor declara explícitamente
+                     * temperatura de transporte en grados Celsius.
+                     */
+                    if ($currentEquipment !== null
+                        && ($segment['elements'][0] ?? '') === '2') {
+                        $temperature = explode(
+                            ':',
+                            $segment['elements'][1] ?? ''
+                        );
+
+                        if (($temperature[1] ?? '') === 'CEL'
+                            && isset($temperature[0])
+                            && is_numeric($temperature[0])) {
+                            $this->parsedData['equipment'][$currentEquipment]['transport_temperature_c']
+                                = (float) $temperature[0];
                         }
                     }
                     break;
 
                 case 'FTX':
                     $this->parseFreeText($segment, $currentItem);
+                    break;
+
+                case 'PCI':
+                    /*
+                     * PCI/C210 contiene las marcas de los bultos.
+                     *
+                     * Ejemplos reales Hapag-Lloyd:
+                     *   PCI++NM
+                     *   PCI++NO MARKS
+                     *   PCI++BATCH NO?'S?: 3010851...
+                     *
+                     * No se interpreta el contenido: se conserva como lo
+                     * declaró el emisor y sólo se eliminan los caracteres
+                     * técnicos de escape EDIFACT.
+                     */
+                    if ($currentItem !== null) {
+                        $cargoMarks = $this->cleanEdifactText(
+                            $segment['elements'][1] ?? ''
+                        );
+
+                        if ($cargoMarks !== '') {
+                            $currentItem['cargo_marks'] = mb_substr(
+                                $cargoMarks,
+                                0,
+                                500
+                            );
+                        }
+                    }
                     break;
 
                 case 'DGS':
@@ -529,15 +679,157 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Parsear fechas operativas del CUSCAR.
+     *
+     * Sólo se toman los calificadores que tienen destino inequívoco
+     * en Voyage:
+     *
+     *   132 = llegada estimada
+     *   136 = salida
+     *
+     * DTM+137 es fecha del documento/mensaje y NO se usa como salida.
+     *
+     * Los archivos reales recibidos no siempre respetan el tercer
+     * componente de formato:
+     *
+     *   CMSP:
+     *   DTM+132:202603020000:102
+     *
+     *   Hapag-Lloyd:
+     *   DTM+132:20251202:102
+     *
+     * Por eso se interpreta el valor efectivo según su longitud,
+     * sin alterar ni completar datos inexistentes.
+     */
+    protected function parseCuscarDateTime(array $segment): void
+    {
+        $composite = explode(':', $segment['elements'][0] ?? '');
+
+        $qualifier = trim($composite[0] ?? '');
+        $rawValue = trim($composite[1] ?? '');
+
+        if (!in_array($qualifier, ['132', '136'], true)) {
+            return;
+        }
+
+        $normalized = $this->normalizeCuscarDateTime($rawValue);
+
+        if ($normalized === null) {
+            throw new Exception(
+                "Fecha inválida en DTM+{$qualifier}: '{$rawValue}'."
+            );
+        }
+
+        if ($qualifier === '132') {
+            $this->parsedData['dates']['estimated_arrival'] = $normalized;
+        } elseif ($qualifier === '136') {
+            $this->parsedData['dates']['departure'] = $normalized;
+        }
+    }
+
+    /**
+     * Normalizar las formas observadas realmente en los CUSCAR recibidos:
+     *
+     *   CCYYMMDD       -> fecha
+     *   YYMMDDHHMM     -> fecha/hora
+     *   CCYYMMDDHHMM   -> fecha/hora
+     *
+     * Cuando el archivo sólo informa fecha, se conserva esa fecha.
+     * La columna Voyage es DATETIME y la base almacenará la hora como
+     * 00:00:00 porque el emisor no informó una hora.
+     */
+    protected function normalizeCuscarDateTime(string $raw): ?string
+    {
+        $digits = preg_replace('/\D/', '', $raw);
+
+        if ($digits === null) {
+            return null;
+        }
+
+        $year = null;
+        $month = null;
+        $day = null;
+        $hour = 0;
+        $minute = 0;
+
+        if (strlen($digits) === 8) {
+            // CCYYMMDD
+            $year = (int) substr($digits, 0, 4);
+            $month = (int) substr($digits, 4, 2);
+            $day = (int) substr($digits, 6, 2);
+        } elseif (strlen($digits) === 10) {
+            // YYMMDDHHMM
+            $shortYear = (int) substr($digits, 0, 2);
+            $year = $shortYear >= 70
+                ? 1900 + $shortYear
+                : 2000 + $shortYear;
+
+            $month = (int) substr($digits, 2, 2);
+            $day = (int) substr($digits, 4, 2);
+            $hour = (int) substr($digits, 6, 2);
+            $minute = (int) substr($digits, 8, 2);
+        } elseif (strlen($digits) === 12) {
+            // CCYYMMDDHHMM
+            $year = (int) substr($digits, 0, 4);
+            $month = (int) substr($digits, 4, 2);
+            $day = (int) substr($digits, 6, 2);
+            $hour = (int) substr($digits, 8, 2);
+            $minute = (int) substr($digits, 10, 2);
+        } else {
+            return null;
+        }
+
+        if (!checkdate($month, $day, $year)
+            || $hour < 0
+            || $hour > 23
+            || $minute < 0
+            || $minute > 59) {
+            return null;
+        }
+
+        return sprintf(
+            '%04d-%02d-%02d %02d:%02d:00',
+            $year,
+            $month,
+            $day,
+            $hour,
+            $minute
+        );
+    }
+
+    /**
      * Parsear detalles de transporte
      */
     protected function parseTransportDetails(array $segment): void
     {
         if (count($segment['elements']) >= 2) {
+            // TDT D.96B:
+            // 0 = 8051 etapa de transporte
+            // 1 = 8028 referencia del viaje
+            // 4 = C040 transportista
+            // 7 = C222 identificación del medio de transporte
+            //
+            // Ejemplos reales:
+            // CMSP:
+            // TDT+20+07LSRPFSR+1++CMSP:172+++:103::250-22/300-1:PY
+            //
+            // Hapag-Lloyd:
+            // TDT+20+2511S+1++HLCU::5:HAPAG-LLOYD+++ZPQP1:172::CONAY I:PY
+
+            $transportIdentification = explode(':', $segment['elements'][7] ?? '');
+
+            // C222/8212 = nombre o identificación textual del medio.
+            // Si 8212 no viene informado, usar C222/8213 como respaldo.
+            $vesselName = trim($transportIdentification[3] ?? '');
+
+            if ($vesselName === '') {
+                $vesselName = trim($transportIdentification[0] ?? '');
+            }
+
             $this->parsedData['vessel'] = [
                 'transport_stage' => $segment['elements'][0] ?? '',
-                'vessel_name' => $segment['elements'][1] ?? '',
-                'voyage_number' => $segment['elements'][2] ?? '',
+                'vessel_name' => $vesselName,
+                'voyage_number' => $segment['elements'][1] ?? '',
                 'carrier' => explode(':', $segment['elements'][4] ?? '')[0] ?? ''
             ];
         }
@@ -609,8 +901,11 @@ class CmspEdiParser implements ManifestParserInterface
                     // BM = Bill of Lading number (número de conocimiento)
                     $currentContainer['references']['bill_number'] = $refValue;
                 } elseif ($refType === 'PLZ') {
-                    // PLZ = Permiso/License
+                    // Se conserva tal como viene, sin asignarle semántica aduanera.
                     $currentContainer['references']['permit'] = $refValue;
+                } elseif ($refType === 'EP') {
+                    // UN/EDIFACT D.96B: EP = Export permit number.
+                    $currentContainer['references']['export_permit'] = $refValue;
                 }
             }
         }
@@ -658,10 +953,11 @@ class CmspEdiParser implements ManifestParserInterface
                     $currentItem['gross_weight_kg'] = $this->normalizeDecimal($value);
                 } elseif ($measureType === 'AAY' && $attribute === 'G' && $unit === 'KGM') {
                     // AAY+G es peso bruto VERIFICADO, respaldo cuando no vino
-                    // AAE+G (Roberto 11/08/2026). Hasta hoy se guardaba como
-                    // tara: en el archivo de FFAU2866044 dejo tara=11217 (el
-                    // bruto) y neto negativo. AAE+G tiene prioridad.
-                    if (!isset($currentItem['gross_weight_kg'])) {
+                    // AAE+G. Los items se inicializan con gross_weight_kg = 0,
+                    // por lo que isset() no sirve para detectar que AAE no cargó
+                    // ningún peso. AAE+G mantiene prioridad cuando dejó un valor
+                    // positivo.
+                    if ((float) ($currentItem['gross_weight_kg'] ?? 0) <= 0) {
                         $currentItem['gross_weight_kg'] = $this->normalizeDecimal($value);
                     }
                 } elseif ($measureType === 'AAE' && $unit === 'MTQ') {
@@ -876,8 +1172,22 @@ class CmspEdiParser implements ManifestParserInterface
     protected function parseFreeText(array $segment, ?array &$currentItem): void
     {
         if (count($segment['elements']) >= 4 && $currentItem) {
-            $description = $segment['elements'][3] ?? '';
-            if (!empty($description)) {
+            /*
+             * FTX puede contener caracteres reservados escapados con '?'.
+             *
+             * Ejemplos reales Hapag-Lloyd:
+             *   NCM NO.?: 2918.99.99
+             *   TEMPERATURE ?+20C
+             *   1X40?' HC CONTAINER
+             *
+             * parseEdiFile ya conserva esos caracteres dentro del mismo
+             * elemento; acá se elimina únicamente el release character.
+             */
+            $description = $this->cleanEdifactText(
+                $segment['elements'][3] ?? ''
+            );
+
+            if ($description !== '') {
                 $currentItem['description'] = $description;
             }
         }
@@ -927,10 +1237,15 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Crear objetos de modelo
      */
-    protected function createModelObjects(array $data, ?ManifestImport $importRecord = null, ?float $startTime = null): ManifestParseResult
+    protected function createModelObjects(
+        array $data,
+        ?ManifestImport $importRecord = null,
+        ?float $startTime = null,
+        array $options = []
+    ): ManifestParseResult
     {
-        return DB::transaction(function () use ($data, $importRecord, $startTime) {
-            $voyage = $this->createVoyage($data);
+        return DB::transaction(function () use ($data, $importRecord, $startTime, $options) {
+            $voyage = $this->createVoyage($data, $options);
             $shipment = $this->createShipment($voyage, $data);
             
             $billsOfLading = [];
@@ -1008,7 +1323,7 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Crear voyage
      */
-    protected function createVoyage(array $data): Voyage
+    protected function createVoyage(array $data, array $options = []): Voyage
     {
         // OBTENER COMPANY_ID CORRECTAMENTE
         $user = auth()->user();
@@ -1034,10 +1349,24 @@ class CmspEdiParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($data['ports']['loading'] ?? 'ARBUE');
         $destPort = $this->findOrCreatePort($data['ports']['discharge'] ?? 'PYASU');
 
-        $vesselName = $data['vessel']['vessel_name'] ?? 'CMSP-VESSEL';
-        $vessel = $this->findOrCreateVessel($vesselName, $companyId);
+        // La embarcación la selecciona el operador antes de importar.
+        // No crear embarcaciones ni completar datos físicos/registrales
+        // que el archivo CUSCAR no proporciona de forma confiable.
+        $vesselId = $options['vessel_id'] ?? null;
 
-        $voyageNumber = ($data['vessel']['voyage_number'] ?? '') . '-' . 
+        if (!$vesselId) {
+            throw new Exception('Debe seleccionar una embarcación para importar el archivo CUSCAR.');
+        }
+
+        $vessel = Vessel::find($vesselId);
+
+        if (!$vessel) {
+            throw new Exception("Embarcación con ID {$vesselId} no encontrada.");
+        }
+
+        $vesselName = $vessel->name;
+
+        $voyageNumber = ($data['vessel']['voyage_number'] ?? '') . '-' .
                        ($data['message']['document_number'] ?? uniqid());
 
         // DETERMINAR cargo_type basado en puertos reales del EDI
@@ -1050,6 +1379,57 @@ class CmspEdiParser implements ManifestParserInterface
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($voyageNumber);
 
+        /*
+         * Fecha de salida:
+         * 1. DTM+136 del CUSCAR, si el emisor la informó.
+         * 2. Fecha ingresada por el operador.
+         *
+         * Nunca usar DTM+137 ni now() como reemplazo.
+         */
+        $departureDate = $data['dates']['departure'] ?? null;
+
+        if ($departureDate === null) {
+            $manualDeparture = trim(
+                (string) ($options['departure_date'] ?? '')
+            );
+
+            if ($manualDeparture === '') {
+                throw new Exception(
+                    'El archivo CUSCAR no informa una fecha de salida DTM+136. '
+                    . 'Debe indicar la fecha y hora de salida antes de importar.'
+                );
+            }
+
+            // datetime-local envía YYYY-MM-DDTHH:MM.
+            // Se conserva exactamente la fecha/hora ingresada, sin conversión
+            // de zona horaria.
+            $manualDeparture = str_replace('T', ' ', $manualDeparture);
+
+            if (preg_match(
+                '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/',
+                $manualDeparture
+            )) {
+                $manualDeparture .= ':00';
+            }
+
+            $departureDate = $manualDeparture;
+        }
+
+        /*
+         * La llegada estimada sí está declarada en los dos emisores
+         * CUSCAR reales mediante DTM+132.
+         *
+         * Voyage.estimated_arrival_date es obligatorio, por lo que ante
+         * ausencia del dato se detiene la importación en vez de inventarlo.
+         */
+        $estimatedArrivalDate = $data['dates']['estimated_arrival'] ?? null;
+
+        if ($estimatedArrivalDate === null) {
+            throw new Exception(
+                'El archivo CUSCAR no informa la fecha estimada de llegada DTM+132.'
+            );
+        }
+
         return Voyage::create([
             'company_id' => $companyId,
             'voyage_number' => $voyageNumber,
@@ -1058,8 +1438,8 @@ class CmspEdiParser implements ManifestParserInterface
             'destination_port_id' => $destPort->id,
             'origin_country_id' => $originPort->country_id,         // ← AGREGAR
             'destination_country_id' => $destPort->country_id,      // ← AGREGAR
-            'departure_date' => now(),                              // ← AGREGAR
-            'estimated_arrival_date' => now()->addDays(2),         // ← AGREGAR
+            'departure_date' => $departureDate,
+            'estimated_arrival_date' => $estimatedArrivalDate,
             'vessel_name' => $vesselName,
             'status' => 'planning',
             'cargo_type' => $cargoType,
@@ -1250,6 +1630,39 @@ class CmspEdiParser implements ManifestParserInterface
             ?? optional($shipment->voyage)->departure_date
             ?? $billDate;
 
+        /*
+         * Descripción real del conocimiento.
+         *
+         * En algunos CUSCAR el mismo GID se repite una vez por cada SGP,
+         * por lo que la misma descripción puede aparecer muchas veces.
+         * Se conservan únicamente las descripciones distintas informadas
+         * realmente por el archivo.
+         */
+        $cargoDescriptions = [];
+
+        foreach ($containerGroup['items'] ?? [] as $itemDelGrupo) {
+            $description = trim((string) ($itemDelGrupo['description'] ?? ''));
+
+            if ($description === '') {
+                continue;
+            }
+
+            // Mismo saneamiento utilizado al crear ShipmentItem.
+            $description = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
+            $description = preg_replace('/[^\x20-\x7E\xC0-\xFF]/', '', $description);
+            $description = mb_substr($description, 0, 5000);
+
+            if ($description !== '') {
+                $cargoDescriptions[] = $description;
+            }
+        }
+
+        $cargoDescriptions = array_values(array_unique($cargoDescriptions));
+
+        $cargoDescription = !empty($cargoDescriptions)
+            ? implode(' | ', $cargoDescriptions)
+            : 'Según detalle';
+
         return BillOfLading::create([
             'shipment_id'               => $shipment->id,
             'bill_number'               => (string) $billNumber,
@@ -1274,7 +1687,12 @@ class CmspEdiParser implements ManifestParserInterface
             'is_consolidated'           => false,
             'documentation_complete'    => false,
             'customs_cleared'           => false,
-            'cargo_description'         => 'Según detalle',
+
+            // RFF+EP del CUSCAR: número de permiso de exportación.
+            'permiso_embarque'          => $containerGroup['references']['export_permit'] ?? null,
+
+            // Descripción real informada en los GID/FTX de este CNI.
+            'cargo_description'         => $cargoDescription,
             'total_packages'            => 0,
             // Peso bruto del conocimiento tomado del MEA+AAX del CNI.
             'gross_weight_kg'           => $containerGroup['gross_weight_kg'] ?? 0,
@@ -1293,23 +1711,62 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function createContainersAndItemsForGroup(BillOfLading $billOfLading, array $containerGroup): void
     {
-        // El MEA+AAE+G+KGM es el peso correcto del contenedor cuando el emisor lo
-        // declara bien. Algunos repiten el total del conocimiento en cada item:
-        // ahi hay que usar el VGM (Roberto 07/08/2026).
-        //
-        // La firma es que TODOS los items del conocimiento traigan el mismo valor
-        // teniendo mas de uno. Verificado sobre 250-22_316S-CUSCAR: 8 de 13
-        // conocimientos repiten (340230 en 93 items, 222750 en 22), y 5 traen
-        // valores propios (26150 en un conocimiento de un solo contenedor).
-        $pesos = [];
-        foreach ($containerGroup['items'] as $it) {
-            if (isset($it['gross_weight_kg'])) {
-                $pesos[] = (string) $it['gross_weight_kg'];
-            }
-        }
-        $this->pesoItemEsTotalRepetido = count($pesos) > 1 && count(array_unique($pesos)) === 1;
+        /*
+         * En CUSCAR un mismo GID puede repetirse una vez por cada SGP/contenedor.
+         *
+         * Ejemplo real CMSP:
+         *   GID+1+820:BG:::BAG
+         *   FTX+AAA+++AZUCAR
+         *   MEA...222750
+         *   SGP+CONTENEDOR1
+         *
+         *   GID+1+820:BG:::BAG
+         *   FTX+AAA+++AZUCAR
+         *   MEA...222750
+         *   SGP+CONTENEDOR2
+         *
+         * No son dos mercaderías: es la misma línea distribuida físicamente
+         * entre distintos contenedores.
+         *
+         * Se consolidan únicamente items cuyos datos de mercadería son
+         * exactamente iguales. Los contenedores se excluyen de la firma porque
+         * son justamente el dato que cambia entre las repeticiones.
+         */
+        $itemsConsolidados = [];
 
-        foreach ($containerGroup['items'] as $item) {
+        foreach ($containerGroup['items'] ?? [] as $item) {
+            $firmaData = [
+                'sequence' => $item['sequence'] ?? '',
+                'package_info' => $item['package_info'] ?? '',
+                'description' => $item['description'] ?? '',
+                'cargo_marks' => $item['cargo_marks'] ?? null,
+                'gross_weight_kg' => $item['gross_weight_kg'] ?? 0,
+                'tare_weight_kg' => $item['tare_weight_kg'] ?? 0,
+                'volume_m3' => $item['volume_m3'] ?? 0,
+                'is_dangerous_goods' => $item['is_dangerous_goods'] ?? false,
+                'imdg_class' => $item['imdg_class'] ?? null,
+                'un_number' => $item['un_number'] ?? null,
+                'commodity_code' => $item['commodity_code'] ?? null,
+            ];
+
+            $firma = sha1(json_encode($firmaData, JSON_UNESCAPED_UNICODE));
+
+            if (!isset($itemsConsolidados[$firma])) {
+                $item['_physical_occurrences'] = 1;
+                $item['containers'] = array_values(array_unique($item['containers'] ?? []));
+                $itemsConsolidados[$firma] = $item;
+                continue;
+            }
+
+            $itemsConsolidados[$firma]['_physical_occurrences']++;
+
+            $itemsConsolidados[$firma]['containers'] = array_values(array_unique(array_merge(
+                $itemsConsolidados[$firma]['containers'] ?? [],
+                $item['containers'] ?? []
+            )));
+        }
+
+        foreach ($itemsConsolidados as $item) {
             $shipmentItem = $this->createShipmentItem($billOfLading, $item);
 
             foreach ($item['containers'] as $containerNumber) {
@@ -1321,23 +1778,24 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Peso del contenedor: el declarado en el item (MEA+AAE+G+KGM), salvo que el
-     * conocimiento repita el mismo valor en todos sus items, en cuyo caso ese
-     * numero es el total del conocimiento y se usa el VGM. Si el VGM viene en 0
-     * (contenedores vacios) se deja el del item.
+     * Peso del contenedor.
+     *
+     * Si el GID apareció una sola vez, se conserva el peso declarado en ese item.
+     *
+     * Si el mismo GID apareció físicamente varias veces, una por cada SGP,
+     * el peso del item representa la mercadería lógica completa y para cada
+     * contenedor se usa su VGM cuando el archivo lo proporciona.
      */
     protected function pesoContenedor(string $containerNumber, array $itemData): float
     {
-        // Un contenedor vacio no lleva mercaderia: el peso de la carga es 0,
-        // igual que en el item (ver createShipmentItem). Sin esto el pivote
-        // conservaba el total del conocimiento (340230 en 93 vacios).
         if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
             return 0;
         }
 
         $delItem = (float) ($itemData['gross_weight_kg'] ?? 0);
+        $repeticiones = (int) ($itemData['_physical_occurrences'] ?? 1);
 
-        if (!$this->pesoItemEsTotalRepetido) {
+        if ($repeticiones <= 1) {
             return $delItem;
         }
 
@@ -1416,21 +1874,20 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Recupera la NCM escrita dentro del texto libre de la descripcion, para
-     * los emisores que no mandan el segmento CST.
+     * Recupera el código NCM/HS escrito dentro del texto libre para los
+     * emisores que no mandan el segmento CST.
      *
-     * Formas verificadas contra el archivo real (voyage 95, 31/07/2026):
-     *   "NCM?: 1006.30"   "NCM?: 1006.30.00"   "NCM?: 12079990"
-     *   "NCM 12079990"    "NCM 1701141020"     "NCM CODE?: 1207.99.90"
-     *   "NCM /HS Code?: 170199"
+     * Formas verificadas en archivos reales:
+     *   NCM: 8433.90
+     *   NCM. NO.: 2918.99.99
+     *   NCM CODE: 1207.99.90
+     *   HS CODE: 69139099
+     *   HS CODE 3902.10
+     *   HS-CODE: 390120
+     *   HS-CODE : 87 08 29
      *
-     * El [^0-9] entre la etiqueta y el numero impide saltear un digito y
-     * tomar un valor ajeno (ej. el peso en "...20.500,00 KGS. NCM CODE?: ...").
-     * Tolera el "?" de escape EDIFACT este presente o no, asi sigue andando
-     * cuando se aplique cleanEdifactText() a las descripciones.
-     *
-     * El codigo se guarda tal como viene, sin puntos y sin completar ni
-     * recortar el largo: no se fabrican posiciones arancelarias.
+     * Se conserva el mismo normalizador utilizado para CST/NCM.
+     * No se completan dígitos inexistentes ni se fabrica una posición.
      */
     protected function extractNcmFromText(?string $text): ?string
     {
@@ -1438,7 +1895,11 @@ class CmspEdiParser implements ManifestParserInterface
             return null;
         }
 
-        if (!preg_match('/NCM[^0-9]{0,15}([0-9][0-9.]{4,12})/i', $text, $m)) {
+        if (!preg_match(
+            '/(?:NCM|HS[\s-]*CODE)[^0-9]{0,15}([0-9][0-9.\s]{3,20})/i',
+            $text,
+            $m
+        )) {
             return null;
         }
 
@@ -1500,6 +1961,29 @@ class CmspEdiParser implements ManifestParserInterface
         $commodityCode = $this->extractNcmFromText($description);
     }
 
+    /*
+     * GID/C213:
+     *   0 = cantidad de bultos
+     *   1 = código del tipo de embalaje
+     *   2 = identificación de lista de códigos
+     *   3 = agencia responsable de la lista
+     *   4 = descripción textual del embalaje
+     *
+     * Ejemplos reales:
+     *   CMSP:  820:BG:::BAG
+     *   Hapag: 420:CT:ZZZ:5
+     */
+    $packageInfo = (string) ($itemData['package_info'] ?? '');
+    $packageParts = explode(':', $packageInfo);
+
+    $packagingCode = trim($packageParts[1] ?? '');
+    $packagingCode = $packagingCode !== '' ? $packagingCode : null;
+
+    $packageTypeDescription = trim($packageParts[4] ?? '');
+    $packageTypeDescription = $packageTypeDescription !== ''
+        ? $packageTypeDescription
+        : null;
+
     return ShipmentItem::create([
         'bill_of_lading_id' => $billOfLading->id,
         'line_number' => $lineNumber,
@@ -1517,7 +2001,13 @@ class CmspEdiParser implements ManifestParserInterface
         'package_quantity' => $esVacio
             ? 0
             : $this->extractPackageCount($itemData['package_info'] ?? ''),
+
+        // Conservar el embalaje declarado en GID/C213.
+        'packaging_code' => $packagingCode,
+        'package_type_description' => $packageTypeDescription,
+
         'item_description' => $cleanDescription,
+        'cargo_marks' => $itemData['cargo_marks'] ?? null,
         // Peso tal cual viene en el archivo (MEA+AAE+G+KGM del GID).
         'gross_weight_kg' => $esVacio ? 0 : ($itemData['gross_weight_kg'] ?? 0),
         // net_weight_kg no viene en el archivo y no se transmite a ningun
@@ -1539,83 +2029,150 @@ class CmspEdiParser implements ManifestParserInterface
      * Crear contenedor
      */
     protected function createContainer(string $containerNumber, array $itemData, ShipmentItem $shipmentItem): void
-{
-    if (empty($containerNumber)) return;
-
-    // BUSCAR CONTENEDOR EXISTENTE PRIMERO
-    $container = Container::where('container_number', $containerNumber)->first();
-    
-    if ($container) {
-        // Contenedor existe, solo hacer el attach
-        if (!$shipmentItem->containers->contains($container->id)) {
-            $shipmentItem->containers()->attach($container->id, [
-                'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
-                    ? 0
-                    : $this->extractPackageCount($itemData['package_info'] ?? ''),
-                // VGM (peso verificado del contenedor) si el archivo lo declara.
-                // El gross del item repite el total del conocimiento en cada uno.
-                'gross_weight_kg' => $this->pesoContenedor($containerNumber, $itemData),
-                // No viene en el archivo: NULL ("no informado"), igual que en el item.
-                'net_weight_kg' => null,
-                'volume_m3' => $itemData['volume_m3'] ?? 0
-            ]);
+    {
+        if (empty($containerNumber)) {
+            return;
         }
+
+        // BUSCAR CONTENEDOR EXISTENTE PRIMERO
+        $container = Container::where('container_number', $containerNumber)->first();
+
+        if ($container) {
+            // Contenedor existente: no pisar sus datos físicos globales.
+            // Solo asociarlo al item de este conocimiento.
+            if (!$shipmentItem->containers->contains($container->id)) {
+                $shipmentItem->containers()->attach($container->id, [
+                    'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
+                        ? 0
+                        : $this->extractPackageCount($itemData['package_info'] ?? ''),
+                    'gross_weight_kg' => $this->pesoContenedor($containerNumber, $itemData),
+                    'net_weight_kg' => null,
+                    'volume_m3' => $itemData['volume_m3'] ?? 0,
+                ]);
+            }
+
+            $this->stats['processed_containers']++;
+            return;
+        }
+
+        // Datos físicos declarados para este contenedor en su bloque EQD.
+        $equipment = $this->parsedData['equipment'][$containerNumber] ?? null;
+
+        $containerType = null;
+
+        if ($equipment && !empty($equipment['iso_code'])) {
+            $typeCode = $this->mapIsoContainerType($equipment['iso_code']);
+
+            if ($typeCode) {
+                $containerType = ContainerType::where('code', $typeCode)
+                    ->where('active', true)
+                    ->first();
+            }
+        }
+
+        if (!$containerType) {
+            $containerType = ContainerType::where('active', true)
+                ->where('is_standard', true)
+                ->first();
+        }
+
+        if (!$containerType) {
+            $this->stats['warnings'][] = "Tipo de contenedor no encontrado: {$containerNumber}";
+            return;
+        }
+
+        $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
+        $condition = $esVacio ? 'V' : 'L';
+
+        /*
+         * Tara:
+         * 1. valor real declarado en EQD/MEA;
+         * 2. si no vino, especificación del tipo de contenedor catalogado.
+         *
+         * La columna containers.tare_weight_kg es obligatoria, por eso no puede
+         * quedar NULL.
+         */
+        $tareWeight = isset($equipment['tare_weight_kg'])
+            && $equipment['tare_weight_kg'] !== null
+                ? (float) $equipment['tare_weight_kg']
+                : (float) $containerType->tare_weight_kg;
+
+        /*
+         * VGM es el peso bruto verificado del contenedor.
+         * Si no viene declarado no se reemplaza con el peso del GID, porque ese
+         * peso corresponde a la mercadería y puede ser el total del conocimiento.
+         */
+        $vgmWeight = (float) ($equipment['vgm_weight_kg'] ?? 0);
+
+        $currentGrossWeight = $vgmWeight > 0
+            ? $vgmWeight
+            : null;
+
+        /*
+         * Peso de carga del contenedor:
+         *
+         * - vacío => 0;
+         * - con VGM => VGM - tara;
+         * - un único contenedor sin VGM => puede usarse el peso de su item;
+         * - varios contenedores sin VGM => no distribuir ni repetir el total:
+         *   queda NULL.
+         */
+        $physicalOccurrences = (int) ($itemData['_physical_occurrences'] ?? 1);
+
+        if ($esVacio) {
+            $cargoWeight = 0;
+        } elseif ($vgmWeight > 0) {
+            $cargoWeight = max(0.0, $vgmWeight - $tareWeight);
+        } elseif ($physicalOccurrences <= 1) {
+            $cargoWeight = isset($itemData['gross_weight_kg'])
+                ? (float) $itemData['gross_weight_kg']
+                : null;
+        } else {
+            $cargoWeight = null;
+        }
+
+        $container = Container::create([
+            'container_number' => $containerNumber,
+            'container_type_id' => $containerType->id,
+            'condition' => $condition,
+
+            // Precintos clasificados según el emisor declarado en SEL.
+            'shipper_seal' => $equipment['shipper_seal'] ?? null,
+            'customs_seal' => $equipment['customs_seal'] ?? null,
+            'carrier_seal' => $equipment['carrier_seal'] ?? null,
+            'additional_seals' => !empty($equipment['additional_seals'])
+                ? json_encode($equipment['additional_seals'], JSON_UNESCAPED_UNICODE)
+                : null,
+
+            // Temperatura únicamente cuando TMP+2 la declara expresamente.
+            'temperature_controlled' => $equipment['transport_temperature_c'] !== null,
+            'set_temperature' => $equipment['transport_temperature_c'],
+
+            'tare_weight_kg' => $tareWeight,
+            'max_gross_weight_kg' => $containerType->max_gross_weight_kg,
+            'current_gross_weight_kg' => $currentGrossWeight,
+            'cargo_weight_kg' => $cargoWeight,
+            'operational_status' => $esVacio ? 'empty' : 'loaded',
+            'active' => true,
+            'created_by_user_id' => auth()->id(),
+        ]);
+
+        // Datos de la relación entre mercadería y contenedor.
+        $pesoContenedor = $this->pesoContenedor($containerNumber, $itemData);
+
+        $shipmentItem->containers()->attach($container->id, [
+            'package_quantity' => $esVacio
+                ? 0
+                : $this->extractPackageCount($itemData['package_info'] ?? ''),
+            'gross_weight_kg' => $pesoContenedor,
+            'net_weight_kg' => $esVacio
+                ? 0
+                : max(0.0, $pesoContenedor - $tareWeight),
+            'volume_m3' => $itemData['volume_m3'] ?? 0,
+        ]);
+
         $this->stats['processed_containers']++;
-        return;
     }
-
-    // CONTENEDOR NO EXISTE, CREARLO
-    // Datos declarados en el bloque EQD, si el archivo los trae.
-    $equipment = $this->parsedData['equipment'][$containerNumber] ?? null;
-
-    $containerType = null;
-    if ($equipment && !empty($equipment['iso_code'])) {
-        $typeCode = $this->mapIsoContainerType($equipment['iso_code']);
-        if ($typeCode) {
-            $containerType = ContainerType::where('code', $typeCode)->where('active', true)->first();
-        }
-    }
-
-    if (!$containerType) {
-        $containerType = ContainerType::where('active', true)->where('is_standard', true)->first();
-    }
-
-    if (!$containerType) {
-        $this->stats['warnings'][] = "Tipo de contenedor no encontrado: {$containerNumber}";
-        return;
-    }
-
-    $condition = stripos($itemData['description'] ?? '', 'VACIO') !== false ? 'V' : 'L';
-
-    $container = Container::create([
-        'container_number' => $containerNumber,
-        'container_type_id' => $containerType->id,
-        'condition' => $condition,
-        'shipper_seal' => $equipment['shipper_seal'] ?? null,
-        'tare_weight_kg' => $equipment['tare_weight_kg'] ?? $itemData['tare_weight_kg'] ?? 2200,
-        'max_gross_weight_kg' => 30000,
-        'current_gross_weight_kg' => $itemData['gross_weight_kg'] ?? 0,
-        // La guarda evita el negativo cuando el emisor manda tara sin peso bruto.
-        'cargo_weight_kg' => max(0.0, ($itemData['gross_weight_kg'] ?? 0) - ($itemData['tare_weight_kg'] ?? 2200)),
-        'operational_status' => 'loaded',
-        'active' => true,
-        'created_by_user_id' => auth()->id()
-    ]);
-
-    // VGM (peso verificado del contenedor) si el archivo lo declara.
-    $pesoContenedor = $this->pesoContenedor($containerNumber, $itemData);
-
-    $shipmentItem->containers()->attach($container->id, [
-        'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
-            ? 0
-            : $this->extractPackageCount($itemData['package_info'] ?? ''),
-        'gross_weight_kg' => $pesoContenedor,
-        'net_weight_kg' => $pesoContenedor - ($equipment['tare_weight_kg'] ?? $itemData['tare_weight_kg'] ?? 0),
-        'volume_m3' => $itemData['volume_m3'] ?? 0
-    ]);
-
-    $this->stats['processed_containers']++;
-}
 
     /**
      * Mapear codigo ISO 6346 del EQD al code de container_types.

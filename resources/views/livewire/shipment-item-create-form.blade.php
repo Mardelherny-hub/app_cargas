@@ -1135,7 +1135,7 @@
                                     <label for="consignee_document_type" class="block text-sm font-medium text-gray-700">
                                         Tipo Doc. Destinatario
                                     </label>
-                                    <select wire:model="consignee_document_type" id="consignee_document_type"
+                                    <select wire:model.live="consignee_document_type" id="consignee_document_type"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                         <option value="">Seleccionar</option>
                                         <option value="CUIL">CUIL</option>
@@ -1161,6 +1161,26 @@
                                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                     @enderror
                                 </div>
+
+                                @if($consignee_document_type === 'PASS')
+                                    <div>
+                                        <label for="consignee_passport_country_code" class="block text-sm font-medium text-gray-700">
+                                            País emisor del pasaporte
+                                        </label>
+                                        <input wire:model="consignee_passport_country_code"
+                                            type="text"
+                                            id="consignee_passport_country_code"
+                                            maxlength="3"
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="Código país">
+                                        <p class="mt-1 text-xs text-gray-500">
+                                            Código de país de 3 caracteres requerido por AFIP para pasaporte
+                                        </p>
+                                        @error('consignee_passport_country_code')
+                                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                @endif
                             </div>
 
                         </div>
