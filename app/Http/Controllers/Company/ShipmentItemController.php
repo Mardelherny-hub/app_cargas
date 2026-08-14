@@ -727,11 +727,12 @@ return view('company.shipment-items.edit', compact(
 
             // NUEVO: Validación de contenedores
             'containers' => 'sometimes|array',
-            'containers.*.id' => 'nullable|integer',
-            'containers.*.container_number' => 'required_with:containers|string|max:20',
+            'containers.*.id' => 'nullable|integer|exists:containers,id',
+            'containers.*.container_number' => 'required_with:containers|string|max:15',
             'containers.*.container_type_id' => 'required_with:containers|exists:container_types,id',
             'containers.*.seal_number' => 'nullable|string|max:50',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
+            'containers.*.condition' => 'nullable|in:L,V',
             'containers.*.package_quantity' => 'required_with:containers|integer|min:1',
             'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0.01',
             'containers.*.net_weight_kg' => 'nullable|numeric|min:0',
@@ -741,6 +742,41 @@ return view('company.shipment-items.edit', compact(
         ];
 
         $validated = $request->validate($rules);
+
+        // Los IDs enviados para editar deben pertenecer realmente a este ítem.
+        $currentContainerIds = $shipmentItem->containers()
+            ->pluck('containers.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        foreach ($validated['containers'] ?? [] as $index => $containerData) {
+            if (empty($containerData['id'])) {
+                continue;
+            }
+
+            $containerId = (int) $containerData['id'];
+
+            if (!in_array($containerId, $currentContainerIds, true)) {
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors([
+                        "containers.{$index}.id" => 'El contenedor indicado no pertenece a este ítem.',
+                    ]);
+            }
+
+            $numberInUse = \App\Models\Container::query()
+                ->where('container_number', $containerData['container_number'])
+                ->where('id', '!=', $containerId)
+                ->exists();
+
+            if ($numberInUse) {
+                return redirect()->back()
+                    ->withInput()
+                    ->withErrors([
+                        "containers.{$index}.container_number" => 'Ya existe otro contenedor con ese número.',
+                    ]);
+            }
+        }
 
         // NUEVO: Validar que es carga contenedorizada si hay contenedores
         $isContainerCargo = $this->isContainerizedCargo($validated['cargo_type_id']);
@@ -849,7 +885,8 @@ return view('company.shipment-items.edit', compact(
             ]);
 
             return redirect()->route('company.shipment-items.show', $shipmentItem)
-                ->with('success', 'Item actualizado exitosamente.');
+                ->with('flash.banner', 'Item actualizado exitosamente.')
+                ->with('flash.bannerStyle', 'success');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -890,36 +927,41 @@ return view('company.shipment-items.edit', compact(
 private function updateItemContainers(ShipmentItem $shipmentItem, array $containersData)
 {
     try {
-        // 1. Eliminar relaciones existentes (NO los contenedores)
+        // Se ejecuta dentro de la transacción abierta por update().
         $shipmentItem->containers()->detach();
-        
-        // 2. Procesar cada contenedor con lógica de upsert
+
         foreach ($containersData as $containerData) {
-            
-            // 3. Buscar contenedor existente por número
-            $container = \App\Models\Container::where('container_number', $containerData['container_number'])->first();
-            
+            // Con ID: editar exactamente ese contenedor.
+            // Sin ID: conservar el flujo existente de reutilizar por número o crear.
+            if (!empty($containerData['id'])) {
+                $container = \App\Models\Container::findOrFail((int) $containerData['id']);
+            } else {
+                $container = \App\Models\Container::where(
+                    'container_number',
+                    $containerData['container_number']
+                )->first();
+            }
+
             if ($container) {
-                // 4. CONTENEDOR EXISTE: Actualizar datos si es necesario
                 $container->update([
+                    'container_number' => $containerData['container_number'],
                     'container_type_id' => $containerData['container_type_id'],
+                    'tare_weight_kg' => $containerData['tare_weight'] ?? $container->tare_weight_kg,
                     'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                    'condition' => $containerData['condition'] ?? 'L',
-                    'shipper_seal' => $containerData['seal_number'] ?? $container->shipper_seal,
+                    'condition' => $containerData['condition'] ?? $container->condition,
+                    'shipper_seal' => $containerData['seal_number'] ?? null,
                     'operational_status' => 'loaded',
                     'active' => true,
                     'last_updated_date' => now(),
                     'last_updated_by_user_id' => Auth::id(),
                 ]);
-                
-                Log::info('Contenedor reutilizado', [
+
+                Log::info('Contenedor actualizado/reutilizado', [
                     'container_number' => $containerData['container_number'],
                     'container_id' => $container->id,
-                    'shipment_item_id' => $shipmentItem->id
+                    'shipment_item_id' => $shipmentItem->id,
                 ]);
-                
             } else {
-                // 5. CONTENEDOR NO EXISTE: Crear nuevo
                 $container = \App\Models\Container::create([
                     'container_number' => $containerData['container_number'],
                     'container_type_id' => $containerData['container_type_id'],
@@ -933,15 +975,14 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                     'created_date' => now(),
                     'created_by_user_id' => Auth::id(),
                 ]);
-                
+
                 Log::info('Contenedor creado', [
                     'container_number' => $containerData['container_number'],
                     'container_id' => $container->id,
-                    'shipment_item_id' => $shipmentItem->id
+                    'shipment_item_id' => $shipmentItem->id,
                 ]);
             }
 
-            // 6. Vincular contenedor con el item (siempre necesario)
             $shipmentItem->containers()->attach($container->id, [
                 'package_quantity' => $containerData['package_quantity'],
                 'gross_weight_kg' => $containerData['gross_weight_kg'],
@@ -952,14 +993,13 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                 'created_by_user_id' => Auth::id(),
             ]);
         }
-        
     } catch (\Exception $e) {
         Log::error('Error en updateItemContainers', [
             'shipment_item_id' => $shipmentItem->id,
             'containers_data' => $containersData,
             'error' => $e->getMessage(),
             'file' => $e->getFile(),
-            'line' => $e->getLine()
+            'line' => $e->getLine(),
         ]);
         throw $e;
     }
