@@ -399,22 +399,46 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function processRegistrarEnvios(Voyage $voyage, array $data): array
     {
         $soapClient = $this->createSoapClient();
-        
-        // Procesar cada shipment del viaje
+
         $results = [];
+        $shipmentsProcessed = 0;
+        $titlesProcessed = 0;
+
         foreach ($voyage->shipments as $shipment) {
-            $result = $this->sendEnvios($soapClient, $shipment);
-            $results[] = $result;
-            
-            if (!$result['success']) {
-                return $result; // Fallar rápido si hay error
+            $billsOfLading = $shipment->billsOfLading()
+                ->get(['id', 'bill_number']);
+
+            if ($billsOfLading->isEmpty()) {
+                return [
+                    'success' => false,
+                    'error_message' => "Shipment {$shipment->id} no tiene títulos para RegistrarEnvios.",
+                    'error_code' => 'MISSING_TITLES',
+                ];
             }
+
+            foreach ($billsOfLading as $billOfLading) {
+                $result = $this->sendEnvios(
+                    $soapClient,
+                    $shipment,
+                    (string) $billOfLading->bill_number
+                );
+
+                $results[] = $result;
+                $titlesProcessed++;
+
+                if (!$result['success']) {
+                    return $result;
+                }
+            }
+
+            $shipmentsProcessed++;
         }
-        
+
         return [
             'success' => true,
             'method' => 'RegistrarEnvios',
-            'shipments_processed' => count($results),
+            'shipments_processed' => $shipmentsProcessed,
+            'titles_processed' => $titlesProcessed,
             'results' => $results,
         ];
     }
@@ -966,14 +990,37 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 return $titEnviosResult;
             }
 
-            // PASO 2: RegistrarEnvios (genera TRACKs)
-            $enviosResult = $this->sendEnvios($soapClient, $shipment);
-            if (!$enviosResult['success']) {
-                return $enviosResult;
+            // PASO 2: RegistrarEnvios.
+            // AFIP trabaja sobre un único idTitTrans por llamada, por lo que
+            // se registra cada conocimiento del shipment por separado.
+            $billsOfLading = $shipment->billsOfLading()
+                ->get(['id', 'bill_number']);
+
+            if ($billsOfLading->isEmpty()) {
+                throw new Exception("Shipment {$shipment->id} no tiene títulos para RegistrarEnvios.");
             }
 
-            // Extraer TRACKs de la respuesta
-            $tracks = $this->extractTracksFromResponse($enviosResult['response']);
+            $tracks = [];
+
+            foreach ($billsOfLading as $billOfLading) {
+                $enviosResult = $this->sendEnvios(
+                    $soapClient,
+                    $shipment,
+                    (string) $billOfLading->bill_number
+                );
+
+                if (!$enviosResult['success']) {
+                    return $enviosResult;
+                }
+
+                $tracks = array_merge(
+                    $tracks,
+                    $enviosResult['tracks'] ?? []
+                );
+            }
+
+            $tracks = array_values(array_unique($tracks));
+
             if (empty($tracks)) {
                 throw new Exception("No se generaron TRACKs para shipment {$shipment->id}");
             }
@@ -1276,10 +1323,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     /**
      * PASO 2: Enviar RegistrarEnvios (genera TRACKs)
      */
-    private function sendEnvios($soapClient, $shipment): array
+    private function sendEnvios($soapClient, $shipment, string $idTitTrans): array
     {
         try {
-            $transactionId = 'ENV_' . time() . '_' . $shipment->id;
+            // Máximo 15 caracteres para AFIP y único entre títulos enviados
+            // consecutivamente dentro del mismo shipment.
+            $transactionId = 'E' . time() . substr(uniqid(), -4);
 
             // NUEVO: Crear transacción en BD ANTES de enviar
             $transaction = \App\Models\WebserviceTransaction::create([
@@ -1296,8 +1345,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'webservice_url' => $this->getWsdlUrl(),
             ]);
             
-            // Usar XML corregido
-            $xml = $this->xmlSerializer->createRegistrarEnviosXml($shipment, $transactionId);
+            // Registrar los envíos correspondientes a este título.
+            $xml = $this->xmlSerializer->createRegistrarEnviosXml(
+                $shipment,
+                $idTitTrans,
+                $transactionId
+            );
             
             $this->logOperation('info', 'Enviando RegistrarEnvios', [
                 'shipment_id' => $shipment->id,

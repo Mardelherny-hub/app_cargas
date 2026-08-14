@@ -721,8 +721,9 @@ return view('company.shipment-items.edit', compact(
             'discharge_customs_code' => 'nullable|string|max:3',
             'operational_discharge_code' => 'nullable|string|max:5',
             'comments' => 'nullable|string|max:60',
-            'consignee_document_type' => 'nullable|string|max:4',
-            'consignee_tax_id' => 'nullable|string|max:11',
+            'consignee_document_type' => 'nullable|string|max:4|required_with:consignee_tax_id',
+            'consignee_tax_id' => 'nullable|string|max:11|required_with:consignee_document_type',
+            'consignee_passport_country_code' => 'exclude_unless:consignee_document_type,PASS|required|string|size:3',
 
             // NUEVO: Validación de contenedores
             'containers' => 'sometimes|array',
@@ -821,6 +822,10 @@ return view('company.shipment-items.edit', compact(
                 'comments' => $validated['comments'] ?? null,
                 'consignee_document_type' => $validated['consignee_document_type'] ?? null,
                 'consignee_tax_id' => $validated['consignee_tax_id'] ?? null,
+                'consignee_passport_country_code' =>
+                    ($validated['consignee_document_type'] ?? null) === 'PASS'
+                        ? ($validated['consignee_passport_country_code'] ?? null)
+                        : null,
                 'last_updated_date' => now(),
                 'last_updated_by_user_id' => Auth::id(),
             ];

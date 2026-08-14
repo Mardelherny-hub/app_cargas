@@ -1106,31 +1106,63 @@
                                 <label for="consignee_document_type" class="block text-sm font-medium text-gray-700">
                                     Tipo Documento Destinatario
                                 </label>
-                                <input type="text" 
-                                       name="consignee_document_type" 
-                                       id="consignee_document_type" 
-                                       value="{{ old('consignee_document_type', $shipmentItem->consignee_document_type) }}"
-                                       maxlength="4"
-                                       placeholder="Tipo (4 chars)"
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                @php
+                                    $consigneeDocumentType = old(
+                                        'consignee_document_type',
+                                        $shipmentItem->consignee_document_type
+                                    );
+                                @endphp
+                                <select
+                                    name="consignee_document_type"
+                                    id="consignee_document_type"
+                                    onchange="document.getElementById('consignee-passport-country-wrapper').classList.toggle('hidden', this.value !== 'PASS')"
+                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                    <option value="">Seleccionar</option>
+                                    <option value="CUIL" @selected($consigneeDocumentType === 'CUIL')>CUIL</option>
+                                    <option value="CDI" @selected($consigneeDocumentType === 'CDI')>CDI</option>
+                                    <option value="DNI" @selected($consigneeDocumentType === 'DNI')>DNI</option>
+                                    <option value="PASS" @selected($consigneeDocumentType === 'PASS')>Pasaporte</option>
+                                </select>
                                 @error('consignee_document_type')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            {{-- ID Tributario Destinatario --}}
+                            {{-- Identificador Destinatario --}}
                             <div>
                                 <label for="consignee_tax_id" class="block text-sm font-medium text-gray-700">
-                                    ID Tributario Destinatario
+                                    Identificador Destinatario
                                 </label>
-                                <input type="text" 
-                                       name="consignee_tax_id" 
-                                       id="consignee_tax_id" 
+                                <input type="text"
+                                       name="consignee_tax_id"
+                                       id="consignee_tax_id"
                                        value="{{ old('consignee_tax_id', $shipmentItem->consignee_tax_id) }}"
                                        maxlength="11"
-                                       placeholder="CUIT/RUC"
+                                       placeholder="Identificador"
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
                                 @error('consignee_tax_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            {{-- País emisor del pasaporte --}}
+                            <div
+                                id="consignee-passport-country-wrapper"
+                                class="{{ $consigneeDocumentType === 'PASS' ? '' : 'hidden' }}">
+                                <label for="consignee_passport_country_code" class="block text-sm font-medium text-gray-700">
+                                    País emisor del pasaporte
+                                </label>
+                                <input type="text"
+                                       name="consignee_passport_country_code"
+                                       id="consignee_passport_country_code"
+                                       value="{{ old('consignee_passport_country_code', $shipmentItem->consignee_passport_country_code) }}"
+                                       maxlength="3"
+                                       placeholder="Código país"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm">
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Código de país de 3 caracteres requerido por AFIP para pasaporte
+                                </p>
+                                @error('consignee_passport_country_code')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                             </div>

@@ -278,6 +278,9 @@ class ShipmentItemCreateForm extends Component
     #[Validate('nullable|string|max:11')]
     public $consignee_tax_id = '';
 
+    #[Validate('nullable|string|size:3')]
+    public $consignee_passport_country_code = '';
+
     // MODIFICADO: Campos de contenedor - Ahora para múltiples contenedores
     public $showContainerFields = false;
     public $containers = []; // Array para múltiples contenedores
@@ -558,6 +561,7 @@ class ShipmentItemCreateForm extends Component
             $this->comments = '';
             $this->consignee_document_type = '';
             $this->consignee_tax_id = '';
+            $this->consignee_passport_country_code = '';
             }
 
             // Pre-llenar item con tipo de carga y embalaje del BL
@@ -600,6 +604,7 @@ class ShipmentItemCreateForm extends Component
         $this->comments = '';
         $this->consignee_document_type = '';
         $this->consignee_tax_id = '';
+        $this->consignee_passport_country_code = '';
         
         // Reset otros campos del item
         $this->item_reference = '';
@@ -899,6 +904,11 @@ class ShipmentItemCreateForm extends Component
                 'volume_m3' => 'nullable|numeric|min:0',
                 'declared_value' => 'nullable|numeric|min:0',
                 'country_of_origin' => 'required|string|size:2',
+
+                // Datos AFIP del destinatario de la mercadería
+                'consignee_document_type' => 'nullable|string|max:4|required_with:consignee_tax_id',
+                'consignee_tax_id' => 'nullable|string|max:11|required_with:consignee_document_type',
+                'consignee_passport_country_code' => 'exclude_unless:consignee_document_type,PASS|required|string|size:3',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->dispatch('scroll-to-error');
@@ -967,6 +977,10 @@ class ShipmentItemCreateForm extends Component
                 'comments' => $this->comments,
                 'consignee_document_type' => $this->consignee_document_type,
                 'consignee_tax_id' => $this->consignee_tax_id,
+                'consignee_passport_country_code' =>
+                    $this->consignee_document_type === 'PASS'
+                        ? $this->consignee_passport_country_code
+                        : null,
             ];
 
             $shipmentItem = ShipmentItem::create($itemData);
@@ -1125,6 +1139,7 @@ class ShipmentItemCreateForm extends Component
         $this->comments = '';
         $this->consignee_document_type = '';
         $this->consignee_tax_id = '';
+        $this->consignee_passport_country_code = '';
     }
 
     // MÉTODOS ORIGINALES (sin modificar)

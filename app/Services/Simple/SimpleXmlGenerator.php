@@ -148,15 +148,87 @@ class SimpleXmlGenerator
                     
                     $envioIndex = 1;
                     $allContainers = collect();
-                    $emptyContainers = collect();
+                    $emptyContainerTitles = collect();
 
                     foreach ($billsOfLading as $bol) {
-                        // Códigos AFIP desde el BL (prioridad) o fallback a voyage
-                        //$bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
-                        $bolCodAduOrigen = $codAduOrigen; // usar el mapeo del puerto (getPortCustomsCode) haste que se aclare el problema de los codigos
-                        $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
-                        $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                        $bolCodLugOperDest = str_pad($bol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
+                        /*
+                         * Un BL cuyos contenedores son todos condición V
+                         * corresponde a un Título de Transporte de
+                         * contenedores vacíos.
+                         *
+                         * No debe enviarse también como TitTransEnvio.
+                         */
+                        $bolContainers = $bol->shipmentItems
+                            ->flatMap(
+                                fn ($item) => $item->containers ?? collect()
+                            )
+                            ->unique('container_number')
+                            ->values();
+
+                        $isEmptyContainerTitle =
+                            $bolContainers->isNotEmpty()
+                            && $bolContainers->every(
+                                fn ($container) => $container->condition === 'V'
+                            );
+
+                        if ($isEmptyContainerTitle) {
+                            $emptyContainerTitles->push([
+                                'bol' => $bol,
+                                'containers' => $bolContainers,
+                            ]);
+
+                            foreach ($bolContainers as $container) {
+                                $allContainers->push($container);
+                            }
+
+                            continue;
+                        }
+                        /*
+                         * Los códigos aduaneros de RegistrarTitEnvios
+                         * pertenecen al conocimiento.
+                         *
+                         * No inferirlos desde el puerto ni completar con
+                         * códigos genéricos.
+                         */
+                        $bolCodAduOrigen = trim(
+                            (string) ($bol->origin_customs_code ?? '')
+                        );
+
+                        if ($bolCodAduOrigen === '') {
+                            throw new Exception(
+                                "BL {$bol->bill_number}: falta la aduana AFIP de origen."
+                            );
+                        }
+
+                        $bolCodLugOperOrigen = trim(
+                            (string) ($bol->origin_operative_code ?? '')
+                        );
+
+                        if ($bolCodLugOperOrigen === '') {
+                            throw new Exception(
+                                "BL {$bol->bill_number}: falta el lugar operativo AFIP de origen."
+                            );
+                        }
+
+                        $bolCodAduDest = trim(
+                            (string) ($bol->discharge_customs_code ?? '')
+                        );
+
+                        if ($bolCodAduDest === '') {
+                            throw new Exception(
+                                "BL {$bol->bill_number}: falta la aduana AFIP de destino."
+                            );
+                        }
+
+                        $bolCodLugOperDest = trim(
+                            (string) ($bol->operational_discharge_code ?? '')
+                        );
+
+                        if ($bolCodLugOperDest === '') {
+                            throw new Exception(
+                                "BL {$bol->bill_number}: falta el lugar operativo AFIP de destino."
+                            );
+                        }
                         
                         $w->startElement('TitTransEnvio');
                             
@@ -276,11 +348,7 @@ class SimpleXmlGenerator
                                                     $w->endElement();
                                                     
                                                     // Registrar contenedor para sección global
-                                                    if ($container->condition !== 'V') {
-                                                        $allContainers->push($container);
-                                                    } else {
-                                                        $emptyContainers->push($container);
-                                                    }
+                                                    $allContainers->push($container);
                                                 }
                                             }
                                         }
@@ -318,50 +386,180 @@ class SimpleXmlGenerator
                     $w->endElement(); // titulosTransEnvios
 
                     // === TÍTULOS CONTENEDORES VACÍOS (solo si hay) ===
-                    if ($emptyContainers->isNotEmpty()) {
+                    if ($emptyContainerTitles->isNotEmpty()) {
                         $w->startElement('titulosTransContVacios');
+
+                        foreach ($emptyContainerTitles as $emptyTitle) {
+                            $emptyBol = $emptyTitle['bol'];
+                            $emptyContainers = $emptyTitle['containers'];
+
+                            $emptyBillNumber = trim(
+                                (string) ($emptyBol->bill_number ?? '')
+                            );
+
+                            if ($emptyBillNumber === '') {
+                                throw new Exception(
+                                    'Existe un título de contenedores vacíos '
+                                    . 'sin identificador de transporte.'
+                                );
+                            }
+
+                            $vaciosCodAduOrigen = trim(
+                                (string) ($emptyBol->origin_customs_code ?? '')
+                            );
+
+                            if ($vaciosCodAduOrigen === '') {
+                                throw new Exception(
+                                    "BL {$emptyBillNumber}: falta la aduana AFIP "
+                                    . 'de origen para contenedores vacíos.'
+                                );
+                            }
+
+                            $vaciosCodLugOperOrigen = trim(
+                                (string) ($emptyBol->origin_operative_code ?? '')
+                            );
+
+                            if ($vaciosCodLugOperOrigen === '') {
+                                throw new Exception(
+                                    "BL {$emptyBillNumber}: falta el lugar operativo "
+                                    . 'AFIP de origen para contenedores vacíos.'
+                                );
+                            }
+
+                            $vaciosCodAduDest = trim(
+                                (string) ($emptyBol->discharge_customs_code ?? '')
+                            );
+
+                            if ($vaciosCodAduDest === '') {
+                                throw new Exception(
+                                    "BL {$emptyBillNumber}: falta la aduana AFIP "
+                                    . 'de destino para contenedores vacíos.'
+                                );
+                            }
+
+                            $vaciosCodLugOperDest = trim(
+                                (string) ($emptyBol->operational_discharge_code ?? '')
+                            );
+
+                            $vaciosCodCiuOrigen = trim(
+                                (string) ($emptyBol->loadingPort?->code ?? '')
+                            );
+
+                            if ($vaciosCodCiuOrigen === '') {
+                                throw new Exception(
+                                    "BL {$emptyBillNumber}: falta la ciudad/puerto "
+                                    . 'de origen para contenedores vacíos.'
+                                );
+                            }
+
+                            $vaciosCodCiuDest = trim(
+                                (string) ($emptyBol->dischargePort?->code ?? '')
+                            );
+
+                            if ($vaciosCodCiuDest === '') {
+                                throw new Exception(
+                                    "BL {$emptyBillNumber}: falta la ciudad/puerto "
+                                    . 'de destino para contenedores vacíos.'
+                                );
+                            }
+
+                            $vaciosCodPaisDest = trim(
+                                (string) (
+                                    $emptyBol->dischargePort?->country?->alpha2_code
+                                    ?? ''
+                                )
+                            );
+
+                            if ($vaciosCodPaisDest === '') {
+                                throw new Exception(
+                                    "BL {$emptyBillNumber}: falta el país de destino "
+                                    . 'para contenedores vacíos.'
+                                );
+                            }
+
                             $w->startElement('TitTransContVacio');
+
                                 $w->writeElement('codViaTrans', '8');
-                                $w->writeElement('idTitTrans', 'VACIOS-' . $transactionId);
-                                
+
+                                // Identificador real del título informado en el BL.
+                                $w->writeElement(
+                                    'idTitTrans',
+                                    substr($emptyBillNumber, 0, 36)
+                                );
+
                                 $w->startElement('idContenedores');
-                                foreach ($emptyContainers as $ec) {
-                                    $w->writeElement('idCont', $ec->container_number);
+                                foreach ($emptyContainers as $emptyContainer) {
+                                    $w->writeElement(
+                                        'idCont',
+                                        $emptyContainer->container_number
+                                    );
                                 }
                                 $w->endElement();
-                                
-                                // Remitente simplificado para vacíos
-                                $firstBol = $billsOfLading->first();
-                                $this->writeRemitente($w, $firstBol);
-                                $this->writeConsignatario($w, $firstBol);
-                                $this->writeDestinatario($w, $firstBol);
 
-                                // Códigos AFIP desde el primer BL
-                                $vaciosCodAduOrigen = $firstBol->origin_customs_code ?: $codAduOrigen;
-                                $vaciosCodLugOperOrigen = $firstBol->origin_operative_code ?: $codLugOperOrigen;
-                                $vaciosCodAduDest = str_pad($firstBol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                                $vaciosCodLugOperDest = str_pad($firstBol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
+                                // Las partes pertenecen a este BL vacío concreto.
+                                $this->writeRemitente($w, $emptyBol);
+                                $this->writeConsignatario($w, $emptyBol);
+                                $this->writeDestinatario($w, $emptyBol);
 
                                 $w->startElement('origen');
-                                    $w->writeElement('codAdu', $vaciosCodAduOrigen);
-                                    $w->writeElement('codLugOper', $vaciosCodLugOperOrigen);
-                                    $w->writeElement('codCiu', $codCiuOrigen);
+                                    $w->writeElement(
+                                        'codAdu',
+                                        substr($vaciosCodAduOrigen, 0, 3)
+                                    );
+                                    $w->writeElement(
+                                        'codLugOper',
+                                        substr($vaciosCodLugOperOrigen, 0, 5)
+                                    );
+                                    $w->writeElement(
+                                        'codCiu',
+                                        substr($vaciosCodCiuOrigen, 0, 5)
+                                    );
                                 $w->endElement();
 
                                 $w->startElement('destino');
-                                    $w->writeElement('codPais', $codPaisDest);
-                                    $w->writeElement('codAdu', $vaciosCodAduDest);
-                                    $w->writeElement('codLugOper', $vaciosCodLugOperDest);
-                                    $w->writeElement('codCiu', $codCiuDest);
+                                    $w->writeElement(
+                                        'codPais',
+                                        substr($vaciosCodPaisDest, 0, 2)
+                                    );
+                                    $w->writeElement(
+                                        'codAdu',
+                                        substr($vaciosCodAduDest, 0, 9)
+                                    );
+
+                                    // En destino el lugar operativo es optativo
+                                    // según la estructura DestinoContVacia.
+                                    if ($vaciosCodLugOperDest !== '') {
+                                        $w->writeElement(
+                                            'codLugOper',
+                                            substr($vaciosCodLugOperDest, 0, 9)
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'codCiu',
+                                        substr($vaciosCodCiuDest, 0, 5)
+                                    );
                                 $w->endElement();
-                                
-                                $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+
+                                $w->writeElement(
+                                    'idFiscalATAMIC',
+                                    preg_replace(
+                                        '/[^0-9]/',
+                                        '',
+                                        $this->company->tax_id
+                                    )
+                                );
+
                             $w->endElement(); // TitTransContVacio
+                        }
+
                         $w->endElement(); // titulosTransContVacios
                     }
 
                     // === CONTENEDORES (todos, llenos y vacíos) ===
-                    $allContainersUnique = $allContainers->merge($emptyContainers)->unique('container_number');
+                    $allContainersUnique = $allContainers
+                        ->unique('container_number')
+                        ->values();
                     
                     if ($allContainersUnique->isNotEmpty()) {
                         $w->startElement('contenedores');
@@ -596,12 +794,23 @@ class SimpleXmlGenerator
 
             // Cargar relaciones necesarias
             $voyage = $shipment->voyage()->with(['originPort', 'destinationPort'])->first();
+
+            /*
+             * RegistrarEnvios trabaja sobre un único Título de Transporte.
+             *
+             * En RegistrarTitEnvios la aplicación informa como idTitTrans
+             * el bill_number del conocimiento. Por lo tanto, esta llamada
+             * debe incluir solamente el BL correspondiente a ese idTitTrans.
+             */
             $billsOfLading = $shipment->billsOfLading()
+                ->where('bill_number', $idTitTrans)
                 ->with(['shipmentItems.containers', 'shipmentItems.packagingType'])
                 ->get();
 
             if ($billsOfLading->isEmpty()) {
-                throw new Exception("Shipment {$shipment->id} no tiene Bills of Lading para generar envíos.");
+                throw new Exception(
+                    "Shipment {$shipment->id} no contiene el título {$idTitTrans} para generar RegistrarEnvios."
+                );
             }
 
             // Obtener tokens WSAA
@@ -665,7 +874,8 @@ class SimpleXmlGenerator
                         //$bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
                         $bolCodLugOperDest = str_pad($bol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
                         
-                        // Validar campo obligatorio id_decla
+                        // Validar identificador de la destinación.
+                        // En la app este dato se persiste en permiso_embarque.
                         if (empty($bol->permiso_embarque)) {
                             throw new \Exception("BL {$bol->bill_number} no tiene Permiso de Embarque. Campo obligatorio para AFIP.");
                         }
@@ -677,7 +887,10 @@ class SimpleXmlGenerator
                                 $w->startElement('Destinacion');
                                     
                                     // idDecla - Obligatorio C(16)
-                                    $w->writeElement('idDecla', $bol->id_decla);
+                                    $w->writeElement(
+                                        'idDecla',
+                                        substr($bol->permiso_embarque, 0, 16)
+                                    );
                                     
                                     // Montos - Obligatorios N(18,2) - Cliente usa 0
                                     $w->writeElement('montoFob', '0');
@@ -1382,17 +1595,18 @@ class SimpleXmlGenerator
             
             // codLugOper (obligatorio excepto EPTAI, C9)
             if ($tipoEvento !== 'EPTAI') {
-                // Para países extranjeros (no AR), usar 001 según tabla AFIP exterior
-                if (strtoupper($codPais) !== 'AR') {
-                    $w->writeElement('codLugOper', '001');
-                } else {
-                    // Buscar lugar operativo vinculado al puerto
-                    $operativeLocation = \App\Models\AfipOperativeLocation::where('port_id', $port->id)
-                        ->where('is_active', true)
-                        ->first();
-                    $codLugOper = $operativeLocation?->location_code ?? '001';
-                    $w->writeElement('codLugOper', $codLugOper);
+                $codLugOper = trim((string) $codLugOper);
+
+                if ($codLugOper === '') {
+                    throw new Exception(
+                        "Falta el lugar operativo AFIP para el evento {$tipoEvento}."
+                    );
                 }
+
+                $w->writeElement(
+                    'codLugOper',
+                    substr($codLugOper, 0, 9)
+                );
             }
             
             // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
@@ -2945,7 +3159,27 @@ class SimpleXmlGenerator
 
                     // Parámetros RegistrarTitulosCBC
                     $w->startElement('ar:argRegistrarTitulosCBC');
-                        $w->writeElement('ar:IdTransaccion', substr($transactionId, 0, 15));
+
+                        $registrarTitulosTransactionId = trim($transactionId);
+
+                        if ($registrarTitulosTransactionId === '') {
+                            throw new Exception(
+                                'RegistrarTitulosCbc: falta IdTransaccion.'
+                            );
+                        }
+
+                        if (strlen($registrarTitulosTransactionId) > 20) {
+                            throw new Exception(
+                                "RegistrarTitulosCbc: IdTransaccion "
+                                . "'{$registrarTitulosTransactionId}' supera "
+                                . 'los 20 caracteres admitidos por AFIP.'
+                            );
+                        }
+
+                        $w->writeElement(
+                            'ar:IdTransaccion',
+                            $registrarTitulosTransactionId
+                        );
                         
                         // Información de Títulos
                         $w->startElement('ar:InformacionTitulosDoc');
@@ -2968,76 +3202,1479 @@ class SimpleXmlGenerator
                                 $w->startElement('ar:Titulo');
                                     
                                     // 1. FechaEmbarque (obligatorio)
-                                    $embarqueDate = $bol->issue_date ?? $voyage->departure_date ?? now();
-                                    $w->writeElement('ar:FechaEmbarque', $embarqueDate->format('Y-m-d\TH:i:s'));
+                                    // Debe provenir del conocimiento.
+                                    if (!$bol->loading_date) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta la fecha de embarque."
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:FechaEmbarque',
+                                        $bol->loading_date->format('Y-m-d\TH:i:s')
+                                    );
                                     
                                     // 2. CodigoPuertoEmbarque (obligatorio)
-                                    $loadingPortCode = $this->getPortCustomsCode($bol->loadingPort?->code ?? $voyage->originPort?->code ?? 'ARBUE');
-                                    $w->writeElement('ar:CodigoPuertoEmbarque', $loadingPortCode);
+                                    // AFIP espera código de puerto POR_PAIS, no código de aduana.
+                                    $loadingPortCode = trim(
+                                        (string) ($bol->loadingPort?->code ?? '')
+                                    );
+
+                                    if ($loadingPortCode === '') {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta el puerto de embarque."
+                                        );
+                                    }
+
+                                    if (strlen($loadingPortCode) > 5) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el código de puerto de embarque "
+                                            . "'{$loadingPortCode}' supera los 5 caracteres admitidos por AFIP."
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:CodigoPuertoEmbarque',
+                                        $loadingPortCode
+                                    );
+
+                                    /*
+                                     * FechaCargaLugarOrigen / LugarOrigen /
+                                     * CodigoPaisLugarOrigen.
+                                     *
+                                     * Los tres datos son condicionales:
+                                     * - si existe FechaCargaLugarOrigen,
+                                     *   deben existir también LugarOrigen y
+                                     *   CodigoPaisLugarOrigen;
+                                     * - si no existe la fecha, no deben
+                                     *   transmitirse lugar ni país.
+                                     */
+                                    $originLoadingDate = $bol->origin_loading_date;
+
+                                    $originLocation = trim(
+                                        (string) ($bol->origin_location ?? '')
+                                    );
+
+                                    $originCountryCode = trim(
+                                        (string) (
+                                            $bol->origin_country_code ?? ''
+                                        )
+                                    );
+
+                                    if ($originLoadingDate) {
+                                        if ($originLocation === '') {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: existe fecha "
+                                                . 'de carga en lugar de origen pero '
+                                                . 'falta el lugar de origen.'
+                                            );
+                                        }
+
+                                        if ($originCountryCode === '') {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: existe fecha "
+                                                . 'de carga en lugar de origen pero '
+                                                . 'falta el país del lugar de origen.'
+                                            );
+                                        }
+
+                                        if (mb_strlen($originLocation) > 50) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el lugar de "
+                                                . 'origen supera los 50 caracteres '
+                                                . 'admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        if (strlen($originCountryCode) > 3) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el código de "
+                                                . 'país del lugar de origen supera los '
+                                                . '3 caracteres admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        $w->writeElement(
+                                            'ar:FechaCargaLugarOrigen',
+                                            $originLoadingDate
+                                                ->format('Y-m-d\TH:i:s')
+                                        );
+
+                                        $w->writeElement(
+                                            'ar:LugarOrigen',
+                                            $originLocation
+                                        );
+
+                                        $w->writeElement(
+                                            'ar:CodigoPaisLugarOrigen',
+                                            $originCountryCode
+                                        );
+                                    } elseif (
+                                        $originLocation !== ''
+                                        || $originCountryCode !== ''
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: tiene lugar o país "
+                                            . 'de origen informado sin fecha de carga '
+                                            . 'en lugar de origen.'
+                                        );
+                                    }
                                     
                                     // 3. NumeroConocimiento (obligatorio - máx 18 chars)
-                                    $bolNumber = substr($bol->bill_number ?? 'BL' . $bol->id, 0, 18);
-                                    $w->writeElement('ar:NumeroConocimiento', $bolNumber);
-                                    
-                                    // 4. Líneas de Mercadería (obligatorio)
-                                    $w->startElement('ar:LineasMercaderia');
-                                    
-                                    $items = $bol->shipmentItems;
-                                    if ($items->isEmpty()) {
-                                        // Si no hay items, crear uno genérico
-                                        $w->startElement('ar:LineaMercaderia');
-                                            $w->writeElement('ar:NumeroLinea', '1');
-                                            $w->writeElement('ar:Descripcion', $bol->cargo_description ?? 'MERCADERIA GENERAL');
-                                            $w->writeElement('ar:Peso', number_format($bol->total_weight ?? 1000, 2, '.', ''));
-                                            $w->writeElement('ar:Cantidad', (string)($bol->total_packages ?? 1));
-                                        $w->endElement();
-                                    } else {
-                                        foreach ($items as $index => $item) {
-                                            $w->startElement('ar:LineaMercaderia');
-                                                $w->writeElement('ar:NumeroLinea', (string)($index + 1));
-                                                $w->writeElement('ar:Descripcion', substr($item->description ?? 'MERCADERIA', 0, 100));
-                                                $w->writeElement('ar:Peso', number_format($item->weight ?? 100, 2, '.', ''));
-                                                $w->writeElement('ar:Cantidad', (string)($item->quantity ?? 1));
-                                            $w->endElement();
+                                    // Debe transmitirse exactamente como está registrado.
+                                    // No fabricar ni truncar identificadores documentales.
+                                    $bolNumber = trim(
+                                        (string) ($bol->bill_number ?? '')
+                                    );
+
+                                    if ($bolNumber === '') {
+                                        throw new Exception(
+                                            "BL ID {$bol->id}: falta el número de conocimiento."
+                                        );
+                                    }
+
+                                    if (strlen($bolNumber) > 18) {
+                                        throw new Exception(
+                                            "BL {$bolNumber}: el número de conocimiento "
+                                            . 'supera los 18 caracteres admitidos por AFIP.'
+                                        );
+                                    }
+
+                                                                        $w->writeElement(
+                                        'ar:NumeroConocimiento',
+                                        $bolNumber
+                                    );
+
+                                    /*
+                                     * CodigoPuertoTrasbordo
+                                     * Optativo según RegistrarTitulosCbc.
+                                     */
+                                    if ($bol->transshipmentPort) {
+                                        $transshipmentPortCode = trim(
+                                            (string) $bol->transshipmentPort->code
+                                        );
+
+                                        if (strlen($transshipmentPortCode) > 5) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el código de puerto "
+                                                . 'de trasbordo supera los 5 caracteres '
+                                                . 'admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        if ($transshipmentPortCode !== '') {
+                                            $w->writeElement(
+                                                'ar:CodigoPuertoTrasbordo',
+                                                $transshipmentPortCode
+                                            );
                                         }
                                     }
-                                    
-                                    $w->endElement(); // LineasMercaderia
-                                    
-                                    // 5. Contenedores (opcional pero recomendado)
-                                    $containers = collect();
-                                    foreach ($items as $item) {
-                                        $containers = $containers->merge($item->containers);
+
+                                    /*
+                                     * CodigoPuertoDescarga
+                                     * Obligatorio. Fuente real: puerto de descarga
+                                     * asociado al conocimiento.
+                                     */
+                                    $dischargePortCode = trim(
+                                        (string) ($bol->dischargePort?->code ?? '')
+                                    );
+
+                                    if ($dischargePortCode === '') {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta el puerto de descarga."
+                                        );
                                     }
+
+                                    if (strlen($dischargePortCode) > 5) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el código de puerto "
+                                            . 'de descarga supera los 5 caracteres '
+                                            . 'admitidos por AFIP.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:CodigoPuertoDescarga',
+                                        $dischargePortCode
+                                    );
+
+                                    /*
+                                     * FechaDescarga
+                                     * Optativa. Sólo se informa cuando existe
+                                     * realmente en el conocimiento.
+                                     */
+                                    if ($bol->discharge_date) {
+                                        $w->writeElement(
+                                            'ar:FechaDescarga',
+                                            $bol->discharge_date
+                                                ->format('Y-m-d\TH:i:s')
+                                        );
+                                    }
+
+                                    /*
+                                     * CodigoPaisDestino
+                                     * Obligatorio.
+                                     *
+                                     * Se usa exclusivamente el campo AFIP
+                                     * persistido en el conocimiento. No inferir
+                                     * alpha2, país del puerto ni otro catálogo.
+                                     */
+                                    $destinationCountryCode = trim(
+                                        (string) (
+                                            $bol->destination_country_code ?? ''
+                                        )
+                                    );
+
+                                    if ($destinationCountryCode === '') {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta el código "
+                                            . 'AFIP del país de destino.'
+                                        );
+                                    }
+
+                                    if (strlen($destinationCountryCode) > 3) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el código AFIP "
+                                            . 'del país de destino supera los '
+                                            . '3 caracteres admitidos.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:CodigoPaisDestino',
+                                        $destinationCountryCode
+                                    );
+
+                                    /*
+                                     * MarcaBultos
+                                     * Obligatorio a nivel Titulo.
+                                     *
+                                     * No utilizar S/M ni reconstruirlo desde
+                                     * otras propiedades en este generador.
+                                     */
+                                    $cargoMarks = trim(
+                                        (string) ($bol->cargo_marks ?? '')
+                                    );
+
+                                    if ($cargoMarks === '') {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta la marca "
+                                            . 'de los bultos requerida por AFIP.'
+                                        );
+                                    }
+
+                                    if (mb_strlen($cargoMarks) > 80) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: la marca de los "
+                                            . 'bultos supera los 80 caracteres '
+                                            . 'admitidos por AFIP.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:MarcaBultos',
+                                        $cargoMarks
+                                    );
+
+                                    /*
+                                     * IndicadorConsolidado
+                                     * Obligatorio S/N.
+                                     *
+                                     * En la base is_consolidated es booleano.
+                                     * Se convierte explícitamente:
+                                     *   0 = N
+                                     *   1 = S
+                                     *
+                                     * Se usa el valor crudo de la columna porque
+                                     * el modelo tiene actualmente casts duplicados
+                                     * para is_consolidated.
+                                     */
+                                    $isConsolidatedRaw = $bol->getRawOriginal(
+                                        'is_consolidated'
+                                    );
+
+                                    if (
+                                        !in_array(
+                                            (string) $isConsolidatedRaw,
+                                            ['0', '1'],
+                                            true
+                                        )
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el indicador "
+                                            . 'de consolidado no tiene un valor válido.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:IndicadorConsolidado',
+                                        (string) $isConsolidatedRaw === '1'
+                                            ? 'S'
+                                            : 'N'
+                                    );
+
+                                    /*
+                                     * IndicadorTransitoTrasbordo
+                                     * Obligatorio S/N.
+                                     *
+                                     * Esta columna ya se persiste con la
+                                     * codificación AFIP; no se infiere desde
+                                     * puertos, textos ni presencia de transbordo.
+                                     */
+                                    $transitTransshipmentIndicator = strtoupper(
+                                        trim(
+                                            (string) (
+                                                $bol->is_transit_transshipment
+                                                ?? ''
+                                            )
+                                        )
+                                    );
+
+                                    if (
+                                        !in_array(
+                                            $transitTransshipmentIndicator,
+                                            ['S', 'N'],
+                                            true
+                                        )
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el indicador "
+                                            . 'de tránsito/transbordo debe ser S o N.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:IndicadorTransitoTrasbordo',
+                                        $transitTransshipmentIndicator
+                                    );
+
+                                    /*
+                                     * Los siguientes datos pertenecen al Titulo
+                                     * en el contrato AFIP, pero la app los
+                                     * persiste actualmente en ShipmentItem.
+                                     *
+                                     * Por eso todas las líneas del BL deben
+                                     * contener un único valor consistente.
+                                     */
+                                    $items = $bol->shipmentItems;
+
+                                    if ($items->isEmpty()) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: no tiene líneas de mercadería "
+                                            . 'para RegistrarTitulosCbc.'
+                                        );
+                                    }
+
+                                    /*
+                                     * Datos del destinatario de la mercadería.
+                                     *
+                                     * Son optativos. Si se informa tipo o
+                                     * identificador, ambos deben estar presentes
+                                     * y ser consistentes en todas las líneas.
+                                     *
+                                     * AFIP define el identificador como numérico
+                                     * con largo 11. No se infiere ni se completa.
+                                     */
+                                    $recipientDocumentTypes = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) (
+                                                    $item->consignee_document_type
+                                                    ?? ''
+                                                )
+                                            )
+                                        );
+
+                                    $recipientIdentifiers = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) (
+                                                    $item->consignee_tax_id
+                                                    ?? ''
+                                                )
+                                            )
+                                        );
+
+                                    $recipientPassportCountries = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) (
+                                                    $item->consignee_passport_country_code
+                                                    ?? ''
+                                                )
+                                            )
+                                        );
+
+                                    $hasRecipientData =
+                                        $recipientDocumentTypes->contains(
+                                            fn ($value) => $value !== ''
+                                        )
+                                        || $recipientIdentifiers->contains(
+                                            fn ($value) => $value !== ''
+                                        )
+                                        || $recipientPassportCountries->contains(
+                                            fn ($value) => $value !== ''
+                                        );
+
+                                    if ($hasRecipientData) {
+                                        if (
+                                            $recipientDocumentTypes->contains('')
+                                            || $recipientIdentifiers->contains('')
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: todas las líneas deben "
+                                                . 'tener tipo e identificador del destinatario '
+                                                . 'cuando se informa alguno de esos datos.'
+                                            );
+                                        }
+
+                                        $uniqueRecipientDocumentTypes =
+                                            $recipientDocumentTypes
+                                                ->unique()
+                                                ->values();
+
+                                        if (
+                                            $uniqueRecipientDocumentTypes->count()
+                                            !== 1
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: las líneas tienen "
+                                                . 'tipos de documento del destinatario diferentes.'
+                                            );
+                                        }
+
+                                        $recipientDocumentType =
+                                            $uniqueRecipientDocumentTypes->first();
+
+                                        if (
+                                            mb_strlen($recipientDocumentType)
+                                            > 4
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el tipo de documento "
+                                                . 'del destinatario supera los 4 caracteres '
+                                                . 'admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        $uniqueRecipientIdentifiers =
+                                            $recipientIdentifiers
+                                                ->unique()
+                                                ->values();
+
+                                        if (
+                                            $uniqueRecipientIdentifiers->count()
+                                            !== 1
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: las líneas tienen "
+                                                . 'identificadores del destinatario diferentes.'
+                                            );
+                                        }
+
+                                        $recipientIdentifier =
+                                            $uniqueRecipientIdentifiers->first();
+
+                                        if (
+                                            !ctype_digit($recipientIdentifier)
+                                            || strlen($recipientIdentifier) > 11
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el identificador "
+                                                . 'del destinatario debe ser numérico '
+                                                . 'y no superar 11 dígitos.'
+                                            );
+                                        }
+
+                                        $w->writeElement(
+                                            'ar:TipoDocumentoDestinatarioMercaderia',
+                                            $recipientDocumentType
+                                        );
+
+                                        $w->writeElement(
+                                            'ar:IdentificadorDestinatarioMercaderia',
+                                            $recipientIdentifier
+                                        );
+
+                                        if ($recipientDocumentType === 'PASS') {
+                                            if (
+                                                $recipientPassportCountries
+                                                    ->contains('')
+                                            ) {
+                                                throw new Exception(
+                                                    "BL {$bol->bill_number}: todas las líneas "
+                                                    . 'con destinatario PASS deben informar '
+                                                    . 'el país emisor del pasaporte.'
+                                                );
+                                            }
+
+                                            $uniqueRecipientPassportCountries =
+                                                $recipientPassportCountries
+                                                    ->unique()
+                                                    ->values();
+
+                                            if (
+                                                $uniqueRecipientPassportCountries
+                                                    ->count()
+                                                !== 1
+                                            ) {
+                                                throw new Exception(
+                                                    "BL {$bol->bill_number}: las líneas tienen "
+                                                    . 'países emisores de pasaporte diferentes.'
+                                                );
+                                            }
+
+                                            $recipientPassportCountry =
+                                                $uniqueRecipientPassportCountries
+                                                    ->first();
+
+                                            if (
+                                                strlen(
+                                                    $recipientPassportCountry
+                                                ) !== 3
+                                            ) {
+                                                throw new Exception(
+                                                    "BL {$bol->bill_number}: el país emisor "
+                                                    . 'del pasaporte debe tener 3 caracteres.'
+                                                );
+                                            }
+
+                                            $w->writeElement(
+                                                'ar:CodigoPaisEmisionPasaporteDestinatario',
+                                                $recipientPassportCountry
+                                            );
+                                        } elseif (
+                                            $recipientPassportCountries->contains(
+                                                fn ($value) => $value !== ''
+                                            )
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: existe país emisor "
+                                                . 'de pasaporte informado para un destinatario '
+                                                . 'cuyo tipo de documento no es PASS.'
+                                            );
+                                        }
+                                    }
+
+                                    // PosicionArancelaria - obligatoria.
+                                    $tariffPositions = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) ($item->tariff_position ?? '')
+                                            )
+                                        );
+
+                                    if ($tariffPositions->contains('')) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: todas las líneas deben "
+                                            . 'tener posición arancelaria para AFIP.'
+                                        );
+                                    }
+
+                                    $uniqueTariffPositions = $tariffPositions
+                                        ->unique()
+                                        ->values();
+
+                                    if ($uniqueTariffPositions->count() !== 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen "
+                                            . 'posiciones arancelarias diferentes y AFIP '
+                                            . 'admite una sola a nivel del título.'
+                                        );
+                                    }
+
+                                    $tariffPosition = $uniqueTariffPositions->first();
+
+                                    if (
+                                        strlen($tariffPosition) < 7
+                                        || strlen($tariffPosition) > 15
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: la posición arancelaria "
+                                            . 'debe tener entre 7 y 15 caracteres.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:PosicionArancelaria',
+                                        $tariffPosition
+                                    );
+
+                                    /*
+                                     * Indicadores regulatorios.
+                                     * AFIP exige S/N y la app los persiste
+                                     * expresamente con esa misma codificación.
+                                     */
+                                    $secureLogisticsValues = $items
+                                        ->map(
+                                            fn ($item) => strtoupper(
+                                                trim(
+                                                    (string) (
+                                                        $item->is_secure_logistics_operator
+                                                        ?? ''
+                                                    )
+                                                )
+                                            )
+                                        );
+
+                                    if (
+                                        $secureLogisticsValues->contains(
+                                            fn ($value) => !in_array(
+                                                $value,
+                                                ['S', 'N'],
+                                                true
+                                            )
+                                        )
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: todas las líneas deben "
+                                            . 'tener IndicadorOperadorLogisticoSeguro S/N.'
+                                        );
+                                    }
+
+                                    $uniqueSecureLogistics = $secureLogisticsValues
+                                        ->unique()
+                                        ->values();
+
+                                    if ($uniqueSecureLogistics->count() !== 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen valores "
+                                            . 'diferentes para IndicadorOperadorLogisticoSeguro.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:IndicadorOperadorLogisticoSeguro',
+                                        $uniqueSecureLogistics->first()
+                                    );
+
+                                    $monitoredTransitValues = $items
+                                        ->map(
+                                            fn ($item) => strtoupper(
+                                                trim(
+                                                    (string) (
+                                                        $item->is_monitored_transit
+                                                        ?? ''
+                                                    )
+                                                )
+                                            )
+                                        );
+
+                                    if (
+                                        $monitoredTransitValues->contains(
+                                            fn ($value) => !in_array(
+                                                $value,
+                                                ['S', 'N'],
+                                                true
+                                            )
+                                        )
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: todas las líneas deben "
+                                            . 'tener IndicadorTransitoMonitoreado S/N.'
+                                        );
+                                    }
+
+                                    $uniqueMonitoredTransit = $monitoredTransitValues
+                                        ->unique()
+                                        ->values();
+
+                                    if ($uniqueMonitoredTransit->count() !== 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen valores "
+                                            . 'diferentes para IndicadorTransitoMonitoreado.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:IndicadorTransitoMonitoreado',
+                                        $uniqueMonitoredTransit->first()
+                                    );
+
+                                    $renarValues = $items
+                                        ->map(
+                                            fn ($item) => strtoupper(
+                                                trim(
+                                                    (string) ($item->is_renar ?? '')
+                                                )
+                                            )
+                                        );
+
+                                    if (
+                                        $renarValues->contains(
+                                            fn ($value) => !in_array(
+                                                $value,
+                                                ['S', 'N'],
+                                                true
+                                            )
+                                        )
+                                    ) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: todas las líneas deben "
+                                            . 'tener IndicadorRenar S/N.'
+                                        );
+                                    }
+
+                                    $uniqueRenar = $renarValues
+                                        ->unique()
+                                        ->values();
+
+                                    if ($uniqueRenar->count() !== 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen valores "
+                                            . 'diferentes para IndicadorRenar.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:IndicadorRenar',
+                                        $uniqueRenar->first()
+                                    );
+
+                                    /*
+                                     * RazonSocialFowarderExterior
+                                     * Obligatoria en el contrato AFIP.
+                                     */
+                                    $forwarderNames = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) (
+                                                    $item->foreign_forwarder_name
+                                                    ?? ''
+                                                )
+                                            )
+                                        );
+
+                                    if ($forwarderNames->contains('')) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: todas las líneas deben "
+                                            . 'tener razón social del forwarder exterior.'
+                                        );
+                                    }
+
+                                    $uniqueForwarderNames = $forwarderNames
+                                        ->unique()
+                                        ->values();
+
+                                    if ($uniqueForwarderNames->count() !== 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen "
+                                            . 'forwarders exteriores diferentes.'
+                                        );
+                                    }
+
+                                    $forwarderName = $uniqueForwarderNames->first();
+
+                                    if (mb_strlen($forwarderName) > 70) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: la razón social del "
+                                            . 'forwarder exterior supera los 70 caracteres.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:RazonSocialFowarderExterior',
+                                        $forwarderName
+                                    );
+
+                                    /*
+                                     * CUIT y país del forwarder son optativos,
+                                     * pero si existen deben ser consistentes
+                                     * entre las líneas del mismo título.
+                                     */
+                                    $forwarderTaxIds = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) (
+                                                    $item->foreign_forwarder_tax_id
+                                                    ?? ''
+                                                )
+                                            )
+                                        )
+                                        ->filter()
+                                        ->unique()
+                                        ->values();
+
+                                    if ($forwarderTaxIds->count() > 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen "
+                                            . 'identificadores fiscales de forwarder diferentes.'
+                                        );
+                                    }
+
+                                    if ($forwarderTaxIds->count() === 1) {
+                                        $forwarderTaxId = $forwarderTaxIds->first();
+
+                                        if (strlen($forwarderTaxId) > 35) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el identificador "
+                                                . 'tributario del forwarder exterior supera '
+                                                . 'los 35 caracteres admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        $w->writeElement(
+                                            'ar:IndicadorTributarioForwarderExterior',
+                                            $forwarderTaxId
+                                        );
+                                    }
+
+                                    $forwarderCountries = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) (
+                                                    $item->foreign_forwarder_country
+                                                    ?? ''
+                                                )
+                                            )
+                                        )
+                                        ->filter()
+                                        ->unique()
+                                        ->values();
+
+                                    if ($forwarderCountries->count() > 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen "
+                                            . 'países de forwarder diferentes.'
+                                        );
+                                    }
+
+                                    if ($forwarderCountries->count() === 1) {
+                                        $forwarderCountry = $forwarderCountries->first();
+
+                                        if (strlen($forwarderCountry) > 3) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el código de país "
+                                                . 'del forwarder supera los 3 caracteres.'
+                                            );
+                                        }
+
+                                        $w->writeElement(
+                                            'ar:CodigoPaisEmisorIdentificadorForwarderExterior',
+                                            $forwarderCountry
+                                        );
+                                    }
+
+                                    /*
+                                     * Comentario del título: optativo.
+                                     * Si distintas líneas contienen comentarios
+                                     * distintos no se elige uno arbitrariamente.
+                                     */
+                                    $titleComments = $items
+                                        ->map(
+                                            fn ($item) => trim(
+                                                (string) ($item->comments ?? '')
+                                            )
+                                        )
+                                        ->filter()
+                                        ->unique()
+                                        ->values();
+
+                                    if ($titleComments->count() > 1) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: las líneas tienen "
+                                            . 'comentarios AFIP diferentes.'
+                                        );
+                                    }
+
+                                    if ($titleComments->count() === 1) {
+                                        $titleComment = $titleComments->first();
+
+                                        if (mb_strlen($titleComment) > 60) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el comentario AFIP "
+                                                . 'supera los 60 caracteres.'
+                                            );
+                                        }
+
+                                        $w->writeElement(
+                                            'ar:Comentario',
+                                            $titleComment
+                                        );
+                                    }
+
+                                    /*
+                                     * Códigos de descarga del título.
+                                     * La fuente canónica está en BillOfLading.
+                                     */
+                                    $dischargeOperativeCode = trim(
+                                        (string) (
+                                            $bol->operational_discharge_code
+                                            ?? ''
+                                        )
+                                    );
+
+                                    if ($dischargeOperativeCode === '') {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta el lugar operativo "
+                                            . 'AFIP de descarga.'
+                                        );
+                                    }
+
+                                    if (strlen($dischargeOperativeCode) > 5) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el lugar operativo "
+                                            . 'de descarga supera los 5 caracteres.'
+                                        );
+                                    }
+
+                                    $dischargeCustomsCode = trim(
+                                        (string) (
+                                            $bol->discharge_customs_code
+                                            ?? ''
+                                        )
+                                    );
+
+                                    if ($dischargeCustomsCode === '') {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: falta la aduana "
+                                            . 'AFIP de descarga.'
+                                        );
+                                    }
+
+                                    if (strlen($dischargeCustomsCode) > 3) {
+                                        throw new Exception(
+                                            "BL {$bol->bill_number}: el código de aduana "
+                                            . 'de descarga supera los 3 caracteres.'
+                                        );
+                                    }
+
+                                    $w->writeElement(
+                                        'ar:CodigoLugarOperativoDescarga',
+                                        $dischargeOperativeCode
+                                    );
+
+                                    $w->writeElement(
+                                        'ar:CodigoAduanaDescarga',
+                                        $dischargeCustomsCode
+                                    );
+
+                                    // 4. Mercaderías (obligatorio)
+                                    $w->startElement('ar:Mercaderias');
+
+                                    $lineNumbers = [];
+
+                                    foreach ($items as $item) {
+                                        /*
+                                         * NumeroLinea
+                                         * Obligatorio, numérico, máximo 3 dígitos
+                                         * y no puede repetirse dentro del título.
+                                         */
+                                        if (
+                                            $item->line_number === null
+                                            || !is_numeric($item->line_number)
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: existe una línea "
+                                                . 'sin número de línea válido.'
+                                            );
+                                        }
+
+                                        $lineNumber = (int) $item->line_number;
+
+                                        if ($lineNumber < 1 || $lineNumber > 999) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: número de línea "
+                                                . "{$lineNumber} fuera del rango admitido por AFIP."
+                                            );
+                                        }
+
+                                        if (in_array($lineNumber, $lineNumbers, true)) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}: el número de línea "
+                                                . "{$lineNumber} está repetido."
+                                            );
+                                        }
+
+                                        $lineNumbers[] = $lineNumber;
+
+                                        /*
+                                         * CodigoEmbalaje
+                                         * ShipmentItem.packaging_code es el campo
+                                         * específico preservado para webservices.
+                                         */
+                                        $packagingCode = trim(
+                                            (string) ($item->packaging_code ?? '')
+                                        );
+
+                                        if ($packagingCode === '') {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'falta el código de embalaje.'
+                                            );
+                                        }
+
+                                        if (strlen($packagingCode) > 2) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . "el código de embalaje '{$packagingCode}' "
+                                                . 'supera los 2 caracteres admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        /*
+                                         * Si CodigoEmbalaje = 05, AFIP exige
+                                         * CondicionContenedor.
+                                         *
+                                         * La fuente real es ShipmentItem.container_condition.
+                                         * No inferirla desde Container ni asignar H/P.
+                                         */
+                                        $itemContainerCondition = trim(
+                                            (string) ($item->container_condition ?? '')
+                                        );
+
+                                        if (
+                                            $packagingCode === '05'
+                                            && $itemContainerCondition === ''
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'el embalaje 05 requiere CondicionContenedor.'
+                                            );
+                                        }
+
+                                        if (
+                                            $itemContainerCondition !== ''
+                                            && strlen($itemContainerCondition) !== 1
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'CondicionContenedor debe tener 1 carácter.'
+                                            );
+                                        }
+
+                                        /*
+                                         * CantidadManifestada
+                                         */
+                                        if (
+                                            $item->package_quantity === null
+                                            || !is_numeric($item->package_quantity)
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'falta la cantidad manifestada.'
+                                            );
+                                        }
+
+                                        $packageQuantity = (int) $item->package_quantity;
+
+                                        if (
+                                            $packageQuantity < 0
+                                            || $packageQuantity > 999999999
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'cantidad manifestada fuera del rango AFIP.'
+                                            );
+                                        }
+
+                                        /*
+                                         * PesoVolumenManifestado
+                                         */
+                                        if (
+                                            $item->gross_weight_kg === null
+                                            || !is_numeric($item->gross_weight_kg)
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'falta el peso/volumen manifestado.'
+                                            );
+                                        }
+
+                                        $grossWeight = (float) $item->gross_weight_kg;
+
+                                        if (
+                                            $grossWeight < 0
+                                            || $grossWeight > 99999999.999
+                                        ) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'peso/volumen manifestado fuera del rango AFIP.'
+                                            );
+                                        }
+
+                                        /*
+                                         * DescripcionMercaderia
+                                         */
+                                        $description = trim(
+                                            (string) ($item->item_description ?? '')
+                                        );
+
+                                        if ($description === '') {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'falta la descripción de la mercadería.'
+                                            );
+                                        }
+
+                                        if (mb_strlen($description) > 80) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'la descripción de la mercadería supera '
+                                                . 'los 80 caracteres admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        /*
+                                         * NumeroBultos
+                                         * Obligatorio según el manual.
+                                         *
+                                         * La fuente preservada desde CUSCAR PCI
+                                         * es ShipmentItem.cargo_marks.
+                                         * No enviar "S/M" ni otro texto inventado.
+                                         */
+                                        $packageMarks = trim(
+                                            (string) ($item->cargo_marks ?? '')
+                                        );
+
+                                        if ($packageMarks === '') {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'falta el número/marca de los bultos.'
+                                            );
+                                        }
+
+                                        if (mb_strlen($packageMarks) > 100) {
+                                            throw new Exception(
+                                                "BL {$bol->bill_number}, línea {$lineNumber}: "
+                                                . 'el número/marca de los bultos supera '
+                                                . 'los 100 caracteres admitidos por AFIP.'
+                                            );
+                                        }
+
+                                        $w->startElement('ar:LineaMercaderia');
+
+                                            $w->writeElement(
+                                                'ar:NumeroLinea',
+                                                (string) $lineNumber
+                                            );
+
+                                            $w->writeElement(
+                                                'ar:CodigoEmbalaje',
+                                                $packagingCode
+                                            );
+
+                                            if ($packagingCode === '05') {
+                                                $w->writeElement(
+                                                    'ar:CondicionContenedor',
+                                                    $itemContainerCondition
+                                                );
+                                            }
+
+                                            $w->writeElement(
+                                                'ar:CantidadManifestada',
+                                                (string) $packageQuantity
+                                            );
+
+                                            $w->writeElement(
+                                                'ar:PesoVolumenManifestado',
+                                                number_format(
+                                                    $grossWeight,
+                                                    3,
+                                                    '.',
+                                                    ''
+                                                )
+                                            );
+
+                                            $w->writeElement(
+                                                'ar:DescripcionMercaderia',
+                                                $description
+                                            );
+
+                                            $w->writeElement(
+                                                'ar:NumeroBultos',
+                                                $packageMarks
+                                            );
+
+                                        $w->endElement(); // LineaMercaderia
+                                    }
+
+                                    $w->endElement(); // Mercaderias
+                                    
+                                    // 5. Contenedores
+                                    $containers = collect();
+
+                                    foreach ($items as $item) {
+                                        $containers = $containers->merge(
+                                            $item->containers
+                                        );
+                                    }
+
+                                    $containers = $containers
+                                        ->unique('container_number')
+                                        ->values();
                                     
                                     if ($containers->isNotEmpty()) {
                                         $w->startElement('ar:Contenedores');
                                         
                                         foreach ($containers as $container) {
+                                            $containerNumber = trim(
+                                                (string) ($container->container_number ?? '')
+                                            );
+
+                                            if ($containerNumber === '') {
+                                                throw new Exception(
+                                                    "BL {$bol->bill_number}: existe un contenedor "
+                                                    . 'sin identificador.'
+                                                );
+                                            }
+
+                                            if (strlen($containerNumber) > 20) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: el identificador "
+                                                    . 'supera los 20 caracteres admitidos por AFIP.'
+                                                );
+                                            }
+
+                                            /*
+                                             * Características del contenedor:
+                                             * AFIP espera un código de 4 caracteres.
+                                             * container_types.iso_size_type contiene el código
+                                             * ISO tamaño/tipo real.
+                                             */
+                                            $containerType = trim(
+                                                (string) (
+                                                    $container->containerType?->iso_size_type
+                                                    ?? ''
+                                                )
+                                            );
+
+                                            if (strlen($containerType) !== 4) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: falta un código "
+                                                    . 'ISO de tamaño/tipo de 4 caracteres válido.'
+                                                );
+                                            }
+
+                                            /*
+                                             * Para los contenedores asociados a títulos cargados
+                                             * la condición AFIP está persistida en
+                                             * container_condition: H / P.
+                                             *
+                                             * No confundir con containers.condition, que representa
+                                             * el estado físico/operativo V/D/S/P/L/R.
+                                             */
+                                            $containerCondition = trim(
+                                                (string) ($container->container_condition ?? '')
+                                            );
+
+                                            if (!in_array(
+                                                $containerCondition,
+                                                ['H', 'P'],
+                                                true
+                                            )) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: falta una condición "
+                                                    . 'AFIP válida H/P.'
+                                                );
+                                            }
+
+                                            $tare = $container->tare_weight_kg;
+
+                                            if ($tare === null || (float) $tare <= 0) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: falta la tara real."
+                                                );
+                                            }
+
+                                            if ((float) $tare != floor((float) $tare)) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: la tara tiene "
+                                                    . 'decimales y AFIP exige Tara entera en Kg.'
+                                                );
+                                            }
+
+                                            $grossWeight = $container->current_gross_weight_kg;
+
+                                            if (
+                                                $grossWeight === null
+                                                || (float) $grossWeight <= 0
+                                            ) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: falta el peso "
+                                                    . 'bruto real requerido por AFIP.'
+                                                );
+                                            }
+
+                                            if (
+                                                (float) $grossWeight
+                                                != floor((float) $grossWeight)
+                                            ) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: el peso bruto "
+                                                    . 'tiene decimales y no existe una regla de '
+                                                    . 'redondeo definida para AFIP.'
+                                                );
+                                            }
+
+                                            if ((float) $tare > (float) $grossWeight) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: la tara no puede "
+                                                    . 'ser mayor al peso bruto.'
+                                                );
+                                            }
+
+                                            /*
+                                             * AFIP exige FechaVencimientoContenedor o ACEP.
+                                             * La app no tiene actualmente un campo ACEP
+                                             * identificado, por lo que no se fabrica ninguno.
+                                             */
+                                            if (empty($container->expiry_date)) {
+                                                throw new Exception(
+                                                    "Contenedor {$containerNumber}: falta la fecha "
+                                                    . 'de vencimiento y no existe ACEP informado.'
+                                                );
+                                            }
+
+                                            $dischargeCustomsCode = trim(
+                                                (string) (
+                                                    $bol->discharge_customs_code ?? ''
+                                                )
+                                            );
+
+                                            if ($dischargeCustomsCode === '') {
+                                                throw new Exception(
+                                                    "BL {$bol->bill_number}: falta la aduana AFIP "
+                                                    . 'de descarga.'
+                                                );
+                                            }
+
+                                            $operationalDischargeCode = trim(
+                                                (string) (
+                                                    $bol->operational_discharge_code
+                                                    ?? ''
+                                                )
+                                            );
+
+                                            if ($operationalDischargeCode === '') {
+                                                throw new Exception(
+                                                    "BL {$bol->bill_number}: falta el lugar operativo "
+                                                    . 'AFIP de descarga.'
+                                                );
+                                            }
+
                                             $w->startElement('ar:Contenedor');
-                                                
-                                                // ID contenedor (obligatorio)
-                                                $containerId = substr($container->container_number ?? 'CONT' . $container->id, 0, 20);
-                                                $w->writeElement('ar:Id', $containerId);
-                                                
-                                                // Código medida (obligatorio)
-                                                $containerType = $container->containerType?->iso_code ?? '42G1';
-                                                $w->writeElement('ar:codMedida', $containerType);
-                                                
-                                                // Condición (obligatorio: P=pleno, V=vacío)
-                                                $condition = ($container->condition === 'empty' || $container->condition === 'V') ? 'V' : 'P';
-                                                $w->writeElement('ar:condicion', $condition);
-                                                
-                                                // Precintos (opcional)
-                                                $seals = $container->customsSeals ?? collect();
-                                                if ($seals->isNotEmpty()) {
-                                                    $w->startElement('ar:precintos');
-                                                    foreach ($seals as $seal) {
-                                                        $w->writeElement('ar:precinto', (string)$seal->seal_number);
-                                                    }
-                                                    $w->endElement();
+
+                                                $w->writeElement(
+                                                    'CaracteristicasContenedor',
+                                                    $containerType
+                                                );
+
+                                                $w->writeElement(
+                                                    'IdentificadorContenedor',
+                                                    $containerNumber
+                                                );
+
+                                                $w->writeElement(
+                                                    'CondicionContenedor',
+                                                    $containerCondition
+                                                );
+
+                                                $w->writeElement(
+                                                    'Tara',
+                                                    (string) ((int) $tare)
+                                                );
+
+                                                $w->writeElement(
+                                                    'PesoBruto',
+                                                    (string) ((int) $grossWeight)
+                                                );
+
+                                                // Precinto de origen: sólo si está declarado.
+                                                if (!empty($container->shipper_seal)) {
+                                                    $w->writeElement(
+                                                        'NumeroPrecintoOrigen',
+                                                        substr(
+                                                            (string) $container->shipper_seal,
+                                                            0,
+                                                            35
+                                                        )
+                                                    );
                                                 }
-                                                
+
+                                                $w->writeElement(
+                                                    'FechaVencimientoContenedor',
+                                                    \Carbon\Carbon::parse(
+                                                        $container->expiry_date
+                                                    )->format('Y-m-d\TH:i:s')
+                                                );
+
+                                                // Datos operativos reales del conocimiento.
+                                                if ($bol->loadingPort) {
+                                                    $w->writeElement(
+                                                        'CodigoPuertoEmbarque',
+                                                        substr(
+                                                            (string) $bol->loadingPort->code,
+                                                            0,
+                                                            5
+                                                        )
+                                                    );
+                                                }
+
+                                                if ($bol->loading_date) {
+                                                    $w->writeElement(
+                                                        'FechaEmbarque',
+                                                        $bol->loading_date
+                                                            ->format('Y-m-d\TH:i:s')
+                                                    );
+                                                }
+
+                                                if ($bol->origin_loading_date) {
+                                                    $w->writeElement(
+                                                        'FechaCargaLugarOrigen',
+                                                        $bol->origin_loading_date
+                                                            ->format('Y-m-d\TH:i:s')
+                                                    );
+                                                }
+
+                                                if (!empty($bol->origin_operative_code)) {
+                                                    $w->writeElement(
+                                                        'CodigoLugarOrigen',
+                                                        substr(
+                                                            (string) $bol->origin_operative_code,
+                                                            0,
+                                                            5
+                                                        )
+                                                    );
+                                                }
+
+                                                if ($bol->dischargePort) {
+                                                    $w->writeElement(
+                                                        'CodigoPuertoDescarga',
+                                                        substr(
+                                                            (string) $bol->dischargePort->code,
+                                                            0,
+                                                            5
+                                                        )
+                                                    );
+                                                }
+
+                                                if ($bol->discharge_date) {
+                                                    $w->writeElement(
+                                                        'FechaDescarga',
+                                                        $bol->discharge_date
+                                                            ->format('Y-m-d\TH:i:s')
+                                                    );
+                                                }
+
+                                                $w->writeElement(
+                                                    'CodigoAduana',
+                                                    substr(
+                                                        $dischargeCustomsCode,
+                                                        0,
+                                                        3
+                                                    )
+                                                );
+
+                                                $w->writeElement(
+                                                    'CodigoLugarOperativoDescarga',
+                                                    substr(
+                                                        $operationalDischargeCode,
+                                                        0,
+                                                        5
+                                                    )
+                                                );
+
                                             $w->endElement(); // Contenedor
                                         }
                                         
@@ -3485,30 +5122,44 @@ class SimpleXmlGenerator
         $destinationPortCode = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT');
         $w->writeElement('CodigoPuertoDestino', $destinationPortCode);
 
-        // 7. FechaArribo (obligatorio) - CORREGIDO sin mutar objeto original
-        if ($voyage->estimated_arrival_date) {
-            $w->writeElement('FechaArribo', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
-        } elseif ($voyage->departure_date) {
-            $w->writeElement('FechaArribo', $voyage->departure_date->copy()->addDay()->format('Y-m-d\TH:i:s'));
-        } else {
-            $w->writeElement('FechaArribo', now()->addDay()->format('Y-m-d\TH:i:s'));
+        /*
+         * Fecha de arribo.
+         *
+         * Es obligatoria para Información Anticipada y AFIP la define
+         * con formato AAAAMMDD.
+         *
+         * No se deriva de la salida ni de la fecha actual.
+         */
+        if (!$voyage->estimated_arrival_date) {
+            throw new Exception(
+                'El viaje no tiene fecha estimada de arribo. '
+                . 'AFIP exige FechaArribo para RegistrarViaje.'
+            );
         }
 
-        if ($voyage->estimated_arrival_date) {
-            $w->writeElement('FechaArribo', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s.000-03:00'));
-        } else {
-            $w->writeElement('FechaArribo', $voyage->departure_date->copy()->addDay()->format('Y-m-d\TH:i:s.000-03:00'));
-        }
+        $w->writeElement(
+            'FechaArribo',
+            $voyage->estimated_arrival_date->format('Ymd')
+        );
 
-        // 8. FechaEmbarque (opcional)
+        /*
+         * Fecha de inicio/embarque: optativa.
+         * Se informa únicamente cuando existe una fecha de salida real.
+         */
         if ($voyage->departure_date) {
-            $w->writeElement('FechaEmbarque', $voyage->departure_date->format('Y-m-d\TH:i:s'));
+            $w->writeElement(
+                'FechaEmbarque',
+                $voyage->departure_date->format('Ymd')
+            );
         }
 
-        // 9. FechaCargaLugarOrigen (opcional)
-        if ($voyage->departure_date) {
-            $w->writeElement('FechaCargaLugarOrigen', $voyage->departure_date->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-        }
+        /*
+         * FechaCargaLugarOrigen no se informa acá.
+         *
+         * Es un dato opcional condicionado a una carga efectuada en un
+         * lugar distinto del lugar de embarque. La app no tiene en este
+         * punto un dato real que justifique calcular "salida - 2 horas".
+         */
 
         // 10. CodigoLugarOrigen (opcional)
         $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
@@ -3544,13 +5195,17 @@ class SimpleXmlGenerator
      */
     private function addContainersInformation(\XMLWriter $w, Voyage $voyage): void
     {
-        $w->startElement('ContenedoresVaciosCorreo');
-        
-        // Obtener contenedores reales de forma segura
-        $hasContainers = false;
+        /*
+         * ContenedoresVaciosCorreo sólo informa contenedores cuya condición
+         * declarada sea:
+         *
+         *   V = vacío
+         *   C = correo
+         *
+         * No crear contenedores ficticios cuando el viaje no tenga ninguno.
+         */
         $containers = collect();
-        
-        // Método seguro para obtener contenedores
+
         try {
             if ($voyage->shipments()->count() > 0) {
                 foreach ($voyage->shipments as $shipment) {
@@ -3560,7 +5215,6 @@ class SimpleXmlGenerator
                                 foreach ($bol->shipmentItems as $item) {
                                     if ($item->containers()->count() > 0) {
                                         $containers = $containers->merge($item->containers);
-                                        $hasContainers = true;
                                     }
                                 }
                             }
@@ -3572,113 +5226,244 @@ class SimpleXmlGenerator
             \Log::info('Error obteniendo contenedores: ' . $e->getMessage());
         }
 
-        // Si no hay contenedores reales, crear uno básico para cumplir con AFIP
-        if (!$hasContainers || $containers->isEmpty()) {
-            $w->startElement('Contenedor');
-                // CAMPOS OBLIGATORIOS mínimos según AFIP
-                $w->writeElement('IdentificadorContenedor', 'VACIOS000001');
-                $w->writeElement('CuitOperadorContenedores', (string)$this->company->tax_id);
-                $w->writeElement('CaracteristicasContenedor', '40HC');
-                $w->writeElement('CondicionContenedor', 'V'); // V = Vacío
-                $w->writeElement('Tara', '3800'); // Peso tara estándar contenedor 40HC
-                $w->writeElement('PesoBruto', '3800'); // Solo tara si está vacío
-                $w->writeElement('NumeroPrecintoOrigen', 'VACIO001');
-                
-                // Fechas obligatorias
-                if ($voyage->departure_date) {
-                    $w->writeElement('FechaVencimientoContenedor', $voyage->departure_date->copy()->addMonths(6)->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaEmbarque', $voyage->departure_date->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaCargaLugarOrigen', $voyage->departure_date->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-                } else {
-                    $fechaBase = now();
-                    $w->writeElement('FechaVencimientoContenedor', $fechaBase->copy()->addMonths(6)->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaEmbarque', $fechaBase->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaCargaLugarOrigen', $fechaBase->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-                }
-                
-                // Códigos de lugar obligatorios
-                $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
-                $w->writeElement('CodigoPaisLugarOrigen', $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR'));
-                $w->writeElement('CodigoPuertoDescarga', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                
-                // Fecha descarga
-                if ($voyage->estimated_arrival_date) {
-                    $w->writeElement('FechaDescarga', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
-                } else {
-                    $w->writeElement('FechaDescarga', now()->addDay()->format('Y-m-d\TH:i:s'));
-                }
-                
-                // Campos adicionales opcionales pero recomendados
-                $w->writeElement('Comentario', 'Contenedor vacío para transporte de correo');
-                $w->writeElement('CodigoAduana', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                $w->writeElement('CodigoLugarOperativoDescarga', $voyage->destinationPort?->code ?? 'PYTVT');
-                
-            $w->endElement(); // Contenedor
-        } else {
+        $containers = $containers
+            ->filter(
+                fn ($container) => in_array(
+                    $container->condition,
+                    ['V', 'C'],
+                    true
+                )
+            )
+            ->unique('container_number')
+            ->values();
+
+        // El bloque es opcional. Si no existen vacíos/correo reales,
+        // no se transmite ningún contenedor inventado.
+        if ($containers->isEmpty()) {
+            return;
+        }
+
+        $w->startElement('ContenedoresVaciosCorreo');
+
+        // Procesar únicamente contenedores vacíos/correo reales.
             // Procesar contenedores reales si existen
-            foreach ($containers->take(10) as $index => $container) { // Limitar a 10 contenedores
+            foreach ($containers as $container) {
+                $containerNumber = trim((string) $container->container_number);
+
+                if ($containerNumber === '') {
+                    throw new Exception(
+                        'Existe un contenedor vacío sin identificador. '
+                        . 'AFIP exige IdentificadorContenedor.'
+                    );
+                }
+
+                /*
+                 * AFIP exige las características según la tabla ISO.
+                 * container_types.iso_size_type es el código ISO de
+                 * tamaño/tipo de 4 caracteres (ej. 22G1).
+                 *
+                 * No usar el code interno 20GP/40HC como reemplazo.
+                 */
+                $isoSizeType = trim(
+                    (string) ($container->containerType?->iso_size_type ?? '')
+                );
+
+                if ($isoSizeType === '') {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta el código ISO "
+                        . 'de tamaño/tipo requerido por AFIP.'
+                    );
+                }
+
+                $tara = $container->tare_weight_kg;
+
+                if ($tara === null || (float) $tara <= 0) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta la tara real "
+                        . 'requerida por AFIP.'
+                    );
+                }
+
+                $pesoBruto = $container->current_gross_weight_kg;
+
+                if ($pesoBruto === null || (float) $pesoBruto <= 0) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta el peso bruto real "
+                        . 'requerido por AFIP.'
+                    );
+                }
+
+                /*
+                 * AFIP exige FechaVencimientoContenedor o ACEP.
+                 *
+                 * La app no tiene actualmente un campo ACEP identificado.
+                 * Por eso, si tampoco existe expiry_date, se detiene el envío
+                 * en lugar de fabricar una fecha a partir del viaje.
+                 */
+                if (empty($container->expiry_date)) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta la fecha de "
+                        . 'vencimiento requerida por AFIP y no hay ACEP informado.'
+                    );
+                }
+
+                /*
+                 * Los datos de descarga pertenecen al conocimiento.
+                 *
+                 * Un contenedor puede estar relacionado con más de un item y,
+                 * por lo tanto, eventualmente con más de un conocimiento.
+                 * Sólo se puede transmitir si todos los conocimientos asociados
+                 * coinciden en los datos aduaneros de descarga.
+                 */
+                $bills = $container->shipmentItems()
+                    ->with('billOfLading.dischargePort')
+                    ->get()
+                    ->pluck('billOfLading')
+                    ->filter()
+                    ->unique('id')
+                    ->values();
+
+                if ($bills->isEmpty()) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: no tiene un conocimiento "
+                        . 'asociado para obtener los datos de descarga AFIP.'
+                    );
+                }
+
+                $customsCodes = $bills
+                    ->pluck('discharge_customs_code')
+                    ->filter(fn ($value) => trim((string) $value) !== '')
+                    ->map(fn ($value) => trim((string) $value))
+                    ->unique()
+                    ->values();
+
+                if ($customsCodes->count() !== 1) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta o es inconsistente "
+                        . 'el código de aduana de descarga AFIP.'
+                    );
+                }
+
+                $operativeCodes = $bills
+                    ->pluck('operational_discharge_code')
+                    ->filter(fn ($value) => trim((string) $value) !== '')
+                    ->map(fn ($value) => trim((string) $value))
+                    ->unique()
+                    ->values();
+
+                if ($operativeCodes->count() !== 1) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta o es inconsistente "
+                        . 'el código de lugar operativo de descarga AFIP.'
+                    );
+                }
+
+                $dischargePortCodes = $bills
+                    ->map(fn ($bill) => trim(
+                        (string) ($bill->dischargePort?->code ?? '')
+                    ))
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($dischargePortCodes->count() !== 1) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta o es inconsistente "
+                        . 'el puerto de descarga.'
+                    );
+                }
+
+                $dischargeDates = $bills
+                    ->map(function ($bill) {
+                        if (empty($bill->discharge_date)) {
+                            return null;
+                        }
+
+                        return $bill->discharge_date->format('Ymd');
+                    })
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($dischargeDates->count() !== 1) {
+                    throw new Exception(
+                        "Contenedor {$containerNumber}: falta o es inconsistente "
+                        . 'la fecha de descarga.'
+                    );
+                }
+
                 $w->startElement('Contenedor');
-                    
-                    // CAMPOS OBLIGATORIOS
-                    $w->writeElement('IdentificadorContenedor', $container->container_number ?? 'CONT' . ($index + 1));
-                    
-                    if ($container->operator_tax_id) {
-                        $w->writeElement('CuitOperadorContenedores', $container->operator_tax_id);
-                    } else {
-                        $w->writeElement('CuitOperadorContenedores', (string)$this->company->tax_id);
+
+                    // Campos obligatorios, en el orden de la especificación.
+                    $w->writeElement(
+                        'CaracteristicasContenedor',
+                        substr($isoSizeType, 0, 4)
+                    );
+
+                    $w->writeElement(
+                        'IdentificadorContenedor',
+                        substr($containerNumber, 0, 20)
+                    );
+
+                    $w->writeElement(
+                        'CondicionContenedor',
+                        (string) $container->condition
+                    );
+
+                    $w->writeElement(
+                        'Tara',
+                        number_format((float) $tara, 2, '.', '')
+                    );
+
+                    $w->writeElement(
+                        'PesoBruto',
+                        number_format((float) $pesoBruto, 3, '.', '')
+                    );
+
+                    // El precinto de origen es optativo.
+                    // Sólo SH/shipper_seal identifica inequívocamente al cargador.
+                    if (!empty($container->shipper_seal)) {
+                        $w->writeElement(
+                            'NumeroPrecintoOrigen',
+                            substr((string) $container->shipper_seal, 0, 35)
+                        );
                     }
-                    
-                    $w->writeElement('CaracteristicasContenedor', $container->containerType?->code ?? '40HC');
-                    $w->writeElement('CondicionContenedor', $container->condition ?? 'V');
-                    
-                    // Pesos seguros
-                    $tara = $container->tare_weight ?? 3800;
-                    $pesoBruto = $container->gross_weight ?? $tara;
-                    $w->writeElement('Tara', (string)$tara);
-                    $w->writeElement('PesoBruto', (string)$pesoBruto);
-                    
-                    $w->writeElement('NumeroPrecintoOrigen', $container->shipper_seal ?? $container->customs_seal ?? 'SEAL' . ($index + 1));
-                    
-                    // Fechas con fallbacks seguros
-                    $fechaBase = $voyage->departure_date ?? now();
-                    
-                    if ($container->loading_date) {
-                        $w->writeElement('FechaCargaLugarOrigen', $container->loading_date->format('Y-m-d\TH:i:s'));
-                    } else {
-                        $w->writeElement('FechaCargaLugarOrigen', $fechaBase->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-                    }
-                    
-                    $w->writeElement('FechaEmbarque', $fechaBase->format('Y-m-d\TH:i:s'));
-                    
-                    if ($container->expiry_date) {
-                        $w->writeElement('FechaVencimientoContenedor', $container->expiry_date->format('Y-m-d\TH:i:s'));
-                    } else {
-                        $w->writeElement('FechaVencimientoContenedor', $fechaBase->copy()->addMonths(6)->format('Y-m-d\TH:i:s'));
-                    }
-                    
-                    // Códigos de lugar
-                    $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
-                    $w->writeElement('CodigoPaisLugarOrigen', $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR'));
-                    $w->writeElement('CodigoPuertoDescarga', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                    
-                    if ($container->discharge_date) {
-                        $w->writeElement('FechaDescarga', $container->discharge_date->format('Y-m-d\TH:i:s'));
-                    } else {
-                        $fechaDescarga = $voyage->estimated_arrival_date ?? $fechaBase->copy()->addDay();
-                        $w->writeElement('FechaDescarga', $fechaDescarga->format('Y-m-d\TH:i:s'));
-                    }
-                    
-                    // Comentarios y códigos adicionales
-                    if ($container->notes) {
-                        $w->writeElement('Comentario', substr($container->notes, 0, 100));
-                    }
-                    
-                    $w->writeElement('CodigoAduana', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                    $w->writeElement('CodigoLugarOperativoDescarga', $voyage->destinationPort?->code ?? 'PYTVT');
+
+                    // AFIP requiere AAAAMM para este campo.
+                    $w->writeElement(
+                        'FechaVencimientoContenedor',
+                        \Carbon\Carbon::parse($container->expiry_date)->format('Ym')
+                    );
+
+                    /*
+                     * Para condición V, AFIP exige puerto y fecha de descarga.
+                     * Aduana y lugar operativo son obligatorios en RegistrarViaje.
+                     *
+                     * Todos provienen de los conocimientos asociados; no hay
+                     * códigos ni fechas por defecto.
+                     */
+                    $w->writeElement(
+                        'CodigoPuertoDescarga',
+                        substr($dischargePortCodes->first(), 0, 5)
+                    );
+
+                    $w->writeElement(
+                        'FechaDescarga',
+                        $dischargeDates->first()
+                    );
+
+                    $w->writeElement(
+                        'CodigoAduana',
+                        substr($customsCodes->first(), 0, 3)
+                    );
+
+                    $w->writeElement(
+                        'CodigoLugarOperativoDescarga',
+                        substr($operativeCodes->first(), 0, 5)
+                    );
 
                 $w->endElement(); // Contenedor
             }
-        }
 
         $w->endElement(); // ContenedoresVaciosCorreo
     }
