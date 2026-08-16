@@ -181,7 +181,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
                 // Usar el primer BL para crear voyage y shipment
                 $firstBL = reset($bills);
-                $portInfo = $this->extractPortInfo($firstBL['data'] ?? $data ?? []);
+                $portInfo = $this->extractPortInfo($firstBL['data'] ?? []);
 
                 // 🔒 Guard estricto: no continuar si falta alguno
                 if (empty($portInfo['origin']) || empty($portInfo['destination'])) {
@@ -202,7 +202,13 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 $voyageInfo = $this->extractVoyageInfo($firstBL['data']);
 
                 // CORREGIDO: Crear voyage usando $options
-                $voyage = $this->createVoyage($voyageInfo, $originPort, $destinationPort, $options);
+                $voyage = $this->createVoyage(
+                    $voyageInfo,
+                    $originPort,
+                    $destinationPort,
+                    $options,
+                    $dates
+                );
                 
                 // CORREGIDO: Crear shipment usando $options
                 $shipment = $this->createShipment($voyage, $options);
@@ -409,9 +415,43 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     }
 
     /**
+     * Resolver fechas del viaje sin fabricar valores.
+     *
+     * Prioridad:
+     * 1) fechas explícitas recibidas en options;
+     * 2) fechas inequívocamente extraídas del archivo;
+     * 3) null.
+     */
+    protected function resolveVoyageDates(
+        array $options = [],
+        array $extractedDates = []
+    ): array {
+        $optDates = $options['dates'] ?? [];
+
+        $etdRaw = !empty($optDates['etd'])
+            ? $optDates['etd']
+            : ($extractedDates['etd'] ?? null);
+
+        $etaRaw = !empty($optDates['eta'])
+            ? $optDates['eta']
+            : ($extractedDates['eta'] ?? null);
+
+        return [
+            'etd' => !empty($etdRaw) ? Carbon::parse($etdRaw) : null,
+            'eta' => !empty($etaRaw) ? Carbon::parse($etaRaw) : null,
+        ];
+    }
+
+    /**
      * Crear voyage - CORREGIDO: como PARANA
      */
-    protected function createVoyage(array $voyageInfo, Port $originPort, Port $destinationPort, array $options = []): Voyage
+    protected function createVoyage(
+        array $voyageInfo,
+        Port $originPort,
+        Port $destinationPort,
+        array $options = [],
+        array $extractedDates = []
+    ): Voyage
     {
         // CORREGIDO: Obtener company_id como PARANA
         $user = auth()->user();
@@ -440,15 +480,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($voyageNumber);
 
-        // Fechas estimadas desde el .DAT (si existen) o fallback
-        $dates = $this->extractDates($firstBL['data'] ?? $data ?? []); // si ya lo tenés, reutilizalo
-
-        // Fechas estimadas: se pueden pasar por $options['dates']; si no, defaults
-        // Esperado: $options['dates'] = ['etd' => 'YYYY-MM-DD', 'eta' => 'YYYY-MM-DD']
-        $optDates = $options['dates'] ?? [];
-        $etd = !empty($optDates['etd']) ? Carbon::parse($optDates['etd']) : Carbon::now()->addDays(7);
-        $eta = !empty($optDates['eta']) ? Carbon::parse($optDates['eta']) : (clone $etd)->addDays(7);
-        ;
+        $resolvedDates = $this->resolveVoyageDates($options, $extractedDates);
+        $etd = $resolvedDates['etd'];
+        $eta = $resolvedDates['eta'];
 
 
         $voyageData = [
@@ -579,8 +613,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $blAttrs = [
             'shipment_id'       => $shipment->id,
             'bill_number'       => $blNumber,
-            'bill_date'         => $dates['bl_date'] ?? now(),
-            'loading_date'      => $dates['etd'] ?? now()->addDays(1),
+            // No fabricar fechas que K-Line no informa de forma inequívoca.
+            'bill_date'         => $dates['bl_date'] ?? null,
+            'loading_date'      => $dates['etd'] ?? null,
             // FIX bug #5: usar descripción real extraída de DESCREC en lugar de leyenda fija
             'cargo_description' => implode(' / ', $this->extractCargoDescriptions($data)) ?: 'Mercadería según manifiesto KLine',
             'status'            => 'draft',
