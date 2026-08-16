@@ -45,7 +45,6 @@ class ProcessManifestImportJob implements ShouldQueue
         public int $vesselId,
         public int $userId,
         public string $originalName,
-        public ?string $departureDate = null,
     ) {
         $this->onQueue('imports');
     }
@@ -84,7 +83,6 @@ class ProcessManifestImportJob implements ShouldQueue
             /** @var ManifestParseResult $result */
             $result = $parser->parse($fullPath, [
                 'vessel_id' => $this->vesselId,
-                'departure_date' => $this->departureDate,
             ]);
 
             if ($result->isSuccessful()) {
