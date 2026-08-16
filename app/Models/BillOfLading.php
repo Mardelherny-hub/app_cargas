@@ -97,6 +97,7 @@ class BillOfLading extends Model
         
         // Términos comerciales
         'freight_terms',
+        'freight_amount',
         'payment_terms',
         'incoterms',
         'currency_code',
