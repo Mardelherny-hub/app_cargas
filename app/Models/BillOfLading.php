@@ -115,6 +115,7 @@ class BillOfLading extends Model
         'cargo_description',
         'cargo_marks',
         'commodity_code',
+        'commodity_codes',
         
         // Características especiales - NECESARIAS para recalculación
         'contains_dangerous_goods',
@@ -208,6 +209,7 @@ class BillOfLading extends Model
         'customs_bond_required' => 'boolean',
         
         // JSON
+        'commodity_codes' => 'array',
         'special_instructions' => 'json',
         'additional_charges' => 'json',
         'discrepancy_details' => 'json',
