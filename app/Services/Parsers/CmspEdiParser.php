@@ -1430,6 +1430,29 @@ class CmspEdiParser implements ManifestParserInterface
             );
         }
 
+        // La salida y la llegada deben conservar una cronología posible.
+        // La salida puede venir de DTM+136 o ser ingresada por el operador,
+        // pero en ambos casos debe ser anterior o igual a la ETA informada
+        // por el propio CUSCAR.
+        $departureTimestamp = strtotime((string) $departureDate);
+        $estimatedArrivalTimestamp = strtotime((string) $estimatedArrivalDate);
+
+        if ($departureTimestamp === false || $estimatedArrivalTimestamp === false) {
+            throw new Exception(
+                'No se pudo validar la fecha de salida o la fecha estimada de llegada del viaje.'
+            );
+        }
+
+        $departureDay = date('Y-m-d', $departureTimestamp);
+        $estimatedArrivalDay = date('Y-m-d', $estimatedArrivalTimestamp);
+
+        if ($departureDay > $estimatedArrivalDay) {
+            throw new Exception(
+                'La fecha de salida no puede ser posterior a la fecha estimada de llegada '
+                . 'informada por el archivo CUSCAR.'
+            );
+        }
+
         return Voyage::create([
             'company_id' => $companyId,
             'voyage_number' => $voyageNumber,
@@ -1611,9 +1634,41 @@ class CmspEdiParser implements ManifestParserInterface
         // mismas partes (reportado por Roberto 06/08/2026).
         $partesDelGrupo = $containerGroup['parties'] ?? [];
 
-        $shipper     = $this->findOrCreateClient($partesDelGrupo['shipper']   ?? $data['parties']['shipper']   ?? null);
-        $consignee   = $this->findOrCreateClient($partesDelGrupo['consignee'] ?? $data['parties']['consignee'] ?? null);
-        $notifyParty = $this->findOrCreateClient($partesDelGrupo['notify']    ?? $data['parties']['notify']    ?? null);
+        $shipperData = $partesDelGrupo['shipper']
+            ?? $data['parties']['shipper']
+            ?? null;
+
+        $consigneeData = $partesDelGrupo['consignee']
+            ?? $data['parties']['consignee']
+            ?? null;
+
+        $notifyData = $partesDelGrupo['notify']
+            ?? $data['parties']['notify']
+            ?? null;
+
+        $shipper = $this->findOrCreateClient($shipperData);
+        $consignee = $this->findOrCreateClient($consigneeData);
+
+        /*
+         * Hapag-Lloyd usa literalmente "SAME AS CONSIGNEE" cuando el
+         * notificatario es el mismo consignatario. No es una razón social
+         * y por lo tanto no debe crear/reutilizar un Client.
+         *
+         * Se conserva como texto del conocimiento, igual que ya hace el
+         * importador G2Ocean para este mismo caso.
+         */
+        $notifyParty = null;
+        $notifyText = null;
+
+        $notifyName = strtoupper(trim(
+            (string) ($notifyData['name'] ?? '')
+        ));
+
+        if ($notifyName === 'SAME AS CONSIGNEE') {
+            $notifyText = 'SAME AS CONSIGNEE';
+        } elseif ($notifyName !== '') {
+            $notifyParty = $this->findOrCreateClient($notifyData);
+        }
 
         // Si alguna linea del grupo trae contenedores, el conocimiento es
         // contenedorizado. Mismo criterio que en createShipmentItem().
@@ -1663,13 +1718,14 @@ class CmspEdiParser implements ManifestParserInterface
             ? implode(' | ', $cargoDescriptions)
             : 'Según detalle';
 
-        return BillOfLading::create([
+        $bill = BillOfLading::create([
             'shipment_id'               => $shipment->id,
             'bill_number'               => (string) $billNumber,
             'shipper_id'                => $shipper?->id,
             'consignee_id'              => $consignee?->id,
             // El notificatario nunca se persistía: se parseaba y se descartaba.
             'notify_party_id'           => $notifyParty?->id,
+            'notify_party_text'         => $notifyText,
             'loading_port_id'           => $shipment->voyage->origin_port_id,
             'discharge_port_id'         => $shipment->voyage->destination_port_id,
             'bill_type'                 => 'house',
@@ -1704,6 +1760,39 @@ class CmspEdiParser implements ManifestParserInterface
             'loading_date'              => $loadingDate,
             'created_by_user_id'        => auth()->id(),
         ]);
+
+        /*
+         * Dirección por conocimiento:
+         *
+         * - si coincide con la ficha maestra, no se duplica;
+         * - si difiere, se conserva en BillOfLadingContact;
+         * - nunca se pisa el domicilio maestro del cliente.
+         */
+        if ($specific = $this->resolveSpecificAddress(
+            $shipper,
+            $shipperData['address'] ?? null,
+            'shipper'
+        )) {
+            $bill->specificContacts()->create($specific);
+        }
+
+        if ($specific = $this->resolveSpecificAddress(
+            $consignee,
+            $consigneeData['address'] ?? null,
+            'consignee'
+        )) {
+            $bill->specificContacts()->create($specific);
+        }
+
+        if ($notifyParty && ($specific = $this->resolveSpecificAddress(
+            $notifyParty,
+            $notifyData['address'] ?? null,
+            'notify_party'
+        ))) {
+            $bill->specificContacts()->create($specific);
+        }
+
+        return $bill;
     }
 
     /**
@@ -2290,11 +2379,49 @@ class CmspEdiParser implements ManifestParserInterface
         $client = Client::where('legal_name', $partyData['name'])->first();
 
         if ($client) {
+            /*
+             * Si el archivo trae un identificador fiscal real y el cliente
+             * preexistente fue creado sin él, completar la ficha en lugar de
+             * perder el dato.
+             *
+             * Si ya tiene OTRO identificador, no asociar silenciosamente dos
+             * entidades distintas por compartir nombre: detener la importación.
+             */
+            if ($taxId) {
+                $storedTaxId = preg_replace(
+                    '/\D/',
+                    '',
+                    (string) ($client->tax_id ?? '')
+                );
+
+                if ($storedTaxId === '') {
+                    $client->tax_id = $taxId;
+                    $client->save();
+
+                    Log::info('CMSP: identificacion fiscal completada desde CUSCAR', [
+                        'client_id' => $client->id,
+                        'name' => $client->legal_name,
+                        'tax_id' => $taxId,
+                    ]);
+                } elseif ($storedTaxId !== $taxId) {
+                    throw new Exception(
+                        "El cliente '{$partyData['name']}' ya existe con identificación fiscal "
+                        . "'{$client->tax_id}', pero el archivo CUSCAR informa '{$taxId}'. "
+                        . 'La importación se detuvo para evitar asociar datos de entidades distintas.'
+                    );
+                }
+            }
+
             Log::info('Cliente encontrado por nombre legal', [
                 'name' => $partyData['name'],
                 'client_id' => $client->id
             ]);
-            $this->persistClientAddress($client, $partyData['address'] ?? null);
+
+            $this->persistClientAddress(
+                $client,
+                $partyData['address'] ?? null
+            );
+
             return $client;
         }
 
