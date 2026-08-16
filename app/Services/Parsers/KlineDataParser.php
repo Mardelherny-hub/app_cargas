@@ -610,6 +610,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
 
         // 6) Campos base del BL (seguros)
+        $commodityCodes = $this->extractNCMCodes($data);
+
         $blAttrs = [
             'shipment_id'       => $shipment->id,
             'bill_number'       => $blNumber,
@@ -625,6 +627,10 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'primary_packaging_type_id' => 2,  // NO RETORNABLE
             // FIX bug #6b: BL no estaba recibiendo cargo_marks (quedaba vacío en BD)
             'cargo_marks'               => $this->extractCargoMarks($data),
+            // Mantener un código principal por compatibilidad y preservar
+            // además todos los NCM/HS explícitos informados por K-Line.
+            'commodity_code'             => $commodityCodes[0] ?? null,
+            'commodity_codes'            => $commodityCodes ?: null,
             // FIX QA #5: sincronizar totales del BL desde los datos reales del archivo
             // (antes quedaban en 0/1 hardcoded aunque los items sí tuvieran datos)
             'gross_weight_kg'   => ($blMeasurements = $this->extractRealMeasurements($data))['gross_weight_kg'],
@@ -1076,7 +1082,94 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         return implode(' / ', array_values(array_unique($marks)));
     }
     /**
-     * Extraer código NCM - NUEVO método para capturar de múltiples registros
+     * Extraer todos los códigos NCM/HS explícitos del BL.
+     *
+     * El primer código conserva el orden de prioridad del contrato K-Line:
+     * CMMDREC estructurado primero; luego NCM/HS explícitos en texto.
+     *
+     * No se buscan números arbitrarios en las descripciones.
+     */
+    protected function extractNCMCodes(array $data): array
+    {
+        $codes = [];
+
+        $append = function (?string $raw) use (&$codes): void {
+            if ($raw === null) {
+                return;
+            }
+
+            $digits = preg_replace('/\D+/', '', $raw);
+
+            // Contrato histórico de la app:
+            // HS de 6 dígitos se normaliza a 8 agregando 00.
+            if (strlen($digits) === 6) {
+                $digits .= '00';
+            }
+
+            if (strlen($digits) !== 8) {
+                return;
+            }
+
+            if (!in_array($digits, $codes, true)) {
+                $codes[] = $digits;
+            }
+        };
+
+        // 1. Campo estructurado K-Line: prioridad máxima.
+        foreach ($data['CMMDREC0'] ?? [] as $line) {
+            $line = trim((string) $line);
+
+            if (preg_match(
+                '/M3\s+([0-9]{8})(?:\s|$)/i',
+                $line,
+                $matches
+            )) {
+                $append($matches[1]);
+            }
+        }
+
+        // 2. Únicamente campos explícitamente rotulados NCM / HS CODE.
+        foreach (['DESCREC0', 'MARKREC0'] as $recordType) {
+            foreach ($data[$recordType] ?? [] as $line) {
+                $line = preg_replace(
+                    '/^\d{6}/',
+                    '',
+                    trim((string) $line)
+                );
+
+                if (!preg_match(
+                    '/\b(?:NCM|HS\s*CODE)\s*:\s*(.+)$/i',
+                    $line,
+                    $matches
+                )) {
+                    continue;
+                }
+
+                $payload = preg_split(
+                    '/\b(?:NET\s+WEIGHT|GROSS\s+WEIGHT|WEIGHT|KGS|CBM)\b/i',
+                    $matches[1],
+                    2
+                )[0];
+
+                if (!preg_match_all(
+                    '/(?<!\d)\d[\d.]{4,14}\d(?!\d)/',
+                    $payload,
+                    $codeMatches
+                )) {
+                    continue;
+                }
+
+                foreach ($codeMatches[0] as $rawCode) {
+                    $append($rawCode);
+                }
+            }
+        }
+
+        return $codes;
+    }
+
+    /**
+     * Extraer código NCM principal.
      */
     protected function extractNCMCode(array $data): ?string
     {
