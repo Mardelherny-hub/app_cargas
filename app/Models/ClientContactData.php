@@ -155,11 +155,11 @@ class ClientContactData extends Model
                 $model->created_by_user_id = Auth::id();
             }
             
-            // Asegurar zona horaria por defecto según país del cliente
+            // Usar únicamente la zona horaria canónica del país.
+            // Si el catálogo no define una, conservar null: no inventar una
+            // zona horaria para países con múltiples husos o dato desconocido.
             if (!$model->timezone && $model->client) {
-                $model->timezone = $model->client->country_id === 1 // Argentina
-                    ? 'America/Argentina/Buenos_Aires'
-                    : 'America/Asuncion'; // Paraguay
+                $model->timezone = $model->client->country?->timezone;
             }
         });
 
@@ -505,16 +505,25 @@ class ClientContactData extends Model
      */
     public function isOpenAt(Carbon $datetime): bool
     {
-        $day = strtolower($datetime->format('l')); // monday, tuesday, etc.
+        $timezone = $this->timezone
+            ?: $this->client?->country?->timezone
+            ?: config('app.timezone')
+            ?: 'UTC';
+
+        // El día y el horario deben evaluarse en la zona horaria efectiva
+        // del contacto, no en la zona original del Carbon recibido.
+        $checkTime = $datetime->copy()->setTimezone($timezone);
+        $day = strtolower($checkTime->format('l'));
+
         $hours = $this->getBusinessHoursForDay($day);
 
         if (!$hours || !isset($hours['open']) || !isset($hours['close'])) {
             return false;
         }
 
-        $openTime = Carbon::createFromFormat('H:i', $hours['open'], $this->timezone);
-        $closeTime = Carbon::createFromFormat('H:i', $hours['close'], $this->timezone);
-        $checkTime = $datetime->setTimezone($this->timezone);
+        // Apertura y cierre pertenecen al mismo día local que se consulta.
+        $openTime = $checkTime->copy()->setTimeFromTimeString($hours['open']);
+        $closeTime = $checkTime->copy()->setTimeFromTimeString($hours['close']);
 
         return $checkTime->between($openTime, $closeTime);
     }
