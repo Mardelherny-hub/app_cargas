@@ -11,6 +11,7 @@ use App\Models\ShipmentItem;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
@@ -987,6 +988,53 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     }
 
     /**
+     * Extrae el identificador fiscal y conserva el tipo declarado por K-Line.
+     *
+     * Los marcadores genéricos (por ejemplo TAX ID) pueden aportar un número
+     * real, pero no autorizan a inventar CUIT/RUC/NIT/CNPJ.
+     */
+    protected function extractTaxIdentityFromLine(string $line): ?array
+    {
+        $taxId = $this->extractTaxIdFromLine($line);
+
+        if ($taxId === null) {
+            return null;
+        }
+
+        $taxType = null;
+
+        if (preg_match(
+            '/(CUIT(?:\s+NBR)?|CNPJ|NIT|R\.?U\.?C\.?(?:\s*\/\s*TAX\s*ID)?)\s*[:#.]?\s*([0-9][0-9.\-\/]{5,})/i',
+            $line,
+            $matches
+        )) {
+            $candidateTaxId = preg_replace('/\D/', '', $matches[2]);
+
+            // El marcador sólo tipifica al mismo número que realmente
+            // reconoció el helper fiscal común.
+            if ($candidateTaxId === $taxId) {
+                $label = strtoupper(
+                    preg_replace('/[^A-Z]/i', '', $matches[1])
+                );
+
+                $taxType = match (true) {
+                    str_starts_with($label, 'CUIT') => 'CUIT',
+                    str_starts_with($label, 'CNPJ') => 'CNPJ',
+                    str_starts_with($label, 'NIT') => 'NIT',
+                    str_starts_with($label, 'RUC') => 'RUC',
+                    default => null,
+                };
+            }
+        }
+
+        return [
+            'tax_id' => $taxId,
+            'tax_type' => $taxType,
+        ];
+    }
+
+
+    /**
      * Extraer nombre de empresa desde línea KLine - CORREGIDO: separar RUC/CUIT
      */
     protected function extractCompanyNameFromLine(string $line): ?string
@@ -1770,41 +1818,74 @@ protected function extractPortInfo(array $data): array
 
 
     /**
+     * Resolver el tipo fiscal únicamente cuando la fuente lo declara.
+     *
+     * La combinación tipo + país debe existir en el catálogo. Si hay
+     * contradicción, se aborta en lugar de guardar una identidad falsa.
+     */
+    protected function resolveDocumentTypeId(
+        ?string $taxType,
+        ?int $countryId
+    ): ?int {
+        $taxType = strtoupper(trim((string) $taxType));
+
+        if ($taxType === '') {
+            return null;
+        }
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "No se puede resolver {$taxType} sin país."
+            );
+        }
+
+        $documentTypeId = DocumentType::query()
+            ->where('code', $taxType)
+            ->where('country_id', $countryId)
+            ->where('active', true)
+            ->value('id');
+
+        if (!$documentTypeId) {
+            throw new \DomainException(
+                "El tipo fiscal {$taxType} no corresponde al país {$countryId} " .
+                "o no existe en el catálogo."
+            );
+        }
+
+        return (int) $documentTypeId;
+    }
+
+
+    /**
      * Buscar o crear cliente - CORREGIDO: usar estructura real de tabla clients
      */
     protected function findOrCreateClient(array $clientData, int $companyId, array $partyLines = [], ?Port $originPort = null): Client
     {
-        $name  = trim($clientData['name'] ?? 'Cliente Desconocido');
-        $taxId = $clientData['tax_id'] ?? null;
+        $name    = trim($clientData['name'] ?? 'Cliente Desconocido');
+        $taxId   = $clientData['tax_id'] ?? null;
+        $taxType = $clientData['tax_type'] ?? null;
 
-        // Normalizar tax_id (ej. CUIT -> 11 dígitos)
-        $normTaxId = $taxId ? preg_replace('/\D+/', '', $taxId) : null;
+        // Normalizar el identificador fiscal a solo dígitos.
+        $normTaxId = $taxId
+            ? preg_replace('/\D+/', '', $taxId)
+            : null;
 
-        // 1) Buscar por tax_id (si hay)
-        if ($normTaxId) {
-            if ($client = Client::where('tax_id', $normTaxId)->first()) {
-                Log::info('Cliente existente encontrado por tax_id', ['client_id' => $client->id, 'tax_id' => $normTaxId]);
-                return $client;
-            }
+        if ($normTaxId === '') {
+            $normTaxId = null;
         }
 
-        // 2) Buscar por nombre (legal_name)
-        if ($client = Client::where('legal_name', $name)->first()) {
-            Log::info('Cliente existente encontrado por nombre', ['client_id' => $client->id, 'name' => $name]);
-            return $client;
-        }
+        // Resolver primero el país. La identidad fiscal de clients es
+        // tax_id + country_id; nunca debe buscarse el tax_id globalmente.
+        $countryId = null;
 
-        
-        // 3. Crear nuevo cliente con campos REALES de la tabla
-
-       $countryId = null;
         if (!empty($partyLines) && $originPort) {
-            $countryId = $this->detectCountryIdFromParty($partyLines, $originPort) ?? $originPort->country_id;
+            $countryId =
+                $this->detectCountryIdFromParty($partyLines, $originPort)
+                ?? $originPort->country_id;
         } elseif ($originPort) {
             $countryId = $originPort->country_id;
         }
 
-        // Guard si la columna existe y no pudimos resolver país
         if (\Schema::hasColumn('clients', 'country_id') && is_null($countryId)) {
             throw new \DomainException(
                 "No se pudo inferir el país para el cliente '{$name}'. " .
@@ -1812,31 +1893,79 @@ protected function extractPortInfo(array $data): array
             );
         }
 
+        // 1) Buscar por identidad fiscal completa.
+        if ($normTaxId) {
+            $client = Client::query()
+                ->where('tax_id', $normTaxId)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                Log::info(
+                    'Cliente existente encontrado por tax_id y país',
+                    [
+                        'client_id' => $client->id,
+                        'tax_id' => $normTaxId,
+                        'country_id' => $countryId,
+                    ]
+                );
+
+                return $client;
+            }
+        }
+
+        // 2) Buscar por nombre + país únicamente cuando la fuente NO
+        // informó identificador fiscal. Si informó tax_id, ese identificador
+        // tiene prioridad y un nombre coincidente no puede contradecirlo.
+        if (!$normTaxId) {
+            $client = Client::query()
+                ->where('legal_name', $name)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                Log::info(
+                    'Cliente existente encontrado por nombre y país',
+                    [
+                        'client_id' => $client->id,
+                        'name' => $name,
+                        'country_id' => $countryId,
+                    ]
+                );
+
+                return $client;
+            }
+        }
+
+        // El tipo documental sólo se asigna si la fuente aportó un número
+        // fiscal y además declaró explícitamente qué tipo es.
+        $documentTypeId = $normTaxId
+            ? $this->resolveDocumentTypeId($taxType, $countryId)
+            : null;
 
         $client = Client::create([
-            // Obligatorios según tu migración
-            'tax_id'               => $normTaxId,
-            'country_id'           => $countryId,
-            'document_type_id'     => 1, // si 1 = CUIT/Doc local (mantengo tu default)
-            'legal_name'           => $name,
-            'commercial_name'      => $name,
-            'status'               => 'active',
-            'created_by_company_id'=> $companyId,
-            'verified_at'          => now(),
+            'tax_id' => $normTaxId,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
+            'legal_name' => $name,
+            'commercial_name' => $name,
+            'status' => 'active',
+            'created_by_company_id' => $companyId,
+            'verified_at' => now(),
 
-            // Opcionales si vienen
-            'address'              => $clientData['address'] ?? null,
-            'email'                => $clientData['email'] ?? null,
-            'notes'                => 'Cliente creado desde archivo KLine DAT',
+            'address' => $clientData['address'] ?? null,
+            'email' => $clientData['email'] ?? null,
+            'notes' => 'Cliente creado desde archivo KLine DAT',
         ]);
 
-        
         Log::info('Cliente creado desde KLine', [
             'client_id' => $client->id,
             'legal_name' => $client->legal_name,
-            'tax_id' => $client->tax_id
+            'tax_id' => $client->tax_id,
+            'country_id' => $client->country_id,
+            'document_type_id' => $client->document_type_id,
         ]);
-        
+
         return $client;
     }
 
@@ -2001,8 +2130,8 @@ protected function extractPortInfo(array $data): array
             ],
             'clients' => [
                 'auto_create_missing' => true,
-                'default_document_type_id' => 1,
-                'default_country_id' => 1
+                'default_document_type_id' => null,
+                'default_country_id' => null
             ],
             'cargo' => [
                 'default_cargo_type_id' => 1,
@@ -2042,7 +2171,7 @@ protected function extractPortInfo(array $data): array
     // Construye clientData (name/tax/email/address) a partir de líneas
     protected function buildClientDataFromLines(array $lines): array
     {
-        $name = null; $tax = null; $email = null;
+        $name = null; $tax = null; $taxType = null; $email = null;
 
         foreach ($lines as $ln) {
             $trim = trim($ln);
@@ -2055,10 +2184,21 @@ protected function extractPortInfo(array $data): array
 
             // FIX bug QA #4: usar extractTaxIdFromLine que ya detecta NIT/CUIT/CNPJ/RUC.
             // Antes solo detectaba CUIT argentino (\d{2}-\d{8}-\d) y NIT colombiano "860.025.792-3" quedaba afuera.
-            if (!$tax) {
-                $candidateTax = $this->extractTaxIdFromLine($trim);
-                if ($candidateTax) {
-                    $tax = $candidateTax;
+            $identity = $this->extractTaxIdentityFromLine($trim);
+
+            if ($identity) {
+                if (!$tax) {
+                    $tax = $identity['tax_id'];
+                }
+
+                // Si primero apareció un TAX ID genérico y después el mismo
+                // número con marcador específico, conservar el tipo explícito.
+                if (
+                    !$taxType
+                    && $identity['tax_id'] === $tax
+                    && !empty($identity['tax_type'])
+                ) {
+                    $taxType = $identity['tax_type'];
                 }
             }
 
@@ -2077,10 +2217,11 @@ protected function extractPortInfo(array $data): array
         $address = $this->buildAddressFromPartyLines($lines);
 
         return [
-            'name'    => $name ?? 'Cliente Desconocido',
-            'tax_id'  => $tax,
-            'email'   => $email,
-            'address' => $address,
+            'name'     => $name ?? 'Cliente Desconocido',
+            'tax_id'   => $tax,
+            'tax_type' => $taxType,
+            'email'    => $email,
+            'address'  => $address,
         ];
     }
 

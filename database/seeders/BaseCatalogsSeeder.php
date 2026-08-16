@@ -423,6 +423,82 @@ class BaseCatalogsSeeder extends Seeder
 
             $this->command->line("  ✓ PY: {$docType->name}");
         }
+
+
+        // Tipos fiscales extranjeros soportados por importadores.
+        // No son primarios: su presencia debe provenir explícitamente
+        // del documento fuente, no inferirse solamente por país.
+        $foreignTaxDocTypes = [
+            'CO' => [
+                'code' => 'NIT',
+                'name' => 'NIT - Número de Identificación Tributaria',
+                'short_name' => 'NIT',
+                'validation_pattern' => '^\\d{9,10}$',
+                'min_length' => 9,
+                'max_length' => 10,
+                'has_check_digit' => true,
+                'check_digit_algorithm' => null,
+                'display_format' => null,
+                'input_mask' => null,
+                'format_examples' => null,
+                'for_individuals' => true,
+                'for_companies' => true,
+                'for_tax_purposes' => true,
+                'for_customs' => true,
+                'is_primary' => false,
+                'required_for_clients' => false,
+                'display_order' => 10,
+                'active' => true,
+                'webservice_field' => null,
+            ],
+            'BR' => [
+                'code' => 'CNPJ',
+                'name' => 'CNPJ - Cadastro Nacional da Pessoa Jurídica',
+                'short_name' => 'CNPJ',
+                'validation_pattern' => '^\\d{14}$',
+                'min_length' => 14,
+                'max_length' => 14,
+                'has_check_digit' => true,
+                'check_digit_algorithm' => null,
+                'display_format' => '99.999.999/9999-99',
+                'input_mask' => '99.999.999/9999-99',
+                'format_examples' => null,
+                'for_individuals' => false,
+                'for_companies' => true,
+                'for_tax_purposes' => true,
+                'for_customs' => true,
+                'is_primary' => false,
+                'required_for_clients' => false,
+                'display_order' => 10,
+                'active' => true,
+                'webservice_field' => null,
+            ],
+        ];
+
+        foreach ($foreignTaxDocTypes as $alpha2 => $docTypeData) {
+            $country = Country::where('alpha2_code', $alpha2)->first();
+
+            if (!$country) {
+                $this->command->error(
+                    "❌ País {$alpha2} no encontrado para tipo {$docTypeData['code']}."
+                );
+                continue;
+            }
+
+            $docTypeData['country_id'] = $country->id;
+
+            $docType = DocumentType::updateOrCreate(
+                [
+                    'code' => $docTypeData['code'],
+                    'country_id' => $country->id,
+                ],
+                $docTypeData
+            );
+
+            $this->command->line(
+                "  ✓ {$alpha2}: {$docType->name}"
+            );
+        }
     }
 
     /**
