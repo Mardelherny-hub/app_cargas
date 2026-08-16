@@ -1293,15 +1293,29 @@ class CmspEdiParser implements ManifestParserInterface
                     'item'     => $itemIds,
                 ]);
 
-                $importRecord->markAsCompleted([
-                    'voyage_id'               => $voyage->id,
-                    'created_bills'           => count($billIds),
-                    'created_items'           => count($itemIds),
-                    'created_containers'      => $this->stats['processed_containers'] ?? 0,
-                    'processing_time_seconds' => $startTime ? round(microtime(true) - $startTime, 2) : null,
-                    'import_statistics'       => $this->stats,
-                    'notes'                   => 'Importación CMSP EDI completada',
-                ]);
+                $completionData = [
+                    'voyage_id' => $voyage->id,
+                    'created_bills' => count($billIds),
+                    'created_items' => count($itemIds),
+                    'created_containers' => $this->stats['processed_containers'] ?? 0,
+                    'processing_time_seconds' => $startTime
+                        ? round(microtime(true) - $startTime, 2)
+                        : null,
+                    'import_statistics' => $this->stats,
+                    'warnings' => $this->stats['warnings'],
+                    'warnings_count' => count($this->stats['warnings']),
+                    'notes' => 'Importación CMSP EDI completada',
+                ];
+
+                if (!empty($this->stats['warnings'])) {
+                    $importRecord->markAsCompletedWithWarnings(
+                        $completionData
+                    );
+                } else {
+                    $importRecord->markAsCompleted(
+                        $completionData
+                    );
+                }
             }
 
             return ManifestParseResult::success(
@@ -1309,6 +1323,7 @@ class CmspEdiParser implements ManifestParserInterface
                 shipments: [$shipment],
                 containers: $this->getCreatedContainers($data),
                 billsOfLading: $billsOfLading,
+                warnings: $this->stats['warnings'],
                 statistics: [
                     'processed_containers' => $this->stats['processed_containers'],
                     'processed_items' => $this->stats['processed_items'],
@@ -1349,22 +1364,44 @@ class CmspEdiParser implements ManifestParserInterface
         $originPort = $this->findOrCreatePort($data['ports']['loading'] ?? 'ARBUE');
         $destPort = $this->findOrCreatePort($data['ports']['discharge'] ?? 'PYASU');
 
-        // La embarcación la selecciona el operador antes de importar.
-        // No crear embarcaciones ni completar datos físicos/registrales
-        // que el archivo CUSCAR no proporciona de forma confiable.
-        $vesselId = $options['vessel_id'] ?? null;
+        /*
+         * La embarcación seleccionada por el operador es un respaldo.
+         *
+         * Si el CUSCAR identifica una embarcación, esa información prevalece:
+         * - si ya existe en la empresa, se utiliza;
+         * - si no existe, se incorpora con únicamente los datos conocidos.
+         *
+         * Si el archivo no identifica ninguna embarcación, se utiliza la
+         * seleccionada por el operador en el formulario.
+         */
+        $fileVesselName = trim(
+            (string) ($data['vessel']['vessel_name'] ?? '')
+        );
 
-        if (!$vesselId) {
-            throw new Exception('Debe seleccionar una embarcación para importar el archivo CUSCAR.');
+        if ($fileVesselName !== '') {
+            $vessel = $this->findOrCreateVessel(
+                $fileVesselName,
+                $companyId
+            );
+        } else {
+            $vesselId = $options['vessel_id'] ?? null;
+
+            if (!$vesselId) {
+                throw new Exception(
+                    'El archivo CUSCAR no informa una embarcación y no se seleccionó una embarcación de respaldo.'
+                );
+            }
+
+            $vessel = Vessel::where('id', $vesselId)
+                ->where('company_id', $companyId)
+                ->first();
+
+            if (!$vessel) {
+                throw new Exception(
+                    "Embarcación con ID {$vesselId} no encontrada para la empresa."
+                );
+            }
         }
-
-        $vessel = Vessel::find($vesselId);
-
-        if (!$vessel) {
-            throw new Exception("Embarcación con ID {$vesselId} no encontrada.");
-        }
-
-        $vesselName = $vessel->name;
 
         $voyageNumber = ($data['vessel']['voyage_number'] ?? '') . '-' .
                        ($data['message']['document_number'] ?? uniqid());
@@ -1381,46 +1418,17 @@ class CmspEdiParser implements ManifestParserInterface
 
         /*
          * Fecha de salida:
-         * 1. DTM+136 del CUSCAR, si el emisor la informó.
-         * 2. Fecha ingresada por el operador.
+         * sólo se conserva DTM+136 cuando el archivo la informa.
+         * Si el CUSCAR no trae DTM+136, queda NULL.
          *
-         * Nunca usar DTM+137 ni now() como reemplazo.
+         * DTM+137 es fecha del documento y nunca reemplaza la salida.
          */
         $departureDate = $data['dates']['departure'] ?? null;
 
-        if ($departureDate === null) {
-            $manualDeparture = trim(
-                (string) ($options['departure_date'] ?? '')
-            );
-
-            if ($manualDeparture === '') {
-                throw new Exception(
-                    'El archivo CUSCAR no informa una fecha de salida DTM+136. '
-                    . 'Debe indicar la fecha y hora de salida antes de importar.'
-                );
-            }
-
-            // datetime-local envía YYYY-MM-DDTHH:MM.
-            // Se conserva exactamente la fecha/hora ingresada, sin conversión
-            // de zona horaria.
-            $manualDeparture = str_replace('T', ' ', $manualDeparture);
-
-            if (preg_match(
-                '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/',
-                $manualDeparture
-            )) {
-                $manualDeparture .= ':00';
-            }
-
-            $departureDate = $manualDeparture;
-        }
-
         /*
-         * La llegada estimada sí está declarada en los dos emisores
-         * CUSCAR reales mediante DTM+132.
-         *
-         * Voyage.estimated_arrival_date es obligatorio, por lo que ante
-         * ausencia del dato se detiene la importación en vez de inventarlo.
+         * La llegada estimada se toma exclusivamente de DTM+132.
+         * estimated_arrival_date continúa siendo obligatoria en Voyage,
+         * por lo que ante su ausencia se detiene la importación.
          */
         $estimatedArrivalDate = $data['dates']['estimated_arrival'] ?? null;
 
@@ -1430,27 +1438,44 @@ class CmspEdiParser implements ManifestParserInterface
             );
         }
 
-        // La salida y la llegada deben conservar una cronología posible.
-        // La salida puede venir de DTM+136 o ser ingresada por el operador,
-        // pero en ambos casos debe ser anterior o igual a la ETA informada
-        // por el propio CUSCAR.
-        $departureTimestamp = strtotime((string) $departureDate);
-        $estimatedArrivalTimestamp = strtotime((string) $estimatedArrivalDate);
-
-        if ($departureTimestamp === false || $estimatedArrivalTimestamp === false) {
-            throw new Exception(
-                'No se pudo validar la fecha de salida o la fecha estimada de llegada del viaje.'
+        /*
+         * Sólo puede validarse cronología cuando el archivo informó salida.
+         * Si no existe DTM+136, departure_date permanece NULL.
+         */
+        if ($departureDate !== null) {
+            $departureTimestamp = strtotime(
+                (string) $departureDate
             );
-        }
 
-        $departureDay = date('Y-m-d', $departureTimestamp);
-        $estimatedArrivalDay = date('Y-m-d', $estimatedArrivalTimestamp);
-
-        if ($departureDay > $estimatedArrivalDay) {
-            throw new Exception(
-                'La fecha de salida no puede ser posterior a la fecha estimada de llegada '
-                . 'informada por el archivo CUSCAR.'
+            $estimatedArrivalTimestamp = strtotime(
+                (string) $estimatedArrivalDate
             );
+
+            if (
+                $departureTimestamp === false
+                || $estimatedArrivalTimestamp === false
+            ) {
+                throw new Exception(
+                    'No se pudo validar la fecha de salida o la fecha estimada de llegada del viaje.'
+                );
+            }
+
+            $departureDay = date(
+                'Y-m-d',
+                $departureTimestamp
+            );
+
+            $estimatedArrivalDay = date(
+                'Y-m-d',
+                $estimatedArrivalTimestamp
+            );
+
+            if ($departureDay > $estimatedArrivalDay) {
+                throw new Exception(
+                    'La fecha de salida no puede ser posterior a la fecha estimada de llegada '
+                    . 'informada por el archivo CUSCAR.'
+                );
+            }
         }
 
         return Voyage::create([
@@ -1463,7 +1488,6 @@ class CmspEdiParser implements ManifestParserInterface
             'destination_country_id' => $destPort->country_id,      // ← AGREGAR
             'departure_date' => $departureDate,
             'estimated_arrival_date' => $estimatedArrivalDate,
-            'vessel_name' => $vesselName,
             'status' => 'planning',
             'cargo_type' => $cargoType,
             'created_by_user_id' => auth()->id(),
@@ -1503,36 +1527,93 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Buscar o crear vessel basado en nombre del EDI
      */
-    protected function findOrCreateVessel(string $vesselName, int $companyId): Vessel
-    {
-        // Buscar vessel existente por nombre
-        $vessel = Vessel::where('name', $vesselName)
-            ->where('company_id', $companyId)
+    protected function findOrCreateVessel(
+        string $vesselName,
+        int $companyId
+    ): Vessel {
+        $vesselName = trim($vesselName);
+
+        $vessel = Vessel::where('company_id', $companyId)
+            ->where('name', $vesselName)
             ->first();
 
-        if (!$vessel) {
-            $vessel = Vessel::create([
-                'name' => $vesselName,
-                'registration_number' => 'CMSP-' . uniqid(),
-                'company_id' => $companyId,
-                'vessel_type_id' => 1, // Default vessel type
-                'flag_country_id' => 2, // Paraguay (PY=2)
-                'length_meters' => 60.0,
-                'beam_meters' => 12.0,
-                'draft_meters' => 3.5,
-                'gross_tonnage' => 500,  
-                'net_tonnage' => 350,            
-                'cargo_capacity_tons' => 2000.0,
-                'operational_status' => 'active',
-                'active' => true,
-                'created_by_user_id' => auth()->id()
-            ]);
-
-            Log::info('Vessel creado automáticamente desde EDI', [
-                'vessel_name' => $vesselName,
-                'vessel_id' => $vessel->id
-            ]);
+        if ($vessel) {
+            return $vessel;
         }
+
+        /*
+         * El archivo acredita la existencia y el nombre de la embarcación,
+         * pero no necesariamente informa sus datos registrales o técnicos.
+         *
+         * Se incorpora el registro sin fabricar información.
+         * Los datos desconocidos quedan NULL y la ficha queda sin verificar
+         * hasta que el operador complete la información real.
+         */
+        $vessel = new Vessel();
+
+        $vessel->name = $vesselName;
+        $vessel->company_id = $companyId;
+
+        $vessel->registration_number = null;
+        $vessel->vessel_type_id = null;
+        $vessel->flag_country_id = null;
+
+        $vessel->length_meters = null;
+        $vessel->beam_meters = null;
+        $vessel->draft_meters = null;
+
+        $vessel->cargo_capacity_tons = null;
+        $vessel->max_cargo_capacity = null;
+
+        /*
+         * Estas columnas poseen defaults históricos en la tabla.
+         * Se escribe NULL explícitamente para no atribuir características
+         * que el archivo CUSCAR nunca informó.
+         */
+        $vessel->engine_hours = null;
+        $vessel->ownership_type = null;
+        $vessel->available_for_charter = null;
+        $vessel->current_crew_size = null;
+        $vessel->crew_quarters_available = null;
+        $vessel->passenger_capacity = null;
+        $vessel->maintenance_interval_days = null;
+
+        $vessel->has_cranes = null;
+        $vessel->has_conveyor_system = null;
+        $vessel->has_refrigeration = null;
+        $vessel->has_gps = null;
+        $vessel->has_radar = null;
+        $vessel->has_ais = null;
+        $vessel->green_technology = null;
+
+        /*
+         * Estos sí son estados internos conocidos por la aplicación:
+         * el registro puede utilizarse, pero sus datos aún no están verificados.
+         */
+        $vessel->operational_status = 'active';
+        $vessel->active = true;
+        $vessel->verified = false;
+        $vessel->created_by_user_id = auth()->id();
+
+        $vessel->save();
+
+        $warning = sprintf(
+            'La embarcación "%s" fue informada por el archivo CUSCAR y no estaba registrada. '
+            . 'Se incorporó a la empresa y fue asignada al viaje. '
+            . 'Su ficha tiene datos registrales o técnicos pendientes de completar.',
+            $vesselName
+        );
+
+        $this->stats['warnings'][] = $warning;
+
+        Log::warning(
+            'Embarcación incorporada desde CUSCAR con datos incompletos',
+            [
+                'vessel_id' => $vessel->id,
+                'vessel_name' => $vesselName,
+                'company_id' => $companyId,
+            ]
+        );
 
         return $vessel;
     }
@@ -1548,7 +1629,7 @@ class CmspEdiParser implements ManifestParserInterface
             'shipment_number' => 'CMSP-' . ($data['message']['document_number'] ?? uniqid()),
             'sequence_in_voyage' => $this->getNextSequenceInVoyage($voyage->id),
             'vessel_role' => 'single',
-            'cargo_capacity_tons' => $voyage->lead_vessel->cargo_capacity_tons ?? 1000, 
+            'cargo_capacity_tons' => $voyage->leadVessel?->cargo_capacity_tons,
             'status' => 'planning',
             'active' => true,
             'created_by_user_id' => auth()->id()
@@ -2147,6 +2228,27 @@ class CmspEdiParser implements ManifestParserInterface
         // Datos físicos declarados para este contenedor en su bloque EQD.
         $equipment = $this->parsedData['equipment'][$containerNumber] ?? null;
 
+        /*
+         * Si el contenedor no existe todavía, necesitamos los datos físicos
+         * declarados por el CUSCAR para poder crearlo.
+         *
+         * Hay emisores reales que informan SGP pero no envían ningún EQD
+         * (CMSP.EDI histórico: 72 SGP y 0 EQD). En ese caso no corresponde
+         * completar tipo, tara ni peso máximo usando valores de catálogo:
+         * serían datos no declarados por el archivo.
+         *
+         * Un contenedor ya existente sí puede asociarse, porque sus datos
+         * maestros fueron resueltos previamente y no se pisan.
+         */
+        if (!$equipment) {
+            throw new Exception(
+                "El contenedor {$containerNumber} no existe y el archivo CUSCAR "
+                . "no informa datos EQD suficientes para crearlo. "
+                . "Debe registrar previamente el contenedor o utilizar un archivo "
+                . "que informe sus datos físicos."
+            );
+        }
+
         $containerType = null;
 
         if ($equipment && !empty($equipment['iso_code'])) {
@@ -2499,12 +2601,7 @@ class CmspEdiParser implements ManifestParserInterface
     public function validate(array $data): array
     {
         $errors = [];
-
-        if (empty($data['vessel']['vessel_name'])) {
-            $errors[] = 'Información de embarcación faltante';
-        }
-
-        if (empty($data['ports']['loading']) || empty($data['ports']['discharge'])) {
+if (empty($data['ports']['loading']) || empty($data['ports']['discharge'])) {
             $errors[] = 'Información de puertos incompleta';
         }
 
