@@ -1000,84 +1000,115 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     protected function extractCargoMarks(array $data): string
     {
         $marks = [];
-        
+
         if (!empty($data['MARKREC0'])) {
             foreach ($data['MARKREC0'] as $line) {
                 $cleanLine = trim($line);
-                // Saltar líneas vacías o que solo tienen espacios
-                if (strlen($cleanLine) > 5) { // Al menos algo de contenido
-                    // Extraer solo la parte útil, saltar códigos HS redundantes
-                    if (!str_contains($cleanLine, 'HS CODE:') && !str_contains($cleanLine, 'NCM:')) {
-                        $marks[] = $cleanLine;
-                    }
+
+                // groupByBillOfLading() deja en MARKREC los 6 dígitos
+                // de secuencia/subsecuencia.
+                // Ej: 001001RENAULT - ORIGEN - -> RENAULT - ORIGEN -
+                $cleanLine = preg_replace('/^\d{6}/', '', $cleanLine);
+                $cleanLine = trim($cleanLine);
+
+                if ($cleanLine === '') {
+                    continue;
                 }
+
+                $upper = strtoupper($cleanLine);
+
+                // HS CODE / NCM son información aduanera, no marcas.
+                if (
+                    str_contains($upper, 'HS CODE:') ||
+                    str_contains($upper, 'NCM:')
+                ) {
+                    continue;
+                }
+
+                // Continuaciones puramente numéricas de HS CODE tampoco son marcas.
+                if (preg_match('/^\d{2}\.\d{2}\.\d{2}(?:\.\d{2})?$/', $cleanLine)) {
+                    continue;
+                }
+
+                $marks[] = $cleanLine;
             }
         }
-        
-        // FIX bug #6a: si no hay marcas útiles, retornar "SM" (sin barra, como pidió Roberto)
+
         if (empty($marks)) {
             return 'SM';
         }
-        
-        // Unir marcas encontradas
-        $marksText = implode(' / ', array_unique($marks));
-        
-        // FIX bug #6a: si las marcas son solo códigos técnicos, también "SM"
-        if (strlen($marksText) < 5 || 
-            str_contains($marksText, 'HS CODE') || 
-            str_contains($marksText, 'NCM')) {
-            return 'SM';
-        }
-        
-        return $marksText;
-    }
 
+        return implode(' / ', array_values(array_unique($marks)));
+    }
     /**
      * Extraer código NCM - NUEVO método para capturar de múltiples registros
      */
     protected function extractNCMCode(array $data): ?string
     {
-        $ncmPatterns = [
-            // Patrón en DESCREC: "NCM: 87.04.3190"
-            '/NCM[:\s]+([0-9]{2}\.?[0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/',
-            // Patrón en DESCREC: "HS CODE: 87.03.22"  
-            '/HS\s+CODE[:\s]+([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/',
-            // Patrón en MARKREC: "HS CODE: 87.03.22"
-            '/HS\s+CODE[:\s]+([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/',
-            // Patrón en CMMDREC al final: "87032100"
-            '/([0-9]{8})$/',
-        ];
-        
-        // Buscar en registros de descripción primero
-        $searchRecords = ['DESCREC0', 'MARKREC0', 'CMMDREC0'];
-        
-        foreach ($searchRecords as $recordType) {
-            if (!empty($data[$recordType])) {
-                foreach ($data[$recordType] as $line) {
-                    $cleanLine = trim($line);
-                    
-                    foreach ($ncmPatterns as $pattern) {
-                        if (preg_match($pattern, $cleanLine, $matches)) {
-                            $ncmCode = str_replace('.', '', $matches[1]); // Remover puntos
-                            
-                            // Validar formato NCM (8 dígitos)
-                            if (preg_match('/^[0-9]{8}$/', $ncmCode)) {
-                                return $ncmCode;
-                            }
-                            
-                            // Si es HS Code más corto, completar con ceros
-                            if (preg_match('/^[0-9]{6}$/', $ncmCode)) {
-                                return $ncmCode . '00';
-                            }
-                        }
+        // 1) CMMDREC: fuente estructurada prioritaria.
+        // Ej: ...006743880M3                           87032100
+        if (!empty($data['CMMDREC0'])) {
+            foreach ($data['CMMDREC0'] as $line) {
+                if (preg_match('/M3\s+([0-9]{8})(?:\s|$)/i', trim($line), $matches)) {
+                    return $matches[1];
+                }
+            }
+        }
+
+        // 2) NCM explícitamente identificado en DESCREC.
+        if (!empty($data['DESCREC0'])) {
+            foreach ($data['DESCREC0'] as $line) {
+                // DESCREC conserva los 6 dígitos técnicos de
+                // secuencia/subsecuencia: 021001HS CODE... -> HS CODE...
+                $line = trim(preg_replace('/^\d{6}/', '', trim($line)));
+
+                if (
+                    preg_match(
+                        '/\bNCM\s*:\s*([0-9]{2}\.?[0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $code = str_replace('.', '', $matches[1]);
+
+                    if (preg_match('/^[0-9]{8}$/', $code)) {
+                        return $code;
                     }
                 }
             }
         }
-        
+
+        // 3) HS CODE explícito.
+        // K-Line Colombia informa 6 dígitos:
+        // 87.03.22 -> contrato actual del sistema: 87032200.
+        foreach (['DESCREC0', 'MARKREC0'] as $recordType) {
+            if (empty($data[$recordType])) {
+                continue;
+            }
+
+            foreach ($data[$recordType] as $line) {
+                // DESCREC/MARKREC conservan los 6 dígitos técnicos
+                // de secuencia/subsecuencia.
+                $line = trim(preg_replace('/^\d{6}/', '', trim($line)));
+
+                if (
+                    preg_match(
+                        '/\bHS\s+CODE\s*:\s*([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $code = str_replace('.', '', $matches[1]);
+
+                    if (preg_match('/^[0-9]{6}$/', $code)) {
+                        return $code . '00';
+                    }
+                }
+            }
+        }
+
         return null;
     }
-
     /**
      * Extraer Master Bill of Lading - NUEVO método para identificar MBL
      */
@@ -1150,10 +1181,17 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     $measurements['net_weight_kg'] = floatval($netWeight);
                 }
                 
-                // Patrón: "M3: 6.743,88"
-                if (preg_match('/M3[:\s]+([0-9\.,]+)/i', $line, $matches)) {
-                    $volume = str_replace(',', '.', $matches[1]);
-                    $measurements['volume_m3'] = floatval($volume);
+                // DESCREC es solamente fallback.
+                // CMMDREC es la fuente estructurada prioritaria.
+                if (
+                    $measurements['volume_m3'] <= 0 &&
+                    preg_match('/M3[:\s]+([0-9\.,]+)/i', $line, $matches)
+                ) {
+                    $volume = $this->normalizeNumber($matches[1]);
+
+                    if ($volume !== null) {
+                        $measurements['volume_m3'] = $volume;
+                    }
                 }
             }
         }
@@ -1345,13 +1383,23 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             $cur = $this->detectCurrencyCode($u);
             if ($cur && !$res['currency']) $res['currency'] = $cur;
 
-            // Monto (primer número "grande" con 2 decimales)
-            if (preg_match_all('/\b\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})\b|\b\d+(?:[.,]\d{2})\b/', $u, $m)) {
-                foreach ($m[0] as $cand) {
-                    $val = $this->normalizeNumber($cand);
-                    if ($val !== null && $val > 0) {
-                        // Tomamos el primero razonable y salimos
-                        if ($res['amount'] === null) {
+            // Importe estructurado K-Line:
+            // G000213807880 -> 213807.880
+            // El campo tiene 3 decimales implícitos.
+            if (
+                $res['amount'] === null &&
+                preg_match('/G(\d{12})(?=[A-Z]|\s|$)/', $u, $m)
+            ) {
+                $res['amount'] = ((int) $m[1]) / 1000;
+            }
+
+            // Fallback para variantes que expresen el monto con punto/coma.
+            if ($res['amount'] === null) {
+                if (preg_match_all('/\b\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})\b|\b\d+(?:[.,]\d{2})\b/', $u, $m)) {
+                    foreach ($m[0] as $cand) {
+                        $val = $this->normalizeNumber($cand);
+
+                        if ($val !== null && $val > 0) {
                             $res['amount'] = $val;
                             break;
                         }
