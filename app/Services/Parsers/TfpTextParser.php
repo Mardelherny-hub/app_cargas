@@ -1084,7 +1084,7 @@ protected function extractValue(string $scope, string $label): ?string
             $documentTypeId = DocumentType::query()
                 ->where('code', $taxType)
                 ->where('country_id', $countryId)
-                ->where('is_active', true)
+                ->where('active', true)
                 ->value('id');
 
             if (!$documentTypeId) {
