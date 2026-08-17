@@ -2440,27 +2440,32 @@ class CmspEdiParser implements ManifestParserInterface
             return;
         }
 
-        $containerType = null;
+        $isoCode = strtoupper(trim((string) ($equipment['iso_code'] ?? '')));
 
-        if ($equipment && !empty($equipment['iso_code'])) {
-            $typeCode = $this->mapIsoContainerType($equipment['iso_code']);
-
-            if ($typeCode) {
-                $containerType = ContainerType::where('code', $typeCode)
-                    ->where('active', true)
-                    ->first();
-            }
+        if ($isoCode === '') {
+            throw new Exception(
+                "El contenedor {$containerNumber} tiene EQD pero no informa código ISO."
+            );
         }
 
-        if (!$containerType) {
-            $containerType = ContainerType::where('active', true)
-                ->where('is_standard', true)
-                ->first();
+        $typeCode = $this->mapIsoContainerType($isoCode);
+
+        if ($typeCode === null) {
+            throw new Exception(
+                "Código ISO de contenedor desconocido en CMSP: {$isoCode} "
+                . "({$containerNumber}). No se asigna un tipo estándar por defecto."
+            );
         }
 
+        $containerType = ContainerType::where('code', $typeCode)
+            ->where('active', true)
+            ->first();
+
         if (!$containerType) {
-            $this->stats['warnings'][] = "Tipo de contenedor no encontrado: {$containerNumber}";
-            return;
+            throw new Exception(
+                "El código ISO {$isoCode} corresponde al tipo {$typeCode}, "
+                . "pero ese tipo no existe activo en el catálogo de contenedores."
+            );
         }
 
         $condition = $esVacio ? 'V' : 'L';
@@ -2560,8 +2565,8 @@ class CmspEdiParser implements ManifestParserInterface
      * En ISO 6346 el primer caracter es el largo (2 = 20 pies, 4 = 40 pies) y el
      * segundo la altura (2 = estandar, 5 = high cube). El archivo de Roberto trae
      * solo 45G1 (138 veces) y 22G1 (40); el resto se incluye por equivalencia con
-     * los tipos ya cargados en container_types. Codigo desconocido -> null, y el
-     * llamador cae al tipo estandar por defecto.
+     * los tipos ya cargados en container_types. Codigo desconocido -> null; el llamador rechaza el archivo para no
+     * inventar un tipo físico de contenedor.
      */
     protected function mapIsoContainerType(string $isoCode): ?string
     {
