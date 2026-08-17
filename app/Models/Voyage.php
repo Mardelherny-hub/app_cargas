@@ -167,6 +167,7 @@ class Voyage extends Model
         'cargo_type',
         'is_consolidated',
         'has_transshipment',
+        'has_multiple_destinations',
         'requires_pilot',
         'is_convoy',
         'vessel_count',
@@ -328,6 +329,7 @@ class Voyage extends Model
         // === BOOLEANOS (CARACTERÍSTICAS Y ESTADOS) ===
         // Características del viaje
         'is_consolidated' => 'boolean',
+        'has_multiple_destinations' => 'boolean',
         'has_transshipment' => 'boolean',
         'requires_pilot' => 'boolean',
         'is_convoy' => 'boolean',
@@ -727,13 +729,25 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
      */
     public function getRouteDescriptionAttribute(): string
     {
-        $route = $this->originPort->code . ' → ' . $this->destinationPort->code;
-        
-        if ($this->transshipmentPort) {
-            $route = $this->originPort->code . ' → ' . $this->transshipmentPort->code . ' → ' . $this->destinationPort->code;
+        $origin = $this->originPort?->code ?? 'ORIGEN NO INFORMADO';
+
+        if ($this->has_multiple_destinations) {
+            return $origin . ' → MÚLTIPLES DESTINOS';
         }
-        
-        return $route;
+
+        $destination = $this->destinationPort?->code;
+
+        if ($destination === null) {
+            return $origin . ' → DESTINO NO INFORMADO';
+        }
+
+        if ($this->transshipmentPort) {
+            return $origin
+                . ' → ' . $this->transshipmentPort->code
+                . ' → ' . $destination;
+        }
+
+        return $origin . ' → ' . $destination;
     }
 
     /**
