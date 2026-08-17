@@ -958,6 +958,13 @@ class G2OceanXmlParser implements ManifestParserInterface
             );
         }
 
+        if ((int) $vessel->company_id !== (int) $companyId) {
+            throw new Exception(
+                'El vessel seleccionado no pertenece '
+                . 'a la empresa importadora.'
+            );
+        }
+
         $this->assertG2OceanVesselMatchesSource(
             $vessel,
             $blData['vessel_name'] ?? null
