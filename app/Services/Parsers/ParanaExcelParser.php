@@ -165,6 +165,9 @@ class ParanaExcelParser implements ManifestParserInterface
 
         try {
             $importRecord = $this->createImportRecord($filePath, $options);
+
+            \Illuminate\Support\Facades\DB::beginTransaction();
+
             $reader = IOFactory::createReaderForFile($filePath);
             $reader->setReadDataOnly(true);
             $spreadsheet = $reader->load($filePath);
@@ -182,8 +185,12 @@ class ParanaExcelParser implements ManifestParserInterface
             $voyage = $this->createVoyage($voyageData, $options);
             
             // Crear shipment principal
-            $vessel = $this->findOrCreateVessel($voyageData['barge_name'] ?? 'PAR13001', $voyage->company_id);
-            $shipment = $this->createShipment($voyage, $vessel, $voyageData);       
+            $vessel = Vessel::findOrFail($voyage->lead_vessel_id);
+            $shipment = $this->createShipment(
+                $voyage,
+                $vessel,
+                $voyageData
+            );
 
             // Procesar filas de datos (ignorar header si existe)
             $containers = [];
@@ -242,6 +249,8 @@ class ParanaExcelParser implements ManifestParserInterface
             // NUEVO: Registrar objetos creados y completar importación
             $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $items, $startTime);
 
+            \Illuminate\Support\Facades\DB::commit();
+
             return ManifestParseResult::success(
                 voyage: $voyage,
                 shipments: [$shipment],
@@ -256,6 +265,12 @@ class ParanaExcelParser implements ManifestParserInterface
             );
 
         } catch (Exception $e) {
+            if (
+                \Illuminate\Support\Facades\DB::transactionLevel() > 0
+            ) {
+                \Illuminate\Support\Facades\DB::rollBack();
+            }
+
             // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
             if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
                 if (isset($importRecord)) {
@@ -288,25 +303,49 @@ class ParanaExcelParser implements ManifestParserInterface
         }
     }
 
+
     protected function extractVoyageData($worksheet): array
     {
-        // Detectar si la fila 1 es encabezado (por el contenido de A1)
-        $a1 = trim((string)$worksheet->getCell('A1')->getCalculatedValue());
-        $isHeaderRow = in_array(mb_strtoupper($a1), ['LOCATION NAME','COMPANY','LOCATION'], true);
+        $a1 = trim(
+            (string) $worksheet->getCell('A1')->getCalculatedValue()
+        );
 
-        // Si la fila 1 es encabezado, los datos reales empiezan en la 2
+        $isHeaderRow = in_array(
+            mb_strtoupper($a1),
+            ['LOCATION NAME', 'COMPANY', 'LOCATION'],
+            true
+        );
+
         $row = $isHeaderRow ? 2 : 1;
 
         return [
-            'company_name'   => $worksheet->getCell('A' . $row)->getCalculatedValue() ?: 'MAERSK LINE ARGENTINA S.A',
-            'barge_name'     => $worksheet->getCell('M' . $row)->getCalculatedValue() ?: 'PAR13001',
-            'voyage_number'  => $worksheet->getCell('N' . $row)->getCalculatedValue() ?: 'V022NB',
-            'POL'            => $worksheet->getCell('Q' . $row)->getCalculatedValue() ?: 'ARBUE',
-            'POD'            => $worksheet->getCell('S' . $row)->getCalculatedValue() ?: 'PYTVT',
-            'POL_terminal'   => $worksheet->getCell('R' . $row)->getCalculatedValue(),
-            'POD_terminal'   => $worksheet->getCell('T' . $row)->getCalculatedValue() ?: 'TERPORT VILLETA',
+            'company_name' => $this->nullableSourceText(
+                $worksheet->getCell('A' . $row)->getCalculatedValue()
+            ),
+            'barge_name' => $this->nullableSourceText(
+                $worksheet->getCell('M' . $row)->getCalculatedValue()
+            ),
+            'voyage_number' => $this->requireParanaSourceText(
+                $worksheet->getCell('N' . $row)->getCalculatedValue(),
+                'VOYAGE_NO'
+            ),
+            'POL' => $this->requireParanaSourceText(
+                $worksheet->getCell('Q' . $row)->getCalculatedValue(),
+                'POL'
+            ),
+            'POD' => $this->requireParanaSourceText(
+                $worksheet->getCell('S' . $row)->getCalculatedValue(),
+                'POD'
+            ),
+            'POL_terminal' => $this->nullableSourceText(
+                $worksheet->getCell('R' . $row)->getCalculatedValue()
+            ),
+            'POD_terminal' => $this->nullableSourceText(
+                $worksheet->getCell('T' . $row)->getCalculatedValue()
+            ),
         ];
     }
+
 
 
     protected function extractRowData($worksheet, int $row): array
@@ -320,82 +359,100 @@ class ParanaExcelParser implements ManifestParserInterface
         return $data;
     }
 
-    protected function createVoyage(array $data, array $options = []): Voyage
-    {
-        // DEBUG: Verificar estado del usuario y company
-        $user = auth()->user();
-        Log::info('createVoyage Debug', [
-            'user_id' => $user?->id,
-            'user_email' => $user?->email,
-            'user_company_id' => $user?->company_id,
-            'user_userable_type' => $user?->userable_type,
-            'user_userable_id' => $user?->userable_id,
-            'user_company_relation' => $user?->company?->id ?? 'NO COMPANY RELATION',
-        ]);
 
-        // CORREGIDO: Obtener company_id correctamente
-        if ($user->company_id) {
-            $companyId = $user->company_id;
-        } elseif ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
-            $companyId = (int) $user->userable_id;
-        } else {
-            $companyId = null;
+    protected function createVoyage(
+        array $data,
+        array $options = []
+    ): Voyage {
+        $user = auth()->user();
+
+        if (!$user) {
+            throw new \Exception(
+                'PARANA requiere un usuario autenticado.'
+            );
         }
+
+        $companyId = $user->company_id
+            ?: (
+                $user->userable_type === 'App\Models\Company'
+                    ? $user->userable_id
+                    : null
+            );
 
         if (!$companyId) {
-            throw new \Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
+            throw new \Exception(
+                "Usuario {$user->id} no tiene empresa asignada."
+            );
         }
 
-        // Crear/buscar puertos PRIMERO para obtener country_ids
+        $originPort = $this->resolvePortStrict(
+            $this->requireParanaSourceText(
+                $data['POL'] ?? null,
+                'POL'
+            )
+        );
 
-        $originPort = $this->resolvePortStrict($data['POL']);
-        $destPort = $this->resolvePortStrict($data['POD']);
-        
-        // CORREGIDO: Buscar o crear vessel con campos obligatorios
-        // USAR vessel seleccionado en lugar de crear fake
+        $destPort = $this->resolvePortStrict(
+            $this->requireParanaSourceText(
+                $data['POD'] ?? null,
+                'POD'
+            )
+        );
+
         $vesselId = $options['vessel_id'] ?? null;
-        if ($vesselId) {
-            $vessel = Vessel::find($vesselId);
-            if (!$vessel) {
-                throw new \Exception("Vessel con ID {$vesselId} no encontrado");
-            }
-        } else {
-            // Fallback: buscar o crear vessel (para compatibilidad)
-            $vessel = $this->findOrCreateVessel($data['barge_name'] ?? 'PAR13001', $companyId);
+
+        if (!$vesselId) {
+            throw new \Exception(
+                'PARANA requiere vessel_id seleccionado.'
+            );
         }
 
-        // Usar el número de viaje real del archivo (celda N). Antes se generaba uno
-        // sintético con uniqid() — parche temporal de testing (06/08/2025) que rompía
-        // la detección de duplicados. El voyage_number es único global; el guard avisa
-        // si ya existe.
-        $voyageNumber = $data['voyage_number'];
+        $vessel = Vessel::find($vesselId);
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de chocar el índice.
+        if (!$vessel) {
+            throw new \Exception(
+                "Vessel con ID {$vesselId} no encontrado."
+            );
+        }
+
+        if ((int) $vessel->company_id !== (int) $companyId) {
+            throw new \Exception(
+                'El vessel seleccionado no pertenece '
+                . 'a la empresa importadora.'
+            );
+        }
+
+        $voyageNumber = $this->requireParanaSourceText(
+            $data['voyage_number'] ?? null,
+            'VOYAGE_NO'
+        );
+
         $this->guardVoyageNumberIsFree($voyageNumber);
+
+        $timing = $this->buildParanaVoyageTiming();
 
         return Voyage::create([
             'company_id' => $companyId,
             'voyage_number' => $voyageNumber,
             'origin_port_id' => $originPort->id,
             'destination_port_id' => $destPort->id,
-            'lead_vessel_id' => $vessel->id, // CORREGIDO: vessel real con registration_number
-            
-            // CORREGIDO: country_ids dinámicos desde los puertos
+            'lead_vessel_id' => $vessel->id,
             'origin_country_id' => $originPort->country_id,
             'destination_country_id' => $destPort->country_id,
-            
-            'departure_date' => now(),
-            'estimated_arrival_date' => now()->addDays(3),
+            'departure_date' => $timing['departure_date'],
+            'estimated_arrival_date' =>
+                $timing['estimated_arrival_date'],
             'status' => 'planning',
-            
-            // CORREGIDO: valores enum dinámicos según datos
             'voyage_type' => $this->determineVoyageType($data),
-            'cargo_type' => $this->determineCargoType($data, $originPort, $destPort),
-            
-            'created_by_user_id' => auth()->id()
+            'cargo_type' => $this->determineCargoType(
+                $data,
+                $originPort,
+                $destPort
+            ),
+            'created_by_user_id' => auth()->id(),
         ]);
     }
+
 
     protected function determineVoyageType(array $data): string
     {
@@ -414,57 +471,58 @@ class ParanaExcelParser implements ManifestParserInterface
         return 'single_vessel'; // Default
     }
 
-    protected function determineCargoType(array $data, Port $originPort, Port $destPort): string
-    {
-        // DEBUG: Log para analizar determinación de cargo type
-        Log::info('determineCargoType Debug', [
-            'origin_country' => $originPort->country_id,
-            'dest_country' => $destPort->country_id,
-            'manifest_type' => $data['MANIFEST_TYPE'] ?? 'N/A'
-        ]);
-        
-        // Determinar basado en países de origen y destino
-        $originCountry = $originPort->country_id;
-        $destCountry = $destPort->country_id;
-        
-        // Argentina (1) -> Paraguay (2) = Export
-        if ($originCountry == 1 && $destCountry == 2) {
-            return 'export';
-        }
-        
-        // Paraguay (2) -> Argentina (1) = Import  
-        if ($originCountry == 2 && $destCountry == 1) {
-            return 'import';
-        }
-        
-        // Mismo país = Cabotage
-        if ($originCountry == $destCountry) {
+
+    protected function determineCargoType(
+        array $data,
+        Port $originPort,
+        Port $destPort
+    ): string {
+        if (
+            (int) $originPort->country_id
+            === (int) $destPort->country_id
+        ) {
             return 'cabotage';
         }
-        
-        // Países diferentes con transbordo = Transit
-        if (isset($data['transshipment_port']) || str_contains($data['MANIFEST_TYPE'] ?? '', 'TRANSIT')) {
+
+        if (
+            !empty($data['transshipment_port'])
+            || str_contains(
+                strtoupper(
+                    (string) ($data['MANIFEST_TYPE'] ?? '')
+                ),
+                'TRANSIT'
+            )
+        ) {
             return 'transit';
         }
-        
-        return 'export'; // Default para PARANA (generalmente AR->PY)
+
+        return 'export';
     }
 
-    protected function createShipment(Voyage $voyage, Vessel $vessel, array $data): Shipment
-    {
+
+
+    protected function createShipment(
+        Voyage $voyage,
+        Vessel $vessel,
+        array $data
+    ): Shipment {
         return Shipment::create([
             'voyage_id' => $voyage->id,
-            'vessel_id' => $vessel->id,  // CORREGIDO: usar vessel real
-            'shipment_number' => 'PARANA-' . now()->format('YmdHis'),
+            'vessel_id' => $vessel->id,
+            'shipment_number' =>
+                'PARANA-' . $voyage->voyage_number,
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
-            'cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 1500.00,  // CORREGIDO: usar capacidad real
-            'container_capacity' => $vessel->container_capacity ?? 64,  // CORREGIDO: usar capacidad real
+            'cargo_capacity_tons' =>
+                $vessel->cargo_capacity_tons,
+            'container_capacity' =>
+                $vessel->container_capacity ?? 0,
             'status' => 'planning',
             'active' => true,
-            'created_by_user_id' => auth()->id()
+            'created_by_user_id' => auth()->id(),
         ]);
     }
+
 
     protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
     {
@@ -478,22 +536,34 @@ class ParanaExcelParser implements ManifestParserInterface
 
         // Resolver puertos antes de tocar clientes.
         $loadingPort = $this->resolvePortStrict(
-            $data['POL'] ?? 'ARBUE'
+            $this->requireParanaSourceText(
+                $data['POL'] ?? null,
+                'POL'
+            )
         );
 
         $dischargePort = $this->resolvePortStrict(
-            $data['POD'] ?? 'PYTVT'
+            $this->requireParanaSourceText(
+                $data['POD'] ?? null,
+                'POD'
+            )
         );
 
         $shipper = $this->findOrCreateClient([
-            'name' => $data['SHIPPER_NAME'] ?? 'Shipper Unknown',
+            'name' => $this->requireParanaSourceText(
+                $data['SHIPPER_NAME'] ?? null,
+                'SHIPPER_NAME'
+            ),
             'address' => $this->buildPartyAddress($data, 'SHIPPER'),
             'country' => $data['SHIPPER_COUNTRY'] ?? null,
             'phone' => $data['SHIPPER_PHONE'] ?? null,
         ], $shipment->voyage->company_id, (int) $loadingPort->country_id);
 
         $consignee = $this->findOrCreateClient([
-            'name' => $data['CONSIGNEE_NAME'] ?? 'Consignee Unknown',
+            'name' => $this->requireParanaSourceText(
+                $data['CONSIGNEE_NAME'] ?? null,
+                'CONSIGNEE_NAME'
+            ),
             'address' => $this->buildPartyAddress($data, 'CONSIGNEE'),
             'country' => $data['CONSIGNEE_COUNTRY'] ?? null,
             'phone' => $data['CONSIGNEE_PHONE'] ?? null,
@@ -506,20 +576,24 @@ class ParanaExcelParser implements ManifestParserInterface
             throw new \Exception("Ya existe un conocimiento de embarque con número: {$billNumber}.");
         }
 
-        // CORREGIDO: Generar fechas obligatorias
-        $billDate = $this->parseDateFromData($data['BL_DATE']) ?? now();
-        $loadingDate = $this->parseDateFromData($data['BL_DATE']) ?? now()->addDays(1);
+        $billDates = $this->buildParanaBillDates(
+            $data['BL_DATE'] ?? null
+        );
 
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['BL_NUMBER'],
             
             // AGREGADO: Campos de fecha obligatorios
-            'bill_date' => $billDate,
-            'loading_date' => $loadingDate,
+            'bill_date' => $billDates['bill_date'],
+            'loading_date' => $billDates['loading_date'],
             
             // AGREGADO: Descripción de carga obligatoria
-            'cargo_description' => $data['DESCRIPTION'] ?? 'Mercadería general importada desde PARANA Excel',
+            'cargo_description' =>
+                $this->requireParanaSourceText(
+                    $data['DESCRIPTION'] ?? null,
+                    'DESCRIPTION'
+                ),
             
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
@@ -533,21 +607,24 @@ class ParanaExcelParser implements ManifestParserInterface
             // AGREGADO: Campos adicionales con valores por defecto
             'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
             'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
-            'total_packages' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),  // CORREGIDO: era PACKAGE_COUNT
+            'total_packages' =>
+                $this->parseParanaPackageQuantity(
+                    $data['NUMBER_OF_PACKAGES'] ?? null
+                ),
             'volume_m3' => $this->parseVolume($data['VOLUME']),
             'master_bill_number' => $data['MLO_BL_NR'] ?? null, // MLO BL Number agregado
             'permiso_embarque' => $data['PERMISO'] ?? null, // Permiso de embarque agregado
             'commodity_code' => $data['NCM'] ?? null, // Código NCM agregado
-            'cargo_marks' => !empty($data['MARKS_DESCRIPTION']) && $data['MARKS_DESCRIPTION'] !== 'N/A' 
-                ? $data['MARKS_DESCRIPTION'] 
-                : 'S/M', // S/M si no hay marcas 
-        ]);
+            'cargo_marks' => $this->normalizeParanaCargoMarks(
+                $data['MARKS_DESCRIPTION'] ?? null
+            ),
+]);
 
         Log::info('BillOfLading creado', [
             'bill_id' => $bill->id,
             'bill_number' => $bill->bill_number,
-            'bill_date' => $bill->bill_date->toDateString(),
-            'loading_date' => $bill->loading_date->toDateString()
+            'bill_date' => $bill->bill_date?->toDateString(),
+            'loading_date' => $bill->loading_date?->toDateString()
         ]);
 
         // Dirección del cliente: persistir en ficha (cliente nuevo/sin dirección)
@@ -567,6 +644,120 @@ class ParanaExcelParser implements ManifestParserInterface
         return $bill;
     }
 
+
+    protected function nullableSourceText($value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : null;
+    }
+
+    protected function requireParanaSourceText(
+        $value,
+        string $field
+    ): string {
+        $value = $this->nullableSourceText($value);
+
+        if ($value === null) {
+            throw new \Exception(
+                "PARANA: falta {$field} en el archivo."
+            );
+        }
+
+        return $value;
+    }
+
+    protected function buildParanaVoyageTiming(): array
+    {
+        return [
+            'departure_date' => null,
+            'estimated_arrival_date' => null,
+        ];
+    }
+
+    protected function buildParanaBillDates($value): array
+    {
+        $value = $this->nullableSourceText($value);
+
+        if ($value === null) {
+            return [
+                'bill_date' => null,
+                'loading_date' => null,
+            ];
+        }
+
+        $billDate = $this->parseDateFromData($value);
+
+        if (!$billDate) {
+            throw new \Exception(
+                "PARANA: BL_DATE inválida: {$value}"
+            );
+        }
+
+        return [
+            'bill_date' => $billDate,
+            'loading_date' => null,
+        ];
+    }
+
+    protected function parseParanaPackageQuantity($value): int
+    {
+        $value = trim((string) $value);
+
+        if ($value === '' || !ctype_digit($value)) {
+            throw new \Exception(
+                'PARANA: NUMBER_OF_PACKAGES inválido o ausente.'
+            );
+        }
+
+        $quantity = (int) $value;
+
+        if ($quantity <= 0) {
+            throw new \Exception(
+                'PARANA: NUMBER_OF_PACKAGES debe ser mayor que cero.'
+            );
+        }
+
+        return $quantity;
+    }
+
+    protected function normalizeParanaCargoMarks($value): ?string
+    {
+        $value = trim((string) $value);
+
+        if (
+            $value === ''
+            || strtoupper($value) === 'N/A'
+        ) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    protected function mapParanaContainerState($status): array
+    {
+        $status = strtoupper(
+            trim((string) $status)
+        );
+
+        return match ($status) {
+            'F', 'FULL', 'L' => [
+                'condition' => 'L',
+                'operational_status' => 'loaded',
+                'is_empty' => false,
+            ],
+            'E', 'EMPTY' => [
+                'condition' => 'V',
+                'operational_status' => 'empty',
+                'is_empty' => true,
+            ],
+            default => throw new \Exception(
+                "PARANA: CONTAINER_STATUS inválido: {$status}"
+            ),
+        };
+    }
+
     protected function parseDateFromData(?string $dateValue): ?\Carbon\Carbon
     {
         if (!$dateValue) {
@@ -584,104 +775,128 @@ class ParanaExcelParser implements ManifestParserInterface
         }
     }
 
-    protected function createContainer(BillOfLading $bill, array $data): ?Container
-    {
-        if (empty($data['CONTAINER_NUMBER'])) {
+
+    protected function createContainer(
+        BillOfLading $bill,
+        array $data
+    ): ?Container {
+        $number = trim(
+            (string) ($data['CONTAINER_NUMBER'] ?? '')
+        );
+
+        if ($number === '') {
             return null;
         }
 
-        // DEBUG: Log del container que se está procesando
-        Log::info('createContainer Debug', [
-            'container_number' => $data['CONTAINER_NUMBER'],
-            'container_type' => $data['CONTAINER_TYPE'] ?? 'N/A',
-            'bill_id' => $bill->id
-        ]);
-
-        // Verificar si ya existe
-       // VALIDACIÓN: Verificar si ya existe contenedor con este número
-        $existing = Container::where('container_number', $data['CONTAINER_NUMBER'])->first();
-        if ($existing) {
-            throw new \Exception("Ya existe un contenedor con número: {$data['CONTAINER_NUMBER']}.");
+        if (
+            Container::where(
+                'container_number',
+                $number
+            )->exists()
+        ) {
+            throw new \Exception(
+                "Ya existe un contenedor con número: {$number}."
+            );
         }
-        // CORREGIDO: Usar container types existentes en lugar de crear nuevos
+
         $containerType = $this->findExistingContainerType(
-            $data['CONTAINER_TYPE'] ?? '40HC'
+            $this->requireParanaSourceText(
+                $data['CONTAINER_TYPE'] ?? null,
+                'CONTAINER_TYPE'
+            )
         );
 
-        $container = Container::create([
-            'container_number' => $data['CONTAINER_NUMBER'],
+        $state = $this->mapParanaContainerState(
+            $data['CONTAINER_STATUS'] ?? null
+        );
+
+        return Container::create([
+            'container_number' => $number,
             'container_type_id' => $containerType->id,
-            'tare_weight_kg' => $this->parseWeight($data['TARE_WEIGHT']),
-            'current_gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
-            'cargo_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
-            'max_gross_weight_kg' => 30000,
-            'condition' => 'L', // Loaded - valor fijo válido
+            'tare_weight_kg' => $this->parseWeight(
+                $data['TARE_WEIGHT'] ?? null
+            ),
+            'current_gross_weight_kg' => $this->parseWeight(
+                $data['GROSS_WEIGHT'] ?? null
+            ),
+            'cargo_weight_kg' => $state['is_empty']
+                ? 0
+                : $this->parseWeight(
+                    $data['NET_WEIGHT'] ?? null
+                ),
+            'max_gross_weight_kg' =>
+                $containerType->max_gross_weight_kg,
+            'condition' => $state['condition'],
             'shipper_seal' => $data['SEAL_NO'] ?? null,
-            'operational_status' => 'loaded',
+            'operational_status' =>
+                $state['operational_status'],
             'current_port_id' => $bill->loading_port_id,
             'webservice_data' => json_encode([
                 'parana_data' => [
-                    'description' => $data['DESCRIPTION'] ?? null,
-                    'imo_number' => $data['IMO_NUMBER'] ?? null,
-                    'un_number' => $data['UN_NUMBER'] ?? null,
-                    'temp_max' => $data['TEMP_MAX'] ?? null,
-                    'temp_min' => $data['TEMP_MIN'] ?? null,
-                    'packages' => $data['NUMBER_OF_PACKAGES'] ?? null,
-                    'volume' => $data['VOLUME'] ?? null
-                ]
+                    'description' =>
+                        $data['DESCRIPTION'] ?? null,
+                    'imo_number' =>
+                        $data['IMO_NUMBER'] ?? null,
+                    'un_number' =>
+                        $data['UN_NUMBER'] ?? null,
+                    'temp_max' =>
+                        $data['TEMP_MAX'] ?? null,
+                    'temp_min' =>
+                        $data['TEMP_MIN'] ?? null,
+                    'packages' =>
+                        $data['NUMBER_OF_PACKAGES'] ?? null,
+                    'volume' =>
+                        $data['VOLUME'] ?? null,
+                ],
             ]),
             'active' => true,
-            'created_by_user_id' => auth()->id()
+            'created_by_user_id' => auth()->id(),
         ]);
-
-        Log::info('Container creado', [
-            'container_id' => $container->id,
-            'number' => $container->container_number,
-            'type' => $containerType->code,
-            'operational_status' => $container->operational_status
-        ]);
-
-        return $container;
-
     }
 
-    protected function findExistingContainerType(string $typeCode): ContainerType
-    {
-        // Mapear códigos PARANA a códigos estándar existentes
-        $typeMapping = [
-            '20DV' => '20GP',  // Dry Van -> General Purpose
-            '40DV' => '40GP',  // Dry Van -> General Purpose  
-            '20GP' => '20GP',  // Ya correcto
-            '40GP' => '40GP',  // Ya correcto
-            '40HC' => '40HC',  // Ya correcto
-            '20RF' => '20RF',  // Refrigerado
-            '40RF' => '40HC',  // No hay 40RF, usar 40HC
-            '45HC' => '40HC',  // 45HC -> 40HC como fallback
+
+
+    protected function findExistingContainerType(
+        string $typeCode
+    ): ContainerType {
+        $source = strtoupper(trim($typeCode));
+
+        $mapping = [
+            '20DV' => '20GP',
+            '20GP' => '20GP',
+            '40DV' => '40GP',
+            '40GP' => '40GP',
+            '40HC' => '40HC',
+            '20RF' => '20RF',
+            '40RH' => '40RH',
+            '20TN' => '20TN',
+            '20OT' => '20OT',
         ];
-        
-        $mappedCode = $typeMapping[$typeCode] ?? '40HC'; // Default 40HC
-        
-        $type = ContainerType::where('code', $mappedCode)
-                            ->where('active', true)
-                            ->first();
-        
-        if (!$type) {
-            // Si no existe el mapeado, usar el primer tipo activo disponible
-            $type = ContainerType::where('active', true)->first();
-            
-            if (!$type) {
-                throw new \Exception("No hay tipos de contenedor disponibles. Ejecute ContainerTypesSeeder.");
-            }
-            
-            Log::warning('Tipo de contenedor no encontrado, usando fallback', [
-                'requested' => $typeCode,
-                'mapped' => $mappedCode,
-                'fallback_used' => $type->code
-            ]);
+
+        if (!isset($mapping[$source])) {
+            throw new \Exception(
+                "Tipo de contenedor PARANA {$source} "
+                . 'sin equivalencia comprobada en catálogo.'
+            );
         }
-        
+
+        $type = ContainerType::where(
+                'code',
+                $mapping[$source]
+            )
+            ->where('active', true)
+            ->first();
+
+        if (!$type) {
+            throw new \Exception(
+                "Falta {$mapping[$source]} en catálogo "
+                . "para PARANA {$source}."
+            );
+        }
+
         return $type;
     }
+
 
     protected function findOrCreatePort(?string $code, string $defaultCity = 'Puerto'): ?Port
     {
@@ -1243,119 +1458,132 @@ class ParanaExcelParser implements ManifestParserInterface
         ];
     }
 
-    protected function findOrCreateVessel(string $bargeName, int $companyId): Vessel
-    {
-        $vessel = Vessel::where('registration_number', $bargeName)->first();
-        
-        if (!$vessel) {
-            $vessel = Vessel::create([
-            'name' => $bargeName,
-            'registration_number' => $bargeName, // Campo obligatorio
-            'vessel_type_id' => 1,
-            'company_id' => $companyId,
-            'flag_country_id' => 1,
-            'length_meters' => 120.00, // Campo obligatorio
-            'beam_meters' => 18.00,    // Campo obligatorio
-            'draft_meters' => 3.50,    // Campo obligatorio
-            'depth_meters' => 8.00,    // Campo obligatorio agregado
-            'cargo_capacity_tons' => 1500.00,  // Campo obligatorio agregado
-            'operational_status' => 'active',   // Campo obligatorio agregado
-            'active' => true,
-            'created_by_user_id' => auth()->id()  // Campo obligatorio agregado
-        ]);
-        }
-        
-        return $vessel;
+
+    protected function findOrCreateVessel(
+        string $bargeName,
+        int $companyId
+    ): Vessel {
+        throw new \Exception(
+            'PARANA requiere el vessel seleccionado explícitamente '
+            . 'durante la importación.'
+        );
     }
+
+
 
     protected function extractVesselDataFromExcel($worksheet): array
     {
-        // Extraer datos REALES de la barcaza desde las primeras filas del Excel
-        $bargeId = $worksheet->getCell('L1')->getCalculatedValue(); // BARGE_ID
-        $bargeName = $worksheet->getCell('M1')->getCalculatedValue(); // BARGE_NAME como PAR13001
-        
-        // Si no hay nombre en M1, buscar en otras filas
-        if (empty($bargeName)) {
-            for ($row = 2; $row <= 10; $row++) {
-                $testName = $worksheet->getCell('M' . $row)->getCalculatedValue();
-                if (!empty($testName) && preg_match('/^PAR\d+/', $testName)) {
-                    $bargeName = $testName;
-                    break;
-                }
-            }
-        }
-        
-        // Si aún no encontramos el nombre, usar valor por defecto pero loggearlo
-        if (empty($bargeName)) {
-            Log::warning('PARANA: No se encontró nombre de barcaza en Excel, usando valor por defecto');
-            $bargeName = 'PAR13001';
-        }
-        
+        $a1 = trim(
+            (string) $worksheet->getCell('A1')->getCalculatedValue()
+        );
+
+        $row = in_array(
+            mb_strtoupper($a1),
+            ['LOCATION NAME', 'COMPANY', 'LOCATION'],
+            true
+        ) ? 2 : 1;
+
+        $bargeName = $this->nullableSourceText(
+            $worksheet->getCell('M' . $row)->getCalculatedValue()
+        );
+
+        $bargeId = $this->nullableSourceText(
+            $worksheet->getCell('L' . $row)->getCalculatedValue()
+        );
+
         return [
             'barge_id' => $bargeId,
             'barge_name' => $bargeName,
-            'registration_number' => $bargeName, // Usar el nombre como registration_number
-            'cargo_capacity_tons' => 1500.00, // Capacidad típica barcaza Paraná
-            'container_capacity' => 64, // Capacidad típica contenedores
+            'registration_number' => $bargeId,
         ];
     }
 
-    protected function createShipmentItem(BillOfLading $bill, array $data): ?\App\Models\ShipmentItem
-    {
-        // Generar line_number único para este bill_of_lading
-        $nextLineNumber = \App\Models\ShipmentItem::where('bill_of_lading_id', $bill->id)
-            ->max('line_number') + 1;
-        
+
+
+    protected function createShipmentItem(
+        BillOfLading $bill,
+        array $data
+    ): ?\App\Models\ShipmentItem {
+        $nextLineNumber =
+            \App\Models\ShipmentItem::where(
+                'bill_of_lading_id',
+                $bill->id
+            )->max('line_number') + 1;
+
         if ($nextLineNumber < 1) {
             $nextLineNumber = 1;
         }
 
-        try {
-            $shipmentItem = \App\Models\ShipmentItem::create([
+        $quantity = $this->parseParanaPackageQuantity(
+            $data['NUMBER_OF_PACKAGES'] ?? null
+        );
+
+        $shipmentItem =
+            \App\Models\ShipmentItem::create([
                 'bill_of_lading_id' => $bill->id,
                 'line_number' => $nextLineNumber,
-                'item_description' => $data['DESCRIPTION'] ?? 'Mercadería general',
-                'package_quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
-                'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
-                'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
-                'cargo_type_id' => $this->determinateCargoTypeId($data),
-                'packaging_type_id' => $this->determinatePackagingTypeId($data),                
-                'volume_m3' => $this->parseVolume($data['VOLUME']),
-                'commodity_code' => $data['NCM'] ?? null,                             // BP
-                'cargo_marks' => $data['MARKS_DESCRIPTION'] ?? null,                  // BI
-                'created_by_user_id' => auth()->id()
+                'item_description' =>
+                    $this->requireParanaSourceText(
+                        $data['DESCRIPTION'] ?? null,
+                        'DESCRIPTION'
+                    ),
+                'package_quantity' => $quantity,
+                'gross_weight_kg' => $this->parseWeight(
+                    $data['GROSS_WEIGHT'] ?? null
+                ),
+                'net_weight_kg' => $this->parseWeight(
+                    $data['NET_WEIGHT'] ?? null
+                ),
+                'cargo_type_id' =>
+                    $this->determinateCargoTypeId($data),
+                'packaging_type_id' =>
+                    $this->determinatePackagingTypeId($data),
+                'volume_m3' => $this->parseVolume(
+                    $data['VOLUME'] ?? null
+                ),
+                'commodity_code' =>
+                    $data['NCM'] ?? null,
+                'cargo_marks' =>
+                    $this->normalizeParanaCargoMarks(
+                        $data['MARKS_DESCRIPTION'] ?? null
+                    ),
+                'created_by_user_id' => auth()->id(),
             ]);
 
-            Log::info('ShipmentItem created successfully', [
-                'item_id' => $shipmentItem->id,
-                'line_number' => $shipmentItem->line_number,
-                'bill_id' => $bill->id
-            ]);
+        if (!empty($data['CONTAINER_NUMBER'])) {
+            $container = Container::where(
+                'container_number',
+                $data['CONTAINER_NUMBER']
+            )->first();
 
-            // Crear relación con contenedor si existe
-            if (!empty($data['CONTAINER_NUMBER'])) {
-                $container = Container::where('container_number', $data['CONTAINER_NUMBER'])->first();
-                
-                if ($container) {
-                    $shipmentItem->containers()->attach($container->id, [
-                        'package_quantity' => intval($data['NUMBER_OF_PACKAGES'] ?? 1),
-                        'gross_weight_kg' => $this->parseWeight($data['GROSS_WEIGHT']),
-                        'net_weight_kg' => $this->parseWeight($data['NET_WEIGHT']),
-                        'volume_m3' => $this->parseVolume($data['VOLUME']),
-                    ]);
-                }
+            if (!$container) {
+                throw new \Exception(
+                    'No se encontró el contenedor procesado: '
+                    . $data['CONTAINER_NUMBER']
+                );
             }
 
-            return $shipmentItem;
-        } catch (\Exception $e) {
-            Log::error('Error creating ShipmentItem', [
-                'bill_id' => $bill->id,
-                'data' => $data,
-                'error' => $e->getMessage()
-            ]);
-            return null;
+            $shipmentItem->containers()->attach(
+                $container->id,
+                [
+                    'package_quantity' => $quantity,
+                    'gross_weight_kg' => $this->parseWeight(
+                        $data['GROSS_WEIGHT'] ?? null
+                    ),
+                    'net_weight_kg' => $this->parseWeight(
+                        $data['NET_WEIGHT'] ?? null
+                    ),
+                    'volume_m3' => $this->parseVolume(
+                        $data['VOLUME'] ?? null
+                    ),
+                    'status' => 'planned',
+                ]
+            );
         }
+
+        return $shipmentItem;
     }
+
 
     /**
      * Crear registro de importación - NUEVO
@@ -1387,40 +1615,44 @@ class ParanaExcelParser implements ManifestParserInterface
     /**
      * Completar registro de importación - NUEVO
      */
+
     protected function completeImportRecord(
-        ManifestImport $importRecord, 
-        Voyage $voyage, 
-        array $bills, 
+        ManifestImport $importRecord,
+        Voyage $voyage,
+        array $bills,
         array $containers,
         array $items,
         float $startTime
     ): void {
         $processingTime = microtime(true) - $startTime;
-        
-        // Registrar IDs de objetos creados
-        $createdObjects = [
-            'voyages' => [$voyage->id],
-            'shipments' => [$voyage->shipments()->first()->id ?? null],
-            'bills' => array_map(fn($bill) => $bill->id, $bills),
-            'containers' => array_map(fn($container) => $container->id, $containers),
-            'items' => array_map(fn($item) => $item->id, $items)                                                                                    
-        ];
-        
-        // Filtrar nulls
-        $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
-        
-        $importRecord->recordCreatedObjects($createdObjects);
+
+        $shipmentId = $voyage->shipments()->value('id');
+
+        $importRecord->recordExplicitlyCreatedObjects([
+            'voyage' => [$voyage->id],
+            'shipment' => array_filter([$shipmentId]),
+            'bill' => array_map(
+                fn ($bill) => $bill->id,
+                $bills
+            ),
+            'container' => array_map(
+                fn ($container) => $container->id,
+                $containers
+            ),
+            'item' => array_map(
+                fn ($item) => $item->id,
+                $items
+            ),
+        ]);
+
         $importRecord->markAsCompleted([
             'voyage_id' => $voyage->id,
-            'processing_time_seconds' => round($processingTime, 2),
-            'notes' => 'Importación PARANA Excel completada exitosamente'
-        ]);
-        
-        Log::info('PARANA import record completed', [
-            'import_id' => $importRecord->id,
-            'processing_time' => round($processingTime, 2) . 's'
+            'processing_time_seconds' =>
+                round($processingTime, 2),
+            'notes' => 'Importación PARANA Excel completada',
         ]);
     }
+
 
     protected function parseConsigneeMixedData(string $mixedData): array
     {
