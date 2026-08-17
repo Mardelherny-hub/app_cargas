@@ -72,6 +72,9 @@ class CmspEdiParser implements ManifestParserInterface
     protected array $ediSegments = [];
     protected array $parsedData = [];
 
+    /** IDs de contenedores creados realmente por esta importación. */
+    protected array $createdContainerIds = [];
+
     /**
      * Verificar si puede parsear el archivo
      */
@@ -135,6 +138,7 @@ class CmspEdiParser implements ManifestParserInterface
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $startTime = microtime(true);
+        $this->createdContainerIds = [];
 
         Log::info('Starting CMSP EDI parsing', [
             'file_path' => $filePath,
@@ -354,10 +358,16 @@ class CmspEdiParser implements ManifestParserInterface
                     break;
 
                 case 'CNI':
-                    // Guardar contenedor anterior si existe y tiene items
+                    // Guardar conocimiento anterior si existe y tiene items.
                     if ($currentContainer !== null && !empty($currentContainer['items'])) {
                         $this->parsedData['containers'][] = $currentContainer;
                     }
+
+                    // Un nuevo CNI comienza fuera de cualquier GID anterior.
+                    // Si se conserva $currentItem, el MEA+AAX del nuevo conocimiento
+                    // se interpreta erróneamente como una medida del último item.
+                    unset($currentItem);
+                    $currentItem = null;
 
                     // Los bloques EQD terminaron: sin esto $currentEquipment queda
                     // apuntando al ultimo contenedor durante todo el conocimiento.
@@ -1268,8 +1278,13 @@ class CmspEdiParser implements ManifestParserInterface
             // Iterar sobre cada CNI (cada uno es un BL separado)
             foreach ($data['containers'] as $containerGroup) {
                 // Obtener bill_number del RFF+BM, o usar fallback
-                $billNumber = $containerGroup['references']['bill_number'] 
-                    ?? $data['message']['document_number'] . '-' . ($containerGroup['sequence'] ?? uniqid());
+                $billNumber = trim((string) ($containerGroup['references']['bill_number'] ?? ''));
+
+                if ($billNumber === '') {
+                    throw new Exception(
+                        "CMSP EDI: CNI '{$containerGroup['sequence']}' sin número de conocimiento RFF+BM."
+                    );
+                }
                 
                 // Crear BL para este grupo
                 $billOfLading = $this->createBillOfLadingForGroup($shipment, $data, $billNumber, $containerGroup);
@@ -1277,6 +1292,11 @@ class CmspEdiParser implements ManifestParserInterface
                 
                 // Crear items y contenedores solo para este BL
                 $this->createContainersAndItemsForGroup($billOfLading, $containerGroup);
+
+                // Los observers de ShipmentItem recalculan el BL desde los items.
+                // En reposiciones vacías eso no debe borrar medidas declaradas
+                // explícitamente a nivel CNI.
+                $this->finalizeBillOfLadingForGroup($billOfLading, $containerGroup);
                 
                 $this->stats['processed_bls']++;
             }
@@ -1298,21 +1318,23 @@ class CmspEdiParser implements ManifestParserInterface
                     $itemIds = array_merge($itemIds, $bl->shipmentItems()->pluck('id')->all());
                 }
 
-                // No se trackean container_ids a propósito: getCreatedContainers busca por
-                // número de forma global y podría incluir containers de otros viajes; el
-                // revert los reconstruye de forma segura por el pivote.
-                $importRecord->recordCreatedObjects([
-                    'voyage'   => [$voyage->id],
-                    'shipment' => [$shipment->id],
-                    'bill'     => $billIds,
-                    'item'     => $itemIds,
+                $createdContainerIds = array_values(array_unique(
+                    $this->createdContainerIds
+                ));
+
+                $importRecord->recordExplicitlyCreatedObjects([
+                    'voyage'    => [$voyage->id],
+                    'shipment'  => [$shipment->id],
+                    'bill'      => $billIds,
+                    'item'      => $itemIds,
+                    'container' => $createdContainerIds,
                 ]);
 
                 $completionData = [
                     'voyage_id' => $voyage->id,
                     'created_bills' => count($billIds),
                     'created_items' => count($itemIds),
-                    'created_containers' => $this->stats['processed_containers'] ?? 0,
+                    'created_containers' => count($createdContainerIds),
                     'processing_time_seconds' => $startTime
                         ? round(microtime(true) - $startTime, 2)
                         : null,
@@ -1418,14 +1440,14 @@ class CmspEdiParser implements ManifestParserInterface
             }
         }
 
-        $voyageNumber = ($data['vessel']['voyage_number'] ?? '') . '-' .
-                       ($data['message']['document_number'] ?? uniqid());
+        $voyageNumber = trim((string) ($data['vessel']['voyage_number'] ?? ''));
 
-        // DETERMINAR cargo_type basado en puertos reales del EDI
-        $loadingPort = $data['ports']['loading'] ?? 'ARBUE';
-        $dischargePort = $data['ports']['discharge'] ?? 'PYASU';
-        
-        $cargoType = $this->determineCargTypeFromPorts($loadingPort, $dischargePort);
+        if ($voyageNumber === '') {
+            throw new Exception('CMSP EDI: TDT sin número de viaje.');
+        }
+
+        // Clasificar el viaje según los países reales de los puertos resueltos.
+        $cargoType = $this->determineCargoTypeFromPorts($originPort, $destPort);
 
         // El voyage_number es único global. Si ya existe (en cualquier empresa),
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
@@ -1514,28 +1536,41 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Determinar cargo_type basado en puertos origen/destino del EDI
      */
-    protected function determineCargTypeFromPorts(string $loadingPort, string $dischargePort): string
-    {
-        // Mapeo de puertos a países
-        $argentinePorts = ['ARBUE'];
-        $paraguayanPorts = ['PYASU'];
-        
-        $isFromArgentina = in_array($loadingPort, $argentinePorts);
-        $isToParaguay = in_array($dischargePort, $paraguayanPorts);
-        $isFromParaguay = in_array($loadingPort, $paraguayanPorts);
-        $isToArgentina = in_array($dischargePort, $argentinePorts);
-        
-        // ARBUE → PYASU = Import (para Paraguay)
-        if ($isFromArgentina && $isToParaguay) {
+    protected function determineCargoTypeFromPorts(
+        \App\Models\Port $originPort,
+        \App\Models\Port $destinationPort
+    ): string {
+        if (
+            (int) $originPort->country_id
+            === (int) $destinationPort->country_id
+        ) {
+            return 'cabotage';
+        }
+
+        $originCountry = \App\Models\Country::find($originPort->country_id);
+        $destinationCountry = \App\Models\Country::find($destinationPort->country_id);
+
+        $originAlpha2 = strtoupper(
+            trim((string) $originCountry?->alpha2_code)
+        );
+        $destinationAlpha2 = strtoupper(
+            trim((string) $destinationCountry?->alpha2_code)
+        );
+
+        if ($originAlpha2 === '' || $destinationAlpha2 === '') {
+            throw new Exception(
+                'CMSP EDI: no se pudo determinar el país de origen o destino del viaje.'
+            );
+        }
+
+        if ($destinationAlpha2 === 'AR') {
             return 'import';
         }
-        
-        // PYASU → ARBUE = Export (desde Paraguay)
-        if ($isFromParaguay && $isToArgentina) {
+
+        if ($originAlpha2 === 'AR') {
             return 'export';
         }
-        
-        // Default: transit (tránsito)
+
         return 'transit';
     }
 
@@ -1638,10 +1673,16 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function createShipment(Voyage $voyage, array $data): Shipment
     {
+        $documentNumber = trim((string) ($data['message']['document_number'] ?? ''));
+
+        if ($documentNumber === '') {
+            throw new Exception('CMSP EDI: BGM sin número de documento.');
+        }
+
         return Shipment::create([
             'voyage_id' => $voyage->id,
             'vessel_id' => $voyage->lead_vessel_id,
-            'shipment_number' => 'CMSP-' . ($data['message']['document_number'] ?? uniqid()),
+            'shipment_number' => 'CMSP-' . $documentNumber,
             'sequence_in_voyage' => $this->getNextSequenceInVoyage($voyage->id),
             'vessel_role' => 'single',
             'cargo_capacity_tons' => $voyage->leadVessel?->cargo_capacity_tons,
@@ -1776,10 +1817,9 @@ class CmspEdiParser implements ManifestParserInterface
             }
         }
 
-        $billDate = $this->extractBillDate($data) ?? now()->toDateString();
-        $loadingDate = $this->extractLoadingDate($data)
-            ?? optional($shipment->voyage)->departure_date
-            ?? $billDate;
+        // El CUSCAR recibido no informa fecha propia del BL ni fecha de carga.
+        $billDate = null;
+        $loadingDate = null;
 
         /*
          * Descripción real del conocimiento.
@@ -1810,9 +1850,13 @@ class CmspEdiParser implements ManifestParserInterface
 
         $cargoDescriptions = array_values(array_unique($cargoDescriptions));
 
-        $cargoDescription = !empty($cargoDescriptions)
-            ? implode(' | ', $cargoDescriptions)
-            : 'Según detalle';
+        if (empty($cargoDescriptions)) {
+            throw new Exception(
+                "CMSP EDI: BL '{$billNumber}' sin descripción de mercadería."
+            );
+        }
+
+        $cargoDescription = implode(' | ', $cargoDescriptions);
 
         $bill = BillOfLading::create([
             'shipment_id'               => $shipment->id,
@@ -1835,7 +1879,7 @@ class CmspEdiParser implements ManifestParserInterface
             'primary_packaging_type_id' => $tieneContenedores
                 ? $this->getContainerPackagingTypeId()
                 : $this->getDefaultPackagingTypeId(),
-            'freight_terms'             => 'prepaid',
+            'freight_terms'             => null,
             'is_consolidated'           => false,
             'documentation_complete'    => false,
             'customs_cleared'           => false,
@@ -1848,10 +1892,9 @@ class CmspEdiParser implements ManifestParserInterface
             'total_packages'            => 0,
             // Peso bruto del conocimiento tomado del MEA+AAX del CNI.
             'gross_weight_kg'           => $containerGroup['gross_weight_kg'] ?? 0,
-            'net_weight_kg'             => 0,
-            'volume_m3'                 => 0,
+            'net_weight_kg'             => null,
+            'volume_m3'                 => null,
             'status'                    => 'draft',
-            'issue_date'                => now()->toDateString(),
             'bill_date'                 => $billDate,
             'loading_date'              => $loadingDate,
             'created_by_user_id'        => auth()->id(),
@@ -1889,6 +1932,49 @@ class CmspEdiParser implements ManifestParserInterface
         }
 
         return $bill;
+    }
+
+    protected function finalizeBillOfLadingForGroup(
+        BillOfLading $bill,
+        array $containerGroup
+    ): void {
+        $containerNumbers = [];
+        $items = $containerGroup['items'] ?? [];
+        $allEmpty = !empty($items);
+
+        foreach ($items as $item) {
+            if (stripos((string) ($item['description'] ?? ''), 'VACIO') === false) {
+                $allEmpty = false;
+            }
+
+            foreach ($item['containers'] ?? [] as $number) {
+                $number = trim((string) $number);
+                if ($number !== '') {
+                    $containerNumbers[] = $number;
+                }
+            }
+        }
+
+        $attributes = [
+            'container_count' => count(array_unique($containerNumbers)),
+        ];
+
+        if (array_key_exists('gross_weight_kg', $containerGroup)) {
+            $attributes['gross_weight_kg'] =
+                round((float) $containerGroup['gross_weight_kg'], 2);
+        }
+
+        if ($allEmpty) {
+            $attributes['total_packages'] = 0;
+            $attributes['net_weight_kg'] = null;
+            $attributes['volume_m3'] = null;
+        }
+
+        // Los observers actualizaron el mismo BL mediante otra instancia.
+        // Refrescar evita que Eloquent compare contra atributos obsoletos
+        // y omita valores fuente que deben restaurarse.
+        $bill->refresh();
+        $bill->updateQuietly($attributes);
     }
 
     /**
@@ -1963,6 +2049,25 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * VGM declarado expresamente para un contenedor.
+     * Ausente o cero significa desconocido, no 0 kg.
+     */
+    protected function verifiedGrossMassForContainer(
+        string $containerNumber
+    ): ?float {
+        $raw = $this->parsedData['equipment'][$containerNumber]['vgm_weight_kg']
+            ?? null;
+
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        $value = (float) $raw;
+
+        return $value > 0 ? $value : null;
+    }
+
+    /**
      * Peso del contenedor.
      *
      * Si el GID apareció una sola vez, se conserva el peso declarado en ese item.
@@ -1971,22 +2076,65 @@ class CmspEdiParser implements ManifestParserInterface
      * el peso del item representa la mercadería lógica completa y para cada
      * contenedor se usa su VGM cuando el archivo lo proporciona.
      */
-    protected function pesoContenedor(string $containerNumber, array $itemData): float
+    protected function cantidadBultosContenedor(array $itemData): ?int
     {
         if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
             return 0;
         }
 
-        $delItem = (float) ($itemData['gross_weight_kg'] ?? 0);
-        $repeticiones = (int) ($itemData['_physical_occurrences'] ?? 1);
-
-        if ($repeticiones <= 1) {
-            return $delItem;
+        if ((int) ($itemData['_physical_occurrences'] ?? 1) > 1) {
+            return null;
         }
 
-        $vgm = (float) ($this->parsedData['equipment'][$containerNumber]['vgm_weight_kg'] ?? 0);
+        return $this->extractPackageCount($itemData['package_info'] ?? '');
+    }
 
-        return $vgm > 0 ? $vgm : $delItem;
+    protected function pesoContenedor(array $itemData): ?float
+    {
+        if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
+            return 0.0;
+        }
+
+        // Si el mismo item lógico fue repetido para varios SGP, el archivo
+        // informa el total del item, no cuánto corresponde a cada contenedor.
+        // VGM tampoco reemplaza este dato: tiene su campo específico.
+        if ((int) ($itemData['_physical_occurrences'] ?? 1) > 1) {
+            return null;
+        }
+
+        if (!array_key_exists('gross_weight_kg', $itemData)
+            || $itemData['gross_weight_kg'] === null) {
+            return null;
+        }
+
+        return (float) $itemData['gross_weight_kg'];
+    }
+
+    protected function pesoNetoContenedor(array $itemData): ?float
+    {
+        // CMSP no informa peso neto por contenedor.
+        // Para reposicionamiento vacío, la mercadería es explícitamente cero.
+        return stripos($itemData['description'] ?? '', 'VACIO') !== false
+            ? 0.0
+            : null;
+    }
+
+    protected function volumenContenedor(array $itemData): ?float
+    {
+        if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
+            return 0.0;
+        }
+
+        if ((int) ($itemData['_physical_occurrences'] ?? 1) > 1) {
+            return null;
+        }
+
+        if (!array_key_exists('volume_m3', $itemData)
+            || $itemData['volume_m3'] === null) {
+            return null;
+        }
+
+        return (float) $itemData['volume_m3'];
     }
 
     protected function getDefaultCargoTypeId(): int
@@ -2227,12 +2375,11 @@ class CmspEdiParser implements ManifestParserInterface
             // Solo asociarlo al item de este conocimiento.
             if (!$shipmentItem->containers->contains($container->id)) {
                 $shipmentItem->containers()->attach($container->id, [
-                    'package_quantity' => stripos($itemData['description'] ?? '', 'VACIO') !== false
-                        ? 0
-                        : $this->extractPackageCount($itemData['package_info'] ?? ''),
-                    'gross_weight_kg' => $this->pesoContenedor($containerNumber, $itemData),
-                    'net_weight_kg' => null,
-                    'volume_m3' => $itemData['volume_m3'] ?? 0,
+                    'package_quantity' => $this->cantidadBultosContenedor($itemData),
+                    'gross_weight_kg' => $this->pesoContenedor($itemData),
+                    'net_weight_kg' => $this->pesoNetoContenedor($itemData),
+                    'volume_m3' => $this->volumenContenedor($itemData),
+                    'verified_gross_mass_kg' => $this->verifiedGrossMassForContainer($containerNumber),
                 ]);
             }
 
@@ -2242,26 +2389,55 @@ class CmspEdiParser implements ManifestParserInterface
 
         // Datos físicos declarados para este contenedor en su bloque EQD.
         $equipment = $this->parsedData['equipment'][$containerNumber] ?? null;
+        $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
 
         /*
-         * Si el contenedor no existe todavía, necesitamos los datos físicos
-         * declarados por el CUSCAR para poder crearlo.
+         * Algunos CUSCAR históricos identifican contenedores vacíos mediante SGP
+         * pero no incluyen EQD. En ese caso conocemos el número y la condición,
+         * pero no conocemos tipo ISO, tara ni peso máximo.
          *
-         * Hay emisores reales que informan SGP pero no envían ningún EQD
-         * (CMSP.EDI histórico: 72 SGP y 0 EQD). En ese caso no corresponde
-         * completar tipo, tara ni peso máximo usando valores de catálogo:
-         * serían datos no declarados por el archivo.
-         *
-         * Un contenedor ya existente sí puede asociarse, porque sus datos
-         * maestros fueron resueltos previamente y no se pisan.
+         * Esos datos se guardan como NULL. Para carga no vacía, la ausencia de
+         * EQD continúa siendo un error: nunca se fabrican características físicas.
          */
         if (!$equipment) {
-            throw new Exception(
-                "El contenedor {$containerNumber} no existe y el archivo CUSCAR "
-                . "no informa datos EQD suficientes para crearlo. "
-                . "Debe registrar previamente el contenedor o utilizar un archivo "
-                . "que informe sus datos físicos."
-            );
+            if (!$esVacio) {
+                throw new Exception(
+                    "El contenedor {$containerNumber} no existe y el archivo CUSCAR "
+                    . "no informa datos EQD suficientes para crearlo."
+                );
+            }
+
+            $container = Container::create([
+                'container_number' => $containerNumber,
+                'container_type_id' => null,
+                'condition' => 'V',
+                'shipper_seal' => null,
+                'customs_seal' => null,
+                'carrier_seal' => null,
+                'additional_seals' => null,
+                'temperature_controlled' => false,
+                'set_temperature' => null,
+                'tare_weight_kg' => null,
+                'max_gross_weight_kg' => null,
+                'current_gross_weight_kg' => null,
+                'cargo_weight_kg' => 0,
+                'operational_status' => 'empty',
+                'active' => true,
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            $this->createdContainerIds[] = $container->id;
+
+            $shipmentItem->containers()->attach($container->id, [
+                'package_quantity' => 0,
+                'gross_weight_kg' => 0,
+                'net_weight_kg' => 0,
+                'volume_m3' => 0,
+                'verified_gross_mass_kg' => null,
+            ]);
+
+            $this->stats['processed_containers']++;
+            return;
         }
 
         $containerType = null;
@@ -2287,7 +2463,6 @@ class CmspEdiParser implements ManifestParserInterface
             return;
         }
 
-        $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
         $condition = $esVacio ? 'V' : 'L';
 
         /*
@@ -2363,18 +2538,17 @@ class CmspEdiParser implements ManifestParserInterface
             'created_by_user_id' => auth()->id(),
         ]);
 
+        $this->createdContainerIds[] = $container->id;
+
         // Datos de la relación entre mercadería y contenedor.
-        $pesoContenedor = $this->pesoContenedor($containerNumber, $itemData);
+        $pesoContenedor = $this->pesoContenedor($itemData);
 
         $shipmentItem->containers()->attach($container->id, [
-            'package_quantity' => $esVacio
-                ? 0
-                : $this->extractPackageCount($itemData['package_info'] ?? ''),
+            'package_quantity' => $this->cantidadBultosContenedor($itemData),
             'gross_weight_kg' => $pesoContenedor,
-            'net_weight_kg' => $esVacio
-                ? 0
-                : max(0.0, $pesoContenedor - $tareWeight),
-            'volume_m3' => $itemData['volume_m3'] ?? 0,
+            'net_weight_kg' => $this->pesoNetoContenedor($itemData),
+            'volume_m3' => $this->volumenContenedor($itemData),
+            'verified_gross_mass_kg' => $this->verifiedGrossMassForContainer($containerNumber),
         ]);
 
         $this->stats['processed_containers']++;
@@ -2830,28 +3004,56 @@ class CmspEdiParser implements ManifestParserInterface
     public function validate(array $data): array
     {
         $errors = [];
-if (empty($data['ports']['loading']) || empty($data['ports']['discharge'])) {
+
+        if (empty($data['message']['document_number'])) {
+            $errors[] = 'BGM sin número de documento';
+        }
+
+        if (empty($data['vessel']['voyage_number'])) {
+            $errors[] = 'TDT sin número de viaje';
+        }
+
+        if (
+            empty($data['ports']['loading'])
+            || empty($data['ports']['discharge'])
+        ) {
             $errors[] = 'Información de puertos incompleta';
         }
 
-        if (empty($data['containers'])) {
-            $errors[] = 'No se encontraron contenedores en el archivo';
+        $containerGroups = $data['containers'] ?? [];
+
+        if ($containerGroups === []) {
+            $errors[] = 'No se encontraron conocimientos CNI en el archivo';
         }
 
-        foreach ($data['containers'] as $containerGroup) {
-            if (empty($containerGroup['items'])) {
-                $errors[] = 'Grupo de contenedores sin items';
+        foreach ($containerGroups as $containerGroup) {
+            $sequence = $containerGroup['sequence'] ?? '?';
+
+            $billNumber = trim((string) (
+                $containerGroup['references']['bill_number'] ?? ''
+            ));
+
+            if ($billNumber === '') {
+                $errors[] = "CNI {$sequence} sin número de conocimiento RFF+BM";
+            }
+
+            $items = $containerGroup['items'] ?? [];
+
+            if ($items === []) {
+                $errors[] = "CNI {$sequence} sin items";
                 continue;
             }
 
-            foreach ($containerGroup['items'] as $item) {
+            foreach ($items as $itemIndex => $item) {
                 if (empty($item['containers'])) {
-                    $errors[] = 'Item sin contenedores asociados';
+                    $itemNumber = $itemIndex + 1;
+                    $errors[] =
+                        "CNI {$sequence}, item {$itemNumber} sin contenedores asociados";
                 }
             }
         }
 
-        return $errors;
+        return array_values(array_unique($errors));
     }
 
     /**
