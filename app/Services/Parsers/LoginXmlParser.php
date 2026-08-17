@@ -79,6 +79,15 @@ class LoginXmlParser implements ManifestParserInterface
         '20TK' => '20TN',
     ];
 
+    /**
+     * Tipo fiscal explícitamente demostrado dentro del Login.xml actual,
+     * indexado por tax_id normalizado.
+     *
+     * Permite que una aparición genérica "Tax ID" reutilice la semántica
+     * demostrada por otra aparición del MISMO número como CUIT/CNPJ/etc.
+     */
+    protected array $loginTaxTypeById = [];
+
     // Mapeo de países por código NCM/origen
     protected array $countryMapping = [
         'default' => 'ARG', // Argentina por defecto para Login
@@ -346,6 +355,10 @@ class LoginXmlParser implements ManifestParserInterface
             'containers' => []        // Todos los containers (para compatibilidad)
         ];
 
+        // Antes de resolver clientes, reunir la semántica fiscal explícita
+        // disponible en todo el manifiesto.
+        $this->buildLoginTaxTypeIndex($xml);
+
         $blCount = 0;
         
         // Iterar sobre TODOS los BillOfLading del XML
@@ -448,21 +461,367 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Extraer tax_id (CNPJ/CUIT) del texto
+     * Verificar que la longitud del identificador sea compatible con
+     * el tipo fiscal explícitamente declarado.
+     */
+    protected function isTaxIdCompatibleWithType(
+        ?string $taxId,
+        ?string $taxType
+    ): bool {
+        if (!$taxId || !$taxType) {
+            return false;
+        }
+
+        $length = strlen(preg_replace('/\D/', '', $taxId));
+
+        return match (strtoupper($taxType)) {
+            'CUIT' => $length === 11,
+            'CNPJ' => $length === 14,
+            'RUC' => $length >= 7 && $length <= 9,
+            'NIT' => $length >= 9 && $length <= 10,
+            default => false,
+        };
+    }
+
+    /**
+     * Construir evidencia fiscal del manifiesto completo.
+     *
+     * Sólo indexa marcadores explícitos: CUIT/CNPJ/RUC/NIT.
+     * TAX ID genérico no crea semántica por sí mismo.
+     */
+    protected function buildLoginTaxTypeIndex(\SimpleXMLElement $xml): void
+    {
+        $this->loginTaxTypeById = [];
+
+        $headers = $xml->xpath(
+            '//*[local-name()="BillOfLadingHeader"]'
+        ) ?: [];
+
+        foreach ($headers as $header) {
+            // Campo estructurado cuyo significado es inequívocamente CUIT.
+            $structured = $this->resolveTaxId(
+                trim((string) ($header->ShipperExporterCUIT ?? '')),
+                null,
+                null
+            );
+
+            if ($this->isTaxIdCompatibleWithType($structured, 'CUIT')) {
+                $this->rememberLoginTaxType($structured, 'CUIT');
+            }
+
+            foreach ([
+                'ShipperExporter',
+                'Consignee',
+                'NotifyParty',
+            ] as $field) {
+                $text = trim((string) ($header->{$field} ?? ''));
+
+                if ($text === '') {
+                    continue;
+                }
+
+                $identity = $this->extractTaxIdentityFromText($text);
+
+                if (
+                    $identity !== null
+                    && $identity['tax_id'] !== null
+                    && $identity['tax_type'] !== null
+                ) {
+                    $this->rememberLoginTaxType(
+                        $identity['tax_id'],
+                        $identity['tax_type']
+                    );
+                }
+            }
+        }
+    }
+
+    protected function rememberLoginTaxType(
+        string $taxId,
+        string $taxType
+    ): void {
+        $existing = $this->loginTaxTypeById[$taxId] ?? null;
+
+        if ($existing !== null && $existing !== $taxType) {
+            throw new \DomainException(
+                "Login XML declara el identificador {$taxId} como " .
+                "{$existing} y {$taxType} dentro del mismo manifiesto."
+            );
+        }
+
+        $this->loginTaxTypeById[$taxId] = $taxType;
+    }
+
+    /**
+     * Extraer identificador fiscal conservando el tipo declarado por Login.
+     *
+     * El archivo real también contiene:
+     * - CNPJ sin ":" ni espacio;
+     * - "CPNJ" como typo del emisor;
+     * - TAX ID genérico, que aporta número pero NO tipo documental.
+     */
+    protected function extractTaxIdentityFromText(?string $text): ?array
+    {
+        $text = trim((string) $text);
+
+        if ($text === '') {
+            return null;
+        }
+
+        // "C/O ..." introduce otra persona/entidad dentro del domicilio.
+        // Su CUIT no identifica a la parte principal del BL.
+        $primaryText = preg_split(
+            '/\bC\/O\b|\bCARE\s+OF\b/iu',
+            $text,
+            2
+        )[0] ?? $text;
+
+        $typedPatterns = [
+            'CUIT' => '/\bCUIT(?:\s+NBR)?\s*:?\s*([0-9][0-9.\-\/]*)/iu',
+            // CPNJ está verificado en Login.xml y se interpreta como CNPJ.
+            'CNPJ' => '/\b(?:CNPJ|CPNJ)\s*:?\s*([0-9][0-9.\-\/]*)/iu',
+            'RUC' => '/\bR\.?U\.?C\.?\s*:?\s*([0-9][0-9.\-\/]*)/iu',
+            'NIT' => '/\bNIT\s*:?\s*([0-9][0-9.\-\/]*)/iu',
+        ];
+
+        foreach ($typedPatterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $primaryText, $matches)) {
+                continue;
+            }
+
+            $taxId = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($taxId !== null) {
+                return [
+                    'tax_id' => $taxId,
+                    'tax_type' => $taxType,
+                ];
+            }
+        }
+
+        if (preg_match(
+            '/\bTAX\s*ID\s*:?\s*([0-9][0-9.\-\/]*)/iu',
+            $primaryText,
+            $matches
+        )) {
+            $taxId = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($taxId !== null) {
+                return [
+                    'tax_id' => $taxId,
+                    'tax_type' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolver número + tipo sin inventar semántica fiscal.
+     *
+     * El campo estructurado tiene prioridad. Si el mismo documento también
+     * aparece en el texto y contradice al campo estructurado, se aborta.
+     */
+    protected function resolveClientTaxIdentity(
+        ?string $structuredTaxId,
+        ?string $text,
+        ?string $declaredTaxType = null
+    ): array {
+        $declaredTaxType = strtoupper(
+            trim((string) $declaredTaxType)
+        );
+
+        $declaredTaxType = $declaredTaxType !== ''
+            ? $declaredTaxType
+            : null;
+
+        $structured = $this->resolveTaxId(
+            $structuredTaxId,
+            null,
+            null
+        );
+
+        // Un campo llamado CUIT no se acepta sólo porque contiene dígitos:
+        // debe ser compatible con la estructura del tipo declarado.
+        // Login.xml contiene al menos un CUIT estructurado truncado.
+        if (
+            $structured !== null
+            && $declaredTaxType !== null
+            && !$this->isTaxIdCompatibleWithType(
+                $structured,
+                $declaredTaxType
+            )
+        ) {
+            // El campo estructurado puede venir truncado. No se acepta sólo
+            // porque contiene dígitos; se descarta y se conserva la evidencia
+            // fiscal válida de la parte principal.
+            $structured = null;
+        }
+
+        // Toda resolución textual se limita a la parte principal.
+        // Un identificador que aparezca únicamente dentro de C/O / CARE OF
+        // pertenece a otra persona o entidad y no identifica al cliente.
+        $primaryText = preg_split(
+            '/\\bC\\/O\\b|\\bCARE\\s+OF\\b/iu',
+            (string) $text,
+            2
+        )[0] ?? (string) $text;
+
+        $embedded = $this->extractTaxIdentityFromText($primaryText);
+
+        if (
+            $structured !== null
+            && $embedded !== null
+            && $embedded['tax_id'] !== $structured
+        ) {
+            throw new \DomainException(
+                'Login XML informa dos identificadores fiscales válidos ' .
+                'y distintos para la misma parte.'
+            );
+        }
+
+        $taxId = $structured
+            ?? ($embedded['tax_id'] ?? null)
+            ?? $this->resolveTaxId(null, $primaryText, null);
+
+        // El tipo declarado pertenece al campo estructurado. Si ese campo
+        // estaba vacío o fue descartado por inválido, no debe imponer CUIT
+        // sobre la evidencia textual válida.
+        $taxType = $structured !== null
+            ? $declaredTaxType
+            : null;
+
+        if (
+            $taxType === null
+            && $embedded !== null
+            && $embedded['tax_id'] === $taxId
+        ) {
+            $taxType = $embedded['tax_type'];
+        }
+
+        // Una aparición genérica TAX ID puede adquirir tipo únicamente
+        // si el MISMO número aparece explícitamente tipificado en otro
+        // BL del mismo Login.xml.
+        if (
+            $taxId !== null
+            && $taxType === null
+            && isset($this->loginTaxTypeById[$taxId])
+        ) {
+            $taxType = $this->loginTaxTypeById[$taxId];
+        }
+
+        if (
+            $taxId !== null
+            && $taxType !== null
+            && !$this->isTaxIdCompatibleWithType($taxId, $taxType)
+        ) {
+            throw new \DomainException(
+                "El identificador {$taxId} no es compatible con {$taxType}."
+            );
+        }
+
+        if (
+            $taxType !== null
+            && $embedded !== null
+            && $embedded['tax_type'] !== null
+            && $embedded['tax_id'] === $taxId
+            && $embedded['tax_type'] !== $taxType
+        ) {
+            throw new \DomainException(
+                'Login XML informa tipos fiscales contradictorios ' .
+                'para la misma parte.'
+            );
+        }
+
+        if ($taxId === null) {
+            $taxType = null;
+        }
+
+        return [
+            'tax_id' => $taxId,
+            'tax_type' => $taxType,
+        ];
+    }
+
+    /**
+     * Resolver país sólo desde evidencia del documento.
+     *
+     * CUIT/CNPJ/RUC/NIT tienen país semántico propio. Si no hay tipo fiscal,
+     * se inspecciona únicamente el domicilio (no el nombre de la empresa)
+     * para evitar confundir "BRASIL" dentro de una razón social con país.
+     */
+    protected function inferClientCountryAlpha2(
+        ?string $taxType,
+        ?string $text
+    ): ?string {
+        $countryFromType = match (strtoupper((string) $taxType)) {
+            'CUIT' => 'AR',
+            'CNPJ' => 'BR',
+            'RUC' => 'PY',
+            'NIT' => 'CO',
+            default => null,
+        };
+
+        $address = $this->extractAddressFromNode($text) ?? '';
+
+        $countriesInAddress = [];
+
+        $patterns = [
+            'AR' => '/\bARGENTINA\b/iu',
+            'BR' => '/\b(?:BRASIL|BRAZIL)\b/iu',
+            'PY' => '/\b(?:PARAGUAY|PARAGUAI)\b/iu',
+            'UY' => '/\b(?:URUGUAY|URUGUAI)\b/iu',
+            'CO' => '/\bCOLOMBIA\b/iu',
+        ];
+
+        foreach ($patterns as $alpha2 => $pattern) {
+            if (preg_match($pattern, $address)) {
+                $countriesInAddress[] = $alpha2;
+            }
+        }
+
+        $countriesInAddress = array_values(
+            array_unique($countriesInAddress)
+        );
+
+        if (count($countriesInAddress) > 1) {
+            throw new \DomainException(
+                'Login XML informa más de un país para la misma parte.'
+            );
+        }
+
+        $countryFromAddress = $countriesInAddress[0] ?? null;
+
+        if (
+            $countryFromType !== null
+            && $countryFromAddress !== null
+            && $countryFromType !== $countryFromAddress
+        ) {
+            throw new \DomainException(
+                "El tipo fiscal {$taxType} contradice el país informado " .
+                'en el domicilio de la parte.'
+            );
+        }
+
+        return $countryFromType ?? $countryFromAddress;
+    }
+
+    /**
+     * Compatibilidad con los consumidores existentes que sólo necesitan
+     * el número fiscal.
      */
     protected function extractTaxIdFromText(string $text): ?string
     {
-        // Buscar CNPJ pattern: XX.XXX.XXX/XXXX-XX
-        if (preg_match('/CNPJ:\s*([0-9]{2}\.?[0-9]{3}\.?[0-9]{3}\/[0-9]{4}-[0-9]{2})/', $text, $matches)) {
-            return preg_replace('/[^0-9]/', '', $matches[1]);
-        }
-        
-        // Buscar CUIT pattern: XX-XXXXXXXX-X
-        if (preg_match('/CUIT:\s*([0-9]{2}-?[0-9]{8}-?[0-9])/', $text, $matches)) {
-            return preg_replace('/[^0-9]/', '', $matches[1]);
-        }
-        
-        return null;
+        return $this->extractTaxIdentityFromText($text)['tax_id'] ?? null;
     }
 
     /**
@@ -757,7 +1116,8 @@ class LoginXmlParser implements ManifestParserInterface
             $data['bill_of_lading']['shipper_name'], 
             'shipper',
             $context,
-            $data['bill_of_lading']['shipper_cuit'] ?? null
+            $data['bill_of_lading']['shipper_cuit'] ?? null,
+            'CUIT'
         );
         
         $consignee = $this->findOrCreateClient(
@@ -917,7 +1277,8 @@ class LoginXmlParser implements ManifestParserInterface
             $blData['shipper_name'], 
             'shipper',
             $context,
-            $blData['shipper_cuit'] ?? null
+            $blData['shipper_cuit'] ?? null,
+            'CUIT'
         );
         
         $consignee = $this->findOrCreateClient(
@@ -1086,73 +1447,114 @@ class LoginXmlParser implements ManifestParserInterface
     /**
      * Encontrar o crear cliente con datos reales
      */
-    protected function findOrCreateClient(?string $name, string $type, array $context, ?string $taxId = null): ?Client
-    {
+    protected function findOrCreateClient(
+        ?string $name,
+        string $type,
+        array $context,
+        ?string $taxId = null,
+        ?string $declaredTaxType = null
+    ): ?Client {
         if (empty($name)) {
             return null;
         }
 
-        // Limpiar el nombre
         $cleanName = $this->cleanClientName($name);
 
-        // Resolver tax: estructurado > embebido en el nombre. Sin dato real -> null (no fabrica).
-        $taxId = $this->resolveTaxId($taxId, $name);
+        $identity = $this->resolveClientTaxIdentity(
+            $taxId,
+            $name,
+            $declaredTaxType
+        );
 
-        Log::debug('findOrCreateClient - Búsqueda', [
-            'name' => $name,
+        $cleanTaxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $countryAlpha2 = $this->inferClientCountryAlpha2(
+            $taxType,
+            $name
+        );
+
+        if ($countryAlpha2 === null) {
+            throw new \DomainException(
+                "Login XML no informa un país confiable para '{$cleanName}'. " .
+                'No se creará un cliente con país inventado.'
+            );
+        }
+
+        $countryId = \App\Models\Country::query()
+            ->where('alpha2_code', $countryAlpha2)
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "No existe el país {$countryAlpha2} en el catálogo."
+            );
+        }
+
+        Log::debug('findOrCreateClient - identidad resuelta', [
+            'name' => $cleanName,
             'type' => $type,
-            'taxId_original' => $taxId,
-            'cleanName' => $cleanName
+            'tax_id' => $cleanTaxId,
+            'tax_type' => $taxType,
+            'country' => $countryAlpha2,
+            'country_id' => $countryId,
         ]);
-        
-        // 1. Si tiene tax_id, buscar primero por tax_id (más específico)
-        if ($taxId) {
-            $cleanTaxId = preg_replace('/[^0-9]/', '', $taxId);
-            $client = Client::where('tax_id', $cleanTaxId)->first();
-            
+
+        // Con identificador fiscal, la identidad es tax_id + country_id.
+        if ($cleanTaxId) {
+            $client = Client::query()
+                ->where('tax_id', $cleanTaxId)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                return $client;
+            }
+        } else {
+            // Sin identificador: sólo reutilizar otro cliente también sin tax_id,
+            // del mismo país y con el mismo nombre normalizado.
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->whereRaw(
+                    'UPPER(TRIM(legal_name)) = ?',
+                    [mb_strtoupper(trim($cleanName))]
+                )
+                ->first();
+
             if ($client) {
                 return $client;
             }
         }
-        
-        // 2. Si no se encontró por tax_id, buscar por nombre
-        $client = Client::where('legal_name', 'LIKE', '%' . $cleanName . '%')->first();
-        
-        if ($client) {
-            return $client;
-        }
 
-        $cleanTaxId = $taxId ? preg_replace('/[^0-9]/', '', $taxId) : null;
+        $documentTypeId = null;
 
-        // Crear nuevo cliente con datos del XML.
-        // Con tax_id real: deduplicar por (tax_id, country). Sin tax_id: crear con null,
-        // NO usar el CUIT de la empresa importadora ni fabricar uno.
-        if ($cleanTaxId) {
-            return Client::firstOrCreate(
-                [
-                    'tax_id' => $cleanTaxId,
-                    'country_id' => 1,
-                ],
-                [
-                    'legal_name' => $cleanName,
-                    'document_type_id' => 1,
-                    'status' => 'active',
-                    'created_by_company_id' => $context['company_id'],
-                    'verified_at' => now(),
-                    'created_by_user_id' => $context['user_id']
-                ]
-            );
+        if ($cleanTaxId && $taxType) {
+            $documentTypeId = \App\Models\DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "El tipo fiscal {$taxType} no corresponde al país " .
+                    "{$countryAlpha2} o no existe en el catálogo."
+                );
+            }
         }
 
         return Client::create([
-            'tax_id' => null,
-            'country_id' => 1,
+            'tax_id' => $cleanTaxId,
+            'country_id' => (int) $countryId,
             'legal_name' => $cleanName,
-            'document_type_id' => 1,
+            'document_type_id' => $documentTypeId
+                ? (int) $documentTypeId
+                : null,
             'status' => 'active',
             'created_by_company_id' => $context['company_id'],
             'verified_at' => now(),
-            'created_by_user_id' => $context['user_id']
+            'created_by_user_id' => $context['user_id'],
         ]);
     }
 
@@ -1161,15 +1563,20 @@ class LoginXmlParser implements ManifestParserInterface
      */
     protected function cleanClientName(string $name): string
     {
-        // Dividir por saltos de línea y tomar solo la primera línea (nombre principal)
-        $lines = explode("\n", $name);
-        $mainName = trim($lines[0]);
-        
-        // Remover información extra común
-        $mainName = preg_replace('/\s*CUIT:\s*[0-9-]+/i', '', $mainName);
-        $mainName = preg_replace('/\s*CNPJ:\s*[0-9\/-]+/i', '', $mainName);
-        
-        return trim($mainName);
+        // La primera línea contiene la razón social; las siguientes son domicilio.
+        $lines = preg_split('/\r\n|\r|\n/', $name);
+        $mainName = trim($lines[0] ?? '');
+
+        // El archivo real puede pegar CUIT/CNPJ/CPNJ/TAX ID a la razón social.
+        // Desde el marcador fiscal en adelante ya no forma parte del nombre.
+        $mainName = preg_replace(
+            '/\s+(?:CUIT(?:\s+NBR)?|CNPJ|CPNJ|R\.?U\.?C\.?|NIT|TAX\s*ID)' .
+            '\s*:?\s*[0-9][0-9.\-\/]*.*$/iu',
+            '',
+            $mainName
+        );
+
+        return trim($mainName, " \t\n\r\0\x0B-–—,;:");
     }
 
     /**
