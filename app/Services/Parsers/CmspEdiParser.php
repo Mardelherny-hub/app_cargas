@@ -381,7 +381,7 @@ class CmspEdiParser implements ManifestParserInterface
                         'references' => [],
                         // Peso bruto del conocimiento (MEA+AAX). Unico peso real
                         // del archivo: ver comentario en parseMeasurements().
-                        'gross_weight_kg' => 0,
+                        'gross_weight_kg' => null,
                     ];
                     break;
 
@@ -454,9 +454,9 @@ class CmspEdiParser implements ManifestParserInterface
                         'sequence' => $segment['elements'][0] ?? '',
                         'package_info' => $segment['elements'][1] ?? '',
                         'description' => '',
-                        'gross_weight_kg' => 0,
-                        'tare_weight_kg' => 0,
-                        'volume_m3' => 0,
+                        'gross_weight_kg' => null,
+                        'tare_weight_kg' => null,
+                        'volume_m3' => null,
                         'containers' => [],
                         // Campos DGS (mercadería peligrosa)
                         'is_dangerous_goods' => false,
@@ -969,7 +969,7 @@ class CmspEdiParser implements ManifestParserInterface
                     // por lo que isset() no sirve para detectar que AAE no cargó
                     // ningún peso. AAE+G mantiene prioridad cuando dejó un valor
                     // positivo.
-                    if ((float) ($currentItem['gross_weight_kg'] ?? 0) <= 0) {
+                    if (($currentItem['gross_weight_kg'] ?? null) === null) {
                         $currentItem['gross_weight_kg'] = $this->normalizeDecimal($value);
                     }
                 } elseif ($measureType === 'AAE' && $unit === 'MTQ') {
@@ -987,7 +987,7 @@ class CmspEdiParser implements ManifestParserInterface
                     $bruto   = $currentItem['gross_weight_kg'] ?? null;
 
                     $currentItem['volume_m3'] = ($bruto !== null && abs($volumen - $bruto) < 0.001)
-                        ? 0
+                        ? null
                         : $volumen;
                 }
             }
@@ -1765,6 +1765,13 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
     {
+        if (!array_key_exists('gross_weight_kg', $containerGroup)
+            || $containerGroup['gross_weight_kg'] === null) {
+            throw new Exception(
+                "El CNI {$billNumber} no informa peso bruto MEA+AAX+G."
+            );
+        }
+
         // Partes propias del conocimiento. Las de $data son de cabecera y solo
         // sirven de respaldo para los CNI que no declaren las suyas: usarlas
         // siempre hacia que los 51 conocimientos del archivo compartieran las
@@ -1840,7 +1847,7 @@ class CmspEdiParser implements ManifestParserInterface
 
             // Mismo saneamiento utilizado al crear ShipmentItem.
             $description = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
-            $description = preg_replace('/[^\x20-\x7E\xC0-\xFF]/', '', $description);
+            $description = preg_replace('/[\x00-\x1F\x7F]/u', '', $description);
             $description = mb_substr($description, 0, 5000);
 
             if ($description !== '') {
@@ -1891,7 +1898,7 @@ class CmspEdiParser implements ManifestParserInterface
             'cargo_description'         => $cargoDescription,
             'total_packages'            => 0,
             // Peso bruto del conocimiento tomado del MEA+AAX del CNI.
-            'gross_weight_kg'           => $containerGroup['gross_weight_kg'] ?? 0,
+            'gross_weight_kg'           => (float) $containerGroup['gross_weight_kg'],
             'net_weight_kg'             => null,
             'volume_m3'                 => null,
             'status'                    => 'draft',
@@ -2011,9 +2018,9 @@ class CmspEdiParser implements ManifestParserInterface
                 'package_info' => $item['package_info'] ?? '',
                 'description' => $item['description'] ?? '',
                 'cargo_marks' => $item['cargo_marks'] ?? null,
-                'gross_weight_kg' => $item['gross_weight_kg'] ?? 0,
-                'tare_weight_kg' => $item['tare_weight_kg'] ?? 0,
-                'volume_m3' => $item['volume_m3'] ?? 0,
+                'gross_weight_kg' => $item['gross_weight_kg'] ?? null,
+                'tare_weight_kg' => $item['tare_weight_kg'] ?? null,
+                'volume_m3' => $item['volume_m3'] ?? null,
                 'is_dangerous_goods' => $item['is_dangerous_goods'] ?? false,
                 'imdg_class' => $item['imdg_class'] ?? null,
                 'un_number' => $item['un_number'] ?? null,
@@ -2292,9 +2299,16 @@ class CmspEdiParser implements ManifestParserInterface
     $lineNumber++;
 
     // SANITIZAR descripción para evitar errores de codificación
-    $description = $itemData['description'] ?: 'Mercadería según manifiesto EDI';
+    $description = trim((string) ($itemData['description'] ?? ''));
+
+    if ($description === '') {
+        throw new Exception(
+            "Item CMSP sin descripción fuente en BL {$billOfLading->bill_number}."
+        );
+    }
+
     $cleanDescription = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
-    $cleanDescription = preg_replace('/[^\x20-\x7E\xC0-\xFF]/', '', $cleanDescription); // Remover caracteres problemáticos
+    $cleanDescription = preg_replace('/[\x00-\x1F\x7F]/u', '', $cleanDescription); // Remover caracteres de control sin destruir UTF-8
     // 5000: el maximo real medido en archivos TFP es 2075 (ASUNCION B, 07/08/2026),
     // con parrafos legales completos que pueden crecer segun el emisor.
     $cleanDescription = mb_substr($cleanDescription, 0, 5000); // Limitar longitud
@@ -2303,6 +2317,14 @@ class CmspEdiParser implements ManifestParserInterface
     // aunque el archivo los declare (Roberto 07/08/2026). Mismo criterio que
     // createContainer para la condicion V.
     $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
+
+    if (!$esVacio
+        && (!array_key_exists('gross_weight_kg', $itemData)
+            || $itemData['gross_weight_kg'] === null)) {
+        throw new Exception(
+            "Item CMSP no vacío sin peso bruto fuente en BL {$billOfLading->bill_number}."
+        );
+    }
 
     // La NCM viene en el segmento CST cuando el emisor lo manda. Si no, esta
     // escrita dentro del texto libre. Se busca sobre $description (el texto
@@ -2365,7 +2387,7 @@ class CmspEdiParser implements ManifestParserInterface
         // webservice activo. Se deja en NULL ("no informado") en lugar de
         // calcular bruto - tara, que es lo que daba los negativos.
         'net_weight_kg' => null,
-        'volume_m3' => $esVacio ? 0 : ($itemData['volume_m3'] ?? 0),
+        'volume_m3' => $esVacio ? 0 : ($itemData['volume_m3'] ?? null),
         // Campos DGS (mercadería peligrosa)
         'is_dangerous_goods' => $itemData['is_dangerous_goods'] ?? false,
         'imdg_class' => $itemData['imdg_class'] ?? null,
@@ -3003,10 +3025,15 @@ class CmspEdiParser implements ManifestParserInterface
      */
     protected function extractPackageCount(string $packageInfo): int
     {
-        if (preg_match('/^(\d+):/', $packageInfo, $matches)) {
-            return (int) $matches[1];
+        $packageInfo = trim($packageInfo);
+
+        if (!preg_match('/^(\d+):/', $packageInfo, $matches)) {
+            throw new Exception(
+                "GID CMSP sin cantidad de bultos válida: '{$packageInfo}'."
+            );
         }
-        return 1;
+
+        return (int) $matches[1];
     }
 
     /**
