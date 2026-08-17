@@ -2148,21 +2148,39 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Tipos para carga contenedorizada. Verificados en produccion 31/07/2026:
-     * CargoType CON001 = CONTENEDORES (id 9), PackagingType T = CONTENEDOR (id 4).
-     * Mismo criterio que LoginXmlParser. Se busca por code y no por id porque el
-     * code es estable entre entornos. Si no existe, cae al default de siempre.
+     * Tipos canónicos para carga contenedorizada.
+     *
+     * No se sustituyen por otro catálogo si faltan: hacerlo convertiría un error
+     * de configuración en información aparentemente válida dentro del manifiesto.
      */
     protected function getContainerCargoTypeId(): int
     {
-        return CargoType::where('code', 'CON001')->where('active', true)->value('id')
-            ?? $this->getDefaultCargoTypeId();
+        $id = CargoType::where('code', 'CON001')
+            ->where('active', true)
+            ->value('id');
+
+        if ($id === null) {
+            throw new Exception(
+                'Falta el CargoType activo CON001 (CONTENEDORES) requerido por CMSP.'
+            );
+        }
+
+        return (int) $id;
     }
 
     protected function getContainerPackagingTypeId(): int
     {
-        return PackagingType::where('code', 'T')->where('active', true)->value('id')
-            ?? $this->getDefaultPackagingTypeId();
+        $id = PackagingType::where('code', 'T')
+            ->where('active', true)
+            ->value('id');
+
+        if ($id === null) {
+            throw new Exception(
+                'Falta el PackagingType activo T (CONTENEDOR) requerido por CMSP.'
+            );
+        }
+
+        return (int) $id;
     }
 
     protected function extractBillDate(array $data): ?string
