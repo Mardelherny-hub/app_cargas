@@ -683,10 +683,9 @@ class GuaranExcelParser implements ManifestParserInterface
         $consignee = $this->findOrCreateClient($this->extractClientData($row, 'CONSIGNEE'));
         $notifyParty = $this->findOrCreateClient($this->extractClientData($row, 'NOTIFY_PARTY'));
 
-        $blDate = $this->parseDate($row['BL_DATE']);
-        if (!$blDate) {
-            throw new Exception('BL_DATE inválida: ' . $row['BL_DATE']);
-        }
+        $billDates = $this->buildBillDocumentDates(
+            $row['BL_DATE'] ?? null
+        );
 
         // Detectar si el BL es contenedorizado: alguna fila trae CONTAINER_NUMBER
         $containerNumbers = [];
@@ -746,8 +745,8 @@ class GuaranExcelParser implements ManifestParserInterface
             'primary_packaging_type_id' => $primaryPackagingTypeId,
             'origin_operative_code' => '10073', // Guaran: lugar operativo origen siempre 10073 (Roberto 22/05). Confirmado contra carga manual (BL 32/31). Serializer lee origin_operative_code para codLugOper origen.
             'bill_number' => $row['BL_NUMBER'],
-            'bill_date' => $blDate,
-            'loading_date' => $blDate,
+            'bill_date' => $billDates['bill_date'],
+            'loading_date' => $billDates['loading_date'],
             'freight_terms' => $this->mapFreightTerms($row['FREIGHT_TERMS']),
             'total_packages' => $totalPackages,
             'gross_weight_kg' => $totalGrossWeight,
@@ -811,7 +810,9 @@ class GuaranExcelParser implements ManifestParserInterface
             'item_description' => $this->buildCargoDescription($row),
             'cargo_type_id' => $cargoTypeId,
             'packaging_type_id' => $packagingTypeId,
-            'package_quantity' => (int) ($row['NUMBER_OF_PACKAGES'] ?? 1),
+            'package_quantity' => $this->parsePackageQuantity(
+                $row['NUMBER_OF_PACKAGES'] ?? null
+            ),
             'unit_of_measure' => 'KG', // Guaran exporta peso en kg (Roberto 22/05). Sin esto, la columna usa su default 'PCS'.
             // Campos AFIP/visualización a nivel item (los lee la pantalla del conocimiento
             // y el serializer). El parser los completa con el mismo criterio que la carga manual.
@@ -823,8 +824,6 @@ class GuaranExcelParser implements ManifestParserInterface
             'volume_m3' => $this->parseVolume($row['VOLUME'] ?? null),
             'commodity_code' => $row['NCM'] ?: null,
             'tariff_position' => $row['NCM'] ?: null,
-            'cargo_marks' => !empty($row['MARKS_DESCRIPTION']) ? $row['MARKS_DESCRIPTION'] : 'SM',
-            'country_of_origin_id' => $this->determineOriginCountry($row),
             'is_dangerous_goods' => !empty($row['UN_NUMBER']),
             'requires_refrigeration' => $this->requiresRefrigeration($row),
             'un_number' => $row['UN_NUMBER'] ?: null,
@@ -1093,6 +1092,50 @@ class GuaranExcelParser implements ManifestParserInterface
     protected function mapManifestType(?string $type): string
     {
             return 'convoy';
+    }
+
+    /**
+     * Guaran declara BL_DATE, pero no declara una fecha de carga.
+     */
+    protected function buildBillDocumentDates($blDate): array
+    {
+        $billDate = $this->parseDate($blDate);
+
+        if (!$billDate) {
+            throw new Exception(
+                'BL_DATE inválida: ' . (string) $blDate
+            );
+        }
+
+        return [
+            'bill_date' => $billDate,
+            'loading_date' => null,
+        ];
+    }
+
+    /**
+     * NUMBER_OF_PACKAGES es obligatorio para cada item Guaran.
+     * No fabricar una unidad cuando el archivo no trae cantidad.
+     */
+    protected function parsePackageQuantity($value): int
+    {
+        $value = trim((string) $value);
+
+        if ($value === '' || !ctype_digit($value)) {
+            throw new Exception(
+                'NUMBER_OF_PACKAGES inválido o ausente en Guaran'
+            );
+        }
+
+        $quantity = (int) $value;
+
+        if ($quantity <= 0) {
+            throw new Exception(
+                'NUMBER_OF_PACKAGES debe ser mayor que cero'
+            );
+        }
+
+        return $quantity;
     }
 
     protected function parseDate($date): ?Carbon
@@ -1750,24 +1793,6 @@ class GuaranExcelParser implements ManifestParserInterface
             ->first();
             
         return $type ? $type->id : 1;
-    }
-
-    protected function determineOriginCountry(array $row): int
-    {
-        $shipperAddress = strtolower($row['SHIPPER_ADDRESS1'] ?? '');
-        
-        if (strpos($shipperAddress, 'paraguay') !== false || 
-            strpos($shipperAddress, 'asuncion') !== false) {
-            return 2;
-        }
-        
-        if (strpos($shipperAddress, 'argentina') !== false) {
-            return 1;
-        }
-        
-        // Por puerto de origen
-        $pol = $row['POL'] ?? '';
-        return str_starts_with($pol, 'PY') ? 2 : 1;
     }
 
     protected function mapFreightTerms(?string $terms): string
