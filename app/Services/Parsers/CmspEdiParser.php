@@ -2489,17 +2489,16 @@ class CmspEdiParser implements ManifestParserInterface
         $condition = $esVacio ? 'V' : 'L';
 
         /*
-         * Tara:
-         * 1. valor real declarado en EQD/MEA;
-         * 2. si no vino, especificación del tipo de contenedor catalogado.
+         * Tara únicamente cuando el EDI la declara expresamente.
          *
-         * La columna containers.tare_weight_kg es obligatoria, por eso no puede
-         * quedar NULL.
+         * El tipo ISO permite clasificar el contenedor, pero la tara de catálogo
+         * es una especificación genérica del tipo, no un dato declarado para esta
+         * unidad física. Si el archivo no la informa, queda NULL.
          */
         $tareWeight = isset($equipment['tare_weight_kg'])
             && $equipment['tare_weight_kg'] !== null
                 ? (float) $equipment['tare_weight_kg']
-                : (float) $containerType->tare_weight_kg;
+                : null;
 
         /*
          * VGM es el peso bruto verificado del contenedor.
@@ -2525,9 +2524,12 @@ class CmspEdiParser implements ManifestParserInterface
 
         if ($esVacio) {
             $cargoWeight = 0;
-        } elseif ($vgmWeight > 0) {
+        } elseif ($vgmWeight > 0 && $tareWeight !== null) {
+            // Ambos valores vienen del EDI: la diferencia sí puede derivarse.
             $cargoWeight = max(0.0, $vgmWeight - $tareWeight);
         } elseif ($physicalOccurrences <= 1) {
+            // Sin una tara fuente no se deriva carga desde VGM. Para una única
+            // ocurrencia física sí puede conservarse el peso bruto del propio item.
             $cargoWeight = isset($itemData['gross_weight_kg'])
                 ? (float) $itemData['gross_weight_kg']
                 : null;
@@ -2553,7 +2555,9 @@ class CmspEdiParser implements ManifestParserInterface
             'set_temperature' => $equipment['transport_temperature_c'],
 
             'tare_weight_kg' => $tareWeight,
-            'max_gross_weight_kg' => $containerType->max_gross_weight_kg,
+            // CMSP no declara este valor en los segmentos que parseamos.
+            // No copiar la especificación genérica del catálogo como dato fuente.
+            'max_gross_weight_kg' => null,
             'current_gross_weight_kg' => $currentGrossWeight,
             'cargo_weight_kg' => $cargoWeight,
             'operational_status' => $esVacio ? 'empty' : 'loaded',
