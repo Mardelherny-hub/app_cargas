@@ -433,23 +433,93 @@ class ManifestImport extends Model
     }
 
     /**
-     * Registrar IDs de objetos creados
+     * Indica si el tracking de IDs fue escrito explícitamente.
+     *
+     * NULL = importación histórica/sin tracking explícito: se permite
+     * reconstrucción por relaciones.
+     * []   = tracking explícito: creó cero objetos de ese tipo.
+     */
+    protected function hasExplicitCreatedObjectTracking(string $attribute): bool
+    {
+        return array_key_exists($attribute, $this->attributes)
+            && $this->attributes[$attribute] !== null;
+    }
+
+    /**
+     * Registrar IDs de objetos creados.
+     *
+     * También persiste listas vacías. Esto permite distinguir entre
+     * "no hubo tracking" (NULL, importaciones históricas) y
+     * "se comprobó que creó cero objetos" ([]).
      */
     public function recordCreatedObjects(array $objects): void
     {
+        // Contrato histórico.
+        //
+        // Se conserva sin cambiar su semántica porque existen parsers
+        // anteriores que mezclan objetos creados y reutilizados.
+        // No debe utilizarse como prueba de propiedad para código nuevo.
         $updates = [];
-        
+
         foreach ($objects as $type => $ids) {
             if (!empty($ids)) {
                 $fieldName = "created_{$type}_ids";
                 $countField = "created_{$type}";
-                
+
                 $updates[$fieldName] = array_values($ids);
                 $updates[$countField] = count($ids);
             }
         }
-        
+
         if (!empty($updates)) {
+            $this->update($updates);
+        }
+    }
+
+    /**
+     * Registrar explícitamente objetos cuya creación pertenece a esta
+     * importación.
+     *
+     * Contrato:
+     * - claves canónicas en singular;
+     * - sólo IDs de objetos realmente creados por la importación;
+     * - [] se persiste y significa "creó cero";
+     * - NULL queda reservado para tracking histórico/desconocido.
+     */
+    public function recordExplicitlyCreatedObjects(array $objects): void
+    {
+        $typeMap = [
+            'voyage' => ['created_voyage_ids', 'created_voyages'],
+            'shipment' => ['created_shipment_ids', 'created_shipments'],
+            'bill' => ['created_bill_ids', 'created_bills'],
+            'item' => ['created_item_ids', 'created_items'],
+            'container' => ['created_container_ids', 'created_containers'],
+            'client' => ['created_client_ids', 'created_clients'],
+            'port' => ['created_port_ids', 'created_ports'],
+        ];
+
+        $updates = [];
+
+        foreach ($objects as $type => $ids) {
+            if (!isset($typeMap[$type])) {
+                throw new \InvalidArgumentException(
+                    "Tipo de objeto no soportado para tracking explícito: {$type}"
+                );
+            }
+
+            [$idsField, $countField] = $typeMap[$type];
+
+            $normalizedIds = collect($ids)
+                ->filter(static fn ($id) => $id !== null)
+                ->unique()
+                ->values()
+                ->all();
+
+            $updates[$idsField] = $normalizedIds;
+            $updates[$countField] = count($normalizedIds);
+        }
+
+        if ($updates !== []) {
             $this->update($updates);
         }
     }
@@ -460,6 +530,12 @@ class ManifestImport extends Model
     public function getAllCreatedObjectIds(): array
     {
         // 1) Leer lo que ya dejó trackeado la importación (si existe)
+        $voyageIdsExplicit = $this->hasExplicitCreatedObjectTracking('created_voyage_ids');
+        $shipmentIdsExplicit = $this->hasExplicitCreatedObjectTracking('created_shipment_ids');
+        $billIdsExplicit = $this->hasExplicitCreatedObjectTracking('created_bill_ids');
+        $containerIdsExplicit = $this->hasExplicitCreatedObjectTracking('created_container_ids');
+        $itemIdsExplicit = $this->hasExplicitCreatedObjectTracking('created_item_ids');
+
         $voyageIds    = collect($this->created_voyage_ids ?? [])->filter()->values();
         $shipmentIds  = collect($this->created_shipment_ids ?? [])->filter()->values();
         $billIds      = collect($this->created_bill_ids ?? [])->filter()->values();
@@ -480,7 +556,7 @@ class ManifestImport extends Model
         $voyagesTable    = Schema::hasTable('voyages')    ? 'voyages'    : null;
 
         // 3) Fallbacks por created_by_import_id o relaciones típicas
-        if ($voyageIds->isEmpty() && $voyagesTable) {
+        if (!$voyageIdsExplicit && $voyageIds->isEmpty() && $voyagesTable) {
             if (Schema::hasColumn($voyagesTable, 'created_by_import_id')) {
                 $voyageIds = DB::table($voyagesTable)
                     ->where('created_by_import_id', $this->id)
@@ -492,7 +568,7 @@ class ManifestImport extends Model
             }
         }
 
-        if ($shipmentsTable && $shipmentIds->isEmpty()) {
+        if (!$shipmentIdsExplicit && $shipmentsTable && $shipmentIds->isEmpty()) {
             if (Schema::hasColumn($shipmentsTable, 'created_by_import_id')) {
                 $shipmentIds = DB::table($shipmentsTable)
                     ->where('created_by_import_id', $this->id)
@@ -504,7 +580,7 @@ class ManifestImport extends Model
             }
         }
 
-        if ($billsTable && $billIds->isEmpty()) {
+        if (!$billIdsExplicit && $billsTable && $billIds->isEmpty()) {
             if (Schema::hasColumn($billsTable, 'created_by_import_id')) {
                 $billIds = DB::table($billsTable)
                     ->where('created_by_import_id', $this->id)
@@ -516,7 +592,7 @@ class ManifestImport extends Model
             }
         }
 
-        if ($itemsTable && $itemIds->isEmpty()) {
+        if (!$itemIdsExplicit && $itemsTable && $itemIds->isEmpty()) {
             if (Schema::hasColumn($itemsTable, 'created_by_import_id')) {
                 $itemIds = DB::table($itemsTable)
                     ->where('created_by_import_id', $this->id)
@@ -538,7 +614,7 @@ class ManifestImport extends Model
         }
 
         // 4) Containers por FKs directas (si existieran)
-        if ($containersTable && $containerIds->isEmpty()) {
+        if (!$containerIdsExplicit && $containersTable && $containerIds->isEmpty()) {
             $c = collect();
 
             $bolFk = null;

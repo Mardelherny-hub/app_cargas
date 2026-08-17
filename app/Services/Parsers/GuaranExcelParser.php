@@ -158,11 +158,20 @@ class GuaranExcelParser implements ManifestParserInterface
             $groupedByBL = $this->groupDataByBillNumber($data);
             $bills = [];
             $containers = [];
+            $createdContainers = [];
+            $items = [];
 
             // Importación masiva: silenciar los eventos de modelo (hooks saved/saving)
             // durante la creación para evitar recálculos en cascada por cada item,
             // que en manifiestos grandes agotan tiempo/memoria (HTTP 500).
-            Model::withoutEvents(function () use ($groupedByBL, $shipment, &$bills, &$containers) {
+            Model::withoutEvents(function () use (
+                $groupedByBL,
+                $shipment,
+                &$bills,
+                &$containers,
+                &$createdContainers,
+                &$items
+            ) {
                 foreach ($groupedByBL as $blNumber => $blRows) {
                     // Pasamos todas las filas del BL para que pueda contar contenedores únicos
                     $bill = $this->createBillOfLading($shipment, $blRows);
@@ -172,10 +181,19 @@ class GuaranExcelParser implements ManifestParserInterface
                         $container = null;
                         if (!empty($row['CONTAINER_NUMBER'])) {
                             $container = $this->createContainer($row);
-                            if ($container) $containers[] = $container;
+
+                            if ($container) {
+                                $containers[] = $container;
+
+                                if ($container->wasRecentlyCreated) {
+                                    $createdContainers[] = $container;
+                                }
+                            }
                         }
-                        // Crear el item y guardarlo en variable para vincular
+
+                        // Todo ShipmentItem de este loop nace en esta importación.
                         $item = $this->createShipmentItem($bill, $row);
+                        $items[] = $item;
                         // Si hay contenedor y se creó el item, vincular en la tabla pivot
                         if ($container && $item) {
                             $this->attachContainerToItem($container, $item);
@@ -191,7 +209,14 @@ class GuaranExcelParser implements ManifestParserInterface
             }
 
             // Completar importación
-            $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $startTime);
+            $this->completeImportRecord(
+                $importRecord,
+                $voyage,
+                $bills,
+                $items,
+                $createdContainers,
+                $startTime
+            );
             
             DB::commit();
 
@@ -199,6 +224,7 @@ class GuaranExcelParser implements ManifestParserInterface
                 'voyage_id' => $voyage->id,
                 'bills' => count($bills),
                 'containers' => count($containers),
+                'containers_created' => count($createdContainers),
                 'time' => round(microtime(true) - $startTime, 2) . 's'
             ]);
 
@@ -210,7 +236,8 @@ class GuaranExcelParser implements ManifestParserInterface
                 statistics: [
                     'records_processed' => count($data),
                     'bills_created' => count($bills),
-                    'containers_created' => count($containers),
+                    'containers_created' => count($createdContainers),
+                    'containers_processed' => count($containers),
                     'agent' => $voyageData['agent_name'],
                     'vessel' => $voyageData['vessel_name'],
                     'route' => $voyageData['pol'] . ' → ' . $voyageData['pod']
@@ -1613,21 +1640,26 @@ class GuaranExcelParser implements ManifestParserInterface
         ManifestImport $importRecord,
         Voyage $voyage,
         array $bills,
-        array $containers,
+        array $items,
+        array $createdContainers,
         float $startTime
     ): void {
         $processingTime = microtime(true) - $startTime;
         
         $createdObjects = [
-            'voyages' => [$voyage->id],
-            'shipments' => [$voyage->shipments()->first()->id ?? null],
-            'bills' => array_map(fn($bill) => $bill->id, $bills),
-            'containers' => array_map(fn($container) => $container->id, $containers)
+            'voyage' => [$voyage->id],
+            'shipment' => [$voyage->shipments()->first()->id ?? null],
+            'bill' => array_map(fn($bill) => $bill->id, $bills),
+            'item' => array_map(fn($item) => $item->id, $items),
+            'container' => array_map(
+                fn($container) => $container->id,
+                $createdContainers
+            ),
         ];
         
         $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
         
-        $importRecord->recordCreatedObjects($createdObjects);
+        $importRecord->recordExplicitlyCreatedObjects($createdObjects);
         $importRecord->markAsCompleted([
             'voyage_id' => $voyage->id,
             'processing_time_seconds' => round($processingTime, 2),
