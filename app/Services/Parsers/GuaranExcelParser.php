@@ -839,119 +839,251 @@ class GuaranExcelParser implements ManifestParserInterface
      */
     protected function createContainer(array $row): ?Container
     {
-        $containerNumber = $row['CONTAINER_NUMBER'];
-        if (!$containerNumber) return null;
+        $containerNumber = $this->normalizeContainerNumber(
+            $row['CONTAINER_NUMBER'] ?? null
+        );
 
-        $existing = Container::where('container_number', $containerNumber)->first();
-        if ($existing) return $existing;
-
-        // Precintos: el SEAL_NO de Guaran puede traer varios separados por coma.
-        // Se guardan en shipper_seal (varchar 50) que es el campo que lee el
-        // serializer AFIP (SimpleXmlGenerator). Antes se guardaba en 'seal_numbers',
-        // un campo inexistente en la tabla containers -> el precinto nunca llegaba al XML.
-        $shipperSeal = null;
-        if (!empty($row['SEAL_NO'])) {
-            $seals = array_filter(array_map('trim', explode(',', $row['SEAL_NO'])));
-            $shipperSeal = substr(implode(', ', $seals), 0, 50);
+        if ($containerNumber === null) {
+            return null;
         }
 
-        // Validar límite VARCHAR(15)
-        if (strlen($containerNumber) > 15) {
-            Log::warning('Container number truncado', [
-                'original' => $containerNumber,
-                'length' => strlen($containerNumber)
-            ]);
-            $containerNumber = substr($containerNumber, 0, 15);
+        // Validar siempre los datos declarados por Guaran, incluso si la
+        // unidad ya existe en el maestro.
+        $containerType = $this->resolveContainerTypeByCode(
+            $row['CONTAINER_TYPE'] ?? null
+        );
+
+        $this->mapContainerConditionToEnum(
+            $row['CONTAINER_STATUS'] ?? null
+        );
+
+        $this->normalizeShipperSeal(
+            $row['SEAL_NO'] ?? null
+        );
+
+        $existing = Container::where(
+            'container_number',
+            $containerNumber
+        )->first();
+
+        if ($existing) {
+            // El número identifica la unidad física. Un tipo diferente para
+            // la misma unidad no debe aceptarse silenciosamente.
+            if (
+                (int) $existing->container_type_id
+                !== (int) $containerType->id
+            ) {
+                throw new Exception(
+                    "Contenedor {$containerNumber}: tipo "
+                    . ($row['CONTAINER_TYPE'] ?? 'N/A')
+                    . " no coincide con el tipo ya registrado"
+                );
+            }
+
+            return $existing;
         }
-        return Container::create([
-            'container_number' => $containerNumber, // ✅ Variable real
-            'container_type_id' => $this->findContainerTypeByCode($row['CONTAINER_TYPE']), // ✅ ID real
-            'condition' => $this->mapContainerConditionToEnum($row['CONTAINER_STATUS']), // ✅ ENUM válido
-            'size_feet' => $this->extractContainerSize($row['CONTAINER_TYPE']),
-            'container_condition' => 'H', // Guaran: siempre House (Roberto 22/05). Serializer lee este campo para <condicion> AFIP (SimpleXmlGenerator L377/907).
-            'shipper_seal' => $shipperSeal,
-            'tare_weight_kg' => $this->parseWeight($row['TARE_WEIGHT']),
-            'current_status' => 'loaded',
-            'temperature_min' => $this->parseTemperature($row['TEMP_MIN']),
-            'temperature_max' => $this->parseTemperature($row['TEMP_MAX']),
-            'is_reefer' => $this->requiresRefrigeration($row),
+
+        return Container::create(
+            $this->buildContainerCreationData(
+                $row,
+                $containerType
+            )
+        );
+    }
+
+    /**
+     * Normalizar el identificador sin truncar información.
+     */
+    protected function normalizeContainerNumber(?string $number): ?string
+    {
+        $number = trim((string) $number);
+
+        if ($number === '') {
+            return null;
+        }
+
+        if (strlen($number) > 15) {
+            throw new Exception(
+                "Número de contenedor excede VARCHAR(15): {$number}"
+            );
+        }
+
+        return $number;
+    }
+
+    /**
+     * Preservar SEAL_NO completo. La columna real admite 255 caracteres.
+     */
+    protected function normalizeShipperSeal(?string $seal): ?string
+    {
+        $seal = trim((string) $seal);
+
+        if ($seal === '') {
+            return null;
+        }
+
+        if (strlen($seal) > 255) {
+            throw new Exception(
+                'SEAL_NO excede la capacidad de shipper_seal (255 caracteres)'
+            );
+        }
+
+        return $seal;
+    }
+
+    /**
+     * Datos de una unidad nueva. Distingue peso actual de capacidad nominal.
+     */
+    protected function buildContainerCreationData(
+        array $row,
+        object $containerType
+    ): array {
+        $containerNumber = $this->normalizeContainerNumber(
+            $row['CONTAINER_NUMBER'] ?? null
+        );
+
+        if ($containerNumber === null) {
+            throw new Exception(
+                'CONTAINER_NUMBER es requerido para crear el contenedor'
+            );
+        }
+
+        if (
+            !isset($containerType->id)
+            || !isset($containerType->max_gross_weight_kg)
+        ) {
+            throw new Exception(
+                'Container type sin capacidad máxima definida'
+            );
+        }
+
+        $condition = $this->mapContainerConditionToEnum(
+            $row['CONTAINER_STATUS'] ?? null
+        );
+
+        $isEmpty = $condition === 'V';
+
+        $gross = $this->parseWeight(
+            $row['GROSS_WEIGHT'] ?? null
+        );
+
+        $net = $this->parseWeight(
+            $row['NET_WEIGHT'] ?? null
+        );
+
+        $tare = $this->parseWeight(
+            $row['TARE_WEIGHT'] ?? null
+        );
+
+        $temperatureControlled = $this->requiresRefrigeration($row);
+
+        return [
+            'container_number' => $containerNumber,
+            'container_type_id' => (int) $containerType->id,
+
+            // Estado físico declarado por Guaran.
+            'condition' => $condition,
+            'operational_status' => $isEmpty ? 'empty' : 'loaded',
+
+            // Regla operativa aprobada para Guaran.
+            'container_condition' => 'H',
+
+            'shipper_seal' => $this->normalizeShipperSeal(
+                $row['SEAL_NO'] ?? null
+            ),
+
+            // Datos reales de ESTA unidad/movimiento.
+            'tare_weight_kg' => $tare,
+            'current_gross_weight_kg' => $gross,
+            'cargo_weight_kg' => $isEmpty ? 0.0 : $net,
+
+            // Capacidad técnica del tipo, no peso observado.
+            'max_gross_weight_kg' => (float) $containerType->max_gross_weight_kg,
+
+            // Guaran permite saber que requiere control, pero TEMP_MIN
+            // no demuestra un setpoint operativo.
+            'temperature_controlled' => $temperatureControlled,
+            'set_temperature' => null,
+
             'active' => true,
-            'max_gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
-            'created_by_user_id' => auth()->id()
-        ]);
+            'created_by_user_id' => auth()->id(),
+        ];
     }
 
     /**
      * Buscar container_type_id real basado en código
      */
-    protected function findContainerTypeByCode(?string $code): int
+    protected function resolveContainerTypeByCode(?string $code): object
     {
-        if (!$code) {
-            return $this->containerTypeFallbackBySize(null);
+        $code = strtoupper(trim((string) $code));
+
+        if ($code === '') {
+            throw new Exception(
+                'CONTAINER_TYPE es requerido en el archivo Guaran'
+            );
         }
-        $code = strtoupper(trim($code));
-        // Mapeo comercial Guaran -> ISO 6346 (confirmado QA 23/05).
-        // 20TN -> 22T1 es mapeo default para tanque 20' generico.
-        $comercialToIso = [
-            '40HC' => '45G1', '40RH' => '45R1', '20DV' => '22G1',
-            '20GP' => '22G1', '40GP' => '42G1', '40DV' => '42G1',
-            '20RF' => '22R1', '20OT' => '22U1', '20TN' => '22T1',
-            '40JU' => '45G1', // Jumbo 40' = High Cube (confirmado Roberto 01/06)
+
+        // Mapeo comercial Guaran -> ISO 6346 aprobado.
+        $commercialToIso = [
+            '40HC' => '45G1',
+            '40RH' => '45R1',
+            '20DV' => '22G1',
+            '20GP' => '22G1',
+            '40GP' => '42G1',
+            '40DV' => '42G1',
+            '20RF' => '22R1',
+            '20OT' => '22U1',
+            '20TN' => '22T1',
+            '40JU' => '45G1',
         ];
-        $isoCode = $comercialToIso[$code] ?? $code;
-        // Buscar en catalogo agrupando el OR correctamente con active.
+
+        $isoCode = $commercialToIso[$code] ?? $code;
+
         $containerType = DB::table('container_types')
             ->where('active', true)
-            ->where(function ($q) use ($isoCode, $code) {
-                $q->where('iso_code', $isoCode)
-                  ->orWhere('code', $code)
-                  ->orWhere('iso_code', $code);
+            ->where(function ($query) use ($isoCode, $code) {
+                $query->where('iso_code', $isoCode)
+                    ->orWhere('code', $code)
+                    ->orWhere('iso_code', $code);
             })
             ->first();
-        if ($containerType) {
-            return $containerType->id;
+
+        if (!$containerType) {
+            throw new Exception(
+                "Tipo de contenedor Guaran no reconocido: {$code}"
+            );
         }
-        // Fallback que respeta el tamaño (no confunde 40' con 20').
-        return $this->containerTypeFallbackBySize($code);
-    }
-    /**
-     * Fallback que elige container_type respetando el tamaño del codigo (20 vs 40 pies).
-     */
-    protected function containerTypeFallbackBySize(?string $code): int
-    {
-        $is40 = $code && str_starts_with($code, '40');
-        $iso = $is40 ? '42G1' : '22G1';
-        $ct = DB::table('container_types')
-            ->where('active', true)
-            ->where('iso_code', $iso)
-            ->first();
-        if ($ct) {
-            return $ct->id;
+
+        if ($containerType->max_gross_weight_kg === null) {
+            throw new Exception(
+                "Tipo {$code} sin max_gross_weight_kg en catálogo"
+            );
         }
-        Log::warning('findContainerTypeByCode sin match ni fallback ISO', [
-            'code' => $code, 'iso_buscado' => $iso,
-        ]);
-        $any = DB::table('container_types')->where('active', true)->first();
-        return $any->id ?? 1;
+
+        return $containerType;
     }
 
-    /**
-     * Mapear container status a ENUM válido
-     */
     protected function mapContainerConditionToEnum(?string $status): string
     {
-        if (!$status) return 'L';
+        $status = strtoupper(trim((string) $status));
 
-        // ENUM permite solo: 'V','D','S','P','L'
         $statusMap = [
-            'F' => 'L',    // Full → Loaded
-            'E' => 'V',    // Empty → Vacío
-            'L' => 'L',    // Loaded → Loaded
+            'F' => 'L',
             'FULL' => 'L',
-            'EMPTY' => 'V'
+            'L' => 'L',
+            'E' => 'V',
+            'EMPTY' => 'V',
         ];
 
-        return $statusMap[strtoupper($status)] ?? 'L';
+        if (!isset($statusMap[$status])) {
+            $display = $status !== '' ? $status : '(vacío)';
+
+            throw new Exception(
+                "CONTAINER_STATUS Guaran no reconocido: {$display}"
+            );
+        }
+
+        return $statusMap[$status];
     }
 
     // =====================================================
@@ -1829,7 +1961,7 @@ class GuaranExcelParser implements ManifestParserInterface
      */
     protected function attachContainerToItem(Container $container, ShipmentItem $item): void
     {
-        // Evitar duplicar la relación si ya existe
+        // Evitar duplicar la relación si ya existe.
         $exists = DB::table('container_shipment_item')
             ->where('container_id', $container->id)
             ->where('shipment_item_id', $item->id)
@@ -1839,18 +1971,36 @@ class GuaranExcelParser implements ManifestParserInterface
             return;
         }
 
-        DB::table('container_shipment_item')->insert([
+        DB::table('container_shipment_item')->insert(
+            $this->buildContainerItemPivotData(
+                $container,
+                $item
+            )
+        );
+    }
+
+    /**
+     * La asociación nace planificada.
+     *
+     * Full/Empty describe el estado físico del contenedor y no debe
+     * confundirse con el workflow operativo del vínculo con el item.
+     */
+    protected function buildContainerItemPivotData(
+        Container $container,
+        ShipmentItem $item
+    ): array {
+        return [
             'container_id' => $container->id,
             'shipment_item_id' => $item->id,
             'package_quantity' => $item->package_quantity,
             'gross_weight_kg' => $item->gross_weight_kg,
             'net_weight_kg' => $item->net_weight_kg,
             'volume_m3' => $item->volume_m3,
-            'status' => 'loaded',
+            'status' => 'planned',
             'created_date' => now(),
             'created_by_user_id' => auth()->id(),
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
     }
 }
