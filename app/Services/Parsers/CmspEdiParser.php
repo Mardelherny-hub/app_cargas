@@ -14,6 +14,8 @@ use App\Models\Container;
 use App\Models\ShipmentItem;
 use App\Models\Client;
 use App\Models\Port;
+use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Models\ContainerType;
 use App\Models\CargoType;
@@ -1019,7 +1021,18 @@ class CmspEdiParser implements ManifestParserInterface
             // y el extractor (que necesita las dos cosas juntas) no encuentra
             // nada. Regresion introducida el 05/08/2026 al agregar el corte;
             // reportada por Roberto el 06/08 como clientes duplicados sin CUIT.
-            $partyTaxId = $this->extractEmbeddedTaxId($this->cleanEdifactText($partyRaw));
+            $cleanPartyRaw = $this->cleanEdifactText($partyRaw);
+
+            $partyTaxId = $this->extractEmbeddedTaxId(
+                $cleanPartyRaw
+            );
+
+            // El nombre se sanea después y puede perder la etiqueta CUIT/RUC/etc.
+            // Conservar ahora el tipo sólo cuando el emisor lo declara expresamente.
+            $partyTaxType = $this->extractExplicitTaxTypeFromText(
+                $cleanPartyRaw,
+                $partyTaxId
+            );
 
             $partyName = $this->cleanEdifactText($partyParts[0] ?? '');
 
@@ -1076,8 +1089,10 @@ class CmspEdiParser implements ManifestParserInterface
                     'name' => $partyName,
                     'address' => $partyAddress,
                     'type' => $rol,
-                    // Del texto completo. El RFF+ADZ lo pisa despues si viene.
+                    // Del texto completo. El RFF+ADZ pisa tax_id después si viene.
+                    // tax_type sólo existe cuando CUIT/RUC/CNPJ/NIT fue explícito.
                     'tax_id' => $partyTaxId,
+                    'tax_type' => $partyTaxType,
                 ];
 
                 if ($currentContainer !== null) {
@@ -2439,114 +2454,322 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Buscar o crear cliente
      */
-    protected function findOrCreateClient(?array $partyData): ?Client
-    {
-        if (!$partyData || empty($partyData['name'])) {
+    protected function extractExplicitTaxTypeFromText(
+        ?string $text,
+        ?string $expectedTaxId = null
+    ): ?string {
+        $text = trim((string) $text);
+
+        if ($text === '') {
             return null;
         }
-    
-        // Obtener company_id
-        $user = auth()->user();
-        $companyId = $user->company_id ?? ($user->userable_type === 'App\Models\Company' ? $user->userable_id : null);
-    
-        if (!$companyId) {
-            throw new Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
+
+        $patterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:(?:NBR|NRO|Nº|N°)\.?\s*)?[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
+            'CNPJ' => '/\bCNPJ\b\s*[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
+            'RUC' => '/\bR\.?\s*U\.?\s*C\.?\b\s*[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
+            'NIT' => '/\bNIT\b\s*[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
+        ];
+
+        foreach ($patterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $taxId = preg_replace('/\D/', '', $matches[1]);
+
+            if (
+                $taxId === ''
+                || preg_match('/^0+$/', $taxId)
+                || !$this->isTaxIdCompatibleWithType($taxId, $taxType)
+            ) {
+                throw new \DomainException(
+                    "CMSP: identificador {$taxType} con formato incompatible."
+                );
+            }
+
+            if ($expectedTaxId !== null) {
+                $expected = preg_replace('/\D/', '', $expectedTaxId);
+
+                if ($expected !== '' && $expected !== $taxId) {
+                    throw new \DomainException(
+                        "CMSP: el identificador {$taxType} escrito en NAD "
+                        . 'no coincide con el identificador fiscal resuelto.'
+                    );
+                }
+            }
+
+            return $taxType;
         }
-    
-        // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
-        // La direccion va como tercer argumento: al cortar el nombre por ':',
-        // el CUIT/RUC que el emisor escribe en la cola queda de ese lado.
-        // El campo estructurado (RFF+ADZ) tiene prioridad; resolveTaxId cae al
-        // texto del nombre o la direccion solo si no vino o no es plausible.
+
+        return null;
+    }
+
+    protected function isTaxIdCompatibleWithType(
+        string $taxId,
+        string $taxType
+    ): bool {
+        $length = strlen($taxId);
+
+        return match ($taxType) {
+            'CUIT' => $length === 11,
+            'CNPJ' => $length === 14,
+            'RUC' => $length >= 7 && $length <= 9,
+            'NIT' => $length >= 9 && $length <= 10,
+            default => false,
+        };
+    }
+
+    /**
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolvePartyTaxIdentity(array $partyData): array
+    {
         $taxId = $this->resolveTaxId(
             $partyData['tax_id'] ?? null,
             $partyData['name'] ?? null,
             $partyData['address'] ?? null
         );
 
-        // 1. Buscar por tax_id de forma GLOBAL (mismo CUIT = mismo cliente, sin importar empresa)
-        if ($taxId) {
-            $client = Client::where('tax_id', $taxId)->first();
+        $taxType = trim(
+            strtoupper((string) ($partyData['tax_type'] ?? ''))
+        );
+
+        $taxType = $taxType !== ''
+            ? $taxType
+            : null;
+
+        if ($taxType === null && $taxId !== null) {
+            $taxType = $this->extractExplicitTaxTypeFromText(
+                ($partyData['name'] ?? '')
+                . ' '
+                . ($partyData['address'] ?? ''),
+                $taxId
+            );
+        }
+
+        if (
+            $taxId !== null
+            && $taxType !== null
+            && !$this->isTaxIdCompatibleWithType($taxId, $taxType)
+        ) {
+            throw new \DomainException(
+                "CMSP: identificador {$taxType} con formato incompatible."
+            );
+        }
+
+        return [
+            'tax_id' => $taxId,
+            'tax_type' => $taxType,
+        ];
+    }
+
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    protected function countryAlpha2FromPartyText(?string $text): ?string
+    {
+        $text = mb_strtoupper(trim((string) $text));
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'AR' => '/\bARGENTINA\b/u',
+            'PY' => '/\bPARAGUAY\b/u',
+            'UY' => '/\bURUGUAY\b/u',
+            'BR' => '/\b(?:BRASIL|BRAZIL)\b/u',
+            'CO' => '/\bCOLOMBIA\b/u',
+        ];
+
+        foreach ($patterns as $alpha2 => $pattern) {
+            if (preg_match($pattern, $text)) {
+                return $alpha2;
+            }
+        }
+
+        return null;
+    }
+
+    protected function countryIdForAlpha2(string $alpha2): int
+    {
+        $countryId = Country::query()
+            ->where('alpha2_code', strtoupper($alpha2))
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "CMSP: no existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
+    }
+
+    protected function contextualCountryIdForParty(array $partyData): int
+    {
+        $role = $partyData['type'] ?? null;
+
+        $portCode = match ($role) {
+            'shipper' => $this->parsedData['ports']['loading'] ?? null,
+            'consignee', 'notify' => $this->parsedData['ports']['discharge'] ?? null,
+            default => null,
+        };
+
+        if (!$portCode) {
+            throw new \DomainException(
+                'CMSP: no existe contexto suficiente para resolver el país de la parte.'
+            );
+        }
+
+        return (int) $this->findOrCreatePort(
+            $portCode
+        )->country_id;
+    }
+
+    protected function resolveClientCountryId(
+        array $partyData,
+        ?string $taxType
+    ): int {
+        $textAlpha2 = $this->countryAlpha2FromPartyText(
+            ($partyData['name'] ?? '')
+            . ' '
+            . ($partyData['address'] ?? '')
+        );
+
+        $taxAlpha2 = $this->countryAlpha2ForTaxType($taxType);
+
+        if (
+            $textAlpha2 !== null
+            && $taxAlpha2 !== null
+            && $textAlpha2 !== $taxAlpha2
+        ) {
+            throw new \DomainException(
+                "CMSP: el país declarado {$textAlpha2} "
+                . "es incompatible con el tipo fiscal {$taxType}."
+            );
+        }
+
+        if ($textAlpha2 !== null) {
+            return $this->countryIdForAlpha2($textAlpha2);
+        }
+
+        if ($taxAlpha2 !== null) {
+            return $this->countryIdForAlpha2($taxAlpha2);
+        }
+
+        return $this->contextualCountryIdForParty($partyData);
+    }
+
+    /**
+     * Buscar o crear cliente sin fabricar jurisdicción ni tipo documental.
+     */
+    protected function findOrCreateClient(?array $partyData): ?Client
+    {
+        if (!$partyData || empty($partyData['name'])) {
+            return null;
+        }
+
+        $user = auth()->user();
+
+        $companyId = $user->company_id
+            ?? (
+                $user->userable_type === 'App\Models\Company'
+                    ? $user->userable_id
+                    : null
+            );
+
+        if (!$companyId) {
+            throw new Exception(
+                "Usuario no tiene empresa asignada. User ID: {$user->id}"
+            );
+        }
+
+        $identity = $this->resolvePartyTaxIdentity(
+            $partyData
+        );
+
+        $taxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $countryId = $this->resolveClientCountryId(
+            $partyData,
+            $taxType
+        );
+
+        // Con identificador fiscal la identidad es tax_id + country_id.
+        // Nunca degradar luego a una coincidencia sólo por nombre.
+        if ($taxId !== null) {
+            $client = Client::query()
+                ->where('tax_id', $taxId)
+                ->where('country_id', $countryId)
+                ->first();
+
             if ($client) {
-                Log::info('Cliente encontrado por tax_id', [
-                    'tax_id' => $taxId,
-                    'client_id' => $client->id
-                ]);
-                $this->persistClientAddress($client, $partyData['address'] ?? null);
+                $this->persistClientAddress(
+                    $client,
+                    $partyData['address'] ?? null
+                );
+
+                return $client;
+            }
+        } else {
+            // Sin identificador fiscal sólo reutilizar otra ficha también
+            // sin tax_id, mismo país y mismo nombre.
+            $name = trim((string) $partyData['name']);
+
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->where(function ($query) use ($name) {
+                    $normalizedName = mb_strtoupper($name);
+
+                    $query
+                        ->whereRaw(
+                            'UPPER(TRIM(legal_name)) = ?',
+                            [$normalizedName]
+                        )
+                        ->orWhereRaw(
+                            'UPPER(TRIM(commercial_name)) = ?',
+                            [$normalizedName]
+                        );
+                })
+                ->first();
+
+            if ($client) {
+                $this->persistClientAddress(
+                    $client,
+                    $partyData['address'] ?? null
+                );
+
                 return $client;
             }
         }
 
-        // 2. Si no se encontró por tax_id, buscar por nombre legal (global)
-        $client = Client::where('legal_name', $partyData['name'])->first();
+        $documentTypeId = null;
 
-        if ($client) {
-            /*
-             * Si el archivo trae un identificador fiscal real y el cliente
-             * preexistente fue creado sin él, completar la ficha en lugar de
-             * perder el dato.
-             *
-             * Si ya tiene OTRO identificador, no asociar silenciosamente dos
-             * entidades distintas por compartir nombre: detener la importación.
-             */
-            if ($taxId) {
-                $storedTaxId = preg_replace(
-                    '/\D/',
-                    '',
-                    (string) ($client->tax_id ?? '')
+        if ($taxId !== null && $taxType !== null) {
+            $documentTypeId = DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "CMSP: no existe un tipo documental {$taxType} "
+                    . 'activo y compatible con el país resuelto.'
                 );
-
-                if ($storedTaxId === '') {
-                    $client->tax_id = $taxId;
-                    $client->save();
-
-                    Log::info('CMSP: identificacion fiscal completada desde CUSCAR', [
-                        'client_id' => $client->id,
-                        'name' => $client->legal_name,
-                        'tax_id' => $taxId,
-                    ]);
-                } elseif ($storedTaxId !== $taxId) {
-                    throw new Exception(
-                        "El cliente '{$partyData['name']}' ya existe con identificación fiscal "
-                        . "'{$client->tax_id}', pero el archivo CUSCAR informa '{$taxId}'. "
-                        . 'La importación se detuvo para evitar asociar datos de entidades distintas.'
-                    );
-                }
             }
-
-            Log::info('Cliente encontrado por nombre legal', [
-                'name' => $partyData['name'],
-                'client_id' => $client->id
-            ]);
-
-            $this->persistClientAddress(
-                $client,
-                $partyData['address'] ?? null
-            );
-
-            return $client;
-        }
-
-        // 3. Si no existe ni por tax_id ni por nombre, crear (tax_id real o null, sin fabricar)
-        // Inferencia de pais por longitud del tax_id (mismo criterio aprobado por
-        // QA 29/06 y ya aplicado en GuaranExcelParser):
-        //   11 digitos  => CUIT argentino => Argentina (11), document_type 1
-        //   7 a 9       => RUC paraguayo  => Paraguay  (174), document_type 3
-        // IDs verificados contra countries y document_types.
-        // Antes estaba fijo en country_id=1, que es Afghanistan.
-        $countryId = 174;        // Paraguay: emisor y puertos de carga del CUSCAR
-        $documentTypeId = 3;     // RUC
-
-        if ($taxId) {
-            $taxLen = strlen($taxId); // resolveTaxId devuelve solo digitos
-            if ($taxLen === 11) {
-                $countryId = 11;
-                $documentTypeId = 1;
-            }
-        } else {
-            Log::warning('CMSP: parte sin identificacion fiscal, pais NO confiable (revisar)', [
-                'name' => $partyData['name'],
-            ]);
         }
 
         $client = Client::create([
@@ -2557,16 +2780,22 @@ class CmspEdiParser implements ManifestParserInterface
             'country_id' => $countryId,
             'document_type_id' => $documentTypeId,
         ]);
-    
-            Log::info('Cliente creado automáticamente', [
-                'name' => $partyData['name'],
-                'client_id' => $client->id
-            ]);
 
-            $this->persistClientAddress($client, $partyData['address'] ?? null);
+        Log::info('CMSP: cliente creado automáticamente', [
+            'name' => $partyData['name'],
+            'client_id' => $client->id,
+            'tax_id' => $taxId,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
+        ]);
 
-            return $client;
-        }
+        $this->persistClientAddress(
+            $client,
+            $partyData['address'] ?? null
+        );
+
+        return $client;
+    }
 
     /**
      * Extraer cantidad de paquetes
