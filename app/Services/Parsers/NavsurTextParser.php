@@ -1172,7 +1172,7 @@ class NavsurTextParser implements ManifestParserInterface
             'total_cargo_capacity_tons' =>
                 $vessel->cargo_capacity_tons,
             'total_container_capacity' =>
-                $vessel->container_capacity,
+                $vessel->container_capacity ?? 0,
             'total_cargo_weight_loaded' => 0,
             'total_containers_loaded' => 0,
             'capacity_utilization_percentage' => 0,
@@ -2080,76 +2080,49 @@ class NavsurTextParser implements ManifestParserInterface
     /**
      * Buscar o crear puerto
      */
-    protected function findOrCreatePort(string $code): Port
-    {
-        if (empty($code)) {
-            $code = 'UNKNOWN';
-        }
 
-        $code = strtoupper(trim(str_replace(['/*', '*/'], '', $code)));
-
-        $port = Port::where('code', $code)->first();
-        
-        if ($port) {
-            return $port;
-        }
-
-        // Determinar país y ciudad basado en código
-        $countryId = 1; // Argentina por defecto
-        $cityName = 'Ciudad Desconocida'; // Valor por defecto para city (obligatorio)
-        
-        if (str_starts_with($code, 'PY')) {
-            $countryId = 2; // Paraguay
-            $cityName = $this->mapParaguayanPortCity($code);
-        } elseif (str_starts_with($code, 'BR')) {
-            $countryId = 3; // Brasil
-            $cityName = $this->mapBrazilianPortCity($code);
-        } else {
-            // Argentina o códigos genéricos
-            $cityName = $this->mapArgentinianPortCity($code);
-        }
-
-        $port = Port::create([
-            'code' => $code,
-            'name' => 'Puerto ' . $code,
-            'city' => $cityName, // CORREGIDO: Campo obligatorio agregado
-            'country_id' => $countryId,
-            'port_type' => 'river',
-            'active' => true,
-            'handles_containers' => true,
-            'handles_bulk_cargo' => true,
-            'handles_general_cargo' => true,
-            'has_customs_office' => true,
-            'accepts_new_vessels' => true
-        ]);
-
-        $this->stats['warnings'][] = "Puerto '{$code}' creado automáticamente en {$cityName}";
-
-        return $port;
+    protected function findOrCreatePort(
+        string $code
+    ): Port {
+        /*
+         * Compatibilidad con llamadas históricas.
+         *
+         * Nunca crear puertos desde un manifiesto:
+         * deben existir previamente en catálogo.
+         */
+        return $this->resolvePortStrict($code);
     }
+
 
     /**
      * NUEVO MÉTODO: Mapear códigos paraguayos a ciudades
      */
-    protected function mapParaguayanPortCity(string $code): string
-    {
+
+    protected function mapParaguayanPortCity(
+        string $code
+    ): ?string {
         $cityMap = [
             'PYCAP' => 'Capitán Carmelo Peralta',
             'PYASU' => 'Asunción',
             'PYVIL' => 'Villeta',
             'PYCON' => 'Concepción',
             'PYPIL' => 'Pilar',
-            'PYALB' => 'Puerto Casado'
+            'PYALB' => 'Puerto Casado',
         ];
-        
-        return $cityMap[$code] ?? 'Asunción'; // Default Paraguay
+
+        return $cityMap[
+            strtoupper(trim($code))
+        ] ?? null;
     }
+
 
     /**
      * NUEVO MÉTODO: Mapear códigos argentinos a ciudades
      */
-    protected function mapArgentinianPortCity(string $code): string
-    {
+
+    protected function mapArgentinianPortCity(
+        string $code
+    ): ?string {
         $cityMap = [
             'ARBUE' => 'Buenos Aires',
             'ARROS' => 'Rosario',
@@ -2157,26 +2130,34 @@ class NavsurTextParser implements ManifestParserInterface
             'ARPAR' => 'Paraná',
             'ARCOR' => 'Corrientes',
             'ARFOR' => 'Formosa',
-            'ARBAH' => 'Bahía Blanca'
+            'ARBAH' => 'Bahía Blanca',
         ];
-        
-        return $cityMap[$code] ?? 'Buenos Aires'; // Default Argentina
+
+        return $cityMap[
+            strtoupper(trim($code))
+        ] ?? null;
     }
+
 
     /**
      * NUEVO MÉTODO: Mapear códigos brasileños a ciudades
      */
-    protected function mapBrazilianPortCity(string $code): string
-    {
+
+    protected function mapBrazilianPortCity(
+        string $code
+    ): ?string {
         $cityMap = [
             'BRRIG' => 'Rio Grande',
             'BRPOA' => 'Porto Alegre',
             'BRSFS' => 'Santos',
-            'BRSSZ' => 'Santos'
+            'BRSSZ' => 'Santos',
         ];
-        
-        return $cityMap[$code] ?? 'Porto Alegre'; // Default Brasil
+
+        return $cityMap[
+            strtoupper(trim($code))
+        ] ?? null;
     }
+
 
 /**
  * Buscar o crear tipo de contenedor - VERSIÓN SIMPLIFICADA
