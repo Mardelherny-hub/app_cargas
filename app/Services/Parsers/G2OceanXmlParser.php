@@ -96,159 +96,178 @@ class G2OceanXmlParser implements ManifestParserInterface
     /**
      * Parsear archivo G2Ocean XML
      */
-    public function parse(string $filePath, array $options = []): ManifestParseResult
-    {
+
+    public function parse(
+        string $filePath,
+        array $options = []
+    ): ManifestParseResult {
         $startTime = microtime(true);
-        
+
         try {
-            // Validar vessel_id obligatorio
             if (empty($options['vessel_id'])) {
                 return ManifestParseResult::failure([
                     'vessel_id es obligatorio para procesar archivo G2Ocean'
                 ]);
             }
 
-            // Crear registro de importación
-            $importRecord = $this->createImportRecord($filePath, $options);
+            $importRecord = $this->createImportRecord(
+                $filePath,
+                $options
+            );
 
-            // Parsear XML
             $xml = simplexml_load_file($filePath);
+
             if (!$xml) {
-                return ManifestParseResult::failure([
+                throw new Exception(
                     'No se pudo parsear el archivo XML de G2Ocean'
-                ]);
+                );
             }
 
-            Log::info('Starting G2Ocean parse process', [
-                'file_path' => $filePath,
-                'vessel_id' => $options['vessel_id']
-            ]);
+            $billsData = $this->extractBillsOfLading($xml);
 
-            return DB::transaction(function () use ($xml, $options, $importRecord, $startTime, $filePath) {
-                // Extraer datos del envelope
-                $envelopeData = $this->extractEnvelopeData($xml);
-                
-                // Obtener todos los bills of lading
-                $billsData = $this->extractBillsOfLading($xml);
-                
-                if (empty($billsData)) {
-                    return ManifestParseResult::failure([
-                        'No se encontraron conocimientos de embarque en el archivo G2Ocean'
-                    ]);
-                }
+            if (empty($billsData)) {
+                throw new Exception(
+                    'No se encontraron conocimientos de embarque '
+                    . 'en el archivo G2Ocean'
+                );
+            }
 
-                // Verificar duplicados
-                $duplicateCheck = $this->checkForDuplicateBills($billsData);
-                if ($duplicateCheck['all_duplicates']) {
-                    return ManifestParseResult::failure([
-                        'Este archivo ya fue importado anteriormente. Todos los conocimientos de embarque ya existen en el sistema.'
-                    ], [], $this->stats);
-                }
+            $duplicateCheck =
+                $this->checkForDuplicateBills($billsData);
 
-                // Usar el primer BL para crear voyage y shipment
-                $firstBL = reset($billsData);
-                
-                // Crear voyage
-                $voyage = $this->createVoyage($firstBL, $options);
-                
-                // Crear shipment
-                $shipment = $this->createShipment($voyage, $options);
+            if ($duplicateCheck['all_duplicates']) {
+                throw new Exception(
+                    'Todos los conocimientos de embarque '
+                    . 'del archivo ya existen.'
+                );
+            }
 
-                // Procesar cada BL
-                $createdBills = [];
-                $createdItems = [];
-                
-                foreach ($billsData as $blData) {
-                    try {
-                        // Verificar duplicado
-                        $blNumber = $blData['bl_number'];
-                        $existingBL = BillOfLading::where('bill_number', $blNumber)->first();
-                        
-                        if ($existingBL) {
-                            $this->stats['warnings'][] = "BL {$blNumber} ya existe, omitiendo";
+            return DB::transaction(
+                function () use (
+                    $billsData,
+                    $options,
+                    $importRecord,
+                    $startTime
+                ) {
+                    $firstBL = reset($billsData);
+
+                    $voyage = $this->createVoyage(
+                        $firstBL,
+                        $options
+                    );
+
+                    $shipment = $this->createShipment(
+                        $voyage,
+                        $options
+                    );
+
+                    $createdBills = [];
+                    $createdItems = [];
+
+                    foreach ($billsData as $blData) {
+                        $blNumber =
+                            $this->requireG2OceanText(
+                                $blData['bl_number'] ?? null,
+                                'blNo'
+                            );
+
+                        if (
+                            BillOfLading::where(
+                                'bill_number',
+                                $blNumber
+                            )->exists()
+                        ) {
+                            $this->stats['warnings'][] =
+                                "BL {$blNumber} ya existe, omitiendo";
+
                             continue;
                         }
 
-                        // Crear BillOfLading
-                        $bill = $this->createBillOfLading($shipment, $blData);
+                        /*
+                         * No capturar excepciones acá:
+                         * cualquier BL inválido revierte todo.
+                         */
+                        $bill = $this->createBillOfLading(
+                            $shipment,
+                            $blData
+                        );
+
                         $createdBills[] = $bill;
 
-                        // Crear ShipmentItems
-                        $items = $this->createShipmentItems($bill, $blData);
-                        $createdItems = array_merge($createdItems, $items);
+                        $items = $this->createShipmentItems(
+                            $bill,
+                            $blData
+                        );
+
+                        $createdItems = array_merge(
+                            $createdItems,
+                            $items
+                        );
 
                         $this->stats['created_bills']++;
-                        
-                    } catch (Exception $e) {
-                        $this->stats['errors']++;
-                        $this->stats['warnings'][] = "Error procesando BL {$blData['bl_number']}: " . $e->getMessage();
-                        Log::error('Error processing G2Ocean BL', [
-                            'bl' => $blData['bl_number'],
-                            'error' => $e->getMessage()
-                        ]);
                     }
+
+                    if (empty($createdBills)) {
+                        throw new Exception(
+                            'No se creó ningún Bill of Lading.'
+                        );
+                    }
+
+                    $this->completeImportRecord(
+                        $importRecord,
+                        $voyage,
+                        $createdBills,
+                        $createdItems,
+                        [],
+                        $startTime
+                    );
+
+                    return ManifestParseResult::success(
+                        voyage: $voyage,
+                        shipments: [$shipment],
+                        containers: [],
+                        billsOfLading: $createdBills,
+                        statistics: array_merge(
+                            $this->stats,
+                            [
+                                'processed_items' =>
+                                    count($createdItems),
+                                'total_bills' =>
+                                    count($createdBills),
+                                'import_id' =>
+                                    $importRecord->id,
+                            ]
+                        )
+                    );
                 }
-
-                if (empty($createdBills)) {
-                    return ManifestParseResult::failure([
-                        'No se pudo crear ningún Bill of Lading del archivo G2Ocean'
-                    ], $this->stats['warnings'], $this->stats);
-                }
-
-                Log::info('G2Ocean parsing completed successfully', [
-                    'voyage_id' => $voyage->id,
-                    'bills_created' => count($createdBills),
-                    'items_created' => count($createdItems)
-                ]);
-
-                // Completar registro de importación
-                $this->completeImportRecord($importRecord, $voyage, $createdBills, $createdItems, [], $startTime);
-
-                return ManifestParseResult::success(
-                    voyage: $voyage,
-                    shipments: [$shipment],
-                    containers: [],
-                    billsOfLading: $createdBills,
-                    statistics: array_merge($this->stats, [
-                        'processed_items' => count($createdItems),
-                        'total_bills' => count($createdBills),
-                        'import_id' => $importRecord->id
-                    ])
-                );
-            });
-
+            );
         } catch (Exception $e) {
-            // Viaje ya existente (bloqueo global de duplicado): mensaje amable, no SQL crudo.
-            if (strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false) {
-                if (isset($importRecord)) {
-                    $importRecord->markAsFailed([
-                        'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
-                    ], ['errors_count' => 1]);
-                }
-                return ManifestParseResult::failure([
-                    'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato. Si necesita importarlo de nuevo, primero revierta la importación desde el Historial de Importaciones.'
-                ], [], $this->stats);
-            }
-
             Log::error('Critical error in G2Ocean parser', [
                 'file_path' => $filePath,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
             ]);
 
             if (isset($importRecord)) {
-                $processingTime = microtime(true) - $startTime;
-                $importRecord->markAsFailed([$e->getMessage()], [
-                    'processing_time_seconds' => round($processingTime, 2),
-                    'errors_count' => 1
-                ]);
+                $importRecord->markAsFailed(
+                    [$e->getMessage()],
+                    [
+                        'processing_time_seconds' =>
+                            round(
+                                microtime(true) - $startTime,
+                                2
+                            ),
+                        'errors_count' => 1,
+                    ]
+                );
             }
 
             return ManifestParseResult::failure([
-                'Error al procesar archivo G2Ocean: ' . $e->getMessage()
+                'Error al procesar archivo G2Ocean: '
+                . $e->getMessage(),
             ], [], $this->stats);
         }
     }
+
 
     /**
      * Extraer datos del envelope
@@ -596,7 +615,7 @@ class G2OceanXmlParser implements ManifestParserInterface
             'weight_unit' => (string)($detail->weightUOM ?? 'MT'),
             'volume' => (float)($detail->measure ?? 0),
             'volume_unit' => (string)($detail->measureUOM ?? 'M³'),
-            'marks' => (string)($detail->marks ?? 'S/M'),
+            'marks' => trim((string)($detail->marks ?? '')),
             // NCM/HS despuntado (informativo)
             'commodity_code' => $commodityCode,
             // Posición arancelaria AFIP (con formato de puntos)
@@ -674,19 +693,54 @@ class G2OceanXmlParser implements ManifestParserInterface
     /**
      * Parsear fecha desde formato YYYYMMDD
      */
+
     protected function parseDate(string $dateStr): ?Carbon
     {
-        if (empty($dateStr) || strlen($dateStr) !== 8) {
+        $value = trim($dateStr);
+
+        if ($value === '') {
             return null;
         }
 
+        foreach (
+            ['d/m/Y', 'Y-m-d', 'd-m-Y', 'd.m.Y', 'Ymd']
+            as $format
+        ) {
+            try {
+                $date = Carbon::createFromFormat(
+                    '!' . $format,
+                    $value,
+                    'UTC'
+                );
+
+                $errors = Carbon::getLastErrors();
+
+                if (
+                    $date
+                    && (
+                        $errors === false
+                        || (
+                            $errors['warning_count'] === 0
+                            && $errors['error_count'] === 0
+                        )
+                    )
+                ) {
+                    return $date;
+                }
+            } catch (\Throwable $e) {
+                // probar siguiente formato
+            }
+        }
+
         try {
-            return Carbon::createFromFormat('Ymd', $dateStr);
-        } catch (Exception $e) {
-            Log::warning('Error parsing date: ' . $dateStr);
-            return null;
+            return Carbon::parse($value)->utc();
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException(
+                "Fecha G2Ocean inválida: {$value}"
+            );
         }
     }
+
 
     /**
      * Verificar duplicados en lote
@@ -720,157 +774,450 @@ class G2OceanXmlParser implements ManifestParserInterface
     /**
      * Crear voyage desde datos G2Ocean
      */
-    protected function createVoyage(array $blData, array $options): Voyage
+
+
+    protected function requireG2OceanText(
+        $value,
+        string $field
+    ): string {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            throw new Exception(
+                "G2Ocean: falta {$field} en el XML."
+            );
+        }
+
+        return $value;
+    }
+
+    protected function normalizeG2OceanCargoMarks(
+        $value
+    ): ?string {
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : null;
+    }
+
+    protected function parseG2OceanPackageQuantity(
+        $value
+    ): int {
+        $value = trim((string) $value);
+
+        if (
+            $value === ''
+            || !ctype_digit($value)
+            || (int) $value <= 0
+        ) {
+            throw new Exception(
+                'G2Ocean: cantidad de bultos inválida.'
+            );
+        }
+
+        return (int) $value;
+    }
+
+    protected function g2OceanGrossKg($weightMt): float
     {
-        // Obtener company_id
+        if (
+            !is_numeric($weightMt)
+            || (float) $weightMt <= 0
+        ) {
+            throw new Exception(
+                'G2Ocean: peso MT inválido.'
+            );
+        }
+
+        return round(
+            (float) $weightMt * 1000,
+            2
+        );
+    }
+
+    protected function assertG2OceanVesselMatchesSource(
+        Vessel $vessel,
+        $sourceName
+    ): void {
+        $normalize = static function ($value): string {
+            $value = mb_strtoupper(
+                trim((string) $value)
+            );
+
+            $value = preg_replace(
+                '/[^A-Z0-9]+/u',
+                ' ',
+                $value
+            );
+
+            return trim(
+                preg_replace('/\s+/', ' ', $value)
+            );
+        };
+
+        $source = $normalize($sourceName);
+
+        if ($source === '') {
+            return;
+        }
+
+        $candidates = array_filter([
+            $normalize($vessel->name),
+            $normalize($vessel->registration_number),
+        ]);
+
+        if (!in_array($source, $candidates, true)) {
+            throw new Exception(
+                "G2Ocean declara vessel '{$sourceName}', "
+                . "pero se seleccionó '{$vessel->name}'."
+            );
+        }
+    }
+
+    protected function resolveG2OceanFreightTerms(
+        array $cargoItems
+    ): ?string {
+        $text = strtoupper(
+            implode(
+                ' ',
+                array_map(
+                    fn ($item) =>
+                        (string) (
+                            $item['description'] ?? ''
+                        ),
+                    $cargoItems
+                )
+            )
+        );
+
+        $prepaid = preg_match(
+            '/\bFREIGHT\s+(?:IS\s+)?PREPAID\b'
+            . '|\bPREPAID\s+ABROAD\b/',
+            $text
+        ) === 1;
+
+        $collect = preg_match(
+            '/\bFREIGHT\s+(?:IS\s+)?COLLECT\b/',
+            $text
+        ) === 1;
+
+        if ($prepaid && $collect) {
+            throw new Exception(
+                'G2Ocean: términos de flete contradictorios.'
+            );
+        }
+
+        if ($prepaid) {
+            return 'prepaid';
+        }
+
+        if ($collect) {
+            return 'collect';
+        }
+
+        /*
+         * Puede existir importe de flete sin modalidad de pago
+         * ("FREIGHT : USD18600"). Eso no autoriza inferir
+         * prepaid ni collect.
+         */
+        return null;
+    }
+
+
+    protected function createVoyage(
+        array $blData,
+        array $options
+    ): Voyage {
         $user = auth()->user();
-        if ($user->company_id) {
-            $companyId = $user->company_id;
-        } elseif ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
-            $companyId = (int) $user->userable_id;
-        } else {
-            throw new Exception("Usuario no tiene empresa asignada");
+
+        if (!$user) {
+            throw new Exception(
+                'G2Ocean requiere usuario autenticado.'
+            );
         }
 
-        // Obtener vessel
-        $vesselId = $options['vessel_id'];
-        $vessel = Vessel::find($vesselId);
+        $companyId = $user->company_id
+            ?: (
+                $user->userable_type === 'App\Models\Company'
+                    ? $user->userable_id
+                    : null
+            );
+
+        if (!$companyId) {
+            throw new Exception(
+                'Usuario no tiene empresa asignada.'
+            );
+        }
+
+        $vessel = Vessel::find(
+            $options['vessel_id'] ?? null
+        );
+
         if (!$vessel) {
-            throw new Exception("Vessel con ID {$vesselId} no encontrado");
+            throw new Exception(
+                'Vessel seleccionado no encontrado.'
+            );
         }
 
-        // Crear puertos
-        $originPort = $this->findOrCreatePort($blData['loading_port_code']);
-        $destinationPort = $this->findOrCreatePort($blData['discharge_port_code']);
+        $this->assertG2OceanVesselMatchesSource(
+            $vessel,
+            $blData['vessel_name'] ?? null
+        );
 
-        // Generar voyage number
-        $voyageNumber = 'G2O-' . ($blData['vessel_name'] ?? 'VESSEL') . '-' . ($blData['voyage_number'] ?? date('Ymd'));
+        $originPort = $this->findOrCreatePort(
+            $this->requireG2OceanText(
+                $blData['loading_port_code'] ?? null,
+                'portOfLoading'
+            )
+        );
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de reusar el viaje.
+        $destinationPort = $this->findOrCreatePort(
+            $this->requireG2OceanText(
+                $blData['discharge_port_code'] ?? null,
+                'portOfDischarge'
+            )
+        );
+
+        $voyageNumber = $this->requireG2OceanText(
+            $blData['voyage_number'] ?? null,
+            'voyageNo'
+        );
+
         $this->guardVoyageNumberIsFree($voyageNumber);
 
-        // Fechas
-        $etd = $blData['loading_date'] ?: Carbon::now()->addDays(7);
-        $eta = (clone $etd)->addDays(14); // Viaje marítimo típico
-
-        $voyageData = [
+        $voyage = Voyage::create([
             'company_id' => $companyId,
             'voyage_number' => $voyageNumber,
             'origin_port_id' => $originPort->id,
-            'destination_port_id' => $destinationPort->id,
+            'destination_port_id' =>
+                $destinationPort->id,
             'lead_vessel_id' => $vessel->id,
-            'origin_country_id' => $originPort->country_id,
-            'destination_country_id' => $destinationPort->country_id,
+            'origin_country_id' =>
+                $originPort->country_id,
+            'destination_country_id' =>
+                $destinationPort->country_id,
+
+            /*
+             * dateOfLoading es fecha documental del BL.
+             * El XML no aporta salida de viaje ni ETA.
+             */
+            'departure_date' => null,
+            'estimated_arrival_date' => null,
+
             'voyage_type' => 'single_vessel',
             'cargo_type' => 'import',
             'status' => 'planning',
             'created_by_user_id' => $user->id,
-        ];
+        ]);
 
-        // Agregar fechas según campos disponibles
-        // Campos de fecha obligatorios
-        $voyageData['departure_date'] = $etd;
-        $voyageData['estimated_arrival_date'] = $eta;
-
-        $voyage = Voyage::create($voyageData);
         $this->stats['created_voyages']++;
-        
+
         return $voyage;
     }
+
 
     /**
      * Crear shipment
      */
-    protected function createShipment(Voyage $voyage, array $options): Shipment
-    {
-        $vesselId = $options['vessel_id'];
-        $vessel = Vessel::find($vesselId);
+
+    protected function createShipment(
+        Voyage $voyage,
+        array $options
+    ): Shipment {
+        $vessel = Vessel::findOrFail(
+            $voyage->lead_vessel_id
+        );
 
         return Shipment::create([
             'voyage_id' => $voyage->id,
             'vessel_id' => $vessel->id,
-            'shipment_number' => 'G2O-SHIP-' . now()->format('YmdHis'),
+
+            /*
+             * Identificador técnico interno.
+             * No pretende ser dato documental G2Ocean.
+             */
+            'shipment_number' =>
+                'G2O-SHIP-' . $voyage->id,
+
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
-            'cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 10000.0,
-            'container_capacity' => $vessel->container_capacity ?? 0,
+            'cargo_capacity_tons' =>
+                $vessel->cargo_capacity_tons,
+            'container_capacity' =>
+                $vessel->container_capacity ?? 0,
             'status' => 'planning',
             'active' => true,
-            'created_by_user_id' => auth()->id()
+            'created_by_user_id' => auth()->id(),
         ]);
     }
+
 
     /**
      * Crear BillOfLading
      */
-    protected function createBillOfLading(Shipment $shipment, array $blData): BillOfLading
-    {
-        // Crear puertos
-        $loadingPort = $this->findOrCreatePort($blData['loading_port_code']);
-        $dischargePort = $this->findOrCreatePort($blData['discharge_port_code']);
 
-        // Obtener company_id
-        $companyId = $shipment->voyage->company_id;
+    protected function createBillOfLading(
+        Shipment $shipment,
+        array $blData
+    ): BillOfLading {
+        $loadingPort = $this->findOrCreatePort(
+            $this->requireG2OceanText(
+                $blData['loading_port_code'] ?? null,
+                'portOfLoading'
+            )
+        );
 
-        // Crear clientes
-        $shipper = $this->findOrCreateClient($blData['shipper'], $companyId, $loadingPort);
-        $consignee = $this->findOrCreateClient($blData['consignee'], $companyId, $dischargePort);
+        $dischargePort = $this->findOrCreatePort(
+            $this->requireG2OceanText(
+                $blData['discharge_port_code'] ?? null,
+                'portOfDischarge'
+            )
+        );
+
+        $companyId =
+            $shipment->voyage->company_id;
+
+        $shipper = $this->findOrCreateClient(
+            $blData['shipper'],
+            $companyId,
+            $loadingPort
+        );
+
+        $consignee = $this->findOrCreateClient(
+            $blData['consignee'],
+            $companyId,
+            $dischargePort
+        );
+
         $notify = null;
         $notifyText = null;
-        $notifyName = strtoupper(trim((string) ($blData['notify']['name'] ?? '')));
-        // "SAME AS CONSIGNEE" se preserva como texto literal (lo declarado en el
-        // conocimiento), sin crear cliente. Los notify reales se crean como Client.
+
+        $notifyName = strtoupper(
+            trim(
+                (string) (
+                    $blData['notify']['name'] ?? ''
+                )
+            )
+        );
+
         if ($notifyName === 'SAME AS CONSIGNEE') {
             $notifyText = 'SAME AS CONSIGNEE';
         } elseif ($notifyName !== '') {
-            $notify = $this->findOrCreateClient($blData['notify'], $companyId, $dischargePort);
+            $notify = $this->findOrCreateClient(
+                $blData['notify'],
+                $companyId,
+                $dischargePort
+            );
         }
 
-        // Calcular totales de carga
-        $totalPackages = array_sum(array_column($blData['cargo_items'], 'packages'));
-        $totalWeight = array_sum(array_column($blData['cargo_items'], 'weight_mt'));
-        $totalVolume = array_sum(array_column($blData['cargo_items'], 'volume'));
+        $totalPackages = 0;
+        $totalGrossKg = 0.0;
+        $totalVolume = 0.0;
+
+        foreach ($blData['cargo_items'] as $cargoItem) {
+            $totalPackages +=
+                $this->parseG2OceanPackageQuantity(
+                    $cargoItem['packages'] ?? null
+                );
+
+            $totalGrossKg +=
+                $this->g2OceanGrossKg(
+                    $cargoItem['weight_mt'] ?? null
+                );
+
+            $totalVolume +=
+                (float) ($cargoItem['volume'] ?? 0);
+        }
 
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
-            'bill_number' => $blData['bl_number'],
-            'bill_date' => $blData['issue_date'] ?: now(),
-            'loading_date' => $blData['loading_date'] ?: now()->addDays(1),
+            'bill_number' =>
+                $this->requireG2OceanText(
+                    $blData['bl_number'] ?? null,
+                    'blNo'
+                ),
+            'bill_date' =>
+                $blData['issue_date'] ?? null,
+            'loading_date' =>
+                $blData['loading_date'] ?? null,
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
             'notify_party_id' => $notify?->id,
             'notify_party_text' => $notifyText,
             'loading_port_id' => $loadingPort->id,
-            'discharge_port_id' => $dischargePort->id,
-            'primary_cargo_type_id' => $this->resolveCargoTypeByPkgType($blData['cargo_items'][0]['package_type'] ?? ''),
-            'primary_packaging_type_id' => $this->resolvePackagingTypeByPkgType($blData['cargo_items'][0]['package_type'] ?? ''),
-            'total_packages' => max($totalPackages, 1),
-            'gross_weight_kg' => $totalWeight * 1000, // MT a KG
-            'net_weight_kg' => $totalWeight * 1000 * 0.9, // Estimación 90%
+            'discharge_port_id' =>
+                $dischargePort->id,
+            'primary_cargo_type_id' =>
+                $this->resolveCargoTypeByPkgType(
+                    $blData['cargo_items'][0]
+                        ['package_type'] ?? ''
+                ),
+            'primary_packaging_type_id' =>
+                $this->resolvePackagingTypeByPkgType(
+                    $blData['cargo_items'][0]
+                        ['package_type'] ?? ''
+                ),
+            'total_packages' => $totalPackages,
+            'gross_weight_kg' => $totalGrossKg,
+
+            // La fuente no declara peso neto.
+            'net_weight_kg' => null,
+
             'volume_m3' => $totalVolume,
-            'cargo_description' => $this->buildCargoDescription($blData['cargo_items']),
-            'freight_terms' => 'prepaid',
+            'cargo_description' =>
+                $this->buildCargoDescription(
+                    $blData['cargo_items']
+                ),
+            'freight_terms' =>
+                $this->resolveG2OceanFreightTerms(
+                    $blData['cargo_items']
+                ),
             'status' => 'draft',
-            'created_by_user_id' => auth()->id()
+            'created_by_user_id' => auth()->id(),
         ]);
 
-        // Direcciones de las partes (regla 18/6): ficha si no tiene (Etapa 1),
-        // especifica del BL si difiere (Etapa 2). El notify solo cuando es un
-        // cliente real (no "SAME AS CONSIGNEE", que queda como texto).
-        $this->persistClientAddress($shipper, $blData['shipper']['address'] ?? null);
-        if ($c = $this->resolveSpecificAddress($shipper, $blData['shipper']['address'] ?? null, 'shipper')) {
+        $this->persistClientAddress(
+            $shipper,
+            $blData['shipper']['address'] ?? null
+        );
+
+        if (
+            $c = $this->resolveSpecificAddress(
+                $shipper,
+                $blData['shipper']['address'] ?? null,
+                'shipper'
+            )
+        ) {
             $bill->specificContacts()->create($c);
         }
 
-        $this->persistClientAddress($consignee, $blData['consignee']['address'] ?? null);
-        if ($c = $this->resolveSpecificAddress($consignee, $blData['consignee']['address'] ?? null, 'consignee')) {
+        $this->persistClientAddress(
+            $consignee,
+            $blData['consignee']['address'] ?? null
+        );
+
+        if (
+            $c = $this->resolveSpecificAddress(
+                $consignee,
+                $blData['consignee']['address'] ?? null,
+                'consignee'
+            )
+        ) {
             $bill->specificContacts()->create($c);
         }
 
         if ($notify) {
-            $this->persistClientAddress($notify, $blData['notify']['address'] ?? null);
-            if ($c = $this->resolveSpecificAddress($notify, $blData['notify']['address'] ?? null, 'notify_party')) {
+            $this->persistClientAddress(
+                $notify,
+                $blData['notify']['address'] ?? null
+            );
+
+            if (
+                $c = $this->resolveSpecificAddress(
+                    $notify,
+                    $blData['notify']['address'] ?? null,
+                    'notify_party'
+                )
+            ) {
                 $bill->specificContacts()->create($c);
             }
         }
@@ -878,37 +1225,87 @@ class G2OceanXmlParser implements ManifestParserInterface
         return $bill;
     }
 
+
     /**
      * Crear ShipmentItems
      */
-    protected function createShipmentItems(BillOfLading $bill, array $blData): array
-    {
+
+    protected function createShipmentItems(
+        BillOfLading $bill,
+        array $blData
+    ): array {
         $items = [];
-        
+
         foreach ($blData['cargo_items'] as $cargoItem) {
+            $commodity = trim(
+                (string) (
+                    $cargoItem['commodity_code'] ?? ''
+                )
+            );
+
+            if (mb_strlen($commodity) > 20) {
+                throw new Exception(
+                    'Código G2Ocean de mercadería demasiado largo.'
+                );
+            }
+
             $item = ShipmentItem::create([
                 'bill_of_lading_id' => $bill->id,
-                'line_number' => $cargoItem['item_number'],
-                'item_description' => $cargoItem['description'],
-                'cargo_type_id' => $this->resolveCargoTypeByPkgType($cargoItem['package_type'] ?? ''),
-                'packaging_type_id' => $this->resolvePackagingTypeByPkgType($cargoItem['package_type'] ?? ''),
-                'package_quantity' => $cargoItem['packages'],
-                'gross_weight_kg' => $cargoItem['weight_mt'] * 1000, // MT a KG
-                'net_weight_kg' => $cargoItem['weight_mt'] * 1000 * 0.9, // Estimación
-                'volume_m3' => $cargoItem['volume'],
-                'cargo_marks' => $cargoItem['marks'] ?: 'S/M',
-                // Campo NCM/HS extraído de la descripción
-                'commodity_code' => $cargoItem['commodity_code'] ?? null,
-                // Posición arancelaria AFIP (mismo NCM, con formato de puntos)
-                'tariff_position' => $cargoItem['tariff_position'] ?? null,
-                'created_by_user_id' => auth()->id()
+                'line_number' =>
+                    $cargoItem['item_number'],
+                'item_description' =>
+                    $this->requireG2OceanText(
+                        $cargoItem['description'] ?? null,
+                        'cargo description'
+                    ),
+                'cargo_type_id' =>
+                    $this->resolveCargoTypeByPkgType(
+                        $cargoItem['package_type'] ?? ''
+                    ),
+                'packaging_type_id' =>
+                    $this->resolvePackagingTypeByPkgType(
+                        $cargoItem['package_type'] ?? ''
+                    ),
+                'package_quantity' =>
+                    $this->parseG2OceanPackageQuantity(
+                        $cargoItem['packages'] ?? null
+                    ),
+                'gross_weight_kg' =>
+                    $this->g2OceanGrossKg(
+                        $cargoItem['weight_mt'] ?? null
+                    ),
+
+                // No estimar neto como 90%.
+                'net_weight_kg' => null,
+
+                'volume_m3' =>
+                    (float) ($cargoItem['volume'] ?? 0),
+
+                'cargo_marks' =>
+                    $this->normalizeG2OceanCargoMarks(
+                        $cargoItem['marks'] ?? null
+                    ),
+
+                'commodity_code' =>
+                    $commodity !== ''
+                        ? $commodity
+                        : null,
+
+                /*
+                 * Harmonized Tariff Code de origen no se hace pasar
+                 * automáticamente por posición AFIP argentina.
+                 */
+                'tariff_position' => null,
+
+                'created_by_user_id' => auth()->id(),
             ]);
-            
+
             $items[] = $item;
         }
 
         return $items;
     }
+
 
     /**
      * Buscar/crear puerto
@@ -1137,6 +1534,7 @@ class G2OceanXmlParser implements ManifestParserInterface
         ]);
     }
 
+
     protected function completeImportRecord(
         ManifestImport $importRecord,
         Voyage $voyage,
@@ -1145,25 +1543,37 @@ class G2OceanXmlParser implements ManifestParserInterface
         array $containers,
         float $startTime
     ): void {
-        $processingTime = microtime(true) - $startTime;
-        
-        $createdObjects = [
-            'voyages' => [$voyage->id],
-            'shipments' => [$voyage->shipments()->first()->id ?? null],
-            'bills' => array_map(fn($bill) => $bill->id, $bills),
-            'items' => array_map(fn($item) => $item->id, $items),
-            'containers' => array_map(fn($container) => $container->id, $containers)
-        ];
-        
-        $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
-        
-        $importRecord->recordCreatedObjects($createdObjects);
+        $processingTime =
+            microtime(true) - $startTime;
+
+        $shipmentId =
+            $voyage->shipments()->value('id');
+
+        $importRecord->recordExplicitlyCreatedObjects([
+            'voyage' => [$voyage->id],
+            'shipment' => array_filter([$shipmentId]),
+            'bill' => array_map(
+                fn ($bill) => $bill->id,
+                $bills
+            ),
+            'item' => array_map(
+                fn ($item) => $item->id,
+                $items
+            ),
+            'container' => array_map(
+                fn ($container) => $container->id,
+                $containers
+            ),
+        ]);
+
         $importRecord->markAsCompleted([
             'voyage_id' => $voyage->id,
-            'processing_time_seconds' => round($processingTime, 2),
-            'notes' => 'Importación G2Ocean XML completada exitosamente'
+            'processing_time_seconds' =>
+                round($processingTime, 2),
+            'notes' => 'Importación G2Ocean XML completada',
         ]);
     }
+
 
     // Interface methods
     public function validate(array $data): array
