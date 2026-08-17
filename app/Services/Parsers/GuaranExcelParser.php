@@ -721,8 +721,11 @@ class GuaranExcelParser implements ManifestParserInterface
             : $this->parseWeight($row['NET_WEIGHT']);
 
         $totalVolume = $isContainerized
-            ? array_sum(array_map(fn($r) => (float) ($r['VOLUME'] ?? 0), $blRows))
-            : (float) ($row['VOLUME'] ?? 0);
+            ? array_sum(array_map(
+                fn($r) => $this->parseVolume($r['VOLUME'] ?? null),
+                $blRows
+            ))
+            : $this->parseVolume($row['VOLUME'] ?? null);
 
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
@@ -817,7 +820,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'operational_discharge_code' => '10073', // Guaran: lugar operativo descarga 10073 (Roberto 02/06).
             'gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
             'net_weight_kg' => $this->parseWeight($row['NET_WEIGHT']),
-            'volume_m3' => (float) ($row['VOLUME'] ?? 0),
+            'volume_m3' => $this->parseVolume($row['VOLUME'] ?? null),
             'commodity_code' => $row['NCM'] ?: null,
             'tariff_position' => $row['NCM'] ?: null,
             'cargo_marks' => !empty($row['MARKS_DESCRIPTION']) ? $row['MARKS_DESCRIPTION'] : 'SM',
@@ -1063,6 +1066,17 @@ class GuaranExcelParser implements ManifestParserInterface
         }
 
         return (float) $cleaned;
+    }
+
+    /**
+     * Parsear volumen respetando separadores decimales del archivo Guaran.
+     *
+     * Los valores pueden venir como 76,2, 33.536,670 o numéricos nativos.
+     * Comparte la normalización decimal ya validada para pesos.
+     */
+    protected function parseVolume($volume): float
+    {
+        return $this->parseWeight($volume);
     }
 
     protected function parseTemperature(?string $temp): ?float
