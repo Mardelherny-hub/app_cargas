@@ -803,6 +803,10 @@ class GuaranExcelParser implements ManifestParserInterface
         $cargoTypeId = $isContainerized ? 5 : $this->findCargoTypeByNCM($row['NCM']);
         $packagingTypeId = $isContainerized ? 2 : $this->findPackagingTypeByName($row['PACK_TYPE']);
 
+        $commodity = $this->buildCommodityClassification(
+            $row['NCM'] ?? null
+        );
+
         return ShipmentItem::create([
             'shipment_id' => $bill->shipment_id,
             'bill_of_lading_id' => $bill->id,
@@ -816,14 +820,16 @@ class GuaranExcelParser implements ManifestParserInterface
             'unit_of_measure' => 'KG', // Guaran exporta peso en kg (Roberto 22/05). Sin esto, la columna usa su default 'PCS'.
             // Campos AFIP/visualización a nivel item (los lee la pantalla del conocimiento
             // y el serializer). El parser los completa con el mismo criterio que la carga manual.
-            'cargo_marks' => !empty($row['MARKS_DESCRIPTION']) ? $row['MARKS_DESCRIPTION'] : 'SM',
+            'cargo_marks' => $this->normalizeGuaranCargoMarks(
+                $row['MARKS_DESCRIPTION'] ?? null
+            ),
             'container_condition' => 'H', // Guaran: siempre House (Roberto 22/05), igual que el Container.
             'operational_discharge_code' => '10073', // Guaran: lugar operativo descarga 10073 (Roberto 02/06).
             'gross_weight_kg' => $this->parseWeight($row['GROSS_WEIGHT']),
             'net_weight_kg' => $this->parseWeight($row['NET_WEIGHT']),
             'volume_m3' => $this->parseVolume($row['VOLUME'] ?? null),
-            'commodity_code' => $row['NCM'] ?: null,
-            'tariff_position' => $row['NCM'] ?: null,
+            'commodity_code' => $commodity['commodity_code'],
+            'tariff_position' => $commodity['tariff_position'],
             'is_dangerous_goods' => !empty($row['UN_NUMBER']),
             'requires_refrigeration' => $this->requiresRefrigeration($row),
             'un_number' => $row['UN_NUMBER'] ?: null,
@@ -1276,6 +1282,43 @@ class GuaranExcelParser implements ManifestParserInterface
         // Por descripción
         $desc = strtoupper($row['DESCRIPTION'] ?? '');
         return strpos($desc, 'FROZEN') !== false || strpos($desc, 'TEMPERATURE') !== false;
+    }
+
+    protected function normalizeGuaranCargoMarks($value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : null;
+    }
+
+    /**
+     * BP/NCM se conserva como información de mercadería.
+     *
+     * Guaran puede informar códigos parciales de 4 dígitos o varias
+     * clasificaciones en una misma celda. Eso no demuestra una única
+     * PosicionArancelaria válida para AFIP.
+     */
+    protected function buildCommodityClassification(?string $rawNcm): array
+    {
+        $rawNcm = trim((string) $rawNcm);
+
+        if ($rawNcm === '') {
+            return [
+                'commodity_code' => null,
+                'tariff_position' => null,
+            ];
+        }
+
+        if (mb_strlen($rawNcm) > 20) {
+            throw new Exception(
+                'NCM Guaran excede la capacidad de commodity_code'
+            );
+        }
+
+        return [
+            'commodity_code' => $rawNcm,
+            'tariff_position' => null,
+        ];
     }
 
     protected function buildCargoDescription(array $row): string
