@@ -1019,79 +1019,400 @@ class GuaranExcelParser implements ManifestParserInterface
     protected function extractClientData(array $row, string $type): ?array
     {
         $name = $row[$type . '_NAME'] ?? null;
-        if (!$name) return null;
-        
+
+        if (!$name) {
+            return null;
+        }
+
+        $role = match ($type) {
+            'SHIPPER' => 'shipper',
+            'CONSIGNEE' => 'consignee',
+            'NOTIFY_PARTY' => 'notify',
+            default => null,
+        };
+
+        $contextPortCode = match ($role) {
+            'shipper' => $row['POL'] ?? null,
+            'consignee', 'notify' => $row['POD'] ?? null,
+            default => null,
+        };
+
         return [
             'name' => $name,
             'address' => $row[$type . '_ADDRESS1'] ?? null,
             'city' => $row[$type . '_CITY'] ?? null,
             'country' => $row[$type . '_COUNTRY'] ?? null,
-            'phone' => $row[$type . '_PHONE'] ?? null
+            'phone' => $row[$type . '_PHONE'] ?? null,
+            'role' => $role,
+            'context_port_code' => $contextPortCode,
         ];
+    }
+
+    /**
+     * @return array{tax_id:string,tax_type:?string}|null
+     */
+    protected function extractTypedTaxIdentityFromText(?string $text): ?array
+    {
+        $text = trim((string) $text);
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:(?:NBR|NRO|Nº|N°)\.?\s*)?[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            'CNPJ' => '/\bCNPJ\b\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            'RUC' => '/\bR\.?\s*U\.?\s*C\.?(?:\s*\/\s*TAX\s*ID)?\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            'NIT' => '/\bNIT\b\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+        ];
+
+        foreach ($patterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $taxId = preg_replace('/\D/', '', $matches[1]);
+
+            if (
+                $taxId === ''
+                || preg_match('/^0+$/', $taxId)
+                || !$this->isTaxIdCompatibleWithType($taxId, $taxType)
+            ) {
+                throw new \DomainException(
+                    "Guaran: identificador {$taxType} con formato incompatible."
+                );
+            }
+
+            return [
+                'tax_id' => $taxId,
+                'tax_type' => $taxType,
+            ];
+        }
+
+        return null;
+    }
+
+    protected function isTaxIdCompatibleWithType(
+        string $taxId,
+        string $taxType
+    ): bool {
+        $length = strlen($taxId);
+
+        return match ($taxType) {
+            'CUIT' => $length === 11,
+            'CNPJ' => $length === 14,
+            'RUC' => $length >= 7 && $length <= 9,
+            'NIT' => $length >= 9 && $length <= 10,
+            default => false,
+        };
+    }
+
+    /**
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolveClientTaxIdentity(
+        ?string $name,
+        ?string $address
+    ): array {
+        $nameIdentity = $this->extractTypedTaxIdentityFromText($name);
+        $addressIdentity = $this->extractTypedTaxIdentityFromText($address);
+
+        if ($nameIdentity !== null && $addressIdentity !== null) {
+            if ($nameIdentity['tax_id'] !== $addressIdentity['tax_id']) {
+                throw new \DomainException(
+                    'Guaran: nombre y domicilio declaran identificadores fiscales distintos.'
+                );
+            }
+
+            if (
+                $nameIdentity['tax_type'] !== null
+                && $addressIdentity['tax_type'] !== null
+                && $nameIdentity['tax_type'] !== $addressIdentity['tax_type']
+            ) {
+                throw new \DomainException(
+                    'Guaran: nombre y domicilio declaran tipos fiscales distintos.'
+                );
+            }
+
+            return [
+                'tax_id' => $nameIdentity['tax_id'],
+                'tax_type' => $nameIdentity['tax_type']
+                    ?? $addressIdentity['tax_type'],
+            ];
+        }
+
+        $typed = $nameIdentity ?? $addressIdentity;
+
+        if ($typed !== null) {
+            return $typed;
+        }
+
+        // El trait conserva TAX ID/RUT-VAT/etc. cuando el marcador existe,
+        // pero sin adjudicar un DocumentType por longitud.
+        return [
+            'tax_id' => $this->resolveTaxId(
+                null,
+                $name,
+                $address
+            ),
+            'tax_type' => null,
+        ];
+    }
+
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    protected function countryAlpha2FromPartyText(?string $text): ?string
+    {
+        $text = mb_strtoupper(trim((string) $text));
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'AR' => '/\bARGENTINA\b/u',
+            'PY' => '/\bPARAGUAY\b/u',
+            'UY' => '/\bURUGUAY\b/u',
+            'BR' => '/\b(?:BRASIL|BRAZIL)\b/u',
+            'CO' => '/\bCOLOMBIA\b/u',
+        ];
+
+        foreach ($patterns as $alpha2 => $pattern) {
+            if (preg_match($pattern, $text)) {
+                return $alpha2;
+            }
+        }
+
+        return null;
+    }
+
+    protected function countryAlpha2FromDeclaredValue(
+        ?string $country
+    ): ?string {
+        $country = mb_strtoupper(trim((string) $country));
+
+        if ($country === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Z]{2}$/', $country)) {
+            return $country;
+        }
+
+        $alpha3 = [
+            'ARG' => 'AR',
+            'PRY' => 'PY',
+            'URY' => 'UY',
+            'BRA' => 'BR',
+            'COL' => 'CO',
+        ];
+
+        if (isset($alpha3[$country])) {
+            return $alpha3[$country];
+        }
+
+        return $this->countryAlpha2FromPartyText($country);
+    }
+
+    protected function countryAlpha2FromPortCode(
+        ?string $portCode
+    ): ?string {
+        $portCode = strtoupper(trim((string) $portCode));
+
+        if (
+            !preg_match(
+                '/^([A-Z]{2})[A-Z0-9]{3}$/',
+                $portCode,
+                $matches
+            )
+        ) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    protected function countryIdForAlpha2(string $alpha2): int
+    {
+        $countryId = \App\Models\Country::query()
+            ->where('alpha2_code', strtoupper($alpha2))
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "Guaran: no existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
+    }
+
+    protected function resolveClientCountryId(
+        array $data,
+        ?string $taxType
+    ): int {
+        $declaredValue = trim(
+            (string) ($data['country'] ?? '')
+        );
+
+        $declaredAlpha2 = $this->countryAlpha2FromDeclaredValue(
+            $declaredValue
+        );
+
+        if (
+            $declaredValue !== ''
+            && $declaredAlpha2 === null
+        ) {
+            throw new \DomainException(
+                "Guaran: país declarado no reconocido: {$declaredValue}."
+            );
+        }
+
+        $taxAlpha2 = $this->countryAlpha2ForTaxType(
+            $taxType
+        );
+
+        $textAlpha2 = $this->countryAlpha2FromPartyText(
+            ($data['name'] ?? '')
+            . ' '
+            . ($data['address'] ?? '')
+            . ' '
+            . ($data['city'] ?? '')
+        );
+
+        $sources = array_filter([
+            'declarado' => $declaredAlpha2,
+            'fiscal' => $taxAlpha2,
+            'texto' => $textAlpha2,
+        ]);
+
+        if (count(array_unique(array_values($sources))) > 1) {
+            throw new \DomainException(
+                'Guaran: las fuentes del cliente declaran países incompatibles: '
+                . json_encode($sources)
+            );
+        }
+
+        $alpha2 = $declaredAlpha2
+            ?? $taxAlpha2
+            ?? $textAlpha2;
+
+        if ($alpha2 === null) {
+            $alpha2 = $this->countryAlpha2FromPortCode(
+                $data['context_port_code'] ?? null
+            );
+        }
+
+        if ($alpha2 === null) {
+            throw new \DomainException(
+                'Guaran: no existe evidencia suficiente para resolver el país del cliente.'
+            );
+        }
+
+        return $this->countryIdForAlpha2(
+            $alpha2
+        );
     }
 
     protected function findOrCreateClient(?array $data): ?Client
     {
-        if (!$data || !$data['name']) return null;
+        if (!$data || empty($data['name'])) {
+            return null;
+        }
 
         $user = auth()->user();
-        $companyId = ($user->userable_type === 'App\Models\Company' ? $user->userable_id : null);
 
-        // Extraer tax_id y pais ANTES de buscar, porque la clave unica real es
-        // (tax_id, country_id) global -indice uk_clients_tax_country-, no el nombre.
-        // Un cliente con ese tax_id+pais existe una sola vez aunque lo hayan cargado
-        // distintas empresas. Buscar por nombre+company no lo encontraba y el INSERT
-        // chocaba con la unique (SQLSTATE 23000).
-        // Tax desde dirección o nombre (helper común: cubre RUC/CUIT/TAXID/CNPJ/NIT).
-        // No fabricar: si no hay dato real, queda null.
-        $taxId = $this->resolveTaxId(null, $data['name'] ?? null, $data['address'] ?? null);
+        $companyId = $user?->company_id
+            ?? (
+                $user?->userable_type === 'App\Models\Company'
+                    ? $user?->userable_id
+                    : null
+            );
 
-        $countryId = $this->mapCountryName($data['country']);
-
-        // Inferencia de pais por longitud del tax_id (criterio aprobado QA 29/06).
-        // El Excel de Guaran NO trae la columna _COUNTRY (viene vacia), por lo que
-        // mapCountryName() cae siempre al default. Se refina aca usando la estructura
-        // del identificador fiscal ya resuelto, que es deterministica:
-        //   - 11 digitos  => CUIT argentino  => Argentina (id 11)
-        //   - 7 a 9 digitos => RUC paraguayo  => Paraguay  (id 174)
-        // IDs verificados contra la tabla countries (AR=11, PY=174).
-        // Solo afecta clientes NUEVOS: si el cliente ya existe, las busquedas de abajo
-        // lo devuelven sin modificar (no se pisa el pais de un cliente existente).
-        if ($taxId) {
-            $taxLen = strlen($taxId); // resolveTaxId ya devuelve solo digitos
-            if ($taxLen === 11) {
-                $countryId = 11;  // Argentina
-                Log::info('Guaran: pais inferido por tax_id', ['tax_id' => $taxId, 'len' => $taxLen, 'country_id' => 11, 'pais' => 'Argentina']);
-            } elseif ($taxLen >= 7 && $taxLen <= 9) {
-                $countryId = 174; // Paraguay
-                Log::info('Guaran: pais inferido por tax_id', ['tax_id' => $taxId, 'len' => $taxLen, 'country_id' => 174, 'pais' => 'Paraguay']);
-            }
-            // Longitudes fuera de 7-9 y distintas de 11: no se infiere, queda lo de mapCountryName.
-        } else {
-            // Sin tax_id confiable: no se infiere pais. Queda lo que devolvio mapCountryName
-            // (en Guaran, por columna vacia, sera el default). Se marca para revision:
-            // QA no aprueba "default Paraguay" como regla, pero la DB exige country_id NOT NULL.
-            Log::warning('Guaran: cliente sin tax_id, pais NO confiable (revisar)', [
-                'name'       => $data['name'] ?? null,
-                'country_id' => $countryId,
-            ]);
+        if (!$companyId) {
+            throw new Exception(
+                'Guaran: usuario sin empresa asignada.'
+            );
         }
 
-        // 1. Buscar por la clave unica real (tax_id + country_id), solo si hay tax_id real
-        if ($taxId) {
-            $client = Client::where('tax_id', $taxId)
+        $identity = $this->resolveClientTaxIdentity(
+            $data['name'] ?? null,
+            $data['address'] ?? null
+        );
+
+        $taxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $countryId = $this->resolveClientCountryId(
+            $data,
+            $taxType
+        );
+
+        // Con identificador fiscal la identidad es tax_id + country_id.
+        // Nunca degradar después a una coincidencia solamente por nombre.
+        if ($taxId !== null) {
+            $client = Client::query()
+                ->where('tax_id', $taxId)
                 ->where('country_id', $countryId)
                 ->first();
-            if ($client) return $client;
+
+            if ($client) {
+                return $client;
+            }
+        } else {
+            // Sin identificador fiscal sólo se reutiliza otra ficha
+            // igualmente sin tax_id, mismo país y mismo nombre.
+            $name = trim((string) $data['name']);
+
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->where(function ($query) use ($name) {
+                    $normalizedName = mb_strtoupper($name);
+
+                    $query
+                        ->whereRaw(
+                            'UPPER(TRIM(legal_name)) = ?',
+                            [$normalizedName]
+                        )
+                        ->orWhereRaw(
+                            'UPPER(TRIM(commercial_name)) = ?',
+                            [$normalizedName]
+                        );
+                })
+                ->first();
+
+            if ($client) {
+                return $client;
+            }
         }
 
-        // 2. Fallback: buscar por nombre dentro de la empresa (compatibilidad)
-        $client = Client::where('legal_name', $data['name'])
-            ->where('created_by_company_id', $companyId)
-            ->first();
-        if ($client) return $client;
+        $documentTypeId = null;
 
-        // 3. No existe: crear
+        if ($taxId !== null && $taxType !== null) {
+            $documentTypeId = \App\Models\DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "Guaran: no existe un tipo documental {$taxType} "
+                    . 'activo y compatible con el país resuelto.'
+                );
+            }
+        }
+
         return Client::create([
             'created_by_company_id' => $companyId,
             'legal_name' => $data['name'],
@@ -1099,21 +1420,15 @@ class GuaranExcelParser implements ManifestParserInterface
             'tax_id' => $taxId,
             'client_type' => 'business',
             'status' => 'active',
-            'address_line_1' => $data['address'],
-            'city' => $data['city'],
-            'phone' => $data['phone'],
+            'address_line_1' => $data['address'] ?? null,
+            'city' => $data['city'] ?? null,
+            'phone' => $data['phone'] ?? null,
             'country_id' => $countryId,
-            // Tipo de documento segun el pais real del cliente (verificado en document_types):
-            // Argentina(11)->CUIT(1), Paraguay(174)->RUC(3). El numero (tax_id) puede ir null,
-            // pero el TIPO siempre corresponde al pais. Default RUC para el resto (Guaran es PY->AR).
-            'document_type_id' => $countryId === 11 ? 1 : 3,
-            // verified_at explicito: la creacion ocurre dentro de Model::withoutEvents()
-            // (en parse(), para evitar recalculos en cascada), por lo que el hook 'creating'
-            // del modelo Client -que normalmente setea verified_at- no se dispara. Sin esto,
-            // el cliente queda con verified_at=NULL y el listado (whereNotNull('verified_at'))
-            // no lo muestra aunque exista y este activo.
+            'document_type_id' => $documentTypeId,
+
+            // La creación ocurre bajo Model::withoutEvents() en este parser.
             'verified_at' => now(),
-            'created_by_user_id' => auth()->id()
+            'created_by_user_id' => auth()->id(),
         ]);
     }
 
