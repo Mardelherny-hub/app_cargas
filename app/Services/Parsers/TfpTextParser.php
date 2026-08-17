@@ -10,6 +10,8 @@ use App\Models\BillOfLading;
 use App\Models\Container;
 use App\Models\ShipmentItem;
 use App\Models\Client;
+use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Port;
 use App\Models\Vessel;
 use App\Models\ContainerType;
@@ -519,8 +521,27 @@ protected function extractValue(string $scope, string $label): ?string
 
     protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false, array $containers = [], array $lines = []): BillOfLading
     {
-        $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null, $data['cargador_domicilio'] ?? null);
-        $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null, $data['consignatario_domicilio'] ?? null);
+        // TFP no trae una columna de país propia para cada parte.
+        // Los puertos sí son datos estructurados del BL y aportan el
+        // contexto geográfico cuando la parte no declara identidad fiscal.
+        $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
+        $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
+
+        $shipper = $this->findOrCreateClient(
+            $data['cargador'] ?? 'Cargador TFP',
+            'shipper',
+            $data['cargador_ruc'] ?? null,
+            $data['cargador_domicilio'] ?? null,
+            (int) $loadingPort->country_id
+        );
+
+        $consignee = $this->findOrCreateClient(
+            $data['consignatario'] ?? 'Consignatario TFP',
+            'consignee',
+            $data['consignatario_ruc'] ?? null,
+            $data['consignatario_domicilio'] ?? null,
+            (int) $dischargePort->country_id
+        );
 
         // Algunos generadores TFP emiten NOTIFICATARIO como "nombre del consignatario + dirección"
         // pegados (verificado contra archivo real 13/07/2026). Si el notificatario empieza con el
@@ -539,11 +560,14 @@ protected function extractValue(string $scope, string $label): ?string
                 'direccion_extraida' => $notifyExtraAddr,
             ]);
         } else {
-            $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null, $data['notificatario_domicilio'] ?? null);
+            $notify = $this->findOrCreateClient(
+                $data['notificatario'] ?? 'Notificatario TFP',
+                'notify',
+                $data['notificatario_ruc'] ?? null,
+                $data['notificatario_domicilio'] ?? null,
+                (int) $dischargePort->country_id
+            );
         }
-
-        $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
-        $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
 
         // El permiso de embarque viene en el OBS de los contenedores, repetido en
         // cada uno pero unico por conocimiento: verificado 07/08/2026 sobre
@@ -793,66 +817,301 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    protected function findOrCreateClient(string $name, string $type, ?string $taxId = null, ?string $address = null): Client
+    /**
+     * Extrae identidad fiscal únicamente cuando el propio texto declara
+     * el tipo. Nunca decide el tipo por longitud del número.
+     *
+     * @return array{tax_id:string,tax_type:?string}|null
+     */
+    protected function extractTypedTaxIdentityFromText(?string $text): ?array
     {
+        $text = trim((string) $text);
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'CNPJ' => '/\bCNPJ\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'RUC'  => '/\bR\.?\s*U\.?\s*C\.?\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'NIT'  => '/\bNIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+        ];
+
+        foreach ($patterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $normalized = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($normalized !== null) {
+                return [
+                    'tax_id' => $normalized,
+                    'tax_type' => $taxType,
+                ];
+            }
+        }
+
+        if (preg_match(
+            '/\bTAX\s*ID\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            $text,
+            $matches
+        )) {
+            $normalized = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($normalized !== null) {
+                return [
+                    'tax_id' => $normalized,
+                    'tax_type' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resuelve número y tipo fiscal de una parte TFP sin fabricar datos.
+     *
+     * Prioridad:
+     * 1. campo estructurado *RUC;
+     * 2. marcador fiscal explícito en nombre/domicilio;
+     * 3. marcador genérico reconocido por el trait.
+     *
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolveClientTaxIdentity(
+        ?string $structuredTaxId,
+        ?string $name,
+        ?string $address
+    ): array {
+        $structured = $this->resolveTaxId(
+            $structuredTaxId,
+            null,
+            null
+        );
+
+        $nameIdentity = $this->extractTypedTaxIdentityFromText($name);
+        $addressIdentity = $this->extractTypedTaxIdentityFromText($address);
+
+        $embedded = null;
+
+        if ($nameIdentity !== null && $addressIdentity !== null) {
+            if ($nameIdentity['tax_id'] !== $addressIdentity['tax_id']) {
+                throw new \DomainException(
+                    'TFP: nombre y domicilio informan identificadores fiscales distintos.'
+                );
+            }
+
+            if (
+                $nameIdentity['tax_type'] !== null
+                && $addressIdentity['tax_type'] !== null
+                && $nameIdentity['tax_type'] !== $addressIdentity['tax_type']
+            ) {
+                throw new \DomainException(
+                    'TFP: nombre y domicilio informan tipos fiscales contradictorios.'
+                );
+            }
+
+            $embedded = [
+                'tax_id' => $nameIdentity['tax_id'],
+                'tax_type' => $nameIdentity['tax_type']
+                    ?? $addressIdentity['tax_type'],
+            ];
+        } else {
+            $embedded = $nameIdentity ?? $addressIdentity;
+        }
+
+        if ($structured !== null) {
+            if (
+                $embedded !== null
+                && $embedded['tax_id'] !== $structured
+            ) {
+                throw new \DomainException(
+                    'TFP: el RUC estructurado contradice el identificador fiscal declarado en la parte.'
+                );
+            }
+
+            if (
+                $embedded !== null
+                && $embedded['tax_type'] !== null
+                && $embedded['tax_type'] !== 'RUC'
+            ) {
+                throw new \DomainException(
+                    'TFP: el campo RUC estructurado contradice el tipo fiscal declarado en la parte.'
+                );
+            }
+
+            return [
+                'tax_id' => $structured,
+                'tax_type' => 'RUC',
+            ];
+        }
+
+        if ($embedded !== null) {
+            return $embedded;
+        }
+
+        $genericTaxId = $this->resolveTaxId(
+            null,
+            $name,
+            $address
+        );
+
+        return [
+            'tax_id' => $genericTaxId,
+            'tax_type' => null,
+        ];
+    }
+
+    /**
+     * Jurisdicciones inequívocas de cada tipo fiscal soportado.
+     */
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    /**
+     * Cuando existe un tipo fiscal explícito, manda su jurisdicción.
+     * Sin tipo explícito se utiliza únicamente el país contextual del BL.
+     */
+    protected function resolveClientCountryId(
+        ?string $taxType,
+        int $fallbackCountryId
+    ): int {
+        $alpha2 = $this->countryAlpha2ForTaxType($taxType);
+
+        if ($alpha2 === null) {
+            if ($fallbackCountryId <= 0) {
+                throw new \DomainException(
+                    'TFP: no existe un país confiable para la parte.'
+                );
+            }
+
+            return $fallbackCountryId;
+        }
+
+        $countryId = Country::query()
+            ->where('alpha2_code', $alpha2)
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "TFP: no existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
+    }
+
+    protected function findOrCreateClient(
+        string $name,
+        string $type,
+        ?string $taxId = null,
+        ?string $address = null,
+        int $fallbackCountryId = 0
+    ): Client {
         $user = auth()->user();
-        $companyId = $user->userable_type === 'App\Models\Company' ? $user->userable_id : 
-                     ($user->userable->company_id ?? null);
+
+        $companyId = $user->userable_type === 'App\Models\Company'
+            ? $user->userable_id
+            : ($user->userable->company_id ?? null);
 
         $name = trim($name);
-        if (empty($name)) $name = 'Cliente TFP';
 
-        // Prioridad: RUC declarado (CARGADORRUC/CONSIGNATARIORUC/NOTIFICATARIORUC) >
-        // tax embebido en el nombre > tax embebido en el domicilio. No se fabrica.
-        //
-        // El domicilio se agrego el 07/08/2026: los campos *RUC vienen vacios en
-        // buena parte de los archivos y el emisor escribe el identificador dentro
-        // de *DOMICILIO ("RUC: 80094634-0 CALLE ROQUE CENTURION...", "CHILE 801
-        // ... CUIT 30-69318494-7"). Sin mirarlo ahi se daba de alta un cliente
-        // nuevo por cada importacion del mismo (reportado por Roberto 06/08).
-        $normTaxId = $this->resolveTaxId($taxId, $name, $address);
-
-        // 1) Buscar por tax_id real (si hay)
-        if ($normTaxId) {
-            $client = Client::where('tax_id', $normTaxId)->first();
-            if ($client) return $client;
+        if ($name === '') {
+            $name = 'Cliente TFP';
         }
 
-        // 2) Buscar por nombre
-        $client = Client::where('legal_name', $name)->first();
-        if ($client) return $client;
+        $identity = $this->resolveClientTaxIdentity(
+            $taxId,
+            $name,
+            $address
+        );
 
-        // País inferido por longitud del tax_id (regla QA 30/06, misma que Guaran). Solo afecta
-        // clientes NUEVOS (los existentes ya retornaron arriba sin tocar su país).
-        // 11 dígitos -> Argentina (11); 7-9 -> Paraguay (174). Sin tax o longitud atípica:
-        // default Paraguay 174 (TFP es tráfico AR->PY) con warning para revisión, porque
-        // country_id es NOT NULL y no hay columna de país en el archivo TFP.
-        $countryId = 174;
-        if ($normTaxId) {
-            $taxLen = strlen($normTaxId);
-            if ($taxLen === 11) {
-                $countryId = 11;
-                Log::info('TFP: pais inferido por tax_id', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => 11, 'pais' => 'Argentina']);
-            } elseif ($taxLen >= 7 && $taxLen <= 9) {
-                $countryId = 174;
-                Log::info('TFP: pais inferido por tax_id', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => 174, 'pais' => 'Paraguay']);
-            } else {
-                Log::warning('TFP: longitud de tax_id atipica, pais default (revisar)', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => $countryId]);
+        $normTaxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $countryId = $this->resolveClientCountryId(
+            $taxType,
+            $fallbackCountryId
+        );
+
+        // Con identificación fiscal, la identidad es tax_id + país.
+        // No se permite degradar a búsqueda por nombre.
+        if ($normTaxId !== null) {
+            $client = Client::query()
+                ->where('tax_id', $normTaxId)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                return $client;
             }
         } else {
-            Log::warning('TFP: cliente sin tax_id, pais NO confiable (revisar)', ['name' => $name, 'country_id' => $countryId]);
+            // Sin identificación fiscal solo reutilizamos un cliente también
+            // sin tax_id, del mismo país y con nombre legal exacto.
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->where('legal_name', $name)
+                ->first();
+
+            if ($client) {
+                return $client;
+            }
         }
+
+        $documentTypeId = null;
+
+        if ($normTaxId !== null && $taxType !== null) {
+            $documentTypeId = DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('is_active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "TFP: no existe un tipo documental {$taxType} activo y compatible con el país resuelto."
+                );
+            }
+        }
+
+        Log::info('TFP: alta de cliente con identidad preservada', [
+            'role' => $type,
+            'name' => $name,
+            'tax_id' => $normTaxId,
+            'tax_type' => $taxType,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
+        ]);
 
         return Client::create([
             'tax_id' => $normTaxId,
-            // Argentina(11)->CUIT(1), Paraguay(174)->RUC(3). El TIPO siempre corresponde al país.
             'country_id' => $countryId,
-            'document_type_id' => $countryId === 11 ? 1 : 3,
+            'document_type_id' => $documentTypeId,
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
             'created_by_company_id' => $companyId,
-            'verified_at' => now()
+            'verified_at' => now(),
         ]);
     }
 
