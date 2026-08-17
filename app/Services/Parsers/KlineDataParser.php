@@ -613,6 +613,12 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         // 6) Campos base del BL (seguros)
         $commodityCodes = $this->extractNCMCodes($data);
 
+        $blMeasurements = $this->extractRealMeasurements($data);
+        $this->assertRequiredMeasurements(
+            $blMeasurements,
+            $blNumber
+        );
+
         $blAttrs = [
             'shipment_id'       => $shipment->id,
             'bill_number'       => $blNumber,
@@ -634,7 +640,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'commodity_codes'            => $commodityCodes ?: null,
             // FIX QA #5: sincronizar totales del BL desde los datos reales del archivo
             // (antes quedaban en 0/1 hardcoded aunque los items sí tuvieran datos)
-            'gross_weight_kg'   => ($blMeasurements = $this->extractRealMeasurements($data))['gross_weight_kg'],
+            'gross_weight_kg'   => $blMeasurements['gross_weight_kg'],
             'net_weight_kg'     => $blMeasurements['net_weight_kg'],
             'total_packages'    => $blMeasurements['package_quantity'],
             'volume_m3'         => $blMeasurements['volume_m3'],
@@ -721,7 +727,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             // Extraer información REAL del archivo
             $cargoMarks = $this->extractCargoMarks($data);
             $ncmCode = $this->extractNCMCode($data);
-            $realMeasurements = $this->extractRealMeasurements($data); // NUEVO
+            $realMeasurements = $this->extractRealMeasurements($data);
+            $this->assertRequiredMeasurements(
+                $realMeasurements,
+                $bill->bill_number
+            ); // NUEVO
             $countryOfOrigin = $this->extractCountryOfOrigin($data); // NUEVO
 
             $item = ShipmentItem::create([
@@ -1326,42 +1336,66 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     protected function extractRealMeasurements(array $data): array
     {
         $measurements = [
-            'package_quantity' => 1,
-            'gross_weight_kg' => 0.0,
-            'net_weight_kg' => 0.0,
-            'volume_m3' => 0.0
+            'package_quantity' => null,
+            'gross_weight_kg' => null,
+            'net_weight_kg' => null,
+            'volume_m3' => null,
         ];
-        
-        // Extraer de CMMDREC (datos principales)
+
+        /*
+         * CMMDREC es la fuente estructurada principal.
+         *
+         * Cada dato se extrae independientemente. La ausencia de volumen,
+         * por ejemplo, no debe hacer perder una cantidad o un peso bruto
+         * que sí fueron informados.
+         */
         if (!empty($data['CMMDREC0'])) {
             foreach ($data['CMMDREC0'] as $line) {
-                // Patrón: NAUT00000572VEHICLES...06661940000KGS006743880M3
-                if (preg_match('/NAUT(\d+).*?(\d+)KGS(\d+)M3/', $line, $matches)) {
-                    $measurements['package_quantity'] = intval(ltrim($matches[1], '0')) ?: 1;
-                    // FIX bug #7: K-Line EDI usa 4 decimales fijos para peso (no 3)
-                    // Archivo CMMDREC: "00595580000KGS" = 59558.0000 KG
-                    $measurements['gross_weight_kg'] = floatval($matches[2]) / 10000;
-                    // FIX escala volumen: K-Line EDI usa 3 decimales fijos (no 6)
-                    // Archivo CMMDREC: "000580070M3" = 580.070 M3
-                    $measurements['volume_m3'] = floatval($matches[3]) / 1000;
+                if (preg_match('/NAUT(\d+)/i', $line, $matches)) {
+                    $measurements['package_quantity'] = (int) $matches[1];
+                }
+
+                if (preg_match('/(\d+)KGS/i', $line, $matches)) {
+                    // K-Line: 4 decimales implícitos.
+                    $measurements['gross_weight_kg'] =
+                        ((float) $matches[1]) / 10000;
+                }
+
+                if (preg_match('/(\d+)M3/i', $line, $matches)) {
+                    // K-Line: 3 decimales implícitos.
+                    $measurements['volume_m3'] =
+                        ((float) $matches[1]) / 1000;
                 }
             }
         }
-        
-        // Extraer peso neto de DESCREC
+
+        /*
+         * DESCREC puede aportar peso neto y volumen textual.
+         * El volumen textual sólo es fallback del CMMDREC.
+         */
         if (!empty($data['DESCREC0'])) {
             foreach ($data['DESCREC0'] as $line) {
-                // Patrón: "NET WEIGHT: 666.194,00 KGS"
-                if (preg_match('/NET WEIGHT[:\s]+([0-9\.,]+)\s*KGS/i', $line, $matches)) {
-                    $netWeight = str_replace(['.', ','], ['', '.'], $matches[1]);
-                    $measurements['net_weight_kg'] = floatval($netWeight);
-                }
-                
-                // DESCREC es solamente fallback.
-                // CMMDREC es la fuente estructurada prioritaria.
                 if (
-                    $measurements['volume_m3'] <= 0 &&
-                    preg_match('/M3[:\s]+([0-9\.,]+)/i', $line, $matches)
+                    preg_match(
+                        '/NET WEIGHT[:\s]+([0-9\.,]+)\s*KGS/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $netWeight = $this->normalizeNumber($matches[1]);
+
+                    if ($netWeight !== null) {
+                        $measurements['net_weight_kg'] = $netWeight;
+                    }
+                }
+
+                if (
+                    $measurements['volume_m3'] === null
+                    && preg_match(
+                        '/M3[:\s]+([0-9\.,]+)/i',
+                        $line,
+                        $matches
+                    )
                 ) {
                     $volume = $this->normalizeNumber($matches[1]);
 
@@ -1371,13 +1405,31 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 }
             }
         }
-        
+
         return $measurements;
     }
 
     /**
-     * Extraer país de origen REAL - CRÍTICO para aduana
+     * Los campos obligatorios del modelo no pueden completarse con valores
+     * inventados cuando K-Line no los informa.
      */
+    protected function assertRequiredMeasurements(
+        array $measurements,
+        string $blNumber
+    ): void {
+        if ($measurements['package_quantity'] === null) {
+            throw new \DomainException(
+                "K-Line BL {$blNumber}: no informa cantidad de bultos."
+            );
+        }
+
+        if ($measurements['gross_weight_kg'] === null) {
+            throw new \DomainException(
+                "K-Line BL {$blNumber}: no informa peso bruto."
+            );
+        }
+    }
+
     protected function extractCountryOfOrigin(array $data): string
     {
         // Buscar en DESCREC "ORIGEN - BRASIL" o similar
