@@ -11,6 +11,8 @@ use App\Models\BillOfLading;
 use App\Models\Container;
 use App\Models\Client;
 use App\Models\Port;
+use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
@@ -474,32 +476,28 @@ class ParanaExcelParser implements ManifestParserInterface
             'description' => $data['DESCRIPTION'] ?? 'N/A'
         ]);
 
-        // Obtener o crear clientes
+        // Resolver puertos antes de tocar clientes.
+        $loadingPort = $this->resolvePortStrict(
+            $data['POL'] ?? 'ARBUE'
+        );
+
+        $dischargePort = $this->resolvePortStrict(
+            $data['POD'] ?? 'PYTVT'
+        );
+
         $shipper = $this->findOrCreateClient([
             'name' => $data['SHIPPER_NAME'] ?? 'Shipper Unknown',
-            'address' => $data['SHIPPER_ADDRESS1'] ?? null,
+            'address' => $this->buildPartyAddress($data, 'SHIPPER'),
+            'country' => $data['SHIPPER_COUNTRY'] ?? null,
             'phone' => $data['SHIPPER_PHONE'] ?? null,
-            // El CUIT/RUC viene embebido en la dirección (no hay campo estructurado).
-            'tax_id' => $this->resolveTaxId(null, $data['SHIPPER_NAME'] ?? null, $data['SHIPPER_ADDRESS1'] ?? null),
-        ], $shipment->voyage->company_id);
+        ], $shipment->voyage->company_id, (int) $loadingPort->country_id);
 
-        $consigneeData = [
+        $consignee = $this->findOrCreateClient([
             'name' => $data['CONSIGNEE_NAME'] ?? 'Consignee Unknown',
-            'address' => $data['CONSIGNEE_ADDRESS1'] ?? null,
+            'address' => $this->buildPartyAddress($data, 'CONSIGNEE'),
+            'country' => $data['CONSIGNEE_COUNTRY'] ?? null,
             'phone' => $data['CONSIGNEE_PHONE'] ?? null,
-            // CUIT/RUC embebido en nombre o dirección (sin campo estructurado).
-            'tax_id' => $this->resolveTaxId(
-                null,
-                $data['CONSIGNEE_NAME'] ?? null,
-                $data['CONSIGNEE_ADDRESS1'] ?? null
-            ),
-        ];
-
-        $consignee = $this->findOrCreateClient($consigneeData, $shipment->voyage->company_id);
-
-        // Obtener puertos
-        $loadingPort = $this->resolvePortStrict($data['POL'] ?? 'ARBUE');
-        $dischargePort = $this->resolvePortStrict($data['POD'] ?? 'PYTVT');
+        ], $shipment->voyage->company_id, (int) $dischargePort->country_id);
 
         // VALIDACIÓN: Verificar si ya existe bill of lading con este número
         $billNumber = $data['BL_NUMBER'];
@@ -775,68 +773,410 @@ class ParanaExcelParser implements ManifestParserInterface
         return $cityMap[$code] ?? $defaultCity;
     }
 
-    protected function findOrCreateClient(array $clientData, int $companyId): ?Client
+    protected function buildPartyAddress(
+        array $data,
+        string $prefix
+    ): ?string {
+        $parts = [];
+
+        foreach ([
+            "{$prefix}_ADDRESS1",
+            "{$prefix}_ADDRESS2",
+            "{$prefix}_ADDRESS3",
+            "{$prefix}_CITY",
+            "{$prefix}_ZIP",
+        ] as $field) {
+            $value = trim((string) ($data[$field] ?? ''));
+
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+
+        $parts = array_values(array_unique($parts));
+
+        return $parts === []
+            ? null
+            : implode(', ', $parts);
+    }
+
+    /**
+     * @return array{tax_id:string,tax_type:?string}|null
+     */
+    protected function extractFiscalIdentityFromText(?string $text): ?array
     {
-        if (empty($clientData['name'])) {
+        $text = trim((string) $text);
+
+        if ($text === '') {
             return null;
         }
 
-        // DEBUG: Log del cliente que se está procesando
+        $typedPatterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:(?:NBR|NRO|Nº|N°)\.?\s*)?[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            'CNPJ' => '/\bCNPJ\b\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            'RUC' => '/\bR\.?\s*U\.?\s*C\.?\b\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            'NIT' => '/\bNIT\b\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+        ];
+
+        foreach ($typedPatterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $taxId = preg_replace('/\D/', '', $matches[1]);
+
+            if (
+                $taxId === ''
+                || preg_match('/^0+$/', $taxId)
+                || !$this->isTaxIdCompatibleWithType($taxId, $taxType)
+            ) {
+                throw new \DomainException(
+                    "Parana: identificador {$taxType} con formato incompatible."
+                );
+            }
+
+            return [
+                'tax_id' => $taxId,
+                'tax_type' => $taxType,
+            ];
+        }
+
+        // TAXID/TAX ID y RUT son marcadores fiscales reales del archivo,
+        // pero no alcanzan para adjudicar un DocumentType de nuestro catálogo.
+        //
+        // RUT se trata expresamente como genérico: el archivo real contiene
+        // RUT tanto para Paraguay como para Uruguay.
+        if (preg_match(
+            '/\b(?:TAX\s*ID|TAXID|RUT)\b\s*[:#.-]?\s*([0-9][0-9.\/-]{5,20})/iu',
+            $text,
+            $matches
+        )) {
+            $taxId = preg_replace('/\D/', '', $matches[1]);
+
+            // Al haber marcador fiscal explícito permitimos 7..14 dígitos.
+            // No usamos esa longitud para inferir ningún tipo documental.
+            if (
+                $taxId !== ''
+                && !preg_match('/^0+$/', $taxId)
+                && strlen($taxId) >= 7
+                && strlen($taxId) <= 14
+            ) {
+                return [
+                    'tax_id' => $taxId,
+                    'tax_type' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    protected function isTaxIdCompatibleWithType(
+        string $taxId,
+        string $taxType
+    ): bool {
+        $length = strlen($taxId);
+
+        return match ($taxType) {
+            'CUIT' => $length === 11,
+            'CNPJ' => $length === 14,
+            'RUC' => $length >= 7 && $length <= 9,
+            'NIT' => $length >= 9 && $length <= 10,
+            default => false,
+        };
+    }
+
+    /**
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolveClientTaxIdentity(
+        ?string $name,
+        ?string $address
+    ): array {
+        $nameIdentity = $this->extractFiscalIdentityFromText($name);
+        $addressIdentity = $this->extractFiscalIdentityFromText($address);
+
+        if ($nameIdentity !== null && $addressIdentity !== null) {
+            if ($nameIdentity['tax_id'] !== $addressIdentity['tax_id']) {
+                throw new \DomainException(
+                    'Parana: nombre y domicilio declaran identificadores fiscales distintos.'
+                );
+            }
+
+            if (
+                $nameIdentity['tax_type'] !== null
+                && $addressIdentity['tax_type'] !== null
+                && $nameIdentity['tax_type'] !== $addressIdentity['tax_type']
+            ) {
+                throw new \DomainException(
+                    'Parana: nombre y domicilio declaran tipos fiscales distintos.'
+                );
+            }
+
+            return [
+                'tax_id' => $nameIdentity['tax_id'],
+                'tax_type' => $nameIdentity['tax_type']
+                    ?? $addressIdentity['tax_type'],
+            ];
+        }
+
+        $identity = $nameIdentity ?? $addressIdentity;
+
+        return $identity ?? [
+            'tax_id' => null,
+            'tax_type' => null,
+        ];
+    }
+
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    protected function countryAlpha2FromPartyText(?string $text): ?string
+    {
+        $text = mb_strtoupper(trim((string) $text));
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'AR' => '/\bARGENTINA\b/u',
+            'PY' => '/\bPARAGUAY\b/u',
+            'UY' => '/\bURUGUAY\b/u',
+            'BR' => '/\b(?:BRASIL|BRAZIL)\b/u',
+            'CO' => '/\bCOLOMBIA\b/u',
+        ];
+
+        foreach ($patterns as $alpha2 => $pattern) {
+            if (preg_match($pattern, $text)) {
+                return $alpha2;
+            }
+        }
+
+        return null;
+    }
+
+    protected function countryAlpha2FromDeclaredValue(
+        ?string $country
+    ): ?string {
+        $country = mb_strtoupper(trim((string) $country));
+
+        if ($country === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Z]{2}$/', $country)) {
+            return $country;
+        }
+
+        $alpha3 = [
+            'ARG' => 'AR',
+            'PRY' => 'PY',
+            'URY' => 'UY',
+            'BRA' => 'BR',
+            'COL' => 'CO',
+        ];
+
+        if (isset($alpha3[$country])) {
+            return $alpha3[$country];
+        }
+
+        return $this->countryAlpha2FromPartyText($country);
+    }
+
+    protected function countryIdForAlpha2(string $alpha2): int
+    {
+        $countryId = Country::query()
+            ->where('alpha2_code', strtoupper($alpha2))
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "Parana: no existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
+    }
+
+    protected function resolveClientCountryId(
+        array $clientData,
+        ?string $taxType,
+        int $contextCountryId
+    ): int {
+        $declaredValue = trim(
+            (string) ($clientData['country'] ?? '')
+        );
+
+        $declaredAlpha2 = $this->countryAlpha2FromDeclaredValue(
+            $declaredValue
+        );
+
+        if ($declaredValue !== '' && $declaredAlpha2 === null) {
+            throw new \DomainException(
+                "Parana: país declarado no reconocido: {$declaredValue}."
+            );
+        }
+
+        $taxAlpha2 = $this->countryAlpha2ForTaxType($taxType);
+
+        if (
+            $declaredAlpha2 !== null
+            && $taxAlpha2 !== null
+            && $declaredAlpha2 !== $taxAlpha2
+        ) {
+            throw new \DomainException(
+                "Parana: el país declarado {$declaredAlpha2} "
+                . "es incompatible con el tipo fiscal {$taxType}."
+            );
+        }
+
+        if ($declaredAlpha2 !== null) {
+            return $this->countryIdForAlpha2($declaredAlpha2);
+        }
+
+        if ($taxAlpha2 !== null) {
+            return $this->countryIdForAlpha2($taxAlpha2);
+        }
+
+        $textAlpha2 = $this->countryAlpha2FromPartyText(
+            ($clientData['name'] ?? '')
+            . ' '
+            . ($clientData['address'] ?? '')
+        );
+
+        if ($textAlpha2 !== null) {
+            return $this->countryIdForAlpha2($textAlpha2);
+        }
+
+        if (
+            $contextCountryId <= 0
+            || !Country::query()->whereKey($contextCountryId)->exists()
+        ) {
+            throw new \DomainException(
+                'Parana: no existe un país contextual válido para el cliente.'
+            );
+        }
+
+        return $contextCountryId;
+    }
+
+    protected function findOrCreateClient(
+        array $clientData,
+        int $companyId,
+        int $contextCountryId
+    ): ?Client {
+        $name = trim(
+            (string) ($clientData['name'] ?? '')
+        );
+
+        if ($name === '') {
+            return null;
+        }
+
+        $identity = $this->resolveClientTaxIdentity(
+            $name,
+            $clientData['address'] ?? null
+        );
+
+        $taxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $clientCountryId = $this->resolveClientCountryId(
+            $clientData,
+            $taxType,
+            $contextCountryId
+        );
+
         Log::info('findOrCreateClient Debug', [
-            'client_name' => $clientData['name'],
+            'client_name' => $name,
             'client_address' => $clientData['address'] ?? 'N/A',
-            'company_id' => $companyId
+            'country_id' => $clientCountryId,
+            'tax_id' => $taxId,
+            'tax_type' => $taxType,
+            'company_id' => $companyId,
         ]);
 
-        // Determinar país del cliente ANTES de buscar
-        $clientCountryId = $this->determineClientCountry($clientData, $companyId);
+        // Con identificador fiscal, la identidad es tax_id + country_id.
+        // Nunca degradar luego a una coincidencia solamente por nombre.
+        if ($taxId !== null) {
+            $client = Client::query()
+                ->where('tax_id', $taxId)
+                ->where('country_id', $clientCountryId)
+                ->first();
 
-        // Respetar el identificador declarado (RUC/CUIT) si vino en el documento.
-        // Normalizar a solo dígitos; null si no se declara. NO se fabrica.
-        $normTaxId = !empty($clientData['tax_id'])
-            ? preg_replace('/\D+/', '', $clientData['tax_id'])
-            : null;
+            if ($client) {
+                return $client;
+            }
+        } else {
+            // Sin identificador fiscal sólo se reutiliza otro cliente
+            // igualmente sin tax_id y del mismo país.
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $clientCountryId)
+                ->where(function ($query) use ($name) {
+                    $normalizedName = mb_strtoupper($name);
 
-        // 1) Buscar por tax_id + país, solo si hay identificador real
-        $client = null;
-        if ($normTaxId) {
-            $client = Client::where('tax_id', $normTaxId)
-                            ->where('country_id', $clientCountryId)
-                            ->first();
+                    $query
+                        ->whereRaw(
+                            'UPPER(TRIM(legal_name)) = ?',
+                            [$normalizedName]
+                        )
+                        ->orWhereRaw(
+                            'UPPER(TRIM(commercial_name)) = ?',
+                            [$normalizedName]
+                        );
+                })
+                ->first();
+
+            if ($client) {
+                return $client;
+            }
         }
 
-        // 2) Fallback: buscar por legal_name + país
-        if (!$client) {
-            $client = Client::where('legal_name', $clientData['name'])
-                            ->where('country_id', $clientCountryId)
-                            ->first();
+        $documentTypeId = null;
+
+        if ($taxId !== null && $taxType !== null) {
+            $documentTypeId = DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $clientCountryId)
+                ->where('active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "Parana: no existe un tipo documental {$taxType} "
+                    . 'activo y compatible con el país resuelto.'
+                );
+            }
         }
 
-        if ($client) {
-            Log::info('Cliente existente encontrado', [
-                'client_id' => $client->id,
-                'tax_id' => $client->tax_id
-            ]);
-            return $client;
-        }
-
-        // 3) Crear nuevo cliente con el tax_id real o null (sin fabricar)
         $client = Client::create([
-            'legal_name' => $clientData['name'],
-            'commercial_name' => $clientData['name'],
-            'tax_id' => $normTaxId,
+            'legal_name' => $name,
+            'commercial_name' => $name,
+            'tax_id' => $taxId,
             'country_id' => $clientCountryId,
-            'document_type_id' => 1, // Tipo por defecto
+            'document_type_id' => $documentTypeId,
             'status' => 'active',
             'address' => $clientData['address'] ?? null,
             'created_by_company_id' => $companyId,
-            'verified_at' => now()
+            'verified_at' => now(),
         ]);
 
         Log::info('Cliente creado', [
             'client_id' => $client->id,
             'tax_id' => $client->tax_id,
-            'legal_name' => $client->legal_name
+            'country_id' => $client->country_id,
+            'document_type_id' => $client->document_type_id,
+            'legal_name' => $client->legal_name,
         ]);
 
         return $client;
@@ -1193,39 +1533,6 @@ class ParanaExcelParser implements ManifestParserInterface
         return \App\Models\ContainerType::where('code', $mappedCode)
                                     ->where('active', true)
                                     ->first();
-    }
-
-    /**
-     * Determinar país del cliente basado en contexto
-     */
-    protected function determineClientCountry(array $clientData, int $companyId): int
-    {
-        // Analizar dirección del cliente
-        $address = strtoupper($clientData['address'] ?? '');
-        
-        // Si tiene RUC o menciona Paraguay -> Paraguay (2)
-        if (str_contains($address, 'RUC') || 
-            str_contains($address, 'PARAGUAY') || 
-            str_contains($address, 'ASUNCION') ||
-            str_contains($address, 'VILLETA')) {
-            return 2; // Paraguay
-        }
-        
-        // Si tiene CUIT o menciona Argentina -> Argentina (1)  
-        if (str_contains($address, 'CUIT') || 
-            str_contains($address, 'ARGENTINA') ||
-            str_contains($address, 'BUENOS AIRES')) {
-            return 1; // Argentina
-        }
-        
-        // Si menciona Brasil -> Brasil (3)
-        if (str_contains($address, 'BRASIL') || 
-            str_contains($address, 'BRAZIL')) {
-            return 3; // Brasil
-        }
-        
-        // Default: Argentina (origen típico del shipper PARANA)
-        return 1;
     }
 
     protected function scanValueLikeColumns(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): array
