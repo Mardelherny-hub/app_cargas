@@ -10,6 +10,8 @@ use App\Models\BillOfLading;
 use App\Models\Container;
 use App\Models\ShipmentItem;
 use App\Models\Client;
+use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Port;
 use App\Models\Vessel;
 use App\Models\ContainerType;
@@ -613,10 +615,29 @@ class NavsurTextParser implements ManifestParserInterface
      */
     protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
     {
-        // Obtener o crear clientes
-        $shipper = $this->findOrCreateClient($data['cargador_nombre'], 'shipper');
-        $consignee = $this->findOrCreateClient($data['consignatario_nombre'], 'consignee');
-        $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
+        // Navsur no trae una columna de país propia para las partes.
+        // El prefijo ISO del código estructurado del puerto aporta solamente
+        // contexto de país; no se usa para fabricar identificación fiscal.
+        $shipper = $this->findOrCreateClient(
+            $data['cargador_nombre'],
+            'shipper',
+            $data['cargador_domicilio'] ?? null,
+            $data['puerto_carga'] ?? null
+        );
+
+        $consignee = $this->findOrCreateClient(
+            $data['consignatario_nombre'],
+            'consignee',
+            $data['consignatario_domicilio'] ?? null,
+            $data['puerto_descarga'] ?? null
+        );
+
+        $notify = $this->findOrCreateClient(
+            $data['notificatario1_nombre'],
+            'notify',
+            $data['notificatario1_domicilio'] ?? null,
+            $data['puerto_descarga'] ?? null
+        );
 
         // Obtener puertos
         $loadingPort = $this->resolvePortStrict($data['puerto_carga']);
@@ -845,87 +866,314 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
     /**
      * Buscar o crear cliente
      */
-    protected function findOrCreateClient(?string $name, string $type): ?Client
+    /**
+     * @return array{tax_id:string,tax_type:?string}|null
+     */
+    protected function extractTypedTaxIdentityFromText(?string $text): ?array
     {
-        if (empty($name)) {
+        $text = trim((string) $text);
+
+        if ($text === '') {
             return null;
         }
 
-        // Limpiar nombre
-        $name = trim(str_replace(['/*', '*/'], '', $name));
-        
-        if (empty($name)) {
-            return null;
+        $patterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'CNPJ' => '/\bCNPJ\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'RUC'  => '/\bR\.?\s*U\.?\s*C\.?\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'NIT'  => '/\bNIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+        ];
+
+        foreach ($patterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $taxId = $this->resolveTaxId($matches[1], null, null);
+
+            if ($taxId === null) {
+                continue;
+            }
+
+            if (!$this->isTaxIdCompatibleWithType($taxId, $taxType)) {
+                throw new \DomainException(
+                    "Navsur: identificador {$taxType} con formato incompatible."
+                );
+            }
+
+            return [
+                'tax_id' => $taxId,
+                'tax_type' => $taxType,
+            ];
         }
 
-        // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
-        $taxId = $this->resolveTaxId(null, $name);
+        if (preg_match(
+            '/\bTAX\s*ID\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            $text,
+            $matches
+        )) {
+            $taxId = $this->resolveTaxId($matches[1], null, null);
 
-        // 1. Buscar por tax_id de forma GLOBAL (mismo CUIT = mismo cliente, sin importar empresa)
-        if ($taxId) {
-            $client = Client::where('tax_id', $taxId)->first();
-            if ($client) {
-                Log::info('Cliente encontrado por tax_id', [
+            if ($taxId !== null) {
+                return [
                     'tax_id' => $taxId,
-                    'client_id' => $client->id
-                ]);
+                    'tax_type' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    protected function isTaxIdCompatibleWithType(
+        string $taxId,
+        string $taxType
+    ): bool {
+        $length = strlen($taxId);
+
+        return match ($taxType) {
+            'CUIT' => $length === 11,
+            'CNPJ' => $length === 14,
+            'RUC' => $length >= 7 && $length <= 9,
+            'NIT' => $length >= 9 && $length <= 10,
+            default => false,
+        };
+    }
+
+    /**
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolveClientTaxIdentity(
+        ?string $name,
+        ?string $address
+    ): array {
+        $nameIdentity = $this->extractTypedTaxIdentityFromText($name);
+        $addressIdentity = $this->extractTypedTaxIdentityFromText($address);
+
+        if ($nameIdentity !== null && $addressIdentity !== null) {
+            if ($nameIdentity['tax_id'] !== $addressIdentity['tax_id']) {
+                throw new \DomainException(
+                    'Navsur: nombre y domicilio declaran identificadores fiscales distintos.'
+                );
+            }
+
+            if (
+                $nameIdentity['tax_type'] !== null
+                && $addressIdentity['tax_type'] !== null
+                && $nameIdentity['tax_type'] !== $addressIdentity['tax_type']
+            ) {
+                throw new \DomainException(
+                    'Navsur: nombre y domicilio declaran tipos fiscales distintos.'
+                );
+            }
+
+            return [
+                'tax_id' => $nameIdentity['tax_id'],
+                'tax_type' => $nameIdentity['tax_type']
+                    ?? $addressIdentity['tax_type'],
+            ];
+        }
+
+        $typed = $nameIdentity ?? $addressIdentity;
+
+        if ($typed !== null) {
+            return $typed;
+        }
+
+        // Sólo analiza los campos propios de la parte. Nunca busca TAX/RUC
+        // dentro de MERCADERIA u otros textos del conocimiento.
+        return [
+            'tax_id' => $this->resolveTaxId(null, $name, $address),
+            'tax_type' => null,
+        ];
+    }
+
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    protected function countryAlpha2FromPortCode(?string $portCode): ?string
+    {
+        $portCode = strtoupper(
+            trim(str_replace(['/*', '*/'], '', (string) $portCode))
+        );
+
+        // Código portuario con forma UN/LOCODE: ISO alpha-2 + 3 caracteres.
+        // No se aceptan placeholders como UNKNOWN como fuente de país.
+        if (!preg_match('/^([A-Z]{2})[A-Z0-9]{3}$/', $portCode, $matches)) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    protected function resolveClientCountryId(
+        ?string $taxType,
+        ?string $contextPortCode
+    ): int {
+        // Una identificación fiscal explícita es más fuerte que el contexto
+        // logístico del puerto.
+        $alpha2 = $this->countryAlpha2ForTaxType($taxType)
+            ?? $this->countryAlpha2FromPortCode($contextPortCode);
+
+        if ($alpha2 === null) {
+            throw new \DomainException(
+                'Navsur: no existe un país confiable para la parte.'
+            );
+        }
+
+        $countryId = Country::query()
+            ->where('alpha2_code', $alpha2)
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "Navsur: el país {$alpha2} no existe en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
+    }
+
+    /**
+     * Buscar o crear cliente sin fabricar país ni documento fiscal.
+     */
+    protected function findOrCreateClient(
+        ?string $name,
+        string $type,
+        ?string $address = null,
+        ?string $contextPortCode = null
+    ): ?Client {
+        if (empty($name)) {
+            return null;
+        }
+
+        $name = trim(str_replace(['/*', '*/'], '', $name));
+
+        if ($name === '') {
+            return null;
+        }
+
+        $identity = $this->resolveClientTaxIdentity(
+            $name,
+            $address
+        );
+
+        $taxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $countryId = $this->resolveClientCountryId(
+            $taxType,
+            $contextPortCode
+        );
+
+        // Con tax, la identidad es tax_id + país.
+        // Nunca se degrada después a una coincidencia por nombre.
+        if ($taxId !== null) {
+            $client = Client::query()
+                ->where('tax_id', $taxId)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                return $client;
+            }
+        } else {
+            // Sin tax sólo se reutiliza otro cliente sin tax, del mismo país
+            // y con coincidencia exacta de nombre legal o comercial.
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->where(function ($query) use ($name) {
+                    $query->where('legal_name', $name)
+                        ->orWhere('commercial_name', $name);
+                })
+                ->first();
+
+            if ($client) {
                 return $client;
             }
         }
 
-        // 2. Si no se encontró por tax_id, buscar por nombre (global)
-        $client = Client::where('legal_name', $name)
-            ->orWhere('commercial_name', $name)
-            ->first();
-
-        if ($client) {
-            return $client;
-        }
-
-        // Obtener company_id correctamente
         $user = auth()->user();
         $companyId = null;
 
-        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+        if (
+            $user->userable_type === 'App\Models\Company'
+            && $user->userable_id
+        ) {
             $companyId = (int) $user->userable_id;
-        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
+        } elseif (
+            $user->userable_type === 'App\Models\Operator'
+            && $user->userable
+        ) {
             $companyId = $user->userable->company_id;
         }
 
+        // Se conserva por ahora la conducta previa de company_id.
+        // No forma parte del contrato fiscal de este cambio.
         if (!$companyId) {
             Log::warning('No se pudo obtener company_id para crear cliente', [
                 'user_id' => $user->id,
                 'userable_type' => $user->userable_type,
-                'client_name' => $name
+                'client_name' => $name,
             ]);
-            
+
             $companyId = 1;
         }
 
-        // Determinar país basado en el nombre
-        $countryId = 1; // Argentina por defecto
-        if (str_contains(strtoupper($name), 'PARAGUAY')) {
-            $countryId = 2; // Paraguay
+        $documentTypeId = null;
+
+        if ($taxId !== null && $taxType !== null) {
+            $documentTypeId = DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('is_active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "Navsur: no existe un tipo documental {$taxType} "
+                    . 'activo y compatible con el país resuelto.'
+                );
+            }
         }
 
-        // Crear cliente (tax_id real si vino embebido; null si no, sin fabricar)
         $client = Client::create([
             'tax_id' => $taxId,
             'country_id' => $countryId,
-            'document_type_id' => $countryId == 1 ? 1 : 2, // CUIT o RUC
+            'document_type_id' => $documentTypeId,
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
             'created_by_company_id' => $companyId,
-            'verified_at' => now() // Agregar timestamp de verificación
+            'verified_at' => now(),
         ]);
 
-        if (!$taxId) {
-            $this->stats['warnings'][] = "Cliente '{$name}' creado sin tax_id declarado.";
+        if ($taxId === null) {
+            $this->stats['warnings'][] =
+                "Cliente '{$name}' creado sin tax_id declarado.";
         }
+
+        Log::info('Navsur: alta de cliente con identidad preservada', [
+            'role' => $type,
+            'name' => $name,
+            'tax_id' => $taxId,
+            'tax_type' => $taxType,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
+        ]);
 
         return $client;
     }
+
     /**
      * Buscar o crear puerto
      */
