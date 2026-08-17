@@ -364,7 +364,7 @@ class GuaranExcelParser implements ManifestParserInterface
     protected function extractVoyageData(array $firstRow): array
     {
         return [
-            'agent_name' => $firstRow['LOCATION_NAME'] ?? 'Guaran Feeder S.A.',
+            'agent_name' => $firstRow['LOCATION_NAME'] ?? null,
             'agent_address' => trim(($firstRow['ADDRESS_LINE1'] ?? '') . ' ' . ($firstRow['ADDRESS_LINE2'] ?? '')),
             'agent_city' => $firstRow['CITY'] ?? null,
             'agent_country' => $firstRow['COUNTRY_NAME'] ?? null,
@@ -406,8 +406,35 @@ class GuaranExcelParser implements ManifestParserInterface
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($voyageData['voyage_number']);
 
-        // Crear con datos reales
-        return Voyage::create([
+        return Voyage::create(
+            $this->buildVoyageCreationData(
+                $voyageData,
+                $companyId,
+                $vessel,
+                $originPort,
+                $destPort
+            )
+        );
+    }
+
+    /**
+     * Construir atributos del Voyage sin convertir BL_DATE en fechas
+     * operativas que el archivo Guaran no declara.
+     */
+    protected function buildVoyageCreationData(
+        array $voyageData,
+        int $companyId,
+        Vessel $vessel,
+        Port $originPort,
+        Port $destPort
+    ): array {
+        $notes = 'Importado desde GUARAN Excel';
+
+        if (!empty($voyageData['agent_name'])) {
+            $notes .= ': ' . $voyageData['agent_name'];
+        }
+
+        return [
             'company_id' => $companyId,
             'voyage_number' => $voyageData['voyage_number'],
             'lead_vessel_id' => $vessel->id,
@@ -415,16 +442,19 @@ class GuaranExcelParser implements ManifestParserInterface
             'destination_port_id' => $destPort->id,
             'origin_country_id' => $originPort->country_id,
             'destination_country_id' => $destPort->country_id,
-            'departure_date' => $this->parseBLDateForDeparture($voyageData['bl_date']),
-            'estimated_arrival_date' => $this->parseBLDateForArrival($voyageData['bl_date']),
+
+            // Guaran sólo declara BL_DATE. No declara salida ni ETA.
+            'departure_date' => null,
+            'estimated_arrival_date' => null,
+
             'voyage_type' => $this->mapManifestType($voyageData['manifest_type']),
             'cargo_type' => $this->mapCargoType($voyageData),
             'status' => 'planning',
             'is_consolidated' => true,
             'vessel_count' => 1,
             'created_by_user_id' => auth()->id(),
-            'operational_notes' => 'Importado desde GUARAN Excel: ' . $voyageData['agent_name']
-        ]);
+            'operational_notes' => $notes,
+        ];
     }
 
     /**
@@ -465,43 +495,81 @@ class GuaranExcelParser implements ManifestParserInterface
      */
     protected function findOrCreateVessel(array $voyageData, int $companyId): Vessel
     {
-        if (!$voyageData['vessel_name']) {
+        $name = trim((string) ($voyageData['vessel_name'] ?? ''));
+
+        if ($name === '') {
             throw new Exception("BARGE_NAME es requerido en el archivo");
         }
 
-        // La matricula (registration_number, desde BARGE_ID) es la clave unica REAL
-        // y es global (indice uk_vessels_registration, sin company_id). Una misma
-        // barcaza fluvial existe una sola vez aunque la operen distintas empresas.
-        // Buscar por matricula evita el INSERT duplicado (SQLSTATE 23000).
-        $registrationNumber = $voyageData['vessel_id'] ?? 'REG-' . uniqid();
+        $registrationNumber = trim(
+            (string) ($voyageData['vessel_id'] ?? '')
+        );
 
-        // 1. Buscar por matricula (clave unica global)
-        $vessel = Vessel::where('registration_number', $registrationNumber)->first();
-        if ($vessel) return $vessel;
+        $registrationNumber = $registrationNumber !== ''
+            ? $registrationNumber
+            : null;
 
-        // 2. Fallback: buscar por nombre dentro de la empresa (compatibilidad)
-        $vessel = Vessel::where('name', $voyageData['vessel_name'])
-            ->where('company_id', $companyId)
-            ->first();
-        if ($vessel) return $vessel;
+        if ($registrationNumber !== null) {
+            // Con matrícula explícita, ésa es la identidad real.
+            // No fusionar por nombre con una embarcación de otra matrícula.
+            $vessel = Vessel::where(
+                'registration_number',
+                $registrationNumber
+            )->first();
 
-        // 3. No existe: crear
-        return Vessel::create([
-            'name' => $voyageData['vessel_name'],
+            if ($vessel) {
+                return $vessel;
+            }
+        } else {
+            // Sin matrícula sólo podemos reutilizar por nombre dentro
+            // de la misma empresa. Nunca fabricar una matrícula.
+            $vessel = Vessel::where('name', $name)
+                ->where('company_id', $companyId)
+                ->first();
+
+            if ($vessel) {
+                return $vessel;
+            }
+        }
+
+        return Vessel::create(
+            $this->buildVesselCreationData(
+                $name,
+                $registrationNumber,
+                $companyId
+            )
+        );
+    }
+
+    /**
+     * Atributos permitidos al crear una embarcación desde Guaran.
+     *
+     * El archivo aporta nombre y eventualmente BARGE_ID. No aporta
+     * bandera, tipo técnico, dimensiones, tonelajes ni capacidad.
+     */
+    protected function buildVesselCreationData(
+        string $name,
+        ?string $registrationNumber,
+        int $companyId
+    ): array {
+        return [
+            'name' => $name,
             'registration_number' => $registrationNumber,
             'company_id' => $companyId,
-            'vessel_type_id' => $this->findVesselTypeByName($voyageData['vessel_name']),
-            'flag_country_id' => $this->mapCountryName($voyageData['agent_country']),
+
+            'vessel_type_id' => null,
+            'flag_country_id' => null,
+
             'operational_status' => 'active',
             'active' => true,
-            // Agregar campos requeridos con valores por defecto
-            'length_meters' => 80.0,         // Valor por defecto para barcaza
-            'beam_meters' => 12.0,           // Valor por defecto para barcaza
-            'draft_meters' => 2.5,           // Valor por defecto para barcaza
-            'gross_tonnage' => 500,          // Valor por defecto
-            'net_tonnage' => 350,            // Valor por defecto
-            'cargo_capacity_tons' => 1000,    // Valor por defecto
-        ]);
+
+            'length_meters' => null,
+            'beam_meters' => null,
+            'draft_meters' => null,
+            'gross_tonnage' => null,
+            'net_tonnage' => null,
+            'cargo_capacity_tons' => null,
+        ];
     }
 
     /**
@@ -565,15 +633,15 @@ class GuaranExcelParser implements ManifestParserInterface
             'vessel_id' => $voyage->lead_vessel_id,
             'shipment_number'     => $this->generateShipmentNumber($voyage, $sequence),
             'sequence_in_voyage' => $sequence,
-            'departure_time' => $voyage->departure_date,
-            'estimated_arrival_time' => $voyage->estimated_arrival_date,
+            // Guaran no declara horario de salida ni capacidad operativa.
+            'departure_time' => null,
             'status' => 'planning',
             'is_lead_vessel' => true,
             'vessel_role' => 'single',
             'current_cargo_weight_tons' => 0,
             'current_container_count' => 0,
             'utilization_percentage' => 0.0,
-            'cargo_capacity_tons' => $voyage->leadVessel->cargo_capacity_tons,
+            'cargo_capacity_tons' => null,
         ]);
     }
 
@@ -890,18 +958,6 @@ class GuaranExcelParser implements ManifestParserInterface
     protected function mapManifestType(?string $type): string
     {
             return 'convoy';
-    }
-
-    protected function parseBLDateForDeparture(?string $blDate): Carbon
-    {
-        $date = $this->parseDate($blDate);
-        return $date ? $date->copy()->addDay() : now()->addDay();
-    }
-
-    protected function parseBLDateForArrival(?string $blDate): Carbon
-    {
-        $date = $this->parseDate($blDate);
-        return $date ? $date->copy()->addDays(3) : now()->addDays(3);
     }
 
     protected function parseDate($date): ?Carbon
@@ -1505,17 +1561,6 @@ class GuaranExcelParser implements ManifestParserInterface
             'ARBUE' => 'Puerto de Buenos Aires'
         ];
         return $known[$code] ?? 'Puerto ' . $code;
-    }
-
-    protected function findVesselTypeByName(string $name): int
-    {
-        $type = DB::table('vessel_types')
-            ->whereRaw('UPPER(name) LIKE ?', ['%BARCAZA%'])
-            ->orWhereRaw('UPPER(name) LIKE ?', ['%BARGE%'])
-            ->where('active', true)
-            ->first();
-            
-        return $type ? $type->id : 1;
     }
 
     protected function findCargoTypeByNCM(?string $ncm): int
