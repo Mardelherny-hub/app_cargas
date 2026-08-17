@@ -285,16 +285,25 @@ class ManeFileGeneratorService
         $shipmentItems = $shipment->shipmentItems()->with('containers.containerType')->get();
         
         foreach ($shipmentItems as $item) {
-            foreach ($item->containers as $container) {  // ✅ CORRECTO - 'containers' plural
+            foreach ($item->containers as $container) {
+                $containerType = $container->containerType;
+
+                if (!$containerType) {
+                    throw new Exception(
+                        "No se puede generar MANE: el contenedor "
+                        . "{$container->container_number} no tiene tipo físico informado."
+                    );
+                }
+
                 $containersData[] = [
                     'number' => $container->container_number,
-                    'type_code' => $container->containerType->code ?? '40HC',
-                    'type_name' => $container->containerType->name ?? 'Container',
-                    'size_feet' => $container->containerType->length_feet ?? 40,
-                    'teu' => $this->calculateTEU($container->containerType),
+                    'type_code' => $containerType->code,
+                    'type_name' => $containerType->name,
+                    'size_feet' => $containerType->length_feet,
+                    'teu' => $this->calculateTEU($containerType),
                     'seal_number' => $container->seal_number ?? '',
-                    'tare_weight' => $container->tare_weight_kg ?? 0,
-                    'max_payload' => $container->max_payload_kg ?? 0,
+                    'tare_weight' => $container->tare_weight_kg,
+                    'max_payload' => $containerType->max_payload_kg,
                     'condition' => $container->condition ?? 'FCL',
                 ];
             }
@@ -306,15 +315,18 @@ class ManeFileGeneratorService
     /**
      * Calcular TEU basado en el tipo de contenedor
      */
-    private function calculateTEU($containerType): int
+    private function calculateTEU($containerType): ?int
     {
-        if (!$containerType) return 2;
-        
-        $lengthFeet = $containerType->length_feet ?? 40;
-        
+        if (!$containerType || $containerType->length_feet === null) {
+            return null;
+        }
+
+        $lengthFeet = (float) $containerType->length_feet;
+
         if ($lengthFeet <= 20) return 1;
         if ($lengthFeet <= 40) return 2;
-        return 3; // Para contenedores más grandes
+
+        return 3;
     }
 
     /**
