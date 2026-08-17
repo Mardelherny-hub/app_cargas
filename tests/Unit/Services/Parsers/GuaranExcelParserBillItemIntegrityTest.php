@@ -131,4 +131,83 @@ class GuaranExcelParserBillItemIntegrityTest extends TestCase
             )
         );
     }
+
+    public function test_missing_cargo_marks_are_not_fabricated(): void
+    {
+        $this->assertNull(
+            $this->invoke(
+                'normalizeGuaranCargoMarks',
+                [null]
+            )
+        );
+
+        $this->assertNull(
+            $this->invoke(
+                'normalizeGuaranCargoMarks',
+                ['   ']
+            )
+        );
+    }
+
+    public function test_real_cargo_marks_are_preserved(): void
+    {
+        $this->assertSame(
+            'ABC 123',
+            $this->invoke(
+                'normalizeGuaranCargoMarks',
+                [' ABC 123 ']
+            )
+        );
+    }
+
+    public function test_single_guaran_ncm_is_not_invented_as_tariff_position(): void
+    {
+        $classification = $this->invoke(
+            'buildCommodityClassification',
+            ['0202']
+        );
+
+        $this->assertSame(
+            '0202',
+            $classification['commodity_code']
+        );
+
+        $this->assertNull(
+            $classification['tariff_position']
+        );
+    }
+
+    public function test_multiple_guaran_ncm_codes_are_preserved_as_source_data(): void
+    {
+        $classification = $this->invoke(
+            'buildCommodityClassification',
+            ['0202, 0206, 0504']
+        );
+
+        $this->assertSame(
+            '0202, 0206, 0504',
+            $classification['commodity_code']
+        );
+
+        $this->assertNull(
+            $classification['tariff_position']
+        );
+    }
+
+    public function test_missing_ncm_remains_missing(): void
+    {
+        $classification = $this->invoke(
+            'buildCommodityClassification',
+            [null]
+        );
+
+        $this->assertNull(
+            $classification['commodity_code']
+        );
+
+        $this->assertNull(
+            $classification['tariff_position']
+        );
+    }
+
 }
