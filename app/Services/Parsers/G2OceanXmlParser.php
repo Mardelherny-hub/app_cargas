@@ -988,7 +988,7 @@ class G2OceanXmlParser implements ManifestParserInterface
             $documentTypeId = DocumentType::query()
                 ->where('code', $taxType)
                 ->where('country_id', $countryId)
-                ->where('is_active', true)
+                ->where('active', true)
                 ->value('id');
 
             if (!$documentTypeId) {
