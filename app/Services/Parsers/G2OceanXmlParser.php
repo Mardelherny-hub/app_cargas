@@ -11,6 +11,7 @@ use App\Models\ShipmentItem;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
@@ -315,22 +316,220 @@ class G2OceanXmlParser implements ManifestParserInterface
     protected function extractPartyData(?SimpleXMLElement $partyInfo): array
     {
         if (!$partyInfo) {
-            return ['name' => 'Desconocido', 'address' => '', 'tax_id' => null];
+            return [
+                'name' => 'Desconocido',
+                'address' => '',
+                'tax_id' => null,
+                'tax_type' => null,
+            ];
         }
 
-        $name = (string)($partyInfo->organizationName1 ?? '');
+        $name = (string) ($partyInfo->organizationName1 ?? '');
+
         // Quitar prefijo de rol del XML G2Ocean: "(CO) " consignee, "(NF) " notify.
-        // Solo al inicio, para no tocar paréntesis legítimos del nombre (ej: "(H.K.)").
-        $name = preg_replace('/^\((?:CO|NF)\)\s*/i', '', trim($name));
-        $address = $this->buildAddress($partyInfo->addressInfo ?? null);
-        // Helper común: cubre CUIT, CUIT NBR, RUC, CNPJ, NIT (busca en nombre y dirección).
-        $taxId = $this->resolveTaxId(null, $name, $address);
+        // Solo al inicio, para no tocar paréntesis legítimos del nombre.
+        $name = preg_replace(
+            '/^\((?:CO|NF)\)\s*/i',
+            '',
+            trim($name)
+        );
+
+        $address = $this->buildAddress(
+            $partyInfo->addressInfo ?? null
+        );
+
+        $identity = $this->resolvePartyTaxIdentity(
+            $name,
+            $address
+        );
 
         return [
             'name' => $name ?: 'Desconocido',
             'address' => $address,
-            'tax_id' => $taxId
+            'tax_id' => $identity['tax_id'],
+            'tax_type' => $identity['tax_type'],
         ];
+    }
+
+    /**
+     * Extrae una identidad fiscal únicamente cuando el texto declara
+     * expresamente el tipo. Nunca infiere el tipo por longitud.
+     *
+     * @return array{tax_id:string,tax_type:?string}|null
+     */
+    protected function extractTypedTaxIdentityFromText(?string $text): ?array
+    {
+        $text = trim((string) $text);
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:(?:NBR|NRO|Nº|N°)\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'CNPJ' => '/\bCNPJ\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'RUC'  => '/\bR\.?\s*U\.?\s*C\.?\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'NIT'  => '/\bNIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+        ];
+
+        foreach ($patterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $taxId = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($taxId === null) {
+                continue;
+            }
+
+            if (!$this->isTaxIdCompatibleWithType($taxId, $taxType)) {
+                throw new \DomainException(
+                    "G2Ocean: identificador {$taxType} con formato incompatible."
+                );
+            }
+
+            return [
+                'tax_id' => $taxId,
+                'tax_type' => $taxType,
+            ];
+        }
+
+        // Identificadores genéricos: se conserva el número pero no se
+        // adjudica CUIT/RUC/CNPJ/NIT sin evidencia explícita.
+        if (preg_match(
+            '/\bTAX\s*(?:ID|NUMBER)\b\s*[:#.-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            $text,
+            $matches
+        )) {
+            $taxId = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($taxId !== null) {
+                return [
+                    'tax_id' => $taxId,
+                    'tax_type' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    protected function isTaxIdCompatibleWithType(
+        string $taxId,
+        string $taxType
+    ): bool {
+        $length = strlen($taxId);
+
+        return match ($taxType) {
+            'CUIT' => $length === 11,
+            'CNPJ' => $length === 14,
+            'RUC' => $length >= 7 && $length <= 9,
+            'NIT' => $length >= 9 && $length <= 10,
+            default => false,
+        };
+    }
+
+    /**
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolvePartyTaxIdentity(
+        ?string $name,
+        ?string $address
+    ): array {
+        $nameIdentity = $this->extractTypedTaxIdentityFromText($name);
+        $addressIdentity = $this->extractTypedTaxIdentityFromText($address);
+
+        if ($nameIdentity !== null && $addressIdentity !== null) {
+            if ($nameIdentity['tax_id'] !== $addressIdentity['tax_id']) {
+                throw new \DomainException(
+                    'G2Ocean: nombre y domicilio declaran identificadores fiscales distintos.'
+                );
+            }
+
+            if (
+                $nameIdentity['tax_type'] !== null
+                && $addressIdentity['tax_type'] !== null
+                && $nameIdentity['tax_type'] !== $addressIdentity['tax_type']
+            ) {
+                throw new \DomainException(
+                    'G2Ocean: nombre y domicilio declaran tipos fiscales distintos.'
+                );
+            }
+
+            return [
+                'tax_id' => $nameIdentity['tax_id'],
+                'tax_type' => $nameIdentity['tax_type']
+                    ?? $addressIdentity['tax_type'],
+            ];
+        }
+
+        $typed = $nameIdentity ?? $addressIdentity;
+
+        if ($typed !== null) {
+            return $typed;
+        }
+
+        // El trait mantiene cobertura de otros marcadores genéricos
+        // (por ejemplo RUT/VAT) sin inventar su tipo documental.
+        return [
+            'tax_id' => $this->resolveTaxId(
+                null,
+                $name,
+                $address
+            ),
+            'tax_type' => null,
+        ];
+    }
+
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    protected function resolveClientCountryId(
+        ?string $taxType,
+        Port $defaultPort
+    ): int {
+        $alpha2 = $this->countryAlpha2ForTaxType($taxType);
+
+        if ($alpha2 === null) {
+            $countryId = (int) $defaultPort->country_id;
+
+            if ($countryId <= 0) {
+                throw new \DomainException(
+                    'G2Ocean: el puerto contextual no tiene un país válido.'
+                );
+            }
+
+            return $countryId;
+        }
+
+        $countryId = Country::query()
+            ->where('alpha2_code', $alpha2)
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "G2Ocean: no existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
     }
 
     /**
@@ -751,9 +950,16 @@ class G2OceanXmlParser implements ManifestParserInterface
      */
     protected function findOrCreateClient(array $clientData, int $companyId, Port $defaultPort): Client
     {
-        $name      = $clientData['name'] ?? 'Cliente Desconocido';
-        $taxId     = $clientData['tax_id'] ?: null;   // NULL si el documento no lo declara
-        $countryId = $defaultPort->country_id;
+        $name = $clientData['name'] ?? 'Cliente Desconocido';
+        $taxId = $clientData['tax_id'] ?: null;
+        $taxType = $clientData['tax_type'] ?? null;
+
+        // Con tipo fiscal explícito manda su jurisdicción.
+        // Sin tipo explícito se conserva el país contextual del puerto.
+        $countryId = $this->resolveClientCountryId(
+            $taxType,
+            $defaultPort
+        );
 
         // Buscar existente
         if ($taxId) {
@@ -776,11 +982,28 @@ class G2OceanXmlParser implements ManifestParserInterface
             }
         }
 
-        // Crear nuevo. tax_id = NULL si no vino declarado. NUNCA se fabrica.
+        $documentTypeId = null;
+
+        if ($taxId !== null && $taxType !== null) {
+            $documentTypeId = DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('is_active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "G2Ocean: no existe un tipo documental {$taxType} "
+                    . 'activo y compatible con el país resuelto.'
+                );
+            }
+        }
+
+        // Crear nuevo sin fabricar documento fiscal.
         return Client::create([
             'tax_id' => $taxId,
             'country_id' => $countryId,
-            'document_type_id' => 1,
+            'document_type_id' => $documentTypeId,
             'legal_name' => $name,
             'commercial_name' => $name,
             'address' => $clientData['address'] ?: null,
@@ -978,7 +1201,7 @@ class G2OceanXmlParser implements ManifestParserInterface
             'clients' => [
                 'auto_create_missing' => true,
                 'extract_tax_ids' => true,
-                'default_document_type_id' => 1
+                'default_document_type_id' => null
             ],
             'cargo' => [
                 'default_cargo_type_id' => 1,
