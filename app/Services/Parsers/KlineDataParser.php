@@ -1250,6 +1250,19 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     trim((string) $line)
                 );
 
+                // K-Line puede agregar un sufijo propio después del NCM base.
+                // Ejemplo real: NCM: 8429.52.19.000B.
+                // La aplicación conserva únicamente los 8 dígitos NCM.
+                if (
+                    preg_match(
+                        '/\\bNCM\\s*:\\s*([0-9]{2}\\.?[0-9]{2}\\.?[0-9]{2}\\.?[0-9]{2})/i',
+                        $line,
+                        $ncmMatch
+                    )
+                ) {
+                    $append($ncmMatch[1]);
+                }
+
                 if (!preg_match(
                     '/\b(?:NCM|HS\s*CODE)\s*:\s*(.+)$/i',
                     $line,
@@ -1555,6 +1568,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             Str::ascii(implode("\n", $lines))
         );
 
+        // Clasificación explícita histórica de K-Line.
         if (
             preg_match(
                 '/(?<![A-Z])(?:VEHICLES?|VEHICULOS?)(?![A-Z])/',
@@ -1562,6 +1576,18 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             )
         ) {
             return 'VEH001';
+        }
+
+        // El archivo real KKLUATM02175 declara excavadoras hidráulicas.
+        // No inferir RORO por "SELF PROPELLED UNIT": el DAT no declara
+        // modalidad RoRo. Se conserva como carga no contenedorizada.
+        if (
+            preg_match(
+                '/(?<![A-Z])(?:ESCAVADORAS?|EXCAVATORS?)(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'ONC001';
         }
 
         throw new \DomainException(
@@ -1598,6 +1624,24 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         array $data,
         string $blNumber
     ): string {
+        // CMMDREC informa la unidad explícitamente.
+        // Ejemplo real: NAUT00000002UNITS.
+        foreach (($data['CMMDREC0'] ?? []) as $line) {
+            $source = Str::upper(
+                Str::ascii((string) $line)
+            );
+
+            if (
+                preg_match(
+                    '/NAUT\d+\s*(?:UNITS?|VEHICLES?)(?![A-Z])/',
+                    $source
+                )
+            ) {
+                return 'PCS';
+            }
+        }
+
+        // Compatibilidad con los DAT históricos de vehículos.
         $cargoTypeCode = $this->resolveCargoTypeCode(
             $data,
             $blNumber
@@ -1638,74 +1682,148 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     protected function extractCargoDescriptions(array $data): array
     {
         $descriptions = [];
-        
-        // Buscar información principal de carga en DESCREC
+
+        // Comportamiento histórico: vehículos.
         if (!empty($data['DESCREC0'])) {
             $quantity = '';
             $cargoType = '';
             $brand = '';
-            $model = '';
-            
+
             foreach ($data['DESCREC0'] as $line) {
                 $cleanLine = trim($line);
-                
-                if (empty($cleanLine)) continue;
-                
-                // FIX bug QA #3: el content de DESCREC viene con prefijo numérico
-                // de 6 chars (3 del seq + 3 del sub-seq) por el offset 8 del groupBy.
-                // Ej: "DESCREC000100116 VEHICULOS..." -> content "00100116 VEHICULOS..."
-                // Sin limpiar, "00100116" se interpretaba como cantidad en lugar de "16".
+                if ($cleanLine === '') {
+                    continue;
+                }
+
                 $cleanLine = preg_replace('/^\d{6}/', '', $cleanLine);
                 $cleanLine = trim($cleanLine);
-                if (empty($cleanLine)) continue;
-                
-                // Extraer cantidad y tipo de vehículos
-                // FIX QA #6: sumar cantidades cuando hay múltiples grupos en el mismo BL
-                // (este DAT tiene "16 VEHICULOS" + "27 VEHICULOS" = 43 total)
-                if (preg_match('/^(\d+)\s+(VEHICULOS?.*?)(?:\s+MARCA\s+(.+?))?(?:\s+-\s*)?$/i', $cleanLine, $matches)) {
-                    $quantity = (int)$quantity + (int)$matches[1];
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                if (
+                    preg_match(
+                        '/^(\d+)\s+(VEHICULOS?.*?)(?:\s+MARCA\s+(.+?))?(?:\s+-\s*)?$/i',
+                        $cleanLine,
+                        $matches
+                    )
+                ) {
+                    $quantity = (int) $quantity + (int) $matches[1];
                     $cargoType = trim($matches[2]);
+
                     if (isset($matches[3])) {
                         $brand = trim($matches[3]);
                     }
                 }
-                // FIX QA #6: se quitó la extracción de "modelo específico" porque tomaba
-                // líneas documentales como "EMISION DE ORIGINALES EN DESTINO" o "SEA WAYBILL"
-                // como modelo. Los modelos reales (ej "HJD5M2DAMY DUSTER ICONIC 1.3T 4X4")
-                // contienen puntos y no matcheaban el regex de todas formas.
             }
-            
-            // Construir descripción específica
+
             if ($quantity && $cargoType) {
                 $description = $quantity . ' ' . $cargoType;
-                
+
                 if ($brand) {
                     $description .= ' ' . $brand;
                 }
-                
+
                 $descriptions[] = $description;
             }
         }
-        
-        // Si no se encontró información específica, usar información de CMMDREC
+
+        /*
+         * Variante real KKLUATM02175: excavadoras.
+         *
+         * El CMMD sólo dice "2 UNITS"; DESCREC contiene el significado real,
+         * modelos y números de serie. Debe persistirse como UN solo item para
+         * no repetir las medidas totales del BL.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $cleanLines = [];
+            $hasExcavator = false;
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace('/^\d{6}/', '', trim((string) $line))
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(
+                    Str::ascii($cleanLine)
+                );
+
+                if (
+                    preg_match(
+                        '/(?<![A-Z])(?:ESCAVADORAS?|EXCAVATORS?)(?![A-Z])/',
+                        $upper
+                    )
+                ) {
+                    $hasExcavator = true;
+                }
+
+                $cleanLines[] = $cleanLine;
+            }
+
+            if ($hasExcavator) {
+                $details = [];
+
+                foreach ($cleanLines as $line) {
+                    $upper = Str::upper(
+                        Str::ascii($line)
+                    );
+
+                    if (
+                        preg_match('/^LOADED AS PER BELOW\s*:?\s*$/', $upper)
+                        || preg_match('/^NCM\s*:/', $upper)
+                        || preg_match('/^CONSOLIDATED CARGO\s*$/', $upper)
+                        || preg_match('/^ESCAVADORA IDRAULICA\s*$/', $upper)
+                    ) {
+                        continue;
+                    }
+
+                    $details[] = $line;
+                }
+
+                $details = array_values(array_unique($details));
+
+                $quantity = $this->extractRealMeasurements($data)[
+                    'package_quantity'
+                ];
+
+                $description =
+                    ($quantity !== null ? $quantity . ' ' : '')
+                    . ($quantity === 1
+                        ? 'ESCAVADORA HIDRAULICA'
+                        : 'ESCAVADORAS HIDRAULICAS');
+
+                if ($details !== []) {
+                    $description .= ' / ' . implode(' / ', $details);
+                }
+
+                $descriptions[] = $description;
+            }
+        }
+
+        // Fallback histórico: sólo cuando no existe descripción semántica.
         if (empty($descriptions) && !empty($data['CMMDREC0'])) {
             foreach ($data['CMMDREC0'] as $line) {
                 if (preg_match('/NAUT(\d+)([A-Z]+)/i', $line, $matches)) {
                     $qty = ltrim($matches[1], '0') ?: '1';
                     $type = strtolower($matches[2]);
-                    
+
                     $typeMap = [
                         'VEHICLES' => 'Vehículos',
                         'UNITS' => 'Unidades',
-                        'NAUT' => 'Unidades'
+                        'NAUT' => 'Unidades',
                     ];
-                    
+
                     $typeDesc = $typeMap[$type] ?? $type;
                     $descriptions[] = $qty . ' ' . $typeDesc;
                 }
             }
         }
-        
+
         return $descriptions;
     }
 
