@@ -423,29 +423,69 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
      * 2) fechas inequívocamente extraídas del archivo;
      * 3) null.
      */
+    protected function resolveVoyageNumber(
+        array $voyageInfo,
+        array $options = []
+    ): string {
+        $sourceNumber = trim(
+            (string) ($voyageInfo['voyage_number'] ?? '')
+        );
+
+        $operatorNumber = trim(
+            (string) ($options['voyage_number'] ?? '')
+        );
+
+        $number = $sourceNumber !== ''
+            ? $sourceNumber
+            : $operatorNumber;
+
+        if ($number === '') {
+            throw new \DomainException(
+                'K-Line no informa número de viaje. '
+                . 'Debe ingresarlo al importar el manifiesto.'
+            );
+        }
+
+        if (
+            str_starts_with(
+                strtoupper($number),
+                'KLINE-'
+            )
+        ) {
+            return $number;
+        }
+
+        return 'KLINE-' . $number;
+    }
+
     protected function resolveVoyageDates(
-        array $options = [],
-        array $extractedDates = []
+        array $sourceDates,
+        array $options = []
     ): array {
-        $optDates = $options['dates'] ?? [];
+        $sourceDeparture = $sourceDates['etd'] ?? null;
+        $sourceArrival = $sourceDates['eta'] ?? null;
 
-        $etdRaw = !empty($optDates['etd'])
-            ? $optDates['etd']
-            : ($extractedDates['etd'] ?? null);
+        $operatorDeparture =
+            $options['departure_date'] ?? null;
 
-        $etaRaw = !empty($optDates['eta'])
-            ? $optDates['eta']
-            : ($extractedDates['eta'] ?? null);
+        $departure = !empty($sourceDeparture)
+            ? Carbon::parse($sourceDeparture)
+            : (
+                !empty($operatorDeparture)
+                    ? Carbon::parse($operatorDeparture)
+                    : null
+            );
+
+        $arrival = !empty($sourceArrival)
+            ? Carbon::parse($sourceArrival)
+            : null;
 
         return [
-            'etd' => !empty($etdRaw) ? Carbon::parse($etdRaw) : null,
-            'eta' => !empty($etaRaw) ? Carbon::parse($etaRaw) : null,
+            'departure_date' => $departure,
+            'estimated_arrival_date' => $arrival,
         ];
     }
 
-    /**
-     * Crear voyage - CORREGIDO: como PARANA
-     */
     protected function createVoyage(
         array $voyageInfo,
         Port $originPort,
@@ -475,15 +515,22 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             throw new Exception("Vessel con ID {$vesselId} no encontrado");
         }
 
-        $voyageNumber = 'KLINE-' . ($voyageInfo['voyage_number'] ?? date('YmdHis'));
+        $voyageNumber = $this->resolveVoyageNumber(
+            $voyageInfo,
+            $options
+        );
 
         // El voyage_number es único global. Si ya existe (en cualquier empresa),
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($voyageNumber);
 
-        $resolvedDates = $this->resolveVoyageDates($options, $extractedDates);
-        $etd = $resolvedDates['etd'];
-        $eta = $resolvedDates['eta'];
+        $resolvedDates = $this->resolveVoyageDates(
+            $extractedDates,
+            $options
+        );
+
+        $etd = $resolvedDates['departure_date'];
+        $eta = $resolvedDates['estimated_arrival_date'];
 
 
         $voyageData = [
@@ -548,10 +595,14 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $shipment = Shipment::create([
             'voyage_id' => $voyage->id,
             'vessel_id' => $vessel->id,
-            'shipment_number' => 'KLINE-SHIP-' . now()->format('YmdHis'),
+            'shipment_number' => 'KLINE-SHIP-' . preg_replace(
+                '/^KLINE-/i',
+                '',
+                $voyage->voyage_number
+            ),
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
-            'cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 1000.0,
+            'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
             'container_capacity' => $vessel->container_capacity ?? 0,
             'status' => 'planning',
             'active' => true,
@@ -912,7 +963,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         if ($voyageInfo['voyage_ref']) {
             $voyageInfo['voyage_number'] = $voyageInfo['voyage_ref'];
         } else {
-            $voyageInfo['voyage_number'] = date('YmdHis');
+            $voyageInfo['voyage_number'] = null;
         }
 
         return $voyageInfo;
