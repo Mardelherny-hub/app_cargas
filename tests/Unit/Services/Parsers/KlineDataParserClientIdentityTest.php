@@ -70,6 +70,17 @@ class KlineDataParserClientIdentityTest extends TestCase
         }
     }
 
+    public function test_vat_marker_reuses_real_tax_identity_without_inventing_type(): void
+    {
+        $data = $this->build([
+            '11 IN SA VAT 80086986-9',
+        ]);
+
+        $this->assertSame('11 IN SA', $data['name']);
+        $this->assertSame('800869869', $data['tax_id']);
+        $this->assertNull($data['tax_type']);
+    }
+
     public function test_generic_tax_id_does_not_invent_document_type(): void
     {
         $data = $this->build([
