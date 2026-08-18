@@ -804,7 +804,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 'commodity_code' => $ncmCode ?: null, // REAL o null
                 'country_of_origin' => $countryOfOrigin, // REAL
                 'cargo_marks' => $cargoMarks, // REAL
-                'unit_of_measure' => 'PCS', // TODO: Extraer real
+                'unit_of_measure' => $this->resolveUnitOfMeasure($data, $bill->bill_number),
                 'status' => 'draft',
                 'created_by_user_id' => auth()->id()
             ]);
@@ -1591,6 +1591,25 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
 
         return (int) $id;
+    }
+
+    protected function resolveUnitOfMeasure(
+        array $data,
+        string $blNumber
+    ): string {
+        $cargoTypeCode = $this->resolveCargoTypeCode(
+            $data,
+            $blNumber
+        );
+
+        return match ($cargoTypeCode) {
+            'VEH001' => 'PCS',
+            default => throw new \DomainException(
+                "K-Line no tiene una unidad de medida definida "
+                . "para el tipo de carga {$cargoTypeCode} "
+                . "del BL {$blNumber}."
+            ),
+        };
     }
 
     protected function resolvePackagingTypeId(
