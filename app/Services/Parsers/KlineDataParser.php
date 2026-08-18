@@ -2219,7 +2219,7 @@ protected function extractPortInfo(array $data): array
             ? $this->resolveDocumentTypeId($taxType, $countryId)
             : null;
 
-        $client = Client::create([
+        $client = Client::withoutEvents(fn () => Client::create([
             'tax_id' => $normTaxId,
             'country_id' => $countryId,
             'document_type_id' => $documentTypeId,
@@ -2227,12 +2227,12 @@ protected function extractPortInfo(array $data): array
             'commercial_name' => $name,
             'status' => 'active',
             'created_by_company_id' => $companyId,
-            'verified_at' => now(),
+            'verified_at' => null,
 
             'address' => $clientData['address'] ?? null,
             'email' => $clientData['email'] ?? null,
             'notes' => 'Cliente creado desde archivo KLine DAT',
-        ]);
+        ]));
 
         Log::info('Cliente creado desde KLine', [
             'client_id' => $client->id,
