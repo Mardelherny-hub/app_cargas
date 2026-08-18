@@ -677,7 +677,10 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'bill_date'         => $dates['bl_date'] ?? null,
             'loading_date'      => $dates['etd'] ?? null,
             // FIX bug #5: usar descripción real extraída de DESCREC en lugar de leyenda fija
-            'cargo_description' => implode(' / ', $this->extractCargoDescriptions($data)) ?: 'Mercadería según manifiesto KLine',
+            'cargo_description' => $this->resolveCargoDescription(
+                $data,
+                $blNumber
+            ),
             'status'            => 'draft',
             'master_bl_number'  => $this->extractMasterBL($data),
             // FIX bugs #3, #4: cargo y packaging correctos para K-Line (carga no contenedorizada)
@@ -757,11 +760,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
         // Extraer descripciones de carga de los registros KLine
         $descriptions = $this->extractCargoDescriptions($data);
-        
-        if (empty($descriptions)) {
-            // Crear al menos un item por defecto
-            $descriptions = ['Mercadería general según KLine DAT'];
-        }
+
+        $this->assertCargoDescriptions(
+            $descriptions,
+            $bill->bill_number
+        );
 
         foreach ($descriptions as $description) {
             // CORREGIDO: Verificar duplicado line_number sin throw Exception
@@ -1509,6 +1512,40 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     /**
      * Extraer descripciones de carga - CORREGIDO: información específica del tipo
      */
+    protected function assertCargoDescriptions(
+        array $descriptions,
+        string $blNumber
+    ): void {
+        $descriptions = array_values(
+            array_filter(
+                $descriptions,
+                fn ($description) =>
+                    trim((string) $description) !== ''
+            )
+        );
+
+        if ($descriptions === []) {
+            throw new \DomainException(
+                "K-Line no informa una descripción de mercadería "
+                . "utilizable para el BL {$blNumber}."
+            );
+        }
+    }
+
+    protected function resolveCargoDescription(
+        array $data,
+        string $blNumber
+    ): string {
+        $descriptions = $this->extractCargoDescriptions($data);
+
+        $this->assertCargoDescriptions(
+            $descriptions,
+            $blNumber
+        );
+
+        return implode(' / ', $descriptions);
+    }
+
     protected function extractCargoDescriptions(array $data): array
     {
         $descriptions = [];
@@ -1578,11 +1615,6 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     $descriptions[] = $qty . ' ' . $typeDesc;
                 }
             }
-        }
-        
-        // Fallback si no se encuentra nada específico
-        if (empty($descriptions)) {
-            $descriptions[] = 'Mercadería según manifiesto KLine';
         }
         
         return $descriptions;
