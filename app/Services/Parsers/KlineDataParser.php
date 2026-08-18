@@ -1111,7 +1111,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
         
         // CORREGIDO: Buscar el nombre de la empresa (antes de NIT/CUIT/RUC)
-        if (preg_match('/^(.+?)\s+(?:NIT[:\s]|CUIT[:\s]|CNPJ[:\s]|RUC[:\s]|,|$)/', $cleanLine, $matches)) {
+        if (preg_match('/^(.+?)\s+(?:NIT[:\s]|CUIT[:\s]|CNPJ[:\s]|RUC[:\s]|VAT[:\s]|,|$)/', $cleanLine, $matches)) {
             $companyName = trim($matches[1]);
         } else {
             // Si no hay patrón específico, tomar hasta el primer grupo de espacios largos
