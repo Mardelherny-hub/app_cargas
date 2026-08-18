@@ -309,7 +309,7 @@
                             <input type="number" 
                                    name="containers[{{ $index }}][package_quantity]" 
                                    value="{{ old('containers.'.$index.'.package_quantity', $container['package_quantity']) }}"
-                                   min="1"
+                                   min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
                                    placeholder="20"
                                    required>
@@ -324,7 +324,7 @@
                                    name="containers[{{ $index }}][gross_weight_kg]" 
                                    value="{{ old('containers.'.$index.'.gross_weight_kg', $container['gross_weight_kg']) }}"
                                    step="0.01"
-                                   min="0.01"
+                                   min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
                                    placeholder="1000.00"
                                    required>
@@ -411,7 +411,9 @@
                                 <input type="number" 
                                        name="package_quantity" 
                                        id="package_quantity" 
-                                       value="{{ old('package_quantity', $shipmentItem->package_quantity) }}"
+                                       value="{{ old('package_quantity', $shipmentItem-
+                                       min="0"
+                                       required>package_quantity) }}"
                                        min="1"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('package_quantity') border-red-300 @enderror">
@@ -428,7 +430,9 @@
                                 <input type="number" 
                                        name="gross_weight_kg" 
                                        id="gross_weight_kg" 
-                                       value="{{ old('gross_weight_kg', $shipmentItem->gross_weight_kg) }}"
+                                       value="{{ old('gross_weight_kg', $shipmentItem-
+                                       min="0"
+                                       required>gross_weight_kg) }}"
                                        min="0.01"
                                        step="0.01"
                                        required
@@ -1292,9 +1296,9 @@
                 }
 
                 // Validar que la cantidad de bultos sea positiva
-                if (packageQuantity < 1) {
+                if (packageQuantity < 0) {
                     e.preventDefault();
-                    alert('La cantidad de bultos debe ser al menos 1.');
+                    alert('La cantidad de bultos no puede ser negativa.');
                     return false;
                 }
 
@@ -1362,22 +1366,22 @@ function populateExistingContainers() {
         // Poblar campos de distribución de carga
         const packageQtyField = document.querySelector(`input[name="containers[${index}][package_quantity]"]`);
         if (packageQtyField) {
-            packageQtyField.value = containerData.package_quantity || '';
+            packageQtyField.value = containerData.package_quantity ?? '';
         }
         
         const grossWeightField = document.querySelector(`input[name="containers[${index}][gross_weight_kg]"]`);
         if (grossWeightField) {
-            grossWeightField.value = containerData.gross_weight_kg || '';
+            grossWeightField.value = containerData.gross_weight_kg ?? '';
         }
         
         const netWeightField = document.querySelector(`input[name="containers[${index}][net_weight_kg]"]`);
         if (netWeightField) {
-            netWeightField.value = containerData.net_weight_kg || '';
+            netWeightField.value = containerData.net_weight_kg ?? '';
         }
         
         const volumeField = document.querySelector(`input[name="containers[${index}][volume_m3]"]`);
         if (volumeField) {
-            volumeField.value = containerData.volume_m3 || '';
+            volumeField.value = containerData.volume_m3 ?? '';
         }
         
         const sequenceField = document.querySelector(`input[name="containers[${index}][loading_sequence]"]`);
@@ -1464,7 +1468,7 @@ function addContainer() {
                     </label>
                     <input type="number" 
                            name="containers[${containerIndex}][package_quantity]" 
-                           min="1"
+                           min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
                            required>
                 </div>
@@ -1476,7 +1480,7 @@ function addContainer() {
                     <input type="number" 
                            name="containers[${containerIndex}][gross_weight_kg]" 
                            step="0.01"
-                           min="0.01"
+                           min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
                            required>
                 </div>
