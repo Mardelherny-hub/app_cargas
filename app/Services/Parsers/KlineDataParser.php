@@ -800,7 +800,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 'net_weight_kg' => $realMeasurements['net_weight_kg'], // REAL
                 'volume_m3' => $realMeasurements['volume_m3'], // REAL
                 'declared_value' => null, // No disponible en archivo
-                'currency_code' => 'USD', // Por defecto, cambiar si se encuentra
+                'currency_code' => $this->resolveDeclaredValueCurrency(null, null),
                 'commodity_code' => $ncmCode ?: null, // REAL o null
                 'country_of_origin' => $countryOfOrigin, // REAL
                 'cargo_marks' => $cargoMarks, // REAL
@@ -1728,6 +1728,33 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
         if (!is_numeric($s)) return null;
         return (float) $s;
+    }
+
+    protected function resolveDeclaredValueCurrency(
+        ?float $declaredValue,
+        ?string $currency
+    ): ?string {
+        if ($declaredValue === null) {
+            return null;
+        }
+
+        $normalizedCurrency = strtoupper(
+            trim((string) $currency)
+        );
+
+        if ($normalizedCurrency === '') {
+            throw new \DomainException(
+                'Un valor declarado informado requiere una moneda.'
+            );
+        }
+
+        if (!preg_match('/^[A-Z]{3}$/', $normalizedCurrency)) {
+            throw new \DomainException(
+                "Código de moneda inválido: {$normalizedCurrency}."
+            );
+        }
+
+        return $normalizedCurrency;
     }
 
     // Detecta código de moneda razonable dentro de una línea
