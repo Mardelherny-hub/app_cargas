@@ -11,6 +11,7 @@ use App\Models\ShipmentItem;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
@@ -181,7 +182,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
                 // Usar el primer BL para crear voyage y shipment
                 $firstBL = reset($bills);
-                $portInfo = $this->extractPortInfo($firstBL['data'] ?? $data ?? []);
+                $portInfo = $this->extractPortInfo($firstBL['data'] ?? []);
 
                 // 🔒 Guard estricto: no continuar si falta alguno
                 if (empty($portInfo['origin']) || empty($portInfo['destination'])) {
@@ -202,7 +203,13 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 $voyageInfo = $this->extractVoyageInfo($firstBL['data']);
 
                 // CORREGIDO: Crear voyage usando $options
-                $voyage = $this->createVoyage($voyageInfo, $originPort, $destinationPort, $options);
+                $voyage = $this->createVoyage(
+                    $voyageInfo,
+                    $originPort,
+                    $destinationPort,
+                    $options,
+                    $dates
+                );
                 
                 // CORREGIDO: Crear shipment usando $options
                 $shipment = $this->createShipment($voyage, $options);
@@ -222,32 +229,26 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                             continue;
                         }
 
-                        // Puertos propios del BL. Cada BLNOREC trae su propio
-                        // GNRLREC con los puertos reales de ese conocimiento.
-                        // Antes se usaban los del viaje (extraídos una sola vez
-                        // del primer BL) y todos los conocimientos quedaban con
-                        // el mismo puerto de carga: verificado sobre Kline.DAT,
-                        // 4 BLs cargan en COCTG y 3 en BRPNG, y los 7 quedaban
-                        // en COCTG. Fallback al puerto del viaje si el BL no
-                        // resuelve o el código no está en el catálogo.
-                        $blOriginPort      = $originPort;
-                        $blDestinationPort = $destinationPort;
+                        // Cada BL debe conservar sus propios puertos.
+                        // Nunca sustituirlos silenciosamente por los del viaje.
+                        $blPortInfo = $this->extractPortInfo($blData['data']);
 
-                        try {
-                            $blPortInfo = $this->extractPortInfo($blData['data']);
-
-                            if (!empty($blPortInfo['origin']) && !empty($blPortInfo['destination'])) {
-                                $blOriginPort      = $this->findOrCreatePort($blPortInfo['origin']);
-                                $blDestinationPort = $this->findOrCreatePort($blPortInfo['destination']);
-                            }
-                        } catch (\Throwable $e) {
-                            $blOriginPort      = $originPort;
-                            $blDestinationPort = $destinationPort;
-                            Log::warning('KLine: no se pudieron resolver puertos del BL, se usan los del viaje', [
-                                'bl'    => $blNumber,
-                                'error' => $e->getMessage(),
-                            ]);
+                        if (
+                            empty($blPortInfo['origin'])
+                            || empty($blPortInfo['destination'])
+                        ) {
+                            throw new \DomainException(
+                                "K-Line no informa ambos puertos para el BL {$blNumber}."
+                            );
                         }
+
+                        $blOriginPort = $this->findOrCreatePort(
+                            $blPortInfo['origin']
+                        );
+
+                        $blDestinationPort = $this->findOrCreatePort(
+                            $blPortInfo['destination']
+                        );
 
                         // Crear BillOfLading
                         $bill = $this->createBillOfLading($shipment, $blNumber, $blData['data'], $blOriginPort, $blDestinationPort);
@@ -261,11 +262,18 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                         
                     } catch (Exception $e) {
                         $this->stats['errors']++;
-                        $this->stats['warnings'][] = "Error procesando BL {$blData['bl']}: " . $e->getMessage();
+                        $this->stats['warnings'][] =
+                            "Error procesando BL {$blData['bl']}: "
+                            . $e->getMessage();
+
                         Log::error('Error processing BL', [
                             'bl' => $blData['bl'],
-                            'error' => $e->getMessage()
+                            'error' => $e->getMessage(),
                         ]);
+
+                        // La importación K-Line es atómica:
+                        // un BL inválido invalida el archivo completo.
+                        throw $e;
                     }
                 }
 
@@ -409,9 +417,83 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     }
 
     /**
-     * Crear voyage - CORREGIDO: como PARANA
+     * Resolver fechas del viaje sin fabricar valores.
+     *
+     * Prioridad:
+     * 1) fechas explícitas recibidas en options;
+     * 2) fechas inequívocamente extraídas del archivo;
+     * 3) null.
      */
-    protected function createVoyage(array $voyageInfo, Port $originPort, Port $destinationPort, array $options = []): Voyage
+    protected function resolveVoyageNumber(
+        array $voyageInfo,
+        array $options = []
+    ): string {
+        $sourceNumber = trim(
+            (string) ($voyageInfo['voyage_number'] ?? '')
+        );
+
+        $operatorNumber = trim(
+            (string) ($options['voyage_number'] ?? '')
+        );
+
+        $number = $sourceNumber !== ''
+            ? $sourceNumber
+            : $operatorNumber;
+
+        if ($number === '') {
+            throw new \DomainException(
+                'K-Line no informa número de viaje. '
+                . 'Debe ingresarlo al importar el manifiesto.'
+            );
+        }
+
+        if (
+            str_starts_with(
+                strtoupper($number),
+                'KLINE-'
+            )
+        ) {
+            return $number;
+        }
+
+        return 'KLINE-' . $number;
+    }
+
+    protected function resolveVoyageDates(
+        array $sourceDates,
+        array $options = []
+    ): array {
+        $sourceDeparture = $sourceDates['etd'] ?? null;
+        $sourceArrival = $sourceDates['eta'] ?? null;
+
+        $operatorDeparture =
+            $options['departure_date'] ?? null;
+
+        $departure = !empty($sourceDeparture)
+            ? Carbon::parse($sourceDeparture)
+            : (
+                !empty($operatorDeparture)
+                    ? Carbon::parse($operatorDeparture)
+                    : null
+            );
+
+        $arrival = !empty($sourceArrival)
+            ? Carbon::parse($sourceArrival)
+            : null;
+
+        return [
+            'departure_date' => $departure,
+            'estimated_arrival_date' => $arrival,
+        ];
+    }
+
+    protected function createVoyage(
+        array $voyageInfo,
+        Port $originPort,
+        Port $destinationPort,
+        array $options = [],
+        array $extractedDates = []
+    ): Voyage
     {
         // CORREGIDO: Obtener company_id como PARANA
         $user = auth()->user();
@@ -434,21 +516,22 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             throw new Exception("Vessel con ID {$vesselId} no encontrado");
         }
 
-        $voyageNumber = 'KLINE-' . ($voyageInfo['voyage_number'] ?? date('YmdHis'));
+        $voyageNumber = $this->resolveVoyageNumber(
+            $voyageInfo,
+            $options
+        );
 
         // El voyage_number es único global. Si ya existe (en cualquier empresa),
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($voyageNumber);
 
-        // Fechas estimadas desde el .DAT (si existen) o fallback
-        $dates = $this->extractDates($firstBL['data'] ?? $data ?? []); // si ya lo tenés, reutilizalo
+        $resolvedDates = $this->resolveVoyageDates(
+            $extractedDates,
+            $options
+        );
 
-        // Fechas estimadas: se pueden pasar por $options['dates']; si no, defaults
-        // Esperado: $options['dates'] = ['etd' => 'YYYY-MM-DD', 'eta' => 'YYYY-MM-DD']
-        $optDates = $options['dates'] ?? [];
-        $etd = !empty($optDates['etd']) ? Carbon::parse($optDates['etd']) : Carbon::now()->addDays(7);
-        $eta = !empty($optDates['eta']) ? Carbon::parse($optDates['eta']) : (clone $etd)->addDays(7);
-        ;
+        $etd = $resolvedDates['departure_date'];
+        $eta = $resolvedDates['estimated_arrival_date'];
 
 
         $voyageData = [
@@ -513,10 +596,14 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $shipment = Shipment::create([
             'voyage_id' => $voyage->id,
             'vessel_id' => $vessel->id,
-            'shipment_number' => 'KLINE-SHIP-' . now()->format('YmdHis'),
+            'shipment_number' => 'KLINE-SHIP-' . preg_replace(
+                '/^KLINE-/i',
+                '',
+                $voyage->voyage_number
+            ),
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
-            'cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 1000.0,
+            'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
             'container_capacity' => $vessel->container_capacity ?? 0,
             'status' => 'planning',
             'active' => true,
@@ -576,23 +663,39 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
 
         // 6) Campos base del BL (seguros)
+        $commodityCodes = $this->extractNCMCodes($data);
+
+        $blMeasurements = $this->extractRealMeasurements($data);
+        $this->assertRequiredMeasurements(
+            $blMeasurements,
+            $blNumber
+        );
+
         $blAttrs = [
             'shipment_id'       => $shipment->id,
             'bill_number'       => $blNumber,
-            'bill_date'         => $dates['bl_date'] ?? now(),
-            'loading_date'      => $dates['etd'] ?? now()->addDays(1),
+            // No fabricar fechas que K-Line no informa de forma inequívoca.
+            'bill_date'         => $dates['bl_date'] ?? null,
+            'loading_date'      => $dates['etd'] ?? null,
             // FIX bug #5: usar descripción real extraída de DESCREC en lugar de leyenda fija
-            'cargo_description' => implode(' / ', $this->extractCargoDescriptions($data)) ?: 'Mercadería según manifiesto KLine',
+            'cargo_description' => $this->resolveCargoDescription(
+                $data,
+                $blNumber
+            ),
             'status'            => 'draft',
             'master_bl_number'  => $this->extractMasterBL($data),
             // FIX bugs #3, #4: cargo y packaging correctos para K-Line (carga no contenedorizada)
-            'primary_cargo_type_id'     => 5,  // OTRA CARGA NO CONTENEDORIZADA
-            'primary_packaging_type_id' => 2,  // NO RETORNABLE
+            'primary_cargo_type_id' => $this->resolveCargoTypeId($data, $blNumber),  // OTRA CARGA NO CONTENEDORIZADA
+            'primary_packaging_type_id' => $this->resolvePackagingTypeId($data),  // NO RETORNABLE
             // FIX bug #6b: BL no estaba recibiendo cargo_marks (quedaba vacío en BD)
             'cargo_marks'               => $this->extractCargoMarks($data),
+            // Mantener un código principal por compatibilidad y preservar
+            // además todos los NCM/HS explícitos informados por K-Line.
+            'commodity_code'             => $commodityCodes[0] ?? null,
+            'commodity_codes'            => $commodityCodes ?: null,
             // FIX QA #5: sincronizar totales del BL desde los datos reales del archivo
             // (antes quedaban en 0/1 hardcoded aunque los items sí tuvieran datos)
-            'gross_weight_kg'   => ($blMeasurements = $this->extractRealMeasurements($data))['gross_weight_kg'],
+            'gross_weight_kg'   => $blMeasurements['gross_weight_kg'],
             'net_weight_kg'     => $blMeasurements['net_weight_kg'],
             'total_packages'    => $blMeasurements['package_quantity'],
             'volume_m3'         => $blMeasurements['volume_m3'],
@@ -658,11 +761,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
         // Extraer descripciones de carga de los registros KLine
         $descriptions = $this->extractCargoDescriptions($data);
-        
-        if (empty($descriptions)) {
-            // Crear al menos un item por defecto
-            $descriptions = ['Mercadería general según KLine DAT'];
-        }
+
+        $this->assertCargoDescriptions(
+            $descriptions,
+            $bill->bill_number
+        );
 
         foreach ($descriptions as $description) {
             // CORREGIDO: Verificar duplicado line_number sin throw Exception
@@ -679,7 +782,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             // Extraer información REAL del archivo
             $cargoMarks = $this->extractCargoMarks($data);
             $ncmCode = $this->extractNCMCode($data);
-            $realMeasurements = $this->extractRealMeasurements($data); // NUEVO
+            $realMeasurements = $this->extractRealMeasurements($data);
+            $this->assertRequiredMeasurements(
+                $realMeasurements,
+                $bill->bill_number
+            ); // NUEVO
             $countryOfOrigin = $this->extractCountryOfOrigin($data); // NUEVO
 
             $item = ShipmentItem::create([
@@ -687,18 +794,18 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 'line_number' => $lineNumber,
                 'item_description' => $description,
                 // FIX bugs #3, #4: K-Line no contenedorizado
-                'cargo_type_id' => 5,     // OTRA CARGA NO CONTENEDORIZADA
-                'packaging_type_id' => 2, // NO RETORNABLE
+                'cargo_type_id' => $this->resolveCargoTypeId($data, $bill->bill_number),     // OTRA CARGA NO CONTENEDORIZADA
+                'packaging_type_id' => $this->resolvePackagingTypeId($data), // NO RETORNABLE
                 'package_quantity' => $realMeasurements['package_quantity'], // REAL
                 'gross_weight_kg' => $realMeasurements['gross_weight_kg'], // REAL
                 'net_weight_kg' => $realMeasurements['net_weight_kg'], // REAL
                 'volume_m3' => $realMeasurements['volume_m3'], // REAL
                 'declared_value' => null, // No disponible en archivo
-                'currency_code' => 'USD', // Por defecto, cambiar si se encuentra
+                'currency_code' => $this->resolveDeclaredValueCurrency(null, null),
                 'commodity_code' => $ncmCode ?: null, // REAL o null
                 'country_of_origin' => $countryOfOrigin, // REAL
                 'cargo_marks' => $cargoMarks, // REAL
-                'unit_of_measure' => 'PCS', // TODO: Extraer real
+                'unit_of_measure' => $this->resolveUnitOfMeasure($data, $bill->bill_number),
                 'status' => 'draft',
                 'created_by_user_id' => auth()->id()
             ]);
@@ -860,7 +967,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         if ($voyageInfo['voyage_ref']) {
             $voyageInfo['voyage_number'] = $voyageInfo['voyage_ref'];
         } else {
-            $voyageInfo['voyage_number'] = date('YmdHis');
+            $voyageInfo['voyage_number'] = null;
         }
 
         return $voyageInfo;
@@ -946,6 +1053,53 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     }
 
     /**
+     * Extrae el identificador fiscal y conserva el tipo declarado por K-Line.
+     *
+     * Los marcadores genéricos (por ejemplo TAX ID) pueden aportar un número
+     * real, pero no autorizan a inventar CUIT/RUC/NIT/CNPJ.
+     */
+    protected function extractTaxIdentityFromLine(string $line): ?array
+    {
+        $taxId = $this->extractTaxIdFromLine($line);
+
+        if ($taxId === null) {
+            return null;
+        }
+
+        $taxType = null;
+
+        if (preg_match(
+            '/(CUIT(?:\s+NBR)?|CNPJ|NIT|R\.?U\.?C\.?(?:\s*\/\s*TAX\s*ID)?)\s*[:#.]?\s*([0-9][0-9.\-\/]{5,})/i',
+            $line,
+            $matches
+        )) {
+            $candidateTaxId = preg_replace('/\D/', '', $matches[2]);
+
+            // El marcador sólo tipifica al mismo número que realmente
+            // reconoció el helper fiscal común.
+            if ($candidateTaxId === $taxId) {
+                $label = strtoupper(
+                    preg_replace('/[^A-Z]/i', '', $matches[1])
+                );
+
+                $taxType = match (true) {
+                    str_starts_with($label, 'CUIT') => 'CUIT',
+                    str_starts_with($label, 'CNPJ') => 'CNPJ',
+                    str_starts_with($label, 'NIT') => 'NIT',
+                    str_starts_with($label, 'RUC') => 'RUC',
+                    default => null,
+                };
+            }
+        }
+
+        return [
+            'tax_id' => $taxId,
+            'tax_type' => $taxType,
+        ];
+    }
+
+
+    /**
      * Extraer nombre de empresa desde línea KLine - CORREGIDO: separar RUC/CUIT
      */
     protected function extractCompanyNameFromLine(string $line): ?string
@@ -1000,84 +1154,202 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     protected function extractCargoMarks(array $data): string
     {
         $marks = [];
-        
+
         if (!empty($data['MARKREC0'])) {
             foreach ($data['MARKREC0'] as $line) {
                 $cleanLine = trim($line);
-                // Saltar líneas vacías o que solo tienen espacios
-                if (strlen($cleanLine) > 5) { // Al menos algo de contenido
-                    // Extraer solo la parte útil, saltar códigos HS redundantes
-                    if (!str_contains($cleanLine, 'HS CODE:') && !str_contains($cleanLine, 'NCM:')) {
-                        $marks[] = $cleanLine;
-                    }
+
+                // groupByBillOfLading() deja en MARKREC los 6 dígitos
+                // de secuencia/subsecuencia.
+                // Ej: 001001RENAULT - ORIGEN - -> RENAULT - ORIGEN -
+                $cleanLine = preg_replace('/^\d{6}/', '', $cleanLine);
+                $cleanLine = trim($cleanLine);
+
+                if ($cleanLine === '') {
+                    continue;
                 }
+
+                $upper = strtoupper($cleanLine);
+
+                // HS CODE / NCM son información aduanera, no marcas.
+                if (
+                    str_contains($upper, 'HS CODE:') ||
+                    str_contains($upper, 'NCM:')
+                ) {
+                    continue;
+                }
+
+                // Continuaciones puramente numéricas de HS CODE tampoco son marcas.
+                if (preg_match('/^\d{2}\.\d{2}\.\d{2}(?:\.\d{2})?$/', $cleanLine)) {
+                    continue;
+                }
+
+                $marks[] = $cleanLine;
             }
         }
-        
-        // FIX bug #6a: si no hay marcas útiles, retornar "SM" (sin barra, como pidió Roberto)
+
         if (empty($marks)) {
             return 'SM';
         }
-        
-        // Unir marcas encontradas
-        $marksText = implode(' / ', array_unique($marks));
-        
-        // FIX bug #6a: si las marcas son solo códigos técnicos, también "SM"
-        if (strlen($marksText) < 5 || 
-            str_contains($marksText, 'HS CODE') || 
-            str_contains($marksText, 'NCM')) {
-            return 'SM';
+
+        return implode(' / ', array_values(array_unique($marks)));
+    }
+    /**
+     * Extraer todos los códigos NCM/HS explícitos del BL.
+     *
+     * El primer código conserva el orden de prioridad del contrato K-Line:
+     * CMMDREC estructurado primero; luego NCM/HS explícitos en texto.
+     *
+     * No se buscan números arbitrarios en las descripciones.
+     */
+    protected function extractNCMCodes(array $data): array
+    {
+        $codes = [];
+
+        $append = function (?string $raw) use (&$codes): void {
+            if ($raw === null) {
+                return;
+            }
+
+            $digits = preg_replace('/\D+/', '', $raw);
+
+            // Contrato histórico de la app:
+            // HS de 6 dígitos se normaliza a 8 agregando 00.
+            if (strlen($digits) === 6) {
+                $digits .= '00';
+            }
+
+            if (strlen($digits) !== 8) {
+                return;
+            }
+
+            if (!in_array($digits, $codes, true)) {
+                $codes[] = $digits;
+            }
+        };
+
+        // 1. Campo estructurado K-Line: prioridad máxima.
+        foreach ($data['CMMDREC0'] ?? [] as $line) {
+            $line = trim((string) $line);
+
+            if (preg_match(
+                '/M3\s+([0-9]{8})(?:\s|$)/i',
+                $line,
+                $matches
+            )) {
+                $append($matches[1]);
+            }
         }
-        
-        return $marksText;
+
+        // 2. Únicamente campos explícitamente rotulados NCM / HS CODE.
+        foreach (['DESCREC0', 'MARKREC0'] as $recordType) {
+            foreach ($data[$recordType] ?? [] as $line) {
+                $line = preg_replace(
+                    '/^\d{6}/',
+                    '',
+                    trim((string) $line)
+                );
+
+                if (!preg_match(
+                    '/\b(?:NCM|HS\s*CODE)\s*:\s*(.+)$/i',
+                    $line,
+                    $matches
+                )) {
+                    continue;
+                }
+
+                $payload = preg_split(
+                    '/\b(?:NET\s+WEIGHT|GROSS\s+WEIGHT|WEIGHT|KGS|CBM)\b/i',
+                    $matches[1],
+                    2
+                )[0];
+
+                if (!preg_match_all(
+                    '/(?<!\d)\d[\d.]{4,14}\d(?!\d)/',
+                    $payload,
+                    $codeMatches
+                )) {
+                    continue;
+                }
+
+                foreach ($codeMatches[0] as $rawCode) {
+                    $append($rawCode);
+                }
+            }
+        }
+
+        return $codes;
     }
 
     /**
-     * Extraer código NCM - NUEVO método para capturar de múltiples registros
+     * Extraer código NCM principal.
      */
     protected function extractNCMCode(array $data): ?string
     {
-        $ncmPatterns = [
-            // Patrón en DESCREC: "NCM: 87.04.3190"
-            '/NCM[:\s]+([0-9]{2}\.?[0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/',
-            // Patrón en DESCREC: "HS CODE: 87.03.22"  
-            '/HS\s+CODE[:\s]+([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/',
-            // Patrón en MARKREC: "HS CODE: 87.03.22"
-            '/HS\s+CODE[:\s]+([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/',
-            // Patrón en CMMDREC al final: "87032100"
-            '/([0-9]{8})$/',
-        ];
-        
-        // Buscar en registros de descripción primero
-        $searchRecords = ['DESCREC0', 'MARKREC0', 'CMMDREC0'];
-        
-        foreach ($searchRecords as $recordType) {
-            if (!empty($data[$recordType])) {
-                foreach ($data[$recordType] as $line) {
-                    $cleanLine = trim($line);
-                    
-                    foreach ($ncmPatterns as $pattern) {
-                        if (preg_match($pattern, $cleanLine, $matches)) {
-                            $ncmCode = str_replace('.', '', $matches[1]); // Remover puntos
-                            
-                            // Validar formato NCM (8 dígitos)
-                            if (preg_match('/^[0-9]{8}$/', $ncmCode)) {
-                                return $ncmCode;
-                            }
-                            
-                            // Si es HS Code más corto, completar con ceros
-                            if (preg_match('/^[0-9]{6}$/', $ncmCode)) {
-                                return $ncmCode . '00';
-                            }
-                        }
+        // 1) CMMDREC: fuente estructurada prioritaria.
+        // Ej: ...006743880M3                           87032100
+        if (!empty($data['CMMDREC0'])) {
+            foreach ($data['CMMDREC0'] as $line) {
+                if (preg_match('/M3\s+([0-9]{8})(?:\s|$)/i', trim($line), $matches)) {
+                    return $matches[1];
+                }
+            }
+        }
+
+        // 2) NCM explícitamente identificado en DESCREC.
+        if (!empty($data['DESCREC0'])) {
+            foreach ($data['DESCREC0'] as $line) {
+                // DESCREC conserva los 6 dígitos técnicos de
+                // secuencia/subsecuencia: 021001HS CODE... -> HS CODE...
+                $line = trim(preg_replace('/^\d{6}/', '', trim($line)));
+
+                if (
+                    preg_match(
+                        '/\bNCM\s*:\s*([0-9]{2}\.?[0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $code = str_replace('.', '', $matches[1]);
+
+                    if (preg_match('/^[0-9]{8}$/', $code)) {
+                        return $code;
                     }
                 }
             }
         }
-        
+
+        // 3) HS CODE explícito.
+        // K-Line Colombia informa 6 dígitos:
+        // 87.03.22 -> contrato actual del sistema: 87032200.
+        foreach (['DESCREC0', 'MARKREC0'] as $recordType) {
+            if (empty($data[$recordType])) {
+                continue;
+            }
+
+            foreach ($data[$recordType] as $line) {
+                // DESCREC/MARKREC conservan los 6 dígitos técnicos
+                // de secuencia/subsecuencia.
+                $line = trim(preg_replace('/^\d{6}/', '', trim($line)));
+
+                if (
+                    preg_match(
+                        '/\bHS\s+CODE\s*:\s*([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $code = str_replace('.', '', $matches[1]);
+
+                    if (preg_match('/^[0-9]{6}$/', $code)) {
+                        return $code . '00';
+                    }
+                }
+            }
+        }
+
         return null;
     }
-
     /**
      * Extraer Master Bill of Lading - NUEVO método para identificar MBL
      */
@@ -1119,79 +1391,250 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     protected function extractRealMeasurements(array $data): array
     {
         $measurements = [
-            'package_quantity' => 1,
-            'gross_weight_kg' => 0.0,
-            'net_weight_kg' => 0.0,
-            'volume_m3' => 0.0
+            'package_quantity' => null,
+            'gross_weight_kg' => null,
+            'net_weight_kg' => null,
+            'volume_m3' => null,
         ];
-        
-        // Extraer de CMMDREC (datos principales)
+
+        /*
+         * CMMDREC es la fuente estructurada principal.
+         *
+         * Cada dato se extrae independientemente. La ausencia de volumen,
+         * por ejemplo, no debe hacer perder una cantidad o un peso bruto
+         * que sí fueron informados.
+         */
         if (!empty($data['CMMDREC0'])) {
             foreach ($data['CMMDREC0'] as $line) {
-                // Patrón: NAUT00000572VEHICLES...06661940000KGS006743880M3
-                if (preg_match('/NAUT(\d+).*?(\d+)KGS(\d+)M3/', $line, $matches)) {
-                    $measurements['package_quantity'] = intval(ltrim($matches[1], '0')) ?: 1;
-                    // FIX bug #7: K-Line EDI usa 4 decimales fijos para peso (no 3)
-                    // Archivo CMMDREC: "00595580000KGS" = 59558.0000 KG
-                    $measurements['gross_weight_kg'] = floatval($matches[2]) / 10000;
-                    // FIX escala volumen: K-Line EDI usa 3 decimales fijos (no 6)
-                    // Archivo CMMDREC: "000580070M3" = 580.070 M3
-                    $measurements['volume_m3'] = floatval($matches[3]) / 1000;
+                if (preg_match('/NAUT(\d+)/i', $line, $matches)) {
+                    $measurements['package_quantity'] = (int) $matches[1];
+                }
+
+                if (preg_match('/(\d+)KGS/i', $line, $matches)) {
+                    // K-Line: 4 decimales implícitos.
+                    $measurements['gross_weight_kg'] =
+                        ((float) $matches[1]) / 10000;
+                }
+
+                if (preg_match('/(\d+)M3/i', $line, $matches)) {
+                    // K-Line: 3 decimales implícitos.
+                    $measurements['volume_m3'] =
+                        ((float) $matches[1]) / 1000;
                 }
             }
         }
-        
-        // Extraer peso neto de DESCREC
+
+        /*
+         * DESCREC puede aportar peso neto y volumen textual.
+         * El volumen textual sólo es fallback del CMMDREC.
+         */
         if (!empty($data['DESCREC0'])) {
             foreach ($data['DESCREC0'] as $line) {
-                // Patrón: "NET WEIGHT: 666.194,00 KGS"
-                if (preg_match('/NET WEIGHT[:\s]+([0-9\.,]+)\s*KGS/i', $line, $matches)) {
-                    $netWeight = str_replace(['.', ','], ['', '.'], $matches[1]);
-                    $measurements['net_weight_kg'] = floatval($netWeight);
+                if (
+                    preg_match(
+                        '/NET WEIGHT[:\s]+([0-9\.,]+)\s*KGS/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $netWeight = $this->normalizeNumber($matches[1]);
+
+                    if ($netWeight !== null) {
+                        $measurements['net_weight_kg'] = $netWeight;
+                    }
                 }
-                
-                // Patrón: "M3: 6.743,88"
-                if (preg_match('/M3[:\s]+([0-9\.,]+)/i', $line, $matches)) {
-                    $volume = str_replace(',', '.', $matches[1]);
-                    $measurements['volume_m3'] = floatval($volume);
+
+                if (
+                    $measurements['volume_m3'] === null
+                    && preg_match(
+                        '/M3[:\s]+([0-9\.,]+)/i',
+                        $line,
+                        $matches
+                    )
+                ) {
+                    $volume = $this->normalizeNumber($matches[1]);
+
+                    if ($volume !== null) {
+                        $measurements['volume_m3'] = $volume;
+                    }
                 }
             }
         }
-        
+
         return $measurements;
     }
 
     /**
-     * Extraer país de origen REAL - CRÍTICO para aduana
+     * Los campos obligatorios del modelo no pueden completarse con valores
+     * inventados cuando K-Line no los informa.
      */
-    protected function extractCountryOfOrigin(array $data): string
+    protected function assertRequiredMeasurements(
+        array $measurements,
+        string $blNumber
+    ): void {
+        if ($measurements['package_quantity'] === null) {
+            throw new \DomainException(
+                "K-Line BL {$blNumber}: no informa cantidad de bultos."
+            );
+        }
+
+        if ($measurements['gross_weight_kg'] === null) {
+            throw new \DomainException(
+                "K-Line BL {$blNumber}: no informa peso bruto."
+            );
+        }
+    }
+
+    protected function extractCountryOfOrigin(array $data): ?string
     {
-        // Buscar en DESCREC "ORIGEN - BRASIL" o similar
-        if (!empty($data['MARKREC0'])) {
-            foreach ($data['MARKREC0'] as $line) {
-                if (preg_match('/ORIGEM?\s*-?\s*(BRASIL|BRAZIL)/i', $line)) {
+        foreach (['MARKREC0', 'DESCREC0'] as $recordType) {
+            foreach (($data[$recordType] ?? []) as $line) {
+                $source = Str::upper(
+                    Str::ascii((string) $line)
+                );
+
+                if (
+                    preg_match(
+                        '/\b(?:ORIGEM|ORIGEN)\s*[-:]?\s*(?:BRASIL|BRAZIL)\b/',
+                        $source
+                    )
+                ) {
                     return 'BR';
                 }
-                if (preg_match('/ORIGEN\s*-?\s*(ARGENTINA)/i', $line)) {
+
+                if (
+                    preg_match(
+                        '/\b(?:ORIGEM|ORIGEN)\s*[-:]?\s*ARGENTINA\b/',
+                        $source
+                    )
+                ) {
                     return 'AR';
                 }
             }
         }
-        
-        // Determinar por puertos del viaje
-        if (!empty($data['GNRLREC'])) {
-            foreach ($data['GNRLREC'] as $line) {
-                if (str_contains($line, 'BRPNG')) return 'BR'; // Paranaguá
-                if (str_contains($line, 'COCTG')) return 'CO'; // Cartagena
-            }
-        }
-        
-        return 'BR'; // Default basado en archivo ejemplo
+
+        return null;
     }
 
     /**
      * Extraer descripciones de carga - CORREGIDO: información específica del tipo
      */
+    protected function assertCargoDescriptions(
+        array $descriptions,
+        string $blNumber
+    ): void {
+        $descriptions = array_values(
+            array_filter(
+                $descriptions,
+                fn ($description) =>
+                    trim((string) $description) !== ''
+            )
+        );
+
+        if ($descriptions === []) {
+            throw new \DomainException(
+                "K-Line no informa una descripción de mercadería "
+                . "utilizable para el BL {$blNumber}."
+            );
+        }
+    }
+
+    protected function resolveCargoTypeCode(
+        array $data,
+        string $blNumber
+    ): string {
+        $lines = [];
+
+        foreach (['DESCREC0', 'CMMDREC0'] as $recordType) {
+            foreach (($data[$recordType] ?? []) as $line) {
+                $lines[] = (string) $line;
+            }
+        }
+
+        $sourceText = Str::upper(
+            Str::ascii(implode("\n", $lines))
+        );
+
+        if (
+            preg_match(
+                '/(?<![A-Z])(?:VEHICLES?|VEHICULOS?)(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'VEH001';
+        }
+
+        throw new \DomainException(
+            "K-Line no informa un tipo de carga reconocido "
+            . "para el BL {$blNumber}."
+        );
+    }
+
+    protected function resolveCargoTypeId(
+        array $data,
+        string $blNumber
+    ): int {
+        $code = $this->resolveCargoTypeCode(
+            $data,
+            $blNumber
+        );
+
+        $id = \App\Models\CargoType::query()
+            ->where('code', $code)
+            ->where('active', true)
+            ->value('id');
+
+        if (!$id) {
+            throw new \DomainException(
+                "No existe un tipo de carga activo con código "
+                . "{$code} para el BL {$blNumber}."
+            );
+        }
+
+        return (int) $id;
+    }
+
+    protected function resolveUnitOfMeasure(
+        array $data,
+        string $blNumber
+    ): string {
+        $cargoTypeCode = $this->resolveCargoTypeCode(
+            $data,
+            $blNumber
+        );
+
+        return match ($cargoTypeCode) {
+            'VEH001' => 'PCS',
+            default => throw new \DomainException(
+                "K-Line no tiene una unidad de medida definida "
+                . "para el tipo de carga {$cargoTypeCode} "
+                . "del BL {$blNumber}."
+            ),
+        };
+    }
+
+    protected function resolvePackagingTypeId(
+        array $data
+    ): ?int {
+        // El DAT K-Line identifica la carga, pero no informa
+        // un embalaje equivalente al catálogo interno.
+        return null;
+    }
+
+    protected function resolveCargoDescription(
+        array $data,
+        string $blNumber
+    ): string {
+        $descriptions = $this->extractCargoDescriptions($data);
+
+        $this->assertCargoDescriptions(
+            $descriptions,
+            $blNumber
+        );
+
+        return implode(' / ', $descriptions);
+    }
+
     protected function extractCargoDescriptions(array $data): array
     {
         $descriptions = [];
@@ -1263,35 +1706,29 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             }
         }
         
-        // Fallback si no se encuentra nada específico
-        if (empty($descriptions)) {
-            $descriptions[] = 'Mercadería según manifiesto KLine';
-        }
-        
         return $descriptions;
     }
 
-    // NUEVO: extraer términos de flete desde FRTCREC0
-    protected function extractFreightTerms(array $data): string
+    // Extraer términos de flete únicamente cuando K-Line los informa.
+    protected function extractFreightTerms(array $data): ?string
     {
-        // Default conservador si no hay registro
-        $terms = 'prepaid';
-
         if (!empty($data['FRTCREC0'])) {
             foreach ($data['FRTCREC0'] as $line) {
-                $l = strtoupper(trim($line));
-                // Códigos típicos en KLine:
-                // POFT = Prepaid Ocean Freight ; COFT = Collect Ocean Freight
+                $l = strtoupper(trim((string) $line));
+
+                // POFT = Prepaid Ocean Freight
+                // COFT = Collect Ocean Freight
                 if (str_contains($l, 'POFT')) {
                     return 'prepaid';
                 }
+
                 if (str_contains($l, 'COFT')) {
                     return 'collect';
                 }
             }
         }
 
-        return $terms;
+        return null;
     }
 
     // Normaliza un número con coma/punto a float (e.g. "1.234,56" -> 1234.56)
@@ -1310,6 +1747,33 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
         if (!is_numeric($s)) return null;
         return (float) $s;
+    }
+
+    protected function resolveDeclaredValueCurrency(
+        ?float $declaredValue,
+        ?string $currency
+    ): ?string {
+        if ($declaredValue === null) {
+            return null;
+        }
+
+        $normalizedCurrency = strtoupper(
+            trim((string) $currency)
+        );
+
+        if ($normalizedCurrency === '') {
+            throw new \DomainException(
+                'Un valor declarado informado requiere una moneda.'
+            );
+        }
+
+        if (!preg_match('/^[A-Z]{3}$/', $normalizedCurrency)) {
+            throw new \DomainException(
+                "Código de moneda inválido: {$normalizedCurrency}."
+            );
+        }
+
+        return $normalizedCurrency;
     }
 
     // Detecta código de moneda razonable dentro de una línea
@@ -1345,13 +1809,23 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             $cur = $this->detectCurrencyCode($u);
             if ($cur && !$res['currency']) $res['currency'] = $cur;
 
-            // Monto (primer número "grande" con 2 decimales)
-            if (preg_match_all('/\b\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})\b|\b\d+(?:[.,]\d{2})\b/', $u, $m)) {
-                foreach ($m[0] as $cand) {
-                    $val = $this->normalizeNumber($cand);
-                    if ($val !== null && $val > 0) {
-                        // Tomamos el primero razonable y salimos
-                        if ($res['amount'] === null) {
+            // Importe estructurado K-Line:
+            // G000213807880 -> 213807.880
+            // El campo tiene 3 decimales implícitos.
+            if (
+                $res['amount'] === null &&
+                preg_match('/G(\d{12})(?=[A-Z]|\s|$)/', $u, $m)
+            ) {
+                $res['amount'] = ((int) $m[1]) / 1000;
+            }
+
+            // Fallback para variantes que expresen el monto con punto/coma.
+            if ($res['amount'] === null) {
+                if (preg_match_all('/\b\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})\b|\b\d+(?:[.,]\d{2})\b/', $u, $m)) {
+                    foreach ($m[0] as $cand) {
+                        $val = $this->normalizeNumber($cand);
+
+                        if ($val !== null && $val > 0) {
                             $res['amount'] = $val;
                             break;
                         }
@@ -1594,41 +2068,101 @@ protected function extractPortInfo(array $data): array
 
 
     /**
+     * Resolver el tipo fiscal únicamente cuando la fuente lo declara.
+     *
+     * La combinación tipo + país debe existir en el catálogo. Si hay
+     * contradicción, se aborta en lugar de guardar una identidad falsa.
+     */
+    protected function resolveDocumentTypeId(
+        ?string $taxType,
+        ?int $countryId
+    ): ?int {
+        $taxType = strtoupper(trim((string) $taxType));
+
+        if ($taxType === '') {
+            return null;
+        }
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "No se puede resolver {$taxType} sin país."
+            );
+        }
+
+        $documentTypeId = DocumentType::query()
+            ->where('code', $taxType)
+            ->where('country_id', $countryId)
+            ->where('active', true)
+            ->value('id');
+
+        if (!$documentTypeId) {
+            throw new \DomainException(
+                "El tipo fiscal {$taxType} no corresponde al país {$countryId} " .
+                "o no existe en el catálogo."
+            );
+        }
+
+        return (int) $documentTypeId;
+    }
+
+
+    /**
      * Buscar o crear cliente - CORREGIDO: usar estructura real de tabla clients
      */
+    protected function resolveRequiredClientName(?string $name): string
+    {
+        $name = trim((string) $name);
+
+        if ($name === '') {
+            throw new \DomainException(
+                'K-Line no informa el nombre de una parte obligatoria del BL.'
+            );
+        }
+
+        $normalized = Str::upper(Str::ascii($name));
+
+        if (in_array($normalized, [
+            'CLIENTE DESCONOCIDO',
+            'EMBARCADOR DESCONOCIDO',
+            'CONSIGNATARIO DESCONOCIDO',
+        ], true)) {
+            throw new \DomainException(
+                "K-Line no admite una parte sintética: {$name}."
+            );
+        }
+
+        return $name;
+    }
+
     protected function findOrCreateClient(array $clientData, int $companyId, array $partyLines = [], ?Port $originPort = null): Client
     {
-        $name  = trim($clientData['name'] ?? 'Cliente Desconocido');
-        $taxId = $clientData['tax_id'] ?? null;
+        $name = $this->resolveRequiredClientName(
+            $clientData['name'] ?? null
+        );
+        $taxId   = $clientData['tax_id'] ?? null;
+        $taxType = $clientData['tax_type'] ?? null;
 
-        // Normalizar tax_id (ej. CUIT -> 11 dígitos)
-        $normTaxId = $taxId ? preg_replace('/\D+/', '', $taxId) : null;
+        // Normalizar el identificador fiscal a solo dígitos.
+        $normTaxId = $taxId
+            ? preg_replace('/\D+/', '', $taxId)
+            : null;
 
-        // 1) Buscar por tax_id (si hay)
-        if ($normTaxId) {
-            if ($client = Client::where('tax_id', $normTaxId)->first()) {
-                Log::info('Cliente existente encontrado por tax_id', ['client_id' => $client->id, 'tax_id' => $normTaxId]);
-                return $client;
-            }
+        if ($normTaxId === '') {
+            $normTaxId = null;
         }
 
-        // 2) Buscar por nombre (legal_name)
-        if ($client = Client::where('legal_name', $name)->first()) {
-            Log::info('Cliente existente encontrado por nombre', ['client_id' => $client->id, 'name' => $name]);
-            return $client;
-        }
+        // Resolver primero el país. La identidad fiscal de clients es
+        // tax_id + country_id; nunca debe buscarse el tax_id globalmente.
+        $countryId = null;
 
-        
-        // 3. Crear nuevo cliente con campos REALES de la tabla
-
-       $countryId = null;
         if (!empty($partyLines) && $originPort) {
-            $countryId = $this->detectCountryIdFromParty($partyLines, $originPort) ?? $originPort->country_id;
+            $countryId =
+                $this->detectCountryIdFromParty($partyLines, $originPort)
+                ?? $originPort->country_id;
         } elseif ($originPort) {
             $countryId = $originPort->country_id;
         }
 
-        // Guard si la columna existe y no pudimos resolver país
         if (\Schema::hasColumn('clients', 'country_id') && is_null($countryId)) {
             throw new \DomainException(
                 "No se pudo inferir el país para el cliente '{$name}'. " .
@@ -1636,31 +2170,79 @@ protected function extractPortInfo(array $data): array
             );
         }
 
+        // 1) Buscar por identidad fiscal completa.
+        if ($normTaxId) {
+            $client = Client::query()
+                ->where('tax_id', $normTaxId)
+                ->where('country_id', $countryId)
+                ->first();
 
-        $client = Client::create([
-            // Obligatorios según tu migración
-            'tax_id'               => $normTaxId,
-            'country_id'           => $countryId,
-            'document_type_id'     => 1, // si 1 = CUIT/Doc local (mantengo tu default)
-            'legal_name'           => $name,
-            'commercial_name'      => $name,
-            'status'               => 'active',
-            'created_by_company_id'=> $companyId,
-            'verified_at'          => now(),
+            if ($client) {
+                Log::info(
+                    'Cliente existente encontrado por tax_id y país',
+                    [
+                        'client_id' => $client->id,
+                        'tax_id' => $normTaxId,
+                        'country_id' => $countryId,
+                    ]
+                );
 
-            // Opcionales si vienen
-            'address'              => $clientData['address'] ?? null,
-            'email'                => $clientData['email'] ?? null,
-            'notes'                => 'Cliente creado desde archivo KLine DAT',
-        ]);
+                return $client;
+            }
+        }
 
-        
+        // 2) Buscar por nombre + país únicamente cuando la fuente NO
+        // informó identificador fiscal. Si informó tax_id, ese identificador
+        // tiene prioridad y un nombre coincidente no puede contradecirlo.
+        if (!$normTaxId) {
+            $client = Client::query()
+                ->where('legal_name', $name)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                Log::info(
+                    'Cliente existente encontrado por nombre y país',
+                    [
+                        'client_id' => $client->id,
+                        'name' => $name,
+                        'country_id' => $countryId,
+                    ]
+                );
+
+                return $client;
+            }
+        }
+
+        // El tipo documental sólo se asigna si la fuente aportó un número
+        // fiscal y además declaró explícitamente qué tipo es.
+        $documentTypeId = $normTaxId
+            ? $this->resolveDocumentTypeId($taxType, $countryId)
+            : null;
+
+        $client = Client::withoutEvents(fn () => Client::create([
+            'tax_id' => $normTaxId,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
+            'legal_name' => $name,
+            'commercial_name' => $name,
+            'status' => 'active',
+            'created_by_company_id' => $companyId,
+            'verified_at' => null,
+
+            'address' => $clientData['address'] ?? null,
+            'email' => $clientData['email'] ?? null,
+            'notes' => 'Cliente creado desde archivo KLine DAT',
+        ]));
+
         Log::info('Cliente creado desde KLine', [
             'client_id' => $client->id,
             'legal_name' => $client->legal_name,
-            'tax_id' => $client->tax_id
+            'tax_id' => $client->tax_id,
+            'country_id' => $client->country_id,
+            'document_type_id' => $client->document_type_id,
         ]);
-        
+
         return $client;
     }
 
@@ -1825,8 +2407,8 @@ protected function extractPortInfo(array $data): array
             ],
             'clients' => [
                 'auto_create_missing' => true,
-                'default_document_type_id' => 1,
-                'default_country_id' => 1
+                'default_document_type_id' => null,
+                'default_country_id' => null
             ],
             'cargo' => [
                 'default_cargo_type_id' => 1,
@@ -1866,7 +2448,7 @@ protected function extractPortInfo(array $data): array
     // Construye clientData (name/tax/email/address) a partir de líneas
     protected function buildClientDataFromLines(array $lines): array
     {
-        $name = null; $tax = null; $email = null;
+        $name = null; $tax = null; $taxType = null; $email = null;
 
         foreach ($lines as $ln) {
             $trim = trim($ln);
@@ -1879,10 +2461,21 @@ protected function extractPortInfo(array $data): array
 
             // FIX bug QA #4: usar extractTaxIdFromLine que ya detecta NIT/CUIT/CNPJ/RUC.
             // Antes solo detectaba CUIT argentino (\d{2}-\d{8}-\d) y NIT colombiano "860.025.792-3" quedaba afuera.
-            if (!$tax) {
-                $candidateTax = $this->extractTaxIdFromLine($trim);
-                if ($candidateTax) {
-                    $tax = $candidateTax;
+            $identity = $this->extractTaxIdentityFromLine($trim);
+
+            if ($identity) {
+                if (!$tax) {
+                    $tax = $identity['tax_id'];
+                }
+
+                // Si primero apareció un TAX ID genérico y después el mismo
+                // número con marcador específico, conservar el tipo explícito.
+                if (
+                    !$taxType
+                    && $identity['tax_id'] === $tax
+                    && !empty($identity['tax_type'])
+                ) {
+                    $taxType = $identity['tax_type'];
                 }
             }
 
@@ -1901,10 +2494,11 @@ protected function extractPortInfo(array $data): array
         $address = $this->buildAddressFromPartyLines($lines);
 
         return [
-            'name'    => $name ?? 'Cliente Desconocido',
-            'tax_id'  => $tax,
-            'email'   => $email,
-            'address' => $address,
+            'name'    => $name,
+            'tax_id'   => $tax,
+            'tax_type' => $taxType,
+            'email'    => $email,
+            'address'  => $address,
         ];
     }
 

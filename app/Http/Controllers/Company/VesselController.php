@@ -33,10 +33,10 @@ class VesselController extends Controller
                 ->with('error', 'No se encontró la empresa asociada.');
         }
 
-        // Query base - solo embarcaciones de propietarios de la empresa
-        $query = Vessel::whereHas('vesselOwner', function ($q) use ($company) {
-            $q->where('company_id', $company->id);
-        })->with(['vesselOwner', 'vesselType']);
+        // Query base - embarcaciones pertenecientes a la empresa.
+        // El propietario puede estar pendiente en embarcaciones importadas.
+        $query = Vessel::where('company_id', $company->id)
+            ->with(['vesselOwner', 'vesselType']);
 
         // Filtros
         if ($request->filled('search')) {
@@ -223,9 +223,10 @@ class VesselController extends Controller
      */
     public function show(Vessel $vessel)
     {
-        // Verificar que la embarcación pertenece a un propietario de la empresa del usuario
+        // La empresa del vessel define el ámbito de acceso.
+        // El propietario puede estar pendiente en embarcaciones importadas.
         $company = $this->getUserCompany();
-        if (!$company || !$vessel->vesselOwner || $vessel->vesselOwner->company_id !== $company->id) {
+        if (!$company || $vessel->company_id !== $company->id) {
             abort(403, 'No tiene permisos para ver esta embarcación.');
         }
 
@@ -252,9 +253,10 @@ class VesselController extends Controller
      */
     public function edit(Vessel $vessel)
     {
-        // Verificar que la embarcación pertenece a un propietario de la empresa del usuario
+        // La empresa del vessel define el ámbito de acceso.
+        // El propietario puede estar pendiente en embarcaciones importadas.
         $company = $this->getUserCompany();
-        if (!$company || !$vessel->vesselOwner || $vessel->vesselOwner->company_id !== $company->id) {
+        if (!$company || $vessel->company_id !== $company->id) {
             abort(403, 'No tiene permisos para editar esta embarcación.');
         }
 
@@ -279,9 +281,10 @@ class VesselController extends Controller
      */
     public function update(Request $request, Vessel $vessel)
     {
-        // Verificar que la embarcación pertenece a un propietario de la empresa del usuario
+        // La empresa del vessel define el ámbito de acceso.
+        // El propietario puede estar pendiente en embarcaciones importadas.
         $company = $this->getUserCompany();
-        if (!$company || !$vessel->vesselOwner || $vessel->vesselOwner->company_id !== $company->id) {
+        if (!$company || $vessel->company_id !== $company->id) {
             abort(403, 'No tiene permisos para editar esta embarcación.');
         }
 
@@ -344,9 +347,10 @@ class VesselController extends Controller
      */
     public function destroy(Vessel $vessel)
     {
-        // Verificar que la embarcación pertenece a un propietario de la empresa del usuario
+        // La empresa del vessel define el ámbito de acceso.
+        // El propietario puede estar pendiente en embarcaciones importadas.
         $company = $this->getUserCompany();
-        if (!$company || !$vessel->vesselOwner || $vessel->vesselOwner->company_id !== $company->id) {
+        if (!$company || $vessel->company_id !== $company->id) {
             abort(403, 'No tiene permisos para eliminar esta embarcación.');
         }
 
@@ -376,9 +380,10 @@ class VesselController extends Controller
      */
     public function toggleStatus(Vessel $vessel)
     {
-        // Verificar que la embarcación pertenece a un propietario de la empresa del usuario
+        // La empresa del vessel define el ámbito de acceso.
+        // El propietario puede estar pendiente en embarcaciones importadas.
         $company = $this->getUserCompany();
-        if (!$company || !$vessel->vesselOwner || $vessel->vesselOwner->company_id !== $company->id) {
+        if (!$company || $vessel->company_id !== $company->id) {
             abort(403, 'No tiene permisos para cambiar el estado de esta embarcación.');
         }
 
