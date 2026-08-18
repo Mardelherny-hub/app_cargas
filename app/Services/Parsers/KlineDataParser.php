@@ -1708,27 +1708,26 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         return $descriptions;
     }
 
-    // NUEVO: extraer términos de flete desde FRTCREC0
-    protected function extractFreightTerms(array $data): string
+    // Extraer términos de flete únicamente cuando K-Line los informa.
+    protected function extractFreightTerms(array $data): ?string
     {
-        // Default conservador si no hay registro
-        $terms = 'prepaid';
-
         if (!empty($data['FRTCREC0'])) {
             foreach ($data['FRTCREC0'] as $line) {
-                $l = strtoupper(trim($line));
-                // Códigos típicos en KLine:
-                // POFT = Prepaid Ocean Freight ; COFT = Collect Ocean Freight
+                $l = strtoupper(trim((string) $line));
+
+                // POFT = Prepaid Ocean Freight
+                // COFT = Collect Ocean Freight
                 if (str_contains($l, 'POFT')) {
                     return 'prepaid';
                 }
+
                 if (str_contains($l, 'COFT')) {
                     return 'collect';
                 }
             }
         }
 
-        return $terms;
+        return null;
     }
 
     // Normaliza un número con coma/punto a float (e.g. "1.234,56" -> 1234.56)
