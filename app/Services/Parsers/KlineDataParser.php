@@ -684,8 +684,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'status'            => 'draft',
             'master_bl_number'  => $this->extractMasterBL($data),
             // FIX bugs #3, #4: cargo y packaging correctos para K-Line (carga no contenedorizada)
-            'primary_cargo_type_id'     => 5,  // OTRA CARGA NO CONTENEDORIZADA
-            'primary_packaging_type_id' => 2,  // NO RETORNABLE
+            'primary_cargo_type_id' => $this->resolveCargoTypeId($data, $blNumber),  // OTRA CARGA NO CONTENEDORIZADA
+            'primary_packaging_type_id' => $this->resolvePackagingTypeId($data),  // NO RETORNABLE
             // FIX bug #6b: BL no estaba recibiendo cargo_marks (quedaba vacío en BD)
             'cargo_marks'               => $this->extractCargoMarks($data),
             // Mantener un código principal por compatibilidad y preservar
@@ -793,8 +793,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 'line_number' => $lineNumber,
                 'item_description' => $description,
                 // FIX bugs #3, #4: K-Line no contenedorizado
-                'cargo_type_id' => 5,     // OTRA CARGA NO CONTENEDORIZADA
-                'packaging_type_id' => 2, // NO RETORNABLE
+                'cargo_type_id' => $this->resolveCargoTypeId($data, $bill->bill_number),     // OTRA CARGA NO CONTENEDORIZADA
+                'packaging_type_id' => $this->resolvePackagingTypeId($data), // NO RETORNABLE
                 'package_quantity' => $realMeasurements['package_quantity'], // REAL
                 'gross_weight_kg' => $realMeasurements['gross_weight_kg'], // REAL
                 'net_weight_kg' => $realMeasurements['net_weight_kg'], // REAL
@@ -1530,6 +1530,69 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 . "utilizable para el BL {$blNumber}."
             );
         }
+    }
+
+    protected function resolveCargoTypeCode(
+        array $data,
+        string $blNumber
+    ): string {
+        $lines = [];
+
+        foreach (['DESCREC0', 'CMMDREC0'] as $recordType) {
+            foreach (($data[$recordType] ?? []) as $line) {
+                $lines[] = (string) $line;
+            }
+        }
+
+        $sourceText = Str::upper(
+            Str::ascii(implode("\n", $lines))
+        );
+
+        if (
+            preg_match(
+                '/(?<![A-Z])(?:VEHICLES?|VEHICULOS?)(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'VEH001';
+        }
+
+        throw new \DomainException(
+            "K-Line no informa un tipo de carga reconocido "
+            . "para el BL {$blNumber}."
+        );
+    }
+
+    protected function resolveCargoTypeId(
+        array $data,
+        string $blNumber
+    ): int {
+        $code = $this->resolveCargoTypeCode(
+            $data,
+            $blNumber
+        );
+
+        $id = \App\Models\CargoType::query()
+            ->where('code', $code)
+            ->where('active', true)
+            ->value('id');
+
+        if (!$id) {
+            throw new \DomainException(
+                "No existe un tipo de carga activo con código "
+                . "{$code} para el BL {$blNumber}."
+            );
+        }
+
+        return (int) $id;
+    }
+
+    protected function resolvePackagingTypeId(
+        array $data
+    ): ?int {
+        // El DAT K-Line identifica la carga, pero no informa
+        // un embalaje equivalente al catálogo interno.
+        return null;
     }
 
     protected function resolveCargoDescription(
