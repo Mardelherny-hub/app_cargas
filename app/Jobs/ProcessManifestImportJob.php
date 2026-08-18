@@ -39,13 +39,26 @@ class ProcessManifestImportJob implements ShouldQueue
     public int $tries = 1;
     public int $timeout = 600;
 
+    /**
+     * Datos operativos opcionales de la importación.
+     *
+     * Se declaran con NULL por defecto para que jobs creados antes de este
+     * cambio puedan seguir deserializándose sin inventar información.
+     */
+    public ?string $departureDate = null;
+    public ?string $voyageNumber = null;
+
     public function __construct(
         public int $trackingId,
         public string $storedPath,
         public int $vesselId,
         public int $userId,
         public string $originalName,
+        ?string $departureDate = null,
+        ?string $voyageNumber = null,
     ) {
+        $this->departureDate = $departureDate;
+        $this->voyageNumber = $voyageNumber;
         $this->onQueue('imports');
     }
 
@@ -83,6 +96,8 @@ class ProcessManifestImportJob implements ShouldQueue
             /** @var ManifestParseResult $result */
             $result = $parser->parse($fullPath, [
                 'vessel_id' => $this->vesselId,
+                'departure_date' => $this->departureDate,
+                'voyage_number' => $this->voyageNumber,
             ]);
 
             if ($result->isSuccessful()) {

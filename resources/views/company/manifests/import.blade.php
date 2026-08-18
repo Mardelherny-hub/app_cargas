@@ -128,6 +128,59 @@
                         </p>
                     </div>
 
+                    <!-- Número de viaje -->
+                    <div>
+                        <label for="voyage_number"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            🧭 Número de viaje
+                        </label>
+
+                        <input type="text"
+                               id="voyage_number"
+                               name="voyage_number"
+                               value="{{ old('voyage_number') }}"
+                               maxlength="100"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('voyage_number')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Complete este dato cuando el archivo no informe
+                            el número de viaje. Para K-Line es obligatorio
+                            cuando el DAT no lo contiene.
+                        </p>
+                    </div>
+
+                    <!-- Fecha/hora de salida -->
+                    <div>
+                        <label for="departure_date"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            📅 Fecha y hora de salida
+                        </label>
+
+                        <input type="datetime-local"
+                               id="departure_date"
+                               name="departure_date"
+                               value="{{ old('departure_date') }}"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('departure_date')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Complete este dato cuando el archivo no informe
+                            la fecha de salida. Si el archivo contiene una
+                            fecha válida, esa fecha tendrá prioridad.
+                        </p>
+                    </div>
+
                     <!-- Botón de importación -->
                     <div class="flex items-center justify-between">
                         <div class="text-sm text-gray-600">
