@@ -97,6 +97,7 @@ class BillOfLading extends Model
         
         // Términos comerciales
         'freight_terms',
+        'freight_amount',
         'payment_terms',
         'incoterms',
         'currency_code',
@@ -115,6 +116,7 @@ class BillOfLading extends Model
         'cargo_description',
         'cargo_marks',
         'commodity_code',
+        'commodity_codes',
         
         // Características especiales - NECESARIAS para recalculación
         'contains_dangerous_goods',
@@ -208,6 +210,7 @@ class BillOfLading extends Model
         'customs_bond_required' => 'boolean',
         
         // JSON
+        'commodity_codes' => 'array',
         'special_instructions' => 'json',
         'additional_charges' => 'json',
         'discrepancy_details' => 'json',
@@ -237,11 +240,8 @@ class BillOfLading extends Model
         
         // Auto-calcular campos derivados al guardar
         static::saving(function ($billOfLading) {
-            // Calcular peso neto si no está definido
-            if (is_null($billOfLading->net_weight_kg) && $billOfLading->gross_weight_kg) {
-                $billOfLading->net_weight_kg = $billOfLading->gross_weight_kg * 0.85; // Estimación
-            }
-            
+            // El peso neto nunca se estima.
+            // Si la fuente no lo informa, permanece desconocido.
             // Validar fechas lógicas
             if ($billOfLading->discharge_date && $billOfLading->loading_date) {
                 if ($billOfLading->discharge_date < $billOfLading->loading_date) {

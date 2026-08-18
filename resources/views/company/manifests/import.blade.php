@@ -44,7 +44,6 @@
                         <div class="mt-2 text-sm text-blue-700">
                             <p>
                                 El sistema detectará automáticamente el formato del archivo y usará el parser apropiado.
-                                <strong>Formatos soportados:</strong> KLine.DAT, PARANA.xlsx, Guaran.csv
                             </p>
                         </div>
                     </div>
@@ -87,7 +86,6 @@
                         <input type="file" 
                                id="manifest_file" 
                                name="manifest_file" 
-                               accept=".dat,.xlsx,.csv,.xml,.txt,.edi" 
                                required
                                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                         
@@ -96,7 +94,7 @@
                         @enderror
                         
                         <p class="mt-1 text-xs text-gray-500">
-                            Tamaño máximo: 10MB. Formatos: .dat, .xlsx, .csv, .xml, .txt, .edi
+                            Tamaño máximo: 10MB. El sistema detectará automáticamente el formato del archivo.
                         </p>
                     </div>
                     <!-- Selección de embarcación -->
@@ -109,7 +107,10 @@
                             <option value="">Seleccione una embarcación...</option>
                             @foreach($vessels as $vessel)
                                 <option value="{{ $vessel->id }}" {{ old('vessel_id') == $vessel->id ? 'selected' : '' }}>
-                                    {{ $vessel->name }} ({{ $vessel->registration_number }})
+                                    {{ $vessel->name }}
+                                    @if($vessel->registration_number)
+                                        ({{ $vessel->registration_number }})
+                                    @endif
                                     @if($vessel->cargo_capacity_tons)
                                         - {{ number_format($vessel->cargo_capacity_tons) }}t
                                     @endif
@@ -120,7 +121,63 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            Solo se muestran embarcaciones activas de su empresa
+                            Esta selección funciona como respaldo. Si el archivo informa una embarcación,
+                            esa embarcación tendrá prioridad. Si no está registrada, se incorporará con los
+                            datos disponibles y se informará que su ficha debe completarse. Si el archivo no
+                            informa embarcación, se utilizará la seleccionada aquí.
+                        </p>
+                    </div>
+
+                    <!-- Número de viaje -->
+                    <div>
+                        <label for="voyage_number"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            🧭 Número de viaje
+                        </label>
+
+                        <input type="text"
+                               id="voyage_number"
+                               name="voyage_number"
+                               value="{{ old('voyage_number') }}"
+                               maxlength="100"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('voyage_number')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Complete este dato cuando el archivo no informe
+                            el número de viaje. Para K-Line es obligatorio
+                            cuando el DAT no lo contiene.
+                        </p>
+                    </div>
+
+                    <!-- Fecha/hora de salida -->
+                    <div>
+                        <label for="departure_date"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            📅 Fecha y hora de salida
+                        </label>
+
+                        <input type="datetime-local"
+                               id="departure_date"
+                               name="departure_date"
+                               value="{{ old('departure_date') }}"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('departure_date')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Complete este dato cuando el archivo no informe
+                            la fecha de salida. Si el archivo contiene una
+                            fecha válida, esa fecha tendrá prioridad.
                         </p>
                     </div>
 
