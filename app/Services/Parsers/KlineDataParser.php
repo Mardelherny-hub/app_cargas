@@ -1484,29 +1484,35 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
     }
 
-    protected function extractCountryOfOrigin(array $data): string
+    protected function extractCountryOfOrigin(array $data): ?string
     {
-        // Buscar en DESCREC "ORIGEN - BRASIL" o similar
-        if (!empty($data['MARKREC0'])) {
-            foreach ($data['MARKREC0'] as $line) {
-                if (preg_match('/ORIGEM?\s*-?\s*(BRASIL|BRAZIL)/i', $line)) {
+        foreach (['MARKREC0', 'DESCREC0'] as $recordType) {
+            foreach (($data[$recordType] ?? []) as $line) {
+                $source = Str::upper(
+                    Str::ascii((string) $line)
+                );
+
+                if (
+                    preg_match(
+                        '/\b(?:ORIGEM|ORIGEN)\s*[-:]?\s*(?:BRASIL|BRAZIL)\b/',
+                        $source
+                    )
+                ) {
                     return 'BR';
                 }
-                if (preg_match('/ORIGEN\s*-?\s*(ARGENTINA)/i', $line)) {
+
+                if (
+                    preg_match(
+                        '/\b(?:ORIGEM|ORIGEN)\s*[-:]?\s*ARGENTINA\b/',
+                        $source
+                    )
+                ) {
                     return 'AR';
                 }
             }
         }
-        
-        // Determinar por puertos del viaje
-        if (!empty($data['GNRLREC'])) {
-            foreach ($data['GNRLREC'] as $line) {
-                if (str_contains($line, 'BRPNG')) return 'BR'; // Paranaguá
-                if (str_contains($line, 'COCTG')) return 'CO'; // Cartagena
-            }
-        }
-        
-        return 'BR'; // Default basado en archivo ejemplo
+
+        return null;
     }
 
     /**
