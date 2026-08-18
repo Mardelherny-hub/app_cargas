@@ -229,32 +229,26 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                             continue;
                         }
 
-                        // Puertos propios del BL. Cada BLNOREC trae su propio
-                        // GNRLREC con los puertos reales de ese conocimiento.
-                        // Antes se usaban los del viaje (extraídos una sola vez
-                        // del primer BL) y todos los conocimientos quedaban con
-                        // el mismo puerto de carga: verificado sobre Kline.DAT,
-                        // 4 BLs cargan en COCTG y 3 en BRPNG, y los 7 quedaban
-                        // en COCTG. Fallback al puerto del viaje si el BL no
-                        // resuelve o el código no está en el catálogo.
-                        $blOriginPort      = $originPort;
-                        $blDestinationPort = $destinationPort;
+                        // Cada BL debe conservar sus propios puertos.
+                        // Nunca sustituirlos silenciosamente por los del viaje.
+                        $blPortInfo = $this->extractPortInfo($blData['data']);
 
-                        try {
-                            $blPortInfo = $this->extractPortInfo($blData['data']);
-
-                            if (!empty($blPortInfo['origin']) && !empty($blPortInfo['destination'])) {
-                                $blOriginPort      = $this->findOrCreatePort($blPortInfo['origin']);
-                                $blDestinationPort = $this->findOrCreatePort($blPortInfo['destination']);
-                            }
-                        } catch (\Throwable $e) {
-                            $blOriginPort      = $originPort;
-                            $blDestinationPort = $destinationPort;
-                            Log::warning('KLine: no se pudieron resolver puertos del BL, se usan los del viaje', [
-                                'bl'    => $blNumber,
-                                'error' => $e->getMessage(),
-                            ]);
+                        if (
+                            empty($blPortInfo['origin'])
+                            || empty($blPortInfo['destination'])
+                        ) {
+                            throw new \DomainException(
+                                "K-Line no informa ambos puertos para el BL {$blNumber}."
+                            );
                         }
+
+                        $blOriginPort = $this->findOrCreatePort(
+                            $blPortInfo['origin']
+                        );
+
+                        $blDestinationPort = $this->findOrCreatePort(
+                            $blPortInfo['destination']
+                        );
 
                         // Crear BillOfLading
                         $bill = $this->createBillOfLading($shipment, $blNumber, $blData['data'], $blOriginPort, $blDestinationPort);
@@ -268,11 +262,18 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                         
                     } catch (Exception $e) {
                         $this->stats['errors']++;
-                        $this->stats['warnings'][] = "Error procesando BL {$blData['bl']}: " . $e->getMessage();
+                        $this->stats['warnings'][] =
+                            "Error procesando BL {$blData['bl']}: "
+                            . $e->getMessage();
+
                         Log::error('Error processing BL', [
                             'bl' => $blData['bl'],
-                            'error' => $e->getMessage()
+                            'error' => $e->getMessage(),
                         ]);
+
+                        // La importación K-Line es atómica:
+                        // un BL inválido invalida el archivo completo.
+                        throw $e;
                     }
                 }
 
