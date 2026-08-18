@@ -2108,9 +2108,36 @@ protected function extractPortInfo(array $data): array
     /**
      * Buscar o crear cliente - CORREGIDO: usar estructura real de tabla clients
      */
+    protected function resolveRequiredClientName(?string $name): string
+    {
+        $name = trim((string) $name);
+
+        if ($name === '') {
+            throw new \DomainException(
+                'K-Line no informa el nombre de una parte obligatoria del BL.'
+            );
+        }
+
+        $normalized = Str::upper(Str::ascii($name));
+
+        if (in_array($normalized, [
+            'CLIENTE DESCONOCIDO',
+            'EMBARCADOR DESCONOCIDO',
+            'CONSIGNATARIO DESCONOCIDO',
+        ], true)) {
+            throw new \DomainException(
+                "K-Line no admite una parte sintética: {$name}."
+            );
+        }
+
+        return $name;
+    }
+
     protected function findOrCreateClient(array $clientData, int $companyId, array $partyLines = [], ?Port $originPort = null): Client
     {
-        $name    = trim($clientData['name'] ?? 'Cliente Desconocido');
+        $name = $this->resolveRequiredClientName(
+            $clientData['name'] ?? null
+        );
         $taxId   = $clientData['tax_id'] ?? null;
         $taxType = $clientData['tax_type'] ?? null;
 
@@ -2466,7 +2493,7 @@ protected function extractPortInfo(array $data): array
         $address = $this->buildAddressFromPartyLines($lines);
 
         return [
-            'name'     => $name ?? 'Cliente Desconocido',
+            'name'    => $name,
             'tax_id'   => $tax,
             'tax_type' => $taxType,
             'email'    => $email,
