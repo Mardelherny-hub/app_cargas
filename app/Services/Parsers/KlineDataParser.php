@@ -1590,6 +1590,60 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             return 'ONC001';
         }
 
+        /*
+         * Variante real KKLUATM02176: tractor tiendetubos desmontado.
+         * MAFI / SELF PROPELLED UNIT no implica clasificar como RORO.
+         * El BL declara carga no contenedorizada.
+         */
+        if (
+            preg_match(
+                '/(?<![A-Z])TRACTOR(?:ES)?\s+TIENDETUBOS(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'ONC001';
+        }
+
+        /*
+         * Variante real KKLUATM02177:
+         * tractores/talleres automáticos de soldadura sobre orugas.
+         * Se conservan como maquinaria no contenedorizada.
+         */
+        if (
+            preg_match(
+                '/(?:TRACTOR(?:ES)?\s+DE\s+SOLDADURA|TALLER\w*\s+AUTOMATICO\s+DE\s+SOLDADURA)/',
+                $sourceText
+            )
+        ) {
+            return 'ONC001';
+        }
+
+        /*
+         * Variante real KKLUATM02183:
+         * cosechadora / maquinaria rodante.
+         */
+        if (
+            preg_match(
+                '/(?<![A-Z])COSECHADORAS?(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'VEH001';
+        }
+
+        /*
+         * Variantes reales restantes del DAT K-Line 18ago:
+         * fumigadoras y casas rodantes.
+         */
+        if (
+            preg_match(
+                '/(?<![A-Z])(?:FUMIGADORAS?|CASAS?\s+RODANTES?)(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'VEH001';
+        }
+
         throw new \DomainException(
             "K-Line no informa un tipo de carga reconocido "
             . "para el BL {$blNumber}."
@@ -1802,6 +1856,336 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 }
 
                 $descriptions[] = $description;
+            }
+        }
+
+        /*
+         * Variante real KKLUATM02176: tractor tiendetubos.
+         *
+         * CMMD informa 22 UNIT, pero eso no demuestra 22 tractores
+         * completos porque la maquinaria viene desmontada en piezas.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $hasPipeLayer = false;
+            $hasSuperiorSpx660 = false;
+            $isDismantled = false;
+            $loadedOnMafi = false;
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace(
+                        '/^\d{6}/',
+                        '',
+                        trim((string) $line)
+                    )
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(
+                    Str::ascii($cleanLine)
+                );
+
+                if (
+                    preg_match(
+                        '/(?<![A-Z])TRACTOR(?:ES)?\s+TIENDETUBOS(?![A-Z])/',
+                        $upper
+                    )
+                ) {
+                    $hasPipeLayer = true;
+                }
+
+                if (str_contains($upper, 'SUPERIOR SPX 660')) {
+                    $hasSuperiorSpx660 = true;
+                }
+
+                if (str_contains($upper, 'DESMONTADO EN')) {
+                    $isDismantled = true;
+                }
+
+                if (str_contains($upper, 'CARGO LOADED ON MAFI')) {
+                    $loadedOnMafi = true;
+                }
+            }
+
+            if ($hasPipeLayer) {
+                $parts = [
+                    'TRACTOR TIENDETUBOS',
+                ];
+
+                if ($hasSuperiorSpx660) {
+                    $parts[] = 'SUPERIOR SPX 660';
+                }
+
+                if ($isDismantled) {
+                    $parts[] = 'DESMONTADO';
+                }
+
+                if ($loadedOnMafi) {
+                    $parts[] = 'CARGO LOADED ON MAFI';
+                }
+
+                $descriptions[] = implode(
+                    ' / ',
+                    $parts
+                );
+            }
+        }
+
+        /*
+         * Variante real KKLUATM02177:
+         * maquinaria de soldadura sobre orugas.
+         *
+         * No anteponer "1 UNIT": CMMD informa una unidad declarada del BL,
+         * mientras DESCREC detalla múltiples equipos.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $hasWeldingEquipment = false;
+            $models = [];
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace(
+                        '/^\d{6}/',
+                        '',
+                        trim((string) $line)
+                    )
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(
+                    Str::ascii($cleanLine)
+                );
+
+                if (
+                    preg_match(
+                        '/(?:TRACTOR(?:ES)?\s+DE\s+SOLDADURA|TALLER\w*\s+AUTOMATICO\s+DE\s+SOLDADURA)/',
+                        $upper
+                    )
+                ) {
+                    $hasWeldingEquipment = true;
+                }
+
+                if (
+                    str_contains($upper, 'MOROOKA MST-1500 VD')
+                    || str_contains($upper, 'SUPERIOR SRT 155')
+                    || str_contains($upper, 'SUPERIOR SRT155')
+                ) {
+                    $models[] = $cleanLine;
+                }
+            }
+
+            if ($hasWeldingEquipment) {
+                $models = array_values(array_unique($models));
+
+                $description = 'MAQUINARIA DE SOLDADURA SOBRE ORUGAS';
+
+                if ($models !== []) {
+                    $description .= ' / ' . implode(' / ', $models);
+                }
+
+                $descriptions[] = $description;
+            }
+        }
+
+        /*
+         * Variante real KKLUATM02183:
+         * cosechadora John Deere.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $hasHarvester = false;
+            $model = null;
+            $serial = null;
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace(
+                        '/^\d{6}/',
+                        '',
+                        trim((string) $line)
+                    )
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(
+                    Str::ascii($cleanLine)
+                );
+
+                if (
+                    preg_match(
+                        '/(?<![A-Z])COSECHADORAS?(?![A-Z])/',
+                        $upper
+                    )
+                ) {
+                    $hasHarvester = true;
+                }
+
+                if (
+                    str_contains(
+                        $upper,
+                        'COSECHADORA JOHN DEERE'
+                    )
+                ) {
+                    $model = $cleanLine;
+                }
+
+                if (
+                    preg_match(
+                        '/^S\/N\s+(.+)$/i',
+                        $cleanLine,
+                        $matches
+                    )
+                ) {
+                    $serial = 'S/N ' . trim($matches[1]);
+                }
+            }
+
+            if ($hasHarvester) {
+                $parts = [];
+
+                $parts[] = $model
+                    ?? 'COSECHADORA';
+
+                if ($serial !== null) {
+                    $parts[] = $serial;
+                }
+
+                $descriptions[] = implode(
+                    ' / ',
+                    $parts
+                );
+            }
+        }
+
+        /*
+         * Fumigadora John Deere.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $hasSprayer = false;
+            $identity = null;
+            $serial = null;
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace(
+                        '/^\d{6}/',
+                        '',
+                        trim((string) $line)
+                    )
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(Str::ascii($cleanLine));
+
+                if (
+                    preg_match(
+                        '/(?<![A-Z])FUMIGADORAS?(?![A-Z])/',
+                        $upper
+                    )
+                ) {
+                    $hasSprayer = true;
+                }
+
+                if (
+                    str_contains($upper, 'FUMIGADORA')
+                    && str_contains($upper, 'JOHN DEERE')
+                ) {
+                    $identity = $cleanLine;
+                }
+
+                if (
+                    preg_match(
+                        '/^SERIE\s+(.+)$/i',
+                        $cleanLine,
+                        $matches
+                    )
+                ) {
+                    $serial = 'SERIE ' . trim($matches[1]);
+                }
+            }
+
+            if ($hasSprayer) {
+                $parts = [
+                    $identity ?? 'FUMIGADORA',
+                ];
+
+                if ($serial !== null) {
+                    $parts[] = $serial;
+                }
+
+                $descriptions[] = implode(' / ', $parts);
+            }
+        }
+
+        /*
+         * Casa rodante.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $hasMotorhome = false;
+            $brand = null;
+            $year = null;
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace(
+                        '/^\d{6}/',
+                        '',
+                        trim((string) $line)
+                    )
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(Str::ascii($cleanLine));
+
+                if (
+                    preg_match(
+                        '/(?<![A-Z])CASAS?\s+RODANTES?(?![A-Z])/',
+                        $upper
+                    )
+                ) {
+                    $hasMotorhome = true;
+                }
+
+                if (
+                    str_contains($upper, 'MERCEDES BENZ')
+                    || $upper === 'THMC'
+                ) {
+                    $brand = $cleanLine;
+                }
+
+                if (
+                    preg_match('/^ANO\s+(\d{4})$/', $upper, $matches)
+                ) {
+                    $year = $matches[1];
+                }
+            }
+
+            if ($hasMotorhome) {
+                $parts = ['CASA RODANTE'];
+
+                if ($brand !== null) {
+                    $parts[] = $brand;
+                }
+
+                if ($year !== null) {
+                    $parts[] = 'AÑO ' . $year;
+                }
+
+                $descriptions[] = implode(' / ', $parts);
             }
         }
 
