@@ -30,12 +30,15 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
                 'gross_weight_kg' => null,
                 'net_weight_kg' => null,
                 'volume_m3' => null,
+                '_package_quantity_explicit' => false,
+                '_gross_weight_explicit' => false,
+                '_volume_explicit' => false,
             ],
             $this->invokeParser('extractRealMeasurements', [[]])
         );
     }
 
-    public function test_zero_placeholders_are_treated_as_missing_measurements(): void
+    public function test_explicit_zero_measurements_are_preserved_as_zero(): void
     {
         $measurements = $this->invokeParser(
             'extractRealMeasurements',
@@ -46,10 +49,49 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
             ]]
         );
 
-        $this->assertNull($measurements['package_quantity']);
-        $this->assertNull($measurements['gross_weight_kg']);
+        $this->assertSame(0, $measurements['package_quantity']);
+        $this->assertSame(0.0, $measurements['gross_weight_kg']);
         $this->assertNull($measurements['net_weight_kg']);
-        $this->assertNull($measurements['volume_m3']);
+        $this->assertSame(0.0, $measurements['volume_m3']);
+
+        $this->assertTrue(
+            $measurements['_package_quantity_explicit']
+        );
+        $this->assertTrue(
+            $measurements['_gross_weight_explicit']
+        );
+    }
+
+    public function test_explicit_zero_gross_is_not_replaced_by_description(): void
+    {
+        $measurements = $this->invokeParser(
+            'extractRealMeasurements',
+            [[
+                'CMMDREC0' => [
+                    '000001NAUT00000000VEHICLES 00000000000KGS000000000M3',
+                ],
+                'DESCREC0' => [
+                    '000001GROSS WEIGHT: 16000 LBS',
+                ],
+            ]]
+        );
+
+        $this->assertSame(0.0, $measurements['gross_weight_kg']);
+    }
+
+    public function test_explicit_zero_required_measurements_are_accepted(): void
+    {
+        $this->invokeParser(
+            'assertRequiredMeasurements',
+            [[
+                'package_quantity' => 0,
+                'gross_weight_kg' => 0.0,
+                'net_weight_kg' => null,
+                'volume_m3' => 0.0,
+            ], 'TEST-BL']
+        );
+
+        $this->assertTrue(true);
     }
 
     public function test_quantity_and_gross_survive_when_volume_is_absent(): void

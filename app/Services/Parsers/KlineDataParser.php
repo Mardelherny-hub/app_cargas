@@ -826,6 +826,34 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             $bill->bill_number
         );
 
+        // Una sola lectura de mediciones por BL.
+        $realMeasurements = $this->extractRealMeasurements($data);
+
+        $this->assertRequiredMeasurements(
+            $realMeasurements,
+            $bill->bill_number
+        );
+
+        if (
+            ($realMeasurements['_package_quantity_explicit'] ?? false)
+            && (int) $realMeasurements['package_quantity'] === 0
+        ) {
+            $this->stats['warnings'][] =
+                "BL {$bill->bill_number}: K-Line informa cantidad "
+                . "de bultos en 0. Se importó en 0 y debe completarse "
+                . "manualmente.";
+        }
+
+        if (
+            ($realMeasurements['_gross_weight_explicit'] ?? false)
+            && (float) $realMeasurements['gross_weight_kg'] == 0.0
+        ) {
+            $this->stats['warnings'][] =
+                "BL {$bill->bill_number}: K-Line informa peso bruto "
+                . "en 0. Se importó en 0 y debe completarse "
+                . "manualmente.";
+        }
+
         foreach ($descriptions as $description) {
             // CORREGIDO: Verificar duplicado line_number sin throw Exception
             $existingItem = ShipmentItem::where('bill_of_lading_id', $bill->id)
@@ -841,11 +869,6 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             // Extraer información REAL del archivo
             $cargoMarks = $this->extractCargoMarks($data);
             $ncmCode = $this->extractNCMCode($data);
-            $realMeasurements = $this->extractRealMeasurements($data);
-            $this->assertRequiredMeasurements(
-                $realMeasurements,
-                $bill->bill_number
-            ); // NUEVO
             $countryOfOrigin = $this->extractCountryOfOrigin($data); // NUEVO
 
             $item = ShipmentItem::create([
@@ -1465,6 +1488,12 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'gross_weight_kg' => null,
             'net_weight_kg' => null,
             'volume_m3' => null,
+
+            // Opción C:
+            // distinguir "0 informado por K-Line" de "dato ausente".
+            '_package_quantity_explicit' => false,
+            '_gross_weight_explicit' => false,
+            '_volume_explicit' => false,
         ];
 
         /*
@@ -1477,31 +1506,24 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         if (!empty($data['CMMDREC0'])) {
             foreach ($data['CMMDREC0'] as $line) {
                 if (preg_match('/NAUT(\d+)/i', $line, $matches)) {
-                    $quantity = (int) $matches[1];
-
-                    if ($quantity > 0) {
-                        $measurements['package_quantity'] = $quantity;
-                    }
+                    $measurements['_package_quantity_explicit'] = true;
+                    $measurements['package_quantity'] =
+                        (int) $matches[1];
                 }
 
                 if (preg_match('/(\d+)KGS/i', $line, $matches)) {
                     // K-Line: 4 decimales implícitos.
-                    $grossWeight =
+                    // Un cero explícito se conserva como cero.
+                    $measurements['_gross_weight_explicit'] = true;
+                    $measurements['gross_weight_kg'] =
                         ((float) $matches[1]) / 10000;
-
-                    if ($grossWeight > 0) {
-                        $measurements['gross_weight_kg'] = $grossWeight;
-                    }
                 }
 
                 if (preg_match('/(\d+)M3/i', $line, $matches)) {
                     // K-Line: 3 decimales implícitos.
-                    $volume =
+                    $measurements['_volume_explicit'] = true;
+                    $measurements['volume_m3'] =
                         ((float) $matches[1]) / 1000;
-
-                    if ($volume > 0) {
-                        $measurements['volume_m3'] = $volume;
-                    }
                 }
             }
         }
@@ -1528,6 +1550,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
                 if (
                     $measurements['volume_m3'] === null
+                    && !($measurements['_volume_explicit'] ?? false)
                     && preg_match(
                         '/M3[:\s]+([0-9\.,]+)/i',
                         $line,
@@ -1552,6 +1575,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
          */
         if (
             $measurements['gross_weight_kg'] === null
+            && !($measurements['_gross_weight_explicit'] ?? false)
             && !empty($data['DESCREC0'])
         ) {
             // Primero: total bruto explícito.
@@ -1636,14 +1660,12 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
         if (
             ($measurements['package_quantity'] ?? null) === null
-            || (int) $measurements['package_quantity'] < 1
         ) {
             $missing[] = 'cantidad total de bultos';
         }
 
         if (
             ($measurements['gross_weight_kg'] ?? null) === null
-            || (float) $measurements['gross_weight_kg'] <= 0
         ) {
             $missing[] = 'peso bruto';
         }
