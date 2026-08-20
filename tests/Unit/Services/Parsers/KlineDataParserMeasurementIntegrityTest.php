@@ -35,7 +35,7 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
         );
     }
 
-    public function test_explicit_zero_measurements_are_preserved_as_zero(): void
+    public function test_zero_placeholders_are_treated_as_missing_measurements(): void
     {
         $measurements = $this->invokeParser(
             'extractRealMeasurements',
@@ -46,10 +46,10 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
             ]]
         );
 
-        $this->assertSame(0, $measurements['package_quantity']);
-        $this->assertSame(0.0, $measurements['gross_weight_kg']);
+        $this->assertNull($measurements['package_quantity']);
+        $this->assertNull($measurements['gross_weight_kg']);
         $this->assertNull($measurements['net_weight_kg']);
-        $this->assertSame(0.0, $measurements['volume_m3']);
+        $this->assertNull($measurements['volume_m3']);
     }
 
     public function test_quantity_and_gross_survive_when_volume_is_absent(): void
@@ -74,7 +74,7 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
     public function test_missing_required_quantity_is_rejected(): void
     {
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('no informa cantidad de bultos');
+        $this->expectExceptionMessage('no se pudo determinar de forma inequívoca cantidad total de bultos');
 
         $this->invokeParser(
             'assertRequiredMeasurements',
@@ -90,7 +90,7 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
     public function test_missing_required_gross_weight_is_rejected(): void
     {
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('no informa peso bruto');
+        $this->expectExceptionMessage('no se pudo determinar de forma inequívoca peso bruto');
 
         $this->invokeParser(
             'assertRequiredMeasurements',

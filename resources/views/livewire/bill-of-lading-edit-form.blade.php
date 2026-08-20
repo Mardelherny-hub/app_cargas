@@ -193,6 +193,24 @@
                         @enderror
                     </div>
 
+                    {{-- Importe de Flete --}}
+                    <div>
+                        <label for="freight_amount" class="block text-sm font-medium text-gray-700">
+                            Importe de Flete
+                        </label>
+                        <input
+                            wire:model="freight_amount"
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            id="freight_amount"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('freight_amount') border-red-300 @enderror"
+                        >
+                        @error('freight_amount')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+
                     {{-- Incoterms --}}
                     <div>
                         <label for="incoterms" class="block text-sm font-medium text-gray-700">

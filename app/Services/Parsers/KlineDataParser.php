@@ -637,26 +637,65 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         }
 
         // 2) Partes (líneas + datos mínimos)
-        [$shipperLines, $consigneeLines] = $this->extractPartyLinesFromPTYI($data);
+        [$shipperLines, $consigneeLines, $notifyLines] =
+            $this->extractPartyLinesFromPTYI($data);
+
+        $shipperCountryAlpha2 =
+            $this->extractStructuredPartyCountry($data, 'SH');
+        $consigneeCountryAlpha2 =
+            $this->extractStructuredPartyCountry($data, 'CN');
+        $notifyCountryAlpha2 =
+            $this->extractStructuredPartyCountry($data, 'NP');
+
         $shipperData   = $this->buildClientDataFromLines($shipperLines);
         $consigneeData = $this->buildClientDataFromLines($consigneeLines);
+        $notifyData = $notifyLines !== []
+            ? $this->buildClientDataFromLines($notifyLines)
+            : null;
 
         // 3) Fechas + flete
         $dates        = $this->extractDates($data);                // ['etd','eta','bl_date']
+        $importDate = now()->toDateString();
         $freightTerms = $this->extractFreightTerms($data);         // 'prepaid'|'collect'|default
         $freight      = $this->extractFreightCharges($data, $freightTerms); // ['terms','currency','amount']
 
         // 4) Clientes (ORIGEN → shipper, DESTINO → consignee)
-        $shipper   = $this->findOrCreateClient($shipperData,   $companyId, $shipperLines,   $originPort);
-        $consignee = $this->findOrCreateClient($consigneeData, $companyId, $consigneeLines, $destinationPort);
+        $shipper = $this->findOrCreateClient(
+            $shipperData,
+            $companyId,
+            $shipperLines,
+            $originPort,
+            $shipperCountryAlpha2
+        );
+
+        $consignee = $this->findOrCreateClient(
+            $consigneeData,
+            $companyId,
+            $consigneeLines,
+            $destinationPort,
+            $consigneeCountryAlpha2
+        );
+
+        $notify = $notifyData !== null
+            ? $this->findOrCreateClient(
+                $notifyData,
+                $companyId,
+                $notifyLines,
+                $destinationPort,
+                $notifyCountryAlpha2
+            )
+            : null;
 
         // 5) Atributos de flete (solo si existen columnas)
         $freightAttrs = [];
         if (\Schema::hasColumn('bills_of_lading', 'freight_terms') && ($freight['terms'] ?? null)) {
             $freightAttrs['freight_terms'] = $freight['terms'];
         }
-        if (\Schema::hasColumn('bills_of_lading', 'freight_currency_code') && ($freight['currency'] ?? null)) {
-            $freightAttrs['freight_currency_code'] = $freight['currency'];
+        if (
+            \Schema::hasColumn('bills_of_lading', 'currency_code')
+            && ($freight['currency'] ?? null)
+        ) {
+            $freightAttrs['currency_code'] = $freight['currency'];
         }
         if (\Schema::hasColumn('bills_of_lading', 'freight_amount') && array_key_exists('amount', $freight) && $freight['amount'] !== null) {
             $freightAttrs['freight_amount'] = $freight['amount'];
@@ -674,9 +713,10 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $blAttrs = [
             'shipment_id'       => $shipment->id,
             'bill_number'       => $blNumber,
-            // No fabricar fechas que K-Line no informa de forma inequívoca.
-            'bill_date'         => $dates['bl_date'] ?? null,
-            'loading_date'      => $dates['etd'] ?? null,
+            // Regla operativa: si K-Line no informa la fecha,
+            // usar la fecha del día de la importación.
+            'bill_date'         => $dates['bl_date'] ?? $importDate,
+            'loading_date'      => $dates['etd'] ?? $importDate,
             // FIX bug #5: usar descripción real extraída de DESCREC en lugar de leyenda fija
             'cargo_description' => $this->resolveCargoDescription(
                 $data,
@@ -715,6 +755,10 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             $blAttrs['consignee_client_id'] = $consignee->id;
         }
 
+        if (\Schema::hasColumn('bills_of_lading', 'notify_party_id')) {
+            $blAttrs['notify_party_id'] = $notify?->id;
+        }
+
         if (\Schema::hasColumn('bills_of_lading', 'loading_port_id')) {
             $blAttrs['loading_port_id'] = $originPort->id;
         } elseif (\Schema::hasColumn('bills_of_lading', 'origin_port_id')) {
@@ -735,6 +779,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         //    crea notify en el BL (en archivos vistos NP = consignee siempre).
         $shipperAddr   = $this->buildAddressFromPartyLines($shipperLines);
         $consigneeAddr = $this->buildAddressFromPartyLines($consigneeLines);
+        $notifyAddr = $notify
+            ? $this->buildAddressFromPartyLines($notifyLines)
+            : null;
 
         $this->persistClientAddress($shipper, $shipperAddr);
         if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper')) {
@@ -744,6 +791,18 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $this->persistClientAddress($consignee, $consigneeAddr);
         if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee')) {
             $bill->specificContacts()->create($c);
+        }
+
+        if ($notify) {
+            $this->persistClientAddress($notify, $notifyAddr);
+
+            if ($c = $this->resolveSpecificAddress(
+                $notify,
+                $notifyAddr,
+                'notify_party'
+            )) {
+                $bill->specificContacts()->create($c);
+            }
         }
 
         return $bill;
@@ -824,31 +883,95 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
 
 
-    // Detecta país desde las líneas del party (Shipper/Consignee) y/o un puerto "probable"
+    // Detecta país desde evidencia propia del party; puerto sólo como último fallback.
     protected function detectCountryIdFromParty(array $partyLines, ?Port $likelyPort = null): ?int
     {
-        $text = strtoupper(implode(' ', array_map('strval', $partyLines)));
+        $text = Str::upper(
+            Str::ascii(
+                implode(' ', array_map('strval', $partyLines))
+            )
+        );
 
-        // Palabras clave frecuentes
-        $map = [
-            'ARGENTINA' => 'AR', 'PARAGUAY' => 'PY',
-            'BRASIL'    => 'BR', 'URUGUAY'  => 'UY',
-            'ARG.'      => 'AR', 'PAR.'     => 'PY',
-            'BRA.'      => 'BR', 'URU.'     => 'UY',
-        ];
-        foreach ($map as $needle => $alpha2) {
-            if (str_contains($text, $needle)) {
-                return \App\Models\Country::whereRaw('UPPER(alpha2_code)=?', [$alpha2])->value('id');
+        /*
+         * K-Line puede codificar ISO2 inmediatamente después del rol:
+         * PTYIREC0001SHMX...
+         * PTYIREC0001SHUS...
+         *
+         * Esta evidencia tiene prioridad sobre cualquier inferencia por puerto.
+         */
+        foreach ($partyLines as $partyLine) {
+            $partyLine = Str::upper(
+                Str::ascii(trim((string) $partyLine))
+            );
+
+            if (
+                preg_match(
+                    '/^PTYIREC\d{4}(?:SH|CN|NP)([A-Z]{2})\d/',
+                    $partyLine,
+                    $matches
+                )
+            ) {
+                $countryId = \App\Models\Country::query()
+                    ->whereRaw(
+                        'UPPER(alpha2_code) = ?',
+                        [$matches[1]]
+                    )
+                    ->value('id');
+
+                if ($countryId) {
+                    return (int) $countryId;
+                }
             }
         }
 
-        // CUIT (AR) como pista
-        if (preg_match('/\b\d{2}-?\d{8}-?\d\b/', $text)) {
-            return \App\Models\Country::whereRaw('UPPER(alpha2_code)=?', ['AR'])->value('id');
+        // País declarado textualmente por la propia parte.
+        $map = [
+            'ARGENTINA'         => 'AR',
+            'PARAGUAY'          => 'PY',
+            'BRASIL'            => 'BR',
+            'BRAZIL'            => 'BR',
+            'URUGUAY'           => 'UY',
+            'MEXICO'            => 'MX',
+            'UNITED STATES'     => 'US',
+            'CANADA'            => 'CA',
+            'REPUBLIC OF KOREA' => 'KR',
+
+            'ARG.' => 'AR',
+            'PAR.' => 'PY',
+            'BRA.' => 'BR',
+            'URU.' => 'UY',
+        ];
+
+        foreach ($map as $needle => $alpha2) {
+            if (str_contains($text, $needle)) {
+                return \App\Models\Country::query()
+                    ->whereRaw(
+                        'UPPER(alpha2_code) = ?',
+                        [$alpha2]
+                    )
+                    ->value('id');
+            }
         }
 
-        // Heurística suave: país del puerto más probable (si existe)
-        if ($likelyPort && \Schema::hasColumn('ports','country_id')) {
+        // "USA" sólo como palabra completa.
+        if (preg_match('/\bUSA\b/', $text)) {
+            return \App\Models\Country::query()
+                ->whereRaw('UPPER(alpha2_code) = ?', ['US'])
+                ->value('id');
+        }
+
+        // CUIT argentino como evidencia fiscal.
+        if (preg_match('/\b\d{2}-?\d{8}-?\d\b/', $text)) {
+            return \App\Models\Country::query()
+                ->whereRaw('UPPER(alpha2_code) = ?', ['AR'])
+                ->value('id');
+        }
+
+        // Último recurso: país del puerto probable.
+        if (
+            $likelyPort
+            && \Schema::hasColumn('ports', 'country_id')
+        ) {
             return $likelyPort->country_id ?: null;
         }
 
@@ -1213,13 +1336,17 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
             $digits = preg_replace('/\D+/', '', $raw);
 
-            // Contrato histórico de la app:
-            // HS de 6 dígitos se normaliza a 8 agregando 00.
+            /*
+             * La aplicación conserva NCM base de 8 dígitos:
+             * - HS 6 dígitos -> completar 00;
+             * - códigos extendidos -> conservar primeros 8;
+             * - NCM 8 -> conservar tal cual.
+             */
             if (strlen($digits) === 6) {
                 $digits .= '00';
-            }
-
-            if (strlen($digits) !== 8) {
+            } elseif (strlen($digits) >= 8) {
+                $digits = substr($digits, 0, 8);
+            } else {
                 return;
             }
 
@@ -1228,43 +1355,37 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             }
         };
 
-        // 1. Campo estructurado K-Line: prioridad máxima.
+        // Fuente estructurada: máxima prioridad.
         foreach ($data['CMMDREC0'] ?? [] as $line) {
-            $line = trim((string) $line);
-
             if (preg_match(
                 '/M3\s+([0-9]{8})(?:\s|$)/i',
-                $line,
+                trim((string) $line),
                 $matches
             )) {
                 $append($matches[1]);
             }
         }
 
-        // 2. Únicamente campos explícitamente rotulados NCM / HS CODE.
+        /*
+         * Variantes reales K-Line:
+         * HS CODE 842482
+         * HS CODE: 870195 / 843149
+         * NCM: 8705.20
+         * NCM 8426.41.90
+         * NCM 8479.82.10.900C
+         */
         foreach (['DESCREC0', 'MARKREC0'] as $recordType) {
             foreach ($data[$recordType] ?? [] as $line) {
-                $line = preg_replace(
-                    '/^\d{6}/',
-                    '',
-                    trim((string) $line)
+                $line = trim(
+                    preg_replace(
+                        '/^\d{6}/',
+                        '',
+                        trim((string) $line)
+                    )
                 );
 
-                // K-Line puede agregar un sufijo propio después del NCM base.
-                // Ejemplo real: NCM: 8429.52.19.000B.
-                // La aplicación conserva únicamente los 8 dígitos NCM.
-                if (
-                    preg_match(
-                        '/\\bNCM\\s*:\\s*([0-9]{2}\\.?[0-9]{2}\\.?[0-9]{2}\\.?[0-9]{2})/i',
-                        $line,
-                        $ncmMatch
-                    )
-                ) {
-                    $append($ncmMatch[1]);
-                }
-
                 if (!preg_match(
-                    '/\b(?:NCM|HS\s*CODE)\s*:\s*(.+)$/i',
+                    '/\b(?:NCM|HS\s*CODE)\s*:?\s*(.+)$/i',
                     $line,
                     $matches
                 )) {
@@ -1278,7 +1399,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 )[0];
 
                 if (!preg_match_all(
-                    '/(?<!\d)\d[\d.]{4,14}\d(?!\d)/',
+                    '/(?<!\d)[0-9][0-9.,]*(?:[A-Z])?(?!\d)/i',
                     $payload,
                     $codeMatches
                 )) {
@@ -1294,75 +1415,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         return $codes;
     }
 
-    /**
-     * Extraer código NCM principal.
-     */
     protected function extractNCMCode(array $data): ?string
     {
-        // 1) CMMDREC: fuente estructurada prioritaria.
-        // Ej: ...006743880M3                           87032100
-        if (!empty($data['CMMDREC0'])) {
-            foreach ($data['CMMDREC0'] as $line) {
-                if (preg_match('/M3\s+([0-9]{8})(?:\s|$)/i', trim($line), $matches)) {
-                    return $matches[1];
-                }
-            }
-        }
-
-        // 2) NCM explícitamente identificado en DESCREC.
-        if (!empty($data['DESCREC0'])) {
-            foreach ($data['DESCREC0'] as $line) {
-                // DESCREC conserva los 6 dígitos técnicos de
-                // secuencia/subsecuencia: 021001HS CODE... -> HS CODE...
-                $line = trim(preg_replace('/^\d{6}/', '', trim($line)));
-
-                if (
-                    preg_match(
-                        '/\bNCM\s*:\s*([0-9]{2}\.?[0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/i',
-                        $line,
-                        $matches
-                    )
-                ) {
-                    $code = str_replace('.', '', $matches[1]);
-
-                    if (preg_match('/^[0-9]{8}$/', $code)) {
-                        return $code;
-                    }
-                }
-            }
-        }
-
-        // 3) HS CODE explícito.
-        // K-Line Colombia informa 6 dígitos:
-        // 87.03.22 -> contrato actual del sistema: 87032200.
-        foreach (['DESCREC0', 'MARKREC0'] as $recordType) {
-            if (empty($data[$recordType])) {
-                continue;
-            }
-
-            foreach ($data[$recordType] as $line) {
-                // DESCREC/MARKREC conservan los 6 dígitos técnicos
-                // de secuencia/subsecuencia.
-                $line = trim(preg_replace('/^\d{6}/', '', trim($line)));
-
-                if (
-                    preg_match(
-                        '/\bHS\s+CODE\s*:\s*([0-9]{2}\.?[0-9]{2}\.?[0-9]{2})/i',
-                        $line,
-                        $matches
-                    )
-                ) {
-                    $code = str_replace('.', '', $matches[1]);
-
-                    if (preg_match('/^[0-9]{6}$/', $code)) {
-                        return $code . '00';
-                    }
-                }
-            }
-        }
-
-        return null;
+        return $this->extractNCMCodes($data)[0] ?? null;
     }
+
     /**
      * Extraer Master Bill of Lading - NUEVO método para identificar MBL
      */
@@ -1420,19 +1477,31 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         if (!empty($data['CMMDREC0'])) {
             foreach ($data['CMMDREC0'] as $line) {
                 if (preg_match('/NAUT(\d+)/i', $line, $matches)) {
-                    $measurements['package_quantity'] = (int) $matches[1];
+                    $quantity = (int) $matches[1];
+
+                    if ($quantity > 0) {
+                        $measurements['package_quantity'] = $quantity;
+                    }
                 }
 
                 if (preg_match('/(\d+)KGS/i', $line, $matches)) {
                     // K-Line: 4 decimales implícitos.
-                    $measurements['gross_weight_kg'] =
+                    $grossWeight =
                         ((float) $matches[1]) / 10000;
+
+                    if ($grossWeight > 0) {
+                        $measurements['gross_weight_kg'] = $grossWeight;
+                    }
                 }
 
                 if (preg_match('/(\d+)M3/i', $line, $matches)) {
                     // K-Line: 3 decimales implícitos.
-                    $measurements['volume_m3'] =
+                    $volume =
                         ((float) $matches[1]) / 1000;
+
+                    if ($volume > 0) {
+                        $measurements['volume_m3'] = $volume;
+                    }
                 }
             }
         }
@@ -1445,7 +1514,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             foreach ($data['DESCREC0'] as $line) {
                 if (
                     preg_match(
-                        '/NET WEIGHT[:\s]+([0-9\.,]+)\s*KGS/i',
+                        '/(?:NET\s*WEIGHT|N\.?\s*W\.?)\s*[:.]?\s*([0-9\.,]+)\s*KGS/i',
                         $line,
                         $matches
                     )
@@ -1474,6 +1543,84 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             }
         }
 
+        /*
+         * Si CMMDREC trae cero, K-Line puede informar los pesos
+         * de los componentes en DESCREC.
+         *
+         * Sólo usar expresiones inequívocas. No interpretar números
+         * aislados ni tonelajes descriptivos.
+         */
+        if (
+            $measurements['gross_weight_kg'] === null
+            && !empty($data['DESCREC0'])
+        ) {
+            // Primero: total bruto explícito.
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace('/^\d{6}/', '', trim((string) $line))
+                );
+
+                if (
+                    preg_match(
+                        '/^(?:GROSS\s+WEIGHT|G\.?\s*W\.?)\s*[:.]?\s*([0-9.,]+)\s*(KGS?|LBS)\b/i',
+                        $cleanLine,
+                        $matches
+                    )
+                ) {
+                    $value = $this->normalizeNumber($matches[1]);
+
+                    if ($value !== null && $value > 0) {
+                        $measurements['gross_weight_kg'] =
+                            strtoupper($matches[2]) === 'LBS'
+                                ? $value * 0.45359237
+                                : $value;
+
+                        break;
+                    }
+                }
+            }
+
+            // Segundo: pesos explícitos de componentes; se suman.
+            if ($measurements['gross_weight_kg'] === null) {
+                $componentWeightKg = 0.0;
+                $componentCount = 0;
+
+                foreach ($data['DESCREC0'] as $line) {
+                    $cleanLine = trim(
+                        preg_replace('/^\d{6}/', '', trim((string) $line))
+                    );
+
+                    if (
+                        !preg_match(
+                            '/^WEIGHT\s+([0-9.,]+)\s*(KGS?|LBS)\b/i',
+                            $cleanLine,
+                            $matches
+                        )
+                    ) {
+                        continue;
+                    }
+
+                    $value = $this->normalizeNumber($matches[1]);
+
+                    if ($value === null || $value <= 0) {
+                        continue;
+                    }
+
+                    $componentWeightKg +=
+                        strtoupper($matches[2]) === 'LBS'
+                            ? $value * 0.45359237
+                            : $value;
+
+                    $componentCount++;
+                }
+
+                if ($componentCount > 0 && $componentWeightKg > 0) {
+                    $measurements['gross_weight_kg'] =
+                        $componentWeightKg;
+                }
+            }
+        }
+
         return $measurements;
     }
 
@@ -1485,15 +1632,26 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         array $measurements,
         string $blNumber
     ): void {
-        if ($measurements['package_quantity'] === null) {
-            throw new \DomainException(
-                "K-Line BL {$blNumber}: no informa cantidad de bultos."
-            );
+        $missing = [];
+
+        if (
+            ($measurements['package_quantity'] ?? null) === null
+            || (int) $measurements['package_quantity'] < 1
+        ) {
+            $missing[] = 'cantidad total de bultos';
         }
 
-        if ($measurements['gross_weight_kg'] === null) {
+        if (
+            ($measurements['gross_weight_kg'] ?? null) === null
+            || (float) $measurements['gross_weight_kg'] <= 0
+        ) {
+            $missing[] = 'peso bruto';
+        }
+
+        if ($missing !== []) {
             throw new \DomainException(
-                "K-Line BL {$blNumber}: no informa peso bruto."
+                "K-Line BL {$blNumber}: no se pudo determinar de forma "
+                . "inequívoca " . implode(' ni ', $missing) . "."
             );
         }
     }
@@ -1558,7 +1716,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     ): string {
         $lines = [];
 
-        foreach (['DESCREC0', 'CMMDREC0'] as $recordType) {
+        foreach (['MARKREC0', 'DESCREC0', 'CMMDREC0'] as $recordType) {
             foreach (($data[$recordType] ?? []) as $line) {
                 $lines[] = (string) $line;
             }
@@ -1567,6 +1725,20 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $sourceText = Str::upper(
             Str::ascii(implode("\n", $lines))
         );
+
+        /*
+         * Modalidad explícita declarada por K-Line.
+         * Tiene prioridad sobre palabras como VEHICLE/TRACTOR/COMBINE
+         * que puedan aparecer en la descripción de la mercadería.
+         */
+        if (
+            preg_match(
+                '/(?<![A-Z])RO[ -]?RO(?![A-Z])/',
+                $sourceText
+            )
+        ) {
+            return 'RORO001';
+        }
 
         // Clasificación explícita histórica de K-Line.
         if (
@@ -1702,7 +1874,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         );
 
         return match ($cargoTypeCode) {
-            'VEH001' => 'PCS',
+            'VEH001', 'RORO001' => 'PCS',
             default => throw new \DomainException(
                 "K-Line no tiene una unidad de medida definida "
                 . "para el tipo de carga {$cargoTypeCode} "
@@ -1713,10 +1885,19 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
     protected function resolvePackagingTypeId(
         array $data
-    ): ?int {
-        // El DAT K-Line identifica la carga, pero no informa
-        // un embalaje equivalente al catálogo interno.
-        return null;
+    ): int {
+        $id = \App\Models\PackagingType::query()
+            ->where('code', 'N')
+            ->where('active', true)
+            ->value('id');
+
+        if (!$id) {
+            throw new \DomainException(
+                'No existe el tipo de embalaje activo NO RETORNABLE (N).'
+            );
+        }
+
+        return (int) $id;
     }
 
     protected function resolveCargoDescription(
@@ -1732,6 +1913,184 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
         return implode(' / ', $descriptions);
     }
+
+    /**
+     * Recupera descripción útil directamente de DESCREC cuando ninguna
+     * de las variantes especializadas reconoció la mercadería.
+     *
+     * Se elimina únicamente texto operativo/legal/documental conocido.
+     * No se reinterpretan los datos de la carga.
+     */
+    protected function extractSemanticDescriptionLines(array $data): array
+    {
+        $result = [];
+        $insideCarrierBoilerplate = false;
+        $skipOnBoardContinuation = false;
+
+        foreach ($data['DESCREC0'] ?? [] as $rawLine) {
+            $line = trim(
+                preg_replace(
+                    '/^\d{6}/',
+                    '',
+                    trim((string) $rawLine)
+                )
+            );
+
+            if ($line === '') {
+                continue;
+            }
+
+            $upper = Str::upper(Str::ascii($line));
+
+            /*
+             * Bloque legal estándar K-Line.
+             */
+            if (
+                str_contains(
+                    $upper,
+                    'UNPACKED AND UNPROTECTED VEHICLES'
+                )
+            ) {
+                $insideCarrierBoilerplate = true;
+                continue;
+            }
+
+            if ($insideCarrierBoilerplate) {
+                if (
+                    str_contains(
+                        $upper,
+                        'EXPRESSLY RESERVED'
+                    )
+                ) {
+                    $insideCarrierBoilerplate = false;
+                }
+
+                continue;
+            }
+
+            /*
+             * "LADEN ON BOARD..." puede continuar en 1 o 2 DESCREC:
+             *
+             * LADEN ON BOARD GOODWOOD 48 AT
+             * FREEPORT, TX (UNITED STATES) ON 7
+             * -17-26
+             *
+             * Es dato operativo, no descripción de mercadería.
+             */
+            if (
+                preg_match(
+                    '/^(?:LADEN|LOADED|SHIPPED)\s+ON\s+BOARD\b/i',
+                    $line
+                )
+            ) {
+                $skipOnBoardContinuation =
+                    !preg_match(
+                        '/\d{1,2}-\d{1,2}-\d{2,4}\b/',
+                        $line
+                    );
+
+                continue;
+            }
+
+            if ($skipOnBoardContinuation) {
+                if (
+                    preg_match(
+                        '/\d{1,2}-\d{1,2}-\d{2,4}\b/',
+                        $line
+                    )
+                    || preg_match(
+                        '/^-\d{1,2}-\d{2,4}$/',
+                        $line
+                    )
+                ) {
+                    $skipOnBoardContinuation = false;
+                }
+
+                continue;
+            }
+
+            /*
+             * Contacto / datos fiscales / documentación operativa.
+             */
+            if (
+                str_contains($line, '@')
+                || preg_match(
+                    '/^\*{0,3}(?:'
+                    . 'E-?MAIL'
+                    . '|PH(?:O(?:NE)?)?'
+                    . '|FAX'
+                    . '|TEL(?:EPHONE|EFONO|EFONE)?'
+                    . '|TAX\s+(?:NO|ID)'
+                    . '|RFC'
+                    . '|CUIT'
+                    . '|CNPJ'
+                    . '|RUC'
+                    . ')\b/i',
+                    $line
+                )
+                || preg_match(
+                    '/^\+?\d[\d\s().-]{5,}$/',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            /*
+             * Campos que ya tienen destino propio o documentación
+             * aduanera/comercial, no descripción física.
+             */
+            if (
+                preg_match(
+                    '/^(?:'
+                    . 'FREIGHT\s+PREPAID'
+                    . '|FLETE\s+PAGADO'
+                    . '|SHIPPED\s+UNDER'
+                    . '|INVOICE\s+NO\.?:'
+                    . '|FATURAS?:'
+                    . '|PROFORMA:'
+                    . '|NCM\b'
+                    . '|H\/S\s+CODE\b'
+                    . '|HS\s+CODE\b'
+                    . '|AES(?:\s+ITN)?\b'
+                    . '|ITN:'
+                    . '|NOEEI\b'
+                    . '|NO\s+AES\s+REQUIRED'
+                    . '|T&E\s+ENTRY'
+                    . '|DU-?E:'
+                    . '|DUE:'
+                    . '|\*\*FMC:'
+                    . '|PREPARED\s+BY'
+                    . '|\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}'
+                    . '|CONSOLIDATED\s+(?:CARGO|SHIPMENT)'
+                    . '|MERCHANDISE\s+IN\s+MONITORED\s+TRANSIT'
+                    . '|C-\d+$'
+                    . ')/i',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            if (
+                preg_match(
+                    '/^(?:'
+                    . 'MONTEVIDEO,\s*URUGUAY'
+                    . '|\*BUENOS\s+AIRES\.?\s+ARGENTINA'
+                    . '|TO'
+                    . ')$/i',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            $result[] = $line;
+        }
+
+        return array_values(array_unique($result));
+    }
+
 
     protected function extractCargoDescriptions(array $data): array
     {
@@ -2189,6 +2548,65 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             }
         }
 
+        /*
+         * SKID STEER LOADER: preservar identidad real informada
+         * por DESCREC en lugar de reducirla a "1 vehicles".
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $parts = [];
+            $hasSkidSteer = false;
+
+            foreach ($data['DESCREC0'] as $line) {
+                $cleanLine = trim(
+                    preg_replace('/^\\d{6}/', '', trim((string) $line))
+                );
+
+                if ($cleanLine === '') {
+                    continue;
+                }
+
+                $upper = Str::upper(Str::ascii($cleanLine));
+
+                if (str_contains($upper, 'SKID STEER LOADER')) {
+                    $hasSkidSteer = true;
+                    $parts[] = $cleanLine;
+                    continue;
+                }
+
+                if (
+                    preg_match(
+                        '/^(?:S\\/N|PIN|ENG S\\/N)\\s*:/i',
+                        $cleanLine
+                    )
+                ) {
+                    $parts[] = $cleanLine;
+                }
+            }
+
+            if ($hasSkidSteer) {
+                $descriptions[] = implode(
+                    ' / ',
+                    array_values(array_unique($parts))
+                );
+            }
+        }
+
+        /*
+         * Fallback general: si DESCREC sí describe la mercadería,
+         * nunca reducirla a "1 unit", "3 vehicles", etc.
+         */
+        if (empty($descriptions) && !empty($data['DESCREC0'])) {
+            $semanticLines =
+                $this->extractSemanticDescriptionLines($data);
+
+            if ($semanticLines !== []) {
+                $descriptions[] = implode(
+                    ' / ',
+                    $semanticLines
+                );
+            }
+        }
+
         // Fallback histórico: sólo cuando no existe descripción semántica.
         if (empty($descriptions) && !empty($data['CMMDREC0'])) {
             foreach ($data['CMMDREC0'] as $line) {
@@ -2366,35 +2784,199 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
     // Busca ETD / ETA / BL DATE en el contenido del .DAT
     protected function extractDates(array $data): array
     {
-        $res = ['etd' => null, 'eta' => null, 'bl_date' => null];
+        $res = [
+            'etd' => null,
+            'eta' => null,
+            'bl_date' => null,
+        ];
+
+        /*
+         * GNRLREC informa OPYYYYMMDD.
+         *
+         * Validado contra el archivo real K-Line 18/08:
+         * en los 9 BL que además declaran "LADEN ON BOARD ... M-D-YY",
+         * ambas fechas coinciden exactamente.
+         *
+         * Por lo tanto OP = fecha de carga/embarque del BL.
+         */
+        $operationDate = null;
 
         foreach ($data as $recordType => $lines) {
-            if (!is_array($lines)) continue;
+            if (
+                !str_starts_with((string) $recordType, 'GNRLREC')
+                || !is_array($lines)
+            ) {
+                continue;
+            }
 
             foreach ($lines as $line) {
-                $u = strtoupper((string)$line);
-
-                // Captura cualquier fecha común: YYYY-MM-DD | DD/MM/YYYY | DD-MM-YYYY
-                if (!preg_match_all('/\b(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}|\d{2}-\d{2}-\d{4})\b/', $u, $m)) {
+                if (
+                    !preg_match(
+                        '/\bOP(20\d{6})/',
+                        strtoupper((string) $line),
+                        $matches
+                    )
+                ) {
                     continue;
                 }
 
-                foreach ($m[1] as $raw) {
-                    $yyyy_mm_dd = $this->normalizeDate($raw);
-                    if (!$yyyy_mm_dd) continue;
+                $raw = $matches[1];
 
-                    // Heurísticas simples por palabra clave
-                    if (!$res['etd'] && (str_contains($u, ' ETD') || str_contains($u, 'DEPART') || str_contains($u, ' LOAD'))) {
-                        $res['etd'] = $yyyy_mm_dd;
+                $date = \DateTimeImmutable::createFromFormat(
+                    '!Ymd',
+                    $raw
+                );
+
+                $errors = \DateTimeImmutable::getLastErrors();
+
+                if (
+                    $date !== false
+                    && (
+                        $errors === false
+                        || (
+                            $errors['warning_count'] === 0
+                            && $errors['error_count'] === 0
+                        )
+                    )
+                    && $date->format('Ymd') === $raw
+                ) {
+                    $operationDate = $date->format('Y-m-d');
+                    break 2;
+                }
+            }
+        }
+
+        /*
+         * Buscar además fecha explícita de embarque en DESCREC.
+         * K-Line puede partirla entre registros:
+         *
+         * LADEN ON BOARD GOODWOOD 48 AT
+         * FREEPORT, TX ON 7
+         * -17-26
+         */
+        $descriptionText = '';
+
+        foreach ($data['DESCREC0'] ?? [] as $line) {
+            $clean = trim(
+                preg_replace(
+                    '/^\d{6}/',
+                    '',
+                    trim((string) $line)
+                )
+            );
+
+            if ($clean !== '') {
+                $descriptionText .= ' ' . $clean;
+            }
+        }
+
+        $descriptionText = preg_replace(
+            '/\s+/',
+            ' ',
+            trim($descriptionText)
+        );
+
+        // Reconstruir fechas partidas: "7 -17-26" -> "7-17-26".
+        $descriptionText = preg_replace(
+            '/(\d)\s*-\s*(\d)/',
+            '$1-$2',
+            $descriptionText
+        );
+
+        $onBoardDate = null;
+
+        if (
+            preg_match(
+                '/(?:LADEN|LOADED|SHIPPED)\s+ON\s+BOARD\b'
+                . '.{0,250}?'
+                . '\b(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})\b/i',
+                $descriptionText,
+                $matches
+            )
+        ) {
+            $month = (int) $matches[1];
+            $day = (int) $matches[2];
+            $year = (int) $matches[3];
+
+            if ($year < 100) {
+                $year += 2000;
+            }
+
+            if (checkdate($month, $day, $year)) {
+                $onBoardDate = sprintf(
+                    '%04d-%02d-%02d',
+                    $year,
+                    $month,
+                    $day
+                );
+            }
+        }
+
+        if (
+            $operationDate !== null
+            && $onBoardDate !== null
+            && $operationDate !== $onBoardDate
+        ) {
+            throw new \DomainException(
+                "K-Line informa fechas de embarque contradictorias: "
+                . "GNRLREC OP={$operationDate}, "
+                . "DESCREC ON BOARD={$onBoardDate}."
+            );
+        }
+
+        $res['etd'] = $onBoardDate ?? $operationDate;
+
+        /*
+         * Mantener búsqueda contextual para ETA y fecha de emisión del BL.
+         * No interpretar cualquier YYYYMMDD de GNRLREC como bill_date.
+         */
+        foreach ($data as $recordType => $lines) {
+            if (!is_array($lines)) {
+                continue;
+            }
+
+            foreach ($lines as $line) {
+                $u = strtoupper((string) $line);
+
+                if (
+                    !preg_match_all(
+                        '/\b(\d{4}-\d{2}-\d{2}'
+                        . '|\d{2}\/\d{2}\/\d{4}'
+                        . '|\d{2}-\d{2}-\d{4})\b/',
+                        $u,
+                        $matches
+                    )
+                ) {
+                    continue;
+                }
+
+                foreach ($matches[1] as $raw) {
+                    $date = $this->normalizeDate($raw);
+
+                    if (!$date) {
+                        continue;
                     }
-                    if (!$res['eta'] && (str_contains($u, ' ETA') || str_contains($u, 'ARRIV') || str_contains($u, ' DISCH'))) {
-                        $res['eta'] = $yyyy_mm_dd;
-                    }
+
                     if (
-                        !$res['bl_date'] &&
-                        (str_contains($u, 'B/L') || str_contains($u, 'BL DATE') || str_contains($u, 'ISSUE'))
+                        !$res['eta']
+                        && (
+                            str_contains($u, ' ETA')
+                            || str_contains($u, 'ARRIV')
+                            || str_contains($u, ' DISCH')
+                        )
                     ) {
-                        $res['bl_date'] = $yyyy_mm_dd;
+                        $res['eta'] = $date;
+                    }
+
+                    if (
+                        !$res['bl_date']
+                        && (
+                            str_contains($u, 'B/L')
+                            || str_contains($u, 'BL DATE')
+                            || str_contains($u, 'ISSUE')
+                        )
+                    ) {
+                        $res['bl_date'] = $date;
                     }
                 }
             }
@@ -2636,7 +3218,13 @@ protected function extractPortInfo(array $data): array
         return $name;
     }
 
-    protected function findOrCreateClient(array $clientData, int $companyId, array $partyLines = [], ?Port $originPort = null): Client
+    protected function findOrCreateClient(
+        array $clientData,
+        int $companyId,
+        array $partyLines = [],
+        ?Port $originPort = null,
+        ?string $structuredCountryAlpha2 = null
+    ): Client
     {
         $name = $this->resolveRequiredClientName(
             $clientData['name'] ?? null
@@ -2653,22 +3241,110 @@ protected function extractPortInfo(array $data): array
             $normTaxId = null;
         }
 
-        // Resolver primero el país. La identidad fiscal de clients es
-        // tax_id + country_id; nunca debe buscarse el tax_id globalmente.
+        /*
+         * Resolver país respetando la evidencia más fuerte:
+         *
+         * 1) tipo fiscal explícito (CUIT/CNPJ/RUC/NIT);
+         * 2) país explícito en las líneas de la parte;
+         * 3) puerto probable como último fallback.
+         *
+         * Ejemplo real K-Line:
+         * notify en Foz do Iguacu con CNPJ brasileño. No puede tomar
+         * Argentina simplemente porque el BL descarga en Argentina.
+         */
         $countryId = null;
+        $structuredCountryId = null;
 
-        if (!empty($partyLines) && $originPort) {
-            $countryId =
-                $this->detectCountryIdFromParty($partyLines, $originPort)
-                ?? $originPort->country_id;
-        } elseif ($originPort) {
-            $countryId = $originPort->country_id;
+        if ($structuredCountryAlpha2 !== null) {
+            $structuredCountryId = \App\Models\Country::query()
+                ->whereRaw(
+                    'UPPER(alpha2_code) = ?',
+                    [strtoupper($structuredCountryAlpha2)]
+                )
+                ->value('id');
+
+            if (!$structuredCountryId) {
+                throw new \DomainException(
+                    "K-Line informa país {$structuredCountryAlpha2} "
+                    . "para '{$name}', pero no existe en catálogo."
+                );
+            }
+
+            $structuredCountryId = (int) $structuredCountryId;
+        }
+
+        if ($taxType !== null) {
+            $taxDocumentCountries = DocumentType::query()
+                ->whereRaw('UPPER(code) = ?', [strtoupper($taxType)])
+                ->where('active', true)
+                ->pluck('country_id')
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($taxDocumentCountries->count() === 1) {
+                $countryId = (int) $taxDocumentCountries->first();
+            }
+        }
+
+        if (
+            $countryId !== null
+            && $structuredCountryId !== null
+            && $countryId !== $structuredCountryId
+        ) {
+            throw new \DomainException(
+                "La parte '{$name}' declara {$taxType}, pero el país "
+                . "{$structuredCountryAlpha2} informado por PTYIREC "
+                . "no coincide con el catálogo fiscal."
+            );
+        }
+
+        // Buscar únicamente evidencia explícita de país en la parte.
+        $partyCountryId = !empty($partyLines)
+            ? $this->detectCountryIdFromParty($partyLines, null)
+            : null;
+
+        if (
+            $structuredCountryId !== null
+            && $partyCountryId !== null
+            && $structuredCountryId !== (int) $partyCountryId
+        ) {
+            throw new \DomainException(
+                "La parte '{$name}' informa país "
+                . "{$structuredCountryAlpha2} en PTYIREC, "
+                . "pero sus datos textuales indican otro país."
+            );
+        }
+
+        if (
+            $countryId !== null
+            && $partyCountryId !== null
+            && $countryId !== (int) $partyCountryId
+        ) {
+            throw new \DomainException(
+                "La parte '{$name}' declara {$taxType}, pero el país informado "
+                . "en sus datos no coincide con el catálogo fiscal."
+            );
+        }
+
+        if (
+            $countryId === null
+            && $structuredCountryId !== null
+        ) {
+            $countryId = $structuredCountryId;
+        }
+
+        if ($countryId === null && $partyCountryId !== null) {
+            $countryId = (int) $partyCountryId;
+        }
+
+        if ($countryId === null && $originPort) {
+            $countryId = $originPort->country_id ?: null;
         }
 
         if (\Schema::hasColumn('clients', 'country_id') && is_null($countryId)) {
             throw new \DomainException(
-                "No se pudo inferir el país para el cliente '{$name}'. " .
-                "Revise líneas del party o puertos del BL."
+                "No se pudo determinar el país para el cliente '{$name}'."
             );
         }
 
@@ -2920,11 +3596,60 @@ protected function extractPortInfo(array $data): array
         ];
     }
 
+    /**
+     * País ISO2 estructurado informado por K-Line junto al rol:
+     * 0001SHMX2554480...
+     * 0001SHUS2545869...
+     */
+    protected function extractStructuredPartyCountry(
+        array $data,
+        string $role
+    ): ?string {
+        $role = strtoupper($role);
+
+        if (!in_array($role, ['SH', 'CN', 'NP'], true)) {
+            throw new \InvalidArgumentException(
+                "Rol PTYIREC K-Line inválido: {$role}"
+            );
+        }
+
+        foreach ($data['PTYIREC0'] ?? [] as $raw) {
+            $line = Str::upper(
+                Str::ascii(trim((string) $raw))
+            );
+
+            if (
+                preg_match(
+                    '/^\d+' . preg_quote($role, '/') . '([A-Z]{2})(?=\d)/',
+                    $line,
+                    $matches
+                )
+            ) {
+                $alpha2 = $matches[1];
+
+                $exists = \App\Models\Country::query()
+                    ->whereRaw(
+                        'UPPER(alpha2_code) = ?',
+                        [$alpha2]
+                    )
+                    ->exists();
+
+                if ($exists) {
+                    return $alpha2;
+                }
+            }
+        }
+
+        return null;
+    }
+
+
     // Extrae bloques de líneas de PTYIREC0 para SHIPPER / CONSIGNEE (heurística simple)
     protected function extractPartyLinesFromPTYI(array $data): array
     {
         $shipper = [];
         $consignee = [];
+        $notify = [];
 
         $lines = $data['PTYIREC0'] ?? [];
         if (!is_array($lines)) $lines = [];
@@ -2940,11 +3665,12 @@ protected function extractPortInfo(array $data): array
                 $shipper[] = $m[2];
             } elseif (preg_match('/^(\d+)CN\S*\s+(.+)$/', $trim, $m)) {
                 $consignee[] = $m[2];
+            } elseif (preg_match('/^(\d+)NP\S*\s+(.+)$/', $trim, $m)) {
+                $notify[] = $m[2];
             }
-            // NP (notify party) no se usa en createBillOfLading actualmente
         }
 
-        return [$shipper, $consignee];
+        return [$shipper, $consignee, $notify];
     }
 
     // Construye clientData (name/tax/email/address) a partir de líneas
