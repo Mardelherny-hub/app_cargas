@@ -53,6 +53,7 @@ class BillOfLadingEditForm extends Component
     public $freight_terms = 'prepaid';
     public $payment_terms = 'cash';
     public $currency_code = 'USD';
+    public $freight_amount = null;
     public $incoterms = '';
     // === CAMPOS WEBSERVICES ===
     public $permiso_embarque = ''; // TRP - Permiso de embarque (obligatorio AFIP)
@@ -189,6 +190,7 @@ class BillOfLadingEditForm extends Component
         'freight_terms' => 'required|in:prepaid,collect,third_party',
         'payment_terms' => 'required|in:cash,credit,letter_of_credit,other',
         'currency_code' => 'required|in:USD,ARS,EUR,BRL',
+        'freight_amount' => 'nullable|numeric|min:0',
         'incoterms' => 'nullable|string|max:10',
         'shipper_id' => 'required|exists:clients,id,status,active',
         'consignee_id' => 'required|exists:clients,id,status,active',
@@ -251,6 +253,7 @@ class BillOfLadingEditForm extends Component
         'freight_terms' => ['required','in:prepaid,collect,third_party'],
         'payment_terms' => ['required','in:cash,credit,letter_of_credit,other'],
         'currency_code' => ['required','in:USD,ARS,EUR,BRL'],
+        'freight_amount' => ['nullable','numeric','min:0'],
         'incoterms' => ['nullable','string','max:10'],
 
         // clients activos
@@ -437,6 +440,7 @@ class BillOfLadingEditForm extends Component
         $this->freight_terms = $bl->freight_terms ?? 'prepaid';
         $this->payment_terms = $bl->payment_terms ?? 'cash';
         $this->currency_code = $bl->currency_code ?? 'USD';
+        $this->freight_amount = $bl->freight_amount;
         $this->incoterms = $bl->incoterms ?? '';
         $this->permiso_embarque = $bl->permiso_embarque ?? '';
         $this->id_decla = $this->billOfLading->id_decla ?? '';
@@ -803,6 +807,10 @@ class BillOfLadingEditForm extends Component
                 'freight_terms' => $this->freight_terms,
                 'payment_terms' => $this->payment_terms,
                 'currency_code' => $this->currency_code,
+                'freight_amount' => (
+                    $this->freight_amount === ''
+                    || $this->freight_amount === null
+                ) ? null : $this->freight_amount,
                 'incoterms' => $this->incoterms ?: null,
                 'permiso_embarque' => $this->permiso_embarque ?: null,
                 'id_decla' => $this->id_decla,

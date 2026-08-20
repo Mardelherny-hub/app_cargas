@@ -914,6 +914,15 @@ if ($user) {
                                 <dd class="text-sm text-gray-900">{{ $billOfLading->currency_code }}</dd>
                             </div>
                             @endif
+                            @if($billOfLading->freight_amount !== null)
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">Importe de Flete</dt>
+                                <dd class="text-sm text-gray-900">
+                                    {{ $billOfLading->currency_code }}
+                                    {{ number_format((float) $billOfLading->freight_amount, 3) }}
+                                </dd>
+                            </div>
+                            @endif
                         </dl>
                     </div>
                 </div>

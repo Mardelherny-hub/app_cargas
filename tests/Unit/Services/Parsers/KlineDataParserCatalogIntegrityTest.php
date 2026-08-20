@@ -39,6 +39,24 @@ class KlineDataParserCatalogIntegrityTest extends TestCase
         $this->assertSame('VEH001', $code);
     }
 
+    public function test_explicit_roro_mark_has_priority_over_vehicle_description(): void
+    {
+        $code = $this->invokeParser(
+            'resolveCargoTypeCode',
+            [[
+                'MARKREC0' => [
+                    '0001001RO-RO',
+                ],
+                'DESCREC0' => [
+                    '0001001ONE USED COMBINE',
+                    '0001002UNPACKED AND UNPROTECTED VEHICLES.',
+                ],
+            ], 'KKLU-RORO']
+        );
+
+        $this->assertSame('RORO001', $code);
+    }
+
     public function test_unknown_cargo_is_not_forced_into_generic_catalog(): void
     {
         $this->expectException(DomainException::class);
@@ -54,9 +72,9 @@ class KlineDataParserCatalogIntegrityTest extends TestCase
         );
     }
 
-    public function test_kline_does_not_invent_packaging_type(): void
+    public function test_kline_uses_no_retornable_as_packaging_fallback(): void
     {
-        $packaging = $this->invokeParser(
+        $packagingId = $this->invokeParser(
             'resolvePackagingTypeId',
             [[
                 'CMMDREC0' => [
@@ -65,7 +83,16 @@ class KlineDataParserCatalogIntegrityTest extends TestCase
             ]]
         );
 
-        $this->assertNull($packaging);
+        $packaging = \App\Models\PackagingType::find(
+            $packagingId
+        );
+
+        $this->assertNotNull($packaging);
+        $this->assertSame('N', $packaging->code);
+        $this->assertSame(
+            'NO RETORNABLE',
+            $packaging->name
+        );
     }
 
     private function invokeParser(
