@@ -37,6 +37,7 @@ class ManifestParserFactory
     protected array $parsers = [
         // Whitelist operativa temporal.
         KlineDataParser::class,
+        NavsurTextParser::class,
         CmspEdiParser::class,
     ];
 
@@ -45,7 +46,7 @@ class ManifestParserFactory
      */
     protected array $extensionMappings = [
         'dat' => [KlineDataParser::class],
-        'txt' => [KlineDataParser::class],
+        'txt' => [KlineDataParser::class, NavsurTextParser::class],
         'edi' => [CmspEdiParser::class],
     ];
 
