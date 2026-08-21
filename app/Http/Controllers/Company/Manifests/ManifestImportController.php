@@ -298,19 +298,7 @@ class ManifestImportController extends Controller
         // Preparar datos para el reporte
         $reportData = $this->prepareReportData($result, $fileName, $stats);
 
-        if ($result->isSuccessful()) {
-            // Importación completamente exitosa
-            Log::info('Manifest import completed successfully', [
-                'file_name' => $fileName,
-                'stats' => $stats
-            ]);
-
-            return redirect()
-                ->route('company.manifests.import.report')
-                ->with('import_report_data', $reportData)
-                ->with('success', $this->buildSuccessMessage($result, $fileName));
-
-        } elseif ($result->success && $result->hasWarnings()) {
+        if ($result->isSuccessful() && $result->hasWarnings()) {
             // Importación exitosa con advertencias
             Log::warning('Manifest import completed with warnings', [
                 'file_name' => $fileName,
@@ -322,6 +310,18 @@ class ManifestImportController extends Controller
                 ->route('company.manifests.import.report')
                 ->with('import_report_data', $reportData)
                 ->with('warning', $this->buildWarningMessage($result, $fileName));
+
+        } elseif ($result->isSuccessful()) {
+            // Importación completamente exitosa
+            Log::info('Manifest import completed successfully', [
+                'file_name' => $fileName,
+                'stats' => $stats
+            ]);
+
+            return redirect()
+                ->route('company.manifests.import.report')
+                ->with('import_report_data', $reportData)
+                ->with('success', $this->buildSuccessMessage($result, $fileName));
 
         } else {
             // Importación falló

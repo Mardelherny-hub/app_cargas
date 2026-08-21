@@ -120,6 +120,14 @@ class NavsurTextParser implements ManifestParserInterface
                 return ManifestParseResult::failure(['No se encontraron BLs en el archivo']);
             }
 
+            $validationErrors = $this->validate($bls);
+
+            if ($validationErrors !== []) {
+                throw new \DomainException(
+                    implode(' | ', $validationErrors)
+                );
+            }
+
             // Procesar en transacción
             $result = DB::transaction(function () use ($bls, $importRecord, $startTime) {
                 // Crear voyage único para todos los BLs
@@ -176,14 +184,27 @@ class NavsurTextParser implements ManifestParserInterface
                         'bill'     => array_map(fn($b) => $b->id, $allBills),
                         'item'     => array_map(fn($i) => $i->id, $allItems),
                     ]);
-                    $importRecord->markAsCompleted([
+                    $completionData = [
                         'voyage_id'               => $voyage->id,
                         'created_bills'           => count($allBills),
+                        'created_containers'      => count($allContainers),
                         'created_items'           => count($allItems),
                         'processing_time_seconds' => round(microtime(true) - $startTime, 2),
                         'import_statistics'       => $this->stats,
+                        'warnings'                => $this->stats['warnings'],
+                        'warnings_count'          => count($this->stats['warnings']),
                         'notes'                   => 'Importación Navsur completada',
-                    ]);
+                    ];
+
+                    if ($this->stats['warnings'] !== []) {
+                        $importRecord->markAsCompletedWithWarnings(
+                            $completionData
+                        );
+                    } else {
+                        $importRecord->markAsCompleted(
+                            $completionData
+                        );
+                    }
                 }
 
                 return [
@@ -271,6 +292,7 @@ class NavsurTextParser implements ManifestParserInterface
     /**
      * Parsear una sección de BL
      */
+
     protected function parseBLSection(string $section): array
     {
         $bl = [
@@ -290,19 +312,83 @@ class NavsurTextParser implements ManifestParserInterface
             'cargador_domicilio' => $this->extractValue($section, 'CARGADORDOMICILIO:'),
             'consignatario_domicilio' => $this->extractValue($section, 'CONSIGNATARIODOMICILIO:'),
             'notificatario1_domicilio' => $this->extractValue($section, 'NOTIFICATARIO1DOMICILIO:'),
-            'containers' => []
+            'containers' => [],
         ];
-        
-        // Parsear contenedores
-        $containerSections = $this->extractContainerSections($section);
-        foreach ($containerSections as $containerSection) {
+
+        foreach ($this->extractContainerSections($section) as $containerSection) {
             $container = $this->parseContainerSection($containerSection);
+
             if (!empty($container['cod_contenedor'])) {
                 $bl['containers'][] = $container;
             }
         }
-        
+
+        $bl['containers'] = $this->normalizeContainerItems(
+            $bl['containers'],
+            (string) $bl['numero_bl']
+        );
+
         return $bl;
+    }
+
+
+    /**
+     * Navsur repite, en BL multikontenedor, el bloque completo de
+     * MERCADERIAS después de cada contenedor.
+     *
+     * Cuando todos los bloques son idénticos y la cantidad de líneas del
+     * bloque coincide con la cantidad de contenedores, la relación real es
+     * posicional: contenedor 1 -> item 1, contenedor 2 -> item 2, etc.
+     */
+    protected function normalizeContainerItems(
+        array $containers,
+        string $blNumber
+    ): array {
+        $containerCount = count($containers);
+
+        if ($containerCount <= 1) {
+            return $containers;
+        }
+
+        $sets = array_map(
+            fn (array $container) => $container['items'] ?? [],
+            $containers
+        );
+
+        $first = $sets[0] ?? [];
+
+        $allIdentical = true;
+
+        foreach ($sets as $set) {
+            if ($set !== $first) {
+                $allIdentical = false;
+                break;
+            }
+        }
+
+        if (!$allIdentical) {
+            return $containers;
+        }
+
+        if (count($first) !== $containerCount) {
+            throw new \DomainException(
+                "Navsur BL {$blNumber}: el bloque de mercaderías se repite "
+                . "para {$containerCount} contenedores, pero contiene "
+                . count($first)
+                . " líneas. No se puede determinar una relación inequívoca."
+            );
+        }
+
+        foreach ($containers as $index => &$container) {
+            $container['items'] = [$first[$index]];
+        }
+        unset($container);
+
+        $this->stats['warnings'][] =
+            "BL {$blNumber}: Navsur repite el bloque completo de mercaderías "
+            . "por contenedor. Se normalizó a relación 1 contenedor = 1 ítem.";
+
+        return $containers;
     }
 
     /**
@@ -382,12 +468,11 @@ class NavsurTextParser implements ManifestParserInterface
     /**
      * Parsear sección de items de mercadería
      */
+
     protected function parseItemsSection(string $section): array
     {
         $items = [];
 
-        // Separar cada ítem: cada uno arranca en "ITEM:" y termina donde empieza el siguiente.
-        // Se usa lookahead para no consumir el "ITEM:" del próximo bloque.
         $chunks = preg_split('/(?=ITEM:\s*\/\*)/', $section);
 
         foreach ($chunks as $chunk) {
@@ -397,22 +482,44 @@ class NavsurTextParser implements ManifestParserInterface
 
             $mercaderia = $this->extractValue($chunk, 'MERCADERIA:');
 
-            // Sin descripción de mercadería no hay ítem válido.
             if (empty($mercaderia)) {
                 continue;
             }
 
+            $cantidad = $this->extractValue($chunk, 'CANTIDAD:');
+            $pesoNeto = $this->extractValue($chunk, 'PESONETO:');
+            $pesoBruto = $this->extractValue($chunk, 'PESOBRUTO:');
+            $cubitaje = $this->extractValue($chunk, 'CUBITAJE:');
+
             $items[] = [
-                'item'                => $this->extractValue($chunk, 'ITEM:'),
-                'titulo'              => $this->extractValue($chunk, 'TITULO:') ?? '',
-                'embalaje'            => $this->extractValue($chunk, 'EMBALAJE:') ?? '',
-                'mercaderia'          => $mercaderia,
-                'cantidad'            => intval($this->extractValue($chunk, 'CANTIDAD:') ?? 0),
-                'peso_neto'           => floatval($this->extractValue($chunk, 'PESONETO:') ?? 0),
-                'peso_bruto'          => floatval($this->extractValue($chunk, 'PESOBRUTO:') ?? 0),
-                'cubitaje'            => floatval($this->extractValue($chunk, 'CUBITAJE:') ?? 0),
-                'imo'                 => $this->extractValue($chunk, 'IMO:') ?? '',
-                'partida_arancelaria' => $this->extractValue($chunk, 'PARTIDAARANCELARIA:') ?? '',
+                'item' => $this->extractValue($chunk, 'ITEM:'),
+                'titulo' => $this->extractValue($chunk, 'TITULO:') ?? '',
+                'embalaje' => $this->extractValue($chunk, 'EMBALAJE:') ?? '',
+                'mercaderia' => $mercaderia,
+
+                'cantidad' =>
+                    $cantidad === null || trim($cantidad) === ''
+                        ? null
+                        : (int) $cantidad,
+
+                'peso_neto' =>
+                    $pesoNeto === null || trim($pesoNeto) === ''
+                        ? null
+                        : (float) $pesoNeto,
+
+                'peso_bruto' =>
+                    $pesoBruto === null || trim($pesoBruto) === ''
+                        ? null
+                        : (float) $pesoBruto,
+
+                'cubitaje' =>
+                    $cubitaje === null || trim($cubitaje) === ''
+                        ? null
+                        : (float) $cubitaje,
+
+                'imo' => $this->extractValue($chunk, 'IMO:') ?? '',
+                'partida_arancelaria' =>
+                    $this->extractValue($chunk, 'PARTIDAARANCELARIA:') ?? '',
             ];
         }
 
@@ -434,136 +541,190 @@ class NavsurTextParser implements ManifestParserInterface
     /**
      * Extraer datos del voyage del primer BL
      */
+
     protected function extractVoyageData(array $bl): array
     {
+        foreach ([
+            'viaje' => 'número de viaje',
+            'buque' => 'buque',
+            'puerto_carga' => 'puerto de carga',
+            'puerto_descarga' => 'puerto de descarga',
+        ] as $field => $label) {
+            if (empty($bl[$field])) {
+                throw new \DomainException(
+                    "Navsur no informa {$label}."
+                );
+            }
+        }
+
         return [
-            'voyage_number' => $bl['viaje'] ?? 'NAV-' . date('Ymd'),
-            'vessel_name' => $bl['buque'] ?? 'NAVSUR VESSEL',
-            'flag' => $bl['bandera'] ?? 'PARAGUAYA',
-            'pol' => $bl['puerto_carga'] ?? 'PYCAP',
-            'pod' => $bl['puerto_descarga'] ?? 'ARBUE'
+            'voyage_number' => trim((string) $bl['viaje']),
+            'vessel_name' => trim((string) $bl['buque']),
+            'flag' => !empty($bl['bandera'])
+                ? trim((string) $bl['bandera'])
+                : null,
+            'pol' => trim((string) $bl['puerto_carga']),
+            'pod' => trim((string) $bl['puerto_descarga']),
         ];
     }
 
     /**
      * Buscar o crear voyage - VALORES ENUM CORREGIDOS
      */
+
     protected function findOrCreateVoyage(array $data): Voyage
     {
-        // Obtener company_id correctamente
         $user = auth()->user();
+
+        if (!$user) {
+            throw new \DomainException(
+                'Usuario no autenticado para importar Navsur.'
+            );
+        }
+
         $companyId = null;
 
-        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+        if (
+            $user->userable_type === 'App\Models\Company'
+            && $user->userable_id
+        ) {
             $companyId = (int) $user->userable_id;
-        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
-            $companyId = $user->userable->company_id;
+        } elseif (
+            $user->userable_type === 'App\Models\Operator'
+            && $user->userable
+        ) {
+            $companyId = (int) $user->userable->company_id;
         }
 
         if (!$companyId) {
-            throw new \Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
+            throw new \DomainException(
+                "Usuario {$user->id} no tiene empresa asignada."
+            );
         }
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($data['voyage_number']);
 
-        // Buscar o crear vessel con campos obligatorios correctos
-        $vesselName = $data['vessel_name'] ?? 'NAVSUR VESSEL';
-        $registrationNumber = $data['vessel_name'] ?? 'NAV-' . date('Ymd-His');
-        
-        $vessel = Vessel::firstOrCreate(
-            ['registration_number' => $registrationNumber],
-            [
-                'name' => $vesselName,
-                'company_id' => $companyId,
-                'vessel_type_id' => 1, // Usar vessel_type_id en lugar de vessel_type
-                'flag_country_id' => $this->mapFlagToCountryId($data['flag'] ?? 'PARAGUAYA'),
-                'length_meters' => 50.0,
-                'beam_meters' => 12.0,
-                'draft_meters' => 3.0,
-                'cargo_capacity_tons' => 1000.0,
-                'operational_status' => 'active',
-                'active' => true
-            ]
-        );
-
-        // Buscar puertos
         $originPort = $this->resolvePortStrict($data['pol']);
-        $destPort = $this->resolvePortStrict($data['pod']);
+        $destinationPort = $this->resolvePortStrict($data['pod']);
 
-        // Crear voyage con valores enum CORREGIDOS
-        $voyage = Voyage::create([
+        if (!$originPort->country_id) {
+            throw new \DomainException(
+                "El puerto {$data['pol']} no tiene país configurado."
+            );
+        }
+
+        $flagCountryId = !empty($data['flag'])
+            ? $this->mapFlagToCountryId($data['flag'])
+            : null;
+
+        $vessel = Vessel::where('company_id', $companyId)
+            ->where('name', $data['vessel_name'])
+            ->first();
+
+        if (!$vessel) {
+            $vessel = Vessel::create([
+                'name' => $data['vessel_name'],
+                'registration_number' => null,
+                'company_id' => $companyId,
+                'vessel_type_id' => null,
+                'flag_country_id' => $flagCountryId,
+                'length_meters' => null,
+                'beam_meters' => null,
+                'draft_meters' => null,
+                'cargo_capacity_tons' => null,
+                'container_capacity' => null,
+                'operational_status' => 'active',
+                'active' => true,
+            ]);
+        } elseif (
+            !$vessel->flag_country_id
+            && $flagCountryId
+        ) {
+            $vessel->update([
+                'flag_country_id' => $flagCountryId,
+            ]);
+        }
+
+        return Voyage::create([
             'voyage_number' => $data['voyage_number'],
-            'company_id' => $companyId, 
+            'company_id' => $companyId,
             'lead_vessel_id' => $vessel->id,
             'origin_port_id' => $originPort->id,
-            'destination_port_id' => $destPort->id,
-            'origin_country_id' => $originPort->country_id ?? 2, // PY
-            'destination_country_id' => $destPort->country_id ?? 1, // AR
+            'destination_port_id' => $destinationPort->id,
+            'origin_country_id' => $originPort->country_id,
+            'destination_country_id' =>
+                $destinationPort->country_id ?: null,
+
+            'voyage_type' => 'single_vessel',
+            'cargo_type' => 'export',
             'status' => 'planning',
-            
-            // CORREGIDO: usar valores válidos del enum voyage_type
-            'voyage_type' => 'single_vessel', // En lugar de 'commercial'
-            
-            // CORREGIDO: usar valores válidos del enum cargo_type  
-            'cargo_type' => 'export', // En lugar de 'containers'
-            
-            'departure_date' => now()->addDays(7),
-            'estimated_arrival_date' => now()->addDays(10),
-            'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 1000.0,
-            'total_container_capacity' => $vessel->container_capacity ?? 40,
+
+            // Navsur no informa fechas operativas del viaje.
+            'departure_date' => null,
+            'estimated_arrival_date' => null,
+
+            // Navsur tampoco informa capacidades del buque.
+            'total_cargo_capacity_tons' => 0,
+            'total_container_capacity' => 0,
             'total_cargo_weight_loaded' => 0,
             'total_containers_loaded' => 0,
-            'capacity_utilization_percentage' => 0
+            'capacity_utilization_percentage' => 0,
         ]);
-
-        return $voyage;
     }
 
     /**
      * NUEVO MÉTODO: Mapear bandera a country_id
      */
+
     protected function mapFlagToCountryId(string $flag): int
     {
-        $flag = strtoupper(trim(str_replace(['/*', '*/'], '', $flag)));
-        
-        if (str_contains($flag, 'PARAGUAY')) return 2; // Paraguay
-        if (str_contains($flag, 'ARGENTIN')) return 1; // Argentina  
-        if (str_contains($flag, 'BRASIL')) return 3; // Brasil
-        
-        return 2; // Default: Paraguay
+        $alpha2 = $this->mapFlag($flag);
+
+        $id = DB::table('countries')
+            ->where('alpha2_code', $alpha2)
+            ->value('id');
+
+        if (!$id) {
+            throw new \DomainException(
+                "No existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $id;
     }
 
     
     /**
      * Buscar o crear shipment
      */
-    protected function findOrCreateShipment(Voyage $voyage, array $data): Shipment
-    {
-        $shipment = Shipment::where('voyage_id', $voyage->id)
+
+    protected function findOrCreateShipment(
+        Voyage $voyage,
+        array $data
+    ): Shipment {
+        $existing = Shipment::where('voyage_id', $voyage->id)
             ->where('sequence_in_voyage', 1)
             ->first();
 
-        if ($shipment) {
-            return $shipment;
+        if ($existing) {
+            return $existing;
         }
 
-        $vessel = Vessel::where('name', $data['vessel_name'])->first();
-
-        $shipment = Shipment::create([
+        return Shipment::create([
             'voyage_id' => $voyage->id,
-            'vessel_id' => $vessel->id ?? $voyage->lead_vessel_id,
-            'shipment_number' => 'SHP-' . $voyage->voyage_number . '-001',
+            'vessel_id' => $voyage->lead_vessel_id,
+            'shipment_number' =>
+                'SHP-' . $voyage->voyage_number . '-001',
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
             'is_lead_vessel' => true,
-            'cargo_capacity_tons' => 5000,
-            'container_capacity' => 200,
-            'status' => 'planning'
-        ]);
 
-        return $shipment;
+            // No informadas por Navsur.
+            'cargo_capacity_tons' => null,
+            'container_capacity' => 0,
+
+            'status' => 'planning',
+        ]);
     }
 
     /**
@@ -608,127 +769,473 @@ class NavsurTextParser implements ManifestParserInterface
         ]);
     }
 
+
+    protected function requireActiveCatalogId(
+        string $table,
+        string $code
+    ): int {
+        $id = DB::table($table)
+            ->where('code', $code)
+            ->where('active', true)
+            ->value('id');
+
+        if (!$id) {
+            throw new \DomainException(
+                "No existe {$table}.code={$code} activo."
+            );
+        }
+
+        return (int) $id;
+    }
+
+    protected function flattenBillItems(array $data): array
+    {
+        $items = [];
+
+        foreach (($data['containers'] ?? []) as $container) {
+            foreach (($container['items'] ?? []) as $item) {
+                $items[] = $item;
+            }
+        }
+
+        return $items;
+    }
+
+    protected function normalizeCommodityCode(
+        ?string $value
+    ): ?string {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $value);
+
+        if (strlen($digits) === 6) {
+            return $digits . '00';
+        }
+
+        if (strlen($digits) >= 8) {
+            return substr($digits, 0, 8);
+        }
+
+        return null;
+    }
+
+    protected function resolveItemCommodityCode(
+        array $data
+    ): ?string {
+        $structured = $this->normalizeCommodityCode(
+            $data['partida_arancelaria'] ?? null
+        );
+
+        if ($structured) {
+            return $structured;
+        }
+
+        $description = (string) ($data['mercaderia'] ?? '');
+
+        if (
+            preg_match(
+                '/(?:HS\s*CODE(?:\/NCM)?|NCM)\s*[:\-]?\s*([0-9.]+)/i',
+                $description,
+                $matches
+            )
+        ) {
+            return $this->normalizeCommodityCode($matches[1]);
+        }
+
+        return null;
+    }
+
+    protected function optionalFloat(mixed $value): ?float
+    {
+        if (
+            $value === null
+            || (is_string($value) && trim($value) === '')
+        ) {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    protected function inferClientCountryId(
+        string $name,
+        ?int $fallbackCountryId
+    ): int {
+        $upper = strtoupper(
+            iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $name) ?: $name
+        );
+
+        $alpha2 = null;
+
+        if (str_contains($upper, 'PARAGUAY')) {
+            $alpha2 = 'PY';
+        } elseif (
+            str_contains($upper, 'ARGENTIN')
+            || str_contains($upper, 'BUENOS AIRES')
+        ) {
+            $alpha2 = 'AR';
+        } elseif (
+            str_contains($upper, 'BRASIL')
+            || str_contains($upper, 'BRAZIL')
+        ) {
+            $alpha2 = 'BR';
+        }
+
+        if ($alpha2) {
+            $id = DB::table('countries')
+                ->where('alpha2_code', $alpha2)
+                ->value('id');
+
+            if ($id) {
+                return (int) $id;
+            }
+        }
+
+        if ($fallbackCountryId) {
+            return $fallbackCountryId;
+        }
+
+        throw new \DomainException(
+            "No se pudo determinar el país del cliente '{$name}'."
+        );
+    }
+
+    protected function resolveClientDocumentTypeId(
+        ?string $taxId,
+        int $countryId
+    ): ?int {
+        if (!$taxId) {
+            return null;
+        }
+
+        $alpha2 = DB::table('countries')
+            ->where('id', $countryId)
+            ->value('alpha2_code');
+
+        $code = match ($alpha2) {
+            'AR' => 'CUIT',
+            'PY' => 'RUC',
+            'BR' => 'CNPJ',
+            default => null,
+        };
+
+        if (!$code) {
+            return null;
+        }
+
+        $id = DB::table('document_types')
+            ->where('country_id', $countryId)
+            ->where('code', $code)
+            ->where('active', true)
+            ->value('id');
+
+        return $id ? (int) $id : null;
+    }
+
+    protected function appendBillSeals(
+        BillOfLading $bill,
+        array $data
+    ): void {
+        $new = $this->extractSeals($data);
+
+        if (!$new) {
+            return;
+        }
+
+        $parts = [];
+
+        foreach ([
+            (string) ($bill->bl_seals_numbers ?? ''),
+            $new,
+        ] as $value) {
+            foreach (explode(',', $value) as $seal) {
+                $seal = trim($seal);
+
+                if ($seal !== '') {
+                    $parts[] = $seal;
+                }
+            }
+        }
+
+        $parts = array_values(array_unique($parts));
+
+        $bill->update([
+            'bl_seals_numbers' => implode(', ', $parts),
+        ]);
+    }
+
     /**
      * Crear BillOfLading
      */
-    protected function createBillOfLading(Shipment $shipment, array $data): BillOfLading
-    {
-        // Obtener o crear clientes
-        $shipper = $this->findOrCreateClient($data['cargador_nombre'], 'shipper');
-        $consignee = $this->findOrCreateClient($data['consignatario_nombre'], 'consignee');
-        $notify = $this->findOrCreateClient($data['notificatario1_nombre'], 'notify');
 
-        // Obtener puertos
-        $loadingPort = $this->resolvePortStrict($data['puerto_carga']);
-        $dischargePort = $this->resolvePortStrict($data['puerto_descarga']);
-        // Destino final es opcional: si no se puede resolver no aborta la
-        // importacion, se usa el puerto de descarga.
+    protected function createBillOfLading(
+        Shipment $shipment,
+        array $data
+    ): BillOfLading {
+        $loadingPort = $this->resolvePortStrict(
+            $data['puerto_carga']
+        );
+
+        $dischargePort = $this->resolvePortStrict(
+            $data['puerto_descarga']
+        );
+
         $finalPort = !empty($data['destino_final'])
-            ? ($this->resolvePortOrNull($data['destino_final']) ?? $dischargePort)
+            ? (
+                $this->resolvePortOrNull($data['destino_final'])
+                ?? $dischargePort
+            )
             : $dischargePort;
 
-        // AGREGAR: Fechas obligatorias con valores por defecto
-        //$billDate = null; // Fecha actual como fallback
-        //$loadingDate = null->addDays(1); // Un día después para loading
+        $shipperCountryId = $this->inferClientCountryId(
+            (string) $data['cargador_nombre'],
+            $loadingPort->country_id
+        );
 
-        // ✅ NAVSUR no incluye fechas - usar fecha actual como última opción
-        Log::warning('⚠️ NAVSUR.TXT no contiene fechas específicas - usando fecha actual');
-        $billDate = now();
-        $loadingDate = now()->addDays(1);
+        $consigneeCountryId = $this->inferClientCountryId(
+            (string) $data['consignatario_nombre'],
+            $dischargePort->country_id
+        );
 
-        // Crear BL con campos obligatorios CORREGIDOS
+        $shipper = $this->findOrCreateClient(
+            $data['cargador_nombre'],
+            'shipper',
+            $shipperCountryId
+        );
+
+        $consignee = $this->findOrCreateClient(
+            $data['consignatario_nombre'],
+            'consignee',
+            $consigneeCountryId
+        );
+
+        $notify = !empty($data['notificatario1_nombre'])
+            ? $this->findOrCreateClient(
+                $data['notificatario1_nombre'],
+                'notify',
+                $this->inferClientCountryId(
+                    (string) $data['notificatario1_nombre'],
+                    $dischargePort->country_id
+                )
+            )
+            : null;
+
+        $items = $this->flattenBillItems($data);
+
+        if ($items === []) {
+            throw new \DomainException(
+                "Navsur BL {$data['numero_bl']}: no contiene mercadería."
+            );
+        }
+
+        $totalPackages = 0;
+        $grossWeight = 0.0;
+        $netWeight = 0.0;
+        $volume = 0.0;
+
+        $hasNet = false;
+        $hasVolume = false;
+
+        $descriptions = [];
+        $commodityCodes = [];
+
+        foreach ($items as $item) {
+            if (($item['cantidad'] ?? null) === null) {
+                throw new \DomainException(
+                    "Navsur BL {$data['numero_bl']}: "
+                    . "hay un ítem sin cantidad informada."
+                );
+            }
+
+            if (($item['peso_bruto'] ?? null) === null) {
+                throw new \DomainException(
+                    "Navsur BL {$data['numero_bl']}: "
+                    . "hay un ítem sin peso bruto informado."
+                );
+            }
+
+            $totalPackages += (int) $item['cantidad'];
+            $grossWeight += (float) $item['peso_bruto'];
+
+            if (($item['peso_neto'] ?? null) !== null) {
+                $hasNet = true;
+                $netWeight += (float) $item['peso_neto'];
+            }
+
+            if (($item['cubitaje'] ?? null) !== null) {
+                $hasVolume = true;
+                $volume += (float) $item['cubitaje'];
+            }
+
+            if (!empty($item['mercaderia'])) {
+                $descriptions[] = trim(
+                    (string) $item['mercaderia']
+                );
+            }
+
+            $commodityCode =
+                $this->resolveItemCommodityCode($item);
+
+            if ($commodityCode) {
+                $commodityCodes[] = $commodityCode;
+            }
+        }
+
+        $descriptions = array_values(
+            array_unique($descriptions)
+        );
+
+        $commodityCodes = array_values(
+            array_unique($commodityCodes)
+        );
+
+        $importDate = today();
+
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['numero_bl'],
-            'master_bill_number' => $data['cod_booking'] ?? null,
-            'internal_reference' => $data['cod_programacion'] ?? null,
-            
-            // AGREGADO: Campos de fecha obligatorios
-            'bill_date' => $billDate,
-            'loading_date' => $loadingDate,
-            
-            // Clientes
+            'master_bill_number' =>
+                $data['cod_booking'] ?? null,
+            'internal_reference' =>
+                $data['cod_programacion'] ?? null,
+
+            // Regla operativa: Navsur no trae fechas.
+            'bill_date' => $importDate,
+            'loading_date' => $importDate,
+
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
             'notify_party_id' => $notify?->id,
-            
-            // Puertos
+
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
             'final_destination_port_id' => $finalPort->id,
-            
-            // Términos y estado
-            'freight_terms' => $this->mapFreightTerms($data['condicion_flete'] ?? 'PREPAID'),
+
+            'freight_terms' => $this->mapFreightTerms(
+                $data['condicion_flete'] ?? ''
+            ),
+
             'status' => 'draft',
-            
-            // Tipos obligatorios con valores por defecto
-            'primary_cargo_type_id' => $this->validateCargoTypeId($data),
-            'primary_packaging_type_id' => $this->validatePackagingTypeId($data), // Bags/Bultos
-            
-            // AGREGADO: Campos de peso obligatorios con valores por defecto
-            'gross_weight_kg' => floatval($data['peso_bruto'] ?? 0),
-            'net_weight_kg' => floatval($data['peso_neto'] ?? 0),
-            'total_packages' => intval($data['cantidad_bultos'] ?? 1),
-            'volume_m3' => floatval($data['cubitaje'] ?? 0),
-            
-            // CORREGIDO: campo cargo_description es obligatorio
-            'cargo_description' => $this->validateCargoDescription($data),
-            'special_instructions' => !empty($data['instrucciones']) ? [$data['instrucciones']] : null,
-            'internal_notes' => 'Importado desde archivo Navsur'
+
+            // El manifiesto es contenedorizado.
+            'primary_cargo_type_id' =>
+                $this->requireActiveCatalogId(
+                    'cargo_types',
+                    'CON001'
+                ),
+
+            'primary_packaging_type_id' =>
+                $this->requireActiveCatalogId(
+                    'packaging_types',
+                    'T'
+                ),
+
+            'gross_weight_kg' => $grossWeight,
+            'net_weight_kg' => $hasNet ? $netWeight : null,
+            'total_packages' => $totalPackages,
+            'volume_m3' => $hasVolume ? $volume : null,
+
+            'cargo_description' => implode(
+                "\n",
+                $descriptions
+            ),
+
+            'commodity_code' =>
+                $commodityCodes[0] ?? null,
+
+            'commodity_codes' =>
+                $commodityCodes ?: null,
+
+            'special_instructions' => null,
+            'internal_notes' =>
+                'Importado desde archivo Navsur',
         ]);
 
-        Log::info('BillOfLading creado desde Navsur', [
-            'bill_id' => $bill->id,
-            'bill_number' => $bill->bill_number,
-            'bill_date' => $bill->bill_date->toDateString(),
-            'loading_date' => $bill->loading_date->toDateString()
-        ]);
-
-        // Dirección del cliente: Navsur trae los campos *DOMICILIO (vacíos en algunos
-        // archivos). Con dato -> Etapa 1 persiste en la ficha si el cliente no tiene
-        // dirección; Etapa 2 la guarda como específica del BL si difiere. Vacío -> el
-        // trait no hace nada y el BL usa la dirección por defecto del cliente.
         foreach ([
-            ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,       'role' => 'shipper'],
-            ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null,  'role' => 'consignee'],
-            ['client' => $notify,    'addr' => $data['notificatario1_domicilio'] ?? null, 'role' => 'notify_party'],
-        ] as $p) {
-            $this->persistClientAddress($p['client'], $p['addr']);
-            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
-                $bill->specificContacts()->create($c);
+            [
+                'client' => $shipper,
+                'addr' => $data['cargador_domicilio'] ?? null,
+                'role' => 'shipper',
+            ],
+            [
+                'client' => $consignee,
+                'addr' => $data['consignatario_domicilio'] ?? null,
+                'role' => 'consignee',
+            ],
+            [
+                'client' => $notify,
+                'addr' => $data['notificatario1_domicilio'] ?? null,
+                'role' => 'notify_party',
+            ],
+        ] as $party) {
+            if (!$party['client']) {
+                continue;
+            }
+
+            $this->persistClientAddress(
+                $party['client'],
+                $party['addr']
+            );
+
+            if (
+                $contact = $this->resolveSpecificAddress(
+                    $party['client'],
+                    $party['addr'],
+                    $party['role']
+                )
+            ) {
+                $bill->specificContacts()->create($contact);
             }
         }
 
         return $bill;
     }
 
+
     protected function validateCargoTypeId(array $data): int
     {
-        // ✅ NAVSUR no tiene cargo_type_id - usar tipo general por defecto
-        Log::warning('⚠️ NAVSUR.TXT no contiene cargo_type_id - usando tipo general');
-        return 1; // General cargo como último recurso
+        return $this->requireActiveCatalogId(
+            'cargo_types',
+            'CON001'
+        );
     }
 
     /**
      * NUEVO MÉTODO: Mapear términos de flete
      */
+
     protected function mapFreightTerms(string $terms): string
     {
-        $terms = strtoupper(trim(str_replace(['/*', '*/'], '', $terms)));
-        
-        if (str_contains($terms, 'PREPAID') || str_contains($terms, 'PREPAGADO')) {
+        $terms = strtoupper(
+            trim(str_replace(['/*', '*/'], '', $terms))
+        );
+
+        if (
+            str_contains($terms, 'PREPAID')
+            || str_contains($terms, 'PREPAGADO')
+        ) {
             return 'prepaid';
         }
-        
-        if (str_contains($terms, 'COLLECT') || str_contains($terms, 'COBRAR')) {
+
+        if (
+            str_contains($terms, 'COLLECT')
+            || str_contains($terms, 'COBRAR')
+        ) {
             return 'collect';
         }
-        
-        if (str_contains($terms, 'THIRD') || str_contains($terms, 'TERCERO')) {
+
+        if (
+            str_contains($terms, 'THIRD')
+            || str_contains($terms, 'TERCERO')
+        ) {
             return 'third_party';
         }
-        
-        return 'prepaid'; // Default
+
+        throw new \DomainException(
+            "Condición de flete Navsur no reconocida: '{$terms}'."
+        );
     }
  
     /**
@@ -763,44 +1270,120 @@ class NavsurTextParser implements ManifestParserInterface
 /**
  * Crear Container
  */
-protected function createContainer(BillOfLading $bill, array $data): ?Container
-{
+
+protected function createContainer(
+    BillOfLading $bill,
+    array $data
+): ?Container {
     if (empty($data['cod_contenedor'])) {
         return null;
     }
 
-    // Verificar si ya existe
-    $existing = Container::where('container_number', $data['cod_contenedor'])->first();
-    if ($existing) {
-        Log::info('Container already exists', ['number' => $data['cod_contenedor']]);
-        return $existing;
-    }
-
     $containerType = $this->findOrCreateContainerType(
-        $data['tipo_contenedor'] ?? '20DV',
-        $data['medida'] ?? '20'
+        (string) ($data['tipo_contenedor'] ?? ''),
+        (string) ($data['medida'] ?? '')
     );
 
-    $container = Container::create([
-        'container_number' => $data['cod_contenedor'],
-        'container_type_id' => $containerType->id,
-        'tare_weight_kg' => $this->validateTareWeight($data),
-        'max_gross_weight_kg' => $this->validateMaxGrossWeight($data),
-        'condition' => 'L', // Loaded
-        
-        // CORREGIDO: usar valor válido del enum operational_status
-        'operational_status' => 'loaded', // En lugar de 'in_use'
-        
-        'current_port_id' => $bill->loading_port_id,
-        'active' => true
-    ]);
+    $tare = $this->validateTareWeight($data);
+    $maxGross = $this->validateMaxGrossWeight($data);
 
-    // Guardar sellos en el BL si existen
-    if (!empty($data['precintos_linea'])) {
-        $bill->update([
-            'bl_seals_numbers' => $this->extractSeals($data)
-        ]);
+    if ($tare !== null && $tare == 0.0) {
+        $this->stats['warnings'][] =
+            "Contenedor {$data['cod_contenedor']}: Navsur informa "
+            . "tara en 0. Se importó en 0 y debe completarse "
+            . "manualmente si corresponde.";
     }
+
+    $lineSeal = trim(
+        (string) ($data['precintos_linea'] ?? '')
+    );
+
+    $customsSeal = trim(
+        (string) ($data['precintos_aduana'] ?? '')
+    );
+
+    $senacsaSeal = trim(
+        (string) ($data['precintos_senacsa'] ?? '')
+    );
+
+    $additionalSeals = [];
+
+    if ($senacsaSeal !== '') {
+        $additionalSeals[] = [
+            'issuer' => 'SENACSA',
+            'seal_number' => $senacsaSeal,
+        ];
+    }
+
+    $sourceType = strtoupper(
+        trim((string) ($data['tipo_contenedor'] ?? ''))
+    );
+
+    $isReefer =
+        str_contains($sourceType, 'RH')
+        || str_contains($sourceType, 'RF');
+
+    $attributes = [
+        'container_type_id' => $containerType->id,
+        'tare_weight_kg' => $tare,
+        'max_gross_weight_kg' => $maxGross,
+
+        // Navsur no informa estos pesos a nivel contenedor.
+        'current_gross_weight_kg' => null,
+        'cargo_weight_kg' => null,
+
+        'condition' => 'L',
+        'operational_status' => 'loaded',
+        'current_port_id' => $bill->loading_port_id,
+
+        // PRECINTOSLINEA = precinto de la línea/carrier.
+        'carrier_seal' =>
+            $lineSeal !== '' ? $lineSeal : null,
+
+        'customs_seal' =>
+            $customsSeal !== '' ? $customsSeal : null,
+
+        'additional_seals' =>
+            $additionalSeals !== []
+                ? json_encode(
+                    $additionalSeals,
+                    JSON_UNESCAPED_UNICODE
+                )
+                : null,
+
+        'temperature_controlled' => $isReefer,
+        'requires_power' => $isReefer,
+
+        'set_temperature' =>
+            $this->optionalFloat(
+                $data['temperatura'] ?? null
+            ),
+
+        'active' => true,
+    ];
+
+    $container = Container::where(
+        'container_number',
+        $data['cod_contenedor']
+    )->first();
+
+    if ($container) {
+        $container->update($attributes);
+    } else {
+        $container = Container::create(
+            array_merge(
+                [
+                    'container_number' =>
+                        $data['cod_contenedor'],
+                    'full_container_number' =>
+                        $data['cod_contenedor'],
+                ],
+                $attributes
+            )
+        );
+    }
+
+    $this->appendBillSeals($bill, $data);
 
     return $container;
 }
@@ -808,120 +1391,230 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
     /**
      * Crear ShipmentItem
      */
-    protected function createShipmentItem(BillOfLading $bill, array $data): ?ShipmentItem
-    {
+
+    protected function createShipmentItem(
+        BillOfLading $bill,
+        array $data
+    ): ?ShipmentItem {
         if (empty($data['mercaderia'])) {
             return null;
         }
 
-        // Extraer HS Code de la descripción
-        $hsCode = null;
-        if (preg_match('/(?:HS CODE|NCM)[:\s]*([0-9\.]+)/i', $data['mercaderia'], $matches)) {
-            $hsCode = $matches[1];
+        if (($data['cantidad'] ?? null) === null) {
+            throw new \DomainException(
+                "Navsur BL {$bill->bill_number}: "
+                . "ítem sin cantidad informada."
+            );
         }
 
-        // line_number correlativo dentro del BL: el "ITEM:" del archivo reinicia en cada
-        // contenedor (1,2,3...), pero la BD exige line_number único por bill_of_lading.
-        $lineNumber = ShipmentItem::where('bill_of_lading_id', $bill->id)->count() + 1;
+        if (($data['peso_bruto'] ?? null) === null) {
+            throw new \DomainException(
+                "Navsur BL {$bill->bill_number}: "
+                . "ítem sin peso bruto informado."
+            );
+        }
 
-        $item = ShipmentItem::create([
+        $lineNumber = ShipmentItem::where(
+            'bill_of_lading_id',
+            $bill->id
+        )->count() + 1;
+
+        foreach ([
+            'cantidad' => 'cantidad de bultos',
+            'peso_bruto' => 'peso bruto',
+            'peso_neto' => 'peso neto',
+        ] as $field => $label) {
+            if (
+                array_key_exists($field, $data)
+                && $data[$field] !== null
+                && (float) $data[$field] == 0.0
+            ) {
+                $this->stats['warnings'][] =
+                    "BL {$bill->bill_number}, ítem {$lineNumber}: "
+                    . "Navsur informa {$label} en 0. "
+                    . "Se importó en 0 y debe completarse "
+                    . "manualmente si corresponde.";
+            }
+        }
+
+        $commodityCode =
+            $this->resolveItemCommodityCode($data);
+
+        $packagingDescription = trim(
+            (string) ($data['embalaje'] ?? '')
+        );
+
+        return ShipmentItem::create([
             'bill_of_lading_id' => $bill->id,
             'line_number' => $lineNumber,
-            'cargo_type_id' => 1,
-            'packaging_type_id' => $this->mapPackagingType($data['embalaje'] ?? 'BAGS'),
-            'package_quantity' => intval($data['cantidad'] ?? 1),
-            'gross_weight_kg' => floatval($data['peso_bruto'] ?? 0),
-            'net_weight_kg' => floatval($data['peso_neto'] ?? 0),
-            'volume_m3' => floatval($data['cubitaje'] ?? 0),
-            'item_description' => substr($data['mercaderia'], 0, 1000),
-            'commodity_code' => $hsCode ?? $data['partida_arancelaria'],
-            'dangerous_cargo' => !empty($data['imo']),
-            'imo_code' => $data['imo'] ?? null
-        ]);
 
-        return $item;
+            'cargo_type_id' =>
+                $this->requireActiveCatalogId(
+                    'cargo_types',
+                    'CON001'
+                ),
+
+            'packaging_type_id' =>
+                $this->requireActiveCatalogId(
+                    'packaging_types',
+                    'T'
+                ),
+
+            'package_quantity' =>
+                (int) $data['cantidad'],
+
+            'gross_weight_kg' =>
+                (float) $data['peso_bruto'],
+
+            'net_weight_kg' =>
+                $data['peso_neto'] !== null
+                    ? (float) $data['peso_neto']
+                    : null,
+
+            'volume_m3' =>
+                $data['cubitaje'] !== null
+                    ? (float) $data['cubitaje']
+                    : null,
+
+            'item_description' =>
+                (string) $data['mercaderia'],
+
+            // El catálogo sólo clasifica retorno/contenedor.
+            // El embalaje Navsur exacto se conserva aparte.
+            'package_type_description' =>
+                $packagingDescription !== ''
+                    ? $packagingDescription
+                    : null,
+
+            'packaging_code' =>
+                $packagingDescription !== ''
+                    ? $packagingDescription
+                    : null,
+
+            // NCM / Posición Arancelaria: mismo dato de negocio.
+            // Se conservan ambos campos internos por compatibilidad del modelo.
+            'commodity_code' => $commodityCode,
+            'tariff_position' => $commodityCode,
+
+            'is_dangerous_goods' =>
+                !empty($data['imo']),
+
+            'imdg_class' =>
+                !empty($data['imo'])
+                    ? trim((string) $data['imo'])
+                    : null,
+
+            'unit_of_measure' => 'PCS',
+            'status' => 'draft',
+            'created_by_user_id' => auth()->id(),
+        ]);
     }
 
     /**
      * Buscar o crear cliente
      */
-    protected function findOrCreateClient(?string $name, string $type): ?Client
-    {
-        if (empty($name)) {
+
+    protected function findOrCreateClient(
+        ?string $name,
+        string $type,
+        ?int $countryId = null
+    ): ?Client {
+        if ($name === null || trim($name) === '') {
             return null;
         }
 
-        // Limpiar nombre
-        $name = trim(str_replace(['/*', '*/'], '', $name));
-        
-        if (empty($name)) {
+        $name = trim(
+            str_replace(['/*', '*/'], '', $name)
+        );
+
+        if ($name === '') {
             return null;
         }
 
-        // Resolver tax embebido en el nombre (CUIT/RUC). Sin dato real -> null (no fabrica).
+        $countryId = $this->inferClientCountryId(
+            $name,
+            $countryId
+        );
+
         $taxId = $this->resolveTaxId(null, $name);
 
-        // 1. Buscar por tax_id de forma GLOBAL (mismo CUIT = mismo cliente, sin importar empresa)
         if ($taxId) {
-            $client = Client::where('tax_id', $taxId)->first();
-            if ($client) {
-                Log::info('Cliente encontrado por tax_id', [
-                    'tax_id' => $taxId,
-                    'client_id' => $client->id
-                ]);
-                return $client;
+            $existing = Client::where(
+                'tax_id',
+                $taxId
+            )->first();
+
+            if ($existing) {
+                return $existing;
             }
         }
 
-        // 2. Si no se encontró por tax_id, buscar por nombre (global)
-        $client = Client::where('legal_name', $name)
-            ->orWhere('commercial_name', $name)
+        $existing = Client::where(
+                'country_id',
+                $countryId
+            )
+            ->where(function ($query) use ($name) {
+                $query
+                    ->where('legal_name', $name)
+                    ->orWhere('commercial_name', $name);
+            })
             ->first();
 
-        if ($client) {
-            return $client;
+        if ($existing) {
+            return $existing;
         }
 
-        // Obtener company_id correctamente
         $user = auth()->user();
+
+        if (!$user) {
+            throw new \DomainException(
+                'Usuario no autenticado.'
+            );
+        }
+
         $companyId = null;
 
-        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+        if (
+            $user->userable_type === 'App\Models\Company'
+            && $user->userable_id
+        ) {
             $companyId = (int) $user->userable_id;
-        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
-            $companyId = $user->userable->company_id;
+        } elseif (
+            $user->userable_type === 'App\Models\Operator'
+            && $user->userable
+        ) {
+            $companyId =
+                (int) $user->userable->company_id;
         }
 
         if (!$companyId) {
-            Log::warning('No se pudo obtener company_id para crear cliente', [
-                'user_id' => $user->id,
-                'userable_type' => $user->userable_type,
-                'client_name' => $name
-            ]);
-            
-            $companyId = 1;
+            throw new \DomainException(
+                "No se puede crear cliente '{$name}': "
+                . "el usuario no tiene empresa asignada."
+            );
         }
 
-        // Determinar país basado en el nombre
-        $countryId = 1; // Argentina por defecto
-        if (str_contains(strtoupper($name), 'PARAGUAY')) {
-            $countryId = 2; // Paraguay
-        }
-
-        // Crear cliente (tax_id real si vino embebido; null si no, sin fabricar)
         $client = Client::create([
             'tax_id' => $taxId,
             'country_id' => $countryId,
-            'document_type_id' => $countryId == 1 ? 1 : 2, // CUIT o RUC
+            'document_type_id' =>
+                $this->resolveClientDocumentTypeId(
+                    $taxId,
+                    $countryId
+                ),
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
             'created_by_company_id' => $companyId,
-            'verified_at' => now() // Agregar timestamp de verificación
+
+            // Navsur no declara que el cliente esté verificado.
+            'verified_at' => null,
         ]);
 
         if (!$taxId) {
-            $this->stats['warnings'][] = "Cliente '{$name}' creado sin tax_id declarado.";
+            $this->stats['warnings'][] =
+                "Cliente '{$name}' creado sin identificación "
+                . "tributaria informada por Navsur.";
         }
 
         return $client;
@@ -929,52 +1622,10 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
     /**
      * Buscar o crear puerto
      */
+
     protected function findOrCreatePort(string $code): Port
     {
-        if (empty($code)) {
-            $code = 'UNKNOWN';
-        }
-
-        $code = strtoupper(trim(str_replace(['/*', '*/'], '', $code)));
-
-        $port = Port::where('code', $code)->first();
-        
-        if ($port) {
-            return $port;
-        }
-
-        // Determinar país y ciudad basado en código
-        $countryId = 1; // Argentina por defecto
-        $cityName = 'Ciudad Desconocida'; // Valor por defecto para city (obligatorio)
-        
-        if (str_starts_with($code, 'PY')) {
-            $countryId = 2; // Paraguay
-            $cityName = $this->mapParaguayanPortCity($code);
-        } elseif (str_starts_with($code, 'BR')) {
-            $countryId = 3; // Brasil
-            $cityName = $this->mapBrazilianPortCity($code);
-        } else {
-            // Argentina o códigos genéricos
-            $cityName = $this->mapArgentinianPortCity($code);
-        }
-
-        $port = Port::create([
-            'code' => $code,
-            'name' => 'Puerto ' . $code,
-            'city' => $cityName, // CORREGIDO: Campo obligatorio agregado
-            'country_id' => $countryId,
-            'port_type' => 'river',
-            'active' => true,
-            'handles_containers' => true,
-            'handles_bulk_cargo' => true,
-            'handles_general_cargo' => true,
-            'has_customs_office' => true,
-            'accepts_new_vessels' => true
-        ]);
-
-        $this->stats['warnings'][] = "Puerto '{$code}' creado automáticamente en {$cityName}";
-
-        return $port;
+        return $this->resolvePortStrict($code);
     }
 
     /**
@@ -1030,62 +1681,45 @@ protected function createContainer(BillOfLading $bill, array $data): ?Container
 /**
  * Buscar o crear tipo de contenedor - VERSIÓN SIMPLIFICADA
  */
-protected function findOrCreateContainerType(string $code, string $size): ContainerType
-{
-    $code = strtoupper(trim(str_replace(['/*', '*/'], '', $code)));
-    
-    // Mapear códigos Navsur a códigos estándar existentes en la tabla
-    $codeMapping = [
-        '20DV' => '20GP',  // Dry Van -> General Purpose
-        '40DV' => '40GP',  // Dry Van -> General Purpose  
-        '20GP' => '20GP',  // Ya correcto
-        '40GP' => '40GP',  // Ya correcto
-        '40HC' => '40HC',  // Ya correcto
-        '20RF' => '20RF',  // Refrigerado
-        '40RF' => '40HC',  // No hay 40RF, usar 40HC
-        '20TN' => '20GP',  // Tank -> GP como fallback
-        '40TN' => '40GP',  // Tank -> GP como fallback
-        '20OT' => '20GP',  // Open Top -> GP como fallback
-        '40OT' => '40GP',  // Open Top -> GP como fallback
-        '20FR' => '20GP',  // Flat Rack -> GP como fallback
-        '40FR' => '40GP',  // Flat Rack -> GP como fallback
+
+protected function findOrCreateContainerType(
+    string $code,
+    string $size
+): ContainerType {
+    $code = strtoupper(
+        trim(str_replace(['/*', '*/'], '', $code))
+    );
+
+    if ($code === '') {
+        throw new \DomainException(
+            'Navsur no informa tipo de contenedor.'
+        );
+    }
+
+    // Únicos aliases semánticos inequívocos.
+    $aliases = [
+        '20DV' => '20GP',
+        '40DV' => '40GP',
     ];
-    
-    // Intentar mapear el código
-    $mappedCode = $codeMapping[$code] ?? null;
-    
-    // Si no se puede mapear, intentar detectar por tamaño
-    if (!$mappedCode) {
-        if (str_contains($code, '20')) {
-            $mappedCode = '20GP';
-        } elseif (str_contains($code, '40')) {
-            $mappedCode = str_contains($code, 'HC') ? '40HC' : '40GP';
-        } else {
-            $mappedCode = '20GP'; // Fallback por defecto
-        }
+
+    $resolvedCode = $aliases[$code] ?? $code;
+
+    $type = ContainerType::where(
+            'code',
+            $resolvedCode
+        )
+        ->where('active', true)
+        ->first();
+
+    if (!$type) {
+        throw new \DomainException(
+            "Tipo de contenedor Navsur '{$code}' "
+            . "no existe en el catálogo. "
+            . "No se aplicó ningún tipo por defecto."
+        );
     }
-    
-    // Buscar el tipo de contenedor existente
-    $type = ContainerType::where('code', $mappedCode)->where('active', true)->first();
-    
-    if ($type) {
-        // Si el código original es diferente, registrar warning
-        if ($code !== $mappedCode) {
-            $this->stats['warnings'][] = "Tipo de contenedor '{$code}' mapeado a '{$mappedCode}'";
-        }
-        return $type;
-    }
-    
-    // Si aún no se encuentra, usar el primer tipo activo disponible
-    $type = ContainerType::where('active', true)->first();
-    
-    if ($type) {
-        $this->stats['warnings'][] = "Tipo de contenedor '{$code}' no encontrado, usando '{$type->code}' por defecto";
-        return $type;
-    }
-    
-    // Si no hay ningún tipo en la tabla, throw exception
-    throw new \Exception("No hay tipos de contenedor disponibles en la tabla container_types. Ejecute ContainerTypesSeeder.");
+
+    return $type;
 }
 
     /**
@@ -1104,36 +1738,51 @@ protected function findOrCreateContainerType(string $code, string $size): Contai
     /**
      * Mapear tipo de embalaje
      */
-    protected function mapPackagingType(string $packaging): int
-    {
-        $packaging = strtoupper(trim(str_replace(['/*', '*/'], '', $packaging)));
-        
-        // Mapeo básico - se debe ajustar según tabla packaging_types real
-        $map = [
-            'BAGS' => 1,
-            'CARTONS' => 2,
-            'PALLETS' => 3,
-            'BARRELS' => 4,
-            'BOXES' => 5,
-            'PALLET(S)' => 3,
-            'BARREL(S)' => 4
-        ];
 
-        return $map[$packaging] ?? 1;
+    protected function mapPackagingType(
+        string $packaging
+    ): int {
+        return $this->requireActiveCatalogId(
+            'packaging_types',
+            'T'
+        );
     }
 
     /**
      * Mapear bandera a código ISO
      */
+
     protected function mapFlag(string $flag): string
     {
-        $flag = strtoupper(trim(str_replace(['/*', '*/'], '', $flag)));
-        
-        if (str_contains($flag, 'PARAGUAY')) return 'PY';
-        if (str_contains($flag, 'ARGENTIN')) return 'AR';
-        if (str_contains($flag, 'BRASIL')) return 'BR';
-        
-        return 'PY'; // Default
+        $flag = strtoupper(
+            trim(str_replace(['/*', '*/'], '', $flag))
+        );
+
+        if (
+            $flag === 'PY'
+            || str_contains($flag, 'PARAGUAY')
+        ) {
+            return 'PY';
+        }
+
+        if (
+            $flag === 'AR'
+            || str_contains($flag, 'ARGENTIN')
+        ) {
+            return 'AR';
+        }
+
+        if (
+            $flag === 'BR'
+            || str_contains($flag, 'BRASIL')
+            || str_contains($flag, 'BRAZIL')
+        ) {
+            return 'BR';
+        }
+
+        throw new \DomainException(
+            "Bandera Navsur no reconocida: '{$flag}'."
+        );
     }
 
     /**
@@ -1165,80 +1814,104 @@ protected function findOrCreateContainerType(string $code, string $size): Contai
     /**
      * Validar datos parseados antes de procesamiento
      */
+
     public function validate(array $data): array
     {
         $errors = [];
 
-        // Validar que existe al menos un BL
-        if (empty($data) || !is_array($data)) {
-            $errors[] = 'No se encontraron datos válidos en el archivo';
-            return $errors;
+        if ($data === []) {
+            return [
+                'No se encontraron datos válidos en el archivo',
+            ];
         }
 
         foreach ($data as $index => $bl) {
             $blIndex = $index + 1;
 
-            // Validar campos obligatorios del BL
-            if (empty($bl['numero_bl'])) {
-                $errors[] = "BL #{$blIndex}: Número de BL es obligatorio";
+            foreach ([
+                'numero_bl' => 'Número de BL',
+                'buque' => 'Nombre del buque',
+                'viaje' => 'Número de viaje',
+                'puerto_carga' => 'Puerto de carga',
+                'puerto_descarga' => 'Puerto de descarga',
+                'cargador_nombre' => 'Nombre del cargador',
+                'consignatario_nombre' =>
+                    'Nombre del consignatario',
+            ] as $field => $label) {
+                if (empty($bl[$field])) {
+                    $errors[] =
+                        "BL #{$blIndex}: {$label} es obligatorio";
+                }
             }
 
-            if (empty($bl['buque'])) {
-                $errors[] = "BL #{$blIndex}: Nombre del buque es obligatorio";
+            if (
+                empty($bl['containers'])
+                || !is_array($bl['containers'])
+            ) {
+                $errors[] =
+                    "BL #{$blIndex}: debe tener al menos "
+                    . "un contenedor";
+                continue;
             }
 
-            if (empty($bl['viaje'])) {
-                $errors[] = "BL #{$blIndex}: Número de viaje es obligatorio";
-            }
+            foreach (
+                $bl['containers']
+                as $containerIndex => $container
+            ) {
+                $contIndex = $containerIndex + 1;
 
-            // Validar puertos
-            if (empty($bl['puerto_carga'])) {
-                $errors[] = "BL #{$blIndex}: Puerto de carga es obligatorio";
-            }
+                if (empty($container['cod_contenedor'])) {
+                    $errors[] =
+                        "BL #{$blIndex}, contenedor "
+                        . "#{$contIndex}: código obligatorio";
+                }
 
-            if (empty($bl['puerto_descarga'])) {
-                $errors[] = "BL #{$blIndex}: Puerto de descarga es obligatorio";
-            }
+                if (empty($container['tipo_contenedor'])) {
+                    $errors[] =
+                        "BL #{$blIndex}, contenedor "
+                        . "#{$contIndex}: tipo obligatorio";
+                }
 
-            // Validar partes involucradas
-            if (empty($bl['cargador_nombre'])) {
-                $errors[] = "BL #{$blIndex}: Nombre del cargador es obligatorio";
-            }
+                if (
+                    empty($container['items'])
+                    || !is_array($container['items'])
+                ) {
+                    $errors[] =
+                        "BL #{$blIndex}, contenedor "
+                        . "#{$contIndex}: sin mercadería";
+                    continue;
+                }
 
-            if (empty($bl['consignatario_nombre'])) {
-                $errors[] = "BL #{$blIndex}: Nombre del consignatario es obligatorio";
-            }
+                foreach (
+                    $container['items']
+                    as $itemIndex => $item
+                ) {
+                    $itemNum = $itemIndex + 1;
 
-            // Validar contenedores
-            if (empty($bl['containers']) || !is_array($bl['containers'])) {
-                $errors[] = "BL #{$blIndex}: Debe tener al menos un contenedor";
-            } else {
-                foreach ($bl['containers'] as $containerIndex => $container) {
-                    $contIndex = $containerIndex + 1;
-
-                    if (empty($container['cod_contenedor'])) {
-                        $errors[] = "BL #{$blIndex}, Contenedor #{$contIndex}: Código de contenedor es obligatorio";
+                    if (empty($item['mercaderia'])) {
+                        $errors[] =
+                            "BL #{$blIndex}, contenedor "
+                            . "#{$contIndex}, ítem #{$itemNum}: "
+                            . "descripción obligatoria";
                     }
 
-                    if (empty($container['tipo_contenedor'])) {
-                        $errors[] = "BL #{$blIndex}, Contenedor #{$contIndex}: Tipo de contenedor es obligatorio";
+                    // Cero explícito se acepta.
+                    if (
+                        ($item['cantidad'] ?? null) === null
+                    ) {
+                        $errors[] =
+                            "BL #{$blIndex}, contenedor "
+                            . "#{$contIndex}, ítem #{$itemNum}: "
+                            . "cantidad no informada";
                     }
 
-                    // Validar items del contenedor
-                    if (empty($container['items']) || !is_array($container['items'])) {
-                        $errors[] = "BL #{$blIndex}, Contenedor #{$contIndex}: Debe tener al menos un item de mercadería";
-                    } else {
-                        foreach ($container['items'] as $itemIndex => $item) {
-                            $itemNum = $itemIndex + 1;
-
-                            if (empty($item['mercaderia'])) {
-                                $errors[] = "BL #{$blIndex}, Contenedor #{$contIndex}, Item #{$itemNum}: Descripción de mercadería es obligatoria";
-                            }
-
-                            if (empty($item['cantidad']) || $item['cantidad'] <= 0) {
-                                $errors[] = "BL #{$blIndex}, Contenedor #{$contIndex}, Item #{$itemNum}: Cantidad debe ser mayor a 0";
-                            }
-                        }
+                    if (
+                        ($item['peso_bruto'] ?? null) === null
+                    ) {
+                        $errors[] =
+                            "BL #{$blIndex}, contenedor "
+                            . "#{$contIndex}, ítem #{$itemNum}: "
+                            . "peso bruto no informado";
                     }
                 }
             }
@@ -1385,10 +2058,10 @@ protected function findOrCreateContainerType(string $code, string $size): Contai
             'validate_containers' => true,
             'validate_cargo_items' => true,
             'create_missing_clients' => true,
-            'create_missing_ports' => true,
-            'create_missing_container_types' => true,
-            'default_tare_weight' => 2200,
-            'default_max_gross_weight' => 30000,
+            'create_missing_ports' => false,
+            'create_missing_container_types' => false,
+            'default_tare_weight' => null,
+            'default_max_gross_weight' => null,
             'default_country_mapping' => [
                 'PARAGUAYA' => 'PY',
                 'ARGENTINA' => 'AR',
@@ -1409,98 +2082,73 @@ protected function findOrCreateContainerType(string $code, string $size): Contai
     /**
  * ✅ VALIDAR descripción real del archivo
  */
-protected function validateCargoDescription(array $data): string
-{
-    // ✅ Buscar descripción en múltiples ubicaciones posibles
-    
-    // 1. En items de contenedores
-    if (!empty($data['containers'])) {
-        foreach ($data['containers'] as $container) {
-            if (!empty($container['items'])) {
-                foreach ($container['items'] as $item) {
-                    if (!empty($item['mercaderia'])) {
-                        return trim($item['mercaderia']);
-                    }
-                }
-            }
+
+protected function validateCargoDescription(
+    array $data
+): string {
+    $descriptions = [];
+
+    foreach ($this->flattenBillItems($data) as $item) {
+        if (!empty($item['mercaderia'])) {
+            $descriptions[] = trim(
+                (string) $item['mercaderia']
+            );
         }
     }
-    
-    // 2. En el título del BL
-    if (!empty($data['titulo'])) {
-        return trim($data['titulo']);
+
+    $descriptions = array_values(
+        array_unique($descriptions)
+    );
+
+    if ($descriptions === []) {
+        throw new \DomainException(
+            "Navsur BL {$data['numero_bl']}: "
+            . "sin descripción de mercadería."
+        );
     }
-    
-    // 3. En buque + viaje como descripción básica
-    if (!empty($data['buque']) && !empty($data['viaje'])) {
-        return "Mercadería transportada en {$data['buque']} viaje {$data['viaje']}";
-    }
-    
-    // 4. Última opción: descripción básica
-    Log::warning('⚠️ NAVSUR.TXT sin descripción específica - usando descripción básica');
-    return 'Mercadería general según manifiesto NAVSUR';
+
+    return implode("\n", $descriptions);
 }
 
-protected function validatePackagingTypeId(array $data): int
-{
-    // ✅ NAVSUR tiene EMBALAJE en items - mapear a packaging_type_id
-    if (!empty($data['containers']) && !empty($data['containers'][0]['items'])) {
-        $firstItem = $data['containers'][0]['items'][0];
-        if (!empty($firstItem['embalaje'])) {
-            return $this->mapEmbalajeToPackagingType($firstItem['embalaje']);
-        }
-    }
-    
-    Log::warning('⚠️ NAVSUR.TXT no contiene embalaje específico - usando tipo general');
-    return 1; // Bags/Bultos como último recurso
+
+protected function validatePackagingTypeId(
+    array $data
+): int {
+    return $this->requireActiveCatalogId(
+        'packaging_types',
+        'T'
+    );
 }
 
 /**
  * ✅ Mapear embalaje NAVSUR a packaging_type_id
  */
-protected function mapEmbalajeToPackagingType(string $embalaje): int
-{
-    $embalaje = strtoupper(trim($embalaje));
-    
-    // Mapear tipos de embalaje comunes
-    if (str_contains($embalaje, 'BAGS') || str_contains($embalaje, 'BOLSAS')) {
-        return 1; // Bags
-    }
-    if (str_contains($embalaje, 'CARTONS') || str_contains($embalaje, 'CAJAS')) {
-        return 2; // Cartons
-    }
-    if (str_contains($embalaje, 'PALLETS') || str_contains($embalaje, 'PALETAS')) {
-        return 3; // Pallets
-    }
-    if (str_contains($embalaje, 'BARRELS') || str_contains($embalaje, 'BARRILES')) {
-        return 4; // Barrels
-    }
-    if (str_contains($embalaje, 'BOXES') || str_contains($embalaje, 'CONTENEDORES')) {
-        return 5; // Boxes
-    }
-    
-    Log::warning("Tipo de embalaje no reconocido: {$embalaje} - usando Bags por defecto");
-    return 1; // Default: Bags
+
+protected function mapEmbalajeToPackagingType(
+    string $embalaje
+): int {
+    return $this->requireActiveCatalogId(
+        'packaging_types',
+        'T'
+    );
 }
 
-protected function validateTareWeight(array $data): float
-{
-    if (!empty($data['tara']) && $data['tara'] > 0) {
-        return floatval($data['tara']);
-    }
-    
-    Log::warning('⚠️ NAVSUR.TXT no contiene tara válida - usando peso por defecto');
-    return 2200.0; // Peso tara estándar contenedor 20'
+
+protected function validateTareWeight(
+    array $data
+): ?float {
+    return $this->optionalFloat(
+        $data['tara'] ?? null
+    );
 }
 
-protected function validateMaxGrossWeight(array $data): float
-{
-    if (!empty($data['peso_maximo']) && $data['peso_maximo'] > 0) {
-        return floatval($data['peso_maximo']);
-    }
-    
-    Log::warning('⚠️ NAVSUR.TXT no contiene peso_maximo - usando peso por defecto');
-    return 30000.0; // Peso máximo estándar contenedor
+
+protected function validateMaxGrossWeight(
+    array $data
+): ?float {
+    return $this->optionalFloat(
+        $data['peso_maximo'] ?? null
+    );
 }
 
 }
