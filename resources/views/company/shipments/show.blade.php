@@ -182,7 +182,7 @@
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Salida:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->departure_date->format('d/m/Y H:i') }}</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->departure_date?->format('d/m/Y H:i') ?? 'No informado' }}</span>
                                         </div>
                                     </div>
                                 </div>

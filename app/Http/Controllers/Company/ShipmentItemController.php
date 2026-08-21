@@ -606,7 +606,11 @@ foreach ($existingContainers as $container) {
         'id' => $container->id,
         'container_number' => $container->container_number,
         'container_type_id' => $container->container_type_id,
-        'seal_number' => $container->shipper_seal,
+        'seal_number' => $container->carrier_seal
+            ?: $container->shipper_seal,
+        'seal_source' => $container->carrier_seal
+            ? 'carrier'
+            : 'shipper',
         'tare_weight' => $container->tare_weight_kg,
         'condition' => $container->condition ?? 'L',
         'package_quantity' => $pivot->package_quantity,
@@ -730,6 +734,7 @@ return view('company.shipment-items.edit', compact(
             'containers.*.container_number' => 'required_with:containers|string|max:20',
             'containers.*.container_type_id' => 'required_with:containers|exists:container_types,id',
             'containers.*.seal_number' => 'nullable|string|max:50',
+            'containers.*.seal_source' => 'nullable|in:carrier,shipper',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
             'containers.*.package_quantity' => 'required_with:containers|integer|min:1',
             'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0.01',
@@ -895,12 +900,35 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
             $container = \App\Models\Container::where('container_number', $containerData['container_number'])->first();
             
             if ($container) {
-                // 4. CONTENEDOR EXISTE: Actualizar datos si es necesario
+                // 4. CONTENEDOR EXISTE: Actualizar datos si es necesario.
+                // Mantener el tipo de precinto con el que llegó el dato.
+                $sealField =
+                    ($containerData['seal_source'] ?? null) === 'carrier'
+                        ? 'carrier_seal'
+                        : 'shipper_seal';
+
+                $sealValue = array_key_exists(
+                    'seal_number',
+                    $containerData
+                )
+                    ? (
+                        $containerData['seal_number'] !== ''
+                            ? $containerData['seal_number']
+                            : null
+                    )
+                    : $container->{$sealField};
+
                 $container->update([
                     'container_type_id' => $containerData['container_type_id'],
+                    'tare_weight_kg' => array_key_exists(
+                        'tare_weight',
+                        $containerData
+                    )
+                        ? $containerData['tare_weight']
+                        : $container->tare_weight_kg,
                     'current_gross_weight_kg' => $containerData['gross_weight_kg'],
                     'condition' => $containerData['condition'] ?? 'L',
-                    'shipper_seal' => $containerData['seal_number'] ?? $container->shipper_seal,
+                    $sealField => $sealValue,
                     'operational_status' => 'loaded',
                     'active' => true,
                     'last_updated_date' => now(),

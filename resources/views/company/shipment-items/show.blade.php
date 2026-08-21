@@ -259,7 +259,7 @@
                                             <dt class="text-gray-500">Peso Bruto:</dt>
                                             <dd class="font-medium">{{ number_format($container->pivot->gross_weight_kg, 2) }} kg</dd>
                                         </div>
-                                        @if($container->pivot->net_weight_kg)
+                                        @if($container->pivot->net_weight_kg !== null)
                                             <div class="flex justify-between">
                                                 <dt class="text-gray-500">Peso Neto:</dt>
                                                 <dd class="font-medium">{{ number_format($container->pivot->net_weight_kg, 2) }} kg</dd>
@@ -271,10 +271,31 @@
                                                 <dd class="font-medium">{{ number_format($container->pivot->volume_m3, 3) }} m³</dd>
                                             </div>
                                         @endif
+                                        @if($container->tare_weight_kg !== null)
+                                            <div class="flex justify-between">
+                                                <dt class="text-gray-500">Tara:</dt>
+                                                <dd class="font-medium">{{ number_format($container->tare_weight_kg, 2) }} kg</dd>
+                                            </div>
+                                        @endif
+
+                                        @if($container->carrier_seal)
+                                            <div class="flex justify-between">
+                                                <dt class="text-gray-500">Precinto Línea:</dt>
+                                                <dd class="font-medium font-mono">{{ $container->carrier_seal }}</dd>
+                                            </div>
+                                        @endif
+
                                         @if($container->shipper_seal)
                                             <div class="flex justify-between">
-                                                <dt class="text-gray-500">Precinto:</dt>
+                                                <dt class="text-gray-500">Precinto Cargador:</dt>
                                                 <dd class="font-medium font-mono">{{ $container->shipper_seal }}</dd>
+                                            </div>
+                                        @endif
+
+                                        @if($container->customs_seal)
+                                            <div class="flex justify-between">
+                                                <dt class="text-gray-500">Precinto Aduana:</dt>
+                                                <dd class="font-medium font-mono">{{ $container->customs_seal }}</dd>
                                             </div>
                                         @endif
                                     </dl>
@@ -481,7 +502,7 @@
                                         <dt class="text-sm font-medium text-gray-500">Peso Bruto</dt>
                                         <dd class="mt-1 text-sm font-semibold text-gray-900">{{ number_format($shipmentItem->gross_weight_kg, 2) }} kg</dd>
                                     </div>
-                                    @if($shipmentItem->net_weight_kg)
+                                    @if($shipmentItem->net_weight_kg !== null)
                                         <div>
                                             <dt class="text-sm font-medium text-gray-500">Peso Neto</dt>
                                             <dd class="mt-1 text-sm font-semibold text-gray-900">{{ number_format($shipmentItem->net_weight_kg, 2) }} kg</dd>
