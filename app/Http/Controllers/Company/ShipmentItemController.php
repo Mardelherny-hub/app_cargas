@@ -926,7 +926,6 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                     )
                         ? $containerData['tare_weight']
                         : $container->tare_weight_kg,
-                    'current_gross_weight_kg' => $containerData['gross_weight_kg'],
                     'condition' => $containerData['condition'] ?? 'L',
                     $sealField => $sealValue,
                     'operational_status' => 'loaded',
