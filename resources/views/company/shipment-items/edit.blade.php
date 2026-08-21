@@ -268,6 +268,9 @@
                                value="{{ old('containers.'.$index.'.seal_number', $container['seal_number']) }}"
                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                placeholder="SL123456">
+                        <input type="hidden"
+                               name="containers[{{ $index }}][seal_source]"
+                               value="{{ old('containers.'.$index.'.seal_source', $container['seal_source'] ?? 'shipper') }}">
                     </div>
 
                     {{-- Peso de Tara --}}
@@ -1351,33 +1354,38 @@ function populateExistingContainers() {
         
         const sealNumberField = document.querySelector(`input[name="containers[${index}][seal_number]"]`);
         if (sealNumberField) {
-            sealNumberField.value = containerData.seal_number || '';
+            sealNumberField.value = containerData.seal_number ?? '';
+        }
+
+        const sealSourceField = document.querySelector(`input[name="containers[${index}][seal_source]"]`);
+        if (sealSourceField) {
+            sealSourceField.value = containerData.seal_source ?? 'shipper';
         }
         
         const tareWeightField = document.querySelector(`input[name="containers[${index}][tare_weight]"]`);
         if (tareWeightField) {
-            tareWeightField.value = containerData.tare_weight || '';
+            tareWeightField.value = containerData.tare_weight ?? '';
         }
         
         // Poblar campos de distribución de carga
         const packageQtyField = document.querySelector(`input[name="containers[${index}][package_quantity]"]`);
         if (packageQtyField) {
-            packageQtyField.value = containerData.package_quantity || '';
+            packageQtyField.value = containerData.package_quantity ?? '';
         }
         
         const grossWeightField = document.querySelector(`input[name="containers[${index}][gross_weight_kg]"]`);
         if (grossWeightField) {
-            grossWeightField.value = containerData.gross_weight_kg || '';
+            grossWeightField.value = containerData.gross_weight_kg ?? '';
         }
         
         const netWeightField = document.querySelector(`input[name="containers[${index}][net_weight_kg]"]`);
         if (netWeightField) {
-            netWeightField.value = containerData.net_weight_kg || '';
+            netWeightField.value = containerData.net_weight_kg ?? '';
         }
         
         const volumeField = document.querySelector(`input[name="containers[${index}][volume_m3]"]`);
         if (volumeField) {
-            volumeField.value = containerData.volume_m3 || '';
+            volumeField.value = containerData.volume_m3 ?? '';
         }
         
         const sequenceField = document.querySelector(`input[name="containers[${index}][loading_sequence]"]`);
@@ -1456,6 +1464,9 @@ function addContainer() {
                            name="containers[${containerIndex}][seal_number]" 
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                            placeholder="SL123456">
+                    <input type="hidden"
+                           name="containers[${containerIndex}][seal_source]"
+                           value="shipper">
                 </div>
 
                 <div>
