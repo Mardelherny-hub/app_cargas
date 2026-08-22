@@ -502,6 +502,20 @@ if ($user) {
                     
                 </div>
 
+                {{-- DESCRIPCIÓN DECLARADA DE LA CARGA --}}
+                @if($billOfLading->cargo_description)
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-medium text-gray-900">
+                            Descripción de la carga
+                        </h3>
+                    </div>
+                    <div class="px-6 py-4">
+                        <p class="text-sm text-gray-900 whitespace-pre-line">{{ $billOfLading->cargo_description }}</p>
+                    </div>
+                </div>
+                @endif
+
                 {{-- ITEMS DE MERCADERÍA --}}
                 @php
                     $itemsCount = $billOfLading->shipmentItems->count();
@@ -598,7 +612,9 @@ if ($user) {
                                             </th>
                                         @endif
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Línea</th>
-                                        {{-- <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th> --}}
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mercadería / Referencia</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contenedor</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NCM / Posición</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peso (kg)</th>
@@ -608,7 +624,15 @@ if ($user) {
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     @foreach($itemsToShow as $item)
-                                        <tr class="hover:bg-gray-50 item-row" data-search="{{ strtolower($item->item_description . ' ' . $item->item_reference . ' ' . ($item->cargoType->name ?? '')) }}">
+                                        <tr class="hover:bg-gray-50 item-row"
+                                            data-search="{{ strtolower(trim(
+                                                $item->item_description . ' '
+                                                . $item->item_reference . ' '
+                                                . ($item->commodity_code ?? '') . ' '
+                                                . ($item->tariff_position ?? '') . ' '
+                                                . $item->containers->pluck('container_number')->implode(' ') . ' '
+                                                . ($item->cargoType->name ?? '')
+                                            )) }}">
                                             @if($canBulkDelete)
                                                 <td class="px-4 py-3">
                                                     <input type="checkbox" name="item_ids[]" value="{{ $item->id }}" 
@@ -617,15 +641,30 @@ if ($user) {
                                                 </td>
                                             @endif
                                             <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ $item->line_number }}</td>
-                                            {{-- <td class="px-4 py-3">
-                                                <div class="text-sm font-medium text-gray-900">{{ $item->item_description }}</div>
+
+                                            <td class="px-4 py-3">
+                                                <div class="text-sm font-medium text-gray-900">
+                                                    {{ $item->item_description ?: '-' }}
+                                                </div>
                                                 @if($item->item_reference)
-                                                    <div class="text-sm text-gray-500">Ref: {{ $item->item_reference }}</div>
+                                                    <div class="text-xs text-gray-500">
+                                                        Ref: {{ $item->item_reference }}
+                                                    </div>
                                                 @endif
-                                                @if($item->hs_code)
-                                                    <div class="text-xs text-gray-400">HS: {{ $item->hs_code }}</div>
-                                                @endif
-                                            </td> --}}
+                                            </td>
+
+                                            <td class="px-4 py-3 text-sm text-gray-900">
+                                                @forelse($item->containers as $container)
+                                                    <div>{{ $container->container_number }}</div>
+                                                @empty
+                                                    <span class="text-gray-400">-</span>
+                                                @endforelse
+                                            </td>
+
+                                            <td class="px-4 py-3 text-sm text-gray-900">
+                                                {{ $item->tariff_position ?: ($item->commodity_code ?: '-') }}
+                                            </td>
+
                                             <td class="px-4 py-3 text-sm text-gray-900">
                                                 {{ $item->cargoType->name ?? 'N/A' }}
                                                 @if($item->packagingType)
