@@ -79,15 +79,6 @@ class LoginXmlParser implements ManifestParserInterface
         '20TK' => '20TN',
     ];
 
-    // Mapeo de países por código NCM/origen
-    protected array $countryMapping = [
-        'default' => 'ARG', // Argentina por defecto para Login
-        'argentina' => 'ARG',
-        'paraguay' => 'PRY',
-        'brasil' => 'BRA',
-        'uruguay' => 'URY'
-    ];
-
     // Contenedores creados durante la importación actual (evita duplicados)
     protected array $createdContainersInImport = [];
 
@@ -95,6 +86,9 @@ class LoginXmlParser implements ManifestParserInterface
     protected ?CargoType $cachedCargoType = null;
     protected ?PackagingType $cachedPackagingType = null;
     protected array $cachedContainerTypes = [];
+
+    // Advertencias no bloqueantes originadas en datos explícitos del archivo.
+    protected array $warnings = [];
 
     /**
      * Verificar si el parser puede procesar el archivo XML
@@ -267,15 +261,57 @@ class LoginXmlParser implements ManifestParserInterface
                 $billOfLading = $this->createBillOfLadingFromData($blData, $shipment, $context);
                 $allBillIds[] = $billOfLading->id;
                 
-                $itemIds = $this->createShipmentItemsFromData($blData['containers'], $billOfLading, $context);
+                $itemIds = $this->createShipmentItemsFromData(
+                    $blData['containers'],
+                    $billOfLading,
+                    $context
+                );
+
                 foreach ($itemIds as $iid) {
                     $allItemIds[] = $iid;
                 }
-                
+
+                /*
+                 * Los eventos de ShipmentItem recalculan estadísticas.
+                 * Para Login, la cabecera XML vuelve a ser la fuente
+                 * autoritativa al terminar de crear los items.
+                 */
+                /*
+                 * Los eventos de ShipmentItem actualizan el mismo BL usando
+                 * otras instancias de Eloquent. Refrescar primero evita que
+                 * el dirty-check compare contra atributos obsoletos en memoria.
+                 */
+                $billOfLading->refresh();
+
+                $billOfLading->updateQuietly([
+                    'gross_weight_kg' => $blData['total_weight_kg'],
+                    'volume_m3' => $blData['volume_m3'],
+                    'cargo_marks' => $blData['cargo_marks'] ?? null,
+
+                    // Login no informa cantidad de bultos.
+                    // 0 representa desconocido por exigencia del esquema.
+                    'total_packages' => 0,
+
+                    'container_count' => $blData['total_containers'],
+                ]);
+
                 // Liberar el objeto BL de memoria tras usar su id
                 unset($billOfLading);
             }
             
+            // Completar el tracking dentro de la misma transacción.
+            // Si esto falla, también deben revertirse voyage, shipment,
+            // BLs, items, contenedores y clientes creados por la importación.
+            $this->completeImportRecord(
+                $importRecord,
+                $voyage,
+                [$shipment->id],
+                $allBillIds,
+                $allItemIds,
+                $startTime,
+                $this->warnings
+            );
+
             DB::commit();
 
             Log::info('Login XML parseado exitosamente', [
@@ -285,25 +321,24 @@ class LoginXmlParser implements ManifestParserInterface
                 'items_created' => count($allItemIds)
             ]);
 
-            // Completar registro de importación (recibe IDs directamente)
-            $this->completeImportRecord($importRecord, $voyage, [$shipment->id], $allBillIds, $allItemIds, $startTime);
-
             return ManifestParseResult::success(
                 voyage: $voyage,
                 shipments: [$shipment],
                 billsOfLading: [],
                 containers: [],
+                warnings: $this->warnings,
                 statistics: [
                     'format' => 'Login XML',
                     'bills_of_lading' => count($allBillIds),
                     'containers' => count($transformedData['containers']),
                     'total_weight_kg' => array_sum(array_column($transformedData['containers'], 'gross_weight_kg')),
                     'shipper' => 'Multiple shippers',
-                    'consignee' => 'Multiple consignees'
+                    'consignee' => 'Multiple consignees',
+                    'warnings_count' => count($this->warnings)
                 ]
             );
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             
             // Detectar voyage duplicado
@@ -359,6 +394,10 @@ class LoginXmlParser implements ManifestParserInterface
             }
             
             $header = $billOfLading->BillOfLadingHeader;
+
+            [$vesselName, $voyageNumber] = $this->parseVesselVoyageFlag(
+                (string) $header->InitialVesselVoyFlag
+            );
             
             // Extraer datos del header de este BL
             $blData = [
@@ -368,15 +407,16 @@ class LoginXmlParser implements ManifestParserInterface
                 'consignee_name' => (string)$header->Consignee ?? null,
                 'notify_party_name' => (string)$header->NotifyParty ?? null,
                 'booking_number' => (string)$header->BookingNumber ?? null,
-                'vessel_name' => (string)$header->InitialVesselVoyFlag ?? null,
+                'vessel_name' => $vesselName,
                 'loading_port' => (string)$header->InitalPortOfLoading ?? (string)$header->FinalPortOfLoading ?? null,
                 'discharge_port' => (string)$header->PortOfDischarge ?? null,
                 'gross_weight' => (string)$header->GrossWeight ?? null,
                 'measurement' => (string)$header->Measurement ?? null,
                 'cargo_description' => (string)$header->DescriptionOfPackagesAndGoods ?? null,
+                'cargo_marks' => trim((string)$header->MksAndNos) ?: null,
                 'loading_date' => null,
                 'bill_date' => null,
-                'voyage_number' => (string)$header->BookingNumber ?? null,
+                'voyage_number' => $voyageNumber,
                 'containers' => []  // Containers de este BL específico
             ];
             
@@ -387,10 +427,18 @@ class LoginXmlParser implements ManifestParserInterface
                         'line_number' => (int)$line->BillOfLadingLineNumber ?? 0,
                         'container_number' => (string)$line->Container ?? null,
                         'container_type' => (string)$line->Type ?? null,
-                        'tare_weight_kg' => $this->parseWeight((string)$line->Tare),
-                        'net_weight_kg' => $this->parseWeight((string)$line->NetWeight),
-                        'gross_weight_kg' => $this->parseWeight((string)$line->GrossWeight),
-                        'vgm' => isset($line->Vgm) ? $this->parseWeight((string)$line->Vgm) : null,
+                        'tare_weight_kg' => $this->parseOptionalWeight(
+                            isset($line->Tare) ? (string) $line->Tare : null
+                        ),
+                        'net_weight_kg' => $this->parseOptionalWeight(
+                            isset($line->NetWeight) ? (string) $line->NetWeight : null
+                        ),
+                        'gross_weight_kg' => $this->parseOptionalWeight(
+                            isset($line->GrossWeight) ? (string) $line->GrossWeight : null
+                        ),
+                        'vgm' => isset($line->Vgm)
+                            ? $this->parseOptionalWeight((string) $line->Vgm)
+                            : null,
                         'seals' => [],
                         'ncm_codes' => []
                     ];
@@ -410,10 +458,18 @@ class LoginXmlParser implements ManifestParserInterface
                     }
 
                     $blData['containers'][] = $container;
-                    $data['containers'][] = $container; // También al array global
                 }
             }
             
+            $blData['containers'] = $this->consolidateLoginContainers(
+                $blData['containers'],
+                $blData['bill_number']
+            );
+
+            foreach ($blData['containers'] as $container) {
+                $data['containers'][] = $container;
+            }
+
             $data['bills_of_lading'][] = $blData;
             
             // El primer BL se usa como header principal (para voyage/shipment)
@@ -429,22 +485,119 @@ class LoginXmlParser implements ManifestParserInterface
         return $data;
     }
 
+    protected function parseVesselVoyageFlag(string $raw): array
+    {
+        $raw = trim($raw);
+
+        if ($raw === '' || !str_contains($raw, '/')) {
+            throw new Exception(
+                "Login no informa buque/viaje en formato válido: {$raw}"
+            );
+        }
+
+        [$vesselName, $voyageNumber] = array_map(
+            'trim',
+            explode('/', $raw, 2)
+        );
+
+        if ($vesselName === '' || $voyageNumber === '') {
+            throw new Exception(
+                "Login informa buque/viaje incompleto: {$raw}"
+            );
+        }
+
+        return [$vesselName, $voyageNumber];
+    }
+
+    protected function consolidateLoginContainers(
+        array $containers,
+        string $billNumber
+    ): array {
+        $result = [];
+
+        foreach ($containers as $container) {
+            $number = strtoupper(trim((string) $container['container_number']));
+
+            if (!isset($result[$number])) {
+                $container['container_number'] = $number;
+                $container['seals'] = array_values(array_unique($container['seals']));
+                $container['ncm_codes'] = array_values(array_unique($container['ncm_codes']));
+                $result[$number] = $container;
+                continue;
+            }
+
+            $current = $result[$number];
+
+            foreach ([
+                'container_type',
+                'tare_weight_kg',
+                'net_weight_kg',
+                'gross_weight_kg',
+            ] as $field) {
+                if ($current[$field] != $container[$field]) {
+                    throw new Exception(
+                        "Contenedor {$number} repetido en BL {$billNumber} "
+                        . "con distinto {$field}"
+                    );
+                }
+            }
+
+            if (
+                $current['vgm'] !== null
+                && $container['vgm'] !== null
+                && $current['vgm'] != $container['vgm']
+            ) {
+                throw new Exception(
+                    "Contenedor {$number} repetido en BL {$billNumber} "
+                    . "con distinto VGM"
+                );
+            }
+
+            if ($current['vgm'] === null && $container['vgm'] !== null) {
+                $current['vgm'] = $container['vgm'];
+            }
+
+            $current['seals'] = array_values(array_unique(array_merge(
+                $current['seals'],
+                $container['seals']
+            )));
+
+            $current['ncm_codes'] = array_values(array_unique(array_merge(
+                $current['ncm_codes'],
+                $container['ncm_codes']
+            )));
+
+            $result[$number] = $current;
+        }
+
+        return array_values($result);
+    }
+
     /**
-     * Parsear peso desde string (puede tener comas como separador decimal)
+     * Parsear una medida sin confundir ausencia con cero explícito.
+     */
+    protected function parseOptionalWeight(?string $weightStr): ?float
+    {
+        if ($weightStr === null || trim($weightStr) === '') {
+            return null;
+        }
+
+        $normalized = str_replace(',', '.', trim($weightStr));
+        $cleaned = preg_replace('/[^0-9.-]/', '', $normalized);
+
+        if ($cleaned === '' || $cleaned === '-' || $cleaned === '.') {
+            return null;
+        }
+
+        return (float) $cleaned;
+    }
+
+    /**
+     * Compatibilidad para campos donde el contrato histórico requiere float.
      */
     protected function parseWeight(string $weightStr): float
     {
-        if (empty($weightStr)) {
-            return 0.0;
-        }
-
-        // Reemplazar coma por punto para decimales
-        $normalized = str_replace(',', '.', $weightStr);
-        
-        // Remover cualquier carácter no numérico excepto punto y signo negativo
-        $cleaned = preg_replace('/[^0-9.-]/', '', $normalized);
-        
-        return (float)$cleaned;
+        return $this->parseOptionalWeight($weightStr) ?? 0.0;
     }
 
     /**
@@ -466,19 +619,21 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Validar datos extraídos - SOPORTA MÚLTIPLES BillOfLading
+     * Validar datos extraídos.
+     *
+     * Un cero informado por Login se conserva y genera advertencia.
+     * Un dato obligatorio ausente o un valor negativo bloquea la importación.
      */
     public function validate(array $data): array
     {
         $errors = [];
+        $this->warnings = [];
 
-        // Validar que existan BLs
         if (empty($data['bills_of_lading'])) {
             $errors[] = 'Al menos un Bill of Lading es requerido en el XML';
             return $errors;
         }
 
-        // Validar header principal (para voyage/shipment)
         if (empty($data['header']['loading_port'])) {
             $errors[] = 'Puerto de carga requerido en el XML';
         }
@@ -487,11 +642,20 @@ class LoginXmlParser implements ManifestParserInterface
             $errors[] = 'Puerto de descarga requerido en el XML';
         }
 
-        // Validar cada BL individualmente
+        if (empty($data['header']['voyage_number'])) {
+            $errors[] = 'Número de viaje requerido en el XML';
+        }
+
+        if (empty($data['header']['vessel_name'])) {
+            $errors[] = 'Nombre de buque requerido en el XML';
+        }
+
         foreach ($data['bills_of_lading'] as $blIndex => $bl) {
             $blNum = $blIndex + 1;
-            $blRef = $bl['bill_number'] ?? "BL #{$blNum}";
-            
+
+            $blRef = trim((string) ($bl['bill_number'] ?? ''));
+            $blRef = $blRef !== '' ? $blRef : "BL #{$blNum}";
+
             if (empty($bl['bill_number'])) {
                 $errors[] = "Número de Bill of Lading requerido en {$blRef}";
             }
@@ -504,39 +668,132 @@ class LoginXmlParser implements ManifestParserInterface
                 $errors[] = "Nombre del consignee requerido en {$blRef}";
             }
 
-            // Validar contenedores de este BL
+            if (trim((string) ($bl['cargo_description'] ?? '')) === '') {
+                $errors[] = "Descripción de mercadería requerida en {$blRef}";
+            }
+
+            $headerGross = $this->parseOptionalWeight(
+                isset($bl['gross_weight'])
+                    ? (string) $bl['gross_weight']
+                    : null
+            );
+
+            if ($headerGross === null) {
+                $errors[] = "Peso bruto de cabecera ausente en {$blRef}";
+            } elseif ($headerGross < 0) {
+                $errors[] = "Peso bruto de cabecera negativo en {$blRef}";
+            } elseif ($headerGross == 0.0) {
+                $this->warnings[] =
+                    "{$blRef}: peso bruto de cabecera informado en 0; "
+                    . "debe completarse manualmente si corresponde.";
+            }
+
+            $headerVolume = $this->parseOptionalWeight(
+                isset($bl['measurement'])
+                    ? (string) $bl['measurement']
+                    : null
+            );
+
+            if ($headerVolume !== null) {
+                if ($headerVolume < 0) {
+                    $errors[] = "Volumen de cabecera negativo en {$blRef}";
+                } elseif ($headerVolume == 0.0) {
+                    $this->warnings[] =
+                        "{$blRef}: volumen informado en 0; "
+                        . "debe completarse manualmente si corresponde.";
+                }
+            }
+
             if (empty($bl['containers'])) {
                 $errors[] = "Al menos un contenedor requerido en {$blRef}";
+                continue;
             }
 
             foreach ($bl['containers'] as $cIndex => $container) {
-                $lineRef = "{$blRef} línea " . ($cIndex + 1);
-                
-                if (empty($container['container_number'])) {
+                $containerNumber = trim(
+                    (string) ($container['container_number'] ?? '')
+                );
+
+                $lineRef = $containerNumber !== ''
+                    ? "{$blRef} contenedor {$containerNumber}"
+                    : "{$blRef} línea " . ($cIndex + 1);
+
+                if ($containerNumber === '') {
                     $errors[] = "Número de contenedor requerido en {$lineRef}";
                 }
 
                 if (empty($container['container_type'])) {
                     $errors[] = "Tipo de contenedor requerido en {$lineRef}";
-                } elseif ($this->resolveContainerType($container['container_type']) === null) {
-                    $errors[] = "Tipo de contenedor desconocido \"" . strtoupper(trim((string)$container['container_type']))
-                        . "\" en el contenedor " . ($container['container_number'] ?? 's/n')
-                        . " ({$lineRef}). Debe agregarse su correspondencia al catálogo antes de importar.";
+                } elseif (
+                    $this->resolveContainerType(
+                        $container['container_type']
+                    ) === null
+                ) {
+                    $errors[] =
+                        'Tipo de contenedor desconocido "'
+                        . strtoupper(
+                            trim((string) $container['container_type'])
+                        )
+                        . "\" en {$lineRef}. Debe agregarse su "
+                        . 'correspondencia al catálogo antes de importar.';
                 }
 
-                if ($container['gross_weight_kg'] <= 0) {
-                    $errors[] = "Peso bruto debe ser mayor a 0 en {$lineRef}";
+                $gross = $container['gross_weight_kg'] ?? null;
+                $net = $container['net_weight_kg'] ?? null;
+                $tare = $container['tare_weight_kg'] ?? null;
+                $vgm = $container['vgm'] ?? null;
+
+                if ($gross === null) {
+                    $errors[] = "Peso bruto ausente en {$lineRef}";
+                } elseif ($gross < 0) {
+                    $errors[] = "Peso bruto negativo en {$lineRef}";
+                } elseif ((float) $gross === 0.0) {
+                    $this->warnings[] =
+                        "{$lineRef}: peso bruto informado en 0; "
+                        . "debe completarse manualmente.";
                 }
 
-                if ($container['net_weight_kg'] > $container['gross_weight_kg']) {
-                    $errors[] = "Peso neto no puede ser mayor al peso bruto en {$lineRef}";
+                if ($tare === null) {
+                    $errors[] = "Peso tara ausente en {$lineRef}";
+                } elseif ($tare < 0) {
+                    $errors[] = "Peso tara negativo en {$lineRef}";
+                } elseif ((float) $tare === 0.0) {
+                    $this->warnings[] =
+                        "{$lineRef}: peso tara informado en 0; "
+                        . "debe completarse manualmente.";
                 }
 
-                if ($container['tare_weight_kg'] <= 0) {
-                    $errors[] = "Peso tara debe ser mayor a 0 en {$lineRef}";
+                if ($net !== null) {
+                    if ($net < 0) {
+                        $errors[] = "Peso neto negativo en {$lineRef}";
+                    } elseif ((float) $net === 0.0) {
+                        $this->warnings[] =
+                            "{$lineRef}: peso neto informado en 0; "
+                            . "debe completarse manualmente.";
+                    }
+
+                    if ($gross !== null && $net > $gross) {
+                        $errors[] =
+                            "Peso neto no puede ser mayor al peso bruto "
+                            . "en {$lineRef}";
+                    }
+                }
+
+                if ($vgm !== null) {
+                    if ($vgm < 0) {
+                        $errors[] = "VGM negativo en {$lineRef}";
+                    } elseif ((float) $vgm === 0.0) {
+                        $this->warnings[] =
+                            "{$lineRef}: VGM informado en 0; "
+                            . "debe completarse manualmente.";
+                    }
                 }
             }
         }
+
+        $this->warnings = array_values(
+            array_unique($this->warnings)
+        );
 
         return $errors;
     }
@@ -563,7 +820,8 @@ class LoginXmlParser implements ManifestParserInterface
                     'seals' => implode(', ', $container['seals']),
                     'commodity_code' => implode(', ', $container['ncm_codes']),
                     'package_description' => $this->getContainerDescription($container['container_type']),
-                    'country_of_origin' => $this->countryMapping['default']
+                    // Login no informa país de origen por línea.
+                    'country_of_origin' => null
                 ];
             }, $bl['containers']);
             
@@ -577,9 +835,22 @@ class LoginXmlParser implements ManifestParserInterface
                 'discharge_port' => $bl['discharge_port'] ?? null,
                 'bill_date' => $this->parseDate($bl['bill_date'] ?? null),
                 'loading_date' => $this->parseDate($bl['loading_date'] ?? null),
-                'cargo_description' => $bl['cargo_description'] ?? 'Login XML Import',
+                'cargo_description' => $bl['cargo_description'],
+                'cargo_marks' => $bl['cargo_marks'] ?? null,
                 'total_containers' => count($bl['containers']),
-                'total_weight_kg' => array_sum(array_column($bl['containers'], 'gross_weight_kg')),
+
+                // Valores estructurados de la cabecera del BL.
+                'total_weight_kg' => $this->parseOptionalWeight(
+                    isset($bl['gross_weight'])
+                        ? (string) $bl['gross_weight']
+                        : null
+                ),
+                'volume_m3' => $this->parseOptionalWeight(
+                    isset($bl['measurement'])
+                        ? (string) $bl['measurement']
+                        : null
+                ),
+
                 'containers' => $blContainers
             ];
             
@@ -588,15 +859,15 @@ class LoginXmlParser implements ManifestParserInterface
         
         return [
             'voyage' => [
-                'voyage_number' => $data['header']['voyage_number'] ?? 'LGN-' . date('Y-m-d'),
-                'vessel_name' => $data['header']['vessel_name'] ?? 'Login Vessel',
-                'origin_port' => $data['header']['loading_port'] ?? 'Unknown',
-                'destination_port' => $data['header']['discharge_port'] ?? 'Unknown',
-                'departure_date' => $this->parseDate($data['header']['loading_date'] ?? null),
-                'estimated_arrival_date' => $this->parseDate($data['header']['loading_date'] ?? null, '+3 days')
+                'voyage_number' => $data['header']['voyage_number'],
+                'vessel_name' => $data['header']['vessel_name'],
+                'origin_port' => $data['header']['loading_port'],
+                'destination_port' => $data['header']['discharge_port'],
+                'departure_date' => null,
+                'estimated_arrival_date' => null
             ],
             'shipment' => [
-                'shipment_number' => 'LGN-' . date('Ymd') . '-001',
+                'shipment_number' => 'LGN-' . $data['header']['voyage_number'],
                 'status' => 'planning'
             ],
             'bills_of_lading' => $billsOfLading,
@@ -694,7 +965,7 @@ class LoginXmlParser implements ManifestParserInterface
         }
 
         // Crear o encontrar embarcación líder
-        $vesselName = $data['voyage']['vessel_name'] ?? 'Login Vessel';
+        $vesselName = $data['voyage']['vessel_name'];
         $leadVessel = $this->findOrCreateVessel($vesselName, $company->id);
 
         // El voyage_number es único global. Si ya existe (en cualquier empresa),
@@ -716,8 +987,9 @@ class LoginXmlParser implements ManifestParserInterface
             'status' => 'planning',
             'is_convoy' => false,
             'vessel_count' => 1,
-            'total_cargo_capacity_tons' => $data['voyage']['total_weight_tons'] ?? 1000.0,
-            'total_container_capacity' => count($data['containers']),
+            // El archivo no informa capacidades técnicas del buque.
+            'total_cargo_capacity_tons' => 0,
+            'total_container_capacity' => 0,
             'active' => true,
             'created_date' => now(),
             'created_by_user_id' => $context['user_id']
@@ -738,154 +1010,14 @@ class LoginXmlParser implements ManifestParserInterface
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
             'is_lead_vessel' => true,
-            'cargo_capacity_tons' => $data['voyage']['total_weight_tons'] ?? 500.0,
-            'container_capacity' => count($data['containers']),
+            // El archivo no informa capacidades técnicas del shipment.
+            'cargo_capacity_tons' => 0,
+            'container_capacity' => 0,
             'status' => $data['shipment']['status'],
             'active' => true,
             'created_date' => now(),
             'created_by_user_id' => $context['user_id']
         ]);
-    }
-
-    /**
-     * Crear Bill of Lading
-     */
-    protected function createBillOfLading(array $data, Shipment $shipment, array $context): BillOfLading
-    {
-        // Crear o encontrar clientes con datos reales del XML
-        $shipper = $this->findOrCreateClient(
-            $data['bill_of_lading']['shipper_name'], 
-            'shipper',
-            $context,
-            $data['bill_of_lading']['shipper_cuit'] ?? null
-        );
-        
-        $consignee = $this->findOrCreateClient(
-            $data['bill_of_lading']['consignee_name'], 
-            'consignee',
-            $context,
-            $data['bill_of_lading']['consignee_tax_id'] ?? null
-        );
-        
-        $notifyParty = null;
-        if (!empty($data['bill_of_lading']['notify_party_name'])) {
-            $notifyParty = $this->findOrCreateClient(
-                $data['bill_of_lading']['notify_party_name'], 
-                'notify_party',
-                $context
-            );
-        }
-
-        // Obtener cargo type por defecto
-        $cargoType = CargoType::where('active', true)->first();
-        $packagingType = PackagingType::where('active', true)->first();
-
-
-        return BillOfLading::create([
-            'shipment_id' => $shipment->id,
-            'bill_number' => $data['bill_of_lading']['bill_number'],
-            'shipper_id' => $shipper?->id,
-            'consignee_id' => $consignee?->id,
-            'notify_party_id' => $notifyParty?->id,
-            'loading_port_id' => $shipment->voyage->origin_port_id,
-            'discharge_port_id' => $shipment->voyage->destination_port_id,
-            'primary_cargo_type_id' => $cargoType?->id ?? 1,        
-            'primary_packaging_type_id' => $packagingType?->id ?? 1,
-            'bill_date' => $data['bill_of_lading']['bill_date'] ?? now(),
-            'loading_date' => $data['bill_of_lading']['loading_date'] ?? now(),
-            'cargo_description' => $data['bill_of_lading']['cargo_description'],
-            'total_packages' => $data['bill_of_lading']['total_containers'],
-            'gross_weight_kg' => $data['bill_of_lading']['total_weight_kg'],
-            'container_count' => $data['bill_of_lading']['total_containers'],
-            'freight_terms' => 'prepaid',
-            'currency_code' => 'USD',
-            'status' => 'draft',
-            'is_consolidated' => false,
-            'created_by_user_id' => $context['user_id']
-        ]);
-    }
-
-    /**
-     * Crear ShipmentItems (uno por contenedor)
-     */
-    protected function createShipmentItems(array $data, BillOfLading $billOfLading): array
-    {
-        $items = [];
-        
-        $cargoType = CargoType::where('name', 'LIKE', '%container%')->first() 
-                     ?? CargoType::first();
-        $packagingType = PackagingType::where('name', 'LIKE', '%container%')->first() 
-                         ?? PackagingType::first();
-
-        foreach ($containers as $containerData) {
-            $containerNumber = $containerData['container_number'];
-            
-            // Crear ShipmentItem
-            $item = ShipmentItem::create([
-                'bill_of_lading_id' => $billOfLading->id,
-                'line_number' => $containerData['line_number'],
-                'item_reference' => 'LGN-' . $containerData['container_number'],
-                'item_description' => $containerData['package_description'],
-                'cargo_type_id' => $cargoType?->id,
-                'packaging_type_id' => $packagingType?->id,
-                'package_quantity' => 1,
-                'gross_weight_kg' => $containerData['gross_weight_kg'],
-                'net_weight_kg' => $containerData['net_weight_kg'],
-                'country_of_origin' => $containerData['country_of_origin'],
-                'commodity_code' => $containerData['commodity_code'],
-                'cargo_marks' => $containerData['seals'] ? "Seals: {$containerData['seals']}" : null,
-                'package_type_description' => $containerData['package_description'],
-                'created_date' => now(),
-                'created_by_user_id' => 1
-            ]);
-
-            // Crear Container asociado (evitar duplicados)
-            if (isset($this->createdContainersInImport[$containerNumber])) {
-                $container = $this->createdContainersInImport[$containerNumber];
-            } else {
-                $containerType = $this->resolveContainerType($containerData['container_type']);
-                if ($containerType === null) {
-                    throw new Exception(
-                        'Tipo de contenedor no resuelto: "'
-                        . strtoupper(trim((string)$containerData['container_type']))
-                        . '" en el contenedor ' . $containerNumber
-                        . '. La importación se detuvo para no persistir un contenedor sin tipo válido.'
-                    );
-                }
-
-                $container = Container::firstOrCreate(
-                    ['container_number' => $containerNumber],
-                    [
-                        'container_type_id' => $containerType->id,
-                        'tare_weight_kg' => $containerData['tare_weight_kg'],
-                        'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
-                        'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                        'cargo_weight_kg' => $containerData['net_weight_kg'],
-                        'condition' => 'L',
-                        'operational_status' => 'loaded',
-                        'shipper_seal' => $containerData['seals'],
-                        'active' => true,
-                        'created_date' => now(),
-                        'created_by_user_id' => $context['user_id']
-                    ]
-                );
-                $this->createdContainersInImport[$containerNumber] = $container;
-            }
-
-            // Asociar item con contenedor
-            $container->shipmentItems()->attach($item->id, [
-                'package_quantity' => 1,
-                'gross_weight_kg' => $containerData['gross_weight_kg'],
-                'net_weight_kg' => $containerData['net_weight_kg'],
-                'status' => 'loaded',
-                'created_date' => now(),
-                'created_by_user_id' => 1
-            ]);
-
-            $items[] = $item;
-        }
-
-        return $items;
     }
 
     /**
@@ -937,9 +1069,20 @@ class LoginXmlParser implements ManifestParserInterface
             );
         }
 
-        // Login es siempre carga contenedorizada
-        $cargoType = CargoType::find(9);        // CONTENEDORES
-        $packagingType = PackagingType::find(4); // CONTENEDOR
+        // Resolver semánticamente; nunca depender del ID del catálogo.
+        $cargoType = CargoType::where('name', 'CONTENEDORES')
+            ->where('active', true)
+            ->first();
+
+        $packagingType = PackagingType::where('code', 'T')
+            ->where('active', true)
+            ->first();
+
+        if (!$cargoType || !$packagingType) {
+            throw new Exception(
+                'Catálogo CONTENEDORES/CONTENEDOR no disponible'
+            );
+        }
 
         // Puerto propio del BL; si no viene o no está en catálogo, cae al del voyage
         $blLoadingPort = !empty($blData['loading_port'])
@@ -949,6 +1092,20 @@ class LoginXmlParser implements ManifestParserInterface
             ? $this->findPortByName($blData['discharge_port'])
             : null;
 
+        if (!empty($blData['loading_port']) && !$blLoadingPort) {
+            throw new Exception(
+                "Puerto de carga '{$blData['loading_port']}' del BL "
+                . "{$blData['bill_number']} no encontrado"
+            );
+        }
+
+        if (!empty($blData['discharge_port']) && !$blDischargePort) {
+            throw new Exception(
+                "Puerto de descarga '{$blData['discharge_port']}' del BL "
+                . "{$blData['bill_number']} no encontrado"
+            );
+        }
+
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $blData['bill_number'],
@@ -957,16 +1114,18 @@ class LoginXmlParser implements ManifestParserInterface
             'notify_party_id' => $notifyParty?->id,
             'loading_port_id' => $blLoadingPort?->id ?? $shipment->voyage->origin_port_id,
             'discharge_port_id' => $blDischargePort?->id ?? $shipment->voyage->destination_port_id,
-            'primary_cargo_type_id' => $cargoType?->id ?? 1,        
-            'primary_packaging_type_id' => $packagingType?->id ?? 1,
+            'primary_cargo_type_id' => $cargoType->id,
+            'primary_packaging_type_id' => $packagingType->id,
             'bill_date' => $blData['bill_date'] ?? now(),
             'loading_date' => $blData['loading_date'] ?? now(),
-            'cargo_description' => $blData['cargo_description'] ?? 'Login XML Import',
-            'total_packages' => $blData['total_containers'],
+            'cargo_description' => $blData['cargo_description'],
+            'cargo_marks' => $blData['cargo_marks'] ?? null,
+
+            // Login no informa cantidad de bultos: no confundirla con contenedores.
+            // La columna mantiene su default interno de esquema.
             'gross_weight_kg' => $blData['total_weight_kg'],
+            'volume_m3' => $blData['volume_m3'],
             'container_count' => $blData['total_containers'],
-            'freight_terms' => 'prepaid',
-            'currency_code' => 'USD',
             'status' => 'draft',
             'is_consolidated' => false,
             'created_by_user_id' => $context['user_id']
@@ -996,13 +1155,23 @@ class LoginXmlParser implements ManifestParserInterface
     {
         $itemIds = [];
 
-        // Catálogos resueltos una sola vez por importación (cache de instancia).
-        // Login es siempre carga contenedorizada: CONTENEDORES (9) / CONTENEDOR (4)
+        // Catálogos resueltos semánticamente una sola vez por importación.
         if ($this->cachedCargoType === null) {
-            $this->cachedCargoType = CargoType::find(9);
+            $this->cachedCargoType = CargoType::where('name', 'CONTENEDORES')
+                ->where('active', true)
+                ->first();
         }
+
         if ($this->cachedPackagingType === null) {
-            $this->cachedPackagingType = PackagingType::find(4);
+            $this->cachedPackagingType = PackagingType::where('code', 'T')
+                ->where('active', true)
+                ->first();
+        }
+
+        if (!$this->cachedCargoType || !$this->cachedPackagingType) {
+            throw new Exception(
+                'Catálogo CONTENEDORES/CONTENEDOR no disponible'
+            );
         }
         $cargoType = $this->cachedCargoType;
         $packagingType = $this->cachedPackagingType;
@@ -1013,7 +1182,8 @@ class LoginXmlParser implements ManifestParserInterface
             // Crear ShipmentItem
             $item = ShipmentItem::create([
                 'bill_of_lading_id' => $billOfLading->id,
-                'line_number' => $index + 1,
+                // Conservar numeración real del XML (Login usa base 0).
+                'line_number' => $containerData['line_number'],
                 'item_reference' => 'LGN-' . $containerNumber,
                 'item_description' => $containerData['package_description'],
                 'cargo_type_id' => $cargoType?->id,
@@ -1025,7 +1195,9 @@ class LoginXmlParser implements ManifestParserInterface
                 'country_of_origin' => $containerData['country_of_origin'],
                 'commodity_code' => $containerData['commodity_code'],
                 'tariff_position' => $containerData['commodity_code'] ?: null,
-                'cargo_marks' => $containerData['seals'] ? "Seals: {$containerData['seals']}" : 'SM',
+                'cargo_marks' => $containerData['seals']
+                    ? "Seals: {$containerData['seals']}"
+                    : null,
                 'package_type_description' => $containerData['package_description'],
                 'created_date' => now(),
                 'created_by_user_id' => $context['user_id']
@@ -1050,8 +1222,11 @@ class LoginXmlParser implements ManifestParserInterface
                     [
                         'container_type_id' => $containerType->id,
                         'tare_weight_kg' => $containerData['tare_weight_kg'],
-                        'max_gross_weight_kg' => $containerData['gross_weight_kg'] + 5000,
-                        'current_gross_weight_kg' => $containerData['gross_weight_kg'],
+
+                        // Login no informa máximo técnico ni peso bruto actual.
+                        'max_gross_weight_kg' => null,
+                        'current_gross_weight_kg' => null,
+
                         'cargo_weight_kg' => $containerData['net_weight_kg'],
                         'condition' => 'L',
                         'operational_status' => 'loaded',
@@ -1069,6 +1244,7 @@ class LoginXmlParser implements ManifestParserInterface
                 'package_quantity' => 1,
                 'gross_weight_kg' => $containerData['gross_weight_kg'],
                 'net_weight_kg' => $containerData['net_weight_kg'],
+                'verified_gross_mass_kg' => $containerData['vgm'],
                 'status' => 'loaded',
                 'created_date' => now(),
                 'created_by_user_id' => $context['user_id']
@@ -1086,73 +1262,190 @@ class LoginXmlParser implements ManifestParserInterface
     /**
      * Encontrar o crear cliente con datos reales
      */
-    protected function findOrCreateClient(?string $name, string $type, array $context, ?string $taxId = null): ?Client
-    {
-        if (empty($name)) {
+    protected function findOrCreateClient(
+        ?string $name,
+        string $type,
+        array $context,
+        ?string $taxId = null
+    ): ?Client {
+        if ($name === null || trim($name) === '') {
             return null;
         }
 
-        // Limpiar el nombre
         $cleanName = $this->cleanClientName($name);
 
-        // Resolver tax: estructurado > embebido en el nombre. Sin dato real -> null (no fabrica).
-        $taxId = $this->resolveTaxId($taxId, $name);
+        /*
+         * Login puede traer un identificador estructurado defectuoso
+         * y el CUIT/CNPJ correcto dentro del texto de la parte.
+         *
+         * El estructurado sólo se acepta si su longitud es compatible
+         * con el país explícito en el propio XML.
+         */
+        $structuredTaxId = $taxId;
 
-        Log::debug('findOrCreateClient - Búsqueda', [
-            'name' => $name,
-            'type' => $type,
-            'taxId_original' => $taxId,
-            'cleanName' => $cleanName
-        ]);
-        
-        // 1. Si tiene tax_id, buscar primero por tax_id (más específico)
-        if ($taxId) {
-            $cleanTaxId = preg_replace('/[^0-9]/', '', $taxId);
-            $client = Client::where('tax_id', $cleanTaxId)->first();
-            
+        $structuredDigits = $structuredTaxId
+            ? preg_replace('/\D/', '', $structuredTaxId)
+            : null;
+
+        $explicitCountry = null;
+
+        if (preg_match('/\bARGENTINA\b/iu', $name)) {
+            $explicitCountry = 'AR';
+        } elseif (preg_match('/\bBRASIL\b|\bBRAZIL\b/iu', $name)) {
+            $explicitCountry = 'BR';
+        }
+
+        if (
+            $explicitCountry === 'AR'
+            && $structuredDigits !== null
+            && strlen($structuredDigits) !== 11
+        ) {
+            $structuredTaxId = null;
+        }
+
+        if (
+            $explicitCountry === 'BR'
+            && $structuredDigits !== null
+            && strlen($structuredDigits) !== 14
+        ) {
+            $structuredTaxId = null;
+        }
+
+        /*
+         * Si descartamos el estructurado inválido, resolveTaxId()
+         * continúa con el identificador explícito embebido en el texto.
+         *
+         * PROJECT CARGO:
+         * estructurado: 307110915       -> descartado
+         * texto:        30-71109158-7   -> 30711091587
+         */
+        $taxId = $this->resolveTaxId($structuredTaxId, $name);
+
+        $cleanTaxId = $taxId
+            ? preg_replace('/\D/', '', $taxId)
+            : null;
+
+        $countryCode = null;
+
+        if (preg_match('/\bARGENTINA\b/iu', $name)) {
+            $countryCode = 'AR';
+        } elseif (preg_match('/\bBRASIL\b|\bBRAZIL\b/iu', $name)) {
+            $countryCode = 'BR';
+        } elseif ($cleanTaxId && strlen($cleanTaxId) === 11) {
+            $countryCode = 'AR';
+        } elseif ($cleanTaxId && strlen($cleanTaxId) === 14) {
+            $countryCode = 'BR';
+        }
+
+        if ($countryCode === null) {
+            throw new Exception(
+                "Login no permite determinar el país real del cliente {$cleanName}"
+            );
+        }
+
+        $documentCode = null;
+
+        if ($cleanTaxId !== null) {
+            if ($countryCode === 'AR') {
+                if (strlen($cleanTaxId) !== 11) {
+                    throw new Exception(
+                        "Identificación fiscal incompatible con Argentina para {$cleanName}"
+                    );
+                }
+
+                $documentCode = 'CUIT';
+            }
+
+            if ($countryCode === 'BR') {
+                if (strlen($cleanTaxId) !== 14) {
+                    throw new Exception(
+                        "Identificación fiscal incompatible con Brasil para {$cleanName}"
+                    );
+                }
+
+                $documentCode = 'CNPJ';
+            }
+        }
+
+        $country = Country::where('alpha2_code', $countryCode)->first();
+
+        if (!$country) {
+            throw new Exception(
+                "País {$countryCode} no encontrado en catálogo"
+            );
+        }
+
+        $documentType = null;
+
+        if ($documentCode !== null) {
+            $documentType = \App\Models\DocumentType::where(
+                    'code',
+                    $documentCode
+                )
+                ->where('country_id', $country->id)
+                ->where('active', true)
+                ->first();
+
+            if (!$documentType) {
+                throw new Exception(
+                    "Tipo documental {$documentCode} no encontrado para {$countryCode}"
+                );
+            }
+        }
+
+        /*
+         * Si existe identificación fiscal real:
+         * identidad = tax_id + país.
+         *
+         * NO caer a coincidencia por nombre si ese tax no existe.
+         */
+        if ($cleanTaxId !== null) {
+            $client = Client::where('tax_id', $cleanTaxId)
+                ->where('country_id', $country->id)
+                ->first();
+
+            if ($client) {
+                if (
+                    $documentType
+                    && $client->document_type_id !== null
+                    && (int) $client->document_type_id !== (int) $documentType->id
+                ) {
+                    throw new Exception(
+                        "Cliente {$cleanName} tiene tipo documental incompatible"
+                    );
+                }
+
+                if (
+                    $documentType
+                    && $client->document_type_id === null
+                ) {
+                    $client->updateQuietly([
+                        'document_type_id' => $documentType->id,
+                    ]);
+                }
+
+                return $client;
+            }
+        } else {
+            // Sin tax real: nombre exacto + país.
+            $client = Client::where('legal_name', $cleanName)
+                ->where('country_id', $country->id)
+                ->first();
+
             if ($client) {
                 return $client;
             }
         }
-        
-        // 2. Si no se encontró por tax_id, buscar por nombre
-        $client = Client::where('legal_name', 'LIKE', '%' . $cleanName . '%')->first();
-        
-        if ($client) {
-            return $client;
-        }
-
-        $cleanTaxId = $taxId ? preg_replace('/[^0-9]/', '', $taxId) : null;
-
-        // Crear nuevo cliente con datos del XML.
-        // Con tax_id real: deduplicar por (tax_id, country). Sin tax_id: crear con null,
-        // NO usar el CUIT de la empresa importadora ni fabricar uno.
-        if ($cleanTaxId) {
-            return Client::firstOrCreate(
-                [
-                    'tax_id' => $cleanTaxId,
-                    'country_id' => 1,
-                ],
-                [
-                    'legal_name' => $cleanName,
-                    'document_type_id' => 1,
-                    'status' => 'active',
-                    'created_by_company_id' => $context['company_id'],
-                    'verified_at' => now(),
-                    'created_by_user_id' => $context['user_id']
-                ]
-            );
-        }
 
         return Client::create([
-            'tax_id' => null,
-            'country_id' => 1,
+            'tax_id' => $cleanTaxId,
+            'country_id' => $country->id,
+            'document_type_id' => $documentType?->id,
             'legal_name' => $cleanName,
-            'document_type_id' => 1,
             'status' => 'active',
             'created_by_company_id' => $context['company_id'],
-            'verified_at' => now(),
-            'created_by_user_id' => $context['user_id']
+            'verified_at' => null,
+            'created_by_user_id' => $context['user_id'],
         ]);
     }
 
@@ -1177,37 +1470,37 @@ class LoginXmlParser implements ManifestParserInterface
      */
     protected function findOrCreateVessel(string $vesselName, int $companyId): Vessel
     {
-        if (empty($vesselName) || $vesselName === 'Login Vessel') {
-            $vesselName = 'LGN-' . date('Ymd') . '-' . uniqid();
+        $vesselName = trim($vesselName);
+
+        if ($vesselName === '') {
+            throw new Exception('Login no informa nombre de buque');
         }
 
-        // Buscar embarcación existente
-        $vessel = Vessel::where('name', 'LIKE', '%' . $vesselName . '%')
-                       ->where('company_id', $companyId)
-                       ->first();
+        $vessel = Vessel::where('name', $vesselName)
+            ->where('company_id', $companyId)
+            ->first();
 
         if ($vessel) {
             return $vessel;
         }
 
-        // Crear nueva embarcación
-        $vesselType = VesselType::where('category', 'barge')->first() 
-                     ?? VesselType::first();
-
         return Vessel::create([
             'name' => $vesselName,
-            'registration_number' => 'LGN-' . uniqid(),
             'company_id' => $companyId,
-            'vessel_type_id' => $vesselType->id,
-            'flag_country_id' => 1, // Argentina por defecto
+
+            // Login no informa estos datos.
+            'registration_number' => null,
+            'vessel_type_id' => null,
+            'flag_country_id' => null,
+            'length_meters' => null,
+            'beam_meters' => null,
+            'draft_meters' => null,
+            'gross_tonnage' => null,
+            'net_tonnage' => null,
+            'cargo_capacity_tons' => null,
+
             'operational_status' => 'active',
             'active' => true,
-            'length_meters' => 80.0,
-            'beam_meters' => 12.0,
-            'draft_meters' => 2.5,
-            'gross_tonnage' => 500,
-            'net_tonnage' => 350,
-            'cargo_capacity_tons' => 1000,
         ]);
     }
 
@@ -1251,9 +1544,9 @@ class LoginXmlParser implements ManifestParserInterface
             'encoding' => 'UTF-8',
             'validate_xml' => true,
             'create_missing_clients' => true,
-            'default_currency' => 'USD',
-            'default_freight_terms' => 'prepaid',
-            'default_country' => 'ARG'
+            'default_currency' => null,
+            'default_freight_terms' => null,
+            'default_country' => null
         ];
     }
 
@@ -1321,67 +1614,62 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Determinar cargo_type basándose en puertos de origen y destino
+     * Determinar tipo de operación según los países reales de los puertos.
+     *
+     * Argentina es la referencia operativa de la aplicación:
+     * AR -> exterior = export
+     * exterior -> AR = import
+     * mismo país = cabotage
+     * exterior -> exterior = transit
      */
     protected function determineCargoType(array $data): string
     {
-        try {
-            $originPortName = $data['voyage']['origin_port'] ?? '';
-            $destPortName = $data['voyage']['destination_port'] ?? '';
-            
-            // Usar el método existente findPortByName()
-            $loadingPort = $this->findPortByName($originPortName);
-            $dischargePort = $this->findPortByName($destPortName);
-            
-            if ($loadingPort && $dischargePort) {
-                $originCountry = $loadingPort->country_id;
-                $destCountry = $dischargePort->country_id;
-                
-                // Argentina (1) -> Paraguay (2) = Export
-                if ($originCountry == 1 && $destCountry == 2) {
-                    return 'export';
-                }
-                
-                // Paraguay (2) -> Argentina (1) = Import  
-                if ($originCountry == 2 && $destCountry == 1) {
-                    return 'import';
-                }
-                
-                // Mismo país = Cabotaje
-                if ($originCountry == $destCountry) {
-                    return 'cabotage';
-                }
-                
-                // Brasil/Uruguay/otros = Tránsito
-                if (in_array($originCountry, [3, 4]) || in_array($destCountry, [3, 4])) {
-                    return 'transit';
-                }
-            }
-            
-            // Análisis por nombres si no encontramos en BD
-            $originUpper = strtoupper($originPortName);
-            $destUpper = strtoupper($destPortName);
-            
-            $argentinePorts = ['BUENOS AIRES', 'ROSARIO', 'SANTA FE', 'CONCEPCION'];
-            $paraguayPorts = ['ASUNCION', 'VILLETA'];
-            
-            $isOriginArgentina = collect($argentinePorts)->contains(fn($port) => stripos($originUpper, $port) !== false);
-            $isDestArgentina = collect($argentinePorts)->contains(fn($port) => stripos($destUpper, $port) !== false);
-            $isOriginParaguay = collect($paraguayPorts)->contains(fn($port) => stripos($originUpper, $port) !== false);
-            $isDestParaguay = collect($paraguayPorts)->contains(fn($port) => stripos($destUpper, $port) !== false);
-            
-            if ($isOriginArgentina && $isDestParaguay) return 'export';
-            if ($isOriginParaguay && $isDestArgentina) return 'import';
-            
-        } catch (Exception $e) {
-            Log::warning('Error determinando cargo_type', [
-                'error' => $e->getMessage(),
-                'origin_port' => $data['voyage']['origin_port'] ?? 'N/A',
-                'dest_port' => $data['voyage']['destination_port'] ?? 'N/A'
-            ]);
+        $originPort = $this->findPortByName(
+            $data['voyage']['origin_port']
+        );
+
+        $destinationPort = $this->findPortByName(
+            $data['voyage']['destination_port']
+        );
+
+        if (!$originPort || !$destinationPort) {
+            throw new Exception(
+                'No se puede determinar la operación: puerto no resuelto'
+            );
         }
-        
-        return 'import'; // Default para Login (mayormente importaciones)
+
+        $originCountry = Country::find($originPort->country_id);
+        $destinationCountry = Country::find(
+            $destinationPort->country_id
+        );
+
+        $originCode = strtoupper(
+            trim((string) ($originCountry?->alpha2_code ?? ''))
+        );
+
+        $destinationCode = strtoupper(
+            trim((string) ($destinationCountry?->alpha2_code ?? ''))
+        );
+
+        if ($originCode === '' || $destinationCode === '') {
+            throw new Exception(
+                'No se puede determinar la operación: país de puerto no resuelto'
+            );
+        }
+
+        if ($originCode === $destinationCode) {
+            return 'cabotage';
+        }
+
+        if ($originCode === 'AR') {
+            return 'export';
+        }
+
+        if ($destinationCode === 'AR') {
+            return 'import';
+        }
+
+        return 'transit';
     }
 
     /**
@@ -1408,7 +1696,7 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Completar registro de importación
+     * Completar registro de importación.
      */
     protected function completeImportRecord(
         ManifestImport $importRecord,
@@ -1416,27 +1704,43 @@ class LoginXmlParser implements ManifestParserInterface
         array $shipmentIds,
         array $billIds,
         array $itemIds,
-        float $startTime
+        float $startTime,
+        array $warnings = []
     ): void {
         $processingTime = microtime(true) - $startTime;
-        
+
         $createdObjects = [
             'voyages' => [$voyage->id],
             'shipments' => $shipmentIds,
             'bills' => $billIds,
-            'items' => $itemIds
+            'items' => $itemIds,
         ];
-        
+
         $importRecord->recordCreatedObjects($createdObjects);
-        $importRecord->markAsCompleted([
+
+        $completionData = [
             'voyage_id' => $voyage->id,
             'processing_time_seconds' => round($processingTime, 2),
-            'notes' => 'Importación Login XML completada exitosamente'
-        ]);
-        
+            'warnings' => $warnings,
+            'warnings_count' => count($warnings),
+            'notes' => $warnings === []
+                ? 'Importación Login XML completada exitosamente'
+                : 'Importación Login XML completada con advertencias',
+        ];
+
+        if ($warnings === []) {
+            $importRecord->markAsCompleted($completionData);
+        } else {
+            $importRecord->markAsCompletedWithWarnings(
+                $completionData
+            );
+        }
+
         Log::info('Login XML import record completed', [
             'import_id' => $importRecord->id,
-            'processing_time' => round($processingTime, 2) . 's'
+            'processing_time' => round($processingTime, 2) . 's',
+            'warnings_count' => count($warnings),
         ]);
     }
+
 }
