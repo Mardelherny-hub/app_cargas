@@ -4,6 +4,7 @@ namespace Tests\Unit\Services\Parsers;
 
 use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\KlineDataParser;
+use App\Services\Parsers\NavsurTextParser;
 use App\Services\Parsers\ManifestParserFactory;
 use Tests\TestCase;
 
@@ -16,6 +17,7 @@ class ManifestParserFactoryWhitelistTest extends TestCase
         $this->assertSame(
             [
                 KlineDataParser::class,
+                NavsurTextParser::class,
                 CmspEdiParser::class,
             ],
             $factory->getAvailableParsers()

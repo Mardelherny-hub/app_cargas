@@ -146,10 +146,11 @@
                     {{-- Términos de Flete --}}
                     <div>
                         <label for="freight_terms" class="block text-sm font-medium text-gray-700">
-                            Términos de Flete <span class="text-red-500">*</span>
+                            Términos de Flete
                         </label>
-                        <select wire:model="freight_terms" id="freight_terms" required
+                        <select wire:model="freight_terms" id="freight_terms"
                                 class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('freight_terms') border-red-300 @enderror">
+                            <option value="">No informado</option>
                             <option value="prepaid">Prepago</option>
                             <option value="collect">Por Cobrar</option>
                             <option value="third_party">Tercero</option>
@@ -940,7 +941,7 @@
                                @endif
                                @error('total_packages') border-red-300 @enderror">
                         @if($hasItems)
-                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                            <p class="mt-1 text-xs text-gray-500">Solo lectura mientras existan ítems asociados</p>
                         @endif
                         @error('total_packages')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -956,7 +957,7 @@
                                @readonly($hasItems)
                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('gross_weight_kg') border-red-300 @enderror">
                         @if($hasItems)
-                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                            <p class="mt-1 text-xs text-gray-500">Solo lectura mientras existan ítems asociados</p>
                         @endif
                         @error('gross_weight_kg')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -972,7 +973,7 @@
                                @readonly($hasItems)
                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('net_weight_kg') border-red-300 @enderror">
                         @if($hasItems)
-                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                            <p class="mt-1 text-xs text-gray-500">Solo lectura mientras existan ítems asociados</p>
                         @endif
                         @error('net_weight_kg')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -988,7 +989,7 @@
                                @readonly($hasItems)
                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('volume_m3') border-red-300 @enderror">
                         @if($hasItems)
-                            <p class="mt-1 text-xs text-gray-500">Calculado desde items</p>
+                            <p class="mt-1 text-xs text-gray-500">Solo lectura mientras existan ítems asociados</p>
                         @endif
                         @error('volume_m3')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
