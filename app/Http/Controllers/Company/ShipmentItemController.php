@@ -673,13 +673,13 @@ return view('company.shipment-items.edit', compact(
 
         // Reglas de validación básicas
         $rules = [
-            'line_number' => 'required|integer|min:1',
+            'line_number' => 'required|integer|min:0',
             'item_reference' => 'nullable|string|max:100',
             'item_description' => 'required|string|max:5000',
             'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
             'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
             'package_quantity' => 'required|integer|min:1',
-            'gross_weight_kg' => 'required|numeric|min:0.01',
+            'gross_weight_kg' => 'required|numeric|min:0',
             'net_weight_kg' => 'nullable|numeric|min:0',
             'volume_m3' => 'nullable|numeric|min:0',
             'declared_value' => 'nullable|numeric|min:0',
@@ -712,7 +712,7 @@ return view('company.shipment-items.edit', compact(
             'inspection_type' => 'nullable|in:customs,quality,sanitary,security,environmental',
             
             // Campos AFIP / Aduaneros
-            'tariff_position' => 'nullable|string|max:10',
+            'tariff_position' => 'nullable|string|max:16',
             'is_secure_logistics_operator' => 'nullable|in:S,N',
             'is_monitored_transit' => 'nullable|in:S,N',
             'is_renar' => 'nullable|in:S,N',
@@ -737,7 +737,7 @@ return view('company.shipment-items.edit', compact(
             'containers.*.seal_source' => 'nullable|in:carrier,shipper',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
             'containers.*.package_quantity' => 'required_with:containers|integer|min:1',
-            'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0.01',
+            'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0',
             'containers.*.net_weight_kg' => 'nullable|numeric|min:0',
             'containers.*.volume_m3' => 'nullable|numeric|min:0',
             'containers.*.loading_sequence' => 'nullable|string|max:10',
@@ -784,8 +784,8 @@ return view('company.shipment-items.edit', compact(
                 'packaging_type_id' => $validated['packaging_type_id'],
                 'package_quantity' => $validated['package_quantity'],
                 'gross_weight_kg' => $validated['gross_weight_kg'],
-                'net_weight_kg' => $validated['net_weight_kg'] ?? 0,
-                'volume_m3' => $validated['volume_m3'] ?? 0,
+                'net_weight_kg' => $validated['net_weight_kg'] ?? null,
+                'volume_m3' => $validated['volume_m3'] ?? null,
                 'declared_value' => $validated['declared_value'] ?? 0,
                 'currency_code' => $validated['currency_code'],
                 'unit_of_measure' => $validated['unit_of_measure'],

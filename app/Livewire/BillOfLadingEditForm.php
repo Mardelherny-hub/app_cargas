@@ -50,7 +50,7 @@ class BillOfLadingEditForm extends Component
     public $afipCustomsOfficesDischarge = [];
     public $afipLocationsOrigin = [];
     public $afipLocationsDischarge = [];
-    public $freight_terms = 'prepaid';
+    public $freight_terms = '';
     public $payment_terms = 'cash';
     public $currency_code = 'USD';
     public $freight_amount = null;
@@ -187,7 +187,7 @@ class BillOfLadingEditForm extends Component
         'destination_country_code' => ['nullable','string','size:3'],
         'discharge_customs_code' => ['nullable','string','max:3'],
         'operational_discharge_code' => ['nullable','string','max:5'],
-        'freight_terms' => 'required|in:prepaid,collect,third_party',
+        'freight_terms' => 'nullable|in:prepaid,collect,third_party',
         'payment_terms' => 'required|in:cash,credit,letter_of_credit,other',
         'currency_code' => 'required|in:USD,ARS,EUR,BRL',
         'freight_amount' => 'nullable|numeric|min:0',
@@ -250,7 +250,7 @@ class BillOfLadingEditForm extends Component
         'loading_date' => ['required','date_format:Y-m-d'],
         'discharge_date' => ['nullable','date_format:Y-m-d','after_or_equal:loading_date'],
 
-        'freight_terms' => ['required','in:prepaid,collect,third_party'],
+        'freight_terms' => ['nullable','in:prepaid,collect,third_party'],
         'payment_terms' => ['required','in:cash,credit,letter_of_credit,other'],
         'currency_code' => ['required','in:USD,ARS,EUR,BRL'],
         'freight_amount' => ['nullable','numeric','min:0'],
@@ -437,7 +437,7 @@ class BillOfLadingEditForm extends Component
         $this->destination_country_code = $bl->destination_country_code ?? '';
         $this->discharge_customs_code = $bl->discharge_customs_code ?? '';
         $this->operational_discharge_code = $bl->operational_discharge_code ?? '';
-        $this->freight_terms = $bl->freight_terms ?? 'prepaid';
+        $this->freight_terms = $bl->freight_terms ?? '';
         $this->payment_terms = $bl->payment_terms ?? 'cash';
         $this->currency_code = $bl->currency_code ?? 'USD';
         $this->freight_amount = $bl->freight_amount;
@@ -804,7 +804,7 @@ class BillOfLadingEditForm extends Component
                 'destination_country_code' => $this->destination_country_code ?: null,
                 'discharge_customs_code' => $this->discharge_customs_code ?: null,
                 'operational_discharge_code' => $this->operational_discharge_code ?: null,
-                'freight_terms' => $this->freight_terms,
+                'freight_terms' => $this->freight_terms ?: null,
                 'payment_terms' => $this->payment_terms,
                 'currency_code' => $this->currency_code,
                 'freight_amount' => (
@@ -813,7 +813,7 @@ class BillOfLadingEditForm extends Component
                 ) ? null : $this->freight_amount,
                 'incoterms' => $this->incoterms ?: null,
                 'permiso_embarque' => $this->permiso_embarque ?: null,
-                'id_decla' => $this->id_decla,
+                'id_decla' => $this->id_decla ?: null,
                 'shipper_id' => $this->shipper_id,
                 'consignee_id' => $this->consignee_id,
                 'notify_party_id' => $this->notify_party_id ?: null,
@@ -855,18 +855,35 @@ class BillOfLadingEditForm extends Component
             ];
 
            
+            /*
+             * Estos campos son readonly en la UI cuando existen items.
+             * Aplicar la misma regla en servidor: una edición de cabecera
+             * no puede modificar los totales persistidos.
+             *
+             * Los cambios reales de items recalculan estos valores mediante
+             * los eventos saved/deleted de ShipmentItem.
+             */
+            if ($this->billOfLading->shipmentItems()->exists()) {
+                $persistedBill = $this->billOfLading->fresh();
+
+                $data['total_packages'] = $persistedBill->total_packages;
+                $data['gross_weight_kg'] = $persistedBill->gross_weight_kg;
+                $data['net_weight_kg'] = $persistedBill->net_weight_kg;
+                $data['volume_m3'] = $persistedBill->volume_m3;
+            }
 
             $this->billOfLading->update($data);
 
             // Actualizar direcciones específicas
             $this->updateSpecificContacts();
 
-            // Si el BL tiene items, los totales se calculan desde items.
-            // Pisamos los valores manuales con la suma real para mantener consistencia.
-            if ($this->billOfLading->shipmentItems()->exists()) {
-                $this->billOfLading->fresh()->recalculateItemStats();
-            }
-
+            /*
+             * No recalcular aquí.
+             *
+             * ShipmentItem ya mantiene las estadísticas del BL mediante
+             * sus eventos saved/deleted. Editar únicamente la cabecera
+             * no debe volver a derivar valores desde items que no cambiaron.
+             */
             DB::commit();
 
             session()->flash('message', 'Conocimiento de embarque actualizado exitosamente.');

@@ -416,8 +416,12 @@ class BillOfLadingController extends Controller
         $billOfLading->load([
             'shipment.voyage:id,voyage_number,company_id',
             'shipment.vessel:id,name',
-            'shipment.shipmentItems' => function ($q) {
-                $q->with(['cargoType:id,name', 'packagingType:id,name']);
+            'shipmentItems' => function ($q) {
+                $q->with([
+                    'cargoType:id,name',
+                    'packagingType:id,name',
+                    'containers:id,container_number',
+                ]);
             },
             'shipper:id,legal_name,tax_id,country_id,status',
             'consignee:id,legal_name,tax_id,country_id,status', 

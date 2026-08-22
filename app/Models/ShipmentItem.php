@@ -59,17 +59,76 @@ class ShipmentItem extends Model
         
         // Actualizar estadísticas cuando se modifica un item
         static::saved(function ($shipmentItem) {
-            // CORREGIDO: Recalcular estadísticas del bill of lading
-            if ($shipmentItem->billOfLading) {
-                $shipmentItem->billOfLading->recalculateItemStats();
-                
-                // También recalcular estadísticas del shipment
-                if ($shipmentItem->billOfLading->shipment) {
-                    $shipmentItem->billOfLading->shipment->recalculateItemStats();
+            if (!$shipmentItem->billOfLading) {
+                return;
+            }
+
+            $bill = $shipmentItem->billOfLading->fresh();
+
+            /*
+             * Al crear un ítem se conserva el comportamiento histórico:
+             * todas las estadísticas se recalculan.
+             */
+            if ($shipmentItem->wasRecentlyCreated) {
+                $bill->recalculateItemStats();
+
+                if ($bill->shipment) {
+                    $bill->shipment->recalculateItemStats();
                 }
+
+                return;
+            }
+
+            /*
+             * En una edición sólo recalcular la magnitud que realmente
+             * cambió. Una edición descriptiva no debe alterar la cabecera.
+             */
+            $updates = [];
+
+            if ($shipmentItem->wasChanged('package_quantity')) {
+                $updates['total_packages'] = (int) $bill
+                    ->shipmentItems()
+                    ->sum('package_quantity');
+            }
+
+            if ($shipmentItem->wasChanged('gross_weight_kg')) {
+                $updates['gross_weight_kg'] = round(
+                    (float) $bill
+                        ->shipmentItems()
+                        ->sum('gross_weight_kg'),
+                    2
+                );
+            }
+
+            if ($shipmentItem->wasChanged('net_weight_kg')) {
+                $updates['net_weight_kg'] = round(
+                    (float) $bill
+                        ->shipmentItems()
+                        ->sum('net_weight_kg'),
+                    2
+                );
+            }
+
+            if ($shipmentItem->wasChanged('volume_m3')) {
+                $updates['volume_m3'] = round(
+                    (float) $bill
+                        ->shipmentItems()
+                        ->sum('volume_m3'),
+                    3
+                );
+            }
+
+            if ($updates === []) {
+                return;
+            }
+
+            $bill->updateQuietly($updates);
+
+            if ($bill->shipment) {
+                $bill->shipment->recalculateItemStats();
             }
         });
-        
+
         static::deleted(function ($shipmentItem) {
             // CORREGIDO: Recalcular estadísticas del bill of lading
             if ($shipmentItem->billOfLading) {
