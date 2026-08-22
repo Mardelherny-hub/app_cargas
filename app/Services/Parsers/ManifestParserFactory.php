@@ -39,6 +39,7 @@ class ManifestParserFactory
         KlineDataParser::class,
         NavsurTextParser::class,
         CmspEdiParser::class,
+        LoginXmlParser::class,
     ];
 
     /**
@@ -48,6 +49,7 @@ class ManifestParserFactory
         'dat' => [KlineDataParser::class],
         'txt' => [KlineDataParser::class, NavsurTextParser::class],
         'edi' => [CmspEdiParser::class],
+        'xml' => [LoginXmlParser::class],
     ];
 
     /**
