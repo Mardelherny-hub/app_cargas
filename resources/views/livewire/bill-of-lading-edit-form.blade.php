@@ -227,6 +227,105 @@
             </div>
         </div>
 
+        @if($billOfLading->source_format === 'LOGIN_XML')
+        @php
+            $loginCommodityCodes =
+                is_array($billOfLading->commodity_codes)
+                    ? $billOfLading->commodity_codes
+                    : (
+                        json_decode(
+                            (string) $billOfLading->commodity_codes,
+                            true
+                        ) ?: []
+                    );
+
+            $loginDangerousDetails =
+                is_array($billOfLading->dangerous_goods_details)
+                    ? $billOfLading->dangerous_goods_details
+                    : (
+                        json_decode(
+                            (string) $billOfLading->dangerous_goods_details,
+                            true
+                        ) ?: []
+                    );
+        @endphp
+
+        <div
+            class="bg-slate-50 border border-slate-200 rounded-lg"
+            data-testid="login-source-data-readonly"
+        >
+            <div class="px-4 py-5 sm:p-6">
+                <h3 class="text-lg font-medium text-gray-900">
+                    Datos fuente Login
+                </h3>
+
+                <p class="text-xs text-gray-500 mt-1 mb-4">
+                    Solo lectura: son los valores originales del archivo importado.
+                    Los campos operativos/canónicos se editan en las secciones normales.
+                </p>
+
+                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <dt class="font-medium text-gray-500">Booking</dt>
+                        <dd>{{ $billOfLading->booking_number ?: '—' }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="font-medium text-gray-500">
+                            Referencias de exportación
+                        </dt>
+                        <dd>{{ $billOfLading->export_references ?: '—' }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="font-medium text-gray-500">Email fuente</dt>
+                        <dd class="break-all">
+                            {{ $billOfLading->source_email ?: '—' }}
+                        </dd>
+                    </div>
+
+                    <div>
+                        <dt class="font-medium text-gray-500">
+                            Tipo de movimiento
+                        </dt>
+                        <dd>{{ $billOfLading->type_of_move ?: '—' }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="font-medium text-gray-500">
+                            Resumen de contenedores
+                        </dt>
+                        <dd>{{ $billOfLading->container_summary ?: '—' }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="font-medium text-gray-500">NCM fuente</dt>
+                        <dd>
+                            {{ $loginCommodityCodes
+                                ? implode(', ', $loginCommodityCodes)
+                                : '—' }}
+                        </dd>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <dt class="font-medium text-gray-500">
+                            Mercadería peligrosa fuente
+                        </dt>
+                        <dd class="break-words">
+                            {{ $loginDangerousDetails
+                                ? json_encode(
+                                    $loginDangerousDetails,
+                                    JSON_UNESCAPED_UNICODE
+                                    | JSON_UNESCAPED_SLASHES
+                                )
+                                : '—' }}
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+        </div>
+        @endif
+
         {{-- Partes Involucradas --}}
         <div class="bg-white overflow-hidden shadow rounded-lg">
             <div class="px-4 py-5 sm:p-6">

@@ -325,4 +325,240 @@ class LoginXmlParserStage1IntegrityTest extends TestCase
             $rollback
         );
     }
+
+    public function test_transform_keeps_one_commercial_item_semantics_per_bill(): void
+    {
+        $parser = new LoginXmlParser();
+
+        $raw = [
+            'header' => [
+                'loading_port' => 'BUENOS AIRES',
+                'discharge_port' => 'NAVEGANTES',
+                'voyage_number' => '004N',
+                'vessel_name' => 'LOG-IN EXPERIENCE',
+            ],
+
+            'bills_of_lading' => [[
+                'bill_number' => '004N902806403',
+                'shipper_name' => 'SHIPPER',
+                'shipper_cuit' => null,
+                'consignee_name' => 'CONSIGNEE',
+                'notify_party_name' => null,
+                'loading_port' => 'BUENOS AIRES',
+                'discharge_port' => 'NAVEGANTES',
+
+                'cargo_description' =>
+                    '5 CONTAINERS OF 40 HC SAID TO CONTAIN PE DOWLEX',
+
+                'cargo_marks' => null,
+                'gross_weight' => '137700,000',
+                'measurement' => '227,610',
+                'bill_date' => null,
+                'loading_date' => null,
+
+                'containers' => [
+                    [
+                        'line_number' => 0,
+                        'container_number' => 'CAIU7576710',
+                        'container_type' => '40HC',
+                        'tare_weight_kg' => 3940.0,
+                        'net_weight_kg' => 27000.0,
+                        'gross_weight_kg' => 27540.0,
+                        'vgm' => 31320.0,
+                        'seals' => ['A'],
+                        'ncm_codes' => ['390210', '390230'],
+                    ],
+                    [
+                        'line_number' => 1,
+                        'container_number' => 'CIPU5001898',
+                        'container_type' => '40HC',
+                        'tare_weight_kg' => 3940.0,
+                        'net_weight_kg' => 27000.0,
+                        'gross_weight_kg' => 27540.0,
+                        'vgm' => 31320.0,
+                        'seals' => ['B'],
+                        'ncm_codes' => ['390210', '390230'],
+                    ],
+                ],
+            ]],
+        ];
+
+        $transformed = $parser->transform($raw);
+
+        $bill = $transformed['bills_of_lading'][0];
+
+        $this->assertSame(
+            2,
+            $bill['total_containers']
+        );
+
+        $this->assertSame(
+            '390210',
+            $bill['commodity_code']
+        );
+
+        $this->assertSame(
+            ['390210', '390230'],
+            $bill['commodity_codes']
+        );
+
+        $this->assertSame(
+            ['390210', '390230'],
+            $bill['containers'][0]['ncm_codes']
+        );
+
+        $this->assertSame(
+            ['A'],
+            $bill['containers'][0]['seals']
+        );
+
+        $this->assertSame(
+            'H',
+            $bill['containers'][0]['container_condition']
+        );
+
+        $this->assertSame(
+            [0],
+            $bill['containers'][0]['source_line_numbers']
+        );
+
+        $this->assertSame(
+            54000.0,
+            $bill['total_net_weight_kg']
+        );
+
+        $this->assertSame(
+            137700.0,
+            $bill['total_weight_kg']
+        );
+
+        $this->assertSame(
+            '5 CONTAINERS OF 40 HC SAID TO CONTAIN PE DOWLEX',
+            $bill['cargo_description']
+        );
+    }
+
+    public function test_login_creates_item_once_before_iterating_containers(): void
+    {
+        $file = (
+            new ReflectionClass(
+                LoginXmlParser::class
+            )
+        )->getFileName();
+
+        $source = file_get_contents($file);
+
+        $start = strpos(
+            $source,
+            'protected function createShipmentItemFromBillData'
+        );
+
+        $end = strpos(
+            $source,
+            'protected function findOrCreateClient',
+            $start
+        );
+
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+
+        $method = substr(
+            $source,
+            $start,
+            $end - $start
+        );
+
+        $this->assertSame(
+            1,
+            substr_count(
+                $method,
+                'ShipmentItem::create('
+            )
+        );
+
+        $createPosition = strpos(
+            $method,
+            'ShipmentItem::create('
+        );
+
+        $containerLoopPosition = strpos(
+            $method,
+            "foreach (\$blData['containers'] as \$containerData)"
+        );
+
+        $this->assertNotFalse($createPosition);
+        $this->assertNotFalse($containerLoopPosition);
+
+        $this->assertLessThan(
+            $containerLoopPosition,
+            $createPosition
+        );
+    }
+
+
+    public function test_async_report_uses_real_created_object_graph_counts(): void
+    {
+        $parserFile = (
+            new ReflectionClass(
+                LoginXmlParser::class
+            )
+        )->getFileName();
+
+        $root = dirname(
+            $parserFile,
+            4
+        );
+
+        $controllerFile = $root
+            . '/app/Http/Controllers/Company/Manifests/'
+            . 'ManifestImportController.php';
+
+        $source = file_get_contents($controllerFile);
+
+        $start = strpos(
+            $source,
+            'protected function buildReportDataFromImport'
+        );
+
+        $end = strpos(
+            $source,
+            'public function revert',
+            $start
+        );
+
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+
+        $method = substr(
+            $source,
+            $start,
+            $end - $start
+        );
+
+        $this->assertStringContainsString(
+            '$createdObjectIds = $import->getAllCreatedObjectIds();',
+            $method
+        );
+
+        $this->assertStringContainsString(
+            "count(\$createdObjectIds['bills'])",
+            $method
+        );
+
+        $this->assertStringContainsString(
+            "count(\$createdObjectIds['containers'])",
+            $method
+        );
+
+        $this->assertStringContainsString(
+            "count(\$createdObjectIds['items'])",
+            $method
+        );
+
+        $this->assertStringNotContainsString(
+            "'containers'    => \$import->created_containers ?? 0",
+            $method
+        );
+    }
+
 }

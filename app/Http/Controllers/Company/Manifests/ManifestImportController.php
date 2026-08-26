@@ -592,6 +592,8 @@ public function showReport(Request $request)
     {
         $import->loadMissing(['user', 'voyage', 'voyage.vessel', 'voyage.originPort', 'voyage.destinationPort']);
 
+        $createdObjectIds = $import->getAllCreatedObjectIds();
+
         $isSuccess  = in_array($import->status, ['completed', 'completed_with_warnings']);
         $hasWarnings = $import->status === 'completed_with_warnings';
 
@@ -612,9 +614,9 @@ public function showReport(Request $request)
                 'containers'    => [],
             ],
             'counts' => [
-                'billsOfLading' => $import->created_bills ?? 0,
-                'containers'    => $import->created_containers ?? 0,
-                'items'         => $import->created_items ?? 0,
+                'billsOfLading' => count($createdObjectIds['bills']),
+                'containers'    => count($createdObjectIds['containers']),
+                'items'         => count($createdObjectIds['items']),
             ],
             'warnings' => $import->warnings ?? [],
             'errors'   => $import->errors ?? [],

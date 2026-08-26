@@ -261,15 +261,13 @@ class LoginXmlParser implements ManifestParserInterface
                 $billOfLading = $this->createBillOfLadingFromData($blData, $shipment, $context);
                 $allBillIds[] = $billOfLading->id;
                 
-                $itemIds = $this->createShipmentItemsFromData(
-                    $blData['containers'],
+                $itemId = $this->createShipmentItemFromBillData(
+                    $blData,
                     $billOfLading,
                     $context
                 );
 
-                foreach ($itemIds as $iid) {
-                    $allItemIds[] = $iid;
-                }
+                $allItemIds[] = $itemId;
 
                 /*
                  * Los eventos de ShipmentItem recalculan estadísticas.
@@ -398,6 +396,35 @@ class LoginXmlParser implements ManifestParserInterface
             [$vesselName, $voyageNumber] = $this->parseVesselVoyageFlag(
                 (string) $header->InitialVesselVoyFlag
             );
+
+            $initialLoadingPort = trim(
+                (string) $header->InitalPortOfLoading
+            );
+
+            $finalLoadingPort = trim(
+                (string) $header->FinalPortOfLoading
+            );
+
+            if (
+                $initialLoadingPort !== ''
+                && $finalLoadingPort !== ''
+                && strtoupper($initialLoadingPort)
+                    !== strtoupper($finalLoadingPort)
+            ) {
+                throw new Exception(
+                    'Login informa puertos de carga distintos en BL '
+                    . (string) $header->BillOfLadingNumber
+                    . ": inicial={$initialLoadingPort}, "
+                    . "final={$finalLoadingPort}. "
+                    . 'La aplicación dispone de un único puerto de carga; '
+                    . 'no se elige uno arbitrariamente.'
+                );
+            }
+
+            $loadingPort =
+                $finalLoadingPort !== ''
+                    ? $finalLoadingPort
+                    : $initialLoadingPort;
             
             // Extraer datos del header de este BL
             $blData = [
@@ -406,9 +433,40 @@ class LoginXmlParser implements ManifestParserInterface
                 'shipper_cuit' => (string)$header->ShipperExporterCUIT ?? null,
                 'consignee_name' => (string)$header->Consignee ?? null,
                 'notify_party_name' => (string)$header->NotifyParty ?? null,
-                'booking_number' => (string)$header->BookingNumber ?? null,
+                'booking_number' =>
+                    trim((string) $header->BookingNumber) ?: null,
+
+                'export_references' =>
+                    trim((string) $header->ExportReferences) ?: null,
+
+                /*
+                 * Email informado por Login a nivel BL.
+                 * No se asigna artificialmente a shipper/consignee/notify:
+                 * la fuente no declara el rol.
+                 */
+                'source_email' =>
+                    trim((string) $header->Email) ?: null,
+
+                'type_of_move' =>
+                    trim((string) $header->TypeOfMove) ?: null,
+
+                /*
+                 * Ej.: 4X40HC. Es resumen de composición física,
+                 * no cantidad de bultos.
+                 */
+                'container_summary' =>
+                    trim((string) $header->NoOfPkgsHm) ?: null,
+
+                /*
+                 * Puede haber múltiples pares UN / clase IMDG.
+                 */
+                'dangerous_goods_details' => [],
+
                 'vessel_name' => $vesselName,
-                'loading_port' => (string)$header->InitalPortOfLoading ?? (string)$header->FinalPortOfLoading ?? null,
+                'loading_port' =>
+                    $loadingPort !== ''
+                        ? $loadingPort
+                        : null,
                 'discharge_port' => (string)$header->PortOfDischarge ?? null,
                 'gross_weight' => (string)$header->GrossWeight ?? null,
                 'measurement' => (string)$header->Measurement ?? null,
@@ -419,12 +477,67 @@ class LoginXmlParser implements ManifestParserInterface
                 'voyage_number' => $voyageNumber,
                 'containers' => []  // Containers de este BL específico
             ];
+
+            if (isset($header->Imo->Nimo)) {
+                foreach ($header->Imo->Nimo as $imo) {
+                    $unNumber = trim(
+                        (string) ($imo->Un ?? '')
+                    );
+
+                    $imdgClass = trim(
+                        (string) ($imo->Classe ?? '')
+                    );
+
+                    if (
+                        $unNumber === ''
+                        && $imdgClass === ''
+                    ) {
+                        continue;
+                    }
+
+                    $detail = [
+                        'un_number' =>
+                            $unNumber !== ''
+                                ? $unNumber
+                                : null,
+
+                        'imdg_class' =>
+                            $imdgClass !== ''
+                                ? $imdgClass
+                                : null,
+                    ];
+
+                    if (
+                        !in_array(
+                            $detail,
+                            $blData[
+                                'dangerous_goods_details'
+                            ],
+                            true
+                        )
+                    ) {
+                        $blData[
+                            'dangerous_goods_details'
+                        ][] = $detail;
+                    }
+                }
+            }
             
             // Extraer contenedores de este BL
             if (isset($billOfLading->BillOfLadingLineDetail->BillOfLadingLine)) {
                 foreach ($billOfLading->BillOfLadingLineDetail->BillOfLadingLine as $line) {
                     $container = [
-                        'line_number' => (int)$line->BillOfLadingLineNumber ?? 0,
+                        'line_number' =>
+                            isset($line->BillOfLadingLineNumber)
+                                ? (int) $line->BillOfLadingLineNumber
+                                : 0,
+
+                        'source_line_numbers' => [
+                            isset($line->BillOfLadingLineNumber)
+                                ? (int) $line->BillOfLadingLineNumber
+                                : 0,
+                        ],
+
                         'container_number' => (string)$line->Container ?? null,
                         'container_type' => (string)$line->Type ?? null,
                         'tare_weight_kg' => $this->parseOptionalWeight(
@@ -520,8 +633,20 @@ class LoginXmlParser implements ManifestParserInterface
 
             if (!isset($result[$number])) {
                 $container['container_number'] = $number;
-                $container['seals'] = array_values(array_unique($container['seals']));
-                $container['ncm_codes'] = array_values(array_unique($container['ncm_codes']));
+                $container['seals'] = array_values(
+                    array_unique($container['seals'])
+                );
+
+                $container['ncm_codes'] = array_values(
+                    array_unique($container['ncm_codes'])
+                );
+
+                $container['source_line_numbers'] = array_values(
+                    array_unique(
+                        $container['source_line_numbers'] ?? []
+                    )
+                );
+
                 $result[$number] = $container;
                 continue;
             }
@@ -566,6 +691,15 @@ class LoginXmlParser implements ManifestParserInterface
                 $current['ncm_codes'],
                 $container['ncm_codes']
             )));
+
+            $current['source_line_numbers'] = array_values(
+                array_unique(
+                    array_merge(
+                        $current['source_line_numbers'] ?? [],
+                        $container['source_line_numbers'] ?? []
+                    )
+                )
+            );
 
             $result[$number] = $current;
         }
@@ -811,20 +945,105 @@ class LoginXmlParser implements ManifestParserInterface
             $blContainers = array_map(function($container) {
                 return [
                     'line_number' => $container['line_number'],
+
+                    'source_line_numbers' =>
+                        array_values(
+                            $container[
+                                'source_line_numbers'
+                            ] ?? [
+                                $container[
+                                    'line_number'
+                                ],
+                            ]
+                        ),
+
                     'container_number' => $container['container_number'],
                     'container_type' => strtoupper(trim((string)$container['container_type'])),
                     'tare_weight_kg' => $container['tare_weight_kg'],
                     'net_weight_kg' => $container['net_weight_kg'],
                     'gross_weight_kg' => $container['gross_weight_kg'],
                     'vgm' => $container['vgm'],
-                    'seals' => implode(', ', $container['seals']),
-                    'commodity_code' => implode(', ', $container['ncm_codes']),
+
+                    /*
+                     * Preservar la cardinalidad de la fuente.
+                     * No concatenar varios valores en un escalar.
+                     */
+                    'seals' => array_values(
+                        array_unique(
+                            array_filter(
+                                array_map(
+                                    static fn ($seal) =>
+                                        trim((string) $seal),
+                                    $container['seals'] ?? []
+                                ),
+                                static fn ($seal) =>
+                                    $seal !== ''
+                            )
+                        )
+                    ),
+
+                    'ncm_codes' => array_values(
+                        array_unique(
+                            array_filter(
+                                array_map(
+                                    static fn ($ncm) =>
+                                        trim((string) $ncm),
+                                    $container['ncm_codes'] ?? []
+                                ),
+                                static fn ($ncm) =>
+                                    $ncm !== ''
+                            )
+                        )
+                    ),
+
+                    /*
+                     * Requisito aduanero Login.
+                     * Se persiste también en el pivot de la operación.
+                     */
+                    'container_condition' => 'H',
+
                     'package_description' => $this->getContainerDescription($container['container_type']),
                     // Login no informa país de origen por línea.
                     'country_of_origin' => null
                 ];
             }, $bl['containers']);
             
+            /*
+             * Login expresa una única mercadería por BL.
+             * BillOfLadingLine son contenedores físicos, no ítems comerciales.
+             */
+            $ncmCodes = [];
+
+            foreach ($bl['containers'] as $container) {
+                foreach (($container['ncm_codes'] ?? []) as $ncmCode) {
+                    $ncmCode = trim((string) $ncmCode);
+
+                    if ($ncmCode !== '' && !in_array($ncmCode, $ncmCodes, true)) {
+                        $ncmCodes[] = $ncmCode;
+                    }
+                }
+            }
+
+            /*
+             * Los escalares conservan únicamente el NCM primario.
+             * La lista completa vive en commodity_codes.
+             */
+            $primaryCommodityCode =
+                $ncmCodes[0] ?? null;
+
+            $netWeights = array_column(
+                $blContainers,
+                'net_weight_kg'
+            );
+
+            $totalNetWeightKg = in_array(
+                null,
+                $netWeights,
+                true
+            )
+                ? null
+                : array_sum($netWeights);
+
             $billsOfLading[] = [
                 'bill_number' => $bl['bill_number'],
                 'shipper_name' => $bl['shipper_name'],
@@ -837,6 +1056,84 @@ class LoginXmlParser implements ManifestParserInterface
                 'loading_date' => $this->parseDate($bl['loading_date'] ?? null),
                 'cargo_description' => $bl['cargo_description'],
                 'cargo_marks' => $bl['cargo_marks'] ?? null,
+
+                'booking_number' =>
+                    $bl['booking_number'] ?? null,
+
+                'export_references' =>
+                    $bl['export_references'] ?? null,
+
+                'source_email' =>
+                    $bl['source_email'] ?? null,
+
+                'type_of_move' =>
+                    $bl['type_of_move'] ?? null,
+
+                'container_summary' =>
+                    $bl['container_summary'] ?? null,
+
+                'source_format' => 'LOGIN_XML',
+
+                /*
+                 * NCM primario para compatibilidad y todos los NCM
+                 * en el campo estructurado del BL.
+                 */
+                'commodity_code' =>
+                    $primaryCommodityCode,
+
+                'commodity_codes' =>
+                    $ncmCodes,
+
+                /*
+                 * Mercadería peligrosa: conservar todos los pares.
+                 *
+                 * Los escalares sólo son representativos cuando existe
+                 * exactamente UN par UN/IMDG. Con más de uno quedarían
+                 * semánticamente incompletos, por eso permanecen null.
+                 */
+                'dangerous_goods_details' =>
+                    array_values(
+                        $bl[
+                            'dangerous_goods_details'
+                        ] ?? []
+                    ),
+
+                'contains_dangerous_goods' =>
+                    !empty(
+                        $bl[
+                            'dangerous_goods_details'
+                        ] ?? []
+                    ),
+
+                'un_number' =>
+                    count(
+                        $bl[
+                            'dangerous_goods_details'
+                        ] ?? []
+                    ) === 1
+                        ? (
+                            $bl[
+                                'dangerous_goods_details'
+                            ][0]['un_number']
+                            ?? null
+                        )
+                        : null,
+
+                'imdg_class' =>
+                    count(
+                        $bl[
+                            'dangerous_goods_details'
+                        ] ?? []
+                    ) === 1
+                        ? (
+                            $bl[
+                                'dangerous_goods_details'
+                            ][0]['imdg_class']
+                            ?? null
+                        )
+                        : null,
+
+                'total_net_weight_kg' => $totalNetWeightKg,
                 'total_containers' => count($bl['containers']),
 
                 // Valores estructurados de la cabecera del BL.
@@ -1109,6 +1406,47 @@ class LoginXmlParser implements ManifestParserInterface
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $blData['bill_number'],
+
+            'booking_number' =>
+                $blData['booking_number'] ?? null,
+
+            'export_references' =>
+                $blData['export_references'] ?? null,
+
+            'source_email' =>
+                $blData['source_email'] ?? null,
+
+            'type_of_move' =>
+                $blData['type_of_move'] ?? null,
+
+            'container_summary' =>
+                $blData['container_summary'] ?? null,
+
+            'source_format' =>
+                $blData['source_format'] ?? 'LOGIN_XML',
+
+            'commodity_code' =>
+                $blData['commodity_code'] ?? null,
+
+            'commodity_codes' =>
+                $blData['commodity_codes'] ?? [],
+
+            'contains_dangerous_goods' =>
+                $blData[
+                    'contains_dangerous_goods'
+                ] ?? false,
+
+            'un_number' =>
+                $blData['un_number'] ?? null,
+
+            'imdg_class' =>
+                $blData['imdg_class'] ?? null,
+
+            'dangerous_goods_details' =>
+                $blData[
+                    'dangerous_goods_details'
+                ] ?? [],
+
             'shipper_id' => $shipper?->id,
             'consignee_id' => $consignee?->id,
             'notify_party_id' => $notifyParty?->id,
@@ -1149,113 +1487,309 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Crear ShipmentItems desde array de contenedores transformados
+     * Login tiene una sola mercadería comercial por conocimiento.
+     *
+     * Las BillOfLadingLine del XML describen contenedores físicos.
+     * Se crea UN ShipmentItem para el BL y todos sus contenedores
+     * quedan asociados a ese mismo ítem.
      */
-    protected function createShipmentItemsFromData(array $containers, BillOfLading $billOfLading, array $context): array
-    {
-        $itemIds = [];
-
-        // Catálogos resueltos semánticamente una sola vez por importación.
+    protected function createShipmentItemFromBillData(
+        array $blData,
+        BillOfLading $billOfLading,
+        array $context
+    ): int {
         if ($this->cachedCargoType === null) {
-            $this->cachedCargoType = CargoType::where('name', 'CONTENEDORES')
+            $this->cachedCargoType = CargoType::where(
+                    'name',
+                    'CONTENEDORES'
+                )
                 ->where('active', true)
                 ->first();
         }
 
         if ($this->cachedPackagingType === null) {
-            $this->cachedPackagingType = PackagingType::where('code', 'T')
+            $this->cachedPackagingType = PackagingType::where(
+                    'code',
+                    'T'
+                )
                 ->where('active', true)
                 ->first();
         }
 
-        if (!$this->cachedCargoType || !$this->cachedPackagingType) {
+        if (
+            !$this->cachedCargoType
+            || !$this->cachedPackagingType
+        ) {
             throw new Exception(
                 'Catálogo CONTENEDORES/CONTENEDOR no disponible'
             );
         }
+
         $cargoType = $this->cachedCargoType;
         $packagingType = $this->cachedPackagingType;
 
-        foreach ($containers as $index => $containerData) {
-            $containerNumber = $containerData['container_number'];
-            
-            // Crear ShipmentItem
-            $item = ShipmentItem::create([
-                'bill_of_lading_id' => $billOfLading->id,
-                // Conservar numeración real del XML (Login usa base 0).
-                'line_number' => $containerData['line_number'],
-                'item_reference' => 'LGN-' . $containerNumber,
-                'item_description' => $containerData['package_description'],
-                'cargo_type_id' => $cargoType?->id,
-                'packaging_type_id' => $packagingType?->id,
-                'package_quantity' => 1,
-                'unit_of_measure' => 'KG',
-                'gross_weight_kg' => $containerData['gross_weight_kg'],
-                'net_weight_kg' => $containerData['net_weight_kg'],
-                'country_of_origin' => $containerData['country_of_origin'],
-                'commodity_code' => $containerData['commodity_code'],
-                'tariff_position' => $containerData['commodity_code'] ?: null,
-                'cargo_marks' => $containerData['seals']
-                    ? "Seals: {$containerData['seals']}"
-                    : null,
-                'package_type_description' => $containerData['package_description'],
-                'created_date' => now(),
-                'created_by_user_id' => $context['user_id']
-            ]);
+        $commodityCode = trim(
+            (string) ($blData['commodity_code'] ?? '')
+        );
 
-            // Crear Container asociado (evitar duplicados en misma importación)
-            if (isset($this->createdContainersInImport[$containerNumber])) {
-                $container = $this->createdContainersInImport[$containerNumber];
+        /*
+         * No existe cantidad estructurada de bultos en Login.
+         * El proyecto ya usa 0 para representar ese dato desconocido
+         * en la cabecera del BL; no se inventa "1 por contenedor".
+         */
+        $item = ShipmentItem::create([
+            'bill_of_lading_id' => $billOfLading->id,
+            'line_number' => 1,
+            'item_reference' => 'LGN-' . $billOfLading->bill_number,
+
+            'item_description' => $blData['cargo_description'],
+
+            'cargo_type_id' => $cargoType->id,
+            'packaging_type_id' => $packagingType->id,
+
+            'package_quantity' => 0,
+            'unit_of_measure' => 'KG',
+
+            'gross_weight_kg' => $blData['total_weight_kg'],
+            'net_weight_kg' => $blData['total_net_weight_kg'] ?? null,
+            'volume_m3' => $blData['volume_m3'],
+
+            'country_of_origin' => null,
+
+            'commodity_code' => $commodityCode !== ''
+                ? $commodityCode
+                : null,
+
+            'tariff_position' => $commodityCode !== ''
+                ? $commodityCode
+                : null,
+
+            'is_dangerous_goods' =>
+                $blData[
+                    'contains_dangerous_goods'
+                ] ?? false,
+
+            'un_number' =>
+                $blData['un_number'] ?? null,
+
+            'imdg_class' =>
+                $blData['imdg_class'] ?? null,
+
+            /*
+             * MANE consume este campo en ShipmentItem.
+             */
+            'container_condition' => 'H',
+
+            'cargo_marks' => $blData['cargo_marks'] ?? null,
+
+            'package_type_description' =>
+                $packagingType->name ?? 'CONTENEDOR',
+
+            'created_date' => now(),
+            'created_by_user_id' => $context['user_id'],
+        ]);
+
+        foreach ($blData['containers'] as $containerData) {
+            $containerNumber =
+                $containerData['container_number'];
+
+            if (
+                isset(
+                    $this->createdContainersInImport[
+                        $containerNumber
+                    ]
+                )
+            ) {
+                $container =
+                    $this->createdContainersInImport[
+                        $containerNumber
+                    ];
             } else {
-                $containerType = $this->resolveContainerType($containerData['container_type']);
+                $containerType = $this->resolveContainerType(
+                    $containerData['container_type']
+                );
+
                 if ($containerType === null) {
                     throw new Exception(
                         'Tipo de contenedor no resuelto: "'
-                        . strtoupper(trim((string)$containerData['container_type']))
-                        . '" en el contenedor ' . $containerNumber
-                        . '. La importación se detuvo para no persistir un contenedor sin tipo válido.'
+                        . strtoupper(
+                            trim(
+                                (string)
+                                $containerData['container_type']
+                            )
+                        )
+                        . '" en el contenedor '
+                        . $containerNumber
+                        . '. La importación se detuvo para no '
+                        . 'persistir un contenedor sin tipo válido.'
                     );
                 }
 
                 $container = Container::firstOrCreate(
-                    ['container_number' => $containerNumber],
                     [
-                        'container_type_id' => $containerType->id,
-                        'tare_weight_kg' => $containerData['tare_weight_kg'],
+                        'container_number' =>
+                            $containerNumber,
+                    ],
+                    [
+                        'container_type_id' =>
+                            $containerType->id,
 
-                        // Login no informa máximo técnico ni peso bruto actual.
+                        'tare_weight_kg' =>
+                            $containerData[
+                                'tare_weight_kg'
+                            ],
+
                         'max_gross_weight_kg' => null,
                         'current_gross_weight_kg' => null,
 
-                        'cargo_weight_kg' => $containerData['net_weight_kg'],
+                        'cargo_weight_kg' =>
+                            $containerData[
+                                'net_weight_kg'
+                            ],
+
                         'condition' => 'L',
+
+                        /*
+                         * H/P es condición aduanera, independiente
+                         * de condition operacional.
+                         */
+                        'container_condition' => 'H',
+
                         'operational_status' => 'loaded',
-                        'shipper_seal' => $containerData['seals'],
+
+                        /*
+                         * Login informa números de precinto pero no
+                         * quién los emitió. No inventar shipper/carrier/
+                         * customs. Preservarlos como adicionales sin issuer.
+                         */
+                        'additional_seals' =>
+                            array_map(
+                                static fn ($seal) => [
+                                    'seal_number' =>
+                                        $seal,
+                                    'issuer_code' =>
+                                        null,
+                                ],
+                                $containerData[
+                                    'seals'
+                                ] ?? []
+                            ),
+
                         'active' => true,
                         'created_date' => now(),
-                        'created_by_user_id' => $context['user_id']
+                        'created_by_user_id' =>
+                            $context['user_id'],
                     ]
                 );
-                $this->createdContainersInImport[$containerNumber] = $container;
+
+                if (!$container->wasRecentlyCreated) {
+                    if (
+                        (int) $container->container_type_id
+                        !== (int) $containerType->id
+                    ) {
+                        throw new Exception(
+                            "Contenedor {$containerNumber} ya existe "
+                            . 'con un tipo incompatible con Login. '
+                            . 'No se modifica automáticamente el maestro.'
+                        );
+                    }
+
+                    $sourceTare =
+                        $containerData[
+                            'tare_weight_kg'
+                        ];
+
+                    $storedTare =
+                        $container->tare_weight_kg;
+
+                    if (
+                        $sourceTare !== null
+                        && (
+                            $storedTare === null
+                            || abs(
+                                (float) $storedTare
+                                - (float) $sourceTare
+                            ) > 0.01
+                        )
+                    ) {
+                        throw new Exception(
+                            "Contenedor {$containerNumber} ya existe "
+                            . 'con una tara incompatible con Login. '
+                            . 'No se modifica automáticamente el maestro.'
+                        );
+                    }
+                }
+
+                $this->createdContainersInImport[
+                    $containerNumber
+                ] = $container;
             }
 
-            // Asociar item con contenedor
-            $container->shipmentItems()->attach($item->id, [
-                'package_quantity' => 1,
-                'gross_weight_kg' => $containerData['gross_weight_kg'],
-                'net_weight_kg' => $containerData['net_weight_kg'],
-                'verified_gross_mass_kg' => $containerData['vgm'],
-                'status' => 'loaded',
-                'created_date' => now(),
-                'created_by_user_id' => $context['user_id']
-            ]);
+            /*
+             * Login no informa bultos estructurados por contenedor.
+             * Se conserva 0/desconocido; pesos y VGM sí son propios
+             * de cada contenedor.
+             */
+            $container->shipmentItems()->attach(
+                $item->id,
+                [
+                    'package_quantity' => 0,
+                    'gross_weight_kg' =>
+                        $containerData[
+                            'gross_weight_kg'
+                        ],
 
-            $itemIds[] = $item->id;
-            // Liberar objetos Eloquent de la iteracion
-            unset($item, $container);
+                    'net_weight_kg' =>
+                        $containerData[
+                            'net_weight_kg'
+                        ],
+
+                    'verified_gross_mass_kg' =>
+                        $containerData['vgm'],
+
+                    /*
+                     * attach() no aplica casts de modelo sobre el pivot.
+                     * El JSON se serializa exactamente una vez aquí.
+                     */
+                    'source_seals' =>
+                        json_encode(
+                            array_values(
+                                $containerData[
+                                    'seals'
+                                ] ?? []
+                            ),
+                            JSON_UNESCAPED_UNICODE
+                            | JSON_UNESCAPED_SLASHES
+                        ),
+
+                    'source_line_numbers' =>
+                        json_encode(
+                            array_values(
+                                $containerData[
+                                    'source_line_numbers'
+                                ] ?? []
+                            ),
+                            JSON_UNESCAPED_UNICODE
+                            | JSON_UNESCAPED_SLASHES
+                        ),
+
+                    'container_condition' =>
+                        $containerData[
+                            'container_condition'
+                        ] ?? 'H',
+
+                    'status' => 'loaded',
+                    'created_date' => now(),
+
+                    'created_by_user_id' =>
+                        $context['user_id'],
+                ]
+            );
+
+            unset($container);
         }
 
-        return $itemIds;
+        return $item->id;
     }
 
 
@@ -1394,41 +1928,112 @@ class LoginXmlParser implements ManifestParserInterface
         }
 
         /*
-         * Si existe identificación fiscal real:
-         * identidad = tax_id + país.
+         * CUIT/CNPJ son identificadores fiscales específicos de país.
          *
-         * NO caer a coincidencia por nombre si ese tax no existe.
+         * Si ya existe exactamente ese identificador, no se crea otra
+         * persona jurídica.
+         *
+         * Si el país histórico es incompatible con la semántica fiscal,
+         * la importación se bloquea para corregir el maestro de forma
+         * controlada; el parser no cambia silenciosamente el país.
          */
         if ($cleanTaxId !== null) {
-            $client = Client::where('tax_id', $cleanTaxId)
-                ->where('country_id', $country->id)
-                ->first();
+            $taxMatches = Client::where(
+                    'tax_id',
+                    $cleanTaxId
+                )
+                ->get();
+
+            $client = $taxMatches->first(
+                static fn (Client $candidate) =>
+                    (int) $candidate->country_id
+                    === (int) $country->id
+            );
 
             if ($client) {
                 if (
                     $documentType
-                    && $client->document_type_id !== null
-                    && (int) $client->document_type_id !== (int) $documentType->id
-                ) {
-                    throw new Exception(
-                        "Cliente {$cleanName} tiene tipo documental incompatible"
-                    );
-                }
-
-                if (
-                    $documentType
-                    && $client->document_type_id === null
+                    && (
+                        $client->document_type_id === null
+                        || (int) $client->document_type_id
+                            !== (int) $documentType->id
+                    )
                 ) {
                     $client->updateQuietly([
-                        'document_type_id' => $documentType->id,
+                        'document_type_id' =>
+                            $documentType->id,
                     ]);
+                }
+
+                if ($taxMatches->count() > 1) {
+                    $this->warnings[] =
+                        "Identificación fiscal {$cleanTaxId}: "
+                        . 'ya existen clientes duplicados; '
+                        . 'se reutilizó el registro compatible '
+                        . "con {$countryCode}.";
                 }
 
                 return $client;
             }
+
+            if ($taxMatches->count() === 1) {
+                $client = $taxMatches->first();
+
+                /*
+                 * Maestro legacy inequívoco:
+                 *
+                 * - existe una sola fila con este tax_id;
+                 * - Login determinó país por CUIT/CNPJ;
+                 * - el tipo documental fue resuelto contra ese país.
+                 *
+                 * Se corrige la identidad fiscal de ESA MISMA fila.
+                 * Nunca se crea un duplicado ni se elige entre varios.
+                 */
+                $previousCountry = Country::find(
+                    $client->country_id
+                );
+
+                $previousCountryCode =
+                    $previousCountry?->alpha2_code
+                    ?? (string) $client->country_id;
+
+                Log::warning(
+                    'Login corrige maestro fiscal legacy inequívoco',
+                    [
+                        'client_id' => $client->id,
+                        'tax_id' => $cleanTaxId,
+                        'country_from' => $previousCountryCode,
+                        'country_to' => $countryCode,
+                        'document_from' =>
+                            $client->document_type_id,
+                        'document_to' =>
+                            $documentType?->id,
+                    ]
+                );
+
+                $client->updateQuietly([
+                    'country_id' => $country->id,
+                    'document_type_id' =>
+                        $documentType?->id,
+                ]);
+
+                return $client;
+            }
+
+            if ($taxMatches->count() > 1) {
+                throw new Exception(
+                    "Identificación fiscal {$cleanTaxId} "
+                    . 'corresponde a múltiples clientes y ninguno '
+                    . "coincide con el país {$countryCode}. "
+                    . 'Debe resolverse la duplicidad antes de importar.'
+                );
+            }
         } else {
             // Sin tax real: nombre exacto + país.
-            $client = Client::where('legal_name', $cleanName)
+            $client = Client::where(
+                    'legal_name',
+                    $cleanName
+                )
                 ->where('country_id', $country->id)
                 ->first();
 

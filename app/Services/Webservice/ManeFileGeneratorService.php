@@ -478,6 +478,8 @@ class ManeFileGeneratorService
             'giro',
             'originCustoms',
             'billsOfLading.loadingPort',
+            'billsOfLading.dischargePort',
+            'billsOfLading.shipper',
             'billsOfLading.consignee',
             'billsOfLading.notifyParty',
             'billsOfLading.shipmentItems.packagingType',
@@ -727,38 +729,349 @@ class ManeFileGeneratorService
         return '@' . implode('@', $fields) . '@';
     }
 
+    private function isLoginBill(
+        BillOfLading $bill
+    ): bool {
+        return strtoupper(
+            trim((string) $bill->source_format)
+        ) === 'LOGIN_XML';
+    }
+
+    private function isLoginVoyage(
+        Voyage $voyage
+    ): bool {
+        $bills = $voyage->billsOfLading;
+
+        if ($bills->isEmpty()) {
+            return false;
+        }
+
+        $loginCount = $bills
+            ->filter(
+                fn (BillOfLading $bill) =>
+                    $this->isLoginBill($bill)
+            )
+            ->count();
+
+        if ($loginCount === 0) {
+            return false;
+        }
+
+        if ($loginCount !== $bills->count()) {
+            throw new \DomainException(
+                'Un MANE no puede mezclar BL Login '
+                . 'con BL de otros formatos.'
+            );
+        }
+
+        return true;
+    }
+
+    private function loginCustomsCode(
+        BillOfLading $bill
+    ): string {
+        $port = $bill->loadingPort;
+
+        if (!$port) {
+            throw new \DomainException(
+                "BL {$bill->bill_number}: "
+                . 'Login sin puerto de carga.'
+            );
+        }
+
+        $config = $port->webservice_config;
+
+        if (is_string($config)) {
+            $config = json_decode(
+                $config,
+                true
+            );
+        }
+
+        $code = is_array($config)
+            ? trim(
+                (string) (
+                    $config[
+                        'customs_office_id'
+                    ] ?? ''
+                )
+            )
+            : '';
+
+        if ($code === '') {
+            $default = $port
+                ->defaultAfipCustomsOffice()
+                ->where(
+                    'afip_customs_offices.is_active',
+                    true
+                )
+                ->first();
+
+            $code = trim(
+                (string) ($default?->code ?? '')
+            );
+        }
+
+        if ($code === '') {
+            throw new \DomainException(
+                "BL {$bill->bill_number}: "
+                . "puerto {$port->code} "
+                . 'sin aduana AFIP MANE.'
+            );
+        }
+
+        return ctype_digit($code)
+            ? str_pad(
+                $code,
+                3,
+                '0',
+                STR_PAD_LEFT
+            )
+            : $code;
+    }
+
+    private function loginShipperValue(
+        BillOfLading $bill
+    ): string {
+        $shipper = $bill->shipper;
+
+        if (!$shipper) {
+            throw new \DomainException(
+                "BL {$bill->bill_number}: "
+                . 'Login sin cargador.'
+            );
+        }
+
+        $taxId = preg_replace(
+            '/\D/',
+            '',
+            (string) $shipper->tax_id
+        );
+
+        if (strlen($taxId) === 11) {
+            return $taxId;
+        }
+
+        $name = trim(
+            (string) $shipper->legal_name
+        );
+
+        if ($name === '') {
+            throw new \DomainException(
+                "BL {$bill->bill_number}: "
+                . 'cargador sin CUIT ni nombre.'
+            );
+        }
+
+        return $name;
+    }
+
+    private function loginNcmDescription(
+        BillOfLading $bill,
+        ShipmentItem $item
+    ): string {
+        $codes = $bill->commodity_codes;
+
+        if (is_string($codes)) {
+            $decoded = json_decode(
+                $codes,
+                true
+            );
+
+            $codes = is_array($decoded)
+                ? $decoded
+                : [];
+        }
+
+        if (!is_array($codes)) {
+            $codes = [];
+        }
+
+        $codes = array_values(
+            array_unique(
+                array_filter(
+                    array_map(
+                        static fn ($value) =>
+                            trim((string) $value),
+                        $codes
+                    )
+                )
+            )
+        );
+
+        if (
+            $codes === []
+            && trim(
+                (string) $bill->commodity_code
+            ) !== ''
+        ) {
+            $codes[] = trim(
+                (string) $bill->commodity_code
+            );
+        }
+
+        if ($codes === []) {
+            $description = trim(
+                (string) $item->item_description
+            );
+
+            if ($description === '') {
+                throw new \DomainException(
+                    "BL {$bill->bill_number}: "
+                    . 'sin NCM ni descripción.'
+                );
+            }
+
+            return $description;
+        }
+
+        static $catalog = null;
+
+        if ($catalog === null) {
+            $catalog = require resource_path(
+                'data/ncm_es_login.php'
+            );
+        }
+
+        $descriptions = [];
+
+        foreach ($codes as $code) {
+            if (!isset($catalog[$code])) {
+                throw new \DomainException(
+                    "BL {$bill->bill_number}: "
+                    . "NCM {$code} "
+                    . 'sin descripción MANE.'
+                );
+            }
+
+            $descriptions[] =
+                $catalog[$code];
+        }
+
+        return implode(
+            ' / ',
+            $descriptions
+        );
+    }
+
     /**
      * Registro tipo 1 - Carátula (15 campos). Devuelve la línea sin CRLF.
      * Campos verificados contra modelos reales.
      */
-    private function record1(Voyage $voyage): string
-    {
+    private function record1(
+        Voyage $voyage
+    ): string {
         $company = $this->company;
 
-        // Imp/Exp: export -> 'E', import -> 'I'
-        $impExp = $voyage->cargo_type === 'export' ? 'E' : 'I';
+        $impExp =
+            $voyage->cargo_type === 'export'
+                ? 'E'
+                : 'I';
 
-        // País extranjero (campo 8): destino si export, origen si import
-        $foreignCountry = $voyage->cargo_type === 'export'
-            ? $voyage->destinationCountry
-            : $voyage->originCountry;
+        $foreignCountry =
+            $voyage->cargo_type === 'export'
+                ? $voyage->destinationCountry
+                : $voyage->originCountry;
+
+        $login =
+            $this->isLoginVoyage($voyage);
+
+        $vesselName = (string) optional(
+            $voyage->leadVessel
+        )->name;
+
+        $vesselField = $login
+            ? $vesselName
+                . (string) $voyage->voyage_number
+            : $vesselName;
+
+        $comment = '';
+
+        $customsCode = optional(
+            $voyage->originCustoms
+        )->code;
+
+        if ($login) {
+            $firstBill =
+                $voyage->billsOfLading->first();
+
+            $customsCode =
+                $this->loginCustomsCode(
+                    $firstBill
+                );
+
+            $comment =
+                'BODEGA COMPARTIDA VIAJE '
+                . $voyage->voyage_number;
+        }
 
         return $this->buildLine([
-            $this->field('1', 1),                                                              // 1  tipo registro
-            $this->field('A', 1),                                                              // 2  tipo operación
-            $this->field($company->id_maria, 4),                                               // 3  código habilitado
-            $this->field($impExp, 1),                                                          // 4  imp/exp
-            $this->field(optional($voyage->estimated_arrival_date)->format('Ymd'), 8),         // 5  fecha arribo
-            $this->field($voyage->is_empty_transport, 1),                                      // 6  transporte vacío
-            $this->field($voyage->has_cargo_onboard, 1),                                       // 7  mercadería a bordo
-            $this->field(optional($foreignCountry)->codigo_afip, 3),                           // 8  país proc/destino
-            $this->field($company->legal_name, 35),                                            // 9  designación transportista
-            $this->field(optional(optional($voyage->leadVessel)->flagCountry)->codigo_afip, 3),// 10 país transportista (bandera) *pendiente Roberto
-            $this->field(optional(optional($voyage->leadVessel)->flagCountry)->codigo_afip, 3),// 11 nac. medio transporte (bandera)
-            $this->field(optional($voyage->leadVessel)->name, 20),                             // 12 nombre buque
-            $this->field(optional($voyage->giro)->codigo, 3),                                  // 13 lugar de giro
-            $this->field('', 60),                                                              // 14 comentario
-            $this->field(optional($voyage->originCustoms)->code, 3),                           // 15 código aduana
+            $this->field('1', 1),
+            $this->field('A', 1),
+            $this->field(
+                $company->id_maria,
+                4
+            ),
+            $this->field($impExp, 1),
+            $this->field(
+                optional(
+                    $voyage
+                        ->estimated_arrival_date
+                )->format('Ymd'),
+                8
+            ),
+            $this->field(
+                $voyage->is_empty_transport,
+                1
+            ),
+            $this->field(
+                $voyage->has_cargo_onboard,
+                1
+            ),
+            $this->field(
+                optional(
+                    $foreignCountry
+                )->codigo_afip,
+                3
+            ),
+            $this->field(
+                $company->legal_name,
+                35
+            ),
+            $this->field(
+                optional(
+                    optional(
+                        $voyage->leadVessel
+                    )->flagCountry
+                )->codigo_afip,
+                3
+            ),
+            $this->field(
+                optional(
+                    optional(
+                        $voyage->leadVessel
+                    )->flagCountry
+                )->codigo_afip,
+                3
+            ),
+            $this->field(
+                $vesselField,
+                $login ? 30 : 20
+            ),
+            $this->field(
+                optional(
+                    $voyage->giro
+                )->codigo,
+                3
+            ),
+            $this->field(
+                $comment,
+                60
+            ),
+            $this->field(
+                $customsCode,
+                3
+            ),
         ]);
     }
 
@@ -776,29 +1089,136 @@ class ManeFileGeneratorService
      * Un registro por Bill of Lading. Devuelve la línea sin CRLF.
      * Campos verificados contra modelos reales.
      */
-    private function record2(BillOfLading $bill): string
-    {
-        // Ítem primario del BL: menor line_number.
-        $item = $bill->shipmentItems->sortBy('line_number')->first();
+    private function record2(
+        BillOfLading $bill
+    ): string {
+        $item = $bill
+            ->shipmentItems
+            ->sortBy('line_number')
+            ->first();
+
+        $login =
+            $this->isLoginBill($bill);
+
+        $portCode = $login
+            ? optional(
+                $bill->dischargePort
+            )->code
+            : optional(
+                $bill->loadingPort
+            )->code;
+
+        if (
+            $login
+            && trim(
+                (string) $portCode
+            ) === ''
+        ) {
+            throw new \DomainException(
+                "BL {$bill->bill_number}: "
+                . 'Login sin puerto destino.'
+            );
+        }
+
+        $marks = trim(
+            (string) $bill->cargo_marks
+        );
+
+        if (
+            $login
+            && $marks === ''
+        ) {
+            $marks = 'SM';
+        }
+
+        $party = $login
+            ? $this->loginShipperValue(
+                $bill
+            )
+            : optional(
+                $bill->consignee
+            )->legal_name;
 
         return $this->buildLine([
-            $this->field('2', 1),                                              // 1  tipo registro
-            $this->field('A', 1),                                              // 2  tipo operación
-            $this->field(optional($bill->loadingPort)->code, 5),               // 3  puerto embarque
-            $this->field($bill->bill_number, 18),                              // 4  número de conocimiento
-            $this->field($bill->cargo_marks, 80),                              // 5  marca de los bultos
-            $this->field(optional($bill->consignee)->legal_name, 80),          // 6  consignatario
-            $this->field(optional($bill->notifyParty)->legal_name ?: $bill->notify_party_text, 35), // 7 notificar a
-            $this->field($this->sn($bill->is_consolidated), 1),                // 8  ind. consolidado (0/1 -> S/N)
-            $this->field($bill->is_transit_transshipment, 1),                  // 9  ind. transito/transbordo (S/N) *pendiente validacion Roberto
-            $this->field('', 60),                                              // 10 comentario
-            $this->field(optional($item)->consignee_document_type, 4),         // 11 tipo doc destinatario
-            $this->field(optional($item)->consignee_tax_id, 11),               // 12 id destinatario
-            $this->field('', 3),                                               // 13 pais pasaporte (sin fuente en app; facultativo)
-            $this->field(optional($item)->tariff_position, 16),                // 14 posicion arancelaria
-            $this->field(optional($item)->is_secure_logistics_operator, 1),    // 15 op. logistico seguro (S/N)
-            $this->field(optional($item)->is_monitored_transit, 1),            // 16 transito monitoreado (S/N)
-            $this->field(optional($item)->is_renar, 1),                        // 17 RENAR (S/N)
+            $this->field('2', 1),
+            $this->field('A', 1),
+            $this->field(
+                $portCode,
+                5
+            ),
+            $this->field(
+                $bill->bill_number,
+                18
+            ),
+            $this->field(
+                $marks,
+                80
+            ),
+            $this->field(
+                $party,
+                80
+            ),
+            $this->field(
+                optional(
+                    $bill->notifyParty
+                )->legal_name
+                    ?: $bill
+                        ->notify_party_text,
+                35
+            ),
+            $this->field(
+                $this->sn(
+                    $bill->is_consolidated
+                ),
+                1
+            ),
+            $this->field(
+                $login
+                    ? 'N'
+                    : $bill
+                        ->is_transit_transshipment,
+                1
+            ),
+            $this->field('', 60),
+            $this->field(
+                optional(
+                    $item
+                )->consignee_document_type,
+                4
+            ),
+            $this->field(
+                optional(
+                    $item
+                )->consignee_tax_id,
+                11
+            ),
+            $this->field('', 3),
+            $this->field(
+                $login
+                    ? ''
+                    : optional(
+                        $item
+                    )->tariff_position,
+                16
+            ),
+            $this->field(
+                optional(
+                    $item
+                )->is_secure_logistics_operator,
+                1
+            ),
+            $this->field(
+                optional(
+                    $item
+                )->is_monitored_transit,
+                1
+            ),
+            $this->field(
+                optional(
+                    $item
+                )->is_renar,
+                1
+            ),
         ]);
     }
 
@@ -807,24 +1227,123 @@ class ManeFileGeneratorService
      * Un registro por ShipmentItem. Devuelve la línea sin CRLF.
      * Campos verificados contra modelos reales.
      */
-    private function record3(BillOfLading $bill, ShipmentItem $item): string
-    {
-        // Campo 3: id doc transporte = puerto de embarque + número de conocimiento (tal cual, sin normalizar).
-        $idDocTransporte = optional($bill->loadingPort)->code . $bill->bill_number;
+    private function record3(
+        BillOfLading $bill,
+        ShipmentItem $item
+    ): string {
+        $login =
+            $this->isLoginBill($bill);
+
+        $portCode = $login
+            ? optional(
+                $bill->dischargePort
+            )->code
+            : optional(
+                $bill->loadingPort
+            )->code;
+
+        $idDocTransporte =
+            $portCode
+            . $bill->bill_number;
+
+        if (!$login) {
+            return $this->buildLine([
+                $this->field('3', 1),
+                $this->field('A', 1),
+                $this->field(
+                    $idDocTransporte,
+                    23
+                ),
+                $this->field(
+                    $item->line_number,
+                    3
+                ),
+                $this->field(
+                    optional(
+                        $item
+                            ->packagingType
+                    )->code,
+                    2
+                ),
+                $this->field('', 1),
+                $this->field(
+                    $item
+                        ->container_condition,
+                    1
+                ),
+                $this->field(
+                    $item->package_quantity,
+                    9
+                ),
+                $this->field(
+                    $item->gross_weight_kg,
+                    12
+                ),
+                $this->field(
+                    $item->item_description,
+                    80
+                ),
+                $this->field(
+                    $item->package_numbers,
+                    100
+                ),
+                $this->field('', 60),
+            ]);
+        }
+
+        if (
+            trim(
+                (string) $portCode
+            ) === ''
+        ) {
+            throw new \DomainException(
+                "BL {$bill->bill_number}: "
+                . 'Login sin destino para R3.'
+            );
+        }
+
+        $description =
+            $this->loginNcmDescription(
+                $bill,
+                $item
+            );
 
         return $this->buildLine([
-            $this->field('3', 1),                                    // 1  tipo registro
-            $this->field('A', 1),                                    // 2  tipo operación
-            $this->field($idDocTransporte, 23),                      // 3  id doc transporte (Pto+Conocim)
-            $this->field($item->line_number, 3),                     // 4  número de línea
-            $this->field(optional($item->packagingType)->code, 2),   // 5  código de embalaje
-            $this->field('', 1),                                     // 6  tipo de embalaje (sin fuente en app; facultativo)
-            $this->field($item->container_condition, 1),             // 7  condición del contenedor
-            $this->field($item->package_quantity, 9),                // 8  cantidad total manifestada
-            $this->field($item->gross_weight_kg, 12),                // 9  peso / volumen manifestado
-            $this->field($item->item_description, 80),               // 10 descripción de la mercadería
-            $this->field($item->package_numbers, 100),               // 11 número de los bultos
-            $this->field('', 60),                                    // 12 comentario
+            $this->field('3', 1),
+            $this->field('A', 1),
+            $this->field(
+                $idDocTransporte,
+                23
+            ),
+            $this->field(
+                $this->loginCustomsCode(
+                    $bill
+                ),
+                3
+            ),
+            $this->field('05', 2),
+            $this->field('T', 1),
+            $this->field('H', 1),
+            $this->field('', 9),
+            $this->field(
+                number_format(
+                    (float)
+                        $item->gross_weight_kg,
+                    3,
+                    '.',
+                    ''
+                ),
+                12
+            ),
+            $this->field(
+                $description,
+                80
+            ),
+            $this->field(
+                'S/N',
+                100
+            ),
+            $this->field('', 60),
         ]);
     }
 
@@ -834,30 +1353,104 @@ class ManeFileGeneratorService
      * container_shipment_item). Devuelve un array de líneas (sin CRLF).
      * Campos verificados contra modelos reales.
      */
-    private function record5Lines(BillOfLading $bill): array
-    {
-        // Dedup: juntar contenedores distintos de todos los items del BL, indexados por id.
+    private function record5Lines(
+        BillOfLading $bill
+    ): array {
         $containers = collect();
-        foreach ($bill->shipmentItems as $item) {
-            foreach ($item->containers as $c) {
-                $containers->put($c->id, $c);
+
+        foreach (
+            $bill->shipmentItems
+            as $item
+        ) {
+            foreach (
+                $item->containers
+                as $container
+            ) {
+                $containers->put(
+                    $container->id,
+                    $container
+                );
             }
         }
 
-        // Campo 4: id doc transporte = puerto de embarque + número de conocimiento (misma regla que R3).
-        $idDocTransporte = optional($bill->loadingPort)->code . $bill->bill_number;
+        $login =
+            $this->isLoginBill($bill);
+
+        $portCode = $login
+            ? optional(
+                $bill->dischargePort
+            )->code
+            : optional(
+                $bill->loadingPort
+            )->code;
+
+        $idDocTransporte =
+            $portCode
+            . $bill->bill_number;
 
         $lines = [];
-        foreach ($containers as $c) {
-            $lines[] = $this->buildLine([
-                $this->field('5', 1),                                          // 1  tipo registro
-                $this->field('A', 1),                                          // 2  tipo operación
-                $this->field(optional($c->containerType)->length_feet, 2),     // 3  medidas contenedor (20/40)
-                $this->field($idDocTransporte, 23),                            // 4  id doc transporte (Pto+Conocim)
-                $this->field($c->container_number, 20),                        // 5  número del contenedor
-                $this->field($c->container_condition, 1),                      // 6  condición del contenedor
-                $this->field('', 60),                                          // 7  comentario
-            ]);
+
+        foreach (
+            $containers
+            as $container
+        ) {
+            $condition =
+                $container
+                    ->container_condition;
+
+            if ($login) {
+                $condition = trim(
+                    (string) optional(
+                        $container->pivot
+                    )->container_condition
+                );
+
+                if ($condition === '') {
+                    throw new \DomainException(
+                        "BL {$bill->bill_number}: "
+                        . 'contenedor '
+                        . $container
+                            ->container_number
+                        . ' sin condición Login.'
+                    );
+                }
+            }
+
+            $lines[] =
+                $this->buildLine([
+                    $this->field(
+                        '5',
+                        1
+                    ),
+                    $this->field(
+                        'A',
+                        1
+                    ),
+                    $this->field(
+                        optional(
+                            $container
+                                ->containerType
+                        )->length_feet,
+                        2
+                    ),
+                    $this->field(
+                        $idDocTransporte,
+                        23
+                    ),
+                    $this->field(
+                        $container
+                            ->container_number,
+                        20
+                    ),
+                    $this->field(
+                        $condition,
+                        1
+                    ),
+                    $this->field(
+                        '',
+                        60
+                    ),
+                ]);
         }
 
         return $lines;
