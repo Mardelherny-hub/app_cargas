@@ -197,6 +197,120 @@ if ($user) {
                     </div>
                 </div>
 
+                {{-- DATOS FUENTE LOGIN: PROVENIENCIA, NO EDITABLE --}}
+                @if($billOfLading->source_format === 'LOGIN_XML')
+                @php
+                    $loginCommodityCodes =
+                        is_array($billOfLading->commodity_codes)
+                            ? $billOfLading->commodity_codes
+                            : (
+                                json_decode(
+                                    (string) $billOfLading->commodity_codes,
+                                    true
+                                ) ?: []
+                            );
+
+                    $loginDangerousDetails =
+                        is_array($billOfLading->dangerous_goods_details)
+                            ? $billOfLading->dangerous_goods_details
+                            : (
+                                json_decode(
+                                    (string) $billOfLading->dangerous_goods_details,
+                                    true
+                                ) ?: []
+                            );
+                @endphp
+
+                <div
+                    class="bg-white overflow-hidden shadow-sm sm:rounded-lg"
+                    data-testid="login-source-data"
+                >
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-medium text-gray-900">
+                            Datos fuente Login
+                        </h3>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Proveniencia del archivo importado. No se modifica desde la ficha.
+                        </p>
+                    </div>
+
+                    <div class="px-6 py-4">
+                        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">
+                                    Booking
+                                </dt>
+                                <dd class="text-sm text-gray-900">
+                                    {{ $billOfLading->booking_number ?: '—' }}
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">
+                                    Referencias de exportación
+                                </dt>
+                                <dd class="text-sm text-gray-900">
+                                    {{ $billOfLading->export_references ?: '—' }}
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">
+                                    Email fuente
+                                </dt>
+                                <dd class="text-sm text-gray-900 break-all">
+                                    {{ $billOfLading->source_email ?: '—' }}
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">
+                                    Tipo de movimiento
+                                </dt>
+                                <dd class="text-sm text-gray-900">
+                                    {{ $billOfLading->type_of_move ?: '—' }}
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">
+                                    Resumen de contenedores
+                                </dt>
+                                <dd class="text-sm text-gray-900">
+                                    {{ $billOfLading->container_summary ?: '—' }}
+                                </dd>
+                            </div>
+
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">
+                                    NCM fuente
+                                </dt>
+                                <dd class="text-sm text-gray-900">
+                                    {{ $loginCommodityCodes
+                                        ? implode(', ', $loginCommodityCodes)
+                                        : '—' }}
+                                </dd>
+                            </div>
+
+                            <div class="sm:col-span-2">
+                                <dt class="text-sm font-medium text-gray-500">
+                                    Mercadería peligrosa fuente
+                                </dt>
+                                <dd class="text-sm text-gray-900 break-words">
+                                    {{ $loginDangerousDetails
+                                        ? json_encode(
+                                            $loginDangerousDetails,
+                                            JSON_UNESCAPED_UNICODE
+                                            | JSON_UNESCAPED_SLASHES
+                                        )
+                                        : '—' }}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+                @endif
+
                 {{-- PARTES INVOLUCRADAS --}}
                 {{-- ============================================================ --}}
 
@@ -655,7 +769,76 @@ if ($user) {
 
                                             <td class="px-4 py-3 text-sm text-gray-900">
                                                 @forelse($item->containers as $container)
-                                                    <div>{{ $container->container_number }}</div>
+                                                    <div>
+                                                        <div>
+                                                            {{ $container->container_number }}
+                                                        </div>
+
+                                                        @if(
+                                                            $billOfLading->source_format === 'LOGIN_XML'
+                                                            && $container->pivot
+                                                        )
+                                                            @php
+                                                                $loginSourceLinesRaw =
+                                                                    $container
+                                                                        ->pivot
+                                                                        ->source_line_numbers;
+
+                                                                $loginSourceLines =
+                                                                    is_array($loginSourceLinesRaw)
+                                                                        ? $loginSourceLinesRaw
+                                                                        : (
+                                                                            json_decode(
+                                                                                (string) $loginSourceLinesRaw,
+                                                                                true
+                                                                            ) ?: []
+                                                                        );
+
+                                                                $loginSourceSealsRaw =
+                                                                    $container
+                                                                        ->pivot
+                                                                        ->source_seals;
+
+                                                                $loginSourceSeals =
+                                                                    is_array($loginSourceSealsRaw)
+                                                                        ? $loginSourceSealsRaw
+                                                                        : (
+                                                                            json_decode(
+                                                                                (string) $loginSourceSealsRaw,
+                                                                                true
+                                                                            ) ?: []
+                                                                        );
+                                                            @endphp
+
+                                                            <div class="text-xs text-gray-500 mt-1">
+                                                                Líneas fuente:
+                                                                {{
+                                                                    $loginSourceLines
+                                                                        ? implode(', ', $loginSourceLines)
+                                                                        : '—'
+                                                                }}
+                                                            </div>
+
+                                                            <div class="text-xs text-gray-500">
+                                                                Precintos:
+                                                                {{
+                                                                    $loginSourceSeals
+                                                                        ? implode(', ', $loginSourceSeals)
+                                                                        : '—'
+                                                                }}
+                                                            </div>
+
+                                                            <div class="text-xs text-gray-500">
+                                                                Condición:
+                                                                {{
+                                                                    $container
+                                                                        ->pivot
+                                                                        ->container_condition
+                                                                        ?: '—'
+                                                                }}
+                                                            </div>
+                                                        @endif
+                                                    </div>
                                                 @empty
                                                     <span class="text-gray-400">-</span>
                                                 @endforelse

@@ -353,6 +353,10 @@ class ShipmentItem extends Model
                 'loaded_at',
                 'sealed_at',
                 'loading_sequence',
+                'verified_gross_mass_kg',
+                'source_seals',
+                'source_line_numbers',
+                'container_condition',
                 'status'
             ])
             ->withTimestamps();

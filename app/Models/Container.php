@@ -90,6 +90,7 @@ class Container extends Model
         'volume' => 'decimal:3',
         'package_count' => 'integer',
         'hazmat_info' => 'array',
+        'additional_seals' => 'array',
         'container_condition' => 'string',
     ];
 
@@ -123,6 +124,10 @@ class Container extends Model
                 'loaded_at',
                 'sealed_at',
                 'loading_sequence',
+                'verified_gross_mass_kg',
+                'source_seals',
+                'source_line_numbers',
+                'container_condition',
                 
                 // ✅ Campos de estado y control - SÍ EXISTEN
                 'status',

@@ -73,6 +73,16 @@ class BillOfLading extends Model
         'master_bill_number',
         'house_bill_number',
         'internal_reference',
+
+        // Datos fuente del conocimiento.
+        'booking_number',
+        'export_references',
+        'source_email',
+        'type_of_move',
+        'container_summary',
+        'dangerous_goods_details',
+        'source_format',
+
         'bill_date',
         'manifest_number',
         'manifest_line_number',
@@ -211,6 +221,7 @@ class BillOfLading extends Model
         
         // JSON
         'commodity_codes' => 'array',
+        'dangerous_goods_details' => 'array',
         'special_instructions' => 'json',
         'additional_charges' => 'json',
         'discrepancy_details' => 'json',
