@@ -1179,7 +1179,10 @@ class ManeFileGeneratorService
                         ->is_transit_transshipment,
                 1
             ),
-            $this->field('', 60),
+            $this->field(
+                $login ? 'N' : '',
+                60
+            ),
             $this->field(
                 optional(
                     $item
@@ -1202,15 +1205,19 @@ class ManeFileGeneratorService
                 16
             ),
             $this->field(
-                optional(
-                    $item
-                )->is_secure_logistics_operator,
+                $login
+                    ? ''
+                    : optional(
+                        $item
+                    )->is_secure_logistics_operator,
                 1
             ),
             $this->field(
-                optional(
-                    $item
-                )->is_monitored_transit,
+                $login
+                    ? ''
+                    : optional(
+                        $item
+                    )->is_monitored_transit,
                 1
             ),
             $this->field(
@@ -1324,7 +1331,19 @@ class ManeFileGeneratorService
             $this->field('05', 2),
             $this->field('T', 1),
             $this->field('H', 1),
-            $this->field('', 9),
+
+            /*
+             * Login ya normalizó la cantidad física de contenedores
+             * en BillOfLading.container_count.
+             *
+             * No usar package_quantity: ese campo representa bultos.
+             * MANE no cuenta ni reconcilia; sólo serializa el dato
+             * canónico dejado por la importación.
+             */
+            $this->field(
+                $bill->container_count,
+                9
+            ),
             $this->field(
                 number_format(
                     (float)

@@ -561,4 +561,52 @@ class LoginXmlParserStage1IntegrityTest extends TestCase
         );
     }
 
+
+    public function test_login_rejects_container_summary_count_mismatch_before_mane(): void
+    {
+        $parser = new LoginXmlParser();
+
+        $data = $this->validationFixture();
+
+        /*
+         * El fixture tiene un contenedor físico.
+         * El tipo vacío produce otro error conocido del fixture,
+         * pero no interfiere con esta aserción de cardinalidad.
+         */
+        $data['bills_of_lading'][0]['container_summary'] =
+            '2x40HC';
+
+        $errors = $parser->validate($data);
+
+        $text = implode(
+            ' | ',
+            $errors
+        );
+
+        $this->assertStringContainsString(
+            'NoOfPkgsHm declara 2 contenedores pero se importaron 1',
+            $text
+        );
+
+        /*
+         * Cuando fuente y cardinalidad física coinciden,
+         * la validación de conteo no debe generar error.
+         */
+        $data['bills_of_lading'][0]['container_summary'] =
+            '1x40HC';
+
+        $errors = $parser->validate($data);
+
+        $text = implode(
+            ' | ',
+            $errors
+        );
+
+        $this->assertStringNotContainsString(
+            'NoOfPkgsHm declara',
+            $text
+        );
+    }
+
+
 }
