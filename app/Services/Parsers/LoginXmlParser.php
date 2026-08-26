@@ -806,6 +806,47 @@ class LoginXmlParser implements ManifestParserInterface
                 $errors[] = "Descripción de mercadería requerida en {$blRef}";
             }
 
+            /*
+             * NoOfPkgsHm describe la composición física de Login
+             * (ej. 5x40HC), no cantidad de bultos comerciales.
+             *
+             * Cuando el formato expresa inequívocamente un único
+             * conteo NxTIPO, ese conteo debe coincidir con los
+             * contenedores físicos ya consolidados por el parser.
+             *
+             * Esta integridad se resuelve aquí, antes de persistir.
+             * MANE no debe descubrir ni reconciliar conteos.
+             */
+            $containerSummary = trim(
+                (string) ($bl['container_summary'] ?? '')
+            );
+
+            if (
+                $containerSummary !== ''
+                && preg_match(
+                    '/^(\d+)\s*[xX]\s*[A-Za-z0-9_-]+$/',
+                    $containerSummary,
+                    $summaryMatch
+                ) === 1
+            ) {
+                $declaredContainerCount =
+                    (int) $summaryMatch[1];
+
+                $actualContainerCount =
+                    count($bl['containers'] ?? []);
+
+                if (
+                    $declaredContainerCount
+                    !== $actualContainerCount
+                ) {
+                    $errors[] =
+                        "{$blRef}: NoOfPkgsHm declara "
+                        . "{$declaredContainerCount} contenedores "
+                        . "pero se importaron "
+                        . "{$actualContainerCount}.";
+                }
+            }
+
             $headerGross = $this->parseOptionalWeight(
                 isset($bl['gross_weight'])
                     ? (string) $bl['gross_weight']
