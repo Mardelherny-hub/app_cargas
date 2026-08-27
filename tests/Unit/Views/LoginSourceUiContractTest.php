@@ -131,4 +131,29 @@ class LoginSourceUiContractTest extends TestCase
             $parser
         );
     }
+
+    public function test_login_view_uses_container_count_for_displayed_quantity(): void
+    {
+        $show = file_get_contents(
+            $this->root()
+            . '/resources/views/company/bills-of-lading/show.blade.php'
+        );
+
+        $this->assertStringContainsString(
+            "\$billOfLading->source_format === 'LOGIN_XML' ? \$billOfLading->container_count",
+            $show
+        );
+
+        $this->assertStringContainsString(
+            "? 'Contenedores' : 'Bultos'",
+            $show
+        );
+
+        $this->assertStringContainsString(
+            ": \$item->package_quantity",
+            $show
+        );
+    }
+
+
 }
