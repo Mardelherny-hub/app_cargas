@@ -672,8 +672,8 @@ if ($user) {
                                 <div class="text-xs text-gray-600">Peso (kg)</div>
                             </div>
                             <div class="bg-purple-50 p-3 rounded">
-                                <div class="text-xl font-bold text-purple-600">{{ number_format($billOfLading->shipmentItems->sum('package_quantity')) }}</div>
-                                <div class="text-xs text-gray-600">Bultos</div>
+                                <div class="text-xl font-bold text-purple-600">{{ number_format($billOfLading->source_format === 'LOGIN_XML' ? $billOfLading->container_count : $billOfLading->shipmentItems->sum('package_quantity')) }}</div>
+                                <div class="text-xs text-gray-600">{{ $billOfLading->source_format === 'LOGIN_XML' ? 'Contenedores' : 'Bultos' }}</div>
                             </div>
                             <div class="bg-yellow-50 p-3 rounded">
                                 <div class="text-xl font-bold text-yellow-600">${{ number_format($billOfLading->shipmentItems->sum('declared_value'), 2) }}</div>
@@ -854,7 +854,7 @@ if ($user) {
                                                     <div class="text-xs text-gray-500">{{ $item->packagingType->name }}</div>
                                                 @endif
                                             </td>
-                                            <td class="px-4 py-3 text-sm text-gray-900">{{ number_format($item->package_quantity) }}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-900">{{ number_format($billOfLading->source_format === 'LOGIN_XML' ? $billOfLading->container_count : $item->package_quantity) }}</td>
                                             <td class="px-4 py-3 text-sm text-gray-900">{{ number_format($item->gross_weight_kg, 2) }}</td>
                                             <td class="px-4 py-3 text-sm text-gray-900">${{ number_format($item->declared_value, 2) }}</td>
                                             <td class="px-4 py-3 text-sm">
