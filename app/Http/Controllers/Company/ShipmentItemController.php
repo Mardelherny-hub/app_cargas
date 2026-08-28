@@ -671,6 +671,24 @@ return view('company.shipment-items.edit', compact(
             }
         }
 
+        /*
+         * Login no informa bultos estructurados.
+         * En esos items, 0 significa cantidad desconocida
+         * y es un valor válido proveniente del importador.
+         *
+         * Los demás formatos mantienen mínimo 1.
+         */
+        $isLoginItem = strtoupper(
+            trim(
+                (string) optional(
+                    $shipmentItem->billOfLading
+                )->source_format
+            )
+        ) === 'LOGIN_XML';
+
+        $minPackageQuantity =
+            $isLoginItem ? 0 : 1;
+
         // Reglas de validación básicas
         $rules = [
             'line_number' => 'required|integer|min:0',
@@ -678,7 +696,9 @@ return view('company.shipment-items.edit', compact(
             'item_description' => 'required|string|max:5000',
             'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
             'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
-            'package_quantity' => 'required|integer|min:1',
+            'package_quantity' =>
+                'required|integer|min:'
+                . $minPackageQuantity,
             'gross_weight_kg' => 'required|numeric|min:0',
             'net_weight_kg' => 'nullable|numeric|min:0',
             'volume_m3' => 'nullable|numeric|min:0',
@@ -736,7 +756,9 @@ return view('company.shipment-items.edit', compact(
             'containers.*.seal_number' => 'nullable|string|max:50',
             'containers.*.seal_source' => 'nullable|in:carrier,shipper',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
-            'containers.*.package_quantity' => 'required_with:containers|integer|min:1',
+            'containers.*.package_quantity' =>
+                'required_with:containers|integer|min:'
+                . $minPackageQuantity,
             'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0',
             'containers.*.net_weight_kg' => 'nullable|numeric|min:0',
             'containers.*.volume_m3' => 'nullable|numeric|min:0',

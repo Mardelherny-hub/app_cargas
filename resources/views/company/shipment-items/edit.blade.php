@@ -312,7 +312,7 @@
                             <input type="number" 
                                    name="containers[{{ $index }}][package_quantity]" 
                                    value="{{ old('containers.'.$index.'.package_quantity', $container['package_quantity']) }}"
-                                   min="1"
+                                   min="{{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }}"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
                                    placeholder="20"
                                    required>
@@ -415,7 +415,7 @@
                                        name="package_quantity" 
                                        id="package_quantity" 
                                        value="{{ old('package_quantity', $shipmentItem->package_quantity) }}"
-                                       min="1"
+                                       min="{{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }}"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('package_quantity') border-red-300 @enderror">
                                 @error('package_quantity')
