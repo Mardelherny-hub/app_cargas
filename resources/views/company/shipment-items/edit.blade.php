@@ -1294,10 +1294,16 @@
                     return false;
                 }
 
-                // Validar que la cantidad de bultos sea positiva
-                if (packageQuantity < 1) {
+                // LOGIN admite 0 porque no informa bultos estructurados.
+                // Los demás orígenes mantienen el mínimo histórico de 1.
+                const minimumPackageQuantity =
+                    {{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }};
+
+                if (packageQuantity < minimumPackageQuantity) {
                     e.preventDefault();
-                    alert('La cantidad de bultos debe ser al menos 1.');
+                    alert(
+                        `La cantidad de bultos debe ser al menos ${minimumPackageQuantity}.`
+                    );
                     return false;
                 }
 
@@ -1475,7 +1481,7 @@ function addContainer() {
                     </label>
                     <input type="number" 
                            name="containers[${containerIndex}][package_quantity]" 
-                           min="1"
+                           min="{{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }}"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
                            required>
                 </div>
