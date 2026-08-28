@@ -899,15 +899,57 @@ class ManeFileGeneratorService
             )
         );
 
-        if (
-            $codes === []
-            && trim(
+        /*
+         * commodity_codes conserva los NCM originales recibidos
+         * desde Login y no debe alterarse al editar el conocimiento.
+         *
+         * Para MANE, una corrección manual sí debe prevalecer.
+         * Puede haberse realizado sobre el item o sobre la cabecera
+         * del conocimiento.
+         */
+        $sourcePrimary =
+            $codes[0] ?? '';
+
+        $operativeCandidates = [
+            trim(
+                (string) $item->commodity_code
+            ),
+            trim(
+                (string) $item->tariff_position
+            ),
+            trim(
                 (string) $bill->commodity_code
-            ) !== ''
+            ),
+        ];
+
+        $override = '';
+
+        foreach (
+            $operativeCandidates as $candidate
         ) {
-            $codes[] = trim(
-                (string) $bill->commodity_code
-            );
+            if (
+                $candidate !== ''
+                && (
+                    $sourcePrimary === ''
+                    || $candidate !== $sourcePrimary
+                )
+            ) {
+                $override = $candidate;
+                break;
+            }
+        }
+
+        if ($override !== '') {
+            $codes = [$override];
+        } elseif ($codes === []) {
+            foreach (
+                $operativeCandidates as $candidate
+            ) {
+                if ($candidate !== '') {
+                    $codes = [$candidate];
+                    break;
+                }
+            }
         }
 
         if ($codes === []) {
