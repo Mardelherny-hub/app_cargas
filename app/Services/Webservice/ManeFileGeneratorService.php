@@ -979,8 +979,19 @@ class ManeFileGeneratorService
 
         foreach ($codes as $code) {
             if (!isset($catalog[$code])) {
-                $descriptions[] = 'NO ENCONTRADO';
-                continue;
+                $description = trim(
+                    (string) $item->item_description
+                );
+
+                if ($description === '') {
+                    throw new \DomainException(
+                        "BL {$bill->bill_number}: "
+                        . "NCM {$code} "
+                        . 'sin descripción de mercadería.'
+                    );
+                }
+
+                return $description;
             }
 
             $descriptions[] =
