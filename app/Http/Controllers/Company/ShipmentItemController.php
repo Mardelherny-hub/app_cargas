@@ -686,8 +686,23 @@ return view('company.shipment-items.edit', compact(
             )
         ) === 'LOGIN_XML';
 
+        $containersInput = $request->input('containers', []);
+
+        $isContainerCargoInput = $this->isContainerizedCargo(
+            (int) $request->input('cargo_type_id')
+        );
+
+        $allContainersEmpty =
+            $isContainerCargoInput
+            && is_array($containersInput)
+            && $containersInput !== []
+            && collect($containersInput)->every(
+                fn ($container) =>
+                    ($container['condition'] ?? 'L') === 'V'
+            );
+
         $minPackageQuantity =
-            $isLoginItem ? 0 : 1;
+            ($isLoginItem || $allContainersEmpty) ? 0 : 1;
 
         // Reglas de validación básicas
         $rules = [
@@ -756,9 +771,9 @@ return view('company.shipment-items.edit', compact(
             'containers.*.seal_number' => 'nullable|string|max:50',
             'containers.*.seal_source' => 'nullable|in:carrier,shipper',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
+            'containers.*.condition' => 'nullable|in:L,V',
             'containers.*.package_quantity' =>
-                'required_with:containers|integer|min:'
-                . $minPackageQuantity,
+                'required_with:containers|integer|min:0',
             'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0',
             'containers.*.net_weight_kg' => 'nullable|numeric|min:0',
             'containers.*.volume_m3' => 'nullable|numeric|min:0',
@@ -767,6 +782,38 @@ return view('company.shipment-items.edit', compact(
         ];
 
         $validated = $request->validate($rules);
+
+        if (!empty($validated['containers'])) {
+            foreach ($validated['containers'] as $index => $containerData) {
+                $condition = $containerData['condition'] ?? 'L';
+                $packages = (int) $containerData['package_quantity'];
+                $grossWeight = (float) $containerData['gross_weight_kg'];
+
+                if ($condition === 'V') {
+                    if ($packages !== 0 || abs($grossWeight) > 0.00001) {
+                        return redirect()->back()
+                            ->withInput()
+                            ->withErrors([
+                                "containers.{$index}.package_quantity" =>
+                                    'Un contenedor vacío debe tener 0 bultos.',
+                                "containers.{$index}.gross_weight_kg" =>
+                                    'Un contenedor vacío debe tener 0 peso de mercadería.',
+                            ]);
+                    }
+
+                    continue;
+                }
+
+                if (!$isLoginItem && $packages < 1) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors([
+                            "containers.{$index}.package_quantity" =>
+                                'Un contenedor con carga debe tener al menos 1 bulto.',
+                        ]);
+                }
+            }
+        }
 
         // NUEVO: Validar que es carga contenedorizada si hay contenedores
         $isContainerCargo = $this->isContainerizedCargo($validated['cargo_type_id']);
@@ -917,6 +964,7 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
         
         // 2. Procesar cada contenedor con lógica de upsert
         foreach ($containersData as $containerData) {
+            $condition = $containerData['condition'] ?? 'L';
             
             // 3. Buscar contenedor existente por número
             $container = \App\Models\Container::where('container_number', $containerData['container_number'])->first();
@@ -948,9 +996,10 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                     )
                         ? $containerData['tare_weight']
                         : $container->tare_weight_kg,
-                    'condition' => $containerData['condition'] ?? 'L',
+                    'condition' => $condition,
                     $sealField => $sealValue,
-                    'operational_status' => 'loaded',
+                    'operational_status' =>
+                        $condition === 'V' ? 'empty' : 'loaded',
                     'active' => true,
                     'last_updated_date' => now(),
                     'last_updated_by_user_id' => Auth::id(),
@@ -969,10 +1018,14 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                     'container_type_id' => $containerData['container_type_id'],
                     'tare_weight_kg' => $containerData['tare_weight'] ?? 2200,
                     'max_gross_weight_kg' => 30000,
-                    'current_gross_weight_kg' => $containerData['gross_weight_kg'],
-                    'condition' => $containerData['condition'] ?? 'L',
+                    'current_gross_weight_kg' =>
+                        $condition === 'V'
+                            ? null
+                            : $containerData['gross_weight_kg'],
+                    'condition' => $condition,
                     'shipper_seal' => $containerData['seal_number'] ?? null,
-                    'operational_status' => 'loaded',
+                    'operational_status' =>
+                        $condition === 'V' ? 'empty' : 'loaded',
                     'active' => true,
                     'created_date' => now(),
                     'created_by_user_id' => Auth::id(),
