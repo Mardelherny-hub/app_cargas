@@ -8,7 +8,7 @@ use App\Models\PackagingType;
 use App\Models\Port;
 use App\Models\ShipmentItem;
 use App\Services\Webservice\ManeFileGeneratorService;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
 
