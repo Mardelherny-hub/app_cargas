@@ -2,7 +2,8 @@
 
 /*
  * Descripciones NCM en español necesarias para el fixture Login de aceptación.
- * Un código Login desconocido NO tiene fallback silencioso: MANE debe bloquear.
+ * Si un código Login no existe en esta tabla, MANE usa la descripción de
+ * mercadería del ítem y continúa la generación del archivo.
  */
 return [
     '0402'   => 'LECHE Y NATA (CREMA), CONCENTRADAS O CON ADICION DE AZUCAR U OTRO EDULCORANTE.',
