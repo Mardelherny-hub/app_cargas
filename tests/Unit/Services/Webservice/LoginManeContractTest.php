@@ -98,40 +98,15 @@ class LoginManeContractTest extends TestCase
             'is_consolidated' => false,
             'is_transit_transshipment' => false,
             'container_count' => 5,
-
-            /*
-             * Vacío deliberadamente:
-             * loginNcmDescription usa entonces la descripción
-             * del ShipmentItem sin depender de catálogo/BD.
-             */
             'commodity_code' => null,
             'commodity_codes' => [],
         ]);
 
-        $bill->setRelation(
-            'loadingPort',
-            $loadingPort
-        );
-
-        $bill->setRelation(
-            'dischargePort',
-            $dischargePort
-        );
-
-        $bill->setRelation(
-            'shipper',
-            $shipper
-        );
-
-        $bill->setRelation(
-            'notifyParty',
-            $notify
-        );
-
-        $bill->setRelation(
-            'shipmentItems',
-            collect([$item])
-        );
+        $bill->setRelation('loadingPort', $loadingPort);
+        $bill->setRelation('dischargePort', $dischargePort);
+        $bill->setRelation('shipper', $shipper);
+        $bill->setRelation('notifyParty', $notify);
+        $bill->setRelation('shipmentItems', collect([$item]));
 
         return [$bill, $item];
     }
@@ -153,20 +128,15 @@ class LoginManeContractTest extends TestCase
             $line
         );
 
-        $fields = explode(
-            '@',
-            substr($line, 1, -1)
-        );
+        $fields = explode('@', substr($line, 1, -1));
 
         $this->assertCount(17, $fields);
-
-        $this->assertSame('N', $fields[7]);   // F08
-        $this->assertSame('N', $fields[8]);   // F09
-        $this->assertSame('N', $fields[9]);   // F10
-
-        $this->assertSame('', $fields[14]);   // F15
-        $this->assertSame('', $fields[15]);   // F16
-        $this->assertSame('N', $fields[16]);  // F17
+        $this->assertSame('N', $fields[7]);
+        $this->assertSame('N', $fields[8]);
+        $this->assertSame('N', $fields[9]);
+        $this->assertSame('', $fields[14]);
+        $this->assertSame('', $fields[15]);
+        $this->assertSame('N', $fields[16]);
     }
 
     public function test_login_record3_uses_normalized_container_count(): void
@@ -187,24 +157,37 @@ class LoginManeContractTest extends TestCase
             $line
         );
 
-        $fields = explode(
-            '@',
-            substr($line, 1, -1)
-        );
+        $fields = explode('@', substr($line, 1, -1));
 
         $this->assertCount(12, $fields);
+        $this->assertSame('5', $fields[7]);
+        $this->assertSame('137700.000', $fields[8]);
+        $this->assertSame(0, $item->package_quantity);
+    }
 
-        $this->assertSame('5', $fields[7]);          // F08
-        $this->assertSame('137700.000', $fields[8]); // F09
+    public function test_login_record3_uses_merchandise_description_when_ncm_is_unknown(): void
+    {
+        [$bill, $item] = $this->loginGraph();
 
-        /*
-         * El arreglo no debe falsear la semántica del modelo.
-         * Los bultos siguen siendo desconocidos.
-         */
-        $this->assertSame(
-            0,
-            $item->package_quantity
+        $bill->commodity_codes = ['99999999'];
+        $item->item_description =
+            'DESCRIPCION DE MERCADERIA PARA NCM FUERA DE TABLA '
+            . 'QUE SUPERA DELIBERADAMENTE LOS OCHENTA CARACTERES DEL CAMPO MANE';
+
+        $line = $this->invoke(
+            $this->service(),
+            'record3',
+            [$bill, $item]
         );
+
+        $fields = explode('@', substr($line, 1, -1));
+
+        $this->assertSame(
+            substr($item->item_description, 0, 80),
+            $fields[9]
+        );
+        $this->assertNotSame('NO ENCONTRADO', $fields[9]);
+        $this->assertCount(12, $fields);
     }
 
     public function test_non_login_record3_keeps_package_quantity_semantics(): void
@@ -221,10 +204,7 @@ class LoginManeContractTest extends TestCase
             'code' => '05',
         ]);
 
-        $item->setRelation(
-            'packagingType',
-            $packaging
-        );
+        $item->setRelation('packagingType', $packaging);
 
         $line = $this->invoke(
             $this->service(),
@@ -232,14 +212,8 @@ class LoginManeContractTest extends TestCase
             [$bill, $item]
         );
 
-        $fields = explode(
-            '@',
-            substr($line, 1, -1)
-        );
+        $fields = explode('@', substr($line, 1, -1));
 
-        $this->assertSame(
-            '77',
-            $fields[7]
-        );
+        $this->assertSame('77', $fields[7]);
     }
 }
