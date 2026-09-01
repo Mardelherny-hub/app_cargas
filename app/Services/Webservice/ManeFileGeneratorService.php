@@ -979,11 +979,8 @@ class ManeFileGeneratorService
 
         foreach ($codes as $code) {
             if (!isset($catalog[$code])) {
-                throw new \DomainException(
-                    "BL {$bill->bill_number}: "
-                    . "NCM {$code} "
-                    . 'sin descripción MANE.'
-                );
+                $descriptions[] = 'NO ENCONTRADO';
+                continue;
             }
 
             $descriptions[] =
