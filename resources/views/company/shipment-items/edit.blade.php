@@ -312,7 +312,7 @@
                             <input type="number" 
                                    name="containers[{{ $index }}][package_quantity]" 
                                    value="{{ old('containers.'.$index.'.package_quantity', $container['package_quantity']) }}"
-                                   min="{{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }}"
+                                   min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
                                    placeholder="20"
                                    required>
@@ -327,7 +327,7 @@
                                    name="containers[{{ $index }}][gross_weight_kg]" 
                                    value="{{ old('containers.'.$index.'.gross_weight_kg', $container['gross_weight_kg']) }}"
                                    step="0.01"
-                                   min="0.01"
+                                   min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
                                    placeholder="1000.00"
                                    required>
@@ -415,7 +415,7 @@
                                        name="package_quantity" 
                                        id="package_quantity" 
                                        value="{{ old('package_quantity', $shipmentItem->package_quantity) }}"
-                                       min="{{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }}"
+                                       min="0"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('package_quantity') border-red-300 @enderror">
                                 @error('package_quantity')
@@ -432,7 +432,7 @@
                                        name="gross_weight_kg" 
                                        id="gross_weight_kg" 
                                        value="{{ old('gross_weight_kg', $shipmentItem->gross_weight_kg) }}"
-                                       min="0.01"
+                                       min="0"
                                        step="0.01"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('gross_weight_kg') border-red-300 @enderror">
@@ -1294,16 +1294,11 @@
                     return false;
                 }
 
-                // LOGIN admite 0 porque no informa bultos estructurados.
-                // Los demás orígenes mantienen el mínimo histórico de 1.
-                const minimumPackageQuantity =
-                    {{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }};
-
-                if (packageQuantity < minimumPackageQuantity) {
+                // Cero es válido para Login y contenedores vacíos.
+                // La semántica definitiva L/V se valida en backend.
+                if (packageQuantity < 0) {
                     e.preventDefault();
-                    alert(
-                        `La cantidad de bultos debe ser al menos ${minimumPackageQuantity}.`
-                    );
+                    alert('La cantidad de bultos no puede ser negativa.');
                     return false;
                 }
 
@@ -1481,7 +1476,7 @@ function addContainer() {
                     </label>
                     <input type="number" 
                            name="containers[${containerIndex}][package_quantity]" 
-                           min="{{ strtoupper(trim((string) optional($shipmentItem->billOfLading)->source_format)) === 'LOGIN_XML' ? 0 : 1 }}"
+                           min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
                            required>
                 </div>
@@ -1493,7 +1488,7 @@ function addContainer() {
                     <input type="number" 
                            name="containers[${containerIndex}][gross_weight_kg]" 
                            step="0.01"
-                           min="0.01"
+                           min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
                            required>
                 </div>
