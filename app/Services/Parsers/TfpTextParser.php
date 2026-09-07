@@ -708,7 +708,9 @@ protected function extractValue(string $scope, string $label): ?string
             'commodity_code' => !empty($data['cod_armonizado'])
                 ? $this->normalizeNcm($data['cod_armonizado'])
                 : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
-            'tariff_position' => $data['cod_armonizado'] ?: null,
+            'tariff_position' => !empty($data['cod_armonizado'])
+                ? $this->normalizeNcm($data['cod_armonizado'])
+                : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
             'created_by_user_id' => auth()->id()
         ]);
     }
