@@ -10,6 +10,8 @@ use App\Models\BillOfLading;
 use App\Models\Container;
 use App\Models\ShipmentItem;
 use App\Models\Client;
+use App\Models\Country;
+use App\Models\DocumentType;
 use App\Models\Port;
 use App\Models\Vessel;
 use App\Models\ContainerType;
@@ -57,7 +59,7 @@ class TfpTextParser implements ManifestParserInterface
             && strpos($head, 'BLMARITIMONUMERO:') !== false;
     }
 
-    public function parse(string $filePath): ManifestParseResult
+    public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $startTime = microtime(true);
 
@@ -85,16 +87,17 @@ class TfpTextParser implements ManifestParserInterface
             }
 
             // Transacción para persistir todo
-            $result = DB::transaction(function () use ($blBlocks, $importRecord, $startTime) {
+            $result = DB::transaction(function () use ($blBlocks, $importRecord, $startTime, $filePath, $options) {
                 // Crear voyage único
-                $voyageData = $this->extractVoyageData($blBlocks[0]);
-                $voyage = $this->findOrCreateVoyage($voyageData);
+                $voyageData = $this->extractVoyageData($blBlocks[0], $filePath);
+                $voyage = $this->findOrCreateVoyage($voyageData, $options);
                 
                 // Crear shipment
                 $shipment = $this->findOrCreateShipment($voyage, $voyageData);
                 
                 $allBills = [];
                 $allContainers = [];
+                $createdContainerIds = [];
                 $allItems = [];
 
                 foreach ($blBlocks as $block) {
@@ -119,6 +122,9 @@ class TfpTextParser implements ManifestParserInterface
                         $container = $this->createContainer($bill, $containerData);
                         if ($container) {
                             $allContainers[] = $container;
+                            if ($container->wasRecentlyCreated) {
+                                $createdContainerIds[] = $container->id;
+                            }
                             // Se guarda junto al dato del archivo: PESO y CANTIDAD
                             // son propios de cada contenedor y hacen falta para el
                             // pivote (ver attachContainerToItem).
@@ -178,11 +184,13 @@ class TfpTextParser implements ManifestParserInterface
                     // Consignar en el BL la descripción y la posición arancelaria
                     // tomadas del primer ítem (en TFP hay un ítem por BL).
                     if (!empty($billItems)) {
+                        $bill->recalculateItemStats();
                         $firstItem = $billItems[0]['model'];
                         $bill->update([
                             'cargo_description' => $firstItem->item_description ?: $bill->cargo_description,
                             'commodity_code'    => $firstItem->commodity_code ?: null,
-                            'tariff_position'   => $firstItem->tariff_position ?: null,
+                            'tariff_position'   => null,
+                            'net_weight_kg'     => null,
                         ]);
                     }
                 }
@@ -190,11 +198,12 @@ class TfpTextParser implements ManifestParserInterface
                 // Registrar objetos creados y completar el registro de importación.
                 // El revert reconstruye items/containers (incluido el pivote) desde el voyage_id.
                 if ($importRecord) {
-                    $importRecord->recordCreatedObjects([
-                        'voyage'   => [$voyage->id],
+                    $importRecord->recordExplicitlyCreatedObjects([
+                        'voyage' => [$voyage->id],
                         'shipment' => [$shipment->id],
-                        'bill'     => array_map(fn($b) => $b->id, $allBills),
-                        'item'     => array_map(fn($i) => $i->id, $allItems),
+                        'bill' => array_map(fn($b) => $b->id, $allBills),
+                        'item' => array_map(fn($i) => $i->id, $allItems),
+                        'container' => $createdContainerIds,
                     ]);
                     $importRecord->markAsCompleted([
                         'voyage_id'               => $voyage->id,
@@ -430,97 +439,168 @@ protected function extractValue(string $scope, string $label): ?string
         return null;
     }
 
-    protected function extractVoyageData(string $firstBlock): array
-    {
+    protected function resolveTfpVoyageCargoType(
+        Port $origin,
+        Port $destination
+    ): string {
+        if ((int) $origin->country_id === (int) $destination->country_id) {
+            return 'cabotage';
+        }
+
+        $originIso = strtoupper((string) \App\Models\Country::find($origin->country_id)?->alpha2_code);
+        $destinationIso = strtoupper((string) \App\Models\Country::find($destination->country_id)?->alpha2_code);
+
+        if ($destinationIso === 'AR') {
+            return 'import';
+        }
+
+        if ($originIso === 'AR') {
+            return 'export';
+        }
+
+        return 'transit';
+    }
+
+    protected function extractVoyageData(
+        string $firstBlock,
+        string $filePath
+    ): array {
         $header = $this->parseHeader($firstBlock);
+
+        foreach (['buque', 'cod_puerto_carga', 'cod_puerto_descarga'] as $field) {
+            if (empty($header[$field])) {
+                throw new Exception("TFP: falta {$field} en la fuente.");
+            }
+        }
+
         return [
-            'voyage_number' => 'TFP-' . date('Ymd-His'),
-            'vessel_name' => $header['buque'] ?? 'TFP VESSEL',
-            'pol' => $header['cod_puerto_carga'] ?? 'ARBAI',
-            'pod' => $header['cod_puerto_descarga'] ?? 'PYPSE',
+            // Clave técnica determinística: TFP no informa número de viaje.
+            'voyage_number' => 'TFP-' . substr(hash_file('sha256', $filePath), 0, 16),
+            'vessel_name' => $header['buque'],
+            'pol' => $header['cod_puerto_carga'],
+            'pod' => $header['cod_puerto_descarga'],
         ];
     }
 
-    protected function findOrCreateVoyage(array $data): Voyage
-    {
+    protected function findOrCreateVoyage(
+        array $data,
+        array $options = []
+    ): Voyage {
         $user = auth()->user();
+
+        if (!$user) {
+            throw new Exception('TFP requiere usuario autenticado.');
+        }
+
         $companyId = null;
 
-        if ($user->userable_type === 'App\Models\Company' && $user->userable_id) {
+        if ($user->userable_type === 'App\\Models\\Company' && $user->userable_id) {
             $companyId = (int) $user->userable_id;
-        } elseif ($user->userable_type === 'App\Models\Operator' && $user->userable) {
-            $companyId = $user->userable->company_id;
+        } elseif ($user->userable_type === 'App\\Models\\Operator' && $user->userable) {
+            $companyId = (int) $user->userable->company_id;
         }
 
         if (!$companyId) {
-            throw new Exception("Usuario no tiene empresa asignada.");
+            throw new Exception('Usuario no tiene empresa asignada.');
         }
 
-        $vessel = Vessel::firstOrCreate(
-            ['name' => $data['vessel_name']],
-            [
-                'company_id' => $companyId,
-                'registration_number' => $data['vessel_name'],
-                'vessel_type_id' => 1,
-                'flag_country_id' => 1,
-                'length_meters' => 50.0,
-                'beam_meters' => 12.0,
-                'draft_meters' => 3.0,
-                'cargo_capacity_tons' => 1000.0,
-                'operational_status' => 'active',
-                'active' => true
-            ]
-        );
+        $vessel = Vessel::find($options['vessel_id'] ?? null);
+
+        if (!$vessel) {
+            throw new Exception('TFP: vessel_id es obligatorio.');
+        }
+
+        if ((int) $vessel->company_id !== $companyId) {
+            throw new Exception(
+                'El vessel seleccionado no pertenece a la empresa importadora.'
+            );
+        }
+
+        if (
+            mb_strtoupper(trim($vessel->name)) !==
+            mb_strtoupper(trim($data['vessel_name']))
+        ) {
+            throw new Exception(
+                "TFP declara buque '{$data['vessel_name']}', "
+                . "pero se seleccionó '{$vessel->name}'."
+            );
+        }
 
         $originPort = $this->findOrCreatePort($data['pol']);
         $destPort = $this->findOrCreatePort($data['pod']);
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de chocar el índice.
         $this->guardVoyageNumberIsFree($data['voyage_number']);
 
-        $voyage = Voyage::create([
+        return Voyage::create([
             'voyage_number' => $data['voyage_number'],
             'company_id' => $companyId,
             'lead_vessel_id' => $vessel->id,
             'origin_port_id' => $originPort->id,
             'destination_port_id' => $destPort->id,
-            'origin_country_id' => $originPort->country_id ?? 1,
-            'destination_country_id' => $destPort->country_id ?? 2,
+            'origin_country_id' => $originPort->country_id,
+            'destination_country_id' => $destPort->country_id,
             'status' => 'planning',
             'voyage_type' => 'single_vessel',
-            'cargo_type' => 'export',
-            'departure_date' => now()->addDays(7),
-            'estimated_arrival_date' => now()->addDays(10),
-            'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 1000.0,
-            'total_container_capacity' => 40,
+            'cargo_type' => $this->resolveTfpVoyageCargoType($originPort, $destPort),
+            'departure_date' => null,
+            'estimated_arrival_date' => null,
+            'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+            'total_container_capacity' => $vessel->container_capacity ?? 0,
             'total_cargo_weight_loaded' => 0,
             'total_containers_loaded' => 0,
-            'capacity_utilization_percentage' => 0
+            'capacity_utilization_percentage' => 0,
         ]);
-
-        return $voyage;
     }
 
-    protected function findOrCreateShipment(Voyage $voyage, array $data): Shipment
-    {
+    protected function findOrCreateShipment(
+        Voyage $voyage,
+        array $data
+    ): Shipment {
+        $vessel = Vessel::findOrFail($voyage->lead_vessel_id);
+
         return Shipment::create([
             'voyage_id' => $voyage->id,
-            'vessel_id' => $voyage->lead_vessel_id,
-            'shipment_number' => 'TFP-' . now()->format('YmdHis'),
+            'vessel_id' => $vessel->id,
+            'shipment_number' => 'TFP-' . $voyage->id,
             'sequence_in_voyage' => 1,
             'vessel_role' => 'single',
             'is_lead_vessel' => true,
-            'cargo_capacity_tons' => 5000,
-            'container_capacity' => 200,
-            'status' => 'planning'
+            'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+            'container_capacity' => $vessel->container_capacity ?? 0,
+            'status' => 'planning',
         ]);
     }
 
     protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false, array $containers = [], array $lines = []): BillOfLading
     {
-        $shipper = $this->findOrCreateClient($data['cargador'] ?? 'Cargador TFP', 'shipper', $data['cargador_ruc'] ?? null, $data['cargador_domicilio'] ?? null);
-        $consignee = $this->findOrCreateClient($data['consignatario'] ?? 'Consignatario TFP', 'consignee', $data['consignatario_ruc'] ?? null, $data['consignatario_domicilio'] ?? null);
+        // TFP no trae una columna de país propia para cada parte.
+        // Los puertos sí son datos estructurados del BL y aportan el
+        // contexto geográfico cuando la parte no declara identidad fiscal.
+        $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? '');
+        $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? '');
+
+        $shipperName = trim((string) ($data['cargador'] ?? ''));
+        $consigneeName = trim((string) ($data['consignatario'] ?? ''));
+
+        if ($shipperName === '' || $consigneeName === '') {
+            throw new Exception('TFP: cargador o consignatario ausente en el BL.');
+        }
+
+        $shipper = $this->findOrCreateClient(
+            $shipperName,
+            'shipper',
+            $data['cargador_ruc'] ?? null,
+            $data['cargador_domicilio'] ?? null,
+            (int) $loadingPort->country_id
+        );
+
+        $consignee = $this->findOrCreateClient(
+            $consigneeName,
+            'consignee',
+            $data['consignatario_ruc'] ?? null,
+            $data['consignatario_domicilio'] ?? null,
+            (int) $dischargePort->country_id
+        );
 
         // Algunos generadores TFP emiten NOTIFICATARIO como "nombre del consignatario + dirección"
         // pegados (verificado contra archivo real 13/07/2026). Si el notificatario empieza con el
@@ -539,11 +619,15 @@ protected function extractValue(string $scope, string $label): ?string
                 'direccion_extraida' => $notifyExtraAddr,
             ]);
         } else {
-            $notify = $this->findOrCreateClient($data['notificatario'] ?? 'Notificatario TFP', 'notify', $data['notificatario_ruc'] ?? null, $data['notificatario_domicilio'] ?? null);
+            if ($notifyName === '') { throw new Exception('TFP: notificatario ausente en el BL.'); }
+            $notify = $this->findOrCreateClient(
+                $notifyName,
+                'notify',
+                $data['notificatario_ruc'] ?? null,
+                $data['notificatario_domicilio'] ?? null,
+                (int) $dischargePort->country_id
+            );
         }
-
-        $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? 'ARBAI');
-        $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? 'PYPSE');
 
         // El permiso de embarque viene en el OBS de los contenedores, repetido en
         // cada uno pero unico por conocimiento: verificado 07/08/2026 sobre
@@ -576,8 +660,8 @@ protected function extractValue(string $scope, string $label): ?string
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['bl_numero'],
-            'bill_date' => now(),
-            'loading_date' => now()->addDays(1),
+            'bill_date' => null,
+            'loading_date' => null,
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
             'notify_party_id' => $notify->id,
@@ -586,15 +670,15 @@ protected function extractValue(string $scope, string $label): ?string
             // Prioridad: campo TRB de la cabecera; si no viene, el OBS de los
             // contenedores (ver arriba). Este archivo lo trae solo en OBS.
             'permiso_embarque' => !empty($data['trb']) ? $data['trb'] : $permisoEmbarque,
-            'freight_terms' => 'prepaid',
+            'freight_terms' => null,
             'status' => 'draft',
             // Si el BL trae contenedores: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR).
             // Si no, se mantiene el default (1 = DOCUMENTOS / A GRANEL).
-            'primary_cargo_type_id' => $hasContainers ? 9 : 1,
-            'primary_packaging_type_id' => $hasContainers ? 4 : 1,
+            'primary_cargo_type_id' => $hasContainers ? \App\Models\CargoType::where('code', 'CON001')->where('active', true)->firstOrFail()->id : null,
+            'primary_packaging_type_id' => null,
             'gross_weight_kg' => 0,
             'net_weight_kg' => 0,
-            'total_packages' => 1,
+            'total_packages' => 0,
             'cargo_description' => 'Mercadería importada desde TFP',
             'is_consolidated' => strtoupper($data['consolidado'] ?? 'N') === 'S',
         ]);
@@ -629,13 +713,13 @@ protected function extractValue(string $scope, string $label): ?string
             return $existing;
         }
 
-        $containerType = $this->findOrCreateContainerType($data['tipo'] ?? '20DV');
+        $containerType = $this->findOrCreateContainerType($data['tipo'] ?? '');
 
         return Container::create([
             'container_number' => $data['numero'],
             'container_type_id' => $containerType->id,
-            'tare_weight_kg' => 2300,
-            'max_gross_weight_kg' => 30000,
+            'tare_weight_kg' => $containerType->tare_weight_kg,
+            'max_gross_weight_kg' => $containerType->max_gross_weight_kg,
             'current_gross_weight_kg' => floatval($data['peso'] ?? 0),
             'cargo_weight_kg' => floatval($data['peso'] ?? 0),
             'condition' => $this->mapTfpCondition($data['condicion'] ?? null)['condition'],
@@ -675,8 +759,9 @@ protected function extractValue(string $scope, string $label): ?string
             return ['condition' => $valor, 'container_condition' => 'P'];
         }
 
-        // Desconocido o vacio: defaults de siempre, no se inventa nada.
-        return ['condition' => 'L', 'container_condition' => 'P'];
+        throw new Exception(
+            "TFP: condición de contenedor '{$valor}' no soportada."
+        );
     }
 
     protected function createShipmentItem(BillOfLading $bill, array $data, bool $hasContainers = false): ?ShipmentItem
@@ -684,10 +769,26 @@ protected function extractValue(string $scope, string $label): ?string
         $lineNumber = ShipmentItem::where('bill_of_lading_id', $bill->id)->max('line_number') ?? 0;
         $lineNumber++;
 
+        $description = trim((string) ($data['naturaleza_mercaderia'] ?? ''));
+        $packagesRaw = trim((string) ($data['cant_total_bultos'] ?? ''));
+        $grossRaw = trim((string) ($data['peso_total_bultos'] ?? ''));
+
+        if ($description === '') {
+            throw new Exception('TFP: mercadería sin descripción.');
+        }
+
+        if ($packagesRaw === '' || !is_numeric($packagesRaw) || (float) $packagesRaw <= 0) {
+            throw new Exception('TFP: cantidad de bultos ausente o inválida.');
+        }
+
+        if ($grossRaw === '' || !is_numeric($grossRaw) || (float) $grossRaw <= 0) {
+            throw new Exception('TFP: peso bruto ausente o inválido.');
+        }
+
         return ShipmentItem::create([
             'bill_of_lading_id' => $bill->id,
             'line_number' => $lineNumber,
-            'item_description' => $data['naturaleza_mercaderia'] ?? 'Mercadería general',
+            'item_description' => $description,
             // CANTTOTALBULTOS viene vacio en parte de los contenedores (50 de 119
             // en ASUNCION B, verificado 06/08/2026). extractValue devuelve '' y no
             // null en ese caso, asi que el ?? no se activaba e intval('') daba 0:
@@ -695,22 +796,20 @@ protected function extractValue(string $scope, string $label): ?string
             // Criterio de Roberto (05/08): sin bultos declarados, 1 por contenedor.
             // El total del conocimiento se recalcula desde los items, con lo cual
             // termina siendo la cantidad de contenedores, como el pidio.
-            'package_quantity' => max(1, intval($data['cant_total_bultos'] ?? 0)),
-            'gross_weight_kg' => floatval($data['peso_total_bultos'] ?? 0),
-            'net_weight_kg' => floatval($data['peso_total_bultos'] ?? 0) * 0.95,
-            'volume_m3' => floatval($data['volumen_total'] ?? 0),
+            'package_quantity' => (int) floatval($packagesRaw),
+            'gross_weight_kg' => floatval($grossRaw),
+            'net_weight_kg' => null,
+            'volume_m3' => isset($data['volumen_total']) && trim((string) $data['volumen_total']) !== '' ? floatval($data['volumen_total']) : null,
             // Mismo criterio que el BL: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR) si hay contenedores.
-            'cargo_type_id' => $hasContainers ? 9 : 1,
-            'packaging_type_id' => $hasContainers ? 4 : 1,
+            'cargo_type_id' => $hasContainers ? \App\Models\CargoType::where('code', 'CON001')->where('active', true)->firstOrFail()->id : null,
+            'packaging_type_id' => null,
             // CODARMONIZADO normalizado a NNNN.NN; si viene vacio, se busca
             // dentro de la descripcion ("NCM NO.: 3808.92.99" - Roberto
             // 11/08/2026). Mismo criterio que CMSP.
             'commodity_code' => !empty($data['cod_armonizado'])
                 ? $this->normalizeNcm($data['cod_armonizado'])
                 : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
-            'tariff_position' => !empty($data['cod_armonizado'])
-                ? $this->normalizeNcm($data['cod_armonizado'])
-                : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
+            'tariff_position' => null,
             'created_by_user_id' => auth()->id()
         ]);
     }
@@ -795,66 +894,301 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    protected function findOrCreateClient(string $name, string $type, ?string $taxId = null, ?string $address = null): Client
+    /**
+     * Extrae identidad fiscal únicamente cuando el propio texto declara
+     * el tipo. Nunca decide el tipo por longitud del número.
+     *
+     * @return array{tax_id:string,tax_type:?string}|null
+     */
+    protected function extractTypedTaxIdentityFromText(?string $text): ?array
     {
+        $text = trim((string) $text);
+
+        if ($text === '') {
+            return null;
+        }
+
+        $patterns = [
+            'CUIT' => '/\bCUIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'CNPJ' => '/\bCNPJ\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'RUC'  => '/\bR\.?\s*U\.?\s*C\.?\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            'NIT'  => '/\bNIT\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+        ];
+
+        foreach ($patterns as $taxType => $pattern) {
+            if (!preg_match($pattern, $text, $matches)) {
+                continue;
+            }
+
+            $normalized = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($normalized !== null) {
+                return [
+                    'tax_id' => $normalized,
+                    'tax_type' => $taxType,
+                ];
+            }
+        }
+
+        if (preg_match(
+            '/\bTAX\s*ID\b\s*(?:N(?:RO|º|°)?\.?\s*)?[:#-]?\s*([0-9][0-9.\-\/ ]{5,20}[0-9])/iu',
+            $text,
+            $matches
+        )) {
+            $normalized = $this->resolveTaxId(
+                $matches[1],
+                null,
+                null
+            );
+
+            if ($normalized !== null) {
+                return [
+                    'tax_id' => $normalized,
+                    'tax_type' => null,
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resuelve número y tipo fiscal de una parte TFP sin fabricar datos.
+     *
+     * Prioridad:
+     * 1. campo estructurado *RUC;
+     * 2. marcador fiscal explícito en nombre/domicilio;
+     * 3. marcador genérico reconocido por el trait.
+     *
+     * @return array{tax_id:?string,tax_type:?string}
+     */
+    protected function resolveClientTaxIdentity(
+        ?string $structuredTaxId,
+        ?string $name,
+        ?string $address
+    ): array {
+        $structured = $this->resolveTaxId(
+            $structuredTaxId,
+            null,
+            null
+        );
+
+        $nameIdentity = $this->extractTypedTaxIdentityFromText($name);
+        $addressIdentity = $this->extractTypedTaxIdentityFromText($address);
+
+        $embedded = null;
+
+        if ($nameIdentity !== null && $addressIdentity !== null) {
+            if ($nameIdentity['tax_id'] !== $addressIdentity['tax_id']) {
+                throw new \DomainException(
+                    'TFP: nombre y domicilio informan identificadores fiscales distintos.'
+                );
+            }
+
+            if (
+                $nameIdentity['tax_type'] !== null
+                && $addressIdentity['tax_type'] !== null
+                && $nameIdentity['tax_type'] !== $addressIdentity['tax_type']
+            ) {
+                throw new \DomainException(
+                    'TFP: nombre y domicilio informan tipos fiscales contradictorios.'
+                );
+            }
+
+            $embedded = [
+                'tax_id' => $nameIdentity['tax_id'],
+                'tax_type' => $nameIdentity['tax_type']
+                    ?? $addressIdentity['tax_type'],
+            ];
+        } else {
+            $embedded = $nameIdentity ?? $addressIdentity;
+        }
+
+        if ($structured !== null) {
+            if (
+                $embedded !== null
+                && $embedded['tax_id'] !== $structured
+            ) {
+                throw new \DomainException(
+                    'TFP: el RUC estructurado contradice el identificador fiscal declarado en la parte.'
+                );
+            }
+
+            if (
+                $embedded !== null
+                && $embedded['tax_type'] !== null
+                && $embedded['tax_type'] !== 'RUC'
+            ) {
+                throw new \DomainException(
+                    'TFP: el campo RUC estructurado contradice el tipo fiscal declarado en la parte.'
+                );
+            }
+
+            return [
+                'tax_id' => $structured,
+                'tax_type' => 'RUC',
+            ];
+        }
+
+        if ($embedded !== null) {
+            return $embedded;
+        }
+
+        $genericTaxId = $this->resolveTaxId(
+            null,
+            $name,
+            $address
+        );
+
+        return [
+            'tax_id' => $genericTaxId,
+            'tax_type' => null,
+        ];
+    }
+
+    /**
+     * Jurisdicciones inequívocas de cada tipo fiscal soportado.
+     */
+    protected function countryAlpha2ForTaxType(?string $taxType): ?string
+    {
+        return match ($taxType) {
+            'CUIT' => 'AR',
+            'RUC' => 'PY',
+            'CNPJ' => 'BR',
+            'NIT' => 'CO',
+            default => null,
+        };
+    }
+
+    /**
+     * Cuando existe un tipo fiscal explícito, manda su jurisdicción.
+     * Sin tipo explícito se utiliza únicamente el país contextual del BL.
+     */
+    protected function resolveClientCountryId(
+        ?string $taxType,
+        int $fallbackCountryId
+    ): int {
+        $alpha2 = $this->countryAlpha2ForTaxType($taxType);
+
+        if ($alpha2 === null) {
+            if ($fallbackCountryId <= 0) {
+                throw new \DomainException(
+                    'TFP: no existe un país confiable para la parte.'
+                );
+            }
+
+            return $fallbackCountryId;
+        }
+
+        $countryId = Country::query()
+            ->where('alpha2_code', $alpha2)
+            ->value('id');
+
+        if (!$countryId) {
+            throw new \DomainException(
+                "TFP: no existe el país {$alpha2} en el catálogo."
+            );
+        }
+
+        return (int) $countryId;
+    }
+
+    protected function findOrCreateClient(
+        string $name,
+        string $type,
+        ?string $taxId = null,
+        ?string $address = null,
+        int $fallbackCountryId = 0
+    ): Client {
         $user = auth()->user();
-        $companyId = $user->userable_type === 'App\Models\Company' ? $user->userable_id : 
-                     ($user->userable->company_id ?? null);
+
+        $companyId = $user->userable_type === 'App\Models\Company'
+            ? $user->userable_id
+            : ($user->userable->company_id ?? null);
 
         $name = trim($name);
-        if (empty($name)) $name = 'Cliente TFP';
 
-        // Prioridad: RUC declarado (CARGADORRUC/CONSIGNATARIORUC/NOTIFICATARIORUC) >
-        // tax embebido en el nombre > tax embebido en el domicilio. No se fabrica.
-        //
-        // El domicilio se agrego el 07/08/2026: los campos *RUC vienen vacios en
-        // buena parte de los archivos y el emisor escribe el identificador dentro
-        // de *DOMICILIO ("RUC: 80094634-0 CALLE ROQUE CENTURION...", "CHILE 801
-        // ... CUIT 30-69318494-7"). Sin mirarlo ahi se daba de alta un cliente
-        // nuevo por cada importacion del mismo (reportado por Roberto 06/08).
-        $normTaxId = $this->resolveTaxId($taxId, $name, $address);
-
-        // 1) Buscar por tax_id real (si hay)
-        if ($normTaxId) {
-            $client = Client::where('tax_id', $normTaxId)->first();
-            if ($client) return $client;
+        if ($name === '') {
+            $name = 'Cliente TFP';
         }
 
-        // 2) Buscar por nombre
-        $client = Client::where('legal_name', $name)->first();
-        if ($client) return $client;
+        $identity = $this->resolveClientTaxIdentity(
+            $taxId,
+            $name,
+            $address
+        );
 
-        // País inferido por longitud del tax_id (regla QA 30/06, misma que Guaran). Solo afecta
-        // clientes NUEVOS (los existentes ya retornaron arriba sin tocar su país).
-        // 11 dígitos -> Argentina (11); 7-9 -> Paraguay (174). Sin tax o longitud atípica:
-        // default Paraguay 174 (TFP es tráfico AR->PY) con warning para revisión, porque
-        // country_id es NOT NULL y no hay columna de país en el archivo TFP.
-        $countryId = 174;
-        if ($normTaxId) {
-            $taxLen = strlen($normTaxId);
-            if ($taxLen === 11) {
-                $countryId = 11;
-                Log::info('TFP: pais inferido por tax_id', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => 11, 'pais' => 'Argentina']);
-            } elseif ($taxLen >= 7 && $taxLen <= 9) {
-                $countryId = 174;
-                Log::info('TFP: pais inferido por tax_id', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => 174, 'pais' => 'Paraguay']);
-            } else {
-                Log::warning('TFP: longitud de tax_id atipica, pais default (revisar)', ['tax_id' => $normTaxId, 'len' => $taxLen, 'country_id' => $countryId]);
+        $normTaxId = $identity['tax_id'];
+        $taxType = $identity['tax_type'];
+
+        $countryId = $this->resolveClientCountryId(
+            $taxType,
+            $fallbackCountryId
+        );
+
+        // Con identificación fiscal, la identidad es tax_id + país.
+        // No se permite degradar a búsqueda por nombre.
+        if ($normTaxId !== null) {
+            $client = Client::query()
+                ->where('tax_id', $normTaxId)
+                ->where('country_id', $countryId)
+                ->first();
+
+            if ($client) {
+                return $client;
             }
         } else {
-            Log::warning('TFP: cliente sin tax_id, pais NO confiable (revisar)', ['name' => $name, 'country_id' => $countryId]);
+            // Sin identificación fiscal solo reutilizamos un cliente también
+            // sin tax_id, del mismo país y con nombre legal exacto.
+            $client = Client::query()
+                ->whereNull('tax_id')
+                ->where('country_id', $countryId)
+                ->where('legal_name', $name)
+                ->first();
+
+            if ($client) {
+                return $client;
+            }
         }
+
+        $documentTypeId = null;
+
+        if ($normTaxId !== null && $taxType !== null) {
+            $documentTypeId = DocumentType::query()
+                ->where('code', $taxType)
+                ->where('country_id', $countryId)
+                ->where('active', true)
+                ->value('id');
+
+            if (!$documentTypeId) {
+                throw new \DomainException(
+                    "TFP: no existe un tipo documental {$taxType} activo y compatible con el país resuelto."
+                );
+            }
+        }
+
+        Log::info('TFP: alta de cliente con identidad preservada', [
+            'role' => $type,
+            'name' => $name,
+            'tax_id' => $normTaxId,
+            'tax_type' => $taxType,
+            'country_id' => $countryId,
+            'document_type_id' => $documentTypeId,
+        ]);
 
         return Client::create([
             'tax_id' => $normTaxId,
-            // Argentina(11)->CUIT(1), Paraguay(174)->RUC(3). El TIPO siempre corresponde al país.
             'country_id' => $countryId,
-            'document_type_id' => $countryId === 11 ? 1 : 3,
+            'document_type_id' => $documentTypeId,
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
             'created_by_company_id' => $companyId,
-            'verified_at' => now()
+            'verified_at' => now(),
         ]);
     }
 
@@ -906,24 +1240,21 @@ protected function extractValue(string $scope, string $label): ?string
             '40HC' => '40HC',
         ];
 
-        $mappedCode = $mapping[$code] ?? '20GP';
-        
-        $type = ContainerType::where('code', $mappedCode)->where('active', true)->first();
-        
-        if ($type) {
-            if ($code !== $mappedCode) {
-                $this->stats['warnings'][] = "Tipo contenedor '{$code}' mapeado a '{$mappedCode}'";
-            }
-            return $type;
+        if (!isset($mapping[$code])) {
+            throw new Exception("TFP: tipo de contenedor '{$code}' no soportado.");
         }
 
-        $type = ContainerType::where('active', true)->first();
-        if ($type) {
-            $this->stats['warnings'][] = "Tipo '{$code}' no encontrado, usando '{$type->code}'";
-            return $type;
+        $mappedCode = $mapping[$code];
+
+        $type = ContainerType::where('code', $mappedCode)
+            ->where('active', true)
+            ->first();
+
+        if (!$type) {
+            throw new Exception("TFP: tipo '{$mappedCode}' no existe activo en el catálogo.");
         }
 
-        throw new Exception("No hay tipos de contenedor en container_types. Ejecute ContainerTypesSeeder.");
+        return $type;
     }
 
     public function getDefaultConfig(): array
