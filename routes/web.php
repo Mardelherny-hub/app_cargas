@@ -40,6 +40,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('company')
         ->middleware(['role:company-admin|user', CompanyAccess::class])
         ->group(base_path('routes/company.php'));
+
+    // Desconsolidados Argentina: reemplaza las dos definiciones históricas
+    // por el controlador E2E canónico sin modificar sus URLs ni nombres.
+    Route::prefix('company')
+        ->middleware(['role:company-admin|user', CompanyAccess::class])
+        ->group(base_path('routes/company_desconsolidado.php'));
 });
 
 // Rutas adicionales que requieren verificación de empresa
