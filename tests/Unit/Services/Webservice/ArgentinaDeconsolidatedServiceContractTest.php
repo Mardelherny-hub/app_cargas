@@ -368,6 +368,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
             . '<' . $method . 'Result>'
             . $resultBody
             . '</' . $method . 'Result>'
+            . '</' . $method . 'Response>'
             . '</soap:Body></soap:Envelope>';
     }
 }
