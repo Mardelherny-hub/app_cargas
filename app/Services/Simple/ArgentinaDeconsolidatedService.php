@@ -12,13 +12,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
- * Servicio AFIP para ATA Desconsolidador.
+ * Servicio AFIP para ATA Desconsolidador Argentina.
  *
- * Reglas principales:
- * - una única IdTransaccion por llamada (máximo 20 caracteres);
- * - XML completo + SOAP 1.1 real;
- * - persistencia de request, response, errores y warnings;
- * - ciclo de vida por BillOfLading, derivado de las transacciones exitosas.
+ * La validación contractual final se realiza en el generador sobre los BL
+ * seleccionados. Esta clase controla ciclo de vida, SOAP, persistencia y respuesta.
  */
 class ArgentinaDeconsolidatedService extends BaseWebserviceService
 {
@@ -73,8 +70,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
     }
 
     /**
-     * Validación rápida para la pantalla. La validación contractual completa
-     * ocurre dentro del generador inmediatamente antes de solicitar el TA.
+     * Precheck de pantalla. No replica toda la norma: sólo requisitos comunes
+     * a las operaciones y señales útiles. El generador valida cada operación.
      */
     protected function validateSpecificData(Voyage $voyage): array
     {
@@ -97,7 +94,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         $bills = $voyage->billsOfLading()
             ->whereNotNull('master_bill_number')
-            ->with(['loadingPort', 'dischargePort', 'shipmentItems'])
+            ->with(['loadingPort', 'shipmentItems'])
             ->get();
 
         if ($bills->isEmpty()) {
@@ -105,17 +102,22 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         }
 
         foreach ($bills as $bill) {
+            $label = $bill->bill_number ?: "ID {$bill->id}";
+
             if (empty($bill->bill_number)) {
                 $errors[] = "BillOfLading {$bill->id}: falta bill_number.";
             }
-            if (!$bill->loadingPort || empty($bill->loadingPort->code)) {
-                $errors[] = "BL {$bill->bill_number}: falta código de puerto de embarque.";
+            if (empty($bill->destination_country_code)) {
+                $warnings[] = "BL {$label}: falta país de destino; Registrar/Rectificar lo requieren.";
             }
-            if (!$bill->dischargePort || empty($bill->dischargePort->code)) {
-                $errors[] = "BL {$bill->bill_number}: falta código de puerto de descarga.";
+            if (empty($bill->cargo_marks)) {
+                $warnings[] = "BL {$label}: faltan marcas de bultos; Registrar/Rectificar las requieren.";
             }
             if ($bill->shipmentItems->isEmpty()) {
-                $errors[] = "BL {$bill->bill_number}: no tiene líneas de mercadería.";
+                $warnings[] = "BL {$label}: no tiene líneas de mercadería; Registrar/Rectificar las requieren.";
+            }
+            if (!$bill->loadingPort || empty($bill->loadingPort->code)) {
+                $warnings[] = "BL {$label}: falta puerto de embarque; Eliminar lo requiere.";
             }
         }
 
@@ -141,42 +143,19 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
     public function registrarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod(
-            $voyage,
-            'registrar',
-            'RegistrarTitulosDesconsolidador',
-            $billIds
-        );
+        return $this->executeMethod($voyage, 'registrar', 'RegistrarTitulosDesconsolidador', $billIds);
     }
 
     public function rectificarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod(
-            $voyage,
-            'rectificar',
-            'RectificarTitulosDesconsolidador',
-            $billIds
-        );
+        return $this->executeMethod($voyage, 'rectificar', 'RectificarTitulosDesconsolidador', $billIds);
     }
 
     public function eliminarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod(
-            $voyage,
-            'eliminar',
-            'EliminarTitulosDesconsolidador',
-            $billIds
-        );
+        return $this->executeMethod($voyage, 'eliminar', 'EliminarTitulosDesconsolidador', $billIds);
     }
 
-    /**
-     * Estado aduanero derivado por BL a partir del historial exitoso.
-     *
-     * Valores posibles:
-     * - null: nunca registrado (o sin evidencia nueva canónica);
-     * - registrar / rectificar: título actualmente registrado;
-     * - eliminar: título eliminado en la última operación exitosa.
-     */
     public function billLifecycleStates(Voyage $voyage, array $billIds = []): array
     {
         $this->assertVoyageOwnership($voyage);
@@ -207,8 +186,6 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             );
             $this->currentTransactionId = $transaction->id;
 
-            // Se pasan los IDs ya resueltos para que validación, metadata y XML
-            // trabajen exactamente sobre el mismo conjunto de títulos.
             $resolvedBillIds = $bills->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
             $xml = $this->generateXml(
                 $voyage,
@@ -231,13 +208,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             );
 
             if ($result['success']) {
-                $this->persistSuccess(
-                    $transaction,
-                    $voyage,
-                    $methodType,
-                    $bills,
-                    $result
-                );
+                $this->persistSuccess($transaction, $voyage, $methodType, $bills, $result);
 
                 return [
                     'success' => true,
@@ -305,14 +276,6 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         }
     }
 
-    /**
-     * Valida la operación por título, no sólo por viaje.
-     *
-     * Registrar: sólo títulos sin registro activo (nunca registrados o cuya
-     * última operación exitosa fue eliminar).
-     * Rectificar/Eliminar: sólo títulos cuya última operación exitosa sea
-     * registrar o rectificar.
-     */
     private function assertOperationSequence(
         Voyage $voyage,
         string $methodType,
@@ -345,15 +308,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         }
     }
 
-    /**
-     * Reconstruye el último éxito de cada BL usando additional_metadata.bill_ids.
-     * No interpreta transacciones legacy sin bill_ids porque hacerlo exigiría
-     * adivinar qué títulos fueron realmente aceptados por AFIP.
-     */
-    private function resolveBillLifecycleStates(
-        Voyage $voyage,
-        Collection $bills
-    ): array {
+    private function resolveBillLifecycleStates(Voyage $voyage, Collection $bills): array
+    {
         $wantedIds = $bills
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
@@ -579,25 +535,19 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             $details[] = [
                 'source' => 'afip',
                 'code' => trim((string) (
-                    $xpath->query('./*[local-name()="Codigo"]', $node)
-                        ->item(0)?->textContent
-                    ?? ''
+                    $xpath->query('./*[local-name()="Codigo"]', $node)->item(0)?->textContent ?? ''
                 )),
                 'description' => trim((string) (
-                    $xpath->query('./*[local-name()="Descripcion"]', $node)
-                        ->item(0)?->textContent
-                    ?? ''
+                    $xpath->query('./*[local-name()="Descripcion"]', $node)->item(0)?->textContent ?? ''
                 )),
                 'additional' => trim((string) (
-                    $xpath->query('./*[local-name()="DescripcionAdicional"]', $node)
-                        ->item(0)?->textContent
-                    ?? ''
+                    $xpath->query('./*[local-name()="DescripcionAdicional"]', $node)->item(0)?->textContent ?? ''
                 )),
             ];
         }
 
-        // El manual permite warnings en ListaErrores sin detener el proceso.
-        // IdentificadorViaje no vacío es la evidencia de aceptación del método.
+        // El manual contempla advertencias sin detener el proceso. La presencia
+        // de IdentificadorViaje es la evidencia de aceptación de la operación.
         if ($identifier !== '') {
             return [
                 'success' => true,
