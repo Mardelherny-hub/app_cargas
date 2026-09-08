@@ -15,9 +15,6 @@ use Throwable;
 
 /**
  * Entrada HTTP canónica del circuito ATA Desconsolidador Argentina.
- *
- * Mantiene la vista y las URLs históricas, pero usa únicamente el
- * webservice_type real de la base: "desconsolidado".
  */
 class ArgentinaDeconsolidatedController extends Controller
 {
@@ -39,6 +36,7 @@ class ArgentinaDeconsolidatedController extends Controller
 
         $desconsolidatedBills = $voyage->billsOfLading
             ->whereNotNull('master_bill_number')
+            ->sortBy('id')
             ->values();
 
         $containersCount = $desconsolidatedBills
@@ -47,8 +45,18 @@ class ArgentinaDeconsolidatedController extends Controller
             ->unique('id')
             ->count();
 
-        $service = new ArgentinaDeconsolidatedService($company, $this->getCurrentUser());
+        $service = new ArgentinaDeconsolidatedService(
+            $company,
+            $this->getCurrentUser()
+        );
         $validation = $service->canProcessVoyage($voyage);
+
+        $billStates = $desconsolidatedBills->isEmpty()
+            ? []
+            : $service->billLifecycleStates(
+                $voyage,
+                $desconsolidatedBills->pluck('id')->all()
+            );
 
         $transactions = WebserviceTransaction::query()
             ->where('company_id', $company->id)
@@ -56,7 +64,7 @@ class ArgentinaDeconsolidatedController extends Controller
             ->where('webservice_type', 'desconsolidado')
             ->where('country', 'AR')
             ->with('user')
-            ->latest('created_at')
+            ->orderByDesc('id')
             ->limit(20)
             ->get();
 
@@ -67,7 +75,8 @@ class ArgentinaDeconsolidatedController extends Controller
             'desconsolidatedBillsCount' => $desconsolidatedBills->count(),
             'containersCount' => $containersCount,
             'validation' => $validation,
-            'estados' => $this->operationStates($transactions),
+            'billStates' => $billStates,
+            'estados' => $this->aggregateStates($billStates),
             'transactions' => $transactions,
         ]);
     }
@@ -78,13 +87,19 @@ class ArgentinaDeconsolidatedController extends Controller
 
         $validated = $request->validate([
             'action' => 'required|in:registrar,rectificar,eliminar',
-            'bill_ids' => 'nullable|array',
+            'bill_ids' => 'required|array|min:1',
             'bill_ids.*' => 'integer|min:1',
+        ], [
+            'bill_ids.required' => 'Seleccione al menos un conocimiento.',
+            'bill_ids.min' => 'Seleccione al menos un conocimiento.',
         ]);
 
         $action = $validated['action'];
-        $billIds = $validated['bill_ids'] ?? [];
-        $service = new ArgentinaDeconsolidatedService($company, $this->getCurrentUser());
+        $billIds = $validated['bill_ids'];
+        $service = new ArgentinaDeconsolidatedService(
+            $company,
+            $this->getCurrentUser()
+        );
 
         try {
             $result = match ($action) {
@@ -94,10 +109,11 @@ class ArgentinaDeconsolidatedController extends Controller
             };
 
             if ($result['success']) {
+                $processedCount = count($result['bill_ids'] ?? $billIds);
                 $messages = [
-                    'registrar' => 'Títulos desconsolidados registrados exitosamente en AFIP.',
-                    'rectificar' => 'Títulos desconsolidados rectificados exitosamente en AFIP.',
-                    'eliminar' => 'Títulos desconsolidados eliminados exitosamente en AFIP.',
+                    'registrar' => "{$processedCount} título(s) desconsolidado(s) registrado(s) exitosamente en AFIP.",
+                    'rectificar' => "{$processedCount} título(s) desconsolidado(s) rectificado(s) exitosamente en AFIP.",
+                    'eliminar' => "{$processedCount} título(s) desconsolidado(s) eliminado(s) exitosamente en AFIP.",
                 ];
 
                 $redirect = redirect()
@@ -105,7 +121,10 @@ class ArgentinaDeconsolidatedController extends Controller
                     ->with('success', $messages[$action]);
 
                 if (!empty($result['warnings'])) {
-                    $redirect->with('warning', $this->formatWarnings($result['warnings']));
+                    $redirect->with(
+                        'warning',
+                        $this->formatWarnings($result['warnings'])
+                    );
                 }
 
                 return $redirect;
@@ -113,19 +132,25 @@ class ArgentinaDeconsolidatedController extends Controller
 
             return redirect()
                 ->route('company.simple.desconsolidado.show', $voyage)
-                ->with('error', 'Error: ' . ($result['error_message'] ?? $result['error'] ?? 'Error desconocido'));
-        } catch (Throwable $e) {
+                ->withInput()
+                ->with(
+                    'error',
+                    'Error: ' . ($result['error_message'] ?? $result['error'] ?? 'Error desconocido')
+                );
+        } catch (Throwable $exception) {
             Log::error('Error HTTP procesando desconsolidado Argentina', [
                 'voyage_id' => $voyage->id,
                 'company_id' => $company->id,
                 'action' => $action,
+                'bill_ids' => $billIds,
                 'user_id' => $this->getCurrentUser()?->id,
-                'error' => $e->getMessage(),
+                'error' => $exception->getMessage(),
             ]);
 
             return redirect()
                 ->route('company.simple.desconsolidado.show', $voyage)
-                ->with('error', 'Error procesando solicitud: ' . $e->getMessage());
+                ->withInput()
+                ->with('error', 'Error procesando solicitud: ' . $exception->getMessage());
         }
     }
 
@@ -133,14 +158,30 @@ class ArgentinaDeconsolidatedController extends Controller
     {
         $company = $this->getUserCompany();
 
-        abort_unless($company, 403, 'No se encontró la empresa asociada al usuario.');
-        abort_unless($this->hasCompanyRole('Desconsolidador'), 403, 'La empresa no tiene habilitado el rol Desconsolidador.');
-        abort_unless((int) $voyage->company_id === (int) $company->id, 403, 'No tiene permisos para este viaje.');
+        abort_unless(
+            $company,
+            403,
+            'No se encontró la empresa asociada al usuario.'
+        );
+        abort_unless(
+            $this->hasCompanyRole('Desconsolidador'),
+            403,
+            'La empresa no tiene habilitado el rol Desconsolidador.'
+        );
+        abort_unless(
+            (int) $voyage->company_id === (int) $company->id,
+            403,
+            'No tiene permisos para este viaje.'
+        );
 
         return $company;
     }
 
-    private function operationStates($transactions): array
+    /**
+     * Resumen visual del viaje. El estado jurídico-operativo sigue siendo
+     * billStates; este resumen sólo conserva compatibilidad con la vista.
+     */
+    private function aggregateStates(array $billStates): array
     {
         $states = [
             'registrar' => 'pending',
@@ -148,16 +189,25 @@ class ArgentinaDeconsolidatedController extends Controller
             'eliminar' => 'pending',
         ];
 
-        $latestSuccess = $transactions->first(fn ($transaction) => $transaction->status === 'success');
-        $method = $latestSuccess?->additional_metadata['method'] ?? null;
+        if ($billStates === []) {
+            return $states;
+        }
 
-        if ($method === 'registrar') {
+        $values = array_values($billStates);
+        $active = array_filter(
+            $values,
+            fn ($state) => in_array($state, ['registrar', 'rectificar'], true)
+        );
+        $deleted = array_filter($values, fn ($state) => $state === 'eliminar');
+        $rectified = array_filter($values, fn ($state) => $state === 'rectificar');
+
+        if ($active !== []) {
             $states['registrar'] = 'success';
-        } elseif ($method === 'rectificar') {
-            $states['registrar'] = 'success';
+        }
+        if ($rectified !== []) {
             $states['rectificar'] = 'success';
-        } elseif ($method === 'eliminar') {
-            // Ciclo cerrado: queda evidencia de eliminación y se habilita un nuevo registro.
+        }
+        if ($deleted !== []) {
             $states['eliminar'] = 'success';
         }
 
