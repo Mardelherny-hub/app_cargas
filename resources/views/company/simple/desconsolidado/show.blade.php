@@ -109,6 +109,137 @@
                 </div>
             @endif
 
+            @if($customsContainers->isNotEmpty())
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                    <div class="p-6 border-b border-gray-200">
+                        <div class="mb-5">
+                            <h3 class="text-lg font-medium text-gray-900">Datos aduaneros de contenedores</h3>
+                            <p class="mt-1 text-sm text-gray-600">
+                                Estos campos se usan exclusivamente para ATA-DESC. No modifican tara, peso,
+                                estado operativo, tarifas, ubicación, precintos ni otros datos internos de gestión.
+                            </p>
+                        </div>
+
+                        <div class="space-y-5">
+                            @foreach($customsContainers as $customsRow)
+                                @php
+                                    $container = $customsRow['container'];
+                                    $items = $customsRow['items'];
+                                    $allConditionsReady = collect($items)->every(
+                                        fn ($item) => in_array($item['condition'], ['H', 'P'], true)
+                                    );
+                                    $documentReady = !empty($container->csc_expiry_date) || !empty($container->acep);
+                                    $containerReady = $allConditionsReady && $documentReady;
+                                @endphp
+
+                                <form
+                                    method="POST"
+                                    action="{{ route('company.simple.desconsolidado.container-customs', [$voyage, $container]) }}"
+                                    class="border rounded-lg p-4 {{ $containerReady ? 'border-green-200 bg-green-50/30' : 'border-yellow-200 bg-yellow-50/30' }}"
+                                >
+                                    @csrf
+
+                                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
+                                        <div>
+                                            <div class="flex items-center gap-2">
+                                                <h4 class="font-semibold text-gray-900">
+                                                    {{ $container->container_number }}
+                                                </h4>
+                                                @if($containerReady)
+                                                    <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                        Datos ATA-DESC completos
+                                                    </span>
+                                                @else
+                                                    <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                        Completar datos ATA-DESC
+                                                    </span>
+                                                @endif
+                                            </div>
+                                            <p class="mt-1 text-xs text-gray-500">
+                                                Estado operativo actual: {{ $container->condition ?: '—' }}.
+                                                Se muestra sólo como referencia y no se modifica desde aquí.
+                                            </p>
+                                        </div>
+
+                                        <button
+                                            type="submit"
+                                            class="inline-flex justify-center items-center px-4 py-2 bg-indigo-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-indigo-700"
+                                        >
+                                            Guardar datos aduaneros
+                                        </button>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                                        <div>
+                                            <p class="text-sm font-medium text-gray-700 mb-2">
+                                                Condición H/P por línea
+                                            </p>
+                                            <div class="space-y-2">
+                                                @foreach($items as $item)
+                                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                                                        <div class="text-sm text-gray-700 sm:col-span-2">
+                                                            BL {{ $item['bill_number'] ?: '—' }} · Línea {{ $item['line_number'] ?: '—' }}
+                                                        </div>
+                                                        <select
+                                                            name="item_conditions[{{ $item['id'] }}]"
+                                                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                                            required
+                                                        >
+                                                            <option value="">Seleccionar H/P</option>
+                                                            <option value="H" @selected($item['condition'] === 'H')>
+                                                                H - Casa a Casa
+                                                            </option>
+                                                            <option value="P" @selected($item['condition'] === 'P')>
+                                                                P - Muelle a Muelle
+                                                            </option>
+                                                        </select>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <p class="text-sm font-medium text-gray-700 mb-2">
+                                                Documento del contenedor
+                                            </p>
+                                            <p class="text-xs text-gray-500 mb-3">
+                                                ATA-DESC exige Fecha de vencimiento del contenedor o ACEP. Informe el dato real disponible; no se completa automáticamente.
+                                            </p>
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div>
+                                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Vencimiento CSC
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        name="csc_expiry_date"
+                                                        value="{{ old('csc_expiry_date', $container->csc_expiry_date?->format('Y-m-d')) }}"
+                                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                                    >
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                                        ACEP
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        name="acep"
+                                                        maxlength="20"
+                                                        value="{{ old('acep', $container->acep) }}"
+                                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                                                        placeholder="Hasta 20 caracteres"
+                                                    >
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <form method="POST" action="{{ route('company.simple.desconsolidado.send', $voyage) }}">
                     @csrf
