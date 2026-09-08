@@ -799,11 +799,13 @@ class ParanaExcelParser implements ManifestParserInterface
             );
         }
 
+        $sourceContainerType = $this->requireParanaSourceText(
+            $data['CONTAINER_TYPE'] ?? null,
+            'CONTAINER_TYPE'
+        );
+
         $containerType = $this->findExistingContainerType(
-            $this->requireParanaSourceText(
-                $data['CONTAINER_TYPE'] ?? null,
-                'CONTAINER_TYPE'
-            )
+            $sourceContainerType
         );
 
         $state = $this->mapParanaContainerState(
@@ -812,7 +814,7 @@ class ParanaExcelParser implements ManifestParserInterface
 
         return Container::create([
             'container_number' => $number,
-            'container_type_id' => $containerType->id,
+            'container_type_id' => $containerType?->id,
             'tare_weight_kg' => $this->parseWeight(
                 $data['TARE_WEIGHT'] ?? null
             ),
@@ -825,7 +827,7 @@ class ParanaExcelParser implements ManifestParserInterface
                     $data['NET_WEIGHT'] ?? null
                 ),
             'max_gross_weight_kg' =>
-                $containerType->max_gross_weight_kg,
+                $containerType?->max_gross_weight_kg,
             'condition' => $state['condition'],
             'shipper_seal' => $data['SEAL_NO'] ?? null,
             'operational_status' =>
@@ -833,6 +835,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'current_port_id' => $bill->loading_port_id,
             'webservice_data' => json_encode([
                 'parana_data' => [
+                    'container_type' =>
+                        $sourceContainerType,
                     'description' =>
                         $data['DESCRIPTION'] ?? null,
                     'imo_number' =>
@@ -858,8 +862,21 @@ class ParanaExcelParser implements ManifestParserInterface
 
     protected function findExistingContainerType(
         string $typeCode
-    ): ContainerType {
+    ): ?ContainerType {
         $source = strtoupper(trim($typeCode));
+
+        /*
+         * PARANA.xlsx declara 40FR en cuatro contenedores reales.
+         * El catálogo actual no posee una equivalencia 40FR comprobada.
+         *
+         * No convertirlo a 40HC ni fabricar especificaciones físicas.
+         * El tipo fuente queda preservado en webservice_data y la
+         * relación de catálogo permanece NULL hasta contar con una
+         * equivalencia documentada.
+         */
+        if ($source === '40FR') {
+            return null;
+        }
 
         $mapping = [
             '20DV' => '20GP',
@@ -1397,16 +1414,34 @@ class ParanaExcelParser implements ManifestParserInterface
         return $client;
     }
 
-    protected function parseWeight(?string $weight): float
+    protected function parseWeight(?string $weight): ?float
     {
-        if (!$weight) return 0.0;
-        return (float)preg_replace('/[^\d.]/', '', $weight);
+        $weight = trim((string) $weight);
+
+        if ($weight === '') {
+            return null;
+        }
+
+        $numeric = preg_replace('/[^\d.]/', '', $weight);
+
+        return $numeric === ''
+            ? null
+            : (float) $numeric;
     }
 
-    protected function parseVolume(?string $volume): float
+    protected function parseVolume(?string $volume): ?float
     {
-        if (!$volume) return 0.0;
-        return (float)preg_replace('/[^\d.]/', '', $volume);
+        $volume = trim((string) $volume);
+
+        if ($volume === '') {
+            return null;
+        }
+
+        $numeric = preg_replace('/[^\d.]/', '', $volume);
+
+        return $numeric === ''
+            ? null
+            : (float) $numeric;
     }
 
     public function validate(array $data): array

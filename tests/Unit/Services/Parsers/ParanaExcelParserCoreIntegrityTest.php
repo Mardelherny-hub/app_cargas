@@ -155,14 +155,100 @@ class ParanaExcelParserCoreIntegrityTest extends TestCase
         }
     }
 
-    public function test_40fr_is_rejected_instead_of_fabricated_as_40hc(): void
+    public function test_40fr_remains_unmapped_instead_of_fabricated_as_40hc(): void
     {
-        $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('40FR');
-
-        $this->invoke(
+        $type = $this->invoke(
             'findExistingContainerType',
             ['40FR']
         );
+
+        $this->assertNull($type);
     }
+
+    public function test_unknown_container_type_is_still_rejected(): void
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage(
+            'Tipo de contenedor PARANA 99XX '
+            . 'sin equivalencia comprobada en catálogo.'
+        );
+
+        $this->invoke(
+            'findExistingContainerType',
+            ['99XX']
+        );
+    }
+
+    public function test_missing_weight_remains_null(): void
+    {
+        $this->assertNull(
+            $this->invoke(
+                'parseWeight',
+                [null]
+            )
+        );
+
+        $this->assertNull(
+            $this->invoke(
+                'parseWeight',
+                ['']
+            )
+        );
+    }
+
+    public function test_explicit_zero_weight_remains_zero(): void
+    {
+        $this->assertSame(
+            0.0,
+            $this->invoke(
+                'parseWeight',
+                ['0']
+            )
+        );
+
+        $this->assertSame(
+            22500.0,
+            $this->invoke(
+                'parseWeight',
+                ['22500']
+            )
+        );
+    }
+
+    public function test_missing_volume_remains_null(): void
+    {
+        $this->assertNull(
+            $this->invoke(
+                'parseVolume',
+                [null]
+            )
+        );
+
+        $this->assertNull(
+            $this->invoke(
+                'parseVolume',
+                ['']
+            )
+        );
+    }
+
+    public function test_explicit_zero_volume_remains_zero(): void
+    {
+        $this->assertSame(
+            0.0,
+            $this->invoke(
+                'parseVolume',
+                ['0']
+            )
+        );
+
+        $this->assertSame(
+            12.5,
+            $this->invoke(
+                'parseVolume',
+                ['12.5']
+            )
+        );
+    }
+
 }
