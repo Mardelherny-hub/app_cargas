@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Services\Webservice;
 
+use App\Models\BillOfLading;
 use App\Models\Company;
+use App\Models\Container;
 use App\Models\User;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
 use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
@@ -168,6 +170,46 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
 
         $this->expectException(Exception::class);
         $this->generatorPrivate('containerCondition', ['V', 'condición']);
+    }
+
+    #[Test]
+    public function optional_container_data_does_not_become_artificially_mandatory(): void
+    {
+        $container = new Container();
+        $container->id = 7;
+        $container->container_number = 'MSCU1234567';
+        $container->container_condition = 'H';
+        $container->operator_client_id = null;
+        $container->tare_weight_kg = null;
+        $container->current_gross_weight_kg = null;
+        $container->csc_expiry_date = '2030-01-01';
+
+        $bill = new BillOfLading();
+        $bill->id = 9;
+
+        $this->generatorPrivate('validateContainer', [$container, $bill]);
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function generic_expiry_date_is_not_used_as_an_acep_or_csc_expiry_substitute(): void
+    {
+        $container = new Container();
+        $container->id = 7;
+        $container->container_number = 'MSCU1234567';
+        $container->container_condition = 'P';
+        $container->operator_client_id = null;
+        $container->tare_weight_kg = null;
+        $container->current_gross_weight_kg = null;
+        $container->expiry_date = '2030-01-01';
+        $container->csc_expiry_date = null;
+
+        $bill = new BillOfLading();
+        $bill->id = 9;
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('app no tiene un campo ACEP');
+        $this->generatorPrivate('validateContainer', [$container, $bill]);
     }
 
     #[Test]
