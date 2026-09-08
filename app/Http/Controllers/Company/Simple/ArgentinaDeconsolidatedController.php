@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Company\Simple;
 
 use App\Http\Controllers\Controller;
+use App\Models\Container;
 use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
@@ -39,11 +40,8 @@ class ArgentinaDeconsolidatedController extends Controller
             ->sortBy('id')
             ->values();
 
-        $containersCount = $desconsolidatedBills
-            ->flatMap(fn ($bill) => $bill->shipmentItems)
-            ->flatMap(fn ($item) => $item->containers)
-            ->unique('id')
-            ->count();
+        $customsContainers = $this->customsContainers($desconsolidatedBills);
+        $containersCount = $customsContainers->count();
 
         $service = new ArgentinaDeconsolidatedService(
             $company,
@@ -74,11 +72,61 @@ class ArgentinaDeconsolidatedController extends Controller
             'desconsolidatedBills' => $desconsolidatedBills,
             'desconsolidatedBillsCount' => $desconsolidatedBills->count(),
             'containersCount' => $containersCount,
+            'customsContainers' => $customsContainers,
             'validation' => $validation,
             'billStates' => $billStates,
             'estados' => $this->aggregateStates($billStates),
             'transactions' => $transactions,
         ]);
+    }
+
+    public function saveContainerCustoms(
+        Request $request,
+        Voyage $voyage,
+        Container $container
+    ): RedirectResponse {
+        $this->authorizeVoyage($voyage);
+        $this->authorizeContainerForVoyage($voyage, $container);
+
+        $validated = $request->validate([
+            'csc_expiry_date' => 'nullable|date',
+            'acep' => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
+        ], [
+            'acep.regex' => 'ACEP sólo puede contener letras y números.',
+            'acep.max' => 'ACEP no puede superar 20 caracteres.',
+        ]);
+
+        $expiry = $validated['csc_expiry_date'] ?? null;
+        $acep = isset($validated['acep'])
+            ? trim((string) $validated['acep'])
+            : null;
+        $acep = $acep === '' ? null : $acep;
+
+        if (!$expiry && !$acep) {
+            return redirect()
+                ->route('company.simple.desconsolidado.show', $voyage)
+                ->withErrors([
+                    'container_customs' =>
+                        'El contenedor debe tener Fecha de vencimiento CSC o ACEP para ATA-DESC.',
+                ]);
+        }
+
+        // Sólo se actualizan los dos datos documentales específicos de ATA-DESC.
+        // No se tocan pesos, estado operativo, tarifas, precintos ni otros datos
+        // que las empresas utilizan para su gestión interna.
+        $container->update([
+            'csc_expiry_date' => $expiry,
+            'acep' => $acep,
+            'last_updated_date' => now(),
+            'last_updated_by_user_id' => $this->getCurrentUser()?->id,
+        ]);
+
+        return redirect()
+            ->route('company.simple.desconsolidado.show', $voyage)
+            ->with(
+                'success',
+                "Datos ATA-DESC del contenedor {$container->container_number} actualizados."
+            );
     }
 
     public function send(Request $request, Voyage $voyage): RedirectResponse
@@ -175,6 +223,57 @@ class ArgentinaDeconsolidatedController extends Controller
         );
 
         return $company;
+    }
+
+    private function authorizeContainerForVoyage(
+        Voyage $voyage,
+        Container $container
+    ): void {
+        $belongs = $voyage->billsOfLading()
+            ->whereNotNull('master_bill_number')
+            ->whereHas('shipmentItems.containers', function ($query) use ($container) {
+                $query->where('containers.id', $container->id);
+            })
+            ->exists();
+
+        abort_unless(
+            $belongs,
+            404,
+            'El contenedor no pertenece a un título desconsolidado de este viaje.'
+        );
+    }
+
+    private function customsContainers($desconsolidatedBills)
+    {
+        $rows = collect();
+
+        foreach ($desconsolidatedBills as $bill) {
+            foreach ($bill->shipmentItems as $item) {
+                foreach ($item->containers as $container) {
+                    $existing = $rows->get($container->id, [
+                        'container' => $container,
+                        'bill_numbers' => [],
+                        'line_numbers' => [],
+                        'item_conditions' => [],
+                    ]);
+
+                    $existing['bill_numbers'][] = (string) $bill->bill_number;
+                    $existing['line_numbers'][] = (string) $item->line_number;
+
+                    if (in_array($item->container_condition, ['H', 'P'], true)) {
+                        $existing['item_conditions'][] = $item->container_condition;
+                    }
+
+                    $existing['bill_numbers'] = array_values(array_unique($existing['bill_numbers']));
+                    $existing['line_numbers'] = array_values(array_unique($existing['line_numbers']));
+                    $existing['item_conditions'] = array_values(array_unique($existing['item_conditions']));
+
+                    $rows->put($container->id, $existing);
+                }
+            }
+        }
+
+        return $rows->values();
     }
 
     /**
