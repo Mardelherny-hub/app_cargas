@@ -20,9 +20,12 @@ use XMLWriter;
 /**
  * XML SOAP para ATA Desconsolidador - wgesinformacionanticipada.
  *
- * Fuente contractual: Manual del Desarrollador AFIP v4.11 (18/12/2018).
- * No completa datos ausentes con valores simulados ni deriva campos de otros
- * conceptos que tengan una semántica distinta dentro de la aplicación.
+ * Contratos usados:
+ * - Manual del Desarrollador AFIP wgesinformacionanticipada v4.11.
+ * - Datos a transmitir por ATA-DESC (obligatoriedad/condicionalidad específica).
+ *
+ * No completa datos ausentes con valores simulados ni reutiliza campos con
+ * otra semántica sólo para satisfacer el XML.
  */
 class SimpleXmlGeneratorDesconsolidado
 {
@@ -75,7 +78,7 @@ class SimpleXmlGeneratorDesconsolidado
         foreach ($bills as $bill) {
             $this->requiredString(
                 $bill->loadingPort?->code,
-                "BL {$bill->id}: CodigoPuertoEmbarque",
+                "BL {$bill->id}: CodigoPuertoEmbarque para eliminación",
                 5
             );
             $this->requiredString(
@@ -125,7 +128,7 @@ class SimpleXmlGeneratorDesconsolidado
             $this->validateBill($bill);
         }
 
-        // Recién se solicita/reutiliza el TA después de superar validación local.
+        // El TA se obtiene recién después de superar toda validación local.
         $auth = $this->getWsaaTokens();
         $writer = $this->createWriter();
         $this->startEnvelope($writer, $method);
@@ -158,7 +161,7 @@ class SimpleXmlGeneratorDesconsolidado
             ->values()
             ->all();
 
-        // Semántica vigente de la app para título hijo: master_bill_number informado.
+        // Semántica vigente de la app para un título hijo.
         $query = $this->voyage->billsOfLading()
             ->whereNotNull('master_bill_number')
             ->with([
@@ -195,29 +198,40 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $prefix = "BL {$bill->id}";
 
-        $this->requiredDate($bill->loading_date, "{$prefix}: FechaEmbarque");
-        $this->requiredString($bill->loadingPort?->code, "{$prefix}: CodigoPuertoEmbarque", 5);
-        $this->requiredString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
-        $this->requiredString($bill->origin_country_code, "{$prefix}: CodigoPaisLugarOrigen", 3);
-        $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
-        $this->requiredString($bill->dischargePort?->code, "{$prefix}: CodigoPuertoDescarga", 5);
+        // El vínculo con el documento madre es condición propia del desconsolidado.
+        $this->requiredString($bill->master_bill_number, "{$prefix}: IdentificadorTituloMadre", 23);
+
+        // ATA-DESC: estos son obligatorios a nivel documento hijo.
         $this->requiredString($bill->destination_country_code, "{$prefix}: CodigoPaisDestino", 3);
+        $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
         $this->requiredString($bill->cargo_marks, "{$prefix}: MarcaBultos", 80);
         $this->requiredFlag($bill->is_consolidated, "{$prefix}: IndicadorConsolidado");
-        $this->requiredFlag($bill->is_transit_transshipment, "{$prefix}: IndicadorTransitoTrasbordo");
-        $this->requiredString($bill->discharge_customs_code, "{$prefix}: CodigoAduanaDescarga", 3);
-        $this->requiredString(
-            $bill->operational_discharge_code,
-            "{$prefix}: CodigoLugarOperativoDescarga",
-            5
+        $this->requiredFlag(
+            $bill->is_transit_transshipment,
+            "{$prefix}: IndicadorTransitoTrasbordo"
         );
+
+        // Lugar de origen es optativo, pero al declararlo sus dependencias dejan
+        // de ser optativas según la hoja ATA-DESC.
+        $hasOriginLocation = trim((string) ($bill->origin_location ?? '')) !== '';
+        if ($hasOriginLocation) {
+            $this->requiredString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
+            $this->requiredDate($bill->origin_loading_date, "{$prefix}: FechaCargaLugarOrigen");
+            $this->requiredString(
+                $bill->origin_country_code,
+                "{$prefix}: CodigoPaisLugarOrigen",
+                3
+            );
+        } elseif ($bill->origin_loading_date || trim((string) ($bill->origin_country_code ?? '')) !== '') {
+            throw new Exception(
+                "{$prefix}: FechaCargaLugarOrigen/CodigoPaisLugarOrigen requieren LugarOrigen."
+            );
+        }
 
         if ($bill->shipmentItems->isEmpty()) {
             throw new Exception("{$prefix}: debe tener al menos una línea de mercadería.");
         }
 
-        // AFIP define estos atributos a nivel título. En la app viven en las
-        // líneas; todas las líneas del BL deben contener el mismo valor.
         $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true);
         $this->singleItemFlag(
             $bill,
@@ -226,12 +240,15 @@ class SimpleXmlGeneratorDesconsolidado
         );
         $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado');
         $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar');
+
+        // Forwarder exterior es optativo en la hoja ATA-DESC. Si está informado,
+        // todas las líneas deben coincidir porque AFIP recibe un único valor por título.
         $this->singleItemValue(
             $bill,
             'foreign_forwarder_name',
             'RazonSocialFowarderExterior',
             70,
-            true
+            false
         );
 
         $lineNumbers = [];
@@ -252,24 +269,17 @@ class SimpleXmlGeneratorDesconsolidado
             $lineNumbers[] = $lineNumber;
 
             $packagingCode = $item->packaging_code ?: $item->packagingType?->argentina_ws_code;
-            $packagingCode = $this->requiredString(
+            $this->requiredString(
                 $packagingCode,
                 "{$prefix}: ShipmentItem {$item->id} CodigoEmbalaje",
                 2
             );
 
-            if ($packagingCode === '05' && trim((string) $item->container_condition) === '') {
-                throw new Exception(
-                    "{$prefix}: ShipmentItem {$item->id} con CodigoEmbalaje 05 requiere CondicionContenedor."
-                );
-            }
-
-            if ($item->container_condition !== null && $item->container_condition !== '') {
-                $this->containerCondition(
-                    $item->container_condition,
-                    "{$prefix}: ShipmentItem {$item->id} CondicionContenedor"
-                );
-            }
+            // ATA-DESC exige H/P en cada línea de mercadería.
+            $this->containerCondition(
+                $item->container_condition,
+                "{$prefix}: ShipmentItem {$item->id} CondicionContenedor"
+            );
 
             $this->requiredIntegerLike(
                 $item->package_quantity,
@@ -300,31 +310,54 @@ class SimpleXmlGeneratorDesconsolidado
     private function validateContainer(Container $container, BillOfLading $bill): void
     {
         $prefix = "BL {$bill->id}: Contenedor {$container->id}";
-        $characteristics = $container->argentina_container_code
-            ?: $container->containerType?->argentina_ws_code;
 
-        $this->containerOperatorCuit($container, $prefix);
-        $this->requiredString($characteristics, "{$prefix}: CaracteristicasContenedor", 4);
         $this->requiredString($container->container_number, "{$prefix}: IdentificadorContenedor", 20);
         $this->containerCondition($container->container_condition, "{$prefix}: CondicionContenedor");
-        $this->requiredIntegerLike($container->tare_weight_kg, "{$prefix}: Tara", 10);
-        $this->requiredIntegerLike($container->current_gross_weight_kg, "{$prefix}: PesoBruto", 14);
-        $this->requiredString($bill->discharge_customs_code, "{$prefix}: CodigoAduana", 3);
-        $this->requiredString(
-            $bill->operational_discharge_code,
-            "{$prefix}: CodigoLugarOperativoDescarga",
-            5
-        );
+
+        // CUIT, características, tara y peso bruto son optativos para ATA-DESC.
+        if ($container->operator_client_id) {
+            $this->containerOperatorCuit($container, $prefix);
+        }
+
+        $characteristics = $container->argentina_container_code
+            ?: $container->containerType?->argentina_ws_code;
+        if ($characteristics !== null && trim((string) $characteristics) !== '') {
+            $this->optionalString($characteristics, "{$prefix}: CaracteristicasContenedor", 4);
+        }
+
+        if ($container->tare_weight_kg !== null) {
+            $this->requiredIntegerLike($container->tare_weight_kg, "{$prefix}: Tara", 10);
+        }
+        if ($container->current_gross_weight_kg !== null) {
+            $this->requiredIntegerLike(
+                $container->current_gross_weight_kg,
+                "{$prefix}: PesoBruto",
+                14
+            );
+        }
+
+        // La norma exige FechaVencimiento o ACEP. El modelo actual no posee ACEP;
+        // por eso un contenedor sin vencimiento real no se puede transmitir sin inventar datos.
+        if (!$container->csc_expiry_date) {
+            throw new Exception(
+                "{$prefix}: falta FechaVencimientoContenedor y la app no tiene un campo ACEP disponible."
+            );
+        }
     }
 
     private function writeTitle(XMLWriter $writer, BillOfLading $bill): void
     {
         $writer->startElement('TituloDesconsolidador');
-        $writer->writeElement('FechaEmbarque', $this->formatDate($bill->loading_date));
-        $writer->writeElement('CodigoPuertoEmbarque', (string) $bill->loadingPort->code);
-        $this->writeOptionalDate($writer, 'FechaCargaLugarOrigen', $bill->origin_loading_date);
-        $writer->writeElement('LugarOrigen', (string) $bill->origin_location);
-        $writer->writeElement('CodigoPaisLugarOrigen', (string) $bill->origin_country_code);
+
+        $this->writeOptionalDate($writer, 'FechaEmbarque', $bill->loading_date);
+        $this->writeOptionalString($writer, 'CodigoPuertoEmbarque', $bill->loadingPort?->code, 5);
+
+        if (trim((string) ($bill->origin_location ?? '')) !== '') {
+            $writer->writeElement('FechaCargaLugarOrigen', $this->formatDate($bill->origin_loading_date));
+            $writer->writeElement('LugarOrigen', (string) $bill->origin_location);
+            $writer->writeElement('CodigoPaisLugarOrigen', (string) $bill->origin_country_code);
+        }
+
         $writer->writeElement('NumeroConocimiento', (string) $bill->bill_number);
         $this->writeOptionalString(
             $writer,
@@ -332,7 +365,7 @@ class SimpleXmlGeneratorDesconsolidado
             $bill->transshipmentPort?->code,
             5
         );
-        $writer->writeElement('CodigoPuertoDescarga', (string) $bill->dischargePort->code);
+        $this->writeOptionalString($writer, 'CodigoPuertoDescarga', $bill->dischargePort?->code, 5);
         $this->writeOptionalDate($writer, 'FechaDescarga', $bill->discharge_date);
         $writer->writeElement('CodigoPaisDestino', (string) $bill->destination_country_code);
         $writer->writeElement('MarcaBultos', (string) $bill->cargo_marks);
@@ -383,15 +416,18 @@ class SimpleXmlGeneratorDesconsolidado
             'IndicadorRenar',
             $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar')
         );
-        $writer->writeElement(
+
+        $this->writeOptionalString(
+            $writer,
             'RazonSocialFowarderExterior',
             $this->singleItemValue(
                 $bill,
                 'foreign_forwarder_name',
                 'RazonSocialFowarderExterior',
                 70,
-                true
-            )
+                false
+            ),
+            70
         );
         $this->writeOptionalString(
             $writer,
@@ -418,23 +454,24 @@ class SimpleXmlGeneratorDesconsolidado
             3
         );
 
-        // XML oficial: lugar operativo antes de aduana de descarga.
-        $writer->writeElement(
+        // Ambos campos son optativos en ATA-DESC; sólo se transmiten si existen.
+        $this->writeOptionalString(
+            $writer,
             'CodigoLugarOperativoDescarga',
-            (string) $bill->operational_discharge_code
+            $bill->operational_discharge_code,
+            5
         );
-        $writer->writeElement('CodigoAduanaDescarga', (string) $bill->discharge_customs_code);
+        $this->writeOptionalString(
+            $writer,
+            'CodigoAduanaDescarga',
+            $bill->discharge_customs_code,
+            3
+        );
 
         $this->writeMerchandise($writer, $bill);
         $this->writeContainers($writer, $bill);
 
-        // El ejemplo oficial lo ubica al final del TituloDesconsolidador.
-        $this->writeOptionalString(
-            $writer,
-            'IdentificadorTituloMadre',
-            $bill->master_bill_number,
-            23
-        );
+        $writer->writeElement('IdentificadorTituloMadre', (string) $bill->master_bill_number);
         $writer->endElement();
     }
 
@@ -449,13 +486,12 @@ class SimpleXmlGeneratorDesconsolidado
             $writer->writeElement('NumeroLinea', (string) ((int) $item->line_number));
             $writer->writeElement('CodigoEmbalaje', $packagingCode);
 
-            // TipoEmbalaje es opcional y no existe un mapeo AFIP inequívoco en el modelo.
-            if ($packagingCode === '05') {
-                $writer->writeElement(
-                    'CondicionContenedor',
-                    strtoupper((string) $item->container_condition)
-                );
-            }
+            // ATA-DESC exige condición H/P en mercadería. TipoEmbalaje no se
+            // transmite porque el modelo no posee un código AFIP inequívoco para ese campo.
+            $writer->writeElement(
+                'CondicionContenedor',
+                strtoupper((string) $item->container_condition)
+            );
 
             $writer->writeElement('CantidadManifestada', $this->integerString($item->package_quantity));
             $writer->writeElement(
@@ -482,43 +518,63 @@ class SimpleXmlGeneratorDesconsolidado
         $writer->startElement('Contenedores');
 
         foreach ($containers as $container) {
+            $writer->startElement('Contenedor');
+
+            if ($container->operator_client_id) {
+                $writer->writeElement(
+                    'CuitAtaOperadorContenedor',
+                    $this->containerOperatorCuit($container, "Contenedor {$container->id}")
+                );
+            }
+
             $characteristics = $container->argentina_container_code
                 ?: $container->containerType?->argentina_ws_code;
-
-            $writer->startElement('Contenedor');
-            $writer->writeElement(
-                'CuitAtaOperadorContenedor',
-                $this->containerOperatorCuit($container, "Contenedor {$container->id}")
+            $this->writeOptionalString(
+                $writer,
+                'CaracteristicasContenedor',
+                $characteristics,
+                4
             );
-            $writer->writeElement('CaracteristicasContenedor', (string) $characteristics);
+
             $writer->writeElement('IdentificadorContenedor', (string) $container->container_number);
             $writer->writeElement(
                 'CondicionContenedor',
                 strtoupper((string) $container->container_condition)
             );
-            $writer->writeElement('Tara', $this->integerString($container->tare_weight_kg));
-            $writer->writeElement(
-                'PesoBruto',
-                $this->integerString($container->current_gross_weight_kg)
-            );
+
+            if ($container->tare_weight_kg !== null) {
+                $writer->writeElement('Tara', $this->integerString($container->tare_weight_kg));
+            }
+            if ($container->current_gross_weight_kg !== null) {
+                $writer->writeElement(
+                    'PesoBruto',
+                    $this->integerString($container->current_gross_weight_kg)
+                );
+            }
+
             $this->writeOptionalString(
                 $writer,
                 'NumeroPrecintoOrigen',
                 $container->shipper_seal,
                 35
             );
-            $this->writeOptionalDate(
-                $writer,
+            $writer->writeElement(
                 'FechaVencimientoContenedor',
-                $container->csc_expiry_date
+                $this->formatDate($container->csc_expiry_date)
             );
 
-            // Acep, puertos y lugar de origen del contenedor son opcionales;
-            // no hay campos inequívocos para ellos en Container.
-            $writer->writeElement('CodigoAduana', (string) $bill->discharge_customs_code);
-            $writer->writeElement(
+            // ACEP no se emite: no existe un campo ACEP en el modelo actual.
+            $this->writeOptionalString(
+                $writer,
+                'CodigoAduana',
+                $bill->discharge_customs_code,
+                3
+            );
+            $this->writeOptionalString(
+                $writer,
                 'CodigoLugarOperativoDescarga',
-                (string) $bill->operational_discharge_code
+                $bill->operational_discharge_code,
+                5
             );
             $writer->endElement();
         }
@@ -895,7 +951,7 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $code = strtoupper(trim((string) ($value ?? '')));
         if (!in_array($code, ['H', 'P'], true)) {
-            throw new Exception("{$label} debe ser H o P según la semántica AFIP de la app.");
+            throw new Exception("{$label} debe ser H o P según ATA-DESC.");
         }
 
         return $code;
@@ -947,7 +1003,7 @@ class SimpleXmlGeneratorDesconsolidado
 
         $text = number_format($number, 0, '.', '');
         if ($maxDigits !== null && strlen($text) > $maxDigits) {
-            throw new Exception("{$label} supera Int({$maxDigits}).");
+            throw new Exception("{$label} supera {$maxDigits} dígitos.");
         }
 
         return $text;
