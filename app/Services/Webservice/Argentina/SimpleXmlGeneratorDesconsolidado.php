@@ -161,7 +161,6 @@ class SimpleXmlGeneratorDesconsolidado
             ->values()
             ->all();
 
-        // Semántica vigente de la app para un título hijo.
         $query = $this->voyage->billsOfLading()
             ->whereNotNull('master_bill_number')
             ->with([
@@ -198,10 +197,7 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $prefix = "BL {$bill->id}";
 
-        // El vínculo con el documento madre es condición propia del desconsolidado.
         $this->requiredString($bill->master_bill_number, "{$prefix}: IdentificadorTituloMadre", 23);
-
-        // ATA-DESC: estos son obligatorios a nivel documento hijo.
         $this->requiredString($bill->destination_country_code, "{$prefix}: CodigoPaisDestino", 3);
         $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
         $this->requiredString($bill->cargo_marks, "{$prefix}: MarcaBultos", 80);
@@ -211,8 +207,6 @@ class SimpleXmlGeneratorDesconsolidado
             "{$prefix}: IndicadorTransitoTrasbordo"
         );
 
-        // Lugar de origen es optativo, pero al declararlo sus dependencias dejan
-        // de ser optativas según la hoja ATA-DESC.
         $hasOriginLocation = trim((string) ($bill->origin_location ?? '')) !== '';
         if ($hasOriginLocation) {
             $this->requiredString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
@@ -240,9 +234,6 @@ class SimpleXmlGeneratorDesconsolidado
         );
         $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado');
         $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar');
-
-        // Forwarder exterior es optativo en la hoja ATA-DESC. Si está informado,
-        // todas las líneas deben coincidir porque AFIP recibe un único valor por título.
         $this->singleItemValue(
             $bill,
             'foreign_forwarder_name',
@@ -275,7 +266,6 @@ class SimpleXmlGeneratorDesconsolidado
                 2
             );
 
-            // ATA-DESC exige H/P en cada línea de mercadería.
             $this->containerCondition(
                 $item->container_condition,
                 "{$prefix}: ShipmentItem {$item->id} CondicionContenedor"
@@ -312,35 +302,33 @@ class SimpleXmlGeneratorDesconsolidado
         $prefix = "BL {$bill->id}: Contenedor {$container->id}";
 
         $this->requiredString($container->container_number, "{$prefix}: IdentificadorContenedor", 20);
-        $this->containerCondition($container->container_condition, "{$prefix}: CondicionContenedor");
+        $this->containerConditionForBill($container, $bill);
 
-        // CUIT, características, tara y peso bruto son optativos para ATA-DESC.
         if ($container->operator_client_id) {
             $this->containerOperatorCuit($container, $prefix);
         }
 
-        $characteristics = $container->argentina_container_code
-            ?: $container->containerType?->argentina_ws_code;
-        if ($characteristics !== null && trim((string) $characteristics) !== '') {
-            $this->optionalString($characteristics, "{$prefix}: CaracteristicasContenedor", 4);
-        }
-
-        if ($container->tare_weight_kg !== null) {
-            $this->requiredIntegerLike($container->tare_weight_kg, "{$prefix}: Tara", 10);
-        }
-        if ($container->current_gross_weight_kg !== null) {
-            $this->requiredIntegerLike(
-                $container->current_gross_weight_kg,
-                "{$prefix}: PesoBruto",
-                14
+        if ($container->argentina_container_code !== null
+            && trim((string) $container->argentina_container_code) !== '') {
+            $this->optionalString(
+                $container->argentina_container_code,
+                "{$prefix}: CaracteristicasContenedor",
+                4
             );
         }
 
-        // La norma exige FechaVencimiento o ACEP. El modelo actual no posee ACEP;
-        // por eso un contenedor sin vencimiento real no se puede transmitir sin inventar datos.
-        if (!$container->csc_expiry_date) {
+        $acep = $this->optionalString($container->acep, "{$prefix}: ACEP", 20);
+        if ($acep !== null && !preg_match('/^[A-Za-z0-9]+$/', $acep)) {
+            throw new Exception("{$prefix}: ACEP sólo puede contener letras y números.");
+        }
+
+        if ($container->csc_expiry_date) {
+            $this->formatDate($container->csc_expiry_date);
+        }
+
+        if (!$container->csc_expiry_date && $acep === null) {
             throw new Exception(
-                "{$prefix}: falta FechaVencimientoContenedor y la app no tiene un campo ACEP disponible."
+                "{$prefix}: debe informar FechaVencimientoContenedor o ACEP."
             );
         }
     }
@@ -395,7 +383,6 @@ class SimpleXmlGeneratorDesconsolidado
             11
         );
 
-        // No existe en la app un campo inequívoco para país de emisión de pasaporte.
         $writer->writeElement(
             'PosicionArancelaria',
             $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true)
@@ -454,7 +441,6 @@ class SimpleXmlGeneratorDesconsolidado
             3
         );
 
-        // Ambos campos son optativos en ATA-DESC; sólo se transmiten si existen.
         $this->writeOptionalString(
             $writer,
             'CodigoLugarOperativoDescarga',
@@ -485,14 +471,13 @@ class SimpleXmlGeneratorDesconsolidado
             $writer->startElement('LineaMercaderia');
             $writer->writeElement('NumeroLinea', (string) ((int) $item->line_number));
             $writer->writeElement('CodigoEmbalaje', $packagingCode);
-
-            // ATA-DESC exige condición H/P en mercadería. TipoEmbalaje no se
-            // transmite porque el modelo no posee un código AFIP inequívoco para ese campo.
             $writer->writeElement(
                 'CondicionContenedor',
-                strtoupper((string) $item->container_condition)
+                $this->containerCondition(
+                    $item->container_condition,
+                    "BL {$bill->id}: ShipmentItem {$item->id} CondicionContenedor"
+                )
             );
-
             $writer->writeElement('CantidadManifestada', $this->integerString($item->package_quantity));
             $writer->writeElement(
                 'PesoVolumenManifestado',
@@ -527,30 +512,26 @@ class SimpleXmlGeneratorDesconsolidado
                 );
             }
 
-            $characteristics = $container->argentina_container_code
-                ?: $container->containerType?->argentina_ws_code;
+            // Sólo el código AFIP explícito de la unidad. No se deriva del tipo
+            // genérico porque no es posible distinguir una clasificación interna
+            // de un dato declarado para esta transmisión.
             $this->writeOptionalString(
                 $writer,
                 'CaracteristicasContenedor',
-                $characteristics,
+                $container->argentina_container_code,
                 4
             );
 
             $writer->writeElement('IdentificadorContenedor', (string) $container->container_number);
             $writer->writeElement(
                 'CondicionContenedor',
-                strtoupper((string) $container->container_condition)
+                $this->containerConditionForBill($container, $bill)
             );
 
-            if ($container->tare_weight_kg !== null) {
-                $writer->writeElement('Tara', $this->integerString($container->tare_weight_kg));
-            }
-            if ($container->current_gross_weight_kg !== null) {
-                $writer->writeElement(
-                    'PesoBruto',
-                    $this->integerString($container->current_gross_weight_kg)
-                );
-            }
+            // Tara y PesoBruto permanecen disponibles para la gestión empresarial,
+            // pero DESC no los transmite porque hoy pueden provenir tanto de una
+            // fuente real como de defaults operativos históricos y el modelo no
+            // registra esa procedencia. Ambos son optativos para ATA-DESC.
 
             $this->writeOptionalString(
                 $writer,
@@ -558,12 +539,13 @@ class SimpleXmlGeneratorDesconsolidado
                 $container->shipper_seal,
                 35
             );
-            $writer->writeElement(
+            $this->writeOptionalDate(
+                $writer,
                 'FechaVencimientoContenedor',
-                $this->formatDate($container->csc_expiry_date)
+                $container->csc_expiry_date
             );
+            $this->writeOptionalString($writer, 'Acep', $container->acep, 20);
 
-            // ACEP no se emite: no existe un campo ACEP en el modelo actual.
             $this->writeOptionalString(
                 $writer,
                 'CodigoAduana',
@@ -588,6 +570,35 @@ class SimpleXmlGeneratorDesconsolidado
             ->flatMap(fn ($item) => $item->containers)
             ->unique('id')
             ->values();
+    }
+
+    private function containerConditionForBill(
+        Container $container,
+        BillOfLading $bill
+    ): string {
+        $conditions = $bill->shipmentItems
+            ->filter(fn ($item) => $item->containers->contains('id', $container->id))
+            ->map(fn ($item) => strtoupper(trim((string) $item->container_condition)))
+            ->filter(fn ($condition) => $condition !== '')
+            ->unique()
+            ->values();
+
+        if ($conditions->isEmpty()) {
+            throw new Exception(
+                "BL {$bill->id}: Contenedor {$container->container_number} no tiene condición H/P contextual en sus líneas."
+            );
+        }
+
+        if ($conditions->count() > 1) {
+            throw new Exception(
+                "BL {$bill->id}: Contenedor {$container->container_number} está vinculado a líneas con condiciones H/P distintas."
+            );
+        }
+
+        return $this->containerCondition(
+            $conditions->first(),
+            "BL {$bill->id}: Contenedor {$container->container_number} CondicionContenedor"
+        );
     }
 
     private function containerOperatorCuit(Container $container, string $prefix): string
