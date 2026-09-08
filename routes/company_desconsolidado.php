@@ -4,23 +4,17 @@ use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
 use Illuminate\Support\Facades\Route;
 
 /**
- * Override canónico de las dos rutas históricas de Desconsolidados Argentina.
+ * Handler canónico de las dos URLs históricas de Desconsolidados Argentina.
  *
- * Se carga después de routes/company.php con exactamente el mismo método, URI
- * y nombre. Illuminate\Routing\RouteCollection conserva la definición más
- * reciente para esa clave, sin cambiar enlaces existentes de la aplicación.
- *
- * Este archivo puede incorporarse directamente a company.php cuando se haga
- * una limpieza posterior del controlador monolítico.
+ * Los nombres de ruta siguen definidos una sola vez en routes/company.php.
+ * Este archivo se carga después, con las mismas URI y métodos HTTP pero sin
+ * nombres duplicados, para que esas URLs sean atendidas por el controlador E2E.
  */
 Route::prefix('simple/webservices/desconsolidado')
-    ->name('company.simple.desconsolidado.')
     ->group(function () {
         Route::get('/{voyage}', [ArgentinaDeconsolidatedController::class, 'show'])
-            ->whereNumber('voyage')
-            ->name('show');
+            ->whereNumber('voyage');
 
         Route::post('/{voyage}/send', [ArgentinaDeconsolidatedController::class, 'send'])
-            ->whereNumber('voyage')
-            ->name('send');
+            ->whereNumber('voyage');
     });
