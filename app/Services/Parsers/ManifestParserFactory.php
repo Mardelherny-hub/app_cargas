@@ -35,11 +35,14 @@ class ManifestParserFactory
      * Lista de parsers disponibles en orden de prioridad
      */
     protected array $parsers = [
-        // Whitelist operativa temporal.
         KlineDataParser::class,
-        NavsurTextParser::class,
-        CmspEdiParser::class,
+        ParanaExcelParser::class,
+        GuaranExcelParser::class, 
         LoginXmlParser::class,
+        TfpTextParser::class,
+        CmspEdiParser::class,
+        NavsurTextParser::class,
+        G2OceanXmlParser::class,
     ];
 
     /**
@@ -47,9 +50,11 @@ class ManifestParserFactory
      */
     protected array $extensionMappings = [
         'dat' => [KlineDataParser::class],
-        'txt' => [KlineDataParser::class, NavsurTextParser::class],
+        'txt' => [KlineDataParser::class, NavsurTextParser::class, TfpTextParser::class],
+        'xlsx' => [ParanaExcelParser::class, GuaranExcelParser::class],
+        'xls' => [ParanaExcelParser::class, GuaranExcelParser::class],
+        'xml' => [LoginXmlParser::class, G2OceanXmlParser::class], // LoginXmlParser::class
         'edi' => [CmspEdiParser::class],
-        'xml' => [LoginXmlParser::class],
     ];
 
     /**
