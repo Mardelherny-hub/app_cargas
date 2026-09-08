@@ -158,8 +158,7 @@ class SimpleXmlGeneratorDesconsolidado
             ->values()
             ->all();
 
-        // Esta es la semántica vigente de la aplicación para un título hijo:
-        // BillOfLading con master_bill_number informado.
+        // Semántica vigente de la app para título hijo: master_bill_number informado.
         $query = $this->voyage->billsOfLading()
             ->whereNotNull('master_bill_number')
             ->with([
@@ -198,11 +197,8 @@ class SimpleXmlGeneratorDesconsolidado
 
         $this->requiredDate($bill->loading_date, "{$prefix}: FechaEmbarque");
         $this->requiredString($bill->loadingPort?->code, "{$prefix}: CodigoPuertoEmbarque", 5);
-
-        // v4.11: sólo FechaCargaLugarOrigen es opcional para Desconsolidador.
         $this->requiredString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
         $this->requiredString($bill->origin_country_code, "{$prefix}: CodigoPaisLugarOrigen", 3);
-
         $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
         $this->requiredString($bill->dischargePort?->code, "{$prefix}: CodigoPuertoDescarga", 5);
         $this->requiredString($bill->destination_country_code, "{$prefix}: CodigoPaisDestino", 3);
@@ -221,7 +217,7 @@ class SimpleXmlGeneratorDesconsolidado
         }
 
         // AFIP define estos atributos a nivel título. En la app viven en las
-        // líneas; por eso todas las líneas del BL deben contener el mismo valor.
+        // líneas; todas las líneas del BL deben contener el mismo valor.
         $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true);
         $this->singleItemFlag(
             $bill,
@@ -240,14 +236,14 @@ class SimpleXmlGeneratorDesconsolidado
 
         $lineNumbers = [];
         foreach ($bill->shipmentItems as $item) {
-            if ($item->line_number === null || $item->line_number === '') {
-                throw new Exception("{$prefix}: ShipmentItem {$item->id} no tiene NumeroLinea.");
+            if ($item->line_number === null || $item->line_number === '' || !is_numeric($item->line_number)) {
+                throw new Exception("{$prefix}: ShipmentItem {$item->id} no tiene NumeroLinea válido.");
             }
 
             $lineNumber = (int) $item->line_number;
-            if ($lineNumber < 0 || $lineNumber > 999) {
+            if ($lineNumber < 1 || $lineNumber > 999) {
                 throw new Exception(
-                    "{$prefix}: ShipmentItem {$item->id} NumeroLinea fuera de rango Int(3)."
+                    "{$prefix}: ShipmentItem {$item->id} NumeroLinea fuera de rango 1-999."
                 );
             }
             if (in_array($lineNumber, $lineNumbers, true)) {
@@ -256,11 +252,17 @@ class SimpleXmlGeneratorDesconsolidado
             $lineNumbers[] = $lineNumber;
 
             $packagingCode = $item->packaging_code ?: $item->packagingType?->argentina_ws_code;
-            $this->requiredString(
+            $packagingCode = $this->requiredString(
                 $packagingCode,
                 "{$prefix}: ShipmentItem {$item->id} CodigoEmbalaje",
                 2
             );
+
+            if ($packagingCode === '05' && trim((string) $item->container_condition) === '') {
+                throw new Exception(
+                    "{$prefix}: ShipmentItem {$item->id} con CodigoEmbalaje 05 requiere CondicionContenedor."
+                );
+            }
 
             if ($item->container_condition !== null && $item->container_condition !== '') {
                 $this->containerCondition(
@@ -274,10 +276,9 @@ class SimpleXmlGeneratorDesconsolidado
                 "{$prefix}: ShipmentItem {$item->id} CantidadManifestada",
                 9
             );
-            $this->requiredIntegerLike(
+            $this->requiredDecimal(
                 $item->gross_weight_kg,
-                "{$prefix}: ShipmentItem {$item->id} PesoVolumenManifestado",
-                12
+                "{$prefix}: ShipmentItem {$item->id} PesoVolumenManifestado"
             );
             $this->requiredString(
                 $item->item_description,
@@ -417,7 +418,7 @@ class SimpleXmlGeneratorDesconsolidado
             3
         );
 
-        // No se reutiliza discrepancy_notes como Comentario: semántica distinta.
+        // XML oficial: lugar operativo antes de aduana de descarga.
         $writer->writeElement(
             'CodigoLugarOperativoDescarga',
             (string) $bill->operational_discharge_code
@@ -442,14 +443,14 @@ class SimpleXmlGeneratorDesconsolidado
         $writer->startElement('Mercaderias');
 
         foreach ($bill->shipmentItems->sortBy('line_number') as $item) {
-            $packagingCode = $item->packaging_code ?: $item->packagingType?->argentina_ws_code;
+            $packagingCode = (string) ($item->packaging_code ?: $item->packagingType?->argentina_ws_code);
 
             $writer->startElement('LineaMercaderia');
             $writer->writeElement('NumeroLinea', (string) ((int) $item->line_number));
-            $writer->writeElement('CodigoEmbalaje', (string) $packagingCode);
+            $writer->writeElement('CodigoEmbalaje', $packagingCode);
 
             // TipoEmbalaje es opcional y no existe un mapeo AFIP inequívoco en el modelo.
-            if ($item->container_condition !== null && $item->container_condition !== '') {
+            if ($packagingCode === '05') {
                 $writer->writeElement(
                     'CondicionContenedor',
                     strtoupper((string) $item->container_condition)
@@ -459,7 +460,7 @@ class SimpleXmlGeneratorDesconsolidado
             $writer->writeElement('CantidadManifestada', $this->integerString($item->package_quantity));
             $writer->writeElement(
                 'PesoVolumenManifestado',
-                $this->integerString($item->gross_weight_kg)
+                $this->decimalString($item->gross_weight_kg)
             );
             $writer->writeElement('DescripcionMercaderia', (string) $item->item_description);
             $writer->writeElement('NumeroBultos', (string) $item->cargo_marks);
@@ -672,9 +673,9 @@ class SimpleXmlGeneratorDesconsolidado
 
     private function endEnvelope(XMLWriter $writer): void
     {
-        $writer->endElement(); // método
-        $writer->endElement(); // Body
-        $writer->endElement(); // Envelope
+        $writer->endElement();
+        $writer->endElement();
+        $writer->endElement();
         $writer->endDocument();
     }
 
@@ -893,10 +894,8 @@ class SimpleXmlGeneratorDesconsolidado
     private function containerCondition($value, string $label): string
     {
         $code = strtoupper(trim((string) ($value ?? '')));
-        if ($code === '' || mb_strlen($code) !== 1) {
-            throw new Exception(
-                "{$label} debe contener un código CONCTD_DESC de un carácter."
-            );
+        if (!in_array($code, ['H', 'P'], true)) {
+            throw new Exception("{$label} debe ser H o P según la semántica AFIP de la app.");
         }
 
         return $code;
@@ -952,6 +951,30 @@ class SimpleXmlGeneratorDesconsolidado
         }
 
         return $text;
+    }
+
+    private function requiredDecimal($value, string $label): string
+    {
+        if ($value === null || $value === '' || !is_numeric($value)) {
+            throw new Exception("Falta o es inválido el campo obligatorio {$label}.");
+        }
+
+        $number = (float) $value;
+        if ($number < 0) {
+            throw new Exception("{$label} no puede ser negativo.");
+        }
+
+        return $this->decimalString($value);
+    }
+
+    private function decimalString($value): string
+    {
+        if (!is_numeric($value)) {
+            throw new Exception('El valor decimal AFIP debe ser numérico.');
+        }
+
+        $text = number_format((float) $value, 3, '.', '');
+        return rtrim(rtrim($text, '0'), '.');
     }
 
     private function writeOptionalString(
