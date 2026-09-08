@@ -12,10 +12,13 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
- * Servicio AFIP para ATA Desconsolidador Argentina.
+ * Servicio AFIP para ATA Desconsolidador.
  *
- * La validación contractual final se realiza en el generador sobre los BL
- * seleccionados. Esta clase controla ciclo de vida, SOAP, persistencia y respuesta.
+ * Reglas principales:
+ * - una única IdTransaccion por llamada (máximo 20 caracteres);
+ * - XML completo + SOAP 1.1 real;
+ * - persistencia de request, response, errores y warnings;
+ * - ciclo de vida por BillOfLading, derivado de las transacciones exitosas.
  */
 class ArgentinaDeconsolidatedService extends BaseWebserviceService
 {
@@ -70,8 +73,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
     }
 
     /**
-     * Precheck de pantalla. No replica toda la norma: sólo requisitos comunes
-     * a las operaciones y señales útiles. El generador valida cada operación.
+     * Validación rápida para la pantalla. La validación contractual completa
+     * ocurre dentro del generador inmediatamente antes de solicitar el TA.
      */
     protected function validateSpecificData(Voyage $voyage): array
     {
@@ -94,7 +97,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         $bills = $voyage->billsOfLading()
             ->whereNotNull('master_bill_number')
-            ->with(['loadingPort', 'shipmentItems'])
+            ->with(['shipmentItems'])
             ->get();
 
         if ($bills->isEmpty()) {
@@ -102,22 +105,11 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         }
 
         foreach ($bills as $bill) {
-            $label = $bill->bill_number ?: "ID {$bill->id}";
-
             if (empty($bill->bill_number)) {
                 $errors[] = "BillOfLading {$bill->id}: falta bill_number.";
             }
-            if (empty($bill->destination_country_code)) {
-                $warnings[] = "BL {$label}: falta país de destino; Registrar/Rectificar lo requieren.";
-            }
-            if (empty($bill->cargo_marks)) {
-                $warnings[] = "BL {$label}: faltan marcas de bultos; Registrar/Rectificar las requieren.";
-            }
             if ($bill->shipmentItems->isEmpty()) {
-                $warnings[] = "BL {$label}: no tiene líneas de mercadería; Registrar/Rectificar las requieren.";
-            }
-            if (!$bill->loadingPort || empty($bill->loadingPort->code)) {
-                $warnings[] = "BL {$label}: falta puerto de embarque; Eliminar lo requiere.";
+                $errors[] = "BL {$bill->bill_number}: no tiene líneas de mercadería.";
             }
         }
 
@@ -143,19 +135,42 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
     public function registrarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod($voyage, 'registrar', 'RegistrarTitulosDesconsolidador', $billIds);
+        return $this->executeMethod(
+            $voyage,
+            'registrar',
+            'RegistrarTitulosDesconsolidador',
+            $billIds
+        );
     }
 
     public function rectificarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod($voyage, 'rectificar', 'RectificarTitulosDesconsolidador', $billIds);
+        return $this->executeMethod(
+            $voyage,
+            'rectificar',
+            'RectificarTitulosDesconsolidador',
+            $billIds
+        );
     }
 
     public function eliminarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod($voyage, 'eliminar', 'EliminarTitulosDesconsolidador', $billIds);
+        return $this->executeMethod(
+            $voyage,
+            'eliminar',
+            'EliminarTitulosDesconsolidador',
+            $billIds
+        );
     }
 
+    /**
+     * Estado aduanero derivado por BL a partir del historial exitoso.
+     *
+     * Valores posibles:
+     * - null: nunca registrado (o sin evidencia nueva canónica);
+     * - registrar / rectificar: título actualmente registrado;
+     * - eliminar: título eliminado en la última operación exitosa.
+     */
     public function billLifecycleStates(Voyage $voyage, array $billIds = []): array
     {
         $this->assertVoyageOwnership($voyage);
@@ -186,7 +201,11 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             );
             $this->currentTransactionId = $transaction->id;
 
-            $resolvedBillIds = $bills->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+            $resolvedBillIds = $bills->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+
             $xml = $this->generateXml(
                 $voyage,
                 $methodType,
@@ -200,12 +219,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 'sent_at' => now(),
             ]);
 
-            $result = $this->sendSoapRequest(
-                $transaction,
-                $xml,
-                $soapMethod,
-                $methodType
-            );
+            $result = $this->sendSoapRequest($transaction, $xml, $soapMethod, $methodType);
 
             if ($result['success']) {
                 $this->persistSuccess($transaction, $voyage, $methodType, $bills, $result);
@@ -215,8 +229,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                     'transaction_id' => $transaction->id,
                     'client_transaction_id' => $transactionId,
                     'identifier' => $result['identifier'],
-                    'bill_ids' => $resolvedBillIds,
                     'warnings' => $result['details'],
+                    'bill_ids' => $resolvedBillIds,
                     'message' => "{$soapMethod} aceptado por AFIP.",
                 ];
             }
@@ -282,42 +296,39 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         Collection $bills
     ): void {
         $states = $this->resolveBillLifecycleStates($voyage, $bills);
-        $invalid = [];
 
+        $invalid = [];
         foreach ($bills as $bill) {
             $state = $states[(int) $bill->id] ?? null;
             $isActive = in_array($state, ['registrar', 'rectificar'], true);
 
             if ($methodType === 'registrar' && $isActive) {
-                $invalid[] = "{$bill->bill_number}: ya está registrado (última operación {$state})";
-                continue;
-            }
-
-            if (in_array($methodType, ['rectificar', 'eliminar'], true) && !$isActive) {
-                $reason = $state === 'eliminar'
-                    ? 'fue eliminado'
-                    : 'no tiene un registro exitoso vigente';
-                $invalid[] = "{$bill->bill_number}: {$reason}";
+                $invalid[] = $bill->bill_number . ' ya está registrado';
+            } elseif (in_array($methodType, ['rectificar', 'eliminar'], true) && !$isActive) {
+                $invalid[] = $bill->bill_number . ' no tiene un registro vigente';
             }
         }
 
         if ($invalid !== []) {
             throw new Exception(
-                'Secuencia inválida para ' . $methodType . ': ' . implode(' | ', $invalid)
+                'Secuencia inválida para ' . $methodType . ': ' . implode('; ', $invalid) . '.'
             );
         }
     }
 
-    private function resolveBillLifecycleStates(Voyage $voyage, Collection $bills): array
-    {
-        $wantedIds = $bills
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values()
+    private function resolveBillLifecycleStates(
+        Voyage $voyage,
+        Collection $bills
+    ): array {
+        $states = $bills
+            ->mapWithKeys(fn (BillOfLading $bill) => [(int) $bill->id => null])
             ->all();
 
-        $states = array_fill_keys($wantedIds, null);
-        $pending = array_fill_keys($wantedIds, true);
+        if ($bills->isEmpty()) {
+            return $states;
+        }
+
+        $targetIds = $bills->pluck('id')->map(fn ($id) => (int) $id)->all();
 
         $transactions = WebserviceTransaction::query()
             ->where('company_id', $this->company->id)
@@ -325,31 +336,23 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ->where('webservice_type', 'desconsolidado')
             ->where('country', 'AR')
             ->where('status', 'success')
-            ->orderByDesc('id')
+            ->orderBy('id')
             ->get(['id', 'additional_metadata']);
 
         foreach ($transactions as $transaction) {
             $metadata = $transaction->additional_metadata ?? [];
             $method = $metadata['method'] ?? null;
-            $transactionBillIds = collect($metadata['bill_ids'] ?? [])
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn (int $id) => $id > 0)
-                ->unique()
-                ->all();
-
             if (!in_array($method, ['registrar', 'rectificar', 'eliminar'], true)) {
                 continue;
             }
 
-            foreach ($transactionBillIds as $billId) {
-                if (isset($pending[$billId])) {
-                    $states[$billId] = $method;
-                    unset($pending[$billId]);
-                }
-            }
+            $transactionBillIds = collect($metadata['bill_ids'] ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => in_array($id, $targetIds, true))
+                ->unique();
 
-            if ($pending === []) {
-                break;
+            foreach ($transactionBillIds as $billId) {
+                $states[$billId] = $method;
             }
         }
 
@@ -366,7 +369,6 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         }
 
         $bills = $query->orderBy('bills_of_lading.id')->get();
-
         if ($bills->isEmpty()) {
             throw new Exception('No hay títulos desconsolidados para la operación solicitada.');
         }
@@ -546,8 +548,6 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ];
         }
 
-        // El manual contempla advertencias sin detener el proceso. La presencia
-        // de IdentificadorViaje es la evidencia de aceptación de la operación.
         if ($identifier !== '') {
             return [
                 'success' => true,
