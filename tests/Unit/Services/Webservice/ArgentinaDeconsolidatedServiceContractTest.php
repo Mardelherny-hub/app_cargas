@@ -5,6 +5,7 @@ namespace Tests\Unit\Services\Webservice;
 use App\Models\BillOfLading;
 use App\Models\Company;
 use App\Models\Container;
+use App\Models\ShipmentItem;
 use App\Models\User;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
 use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
@@ -12,6 +13,7 @@ use Exception;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
 use Tests\TestCase;
+use XMLWriter;
 
 class ArgentinaDeconsolidatedServiceContractTest extends TestCase
 {
@@ -173,19 +175,25 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     }
 
     #[Test]
-    public function optional_container_data_does_not_become_artificially_mandatory(): void
+    public function csc_expiry_satisfies_the_container_document_requirement(): void
     {
-        $container = new Container();
-        $container->id = 7;
-        $container->container_number = 'MSCU1234567';
-        $container->container_condition = 'H';
-        $container->operator_client_id = null;
-        $container->tare_weight_kg = null;
-        $container->current_gross_weight_kg = null;
+        $container = $this->container();
         $container->csc_expiry_date = '2030-01-01';
 
-        $bill = new BillOfLading();
-        $bill->id = 9;
+        $bill = $this->billWithContainer($container, ['H']);
+
+        $this->generatorPrivate('validateContainer', [$container, $bill]);
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function acep_satisfies_the_container_document_requirement_without_csc_expiry(): void
+    {
+        $container = $this->container();
+        $container->csc_expiry_date = null;
+        $container->acep = 'ACEP2030ABC123';
+
+        $bill = $this->billWithContainer($container, ['P']);
 
         $this->generatorPrivate('validateContainer', [$container, $bill]);
         $this->assertTrue(true);
@@ -194,31 +202,72 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     #[Test]
     public function generic_expiry_date_is_not_used_as_an_acep_or_csc_expiry_substitute(): void
     {
-        $container = new Container();
-        $container->id = 7;
-        $container->container_number = 'MSCU1234567';
-        $container->container_condition = 'P';
-        $container->operator_client_id = null;
-        $container->tare_weight_kg = null;
-        $container->current_gross_weight_kg = null;
+        $container = $this->container();
         $container->expiry_date = '2030-01-01';
         $container->csc_expiry_date = null;
+        $container->acep = null;
 
-        $bill = new BillOfLading();
-        $bill->id = 9;
+        $bill = $this->billWithContainer($container, ['P']);
 
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('app no tiene un campo ACEP');
+        $this->expectExceptionMessage('debe informar FechaVencimientoContenedor o ACEP');
         $this->generatorPrivate('validateContainer', [$container, $bill]);
     }
 
     #[Test]
-    public function line_and_container_integer_fields_are_not_silently_rounded(): void
+    public function container_condition_for_desc_comes_from_bill_items_not_global_container_default(): void
     {
-        $this->assertSame('3700', $this->generatorPrivate('integerString', [3700, 'tara', 10]));
+        $container = $this->container();
+        $container->container_condition = 'P';
+        $container->acep = 'ABC123';
+
+        $bill = $this->billWithContainer($container, ['H']);
+
+        $condition = $this->generatorPrivate('containerConditionForBill', [$container, $bill]);
+
+        $this->assertSame('H', $condition);
+    }
+
+    #[Test]
+    public function conflicting_item_conditions_for_the_same_container_are_rejected(): void
+    {
+        $container = $this->container();
+        $container->acep = 'ABC123';
+        $bill = $this->billWithContainer($container, ['H', 'P']);
 
         $this->expectException(Exception::class);
-        $this->generatorPrivate('integerString', [3700.5, 'tara', 10]);
+        $this->expectExceptionMessage('condiciones H/P distintas');
+        $this->generatorPrivate('containerConditionForBill', [$container, $bill]);
+    }
+
+    #[Test]
+    public function operational_default_weights_are_preserved_in_model_but_not_serialized_by_desc(): void
+    {
+        $container = $this->container();
+        $container->container_condition = 'P';
+        $container->tare_weight_kg = 2200;
+        $container->current_gross_weight_kg = 30000;
+        $container->acep = 'ACEP123';
+
+        $bill = $this->billWithContainer($container, ['H']);
+        $xml = $this->writeContainersXml($bill);
+
+        $this->assertStringContainsString('<IdentificadorContenedor>MSCU1234567</IdentificadorContenedor>', $xml);
+        $this->assertStringContainsString('<CondicionContenedor>H</CondicionContenedor>', $xml);
+        $this->assertStringContainsString('<Acep>ACEP123</Acep>', $xml);
+        $this->assertStringNotContainsString('<Tara>', $xml);
+        $this->assertStringNotContainsString('<PesoBruto>', $xml);
+        $this->assertSame(2200, $container->tare_weight_kg);
+        $this->assertSame(30000, $container->current_gross_weight_kg);
+    }
+
+    #[Test]
+    public function line_integer_fields_are_not_silently_rounded(): void
+    {
+        $this->assertSame('3700', $this->generatorPrivate('integerString', [3700, 'cantidad', 10]));
+
+        $this->expectException(Exception::class);
+        $this->generatorPrivate('integerString', [3700.5, 'cantidad', 10]);
     }
 
     private function serviceConfig(string $environment): array
@@ -258,6 +307,58 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
         return $method->invokeArgs($generator, $arguments);
     }
 
+    private function container(): Container
+    {
+        $container = new Container();
+        $container->id = 7;
+        $container->container_number = 'MSCU1234567';
+        $container->operator_client_id = null;
+        $container->argentina_container_code = null;
+        $container->shipper_seal = null;
+        $container->tare_weight_kg = null;
+        $container->current_gross_weight_kg = null;
+        $container->setRelation('containerType', null);
+
+        return $container;
+    }
+
+    private function billWithContainer(Container $container, array $conditions): BillOfLading
+    {
+        $bill = new BillOfLading();
+        $bill->id = 9;
+        $bill->discharge_customs_code = null;
+        $bill->operational_discharge_code = null;
+
+        $items = collect();
+        foreach ($conditions as $index => $condition) {
+            $item = new ShipmentItem();
+            $item->id = 100 + $index;
+            $item->container_condition = $condition;
+            $item->setRelation('containers', collect([$container]));
+            $items->push($item);
+        }
+
+        $bill->setRelation('shipmentItems', $items);
+
+        return $bill;
+    }
+
+    private function writeContainersXml(BillOfLading $bill): string
+    {
+        $reflection = new ReflectionClass(SimpleXmlGeneratorDesconsolidado::class);
+        $generator = $reflection->newInstanceWithoutConstructor();
+        $method = $reflection->getMethod('writeContainers');
+        $method->setAccessible(true);
+
+        $writer = new XMLWriter();
+        $writer->openMemory();
+        $writer->startDocument('1.0', 'UTF-8');
+        $method->invoke($generator, $writer, $bill);
+        $writer->endDocument();
+
+        return $writer->outputMemory();
+    }
+
     private function soapResponse(string $method, string $resultBody): string
     {
         return '<?xml version="1.0" encoding="UTF-8"?>'
@@ -267,7 +368,6 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
             . '<' . $method . 'Result>'
             . $resultBody
             . '</' . $method . 'Result>'
-            . '</' . $method . 'Response>'
             . '</soap:Body></soap:Envelope>';
     }
 }
