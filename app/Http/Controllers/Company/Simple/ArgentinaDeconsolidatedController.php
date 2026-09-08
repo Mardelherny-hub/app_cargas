@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Company\Simple;
 
 use App\Http\Controllers\Controller;
 use App\Models\Container;
+use App\Models\ShipmentItem;
 use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
 use App\Traits\UserHelper;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Throwable;
@@ -91,9 +93,14 @@ class ArgentinaDeconsolidatedController extends Controller
         $validated = $request->validate([
             'csc_expiry_date' => 'nullable|date',
             'acep' => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
+            'item_conditions' => 'required|array|min:1',
+            'item_conditions.*' => 'required|in:H,P',
         ], [
             'acep.regex' => 'ACEP sólo puede contener letras y números.',
             'acep.max' => 'ACEP no puede superar 20 caracteres.',
+            'item_conditions.required' => 'Debe informar H/P para las líneas vinculadas al contenedor.',
+            'item_conditions.*.required' => 'Debe informar H/P para cada línea vinculada al contenedor.',
+            'item_conditions.*.in' => 'La condición aduanera debe ser H o P.',
         ]);
 
         $expiry = $validated['csc_expiry_date'] ?? null;
@@ -111,15 +118,50 @@ class ArgentinaDeconsolidatedController extends Controller
                 ]);
         }
 
-        // Sólo se actualizan los dos datos documentales específicos de ATA-DESC.
-        // No se tocan pesos, estado operativo, tarifas, precintos ni otros datos
-        // que las empresas utilizan para su gestión interna.
-        $container->update([
-            'csc_expiry_date' => $expiry,
-            'acep' => $acep,
-            'last_updated_date' => now(),
-            'last_updated_by_user_id' => $this->getCurrentUser()?->id,
-        ]);
+        $submittedItemIds = collect(array_keys($validated['item_conditions']))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $allowedItems = ShipmentItem::query()
+            ->whereIn('id', $submittedItemIds->all())
+            ->whereHas('containers', fn ($query) => $query->where('containers.id', $container->id))
+            ->whereHas('billOfLading', function ($query) use ($voyage) {
+                $query->where('shipment_id', '!=', null)
+                    ->whereNotNull('master_bill_number')
+                    ->whereHas('shipment', fn ($shipmentQuery) => $shipmentQuery->where('voyage_id', $voyage->id));
+            })
+            ->get()
+            ->keyBy('id');
+
+        if ($allowedItems->count() !== $submittedItemIds->count()) {
+            abort(404, 'Una o más líneas no pertenecen a este contenedor/viaje desconsolidado.');
+        }
+
+        DB::transaction(function () use ($container, $expiry, $acep, $validated, $allowedItems) {
+            // Sólo datos documentales del contenedor específicos de ATA-DESC.
+            $container->update([
+                'csc_expiry_date' => $expiry,
+                'acep' => $acep,
+                'last_updated_date' => now(),
+                'last_updated_by_user_id' => $this->getCurrentUser()?->id,
+            ]);
+
+            // H/P pertenece al contexto de cada línea/BL y no reemplaza el estado
+            // físico/operativo L/V/D/S/R del contenedor.
+            foreach ($allowedItems as $item) {
+                $condition = $validated['item_conditions'][(string) $item->id]
+                    ?? $validated['item_conditions'][$item->id]
+                    ?? null;
+
+                $item->update([
+                    'container_condition' => $condition,
+                    'last_updated_date' => now(),
+                    'last_updated_by_user_id' => $this->getCurrentUser()?->id,
+                ]);
+            }
+        });
 
         return redirect()
             ->route('company.simple.desconsolidado.show', $voyage)
@@ -252,22 +294,19 @@ class ArgentinaDeconsolidatedController extends Controller
                 foreach ($item->containers as $container) {
                     $existing = $rows->get($container->id, [
                         'container' => $container,
-                        'bill_numbers' => [],
-                        'line_numbers' => [],
-                        'item_conditions' => [],
+                        'items' => [],
                     ]);
 
-                    $existing['bill_numbers'][] = (string) $bill->bill_number;
-                    $existing['line_numbers'][] = (string) $item->line_number;
+                    $existing['items'][$item->id] = [
+                        'id' => $item->id,
+                        'bill_number' => (string) $bill->bill_number,
+                        'line_number' => (string) $item->line_number,
+                        'condition' => in_array($item->container_condition, ['H', 'P'], true)
+                            ? $item->container_condition
+                            : null,
+                    ];
 
-                    if (in_array($item->container_condition, ['H', 'P'], true)) {
-                        $existing['item_conditions'][] = $item->container_condition;
-                    }
-
-                    $existing['bill_numbers'] = array_values(array_unique($existing['bill_numbers']));
-                    $existing['line_numbers'] = array_values(array_unique($existing['line_numbers']));
-                    $existing['item_conditions'] = array_values(array_unique($existing['item_conditions']));
-
+                    $existing['items'] = array_values($existing['items']);
                     $rows->put($container->id, $existing);
                 }
             }
