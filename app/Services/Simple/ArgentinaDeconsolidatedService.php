@@ -502,13 +502,9 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             return $this->errorResult('La respuesta de AFIP no es XML válido.');
         }
 
-        $xpath = new \DOMXPath($dom);
-        $fault = $xpath->query('//*[local-name()="Fault"]')->item(0);
+        $fault = $this->firstElementByLocalName($dom, 'Fault');
         if ($fault) {
-            $description = trim((string) (
-                $xpath->query('.//*[local-name()="faultstring"]', $fault)->item(0)?->textContent
-                ?? 'SOAP Fault'
-            ));
+            $description = $this->elementText($fault, 'faultstring') ?: 'SOAP Fault';
 
             return $this->errorResult($description, [[
                 'source' => 'soap_fault',
@@ -518,33 +514,26 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ]]);
         }
 
-        $result = $xpath
-            ->query('//*[local-name()="' . $soapMethod . 'Result"]')
-            ->item(0);
-
+        $resultName = $soapMethod . 'Result';
+        $result = $this->firstElementByLocalName($dom, $resultName);
         if (!$result) {
-            return $this->errorResult("AFIP no devolvió {$soapMethod}Result.");
+            return $this->errorResult("AFIP no devolvió {$resultName}.");
         }
 
-        $identifier = trim((string) (
-            $xpath->query('.//*[local-name()="IdentificadorViaje"]', $result)
-                ->item(0)?->textContent
-            ?? ''
-        ));
-
+        $identifier = $this->elementText($result, 'IdentificadorViaje');
         $details = [];
-        foreach ($xpath->query('.//*[local-name()="DetalleError"]', $result) as $node) {
+
+        $detailNodes = $result->getElementsByTagNameNS('*', 'DetalleError');
+        foreach ($detailNodes as $node) {
+            if (!$node instanceof \DOMElement) {
+                continue;
+            }
+
             $details[] = [
                 'source' => 'afip',
-                'code' => trim((string) (
-                    $xpath->query('./*[local-name()="Codigo"]', $node)->item(0)?->textContent ?? ''
-                )),
-                'description' => trim((string) (
-                    $xpath->query('./*[local-name()="Descripcion"]', $node)->item(0)?->textContent ?? ''
-                )),
-                'additional' => trim((string) (
-                    $xpath->query('./*[local-name()="DescripcionAdicional"]', $node)->item(0)?->textContent ?? ''
-                )),
+                'code' => $this->elementText($node, 'Codigo'),
+                'description' => $this->elementText($node, 'Descripcion'),
+                'additional' => $this->elementText($node, 'DescripcionAdicional'),
             ];
         }
 
@@ -570,6 +559,22 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             $message ?: 'AFIP no devolvió IdentificadorViaje ni detalle de error.',
             $details
         );
+    }
+
+    private function firstElementByLocalName(
+        \DOMDocument|\DOMElement $context,
+        string $localName
+    ): ?\DOMElement {
+        $nodes = $context->getElementsByTagNameNS('*', $localName);
+        $node = $nodes->item(0);
+
+        return $node instanceof \DOMElement ? $node : null;
+    }
+
+    private function elementText(\DOMElement $context, string $localName): string
+    {
+        $element = $this->firstElementByLocalName($context, $localName);
+        return $element ? trim((string) $element->textContent) : '';
     }
 
     private function errorResult(string $message, array $details = []): array
