@@ -70,6 +70,7 @@ class Container extends Model
         'webservice_data',
         'csc_certificate',
         'csc_expiry_date',
+        'acep',
         'insurance_certificate',
         'certifications',
         'active',
@@ -92,6 +93,7 @@ class Container extends Model
         'hazmat_info' => 'array',
         'additional_seals' => 'array',
         'container_condition' => 'string',
+        'csc_expiry_date' => 'date',
     ];
 
     public function billOfLading(): BelongsTo
