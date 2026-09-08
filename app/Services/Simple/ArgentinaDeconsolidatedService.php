@@ -9,18 +9,13 @@ use App\Models\WebserviceTransaction;
 use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
 use Exception;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Circuito AFIP ATA Desconsolidador sobre wgesinformacionanticipada.
+ * Servicio real AFIP para ATA Desconsolidador.
  *
- * Operaciones soportadas:
- * - RegistrarTitulosDesconsolidador
- * - RectificarTitulosDesconsolidador
- * - EliminarTitulosDesconsolidador
- *
- * La transacción persistida y el IdTransaccion enviado a AFIP son el mismo.
+ * Mantiene una única transacción por llamada y usa el mismo IdTransaccion
+ * en BD y en el XML transmitido a AFIP.
  */
 class ArgentinaDeconsolidatedService extends BaseWebserviceService
 {
@@ -29,8 +24,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
     protected function getWebserviceConfig(): array
     {
         $environment = $this->company->ws_environment ?? 'testing';
-
-        $urls = [
+        $endpoints = [
             'testing' => [
                 'endpoint' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
                 'wsdl' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx?wsdl',
@@ -41,7 +35,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ],
         ];
 
-        if (!isset($urls[$environment])) {
+        if (!isset($endpoints[$environment])) {
             throw new Exception("Ambiente AFIP no válido para desconsolidados: {$environment}");
         }
 
@@ -49,8 +43,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'webservice_type' => 'desconsolidado',
             'country' => 'AR',
             'environment' => $environment,
-            'webservice_url' => $urls[$environment]['endpoint'],
-            'wsdl_url' => $urls[$environment]['wsdl'],
+            'webservice_url' => $endpoints[$environment]['endpoint'],
+            'wsdl_url' => $endpoints[$environment]['wsdl'],
             'soap_action_registrar' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarTitulosDesconsolidador',
             'soap_action_rectificar' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RectificarTitulosDesconsolidador',
             'soap_action_eliminar' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/EliminarTitulosDesconsolidador',
@@ -140,41 +134,20 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
     public function registrarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod(
-            $voyage,
-            'registrar',
-            'RegistrarTitulosDesconsolidador',
-            $billIds
-        );
+        return $this->executeMethod($voyage, 'registrar', 'RegistrarTitulosDesconsolidador', $billIds);
     }
 
     public function rectificarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        return $this->executeMethod(
-            $voyage,
-            'rectificar',
-            'RectificarTitulosDesconsolidador',
-            $billIds
-        );
+        return $this->executeMethod($voyage, 'rectificar', 'RectificarTitulosDesconsolidador', $billIds);
     }
 
     public function eliminarTitulos(Voyage $voyage, array $billIds = []): array
     {
-        if ($billIds === []) {
-            return [
-                'success' => false,
-                'error' => 'Debe seleccionar explícitamente al menos un conocimiento para eliminar.',
-                'error_message' => 'Debe seleccionar explícitamente al menos un conocimiento para eliminar.',
-                'transaction_id' => null,
-            ];
-        }
-
-        return $this->executeMethod(
-            $voyage,
-            'eliminar',
-            'EliminarTitulosDesconsolidador',
-            $billIds
-        );
+        // La pantalla vigente representa una eliminación total del conjunto
+        // desconsolidado del viaje. Si no llegan IDs, ese conjunto explícito es
+        // el conjunto de BLs con master_bill_number que muestra la pantalla.
+        return $this->executeMethod($voyage, 'eliminar', 'EliminarTitulosDesconsolidador', $billIds);
     }
 
     private function executeMethod(
@@ -188,48 +161,48 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         try {
             $this->assertVoyageOwnership($voyage);
-            $selectedBills = $this->selectedBills($voyage, $billIds);
+            $this->assertOperationSequence($voyage, $methodType);
+            $bills = $this->selectedBills($voyage, $billIds);
 
             $transaction = $this->createDeconsolidatedTransaction(
                 $voyage,
                 $transactionId,
                 $methodType,
-                $selectedBills
+                $bills
             );
             $this->currentTransactionId = $transaction->id;
 
             $xml = $this->generateXml($voyage, $methodType, $transactionId, $billIds);
-
             $transaction->update([
                 'request_xml' => $xml,
                 'status' => 'sending',
                 'sent_at' => now(),
             ]);
 
-            $soapResult = $this->sendSoapRequest($transaction, $xml, $soapMethod, $methodType);
+            $result = $this->sendSoapRequest($transaction, $xml, $soapMethod, $methodType);
 
-            if ($soapResult['success']) {
-                $this->persistSuccess($transaction, $voyage, $methodType, $selectedBills, $soapResult);
+            if ($result['success']) {
+                $this->persistSuccess($transaction, $voyage, $methodType, $bills, $result);
 
                 return [
                     'success' => true,
                     'transaction_id' => $transaction->id,
                     'client_transaction_id' => $transactionId,
-                    'identifier' => $soapResult['identifier'],
-                    'warnings' => $soapResult['details'],
+                    'identifier' => $result['identifier'],
+                    'warnings' => $result['details'],
                     'message' => "{$soapMethod} aceptado por AFIP.",
                 ];
             }
 
-            $this->persistError($transaction, $voyage, $methodType, $soapResult);
+            $this->persistError($transaction, $voyage, $methodType, $result);
 
             return [
                 'success' => false,
                 'transaction_id' => $transaction->id,
                 'client_transaction_id' => $transactionId,
-                'error' => $soapResult['error_message'],
-                'error_message' => $soapResult['error_message'],
-                'error_details' => $soapResult['details'],
+                'error' => $result['error_message'],
+                'error_message' => $result['error_message'],
+                'error_details' => $result['details'],
             ];
         } catch (Exception $e) {
             if ($transaction) {
@@ -242,7 +215,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                     ],
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'error', [
+                $this->updateStatus($voyage, 'error', [
                     'last_transaction_id' => $transaction->transaction_id,
                     'last_error_message' => $e->getMessage(),
                     'can_send' => true,
@@ -274,21 +247,38 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         }
     }
 
+    private function assertOperationSequence(Voyage $voyage, string $methodType): void
+    {
+        if ($methodType === 'registrar') {
+            return;
+        }
+
+        $registered = WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('voyage_id', $voyage->id)
+            ->where('webservice_type', 'desconsolidado')
+            ->where('status', 'success')
+            ->whereJsonContains('additional_metadata->method', 'registrar')
+            ->exists();
+
+        if (!$registered) {
+            throw new Exception('Primero debe existir un RegistrarTitulosDesconsolidador exitoso para este viaje.');
+        }
+    }
+
     private function selectedBills(Voyage $voyage, array $billIds): Collection
     {
+        $ids = $this->normalizeBillIds($billIds);
         $query = $voyage->billsOfLading()->whereNotNull('master_bill_number');
-
-        if ($billIds !== []) {
-            $query->whereIn('bills_of_lading.id', $billIds);
+        if ($ids !== []) {
+            $query->whereIn('bills_of_lading.id', $ids);
         }
 
         $bills = $query->orderBy('bills_of_lading.id')->get();
-
         if ($bills->isEmpty()) {
             throw new Exception('No hay títulos desconsolidados para la operación solicitada.');
         }
-
-        if ($billIds !== [] && $bills->count() !== count($billIds)) {
+        if ($ids !== [] && $bills->count() !== count($ids)) {
             throw new Exception('Uno o más conocimientos seleccionados no pertenecen al viaje o no son desconsolidados.');
         }
 
@@ -365,23 +355,17 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 SOAP_1_1
             );
 
-            $responseTime = (int) round((microtime(true) - $start) * 1000);
-
             $transaction->update([
-                'request_xml' => $xml,
                 'response_xml' => $responseXml,
-                'response_time_ms' => $responseTime,
+                'response_time_ms' => (int) round((microtime(true) - $start) * 1000),
                 'response_at' => now(),
             ]);
 
             return $this->parseAfipResponse($responseXml, $soapMethod);
         } catch (\SoapFault $e) {
-            $responseTime = (int) round((microtime(true) - $start) * 1000);
-            $lastResponse = (string) ($client->__getLastResponse() ?: $responseXml);
-
             $transaction->update([
-                'response_xml' => $lastResponse ?: null,
-                'response_time_ms' => $responseTime,
+                'response_xml' => $client->__getLastResponse() ?: null,
+                'response_time_ms' => (int) round((microtime(true) - $start) * 1000),
                 'response_at' => now(),
             ]);
 
@@ -401,14 +385,6 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
     private function createDeconsolidatedSoapClient(): \SoapClient
     {
-        $context = stream_context_create([
-            'ssl' => [
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-                'allow_self_signed' => true,
-            ],
-        ]);
-
         return new \SoapClient($this->config['wsdl_url'], [
             'trace' => true,
             'exceptions' => true,
@@ -416,72 +392,50 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'encoding' => 'UTF-8',
             'cache_wsdl' => WSDL_CACHE_NONE,
             'connection_timeout' => $this->config['timeout_seconds'],
-            'stream_context' => $context,
         ]);
     }
 
     private function parseAfipResponse(string $responseXml, string $soapMethod): array
     {
         if (trim($responseXml) === '') {
-            return [
-                'success' => false,
-                'identifier' => null,
-                'details' => [],
-                'error_message' => 'AFIP devolvió una respuesta vacía.',
-            ];
+            return $this->errorResult('AFIP devolvió una respuesta vacía.');
         }
 
         $dom = new \DOMDocument();
         if (!@$dom->loadXML($responseXml)) {
-            return [
-                'success' => false,
-                'identifier' => null,
-                'details' => [],
-                'error_message' => 'La respuesta de AFIP no es XML válido.',
-            ];
+            return $this->errorResult('La respuesta de AFIP no es XML válido.');
         }
 
         $xpath = new \DOMXPath($dom);
         $fault = $xpath->query('//*[local-name()="Fault"]')->item(0);
         if ($fault) {
-            $faultString = $xpath->query('.//*[local-name()="faultstring"]', $fault)->item(0)?->textContent
-                ?: 'SOAP Fault sin descripción';
-
-            return [
-                'success' => false,
-                'identifier' => null,
-                'details' => [[
-                    'source' => 'soap_fault',
-                    'code' => null,
-                    'description' => trim($faultString),
-                    'additional' => null,
-                ]],
-                'error_message' => trim($faultString),
-            ];
+            $description = trim((string) ($xpath->query('.//*[local-name()="faultstring"]', $fault)->item(0)?->textContent ?? 'SOAP Fault'));
+            return $this->errorResult($description, [[
+                'source' => 'soap_fault',
+                'code' => null,
+                'description' => $description,
+                'additional' => null,
+            ]]);
         }
 
         $result = $xpath->query('//*[local-name()="' . $soapMethod . 'Result"]')->item(0);
         if (!$result) {
-            return [
-                'success' => false,
-                'identifier' => null,
-                'details' => [],
-                'error_message' => "AFIP no devolvió {$soapMethod}Result.",
-            ];
+            return $this->errorResult("AFIP no devolvió {$soapMethod}Result.");
         }
 
         $identifier = trim((string) ($xpath->query('.//*[local-name()="IdentificadorViaje"]', $result)->item(0)?->textContent ?? ''));
         $details = [];
-
-        foreach ($xpath->query('.//*[local-name()="DetalleError"]', $result) as $errorNode) {
+        foreach ($xpath->query('.//*[local-name()="DetalleError"]', $result) as $node) {
             $details[] = [
                 'source' => 'afip',
-                'code' => trim((string) ($xpath->query('./*[local-name()="Codigo"]', $errorNode)->item(0)?->textContent ?? '')),
-                'description' => trim((string) ($xpath->query('./*[local-name()="Descripcion"]', $errorNode)->item(0)?->textContent ?? '')),
-                'additional' => trim((string) ($xpath->query('./*[local-name()="DescripcionAdicional"]', $errorNode)->item(0)?->textContent ?? '')),
+                'code' => trim((string) ($xpath->query('./*[local-name()="Codigo"]', $node)->item(0)?->textContent ?? '')),
+                'description' => trim((string) ($xpath->query('./*[local-name()="Descripcion"]', $node)->item(0)?->textContent ?? '')),
+                'additional' => trim((string) ($xpath->query('./*[local-name()="DescripcionAdicional"]', $node)->item(0)?->textContent ?? '')),
             ];
         }
 
+        // El manual permite warnings dentro de ListaErrores sin detener la operación.
+        // La evidencia inequívoca de aceptación es IdentificadorViaje.
         if ($identifier !== '') {
             return [
                 'success' => true,
@@ -491,25 +445,25 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ];
         }
 
-        $messages = collect($details)
-            ->map(function (array $detail): string {
-                $parts = array_filter([
-                    $detail['code'] ? "AFIP {$detail['code']}" : null,
-                    $detail['description'] ?: null,
-                    $detail['additional'] ?: null,
-                ]);
-                return implode(' - ', $parts);
-            })
+        $message = collect($details)
+            ->map(fn (array $d) => implode(' - ', array_filter([
+                $d['code'] ? "AFIP {$d['code']}" : null,
+                $d['description'] ?: null,
+                $d['additional'] ?: null,
+            ])))
             ->filter()
-            ->values();
+            ->implode(' | ');
 
+        return $this->errorResult($message ?: 'AFIP no devolvió IdentificadorViaje ni detalle de error.', $details);
+    }
+
+    private function errorResult(string $message, array $details = []): array
+    {
         return [
             'success' => false,
             'identifier' => null,
             'details' => $details,
-            'error_message' => $messages->isNotEmpty()
-                ? $messages->implode(' | ')
-                : 'AFIP no devolvió IdentificadorViaje ni detalle de error.',
+            'error_message' => $message,
         ];
     }
 
@@ -518,18 +472,18 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         Voyage $voyage,
         string $methodType,
         Collection $bills,
-        array $soapResult
+        array $result
     ): void {
         $transaction->update([
             'status' => 'success',
-            'external_reference' => $soapResult['identifier'],
-            'confirmation_number' => $soapResult['identifier'],
+            'external_reference' => $result['identifier'],
+            'confirmation_number' => $result['identifier'],
             'success_data' => [
                 'method' => $methodType,
-                'identifier_viaje' => $soapResult['identifier'],
+                'identifier_viaje' => $result['identifier'],
                 'bill_ids' => $bills->pluck('id')->values()->all(),
                 'bill_numbers' => $bills->pluck('bill_number')->values()->all(),
-                'warnings' => $soapResult['details'],
+                'warnings' => $result['details'],
             ],
             'error_code' => null,
             'error_message' => null,
@@ -539,14 +493,14 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         WebserviceResponse::create([
             'transaction_id' => $transaction->id,
-            'response_type' => $soapResult['details'] === [] ? 'success' : 'partial_success',
+            'response_type' => $result['details'] === [] ? 'success' : 'partial_success',
             'requires_action' => false,
             'processing_status' => 'completed',
-            'confirmation_number' => $soapResult['identifier'],
-            'external_reference' => $soapResult['identifier'],
+            'confirmation_number' => $result['identifier'],
+            'external_reference' => $result['identifier'],
             'voyage_number' => $voyage->voyage_number,
             'bill_of_lading_numbers' => $bills->pluck('bill_number')->values()->all(),
-            'validation_warnings' => $soapResult['details'],
+            'validation_warnings' => $result['details'],
             'customs_status' => 'approved',
             'customs_processed_at' => now(),
             'processed_at' => now(),
@@ -554,10 +508,10 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'additional_data' => ['method' => $methodType],
         ]);
 
-        $this->updateWebserviceStatus($voyage, 'approved', [
+        $this->updateStatus($voyage, 'approved', [
             'last_transaction_id' => $transaction->transaction_id,
-            'confirmation_number' => $soapResult['identifier'],
-            'external_voyage_number' => $soapResult['identifier'],
+            'confirmation_number' => $result['identifier'],
+            'external_voyage_number' => $result['identifier'],
             'last_sent_at' => now(),
             'approved_at' => now(),
             'last_error_code' => null,
@@ -567,11 +521,9 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         $this->logOperation('info', "Desconsolidado {$methodType} aceptado por AFIP", [
             'transaction_id' => $transaction->id,
-            'id_transaccion' => $transaction->transaction_id,
             'voyage_id' => $voyage->id,
             'bill_ids' => $bills->pluck('id')->values()->all(),
-            'identifier' => $soapResult['identifier'],
-            'warnings' => $soapResult['details'],
+            'identifier' => $result['identifier'],
         ]);
     }
 
@@ -579,15 +531,15 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         WebserviceTransaction $transaction,
         Voyage $voyage,
         string $methodType,
-        array $soapResult
+        array $result
     ): void {
-        $firstCode = collect($soapResult['details'])->pluck('code')->filter()->first();
+        $firstCode = collect($result['details'])->pluck('code')->filter()->first();
 
         $transaction->update([
             'status' => 'error',
             'error_code' => $firstCode,
-            'error_message' => $soapResult['error_message'],
-            'error_details' => $soapResult['details'],
+            'error_message' => $result['error_message'],
+            'error_details' => $result['details'],
             'response_at' => now(),
         ]);
 
@@ -597,7 +549,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'requires_action' => true,
             'processing_status' => 'requires_manual',
             'voyage_number' => $voyage->voyage_number,
-            'business_errors' => $soapResult['details'],
+            'business_errors' => $result['details'],
             'customs_status' => 'rejected',
             'customs_processed_at' => now(),
             'processed_at' => now(),
@@ -605,21 +557,22 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'additional_data' => ['method' => $methodType],
         ]);
 
-        $this->updateWebserviceStatus($voyage, 'error', [
+        $this->updateStatus($voyage, 'error', [
             'last_transaction_id' => $transaction->transaction_id,
             'last_error_code' => $firstCode,
-            'last_error_message' => $soapResult['error_message'],
+            'last_error_message' => $result['error_message'],
             'last_sent_at' => now(),
             'can_send' => true,
         ]);
+    }
 
-        $this->logOperation('error', "Desconsolidado {$methodType} rechazado por AFIP", [
-            'transaction_id' => $transaction->id,
-            'id_transaccion' => $transaction->transaction_id,
-            'voyage_id' => $voyage->id,
-            'error' => $soapResult['error_message'],
-            'details' => $soapResult['details'],
-        ]);
+    private function updateStatus(Voyage $voyage, string $status, array $data = []): void
+    {
+        $row = $this->getWebserviceStatus($voyage);
+        $row->update(array_merge([
+            'user_id' => $this->user->id,
+            'status' => $status,
+        ], $data));
     }
 
     private function countContainers(Collection $bills): int
@@ -641,9 +594,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ->all();
     }
 
-    /**
-     * IdTransaccion: máximo 20 caracteres según el manual AFIP.
-     */
+    /** Idempotencia AFIP: máximo 20 caracteres. */
     protected function generateTransactionId(): string
     {
         return 'DEC' . now()->format('ymdHis') . Str::upper(Str::random(5));
