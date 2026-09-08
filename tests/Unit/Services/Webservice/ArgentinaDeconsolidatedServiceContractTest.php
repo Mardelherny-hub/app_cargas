@@ -5,6 +5,8 @@ namespace Tests\Unit\Services\Webservice;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
+use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
+use Exception;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionClass;
 use Tests\TestCase;
@@ -14,19 +16,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     #[Test]
     public function service_uses_the_real_singular_database_type_and_official_actions(): void
     {
-        $company = new Company();
-        $company->id = 10;
-        $company->ws_environment = 'testing';
-
-        $user = new User();
-        $user->id = 20;
-
-        $service = new ArgentinaDeconsolidatedService($company, $user);
-        $reflection = new ReflectionClass($service);
-
-        $method = $reflection->getMethod('getWebserviceConfig');
-        $method->setAccessible(true);
-        $config = $method->invoke($service);
+        $config = $this->serviceConfig('testing');
 
         $this->assertSame('desconsolidado', $config['webservice_type']);
         $this->assertSame(
@@ -50,18 +40,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     #[Test]
     public function production_endpoint_is_the_official_afip_endpoint(): void
     {
-        $company = new Company();
-        $company->id = 10;
-        $company->ws_environment = 'production';
-
-        $user = new User();
-        $user->id = 20;
-
-        $service = new ArgentinaDeconsolidatedService($company, $user);
-        $reflection = new ReflectionClass($service);
-        $method = $reflection->getMethod('getWebserviceConfig');
-        $method->setAccessible(true);
-        $config = $method->invoke($service);
+        $config = $this->serviceConfig('production');
 
         $this->assertSame(
             'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
@@ -70,7 +49,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     }
 
     #[Test]
-    public function transaction_id_is_exactly_twenty_characters_or_less(): void
+    public function transaction_id_matches_the_afip_twenty_character_contract(): void
     {
         $company = new Company();
         $company->id = 10;
@@ -86,9 +65,21 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
 
         $id = $method->invoke($service);
 
-        $this->assertNotSame('', $id);
-        $this->assertLessThanOrEqual(20, strlen($id));
+        $this->assertSame(20, strlen($id));
         $this->assertMatchesRegularExpression('/^DEC[0-9]{12}[A-Z0-9]{5}$/', $id);
+    }
+
+    #[Test]
+    public function bill_id_normalization_is_deterministic_and_does_not_invent_ids(): void
+    {
+        $reflection = new ReflectionClass(ArgentinaDeconsolidatedService::class);
+        $service = $reflection->newInstanceWithoutConstructor();
+        $method = $reflection->getMethod('normalizeBillIds');
+        $method->setAccessible(true);
+
+        $ids = $method->invoke($service, [5, '2', 5, 0, -3, '9']);
+
+        $this->assertSame([5, 2, 9], $ids);
     }
 
     #[Test]
@@ -161,6 +152,50 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
         $this->assertFalse($malformed['success']);
     }
 
+    #[Test]
+    public function merchandise_weight_keeps_real_decimal_precision(): void
+    {
+        $this->assertSame('28163.07', $this->generatorPrivate('decimalString', [28163.07]));
+        $this->assertSame('24523.03', $this->generatorPrivate('decimalString', ['24523.030']));
+        $this->assertSame('24210', $this->generatorPrivate('decimalString', ['24210.000']));
+    }
+
+    #[Test]
+    public function afip_container_condition_accepts_only_house_or_pier_semantics(): void
+    {
+        $this->assertSame('H', $this->generatorPrivate('containerCondition', ['h', 'condición']));
+        $this->assertSame('P', $this->generatorPrivate('containerCondition', ['P', 'condición']));
+
+        $this->expectException(Exception::class);
+        $this->generatorPrivate('containerCondition', ['V', 'condición']);
+    }
+
+    #[Test]
+    public function line_and_container_integer_fields_are_not_silently_rounded(): void
+    {
+        $this->assertSame('3700', $this->generatorPrivate('integerString', [3700, 'tara', 10]));
+
+        $this->expectException(Exception::class);
+        $this->generatorPrivate('integerString', [3700.5, 'tara', 10]);
+    }
+
+    private function serviceConfig(string $environment): array
+    {
+        $company = new Company();
+        $company->id = 10;
+        $company->ws_environment = $environment;
+
+        $user = new User();
+        $user->id = 20;
+
+        $service = new ArgentinaDeconsolidatedService($company, $user);
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('getWebserviceConfig');
+        $method->setAccessible(true);
+
+        return $method->invoke($service);
+    }
+
     private function parse(string $xml, string $method): array
     {
         $reflection = new ReflectionClass(ArgentinaDeconsolidatedService::class);
@@ -169,6 +204,16 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
         $parser->setAccessible(true);
 
         return $parser->invoke($service, $xml, $method);
+    }
+
+    private function generatorPrivate(string $methodName, array $arguments)
+    {
+        $reflection = new ReflectionClass(SimpleXmlGeneratorDesconsolidado::class);
+        $generator = $reflection->newInstanceWithoutConstructor();
+        $method = $reflection->getMethod($methodName);
+        $method->setAccessible(true);
+
+        return $method->invokeArgs($generator, $arguments);
     }
 
     private function soapResponse(string $method, string $resultBody): string
