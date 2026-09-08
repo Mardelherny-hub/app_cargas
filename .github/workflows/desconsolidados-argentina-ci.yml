@@ -7,8 +7,10 @@ on:
   pull_request:
     paths:
       - 'app/Http/Controllers/Company/Simple/ArgentinaDeconsolidatedController.php'
+      - 'app/Models/Container.php'
       - 'app/Services/Simple/ArgentinaDeconsolidatedService.php'
       - 'app/Services/Webservice/Argentina/SimpleXmlGeneratorDesconsolidado.php'
+      - 'database/migrations/2026_09_08_200500_add_acep_to_containers_table.php'
       - 'resources/views/company/simple/desconsolidado/show.blade.php'
       - 'routes/company_desconsolidado.php'
       - 'routes/web.php'
@@ -40,8 +42,10 @@ jobs:
       - name: PHP syntax checks
         run: |
           php -l app/Http/Controllers/Company/Simple/ArgentinaDeconsolidatedController.php
+          php -l app/Models/Container.php
           php -l app/Services/Simple/ArgentinaDeconsolidatedService.php
           php -l app/Services/Webservice/Argentina/SimpleXmlGeneratorDesconsolidado.php
+          php -l database/migrations/2026_09_08_200500_add_acep_to_containers_table.php
           php -l routes/company_desconsolidado.php
           php -l routes/web.php
           php -l tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php
