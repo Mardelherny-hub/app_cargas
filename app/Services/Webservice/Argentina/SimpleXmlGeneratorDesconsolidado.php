@@ -9,14 +9,20 @@ use App\Models\Container;
 use App\Models\Voyage;
 use App\Models\WsaaToken;
 use App\Services\Webservice\CertificateManagerService;
+use DateTimeImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use Exception;
 use Illuminate\Support\Collection;
+use Throwable;
+use XMLWriter;
 
 /**
  * XML SOAP para ATA Desconsolidador - wgesinformacionanticipada.
  *
- * Fuente contractual: Manual del Desarrollador AFIP, versión 4.11.
- * No completa obligatorios ausentes con valores por defecto.
+ * Fuente contractual: Manual del Desarrollador AFIP v4.11 (18/12/2018).
+ * No completa datos ausentes con valores simulados ni deriva campos de otros
+ * conceptos que tengan una semántica distinta dentro de la aplicación.
  */
 class SimpleXmlGeneratorDesconsolidado
 {
@@ -67,34 +73,42 @@ class SimpleXmlGeneratorDesconsolidado
 
         $bills = $this->getDesconsolidatedBills($billIds);
         foreach ($bills as $bill) {
-            $this->requiredString($bill->loadingPort?->code, "BL {$bill->id}: CodigoPuertoEmbarque", 5);
-            $this->requiredString($bill->bill_number, "BL {$bill->id}: NumeroConocimiento", 18);
+            $this->requiredString(
+                $bill->loadingPort?->code,
+                "BL {$bill->id}: CodigoPuertoEmbarque",
+                5
+            );
+            $this->requiredString(
+                $bill->bill_number,
+                "BL {$bill->id}: NumeroConocimiento",
+                18
+            );
         }
 
-        // Autenticación recién después de terminar las validaciones locales.
         $auth = $this->getWsaaTokens();
+        $writer = $this->createWriter();
+        $this->startEnvelope($writer, 'EliminarTitulosDesconsolidador');
+        $this->writeAuthentication($writer, $auth);
 
-        $w = $this->createWriter();
-        $this->startEnvelope($w, 'EliminarTitulosDesconsolidador');
-        $this->writeAuthentication($w, $auth);
+        $writer->startElement('argEliminarTitulosDesconsolidador');
+        $writer->writeElement('IdTransaccion', $transactionId);
+        $writer->startElement('InformacionTitulosDesconsolidadorDoc');
+        $writer->writeElement('IdentificadorViaje', (string) $this->voyage->argentina_voyage_id);
+        $writer->startElement('PuertosConocimientos');
 
-        $w->startElement('argEliminarTitulosDesconsolidador');
-            $w->writeElement('IdTransaccion', $transactionId);
-            $w->startElement('InformacionTitulosDesconsolidadorDoc');
-                $w->writeElement('IdentificadorViaje', $this->voyage->argentina_voyage_id);
-                $w->startElement('PuertosConocimientos');
-                    foreach ($bills as $bill) {
-                        $w->startElement('PuertoConocimiento');
-                            $w->writeElement('CodigoPuertoEmbarque', $bill->loadingPort->code);
-                            $w->writeElement('NumeroConocimiento', $bill->bill_number);
-                        $w->endElement();
-                    }
-                $w->endElement();
-            $w->endElement();
-        $w->endElement();
+        foreach ($bills as $bill) {
+            $writer->startElement('PuertoConocimiento');
+            $writer->writeElement('CodigoPuertoEmbarque', (string) $bill->loadingPort->code);
+            $writer->writeElement('NumeroConocimiento', (string) $bill->bill_number);
+            $writer->endElement();
+        }
 
-        $this->endEnvelope($w);
-        return $w->outputMemory();
+        $writer->endElement();
+        $writer->endElement();
+        $writer->endElement();
+        $this->endEnvelope($writer);
+
+        return $writer->outputMemory();
     }
 
     private function generateTitlesOperation(
@@ -111,31 +125,41 @@ class SimpleXmlGeneratorDesconsolidado
             $this->validateBill($bill);
         }
 
-        // No solicitar/cachar un TA de WSAA si el viaje no supera validación local.
+        // Recién se solicita/reutiliza el TA después de superar validación local.
         $auth = $this->getWsaaTokens();
+        $writer = $this->createWriter();
+        $this->startEnvelope($writer, $method);
+        $this->writeAuthentication($writer, $auth);
 
-        $w = $this->createWriter();
-        $this->startEnvelope($w, $method);
-        $this->writeAuthentication($w, $auth);
+        $writer->startElement($argumentName);
+        $writer->writeElement('IdTransaccion', $transactionId);
+        $writer->startElement('InformacionTitulosDesconsolidadorDoc');
+        $writer->writeElement('IdentificadorViaje', (string) $this->voyage->argentina_voyage_id);
+        $writer->startElement('TitulosDesconsolidador');
 
-        $w->startElement($argumentName);
-            $w->writeElement('IdTransaccion', $transactionId);
-            $w->startElement('InformacionTitulosDesconsolidadorDoc');
-                $w->writeElement('IdentificadorViaje', $this->voyage->argentina_voyage_id);
-                $w->startElement('TitulosDesconsolidador');
-                    foreach ($bills as $bill) {
-                        $this->writeTitle($w, $bill);
-                    }
-                $w->endElement();
-            $w->endElement();
-        $w->endElement();
+        foreach ($bills as $bill) {
+            $this->writeTitle($writer, $bill);
+        }
 
-        $this->endEnvelope($w);
-        return $w->outputMemory();
+        $writer->endElement();
+        $writer->endElement();
+        $writer->endElement();
+        $this->endEnvelope($writer);
+
+        return $writer->outputMemory();
     }
 
-    private function getDesconsolidatedBills(array $billIds = []): Collection
+    private function getDesconsolidatedBills(array $billIds): Collection
     {
+        $ids = collect($billIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        // Esta es la semántica vigente de la aplicación para un título hijo:
+        // BillOfLading con master_bill_number informado.
         $query = $this->voyage->billsOfLading()
             ->whereNotNull('master_bill_number')
             ->with([
@@ -149,45 +173,23 @@ class SimpleXmlGeneratorDesconsolidado
                 'shipmentItems.containers.containerType',
             ]);
 
-        $ids = collect($billIds)
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn (int $id) => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-
         if ($ids !== []) {
             $query->whereIn('bills_of_lading.id', $ids);
         }
 
         $bills = $query->orderBy('bills_of_lading.id')->get();
+
         if ($bills->isEmpty()) {
             throw new Exception('No hay títulos desconsolidados para procesar.');
         }
 
         if ($ids !== [] && $bills->count() !== count($ids)) {
-            throw new Exception('Uno o más conocimientos seleccionados no pertenecen al viaje o no son desconsolidados.');
+            throw new Exception(
+                'Uno o más conocimientos seleccionados no pertenecen al viaje o no son desconsolidados.'
+            );
         }
 
         return $bills;
-    }
-
-    private function validateTransactionId(string $transactionId): void
-    {
-        if ($transactionId === '' || mb_strlen($transactionId) > 20) {
-            throw new Exception('IdTransaccion es obligatorio y no puede superar 20 caracteres.');
-        }
-    }
-
-    private function validateVoyageIdentifier(): void
-    {
-        $identifier = trim((string) ($this->voyage->argentina_voyage_id ?? ''));
-        if ($identifier === '') {
-            throw new Exception('El viaje no tiene IdentificadorViaje AFIP. Primero debe existir un RegistrarViaje exitoso.');
-        }
-        if (mb_strlen($identifier) > 16) {
-            throw new Exception('IdentificadorViaje AFIP supera los 16 caracteres permitidos.');
-        }
     }
 
     private function validateBill(BillOfLading $bill): void
@@ -196,8 +198,11 @@ class SimpleXmlGeneratorDesconsolidado
 
         $this->requiredDate($bill->loading_date, "{$prefix}: FechaEmbarque");
         $this->requiredString($bill->loadingPort?->code, "{$prefix}: CodigoPuertoEmbarque", 5);
-        $this->optionalString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
-        $this->optionalString($bill->origin_country_code, "{$prefix}: CodigoPaisLugarOrigen", 3);
+
+        // v4.11: sólo FechaCargaLugarOrigen es opcional para Desconsolidador.
+        $this->requiredString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
+        $this->requiredString($bill->origin_country_code, "{$prefix}: CodigoPaisLugarOrigen", 3);
+
         $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
         $this->requiredString($bill->dischargePort?->code, "{$prefix}: CodigoPuertoDescarga", 5);
         $this->requiredString($bill->destination_country_code, "{$prefix}: CodigoPaisDestino", 3);
@@ -205,19 +210,33 @@ class SimpleXmlGeneratorDesconsolidado
         $this->requiredFlag($bill->is_consolidated, "{$prefix}: IndicadorConsolidado");
         $this->requiredFlag($bill->is_transit_transshipment, "{$prefix}: IndicadorTransitoTrasbordo");
         $this->requiredString($bill->discharge_customs_code, "{$prefix}: CodigoAduanaDescarga", 3);
-        $this->requiredString($bill->operational_discharge_code, "{$prefix}: CodigoLugarOperativoDescarga", 5);
+        $this->requiredString(
+            $bill->operational_discharge_code,
+            "{$prefix}: CodigoLugarOperativoDescarga",
+            5
+        );
 
         if ($bill->shipmentItems->isEmpty()) {
             throw new Exception("{$prefix}: debe tener al menos una línea de mercadería.");
         }
 
-        // Estos atributos son a nivel título en el contrato. En la app existen en
-        // shipment_items: deben coincidir entre todas las líneas, nunca se inventan.
+        // AFIP define estos atributos a nivel título. En la app viven en las
+        // líneas; por eso todas las líneas del BL deben contener el mismo valor.
         $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true);
-        $this->singleItemFlag($bill, 'is_secure_logistics_operator', 'IndicadorOperadorLogisticoSeguro');
+        $this->singleItemFlag(
+            $bill,
+            'is_secure_logistics_operator',
+            'IndicadorOperadorLogisticoSeguro'
+        );
         $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado');
         $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar');
-        $this->singleItemValue($bill, 'foreign_forwarder_name', 'RazonSocialFowarderExterior', 70, true);
+        $this->singleItemValue(
+            $bill,
+            'foreign_forwarder_name',
+            'RazonSocialFowarderExterior',
+            70,
+            true
+        );
 
         $lineNumbers = [];
         foreach ($bill->shipmentItems as $item) {
@@ -225,32 +244,51 @@ class SimpleXmlGeneratorDesconsolidado
                 throw new Exception("{$prefix}: ShipmentItem {$item->id} no tiene NumeroLinea.");
             }
 
-            $line = (int) $item->line_number;
-            if ($line < 0 || $line > 999) {
-                throw new Exception("{$prefix}: ShipmentItem {$item->id} NumeroLinea fuera de rango 0-999.");
+            $lineNumber = (int) $item->line_number;
+            if ($lineNumber < 0 || $lineNumber > 999) {
+                throw new Exception(
+                    "{$prefix}: ShipmentItem {$item->id} NumeroLinea fuera de rango Int(3)."
+                );
             }
-            if (in_array($line, $lineNumbers, true)) {
-                throw new Exception("{$prefix}: NumeroLinea {$line} está repetido.");
+            if (in_array($lineNumber, $lineNumbers, true)) {
+                throw new Exception("{$prefix}: NumeroLinea {$lineNumber} está repetido.");
             }
-            $lineNumbers[] = $line;
+            $lineNumbers[] = $lineNumber;
 
             $packagingCode = $item->packaging_code ?: $item->packagingType?->argentina_ws_code;
-            $this->requiredString($packagingCode, "{$prefix}: ShipmentItem {$item->id} CodigoEmbalaje", 2);
+            $this->requiredString(
+                $packagingCode,
+                "{$prefix}: ShipmentItem {$item->id} CodigoEmbalaje",
+                2
+            );
 
-            // CondicionContenedor de LineaMercaderia es opcional en el contrato.
             if ($item->container_condition !== null && $item->container_condition !== '') {
-                $this->containerCondition($item->container_condition, "{$prefix}: ShipmentItem {$item->id} CondicionContenedor");
+                $this->containerCondition(
+                    $item->container_condition,
+                    "{$prefix}: ShipmentItem {$item->id} CondicionContenedor"
+                );
             }
 
-            if ($item->package_quantity === null) {
-                throw new Exception("{$prefix}: ShipmentItem {$item->id} no tiene CantidadManifestada.");
-            }
-            if ($item->gross_weight_kg === null) {
-                throw new Exception("{$prefix}: ShipmentItem {$item->id} no tiene PesoVolumenManifestado.");
-            }
-
-            $this->requiredString($item->item_description, "{$prefix}: ShipmentItem {$item->id} DescripcionMercaderia", 80);
-            $this->requiredString($item->cargo_marks, "{$prefix}: ShipmentItem {$item->id} NumeroBultos", 100);
+            $this->requiredIntegerLike(
+                $item->package_quantity,
+                "{$prefix}: ShipmentItem {$item->id} CantidadManifestada",
+                9
+            );
+            $this->requiredIntegerLike(
+                $item->gross_weight_kg,
+                "{$prefix}: ShipmentItem {$item->id} PesoVolumenManifestado",
+                12
+            );
+            $this->requiredString(
+                $item->item_description,
+                "{$prefix}: ShipmentItem {$item->id} DescripcionMercaderia",
+                80
+            );
+            $this->requiredString(
+                $item->cargo_marks,
+                "{$prefix}: ShipmentItem {$item->id} NumeroBultos",
+                100
+            );
         }
 
         foreach ($this->billContainers($bill) as $container) {
@@ -261,122 +299,230 @@ class SimpleXmlGeneratorDesconsolidado
     private function validateContainer(Container $container, BillOfLading $bill): void
     {
         $prefix = "BL {$bill->id}: Contenedor {$container->id}";
+        $characteristics = $container->argentina_container_code
+            ?: $container->containerType?->argentina_ws_code;
 
+        $this->containerOperatorCuit($container, $prefix);
+        $this->requiredString($characteristics, "{$prefix}: CaracteristicasContenedor", 4);
         $this->requiredString($container->container_number, "{$prefix}: IdentificadorContenedor", 20);
         $this->containerCondition($container->container_condition, "{$prefix}: CondicionContenedor");
-
-        $characteristics = $container->argentina_container_code ?: $container->containerType?->argentina_ws_code;
-        $this->requiredString($characteristics, "{$prefix}: CaracteristicasContenedor", 4);
-
-        if ($container->tare_weight_kg === null) {
-            throw new Exception("{$prefix}: falta Tara.");
-        }
-        if ($container->current_gross_weight_kg === null) {
-            throw new Exception("{$prefix}: falta PesoBruto.");
-        }
-
-        // El historial 4.3 del manual vuelve obligatorio este dato.
-        $this->containerOperatorCuit($container, $prefix);
-
-        // En la clase Contenedor, aduana y lugar operativo son obligatorios.
+        $this->requiredIntegerLike($container->tare_weight_kg, "{$prefix}: Tara", 10);
+        $this->requiredIntegerLike($container->current_gross_weight_kg, "{$prefix}: PesoBruto", 14);
         $this->requiredString($bill->discharge_customs_code, "{$prefix}: CodigoAduana", 3);
-        $this->requiredString($bill->operational_discharge_code, "{$prefix}: CodigoLugarOperativoDescarga", 5);
-
-        // FechaVencimientoContenedor y Acep son opcionales; no bloquear por ausencia.
+        $this->requiredString(
+            $bill->operational_discharge_code,
+            "{$prefix}: CodigoLugarOperativoDescarga",
+            5
+        );
     }
 
-    private function writeTitle(\XMLWriter $w, BillOfLading $bill): void
+    private function writeTitle(XMLWriter $writer, BillOfLading $bill): void
     {
-        $w->startElement('TituloDesconsolidador');
-            $w->writeElement('FechaEmbarque', $this->formatDate($bill->loading_date));
-            $w->writeElement('CodigoPuertoEmbarque', $bill->loadingPort->code);
-            $this->writeOptionalDate($w, 'FechaCargaLugarOrigen', $bill->origin_loading_date);
-            $this->writeOptionalString($w, 'LugarOrigen', $bill->origin_location, 50);
-            $this->writeOptionalString($w, 'CodigoPaisLugarOrigen', $bill->origin_country_code, 3);
-            $w->writeElement('NumeroConocimiento', $bill->bill_number);
-            $this->writeOptionalString($w, 'CodigoPuertoTrasbordo', $bill->transshipmentPort?->code, 5);
-            $w->writeElement('CodigoPuertoDescarga', $bill->dischargePort->code);
-            $this->writeOptionalDate($w, 'FechaDescarga', $bill->discharge_date);
-            $w->writeElement('CodigoPaisDestino', $bill->destination_country_code);
-            $w->writeElement('MarcaBultos', $bill->cargo_marks);
-            $this->writeOptionalString($w, 'Consignatario', $bill->consignee?->legal_name, 80);
-            $this->writeOptionalString($w, 'NotificarA', $bill->notifyParty?->legal_name ?: $bill->notify_party_text, 35);
-            $w->writeElement('IndicadorConsolidado', $this->normalizeFlag($bill->is_consolidated));
-            $w->writeElement('IndicadorTransitoTrasbordo', $this->normalizeFlag($bill->is_transit_transshipment));
+        $writer->startElement('TituloDesconsolidador');
+        $writer->writeElement('FechaEmbarque', $this->formatDate($bill->loading_date));
+        $writer->writeElement('CodigoPuertoEmbarque', (string) $bill->loadingPort->code);
+        $this->writeOptionalDate($writer, 'FechaCargaLugarOrigen', $bill->origin_loading_date);
+        $writer->writeElement('LugarOrigen', (string) $bill->origin_location);
+        $writer->writeElement('CodigoPaisLugarOrigen', (string) $bill->origin_country_code);
+        $writer->writeElement('NumeroConocimiento', (string) $bill->bill_number);
+        $this->writeOptionalString(
+            $writer,
+            'CodigoPuertoTrasbordo',
+            $bill->transshipmentPort?->code,
+            5
+        );
+        $writer->writeElement('CodigoPuertoDescarga', (string) $bill->dischargePort->code);
+        $this->writeOptionalDate($writer, 'FechaDescarga', $bill->discharge_date);
+        $writer->writeElement('CodigoPaisDestino', (string) $bill->destination_country_code);
+        $writer->writeElement('MarcaBultos', (string) $bill->cargo_marks);
+        $this->writeOptionalString($writer, 'Consignatario', $bill->consignee?->legal_name, 80);
+        $this->writeOptionalString(
+            $writer,
+            'NotificarA',
+            $bill->notifyParty?->legal_name ?: $bill->notify_party_text,
+            35
+        );
+        $writer->writeElement('IndicadorConsolidado', $this->normalizeFlag($bill->is_consolidated));
+        $writer->writeElement(
+            'IndicadorTransitoTrasbordo',
+            $this->normalizeFlag($bill->is_transit_transshipment)
+        );
 
-            $this->writeOptionalString($w, 'TipoDocumentoDestinatarioMercaderia', $this->consigneeDocumentType($bill), 4);
-            $this->writeOptionalString($w, 'IdentificadorDestinatarioMercaderia', $this->consigneeTaxId($bill), 11);
-            // No existe un campo inequívoco en la app para CodigoPaisEmisionPasaporteDestinatario.
+        $this->writeOptionalString(
+            $writer,
+            'TipoDocumentoDestinatarioMercaderia',
+            $this->consigneeDocumentType($bill),
+            4
+        );
+        $this->writeOptionalString(
+            $writer,
+            'IdentificadorDestinatarioMercaderia',
+            $this->consigneeTaxId($bill),
+            11
+        );
 
-            $w->writeElement('PosicionArancelaria', $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true));
-            $w->writeElement('IndicadorOperadorLogisticoSeguro', $this->singleItemFlag($bill, 'is_secure_logistics_operator', 'IndicadorOperadorLogisticoSeguro'));
-            $w->writeElement('IndicadorTransitoMonitoreado', $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado'));
-            $w->writeElement('IndicadorRenar', $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar'));
-            $w->writeElement('RazonSocialFowarderExterior', $this->singleItemValue($bill, 'foreign_forwarder_name', 'RazonSocialFowarderExterior', 70, true));
-            $this->writeOptionalString($w, 'IndicadorTributarioForwarderExterior', $this->singleItemValue($bill, 'foreign_forwarder_tax_id', 'IndicadorTributarioForwarderExterior', 35, false), 35);
-            $this->writeOptionalString($w, 'CodigoPaisEmisorIdentificadorForwarderExterior', $this->singleItemValue($bill, 'foreign_forwarder_country', 'CodigoPaisEmisorIdentificadorForwarderExterior', 3, false), 3);
-            // Comentario de título es opcional y BillOfLading no posee hoy un campo con esa semántica exacta.
+        // No existe en la app un campo inequívoco para país de emisión de pasaporte.
+        $writer->writeElement(
+            'PosicionArancelaria',
+            $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true)
+        );
+        $writer->writeElement(
+            'IndicadorOperadorLogisticoSeguro',
+            $this->singleItemFlag(
+                $bill,
+                'is_secure_logistics_operator',
+                'IndicadorOperadorLogisticoSeguro'
+            )
+        );
+        $writer->writeElement(
+            'IndicadorTransitoMonitoreado',
+            $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado')
+        );
+        $writer->writeElement(
+            'IndicadorRenar',
+            $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar')
+        );
+        $writer->writeElement(
+            'RazonSocialFowarderExterior',
+            $this->singleItemValue(
+                $bill,
+                'foreign_forwarder_name',
+                'RazonSocialFowarderExterior',
+                70,
+                true
+            )
+        );
+        $this->writeOptionalString(
+            $writer,
+            'IndicadorTributarioForwarderExterior',
+            $this->singleItemValue(
+                $bill,
+                'foreign_forwarder_tax_id',
+                'IndicadorTributarioForwarderExterior',
+                35,
+                false
+            ),
+            35
+        );
+        $this->writeOptionalString(
+            $writer,
+            'CodigoPaisEmisorIdentificadorForwarderExterior',
+            $this->singleItemValue(
+                $bill,
+                'foreign_forwarder_country',
+                'CodigoPaisEmisorIdentificadorForwarderExterior',
+                3,
+                false
+            ),
+            3
+        );
 
-            // Orden según los XML de ejemplo del método.
-            $w->writeElement('CodigoLugarOperativoDescarga', $bill->operational_discharge_code);
-            $w->writeElement('CodigoAduanaDescarga', $bill->discharge_customs_code);
+        // No se reutiliza discrepancy_notes como Comentario: semántica distinta.
+        $writer->writeElement(
+            'CodigoLugarOperativoDescarga',
+            (string) $bill->operational_discharge_code
+        );
+        $writer->writeElement('CodigoAduanaDescarga', (string) $bill->discharge_customs_code);
 
-            $this->writeMerchandise($w, $bill);
-            $this->writeContainers($w, $bill);
-            $this->writeOptionalString($w, 'IdentificadorTituloMadre', $bill->master_bill_number, 23);
-        $w->endElement();
+        $this->writeMerchandise($writer, $bill);
+        $this->writeContainers($writer, $bill);
+
+        // El ejemplo oficial lo ubica al final del TituloDesconsolidador.
+        $this->writeOptionalString(
+            $writer,
+            'IdentificadorTituloMadre',
+            $bill->master_bill_number,
+            23
+        );
+        $writer->endElement();
     }
 
-    private function writeMerchandise(\XMLWriter $w, BillOfLading $bill): void
+    private function writeMerchandise(XMLWriter $writer, BillOfLading $bill): void
     {
-        $w->startElement('Mercaderias');
+        $writer->startElement('Mercaderias');
+
         foreach ($bill->shipmentItems->sortBy('line_number') as $item) {
             $packagingCode = $item->packaging_code ?: $item->packagingType?->argentina_ws_code;
 
-            $w->startElement('LineaMercaderia');
-                $w->writeElement('NumeroLinea', (string) ((int) $item->line_number));
-                $w->writeElement('CodigoEmbalaje', $packagingCode);
-                if ($item->container_condition !== null && $item->container_condition !== '') {
-                    $w->writeElement('CondicionContenedor', strtoupper((string) $item->container_condition));
-                }
-                $w->writeElement('CantidadManifestada', (string) $item->package_quantity);
-                $w->writeElement('PesoVolumenManifestado', $this->formatNumber($item->gross_weight_kg));
-                $w->writeElement('DescripcionMercaderia', $item->item_description);
-                $w->writeElement('NumeroBultos', $item->cargo_marks);
-                $this->writeOptionalString($w, 'TipoCarga', $item->cargoType?->webservice_code, 3);
-                $this->writeOptionalString($w, 'Comentario', $item->comments, 60);
-            $w->endElement();
+            $writer->startElement('LineaMercaderia');
+            $writer->writeElement('NumeroLinea', (string) ((int) $item->line_number));
+            $writer->writeElement('CodigoEmbalaje', (string) $packagingCode);
+
+            // TipoEmbalaje es opcional y no existe un mapeo AFIP inequívoco en el modelo.
+            if ($item->container_condition !== null && $item->container_condition !== '') {
+                $writer->writeElement(
+                    'CondicionContenedor',
+                    strtoupper((string) $item->container_condition)
+                );
+            }
+
+            $writer->writeElement('CantidadManifestada', $this->integerString($item->package_quantity));
+            $writer->writeElement(
+                'PesoVolumenManifestado',
+                $this->integerString($item->gross_weight_kg)
+            );
+            $writer->writeElement('DescripcionMercaderia', (string) $item->item_description);
+            $writer->writeElement('NumeroBultos', (string) $item->cargo_marks);
+            $this->writeOptionalString($writer, 'TipoCarga', $item->cargoType?->webservice_code, 3);
+            $this->writeOptionalString($writer, 'Comentario', $item->comments, 60);
+            $writer->endElement();
         }
-        $w->endElement();
+
+        $writer->endElement();
     }
 
-    private function writeContainers(\XMLWriter $w, BillOfLading $bill): void
+    private function writeContainers(XMLWriter $writer, BillOfLading $bill): void
     {
         $containers = $this->billContainers($bill);
         if ($containers->isEmpty()) {
             return;
         }
 
-        $w->startElement('Contenedores');
+        $writer->startElement('Contenedores');
+
         foreach ($containers as $container) {
-            $characteristics = $container->argentina_container_code ?: $container->containerType?->argentina_ws_code;
+            $characteristics = $container->argentina_container_code
+                ?: $container->containerType?->argentina_ws_code;
 
-            $w->startElement('Contenedor');
-                $w->writeElement('CuitAtaOperadorContenedor', $this->containerOperatorCuit($container, "Contenedor {$container->id}"));
-                $w->writeElement('CaracteristicasContenedor', $characteristics);
-                $w->writeElement('IdentificadorContenedor', $container->container_number);
-                $w->writeElement('CondicionContenedor', strtoupper((string) $container->container_condition));
-                $w->writeElement('Tara', $this->formatNumber($container->tare_weight_kg));
-                $w->writeElement('PesoBruto', $this->formatNumber($container->current_gross_weight_kg));
-                $this->writeOptionalString($w, 'NumeroPrecintoOrigen', $container->shipper_seal, 35);
-                $this->writeOptionalDate($w, 'FechaVencimientoContenedor', $container->csc_expiry_date);
+            $writer->startElement('Contenedor');
+            $writer->writeElement(
+                'CuitAtaOperadorContenedor',
+                $this->containerOperatorCuit($container, "Contenedor {$container->id}")
+            );
+            $writer->writeElement('CaracteristicasContenedor', (string) $characteristics);
+            $writer->writeElement('IdentificadorContenedor', (string) $container->container_number);
+            $writer->writeElement(
+                'CondicionContenedor',
+                strtoupper((string) $container->container_condition)
+            );
+            $writer->writeElement('Tara', $this->integerString($container->tare_weight_kg));
+            $writer->writeElement(
+                'PesoBruto',
+                $this->integerString($container->current_gross_weight_kg)
+            );
+            $this->writeOptionalString(
+                $writer,
+                'NumeroPrecintoOrigen',
+                $container->shipper_seal,
+                35
+            );
+            $this->writeOptionalDate(
+                $writer,
+                'FechaVencimientoContenedor',
+                $container->csc_expiry_date
+            );
 
-                // No se deriva CodigoLugarOrigen desde origin_location: son conceptos distintos.
-                $w->writeElement('CodigoAduana', $bill->discharge_customs_code);
-                $w->writeElement('CodigoLugarOperativoDescarga', $bill->operational_discharge_code);
-            $w->endElement();
+            // Acep, puertos y lugar de origen del contenedor son opcionales;
+            // no hay campos inequívocos para ellos en Container.
+            $writer->writeElement('CodigoAduana', (string) $bill->discharge_customs_code);
+            $writer->writeElement(
+                'CodigoLugarOperativoDescarga',
+                (string) $bill->operational_discharge_code
+            );
+            $writer->endElement();
         }
-        $w->endElement();
+
+        $writer->endElement();
     }
 
     private function billContainers(BillOfLading $bill): Collection
@@ -393,22 +539,26 @@ class SimpleXmlGeneratorDesconsolidado
             throw new Exception("{$prefix}: falta operator_client_id.");
         }
 
-        $taxId = Client::query()->whereKey($container->operator_client_id)->value('tax_id');
-        $taxId = preg_replace('/\D+/', '', (string) $taxId);
-        if (strlen($taxId) !== 11) {
+        $taxId = Client::query()
+            ->whereKey($container->operator_client_id)
+            ->value('tax_id');
+        $clean = preg_replace('/\D+/', '', (string) $taxId);
+
+        if (strlen($clean) !== 11) {
             throw new Exception("{$prefix}: el CUIT del operador de contenedor debe tener 11 dígitos.");
         }
 
-        return $taxId;
+        return $clean;
     }
 
     private function singleItemFlag(BillOfLading $bill, string $field, string $label): string
     {
-        $value = $this->singleItemValue($bill, $field, $label, 1, true);
-        if (!in_array(strtoupper((string) $value), ['S', 'N'], true)) {
+        $value = strtoupper((string) $this->singleItemValue($bill, $field, $label, 1, true));
+        if (!in_array($value, ['S', 'N'], true)) {
             throw new Exception("BL {$bill->id}: {$label} debe ser S o N.");
         }
-        return strtoupper((string) $value);
+
+        return $value;
     }
 
     private function singleItemValue(
@@ -420,13 +570,15 @@ class SimpleXmlGeneratorDesconsolidado
     ): ?string {
         $values = $bill->shipmentItems
             ->pluck($field)
-            ->filter(fn ($v) => $v !== null && trim((string) $v) !== '')
-            ->map(fn ($v) => trim((string) $v))
+            ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
             ->unique()
             ->values();
 
         if ($values->count() > 1) {
-            throw new Exception("BL {$bill->id}: {$label} tiene valores distintos entre líneas; AFIP admite uno por título.");
+            throw new Exception(
+                "BL {$bill->id}: {$label} tiene valores distintos entre líneas; AFIP admite uno por título."
+            );
         }
 
         $value = $values->first();
@@ -442,18 +594,32 @@ class SimpleXmlGeneratorDesconsolidado
 
     private function consigneeDocumentType(BillOfLading $bill): ?string
     {
-        $explicit = $this->singleItemValue($bill, 'consignee_document_type', 'TipoDocumentoDestinatarioMercaderia', 4, false);
-        if ($explicit !== null) {
-            return $explicit;
-        }
+        $explicit = $this->singleItemValue(
+            $bill,
+            'consignee_document_type',
+            'TipoDocumentoDestinatarioMercaderia',
+            4,
+            false
+        );
 
-        return $this->optionalString($bill->consignee?->documentType?->code, 'TipoDocumentoDestinatarioMercaderia', 4);
+        return $explicit ?: $this->optionalString(
+            $bill->consignee?->documentType?->code,
+            'TipoDocumentoDestinatarioMercaderia',
+            4
+        );
     }
 
     private function consigneeTaxId(BillOfLading $bill): ?string
     {
-        $explicit = $this->singleItemValue($bill, 'consignee_tax_id', 'IdentificadorDestinatarioMercaderia', 11, false);
+        $explicit = $this->singleItemValue(
+            $bill,
+            'consignee_tax_id',
+            'IdentificadorDestinatarioMercaderia',
+            11,
+            false
+        );
         $value = $explicit ?: $bill->consignee?->tax_id;
+
         if (!$value) {
             return null;
         }
@@ -462,57 +628,80 @@ class SimpleXmlGeneratorDesconsolidado
         if ($clean === '' || strlen($clean) > 11) {
             throw new Exception("BL {$bill->id}: IdentificadorDestinatarioMercaderia inválido.");
         }
+
         return $clean;
     }
 
-    private function createWriter(): \XMLWriter
+    private function validateTransactionId(string $transactionId): void
     {
-        $w = new \XMLWriter();
-        $w->openMemory();
-        $w->startDocument('1.0', 'UTF-8');
-        return $w;
+        if ($transactionId === '' || mb_strlen($transactionId) > 20) {
+            throw new Exception('IdTransaccion es obligatorio y no puede superar 20 caracteres.');
+        }
     }
 
-    private function startEnvelope(\XMLWriter $w, string $method): void
+    private function validateVoyageIdentifier(): void
     {
-        $w->startElementNs('soapenv', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-        $w->startElementNs('soapenv', 'Header', null);
-        $w->endElement();
-        $w->startElementNs('soapenv', 'Body', null);
-
-        // Namespace por defecto en el método: todos sus descendientes quedan
-        // dentro del contrato AFIP, como en los ejemplos SOAP 1.1 del manual.
-        $w->startElement($method);
-        $w->writeAttribute('xmlns', self::NAMESPACE);
+        $identifier = trim((string) ($this->voyage->argentina_voyage_id ?? ''));
+        if ($identifier === '') {
+            throw new Exception(
+                'El viaje no tiene IdentificadorViaje AFIP. Primero debe existir un RegistrarViaje exitoso.'
+            );
+        }
+        if (mb_strlen($identifier) > 16) {
+            throw new Exception('IdentificadorViaje AFIP supera los 16 caracteres permitidos.');
+        }
     }
 
-    private function endEnvelope(\XMLWriter $w): void
+    private function createWriter(): XMLWriter
     {
-        $w->endElement();
-        $w->endElement();
-        $w->endElement();
-        $w->endDocument();
+        $writer = new XMLWriter();
+        $writer->openMemory();
+        $writer->startDocument('1.0', 'UTF-8');
+        return $writer;
     }
 
-    private function writeAuthentication(\XMLWriter $w, array $auth): void
+    private function startEnvelope(XMLWriter $writer, string $method): void
+    {
+        $writer->startElementNs('soapenv', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+        $writer->startElementNs('soapenv', 'Header', null);
+        $writer->endElement();
+        $writer->startElementNs('soapenv', 'Body', null);
+        $writer->startElement($method);
+        $writer->writeAttribute('xmlns', self::NAMESPACE);
+    }
+
+    private function endEnvelope(XMLWriter $writer): void
+    {
+        $writer->endElement(); // método
+        $writer->endElement(); // Body
+        $writer->endElement(); // Envelope
+        $writer->endDocument();
+    }
+
+    private function writeAuthentication(XMLWriter $writer, array $auth): void
     {
         $cuit = preg_replace('/\D+/', '', (string) $this->company->tax_id);
         if (strlen($cuit) !== 11) {
             throw new Exception('CUIT de la empresa conectada inválido; debe tener 11 dígitos.');
         }
 
-        $w->startElement('argWSAutenticacionEmpresa');
-            $w->writeElement('Token', $auth['token']);
-            $w->writeElement('Sign', $auth['sign']);
-            $w->writeElement('CuitEmpresaConectada', $cuit);
-            $w->writeElement('TipoAgente', 'TRSP');
-            $w->writeElement('Rol', 'TRSP');
-        $w->endElement();
+        $writer->startElement('argWSAutenticacionEmpresa');
+        $writer->writeElement('Token', $auth['token']);
+        $writer->writeElement('Sign', $auth['sign']);
+        $writer->writeElement('CuitEmpresaConectada', $cuit);
+        $writer->writeElement('TipoAgente', 'TRSP');
+        $writer->writeElement('Rol', 'TRSP');
+        $writer->endElement();
     }
 
     private function getWsaaTokens(): array
     {
-        $cached = WsaaToken::getValidToken($this->company->id, self::SERVICE_NAME, $this->environment);
+        $cached = WsaaToken::getValidToken(
+            $this->company->id,
+            self::SERVICE_NAME,
+            $this->environment
+        );
+
         if ($cached) {
             $cached->markAsUsed();
             return ['token' => $cached->token, 'sign' => $cached->sign];
@@ -520,11 +709,15 @@ class SimpleXmlGeneratorDesconsolidado
 
         $certificate = (new CertificateManagerService($this->company))->readCertificate();
         if (!$certificate || empty($certificate['cert']) || empty($certificate['pkey'])) {
-            throw new Exception('No se pudo leer certificado y clave privada de la empresa para WSAA.');
+            throw new Exception(
+                'No se pudo leer certificado y clave privada de la empresa para WSAA.'
+            );
         }
 
         $signedTicket = $this->signLoginTicket($this->generateLoginTicket(), $certificate);
         $tokens = $this->callWsaa($signedTicket);
+        $issuedAt = $tokens['generation_time'] ?? now();
+        $expiresAt = $tokens['expiration_time'] ?? now()->addHours(12);
 
         WsaaToken::createToken([
             'company_id' => $this->company->id,
@@ -532,15 +725,20 @@ class SimpleXmlGeneratorDesconsolidado
             'environment' => $this->environment,
             'token' => $tokens['token'],
             'sign' => $tokens['sign'],
-            'issued_at' => $tokens['generation_time'] ?? now(),
-            'expires_at' => $tokens['expiration_time'] ?? now()->addHours(12),
-            'generation_time' => ($tokens['generation_time'] ?? now())->format('c'),
+            'issued_at' => $issuedAt,
+            'expires_at' => $expiresAt,
+            'generation_time' => $issuedAt instanceof DateTimeInterface
+                ? $issuedAt->format('c')
+                : (string) $issuedAt,
             'unique_id' => (string) ($tokens['unique_id'] ?? uniqid('', true)),
             'certificate_used' => $this->company->getCertificatePath(),
             'usage_count' => 0,
             'status' => 'active',
             'created_by_process' => self::class,
-            'creation_context' => ['method' => 'getWsaaTokens', 'service' => self::SERVICE_NAME],
+            'creation_context' => [
+                'method' => 'getWsaaTokens',
+                'service' => self::SERVICE_NAME,
+            ],
         ]);
 
         return ['token' => $tokens['token'], 'sign' => $tokens['sign']];
@@ -548,14 +746,18 @@ class SimpleXmlGeneratorDesconsolidado
 
     private function generateLoginTicket(): string
     {
+        $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $uniqueId = (int) min(time(), 2147483647);
-        $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
 
         return '<?xml version="1.0" encoding="UTF-8"?>'
             . '<loginTicketRequest version="1.0"><header>'
             . '<uniqueId>' . $uniqueId . '</uniqueId>'
-            . '<generationTime>' . $now->sub(new \DateInterval('PT5M'))->format('Y-m-d\TH:i:s\Z') . '</generationTime>'
-            . '<expirationTime>' . $now->add(new \DateInterval('PT12H'))->format('Y-m-d\TH:i:s\Z') . '</expirationTime>'
+            . '<generationTime>'
+            . $now->modify('-5 minutes')->format('Y-m-d\TH:i:s\Z')
+            . '</generationTime>'
+            . '<expirationTime>'
+            . $now->modify('+12 hours')->format('Y-m-d\TH:i:s\Z')
+            . '</expirationTime>'
             . '</header><service>' . self::SERVICE_NAME . '</service></loginTicketRequest>';
     }
 
@@ -572,12 +774,14 @@ class SimpleXmlGeneratorDesconsolidado
 
         try {
             file_put_contents($ticketFile, $ticket);
-            $certContent = $certificate['cert'];
-            foreach (($certificate['extracerts'] ?? []) as $extra) {
-                $certContent .= "\n" . $extra;
+
+            $certificateContent = (string) $certificate['cert'];
+            foreach (($certificate['extracerts'] ?? []) as $extraCertificate) {
+                $certificateContent .= "\n" . $extraCertificate;
             }
-            file_put_contents($certFile, $certContent);
-            file_put_contents($keyFile, $certificate['pkey']);
+
+            file_put_contents($certFile, $certificateContent);
+            file_put_contents($keyFile, (string) $certificate['pkey']);
 
             $command = sprintf(
                 'openssl smime -sign -in %s -out %s -signer %s -inkey %s -outform DER -nodetach 2>&1',
@@ -586,10 +790,12 @@ class SimpleXmlGeneratorDesconsolidado
                 escapeshellarg($certFile),
                 escapeshellarg($keyFile)
             );
-            exec($command, $output, $returnCode);
 
+            exec($command, $output, $returnCode);
             if ($returnCode !== 0 || !is_file($signedFile) || filesize($signedFile) === 0) {
-                throw new Exception('Error firmando LoginTicket WSAA: ' . implode(' | ', $output));
+                throw new Exception(
+                    'Error firmando LoginTicket WSAA: ' . implode(' | ', $output)
+                );
             }
 
             return base64_encode((string) file_get_contents($signedFile));
@@ -618,7 +824,7 @@ class SimpleXmlGeneratorDesconsolidado
             throw new Exception('WSAA no devolvió loginCmsReturn.');
         }
 
-        $xml = simplexml_load_string($response->loginCmsReturn);
+        $xml = simplexml_load_string((string) $response->loginCmsReturn);
         if ($xml === false || empty($xml->credentials->token) || empty($xml->credentials->sign)) {
             throw new Exception('Respuesta WSAA inválida o sin Token/Sign.');
         }
@@ -626,22 +832,29 @@ class SimpleXmlGeneratorDesconsolidado
         return [
             'token' => (string) $xml->credentials->token,
             'sign' => (string) $xml->credentials->sign,
-            'generation_time' => isset($xml->header->generationTime) ? new \DateTimeImmutable((string) $xml->header->generationTime) : null,
-            'expiration_time' => isset($xml->header->expirationTime) ? new \DateTimeImmutable((string) $xml->header->expirationTime) : null,
-            'unique_id' => isset($xml->header->uniqueId) ? (string) $xml->header->uniqueId : null,
+            'generation_time' => isset($xml->header->generationTime)
+                ? new DateTimeImmutable((string) $xml->header->generationTime)
+                : null,
+            'expiration_time' => isset($xml->header->expirationTime)
+                ? new DateTimeImmutable((string) $xml->header->expirationTime)
+                : null,
+            'unique_id' => isset($xml->header->uniqueId)
+                ? (string) $xml->header->uniqueId
+                : null,
         ];
     }
 
     private function requiredString($value, string $label, int $maxLength): string
     {
-        $value = trim((string) ($value ?? ''));
-        if ($value === '') {
+        $text = trim((string) ($value ?? ''));
+        if ($text === '') {
             throw new Exception("Falta campo obligatorio {$label}.");
         }
-        if (mb_strlen($value) > $maxLength) {
+        if (mb_strlen($text) > $maxLength) {
             throw new Exception("{$label} supera {$maxLength} caracteres.");
         }
-        return $value;
+
+        return $text;
     }
 
     private function optionalString($value, string $label, int $maxLength): ?string
@@ -649,20 +862,23 @@ class SimpleXmlGeneratorDesconsolidado
         if ($value === null || trim((string) $value) === '') {
             return null;
         }
-        $value = trim((string) $value);
-        if (mb_strlen($value) > $maxLength) {
+
+        $text = trim((string) $value);
+        if (mb_strlen($text) > $maxLength) {
             throw new Exception("{$label} supera {$maxLength} caracteres.");
         }
-        return $value;
+
+        return $text;
     }
 
     private function requiredFlag($value, string $label): string
     {
-        $value = $this->normalizeFlag($value);
-        if (!in_array($value, ['S', 'N'], true)) {
+        $flag = $this->normalizeFlag($value);
+        if (!in_array($flag, ['S', 'N'], true)) {
             throw new Exception("{$label} debe ser S o N.");
         }
-        return $value;
+
+        return $flag;
     }
 
     private function normalizeFlag($value): string
@@ -670,16 +886,20 @@ class SimpleXmlGeneratorDesconsolidado
         if (is_bool($value)) {
             return $value ? 'S' : 'N';
         }
+
         return strtoupper(trim((string) ($value ?? '')));
     }
 
     private function containerCondition($value, string $label): string
     {
-        $value = strtoupper(trim((string) ($value ?? '')));
-        if ($value === '' || mb_strlen($value) > 1) {
-            throw new Exception("{$label} debe contener un código CONCTD_DESC de un carácter.");
+        $code = strtoupper(trim((string) ($value ?? '')));
+        if ($code === '' || mb_strlen($code) !== 1) {
+            throw new Exception(
+                "{$label} debe contener un código CONCTD_DESC de un carácter."
+            );
         }
-        return $value;
+
+        return $code;
     }
 
     private function requiredDate($value, string $label): string
@@ -687,41 +907,69 @@ class SimpleXmlGeneratorDesconsolidado
         if (!$value) {
             throw new Exception("Falta campo obligatorio {$label}.");
         }
+
         return $this->formatDate($value);
     }
 
     private function formatDate($value): string
     {
         try {
-            return $value instanceof \DateTimeInterface
+            return $value instanceof DateTimeInterface
                 ? $value->format('Y-m-d\TH:i:s')
-                : (new \DateTimeImmutable((string) $value))->format('Y-m-d\TH:i:s');
-        } catch (\Throwable $e) {
-            throw new Exception('Fecha inválida para XML AFIP: ' . (string) $value, 0, $e);
+                : (new DateTimeImmutable((string) $value))->format('Y-m-d\TH:i:s');
+        } catch (Throwable $exception) {
+            throw new Exception(
+                'Fecha inválida para XML AFIP: ' . (string) $value,
+                0,
+                $exception
+            );
         }
     }
 
-    private function formatNumber($value): string
+    private function requiredIntegerLike($value, string $label, int $maxDigits): string
+    {
+        if ($value === null || $value === '' || !is_numeric($value)) {
+            throw new Exception("Falta o es inválido el campo obligatorio {$label}.");
+        }
+
+        return $this->integerString($value, $label, $maxDigits);
+    }
+
+    private function integerString($value, string $label = 'valor', ?int $maxDigits = null): string
     {
         if (!is_numeric($value)) {
-            throw new Exception('Valor numérico inválido para XML AFIP: ' . (string) $value);
+            throw new Exception("{$label} debe ser numérico.");
         }
-        $formatted = rtrim(rtrim(number_format((float) $value, 4, '.', ''), '0'), '.');
-        return $formatted === '' ? '0' : $formatted;
+
+        $number = (float) $value;
+        if ($number < 0 || floor($number) !== $number) {
+            throw new Exception("{$label} debe ser un entero no negativo según contrato AFIP.");
+        }
+
+        $text = number_format($number, 0, '.', '');
+        if ($maxDigits !== null && strlen($text) > $maxDigits) {
+            throw new Exception("{$label} supera Int({$maxDigits}).");
+        }
+
+        return $text;
     }
 
-    private function writeOptionalString(\XMLWriter $w, string $name, $value, int $maxLength): void
-    {
-        $value = $this->optionalString($value, $name, $maxLength);
-        if ($value !== null) {
-            $w->writeElement($name, $value);
+    private function writeOptionalString(
+        XMLWriter $writer,
+        string $name,
+        $value,
+        int $maxLength
+    ): void {
+        $text = $this->optionalString($value, $name, $maxLength);
+        if ($text !== null) {
+            $writer->writeElement($name, $text);
         }
     }
 
-    private function writeOptionalDate(\XMLWriter $w, string $name, $value): void
+    private function writeOptionalDate(XMLWriter $writer, string $name, $value): void
     {
         if ($value) {
-            $w->writeElement($name, $this->formatDate($value));
+            $writer->writeElement($name, $this->formatDate($value));
         }
     }
 }
