@@ -121,6 +121,16 @@ class ArgentinaDeconsolidatedController extends Controller
                 ]);
         }
 
+        if ($expiry && $acep) {
+            return redirect()
+                ->route('company.simple.desconsolidado.show', $voyage)
+                ->withInput()
+                ->withErrors([
+                    'container_customs' =>
+                        'Para ATA-DESC informe Fecha de vencimiento CSC o ACEP, pero no ambos.',
+                ]);
+        }
+
         $submittedItemIds = collect(array_keys($validated['item_conditions']))
             ->map(fn ($id) => (int) $id)
             ->filter(fn ($id) => $id > 0)
