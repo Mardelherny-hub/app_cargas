@@ -169,7 +169,7 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         foreach ($positions as $position) {
             $this->assertNotFalse($position);
         }
-        $this->assertSame($positions, $sorted = collect($positions)->sort()->values()->all());
+        $this->assertSame($positions, collect($positions)->sort()->values()->all());
     }
 
     private function generatorFor(BillOfLading $bill): StructuralXmlGenerator
@@ -258,8 +258,8 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $bill->loading_date = '2026-09-01';
         $bill->destination_country_code = 'PY';
         $bill->cargo_marks = 'MARCAS HOUSE';
-        $bill->is_consolidated = true;
-        $bill->is_transit_transshipment = false;
+        $bill->is_consolidated = 'S';
+        $bill->is_transit_transshipment = 'N';
         $bill->origin_location = null;
         $bill->origin_loading_date = null;
         $bill->origin_country_code = null;
