@@ -128,7 +128,9 @@
                                     $allConditionsReady = collect($items)->every(
                                         fn ($item) => in_array($item['condition'], ['H', 'P'], true)
                                     );
-                                    $documentReady = !empty($container->csc_expiry_date) || !empty($container->acep);
+                                    $hasExpiry = !empty($container->csc_expiry_date);
+                                    $hasAcep = !empty($container->acep);
+                                    $documentReady = $hasExpiry !== $hasAcep;
                                     $containerReady = $allConditionsReady && $documentReady;
                                     $isOldContainer = (int) old('container_id') === (int) $container->id;
                                     $oldItemConditions = $isOldContainer ? old('item_conditions', []) : [];
@@ -211,7 +213,7 @@
                                                 Documento del contenedor
                                             </p>
                                             <p class="text-xs text-gray-500 mb-3">
-                                                ATA-DESC exige Fecha de vencimiento del contenedor o ACEP. Informe el dato real disponible; no se completa automáticamente.
+                                                ATA-DESC exige Fecha de vencimiento del contenedor o ACEP. Informe uno u otro dato real, no ambos; no se completa automáticamente.
                                             </p>
                                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <div>
@@ -258,7 +260,7 @@
                                 <h3 class="text-lg font-medium text-gray-900">Títulos a transmitir</h3>
                                 <p class="text-sm text-gray-600 mt-1">
                                     Seleccione exactamente los conocimientos que desea procesar. El servidor vuelve a validar
-                                    pertenencia, estado y datos obligatorios antes de transmitir a AFIP.
+                                    pertenencia, estado y datos obligatorios de los títulos seleccionados antes de transmitir a AFIP.
                                 </p>
                             </div>
                             <div class="text-xs text-gray-500 md:text-right">
@@ -359,7 +361,7 @@
                                 type="submit"
                                 name="action"
                                 value="registrar"
-                                @disabled($desconsolidatedBills->isEmpty() || !empty($validation['errors']))
+                                @disabled($desconsolidatedBills->isEmpty())
                                 class="inline-flex justify-center items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Registrar seleccionados
@@ -369,7 +371,7 @@
                                 type="submit"
                                 name="action"
                                 value="rectificar"
-                                @disabled($desconsolidatedBills->isEmpty() || !empty($validation['errors']))
+                                @disabled($desconsolidatedBills->isEmpty())
                                 class="inline-flex justify-center items-center px-4 py-2 bg-yellow-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Rectificar seleccionados
