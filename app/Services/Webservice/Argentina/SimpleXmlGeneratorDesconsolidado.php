@@ -775,7 +775,8 @@ class SimpleXmlGeneratorDesconsolidado
             return ['token' => $cached->token, 'sign' => $cached->sign];
         }
 
-        $certificate = (new CertificateManagerService($this->company))->readCertificate();
+        $certificateManager = new CertificateManagerService($this->company, ['country' => 'AR']);
+        $certificate = $certificateManager->readCertificate();
         if (!$certificate || empty($certificate['cert']) || empty($certificate['pkey'])) {
             throw new Exception(
                 'No se pudo leer certificado y clave privada de la empresa para WSAA.'
@@ -799,7 +800,8 @@ class SimpleXmlGeneratorDesconsolidado
                 ? $issuedAt->format('c')
                 : (string) $issuedAt,
             'unique_id' => (string) ($tokens['unique_id'] ?? uniqid('', true)),
-            'certificate_used' => $this->company->getCertificatePath(),
+            'certificate_used' => $this->company->certificate_path
+                ?: $this->company->getCertificatePathForCountry('AR'),
             'usage_count' => 0,
             'status' => 'active',
             'created_by_process' => self::class,
