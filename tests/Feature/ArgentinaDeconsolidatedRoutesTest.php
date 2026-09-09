@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
+use App\Http\Controllers\Company\Simple\LegacyDeconsolidationRedirectController;
 use Illuminate\Http\Request;
 use Tests\TestCase;
 
@@ -65,5 +66,47 @@ class ArgentinaDeconsolidatedRoutesTest extends TestCase
             ArgentinaDeconsolidatedController::class . '@send',
             $send->getActionName()
         );
+    }
+
+    public function test_legacy_deconsolidation_routes_cannot_reach_the_fake_controller(): void
+    {
+        $routes = app('router')->getRoutes();
+
+        foreach ([
+            'company.deconsolidation.index',
+            'company.deconsolidation.store',
+            'company.deconsolidation.destroy',
+            'company.deconsolidation.update-status',
+        ] as $name) {
+            $route = $routes->getByName($name);
+            $this->assertNotNull($route, "Falta la ruta legacy {$name}");
+            $this->assertStringContainsString(
+                LegacyDeconsolidationRedirectController::class,
+                $route->getActionName()
+            );
+            $this->assertStringNotContainsString(
+                'DeconsolidationController',
+                str_replace(LegacyDeconsolidationRedirectController::class, '', $route->getActionName())
+            );
+        }
+    }
+
+    public function test_http_matching_neutralizes_legacy_read_and_write_endpoints(): void
+    {
+        $routes = app('router')->getRoutes();
+
+        foreach ([
+            ['GET', '/company/deconsolidation'],
+            ['POST', '/company/deconsolidation'],
+            ['DELETE', '/company/deconsolidation/123'],
+            ['PATCH', '/company/deconsolidation/123/status'],
+        ] as [$method, $uri]) {
+            $route = $routes->match(Request::create($uri, $method));
+            $this->assertStringContainsString(
+                LegacyDeconsolidationRedirectController::class,
+                $route->getActionName(),
+                "{$method} {$uri} no quedó neutralizada"
+            );
+        }
     }
 }
