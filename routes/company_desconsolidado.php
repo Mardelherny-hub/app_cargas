@@ -6,18 +6,18 @@ use Illuminate\Support\Facades\Route;
 /**
  * Handler canónico de las URLs de Desconsolidados Argentina.
  *
- * Los nombres históricos show/send siguen definidos una sola vez en
- * routes/company.php. Este archivo se carga después con las mismas URI para
- * que esas URLs sean atendidas por el controlador E2E. Las rutas nuevas y
- * exclusivas de DESC sí se nombran aquí.
+ * Se carga después de routes/company.php con las mismas URI y nombres para
+ * que tanto el matching HTTP como route(...) resuelvan al controlador E2E.
  */
 Route::prefix('simple/webservices/desconsolidado')
     ->group(function () {
         Route::get('/{voyage}', [ArgentinaDeconsolidatedController::class, 'show'])
-            ->whereNumber('voyage');
+            ->whereNumber('voyage')
+            ->name('company.simple.desconsolidado.show');
 
         Route::post('/{voyage}/send', [ArgentinaDeconsolidatedController::class, 'send'])
-            ->whereNumber('voyage');
+            ->whereNumber('voyage')
+            ->name('company.simple.desconsolidado.send');
 
         Route::post(
             '/{voyage}/containers/{container}/customs',
