@@ -188,6 +188,7 @@ class GuaranExcelParserContainerIntegrityTest extends TestCase
     {
         $expected = [
             '20DV' => '22G1',
+            '20SD' => '22G1',
             '20OT' => '22U1',
             '20RF' => '22R1',
             '20TN' => '22T1',
