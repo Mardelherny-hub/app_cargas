@@ -200,6 +200,37 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     }
 
     #[Test]
+    public function csc_expiry_and_acep_cannot_be_sent_together(): void
+    {
+        $container = $this->container();
+        $container->csc_expiry_date = '2030-01-01';
+        $container->acep = 'ACEP2030ABC123';
+
+        $bill = $this->billWithContainer($container, ['H']);
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('FechaVencimientoContenedor o ACEP, pero no ambos');
+        $this->generatorPrivate('validateContainer', [$container, $bill]);
+    }
+
+    #[Test]
+    public function csc_expiry_is_serialized_without_acep(): void
+    {
+        $container = $this->container();
+        $container->csc_expiry_date = '2030-01-01';
+        $container->acep = null;
+
+        $bill = $this->billWithContainer($container, ['H']);
+        $xml = $this->writeContainersXml($bill);
+
+        $this->assertStringContainsString(
+            '<FechaVencimientoContenedor>2030-01-01T00:00:00</FechaVencimientoContenedor>',
+            $xml
+        );
+        $this->assertStringNotContainsString('<Acep>', $xml);
+    }
+
+    #[Test]
     public function generic_expiry_date_is_not_used_as_an_acep_or_csc_expiry_substitute(): void
     {
         $container = $this->container();
