@@ -616,21 +616,19 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         WebserviceResponse::create([
             'transaction_id' => $transaction->id,
-            'response_type' => $result['details'] === [] ? 'success' : 'partial_success',
+            'response_type' => 'success',
             'requires_action' => false,
             'processing_status' => 'completed',
             'confirmation_number' => $result['identifier'],
-            'external_reference' => $result['identifier'],
-            'voyage_number' => $voyage->voyage_number,
-            'bill_of_lading_numbers' => $billNumbers,
             'validation_warnings' => $result['details'],
             'customs_status' => 'approved',
             'customs_processed_at' => now(),
             'processed_at' => now(),
-            'is_final_response' => true,
-            'additional_data' => [
+            'customs_metadata' => [
                 'method' => $methodType,
+                'identifier_viaje' => $result['identifier'],
                 'bill_ids' => $billIds,
+                'bill_numbers' => $billNumbers,
             ],
         ]);
 
@@ -674,13 +672,14 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'response_type' => 'business_error',
             'requires_action' => true,
             'processing_status' => 'requires_manual',
-            'voyage_number' => $voyage->voyage_number,
-            'business_errors' => $result['details'],
+            'validation_errors' => $result['details'],
             'customs_status' => 'rejected',
             'customs_processed_at' => now(),
             'processed_at' => now(),
-            'is_final_response' => true,
-            'additional_data' => ['method' => $methodType],
+            'customs_metadata' => [
+                'method' => $methodType,
+                'error_message' => $result['error_message'],
+            ],
         ]);
 
         $this->updateStatus($voyage, 'error', [
