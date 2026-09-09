@@ -91,11 +91,13 @@ class ArgentinaDeconsolidatedController extends Controller
         $this->authorizeContainerForVoyage($voyage, $container);
 
         $validated = $request->validate([
+            'container_id' => ['required', 'integer', 'in:' . $container->id],
             'csc_expiry_date' => 'nullable|date',
             'acep' => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
             'item_conditions' => 'required|array|min:1',
             'item_conditions.*' => 'required|in:H,P',
         ], [
+            'container_id.in' => 'El contenedor enviado no coincide con el contenedor de la operación.',
             'acep.regex' => 'ACEP sólo puede contener letras y números.',
             'acep.max' => 'ACEP no puede superar 20 caracteres.',
             'item_conditions.required' => 'Debe informar H/P para las líneas vinculadas al contenedor.',
@@ -112,6 +114,7 @@ class ArgentinaDeconsolidatedController extends Controller
         if (!$expiry && !$acep) {
             return redirect()
                 ->route('company.simple.desconsolidado.show', $voyage)
+                ->withInput()
                 ->withErrors([
                     'container_customs' =>
                         'El contenedor debe tener Fecha de vencimiento CSC o ACEP para ATA-DESC.',
@@ -128,7 +131,7 @@ class ArgentinaDeconsolidatedController extends Controller
             ->whereIn('id', $submittedItemIds->all())
             ->whereHas('containers', fn ($query) => $query->where('containers.id', $container->id))
             ->whereHas('billOfLading', function ($query) use ($voyage) {
-                $query->where('shipment_id', '!=', null)
+                $query->whereNotNull('shipment_id')
                     ->whereNotNull('master_bill_number')
                     ->whereHas('shipment', fn ($shipmentQuery) => $shipmentQuery->where('voyage_id', $voyage->id));
             })
