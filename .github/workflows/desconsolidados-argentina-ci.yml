@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - 'app/Http/Controllers/Company/Simple/ArgentinaDeconsolidatedController.php'
+      - 'app/Http/Controllers/Company/Simple/LegacyDeconsolidationRedirectController.php'
       - 'app/Models/Container.php'
       - 'app/Services/Simple/ArgentinaDeconsolidatedService.php'
       - 'app/Services/Webservice/CertificateManagerService.php'
@@ -16,6 +17,7 @@ on:
       - 'routes/company_desconsolidado.php'
       - 'routes/web.php'
       - 'tests/Feature/ArgentinaDeconsolidatedRoutesTest.php'
+      - 'tests/Unit/Services/Webservice/ArgentinaDeconsolidatedPersistenceContractTest.php'
       - 'tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php'
       - 'tests/Unit/Services/Webservice/ArgentinaDeconsolidatedXmlStructureTest.php'
 
@@ -46,6 +48,7 @@ jobs:
       - name: PHP syntax checks
         run: |
           php -l app/Http/Controllers/Company/Simple/ArgentinaDeconsolidatedController.php
+          php -l app/Http/Controllers/Company/Simple/LegacyDeconsolidationRedirectController.php
           php -l app/Models/Container.php
           php -l app/Services/Simple/ArgentinaDeconsolidatedService.php
           php -l app/Services/Webservice/CertificateManagerService.php
@@ -54,6 +57,7 @@ jobs:
           php -l routes/company_desconsolidado.php
           php -l routes/web.php
           php -l tests/Feature/ArgentinaDeconsolidatedRoutesTest.php
+          php -l tests/Unit/Services/Webservice/ArgentinaDeconsolidatedPersistenceContractTest.php
           php -l tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php
           php -l tests/Unit/Services/Webservice/ArgentinaDeconsolidatedXmlStructureTest.php
 
@@ -62,6 +66,7 @@ jobs:
           php artisan route:clear
           php artisan route:cache
           php artisan route:list --name=company.simple.desconsolidado
+          php artisan route:list --name=company.deconsolidation
           php artisan route:clear
 
       - name: Blade compile check
@@ -70,11 +75,14 @@ jobs:
           php artisan view:cache
           php artisan view:clear
 
+      - name: Persistence contract tests
+        run: php artisan test tests/Unit/Services/Webservice/ArgentinaDeconsolidatedPersistenceContractTest.php
+
       - name: Service contract tests
         run: php artisan test tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php
 
       - name: XML structure tests
         run: php artisan test tests/Unit/Services/Webservice/ArgentinaDeconsolidatedXmlStructureTest.php
 
-      - name: Canonical route tests
+      - name: Canonical and legacy route tests
         run: php artisan test tests/Feature/ArgentinaDeconsolidatedRoutesTest.php
