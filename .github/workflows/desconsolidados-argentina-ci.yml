@@ -9,12 +9,15 @@ on:
       - 'app/Http/Controllers/Company/Simple/ArgentinaDeconsolidatedController.php'
       - 'app/Models/Container.php'
       - 'app/Services/Simple/ArgentinaDeconsolidatedService.php'
+      - 'app/Services/Webservice/CertificateManagerService.php'
       - 'app/Services/Webservice/Argentina/SimpleXmlGeneratorDesconsolidado.php'
       - 'database/migrations/2026_09_08_200500_add_acep_to_containers_table.php'
       - 'resources/views/company/simple/desconsolidado/show.blade.php'
       - 'routes/company_desconsolidado.php'
       - 'routes/web.php'
+      - 'tests/Feature/ArgentinaDeconsolidatedRoutesTest.php'
       - 'tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php'
+      - 'tests/Unit/Services/Webservice/ArgentinaDeconsolidatedXmlStructureTest.php'
 
 jobs:
   contract:
@@ -37,23 +40,28 @@ jobs:
       - name: Prepare Laravel environment
         run: |
           cp .env.example .env
-          php artisan key:generate
+          sed -i 's/^APP_ENV=.*/APP_ENV=testing/' .env
+          php artisan key:generate --force
 
       - name: PHP syntax checks
         run: |
           php -l app/Http/Controllers/Company/Simple/ArgentinaDeconsolidatedController.php
           php -l app/Models/Container.php
           php -l app/Services/Simple/ArgentinaDeconsolidatedService.php
+          php -l app/Services/Webservice/CertificateManagerService.php
           php -l app/Services/Webservice/Argentina/SimpleXmlGeneratorDesconsolidado.php
           php -l database/migrations/2026_09_08_200500_add_acep_to_containers_table.php
           php -l routes/company_desconsolidado.php
           php -l routes/web.php
+          php -l tests/Feature/ArgentinaDeconsolidatedRoutesTest.php
           php -l tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php
+          php -l tests/Unit/Services/Webservice/ArgentinaDeconsolidatedXmlStructureTest.php
 
       - name: Laravel route cache check
         run: |
           php artisan route:clear
           php artisan route:cache
+          php artisan route:list --name=company.simple.desconsolidado
           php artisan route:clear
 
       - name: Blade compile check
@@ -62,5 +70,11 @@ jobs:
           php artisan view:cache
           php artisan view:clear
 
-      - name: Contract tests
+      - name: Service contract tests
         run: php artisan test tests/Unit/Services/Webservice/ArgentinaDeconsolidatedServiceContractTest.php
+
+      - name: XML structure tests
+        run: php artisan test tests/Unit/Services/Webservice/ArgentinaDeconsolidatedXmlStructureTest.php
+
+      - name: Canonical route tests
+        run: php artisan test tests/Feature/ArgentinaDeconsolidatedRoutesTest.php
