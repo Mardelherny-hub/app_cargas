@@ -47,6 +47,8 @@ class ProcessManifestImportJob implements ShouldQueue
      */
     public ?string $departureDate = null;
     public ?string $voyageNumber = null;
+    public ?string $loadingDate = null;
+    public ?string $dischargeDate = null;
 
     public function __construct(
         public int $trackingId,
@@ -56,9 +58,13 @@ class ProcessManifestImportJob implements ShouldQueue
         public string $originalName,
         ?string $departureDate = null,
         ?string $voyageNumber = null,
+        ?string $loadingDate = null,
+        ?string $dischargeDate = null,
     ) {
         $this->departureDate = $departureDate;
         $this->voyageNumber = $voyageNumber;
+        $this->loadingDate = $loadingDate;
+        $this->dischargeDate = $dischargeDate;
         $this->onQueue('imports');
     }
 
@@ -98,6 +104,8 @@ class ProcessManifestImportJob implements ShouldQueue
                 'vessel_id' => $this->vesselId,
                 'departure_date' => $this->departureDate,
                 'voyage_number' => $this->voyageNumber,
+                'loading_date' => $this->loadingDate,
+                'discharge_date' => $this->dischargeDate,
             ]);
 
             if ($result->isSuccessful()) {
