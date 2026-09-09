@@ -1033,6 +1033,7 @@ class GuaranExcelParser implements ManifestParserInterface
             '40HC' => '45G1',
             '40RH' => '45R1',
             '20DV' => '22G1',
+            '20SD' => '22G1',
             '20GP' => '22G1',
             '40GP' => '42G1',
             '40DV' => '42G1',
