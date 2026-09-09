@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
+use App\Http\Controllers\Company\Simple\LegacyDeconsolidationRedirectController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -26,4 +27,32 @@ Route::prefix('simple/webservices/desconsolidado')
             ->whereNumber('voyage')
             ->whereNumber('container')
             ->name('company.simple.desconsolidado.container-customs');
+    });
+
+/**
+ * El CRUD histórico /deconsolidation usaba datos de ejemplo y TODOs, incluso
+ * para supuestas operaciones DESA. Se conservan sus URI y nombres sólo para
+ * que enlaces antiguos no fallen, pero toda entrada queda redirigida al
+ * módulo real. Ninguna operación legacy puede persistir ni simular un envío.
+ */
+Route::prefix('deconsolidation')
+    ->group(function () {
+        Route::get('/', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.index');
+        Route::get('/create', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.create');
+        Route::post('/', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.store');
+        Route::get('/{deconsolidation}', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.show');
+        Route::get('/{deconsolidation}/edit', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.edit');
+        Route::put('/{deconsolidation}', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.update');
+        Route::delete('/{deconsolidation}', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.destroy');
+        Route::patch('/{deconsolidation}/status', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.update-status');
+        Route::get('/{deconsolidation}/pdf', LegacyDeconsolidationRedirectController::class)
+            ->name('company.deconsolidation.pdf');
     });
