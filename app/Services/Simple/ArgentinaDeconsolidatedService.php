@@ -73,8 +73,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
     }
 
     /**
-     * Validación rápida para la pantalla. La validación contractual completa
-     * ocurre dentro del generador inmediatamente antes de solicitar el TA.
+     * Validación local para la pantalla. Reutiliza el mismo contrato de datos
+     * del generador, pero sin solicitar Token/Sign ni abrir conexión con AFIP.
      */
     protected function validateSpecificData(Voyage $voyage): array
     {
@@ -111,6 +111,16 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             if ($bill->shipmentItems->isEmpty()) {
                 $errors[] = "BL {$bill->bill_number}: no tiene líneas de mercadería.";
             }
+        }
+
+        try {
+            $contractValidation = (new SimpleXmlGeneratorDesconsolidado($voyage, [
+                'environment' => $this->config['environment'],
+            ]))->validateLocalData('registrar');
+
+            $errors = array_merge($errors, $contractValidation['errors'] ?? []);
+        } catch (\Throwable $exception) {
+            $errors[] = $exception->getMessage();
         }
 
         return [
