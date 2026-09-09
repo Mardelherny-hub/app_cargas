@@ -181,6 +181,58 @@
                         </p>
                     </div>
 
+                    <!-- Fecha de carga de los conocimientos -->
+                    <div>
+                        <label for="loading_date"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            📅 Fecha de Carga (GUARAN)
+                        </label>
+
+                        <input type="date"
+                               id="loading_date"
+                               name="loading_date"
+                               value="{{ old('loading_date') }}"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('loading_date')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Sólo para archivos GUARAN. Se aplicará a los
+                            conocimientos importados porque este formato no
+                            informa una fecha de carga.
+                        </p>
+                    </div>
+
+                    <!-- Fecha de descarga de los conocimientos -->
+                    <div>
+                        <label for="discharge_date"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            📅 Fecha de Descarga (GUARAN)
+                        </label>
+
+                        <input type="date"
+                               id="discharge_date"
+                               name="discharge_date"
+                               value="{{ old('discharge_date') }}"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('discharge_date')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Sólo para archivos GUARAN. Se aplicará a los
+                            conocimientos importados porque este formato no
+                            informa una fecha de descarga.
+                        </p>
+                    </div>
+
                     <!-- Botón de importación -->
                     <div class="flex items-center justify-between">
                         <div class="text-sm text-gray-600">

@@ -33,7 +33,7 @@ class GuaranExcelParserBillItemIntegrityTest extends TestCase
         );
     }
 
-    public function test_bl_date_is_preserved_without_inventing_loading_date(): void
+    public function test_bl_date_is_preserved_without_inventing_operational_dates(): void
     {
         $dates = $this->invoke(
             'buildBillDocumentDates',
@@ -52,6 +52,71 @@ class GuaranExcelParserBillItemIntegrityTest extends TestCase
 
         $this->assertNull(
             $dates['loading_date']
+        );
+
+        $this->assertNull(
+            $dates['discharge_date']
+        );
+    }
+
+    public function test_explicit_import_dates_are_preserved(): void
+    {
+        $dates = $this->invoke(
+            'buildBillDocumentDates',
+            [
+                '30/06/2025',
+                '2025-07-01',
+                '2025-07-03',
+            ]
+        );
+
+        $this->assertSame(
+            '2025-06-30',
+            $dates['bill_date']->format('Y-m-d')
+        );
+
+        $this->assertSame(
+            '2025-07-01',
+            $dates['loading_date']->format('Y-m-d')
+        );
+
+        $this->assertSame(
+            '2025-07-03',
+            $dates['discharge_date']->format('Y-m-d')
+        );
+    }
+
+    public function test_discharge_before_loading_is_rejected(): void
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage(
+            'La fecha de descarga no puede ser anterior a la fecha de carga'
+        );
+
+        $this->invoke(
+            'buildBillDocumentDates',
+            [
+                '30/06/2025',
+                '2025-07-03',
+                '2025-07-01',
+            ]
+        );
+    }
+
+    public function test_invalid_explicit_loading_date_is_rejected(): void
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage(
+            'Fecha de carga inválida'
+        );
+
+        $this->invoke(
+            'buildBillDocumentDates',
+            [
+                '30/06/2025',
+                'NO-ES-FECHA',
+                null,
+            ]
         );
     }
 

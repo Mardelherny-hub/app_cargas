@@ -78,6 +78,8 @@ class ManifestImportController extends Controller
             'manifest_file' => 'required|file|max:10240', // 10MB max
             'vessel_id' => 'required|exists:vessels,id',
             'departure_date' => 'nullable|date',
+            'loading_date' => 'nullable|date',
+            'discharge_date' => 'nullable|date',
             'voyage_number' => 'nullable|string|max:100',
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
@@ -140,7 +142,9 @@ class ManifestImportController extends Controller
                 auth()->id(),
                 $originalName,
                 $request->input('departure_date'),
-                $request->input('voyage_number')
+                $request->input('voyage_number'),
+                $request->input('loading_date'),
+                $request->input('discharge_date')
             );
 
             Log::info('Manifest import encolado', [
