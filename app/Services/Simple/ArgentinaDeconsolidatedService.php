@@ -91,7 +91,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             $errors[] = 'El IdentificadorViaje AFIP supera 16 caracteres.';
         }
 
-        if (!$this->company->getCertificatePath()) {
+        if (!($this->company->certificate_path ?: $this->company->getCertificatePathForCountry('AR'))) {
             $errors[] = 'La empresa no tiene certificado Argentina configurado.';
         }
 
@@ -420,7 +420,8 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'retry_count' => 0,
             'max_retries' => $this->config['max_retries'],
             'environment' => $this->config['environment'],
-            'certificate_used' => $this->company->getCertificatePath(),
+            'certificate_used' => $this->company->certificate_path
+                ?: $this->company->getCertificatePathForCountry('AR'),
             'currency_code' => 'USD',
             'container_count' => $this->countContainers($bills),
             'bill_of_lading_count' => $bills->count(),
