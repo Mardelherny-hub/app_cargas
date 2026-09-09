@@ -130,6 +130,8 @@
                                     );
                                     $documentReady = !empty($container->csc_expiry_date) || !empty($container->acep);
                                     $containerReady = $allConditionsReady && $documentReady;
+                                    $isOldContainer = (int) old('container_id') === (int) $container->id;
+                                    $oldItemConditions = $isOldContainer ? old('item_conditions', []) : [];
                                 @endphp
 
                                 <form
@@ -138,6 +140,7 @@
                                     class="border rounded-lg p-4 {{ $containerReady ? 'border-green-200 bg-green-50/30' : 'border-yellow-200 bg-yellow-50/30' }}"
                                 >
                                     @csrf
+                                    <input type="hidden" name="container_id" value="{{ $container->id }}">
 
                                     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
                                         <div>
@@ -176,6 +179,11 @@
                                             </p>
                                             <div class="space-y-2">
                                                 @foreach($items as $item)
+                                                    @php
+                                                        $selectedCondition = $isOldContainer
+                                                            ? ($oldItemConditions[$item['id']] ?? $item['condition'])
+                                                            : $item['condition'];
+                                                    @endphp
                                                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
                                                         <div class="text-sm text-gray-700 sm:col-span-2">
                                                             BL {{ $item['bill_number'] ?: '—' }} · Línea {{ $item['line_number'] ?: '—' }}
@@ -186,10 +194,10 @@
                                                             required
                                                         >
                                                             <option value="">Seleccionar H/P</option>
-                                                            <option value="H" @selected($item['condition'] === 'H')>
+                                                            <option value="H" @selected($selectedCondition === 'H')>
                                                                 H - Casa a Casa
                                                             </option>
-                                                            <option value="P" @selected($item['condition'] === 'P')>
+                                                            <option value="P" @selected($selectedCondition === 'P')>
                                                                 P - Muelle a Muelle
                                                             </option>
                                                         </select>
@@ -213,7 +221,7 @@
                                                     <input
                                                         type="date"
                                                         name="csc_expiry_date"
-                                                        value="{{ old('csc_expiry_date', $container->csc_expiry_date?->format('Y-m-d')) }}"
+                                                        value="{{ $isOldContainer ? old('csc_expiry_date', $container->csc_expiry_date?->format('Y-m-d')) : $container->csc_expiry_date?->format('Y-m-d') }}"
                                                         class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                                                     >
                                                 </div>
@@ -225,7 +233,7 @@
                                                         type="text"
                                                         name="acep"
                                                         maxlength="20"
-                                                        value="{{ old('acep', $container->acep) }}"
+                                                        value="{{ $isOldContainer ? old('acep', $container->acep) : $container->acep }}"
                                                         class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                                                         placeholder="Hasta 20 caracteres"
                                                     >
