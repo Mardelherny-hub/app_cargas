@@ -114,6 +114,67 @@ class SimpleXmlGeneratorDesconsolidado
         return $writer->outputMemory();
     }
 
+    /**
+     * Ejecuta exactamente las validaciones locales que anteceden al WSAA,
+     * sin solicitar Token/Sign ni abrir conexión con AFIP.
+     */
+    public function validateLocalData(string $operation = 'registrar', array $billIds = []): array
+    {
+        $errors = [];
+
+        if (!in_array($operation, ['registrar', 'rectificar', 'eliminar'], true)) {
+            return [
+                'is_valid' => false,
+                'errors' => ["Operación desconsolidada desconocida: {$operation}."],
+            ];
+        }
+
+        try {
+            $this->validateVoyageIdentifier();
+        } catch (Throwable $exception) {
+            $errors[] = $exception->getMessage();
+        }
+
+        try {
+            $bills = $this->getDesconsolidatedBills($billIds);
+        } catch (Throwable $exception) {
+            $errors[] = $exception->getMessage();
+
+            return [
+                'is_valid' => false,
+                'errors' => array_values(array_unique($errors)),
+            ];
+        }
+
+        foreach ($bills as $bill) {
+            try {
+                if ($operation === 'eliminar') {
+                    $this->requiredString(
+                        $bill->loadingPort?->code,
+                        "BL {$bill->id}: CodigoPuertoEmbarque para eliminación",
+                        5
+                    );
+                    $this->requiredString(
+                        $bill->bill_number,
+                        "BL {$bill->id}: NumeroConocimiento",
+                        18
+                    );
+                } else {
+                    $this->validateBill($bill);
+                }
+            } catch (Throwable $exception) {
+                $errors[] = $exception->getMessage();
+            }
+        }
+
+        $errors = array_values(array_unique($errors));
+
+        return [
+            'is_valid' => $errors === [],
+            'errors' => $errors,
+        ];
+    }
+
     private function generateTitlesOperation(
         string $method,
         string $argumentName,
@@ -322,13 +383,20 @@ class SimpleXmlGeneratorDesconsolidado
             throw new Exception("{$prefix}: ACEP sólo puede contener letras y números.");
         }
 
-        if ($container->csc_expiry_date) {
+        $hasExpiry = (bool) $container->csc_expiry_date;
+        if ($hasExpiry) {
             $this->formatDate($container->csc_expiry_date);
         }
 
-        if (!$container->csc_expiry_date && $acep === null) {
+        if (!$hasExpiry && $acep === null) {
             throw new Exception(
                 "{$prefix}: debe informar FechaVencimientoContenedor o ACEP."
+            );
+        }
+
+        if ($hasExpiry && $acep !== null) {
+            throw new Exception(
+                "{$prefix}: informe FechaVencimientoContenedor o ACEP, pero no ambos."
             );
         }
     }
@@ -539,12 +607,15 @@ class SimpleXmlGeneratorDesconsolidado
                 $container->shipper_seal,
                 35
             );
-            $this->writeOptionalDate(
-                $writer,
-                'FechaVencimientoContenedor',
-                $container->csc_expiry_date
-            );
-            $this->writeOptionalString($writer, 'Acep', $container->acep, 20);
+
+            if ($container->csc_expiry_date) {
+                $writer->writeElement(
+                    'FechaVencimientoContenedor',
+                    $this->formatDate($container->csc_expiry_date)
+                );
+            } else {
+                $writer->writeElement('Acep', (string) $container->acep);
+            }
 
             $this->writeOptionalString(
                 $writer,
@@ -762,7 +833,7 @@ class SimpleXmlGeneratorDesconsolidado
         $writer->endElement();
     }
 
-    private function getWsaaTokens(): array
+    protected function getWsaaTokens(): array
     {
         $cached = WsaaToken::getValidToken(
             $this->company->id,
