@@ -95,20 +95,23 @@ class CertificateManagerService
         ];
 
         try {
+            $certificatePath = $this->resolveCertificatePath();
+            $password = $this->resolveCertificatePassword();
+
             // 1. Verificar que existe configuración de certificado
-            if (!$this->company->certificate_path) {
+            if (!$certificatePath) {
                 $validation['errors'][] = 'No hay certificado configurado';
                 return $validation;
             }
 
             // 2. Verificar que existe el archivo físico
-            if (!Storage::exists($this->company->certificate_path)) {
+            if (!Storage::exists($certificatePath)) {
                 $validation['errors'][] = self::CERTIFICATE_ERRORS['FILE_NOT_FOUND'];
                 return $validation;
             }
 
             // 3. Validar password
-            if (!$this->company->certificate_password) {
+            if (!$password) {
                 $validation['errors'][] = 'No hay contraseña configurada para el certificado';
                 return $validation;
             }
@@ -178,30 +181,21 @@ class CertificateManagerService
     }
 
     /**
-     * Leer certificado desde storage
-     * ACTUALIZADO: Soporta nueva estructura por país y legacy
+     * Leer certificado desde storage.
+     * Soporta el certificado legacy y la estructura por país sin migrar datos.
      */
     public function readCertificate(): ?array
     {
+        $certificatePath = null;
+
         try {
-            // ===== DEBUG INFO =====
-            \Log::info('=== DEBUG readCertificate ===', [
-                'company_id' => $this->company->id,
-                'company_country' => $this->company->country,
-                'certificate_path_legacy' => $this->company->certificate_path,
-                'certificates_json' => $this->company->certificates,
-                'getCertificatePath_result' => $this->company->getCertificatePath(),
-                'getCertificatePassword_result' => $this->company->getCertificatePassword() ? '***EXISTS***' : 'NULL',
-            ]);
-            
-            // CAMBIO 1: Usar método getCertificatePath() que soporta ambas estructuras
-            $certificatePath = $this->company->getCertificatePath();
-            
+            $certificatePath = $this->resolveCertificatePath();
+
             if (!$certificatePath) {
                 $this->logOperation('error', 'No hay ruta de certificado configurada', [
                     'company_id' => $this->company->id,
                     'has_legacy_path' => !empty($this->company->certificate_path),
-                    'company_country' => $this->company->country,
+                    'country' => $this->resolvedCountry(),
                 ]);
                 return null;
             }
@@ -215,13 +209,12 @@ class CertificateManagerService
             }
 
             $certificateContent = Storage::get($certificatePath);
-            
-            // CAMBIO 2: Usar método getCertificatePassword() que soporta ambas estructuras
-            $password = $this->company->getCertificatePassword();
+            $password = $this->resolveCertificatePassword();
             
             if (!$password) {
                 $this->logOperation('error', 'No hay contraseña de certificado configurada', [
                     'certificate_path' => $certificatePath,
+                    'country' => $this->resolvedCountry(),
                 ]);
                 return null;
             }
@@ -271,6 +264,44 @@ class CertificateManagerService
             ]);
             return null;
         }
+    }
+
+    /**
+     * Resolver país de certificado cuando el consumidor lo informa explícitamente.
+     */
+    private function resolvedCountry(): ?string
+    {
+        $country = $this->config['country'] ?? $this->company->country ?? null;
+        if ($country === null || trim((string) $country) === '') {
+            return null;
+        }
+
+        return strtoupper(trim((string) $country));
+    }
+
+    /**
+     * El certificado legacy sigue siendo válido y es el formato usado por el alta
+     * administrativa actual. Sólo si no existe se consulta la estructura por país.
+     */
+    private function resolveCertificatePath(): ?string
+    {
+        $legacyPath = trim((string) ($this->company->certificate_path ?? ''));
+        if ($legacyPath !== '') {
+            return $legacyPath;
+        }
+
+        $country = $this->resolvedCountry();
+        return $country ? $this->company->getCertificatePathForCountry($country) : null;
+    }
+
+    private function resolveCertificatePassword(): ?string
+    {
+        if (!empty($this->company->certificate_path)) {
+            return $this->company->certificate_password;
+        }
+
+        $country = $this->resolvedCountry();
+        return $country ? $this->company->getCertificatePasswordForCountry($country) : null;
     }
     
 
