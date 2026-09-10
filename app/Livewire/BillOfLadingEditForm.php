@@ -516,7 +516,7 @@ class BillOfLadingEditForm extends Component
                 case 'consignee':
                     $this->loadSpecificContactData($contact, 'consignee');
                     break;
-                case 'notify':
+                case 'notify_party':
                     $this->loadSpecificContactData($contact, 'notify');
                     break;
             }
@@ -670,77 +670,101 @@ class BillOfLadingEditForm extends Component
      */
     private function updateSpecificContacts()
     {
-        // Eliminar contactos específicos existentes
-        $this->billOfLading->specificContacts()->delete();
+        $definitions = [
+            'shipper' => [
+                'enabled' => $this->shipper_use_specific,
+                'client_id' => $this->shipper_id,
+                'address_1' => $this->shipper_specific_address_1,
+                'address_2' => $this->shipper_specific_address_2,
+                'city' => $this->shipper_specific_city,
+                'state' => $this->shipper_specific_state,
+                'postal_code' => $this->shipper_specific_postal_code,
+                'country' => $this->shipper_specific_country,
+                'phone' => $this->shipper_specific_phone,
+                'email' => $this->shipper_specific_email,
+            ],
+            'consignee' => [
+                'enabled' => $this->consignee_use_specific,
+                'client_id' => $this->consignee_id,
+                'address_1' => $this->consignee_specific_address_1,
+                'address_2' => $this->consignee_specific_address_2,
+                'city' => $this->consignee_specific_city,
+                'state' => $this->consignee_specific_state,
+                'postal_code' => $this->consignee_specific_postal_code,
+                'country' => $this->consignee_specific_country,
+                'phone' => $this->consignee_specific_phone,
+                'email' => $this->consignee_specific_email,
+            ],
+            'notify_party' => [
+                'enabled' => $this->notify_use_specific,
+                'client_id' => $this->notify_party_id,
+                'address_1' => $this->notify_specific_address_1,
+                'address_2' => $this->notify_specific_address_2,
+                'city' => $this->notify_specific_city,
+                'state' => $this->notify_specific_state,
+                'postal_code' => $this->notify_specific_postal_code,
+                'country' => $this->notify_specific_country,
+                'phone' => $this->notify_specific_phone,
+                'email' => $this->notify_specific_email,
+            ],
+        ];
 
-        $contactsToCreate = [];
+        foreach ($definitions as $role => $data) {
+            $existing = $this->billOfLading
+                ->specificContacts()
+                ->where('role', $role)
+                ->first();
 
-        // Shipper
-        if ($this->shipper_use_specific && $this->shipper_id) {
-            $shipperContactData = $this->getClientPrimaryContactData($this->shipper_id);
-            if ($shipperContactData) {
-                $contactsToCreate[] = [
-                    'client_contact_data_id' => $shipperContactData->id,
-                    'role' => 'shipper',
-                    'use_specific_data' => true,
-                    'specific_address_line_1' => $this->shipper_specific_address_1,
-                    'specific_address_line_2' => $this->shipper_specific_address_2,
-                    'specific_city' => $this->shipper_specific_city,
-                    'specific_state_province' => $this->shipper_specific_state,
-                    'specific_postal_code' => $this->shipper_specific_postal_code,
-                    'specific_country' => $this->shipper_specific_country,
-                    'specific_phone' => $this->shipper_specific_phone,
-                    'specific_email' => $this->shipper_specific_email,
-                    'created_by_user_id' => auth()->id(),
-                ];
+            /*
+             * Desmarcar no elimina el dato específico.
+             * Sólo deja de utilizarlo, para conservar la información
+             * importada o cargada previamente en el conocimiento.
+             */
+            if (!$data['enabled']) {
+                if ($existing && $existing->use_specific_data) {
+                    $existing->update([
+                        'use_specific_data' => false,
+                    ]);
+                }
+
+                continue;
             }
-        }
 
-        // Consignee
-        if ($this->consignee_use_specific && $this->consignee_id) {
-            $consigneeContactData = $this->getClientPrimaryContactData($this->consignee_id);
-            if ($consigneeContactData) {
-                $contactsToCreate[] = [
-                    'client_contact_data_id' => $consigneeContactData->id,
-                    'role' => 'consignee',
-                    'use_specific_data' => true,
-                    'specific_address_line_1' => $this->consignee_specific_address_1,
-                    'specific_address_line_2' => $this->consignee_specific_address_2,
-                    'specific_city' => $this->consignee_specific_city,
-                    'specific_state_province' => $this->consignee_specific_state,
-                    'specific_postal_code' => $this->consignee_specific_postal_code,
-                    'specific_country' => $this->consignee_specific_country,
-                    'specific_phone' => $this->consignee_specific_phone,
-                    'specific_email' => $this->consignee_specific_email,
-                    'created_by_user_id' => auth()->id(),
-                ];
+            if (!$data['client_id']) {
+                continue;
             }
-        }
 
-        // Notify Party
-        if ($this->notify_use_specific && $this->notify_party_id) {
-            $notifyContactData = $this->getClientPrimaryContactData($this->notify_party_id);
-            if ($notifyContactData) {
-                $contactsToCreate[] = [
-                    'client_contact_data_id' => $notifyContactData->id,
-                    'role' => 'notify_party',
-                    'use_specific_data' => true,
-                    'specific_address_line_1' => $this->notify_specific_address_1,
-                    'specific_address_line_2' => $this->notify_specific_address_2,
-                    'specific_city' => $this->notify_specific_city,
-                    'specific_state_province' => $this->notify_specific_state,
-                    'specific_postal_code' => $this->notify_specific_postal_code,
-                    'specific_country' => $this->notify_specific_country,
-                    'specific_phone' => $this->notify_specific_phone,
-                    'specific_email' => $this->notify_specific_email,
-                    'created_by_user_id' => auth()->id(),
-                ];
+            $primary = $this->getClientPrimaryContactData(
+                $data['client_id']
+            );
+
+            if (!$primary) {
+                continue;
             }
-        }
 
-        // Crear los contactos específicos
-        foreach ($contactsToCreate as $contactData) {
-            $this->billOfLading->specificContacts()->create($contactData);
+            $attributes = [
+                'client_contact_data_id' => $primary->id,
+                'role' => $role,
+                'use_specific_data' => true,
+                'specific_address_line_1' => $data['address_1'],
+                'specific_address_line_2' => $data['address_2'],
+                'specific_city' => $data['city'],
+                'specific_state_province' => $data['state'],
+                'specific_postal_code' => $data['postal_code'],
+                'specific_country' => $data['country'],
+                'specific_phone' => $data['phone'],
+                'specific_email' => $data['email'],
+            ];
+
+            if ($existing) {
+                $existing->update($attributes);
+            } else {
+                $attributes['created_by_user_id'] = auth()->id();
+
+                $this->billOfLading
+                    ->specificContacts()
+                    ->create($attributes);
+            }
         }
     }
 

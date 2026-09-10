@@ -790,15 +790,44 @@ return view('company.shipment-items.edit', compact(
                 $grossWeight = (float) $containerData['gross_weight_kg'];
 
                 if ($condition === 'V') {
-                    if ($packages !== 0 || abs($grossWeight) > 0.00001) {
+                    $tareWeight =
+                        array_key_exists('tare_weight', $containerData)
+                        && $containerData['tare_weight'] !== null
+                        && $containerData['tare_weight'] !== ''
+                            ? (float) $containerData['tare_weight']
+                            : null;
+
+                    $errors = [];
+
+                    /*
+                     * Los distintos formatos existentes representan los
+                     * contenedores vacíos con 0 o 1 bulto.
+                     *
+                     * Si informan peso bruto, éste debe representar como
+                     * máximo el propio contenedor: debe coincidir con la tara.
+                     */
+                    if (!in_array($packages, [0, 1], true)) {
+                        $errors[
+                            "containers.{$index}.package_quantity"
+                        ] = 'Un contenedor vacío debe tener 0 o 1 bulto.';
+                    }
+
+                    if (
+                        abs($grossWeight) > 0.00001
+                        && (
+                            $tareWeight === null
+                            || abs($grossWeight - $tareWeight) > 0.01
+                        )
+                    ) {
+                        $errors[
+                            "containers.{$index}.gross_weight_kg"
+                        ] = 'En un contenedor vacío, el peso bruto debe ser 0 o coincidir con la tara.';
+                    }
+
+                    if ($errors !== []) {
                         return redirect()->back()
                             ->withInput()
-                            ->withErrors([
-                                "containers.{$index}.package_quantity" =>
-                                    'Un contenedor vacío debe tener 0 bultos.',
-                                "containers.{$index}.gross_weight_kg" =>
-                                    'Un contenedor vacío debe tener 0 peso de mercadería.',
-                            ]);
+                            ->withErrors($errors);
                     }
 
                     continue;
@@ -917,8 +946,13 @@ return view('company.shipment-items.edit', compact(
                 'user_id' => Auth::id()
             ]);
 
-            return redirect()->route('company.shipment-items.show', $shipmentItem)
-                ->with('success', 'Item actualizado exitosamente.');
+            return redirect()->route(
+                'company.bills-of-lading.show',
+                $shipmentItem->billOfLading
+            )->with(
+                'success',
+                'Item actualizado exitosamente.'
+            );
 
         } catch (\Exception $e) {
             DB::rollBack();
