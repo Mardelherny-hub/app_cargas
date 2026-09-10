@@ -403,7 +403,38 @@ class GuaranExcelParser implements ManifestParserInterface
             throw new Exception("VOYAGE_NO es requerido en el archivo");
         }
 
-        $vessel = $this->findOrCreateVessel($voyageData, $companyId);
+        /*
+         * La embarcación informada por GUARAN tiene prioridad.
+         * La seleccionada por el operador sólo funciona como respaldo
+         * cuando el archivo no informa BARGE_NAME.
+         */
+        $sourceVesselName = trim(
+            (string) ($voyageData['vessel_name'] ?? '')
+        );
+
+        if ($sourceVesselName !== '') {
+            $vessel = $this->findOrCreateVessel(
+                $voyageData,
+                $companyId
+            );
+        } else {
+            $selectedVesselId = $options['vessel_id'] ?? null;
+
+            $vessel = $selectedVesselId
+                ? Vessel::where('id', $selectedVesselId)
+                    ->where('company_id', $companyId)
+                    ->where('active', true)
+                    ->where('operational_status', 'active')
+                    ->first()
+                : null;
+
+            if (!$vessel) {
+                throw new Exception(
+                    'El archivo GUARAN no informa BARGE_NAME y no hay una embarcación de respaldo válida seleccionada'
+                );
+            }
+        }
+
         $originPort = $this->resolvePortStrict($voyageData['pol']);
         $destPort = $this->resolvePortStrict($voyageData['pod']);
 
