@@ -153,4 +153,61 @@ class GuaranExcelParserVesselVoyageIntegrityTest extends TestCase
             $data['operational_notes']
         );
     }
+
+    public function test_guaran_vessel_resolution_preserves_source_priority_and_selected_vessel_fallback(): void
+    {
+        $source = file_get_contents(
+            app_path('Services/Parsers/GuaranExcelParser.php')
+        );
+
+        $this->assertIsString($source);
+
+        $priorityPosition = strpos(
+            $source,
+            "if (\$sourceVesselName !== '')"
+        );
+
+        $sourceResolverPosition = strpos(
+            $source,
+            '$vessel = $this->findOrCreateVessel(',
+            $priorityPosition !== false ? $priorityPosition : 0
+        );
+
+        $fallbackPosition = strpos(
+            $source,
+            "\$selectedVesselId = \$options['vessel_id'] ?? null;",
+            $priorityPosition !== false ? $priorityPosition : 0
+        );
+
+        $this->assertNotFalse($priorityPosition);
+        $this->assertNotFalse($sourceResolverPosition);
+        $this->assertNotFalse($fallbackPosition);
+
+        $this->assertTrue(
+            $priorityPosition < $sourceResolverPosition
+            && $sourceResolverPosition < $fallbackPosition,
+            'La embarcación del archivo debe resolverse antes del fallback manual.'
+        );
+
+        $this->assertStringContainsString(
+            "->where('company_id', \$companyId)",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "->where('active', true)",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "->where('operational_status', 'active')",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'El archivo GUARAN no informa BARGE_NAME y no hay una embarcación de respaldo válida seleccionada',
+            $source
+        );
+    }
+
 }
