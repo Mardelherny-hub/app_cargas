@@ -11,9 +11,9 @@
                     Línea: <span class="font-medium">#{{ $shipmentItem->line_number }}</span>
                 </p>
             </div>
-            <a href="{{ route('company.shipment-items.show', $shipmentItem) }}" 
+            <a href="{{ route('company.bills-of-lading.show', $shipmentItem->billOfLading) }}"
                class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
-                Volver al Item
+                Volver al Conocimiento
             </a>
         </div>
     </x-slot>
