@@ -170,11 +170,16 @@ class GuaranExcelParser implements ManifestParserInterface
                 &$bills,
                 &$containers,
                 &$createdContainers,
-                &$items
+                &$items,
+                $options
             ) {
                 foreach ($groupedByBL as $blNumber => $blRows) {
                     // Pasamos todas las filas del BL para que pueda contar contenedores únicos
-                    $bill = $this->createBillOfLading($shipment, $blRows);
+                    $bill = $this->createBillOfLading(
+                        $shipment,
+                        $blRows,
+                        $options
+                    );
                     $bills[] = $bill;
                     foreach ($blRows as $row) {
                         // Crear contenedor si la fila lo trae
@@ -412,7 +417,8 @@ class GuaranExcelParser implements ManifestParserInterface
                 $companyId,
                 $vessel,
                 $originPort,
-                $destPort
+                $destPort,
+                $options
             )
         );
     }
@@ -426,7 +432,8 @@ class GuaranExcelParser implements ManifestParserInterface
         int $companyId,
         Vessel $vessel,
         Port $originPort,
-        Port $destPort
+        Port $destPort,
+        array $options = []
     ): array {
         $notes = 'Importado desde GUARAN Excel';
 
@@ -443,8 +450,12 @@ class GuaranExcelParser implements ManifestParserInterface
             'origin_country_id' => $originPort->country_id,
             'destination_country_id' => $destPort->country_id,
 
-            // Guaran sólo declara BL_DATE. No declara salida ni ETA.
-            'departure_date' => null,
+            // GUARAN no declara fecha de salida ni ETA.
+            // La salida sólo se completa cuando fue informada
+            // explícitamente por el operador en la importación.
+            'departure_date' => $this->parseImportDepartureDate(
+                $options['departure_date'] ?? null
+            ),
             'estimated_arrival_date' => null,
 
             'voyage_type' => $this->mapManifestType($voyageData['manifest_type']),
@@ -455,6 +466,27 @@ class GuaranExcelParser implements ManifestParserInterface
             'created_by_user_id' => auth()->id(),
             'operational_notes' => $notes,
         ];
+    }
+
+    /**
+     * Fecha/hora de salida informada explícitamente por el operador.
+     * Si no se informó, permanece NULL.
+     */
+    protected function parseImportDepartureDate($value): ?Carbon
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable $e) {
+            throw new Exception(
+                'Fecha de salida inválida: ' . $value
+            );
+        }
     }
 
     /**
@@ -674,7 +706,11 @@ class GuaranExcelParser implements ManifestParserInterface
     /**
      * Crear BillOfLading - SOLO DATOS REALES
      */
-    protected function createBillOfLading(Shipment $shipment, array $blRows): BillOfLading
+    protected function createBillOfLading(
+        Shipment $shipment,
+        array $blRows,
+        array $options = []
+    ): BillOfLading
     {
         // Tomamos la primera fila para los datos de cabecera (shipper/consignee/notify/fechas)
         $row = $blRows[0];
@@ -684,7 +720,9 @@ class GuaranExcelParser implements ManifestParserInterface
         $notifyParty = $this->findOrCreateClient($this->extractClientData($row, 'NOTIFY_PARTY'));
 
         $billDates = $this->buildBillDocumentDates(
-            $row['BL_DATE'] ?? null
+            $row['BL_DATE'] ?? null,
+            $options['loading_date'] ?? null,
+            $options['discharge_date'] ?? null
         );
 
         // Detectar si el BL es contenedorizado: alguna fila trae CONTAINER_NUMBER
@@ -747,6 +785,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'bill_number' => $row['BL_NUMBER'],
             'bill_date' => $billDates['bill_date'],
             'loading_date' => $billDates['loading_date'],
+            'discharge_date' => $billDates['discharge_date'],
             'freight_terms' => $this->mapFreightTerms($row['FREIGHT_TERMS']),
             'total_packages' => $totalPackages,
             'gross_weight_kg' => $totalGrossWeight,
@@ -774,8 +813,18 @@ class GuaranExcelParser implements ManifestParserInterface
         foreach ($partes as $parte) {
             $this->persistClientAddress($parte['client'], $parte['addr']);
 
-            $specific = $this->resolveSpecificAddress($parte['client'], $parte['addr'], $parte['role']);
+            $specific = $this->resolveSpecificAddress(
+                $parte['client'],
+                $parte['addr'],
+                $parte['role']
+            );
+
             if ($specific) {
+                // La dirección informada por GUARAN se conserva para este BL,
+                // pero no debe sustituir automáticamente la dirección de la
+                // ficha del cliente. El operador decide si desea utilizarla.
+                $specific['use_specific_data'] = false;
+
                 $bill->specificContacts()->create($specific);
             }
         }
@@ -1102,10 +1151,17 @@ class GuaranExcelParser implements ManifestParserInterface
     }
 
     /**
-     * Guaran declara BL_DATE, pero no declara una fecha de carga.
+     * BL_DATE pertenece al documento.
+     *
+     * GUARAN no declara fecha de carga ni fecha de descarga.
+     * Esas fechas sólo se completan cuando el operador las informó
+     * explícitamente en la pantalla de importación.
      */
-    protected function buildBillDocumentDates($blDate): array
-    {
+    protected function buildBillDocumentDates(
+        $blDate,
+        $loadingDate = null,
+        $dischargeDate = null
+    ): array {
         $billDate = $this->parseDate($blDate);
 
         if (!$billDate) {
@@ -1114,9 +1170,43 @@ class GuaranExcelParser implements ManifestParserInterface
             );
         }
 
+        $loadingValue = trim((string) $loadingDate);
+        $dischargeValue = trim((string) $dischargeDate);
+
+        $resolvedLoadingDate = $loadingValue !== ''
+            ? $this->parseDate($loadingValue)
+            : null;
+
+        $resolvedDischargeDate = $dischargeValue !== ''
+            ? $this->parseDate($dischargeValue)
+            : null;
+
+        if ($loadingValue !== '' && !$resolvedLoadingDate) {
+            throw new Exception(
+                'Fecha de carga inválida: ' . $loadingValue
+            );
+        }
+
+        if ($dischargeValue !== '' && !$resolvedDischargeDate) {
+            throw new Exception(
+                'Fecha de descarga inválida: ' . $dischargeValue
+            );
+        }
+
+        if (
+            $resolvedLoadingDate
+            && $resolvedDischargeDate
+            && $resolvedDischargeDate->lt($resolvedLoadingDate)
+        ) {
+            throw new Exception(
+                'La fecha de descarga no puede ser anterior a la fecha de carga'
+            );
+        }
+
         return [
             'bill_date' => $billDate,
-            'loading_date' => null,
+            'loading_date' => $resolvedLoadingDate,
+            'discharge_date' => $resolvedDischargeDate,
         ];
     }
 
