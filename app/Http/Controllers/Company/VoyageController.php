@@ -543,12 +543,12 @@ class VoyageController extends Controller
         
         $company = $this->getUserCompany();
 
-        // --- EMBARCACIONES (activas de la compañía) - LIMITADAS
+        // --- EMBARCACIONES: mismo criterio que en importación
         $vessels = \App\Models\Vessel::where('company_id', $company->id)
             ->where('active', true)
+            ->where('operational_status', 'active')
             ->select('id', 'name', 'imo_number', 'cargo_capacity_tons')
             ->orderBy('name')
-            ->limit($LIMIT)
             ->get();
         
         // --- CAPITANES (activos) - GLOBALES: cualquier empresa puede asignar cualquier capitán activo
