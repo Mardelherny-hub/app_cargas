@@ -109,6 +109,19 @@ class ProcessManifestImportJob implements ShouldQueue
             ]);
 
             if ($result->isSuccessful()) {
+                /*
+                 * Los datos opcionales de la pantalla de importación son comunes
+                 * a todos los formatos. Cada parser sigue siendo responsable de
+                 * respetar la información real de su archivo; acá solamente se
+                 * completa lo que el formato no aporta.
+                 *
+                 * Hay formatos que hoy guardan una fecha sintética ("hoy") aunque
+                 * el archivo no informe fecha de carga. Para esos formatos una
+                 * fecha de carga ingresada explícitamente por el operador es la
+                 * fuente real y debe reemplazar ese valor sintético.
+                 */
+                $this->applyOperationalImportDates($parser, $result);
+
                 // Import OK (con o sin advertencias). Guardamos voyage_id y el
                 // ManifestImport asociado (buscado por voyage, si el parser lo creó).
                 $voyageId = $result->voyage?->id;
@@ -160,6 +173,112 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
+     * Completa las fechas operativas ingresadas al importar sin reemplazar
+     * fechas reales que el formato sí informa.
+     *
+     * Auditoría actual de formatos:
+     * - GUARAN, Login, Paraná, Navsur y TFP no aportan fecha operativa de carga.
+     * - K-Line usa ETD como loading_date; no es una fecha de carga específica.
+     * - G2Ocean sí aporta dateOfLoading.
+     * - CMSP/CUSCAR puede aportar fechas mediante DTM.
+     *
+     * Por eso una fecha de carga explícita del operador es autoritativa para los
+     * seis primeros formatos listados abajo. En G2Ocean y CMSP sólo actúa como
+     * respaldo cuando el parser dejó el campo vacío.
+     *
+     * La fecha de salida siempre es respaldo: si el archivo informó una salida
+     * válida, el parser ya la guardó y no se reemplaza.
+     */
+    protected function applyOperationalImportDates(
+        object $parser,
+        ManifestParseResult $result
+    ): void {
+        $voyage = $result->voyage;
+
+        if (!$voyage) {
+            return;
+        }
+
+        if (
+            $this->departureDate !== null
+            && !$voyage->departure_date
+        ) {
+            $voyage->departure_date = $this->departureDate;
+            $voyage->saveQuietly();
+        }
+
+        if ($this->loadingDate === null && $this->dischargeDate === null) {
+            return;
+        }
+
+        $shipmentIds = \App\Models\Shipment::where(
+            'voyage_id',
+            $voyage->id
+        )->pluck('id');
+
+        if ($shipmentIds->isEmpty()) {
+            return;
+        }
+
+        $parserName = class_basename($parser);
+
+        $operatorLoadingIsSource = in_array(
+            $parserName,
+            [
+                'GuaranExcelParser',
+                'LoginXmlParser',
+                'ParanaExcelParser',
+                'NavsurTextParser',
+                'TfpTextParser',
+                'KlineDataParser',
+            ],
+            true
+        );
+
+        /*
+         * Sólo CMSP/CUSCAR tiene actualmente una fuente específica de fecha de
+         * descarga en el archivo. En el resto, la fecha ingresada por el operador
+         * es el dato operativo disponible para ese campo.
+         */
+        $operatorDischargeIsSource = $parserName !== 'CmspEdiParser';
+
+        $bills = \App\Models\BillOfLading::whereIn(
+            'shipment_id',
+            $shipmentIds
+        )->get();
+
+        foreach ($bills as $bill) {
+            $changed = false;
+
+            if (
+                $this->loadingDate !== null
+                && (
+                    $operatorLoadingIsSource
+                    || !$bill->loading_date
+                )
+            ) {
+                $bill->loading_date = $this->loadingDate;
+                $changed = true;
+            }
+
+            if (
+                $this->dischargeDate !== null
+                && (
+                    $operatorDischargeIsSource
+                    || !$bill->discharge_date
+                )
+            ) {
+                $bill->discharge_date = $this->dischargeDate;
+                $changed = true;
+            }
+
+            if ($changed) {
+                $bill->save();
+            }
+        }
+    }
+
+    /**
      * Ubica el ManifestImport que el parser creó para este viaje (si lo creó),
      * para enlazarlo al tracking y poder armar el reporte después. Se busca por
      * voyage_id porque es el vínculo fiable; puede no existir (parser que abortó).
@@ -174,6 +293,7 @@ class ProcessManifestImportJob implements ShouldQueue
             ->latest('id')
             ->value('id');
     }
+
     /**
      * Los archivos solo se acumulan cuando una importacion falla (las exitosas
      * borran el suyo), asi que la limpieza se dispara en ese mismo momento: no
