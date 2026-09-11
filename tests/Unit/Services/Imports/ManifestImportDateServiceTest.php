@@ -40,12 +40,12 @@ class ManifestImportDateServiceTest extends TestCase
                     $parserClass,
                     true
                 ),
-                "{$parserClass} debe aceptar la fecha manual de carga porque no posee una loading_date explícita propia del BL."
+                "{$parserClass} debe aceptar la fecha manual de carga porque su loading_date actual no representa una fecha explícita propia del BL."
             );
         }
     }
 
-    public function test_explicit_source_loading_keeps_priority_for_g2ocean_and_cmsp(): void
+    public function test_non_whitelisted_formats_preserve_an_existing_loading_date(): void
     {
         foreach ([G2OceanXmlParser::class, CmspEdiParser::class] as $parserClass) {
             $this->assertFalse(
@@ -53,7 +53,7 @@ class ManifestImportDateServiceTest extends TestCase
                     $parserClass,
                     true
                 ),
-                "{$parserClass} debe conservar la fecha de carga que ya vino de la fuente."
+                "{$parserClass} debe conservar una loading_date no nula ya resuelta por su parser."
             );
         }
     }
