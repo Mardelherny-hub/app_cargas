@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ImportTracking;
+use App\Services\Imports\ManifestImportDateService;
 use App\Services\Parsers\ManifestParserFactory;
 use App\ValueObjects\ManifestParseResult;
 use Illuminate\Bus\Queueable;
@@ -11,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -99,14 +101,45 @@ class ProcessManifestImportJob implements ShouldQueue
         try {
             $parser = (new ManifestParserFactory())->getParser($fullPath);
 
-            /** @var ManifestParseResult $result */
-            $result = $parser->parse($fullPath, [
+            $options = [
                 'vessel_id' => $this->vesselId,
                 'departure_date' => $this->departureDate,
                 'voyage_number' => $this->voyageNumber,
                 'loading_date' => $this->loadingDate,
                 'discharge_date' => $this->dischargeDate,
-            ]);
+            ];
+
+            $hasOperationalDates =
+                ($this->departureDate !== null && trim($this->departureDate) !== '')
+                || ($this->loadingDate !== null && trim($this->loadingDate) !== '')
+                || ($this->dischargeDate !== null && trim($this->dischargeDate) !== '');
+
+            $parse = function () use ($parser, $fullPath, $options): ManifestParseResult {
+                /** @var ManifestParseResult $result */
+                $result = $parser->parse($fullPath, $options);
+
+                if ($result->isSuccessful()) {
+                    app(ManifestImportDateService::class)->apply(
+                        $parser,
+                        $result,
+                        $options
+                    );
+                }
+
+                return $result;
+            };
+
+            /*
+             * Cuando hay fechas operativas ingresadas por el operador, la
+             * creación del manifiesto y la aplicación de esas fechas forman una
+             * sola unidad atómica. Así, si la cronología resultara inválida, no
+             * queda una importación creada a medias después del fallo.
+             *
+             * Sin fechas manuales se conserva exactamente el flujo previo.
+             */
+            $result = $hasOperationalDates
+                ? DB::transaction($parse)
+                : $parse();
 
             if ($result->isSuccessful()) {
                 // Import OK (con o sin advertencias). Guardamos voyage_id y el
