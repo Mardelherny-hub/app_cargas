@@ -333,17 +333,15 @@ class VoyageController extends Controller
             abort(403, 'No tiene permisos para ver este viaje.');
         }
 
-        // 3. Verificar si el usuario puede ver este viaje específico
         if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
             abort(403, 'No tiene permisos para ver este viaje.');
         }
 
-        // 4. Cargar relaciones necesarias
         $voyage->load([
-            'company', 
-            'leadVessel', 
+            'company',
+            'leadVessel',
             'captain',
-            'originPort', 
+            'originPort',
             'destinationPort',
             'transshipmentPort',
             'shipments',
@@ -358,7 +356,6 @@ class VoyageController extends Controller
      */
     public function edit(Voyage $voyage)
     {
-        // 1. Verificar permisos - CORREGIDO
         if (!Auth::user()->can('voyages.edit')) {
             abort(403, 'No tiene permisos para editar viajes.');
         }
@@ -367,7 +364,6 @@ class VoyageController extends Controller
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
-        // 2. Verificar ownership
         if (!$this->canAccessCompany($voyage->company_id)) {
             abort(403, 'No tiene permisos para editar este viaje.');
         }
@@ -376,33 +372,29 @@ class VoyageController extends Controller
             abort(403, 'No tiene permisos para editar este viaje.');
         }
 
-        // 3. Verificar estado editable
         if (in_array($voyage->status, ['completed', 'cancelled'])) {
             return redirect()->route('company.voyages.show', $voyage)
                 ->with('error', 'No se puede editar un viaje completado o cancelado.');
         }
 
-        // 4. Obtener datos del formulario - AGREGADO
         $formData = $this->getFormData();
 
-        // 5. Determinar permisos del usuario para la vista - AGREGADO
         $userPermissions = [
             'can_edit' => $this->isCompanyAdmin() || (Auth::user()->can('voyages.edit') && $this->hasCompanyRole('Cargas')),
             'can_delete' => $this->isCompanyAdmin() && $this->hasCompanyRole('Cargas'),
         ];
 
-        // 6. Cargar datos necesarios del voyage - RELACIONES EXISTENTES
         $voyage->load([
-            'company', 
+            'company',
             'vessel' => function($query) {
                 $query->select('id', 'name', 'imo_number', 'max_cargo_capacity');
-            }, 
+            },
             'captain' => function($query) {
                 $query->select('id', 'full_name', 'license_number');
-            }, 
+            },
             'originPort' => function($query) {
                 $query->select('id', 'name', 'code');
-            }, 
+            },
             'destinationPort' => function($query) {
                 $query->select('id', 'name', 'code');
             },
@@ -414,7 +406,6 @@ class VoyageController extends Controller
             }
         ]);
 
-        // 7. Si hay operator_id, cargar el operador manualmente
         if ($voyage->operator_id) {
             $voyage->operator = \App\Models\Operator::select('id', 'first_name', 'last_name', 'position')
                 ->find($voyage->operator_id);
@@ -423,7 +414,6 @@ class VoyageController extends Controller
             }
         }
 
-        // 7. Pasar todas las variables necesarias a la vista - CORREGIDO
         return view('company.voyages.edit', compact('voyage', 'formData', 'userPermissions'));
     }
 
@@ -432,7 +422,6 @@ class VoyageController extends Controller
      */
     public function update(Request $request, Voyage $voyage)
     {
-        // 1. Verificar permisos
         if (!Auth::user()->can('voyages.edit')) {
             abort(403, 'No tiene permisos para editar viajes.');
         }
@@ -445,11 +434,11 @@ class VoyageController extends Controller
             abort(403, 'No tiene permisos para editar este viaje.');
         }
 
-        // 2. Validar — mismos nombres de campo que store()
         $rules = [
             'voyage_number'            => 'required|string|max:50',
             'internal_reference'       => 'nullable|string|max:100',
             'status'                   => 'required|in:draft,planning,loading,in_progress,arrived,completed,cancelled',
+            'cargo_type'               => 'required|in:export,import,transit,transshipment,cabotage',
             'lead_vessel_id'           => 'required|exists:vessels,id',
             'captain_id'               => 'required|exists:captains,id',
             'origin_country_id'        => 'required|exists:countries,id',
@@ -464,7 +453,6 @@ class VoyageController extends Controller
             'nuevo_giro_descripcion'   => 'required_if:giro_id,__nuevo__|nullable|string|max:100',
         ];
 
-        // Fechas obligatorias solo para estados avanzados
         if (in_array($request->status, ['loading', 'in_progress', 'arrived', 'completed'])) {
             $rules['departure_date']         = 'required|date';
             $rules['estimated_arrival_date'] = 'required|date|after:departure_date';
@@ -478,14 +466,10 @@ class VoyageController extends Controller
         try {
             DB::beginTransaction();
 
-            // Resolver giro_id: ID existente, alta rápida (__nuevo__) o null.
-            // Nunca se pasa "__nuevo__" al update; se resuelve a un ID real o null.
             $giroId = null;
             $giroInput = $request->input('giro_id');
 
             if ($giroInput === '__nuevo__') {
-                // Alta rápida: reutiliza el giro si el código ya existe (no pisa su descripción),
-                // o lo crea. codigo es unique en la tabla giros.
                 $giro = \App\Models\Giro::firstOrCreate(
                     ['codigo' => $request->input('nuevo_giro_codigo')],
                     [
@@ -495,7 +479,6 @@ class VoyageController extends Controller
                 );
                 $giroId = $giro->id;
             } elseif (!empty($giroInput)) {
-                // ID existente: se valida contra la tabla antes de asignar.
                 $giroId = \App\Models\Giro::where('id', $giroInput)->value('id');
             }
 
@@ -503,6 +486,7 @@ class VoyageController extends Controller
                 'voyage_number'          => $request->voyage_number,
                 'internal_reference'     => $request->internal_reference,
                 'status'                 => $request->status,
+                'cargo_type'             => $request->cargo_type,
                 'lead_vessel_id'         => $request->lead_vessel_id,
                 'captain_id'             => $request->captain_id,
                 'origin_country_id'      => $request->origin_country_id,
@@ -538,12 +522,10 @@ class VoyageController extends Controller
      */
     private function getFormData()
     {
-        // LIMITAR TAMAÑOS INICIALES para colecciones pequeñas
         $LIMIT = 10;
         
         $company = $this->getUserCompany();
 
-        // --- EMBARCACIONES: mismo criterio que en importación
         $vessels = \App\Models\Vessel::where('company_id', $company->id)
             ->where('active', true)
             ->where('operational_status', 'active')
@@ -551,8 +533,6 @@ class VoyageController extends Controller
             ->orderBy('name')
             ->get();
         
-        // --- CAPITANES (activos) - GLOBALES: cualquier empresa puede asignar cualquier capitán activo
-        // Mismo criterio que el form de creación (línea 122) para evitar inconsistencias.
         $captains = \App\Models\Captain::where('active', true)
             ->where('available_for_hire', true)
             ->where('license_status', 'valid')
@@ -565,7 +545,6 @@ class VoyageController extends Controller
             ->limit($LIMIT)
             ->get();
         
-        // --- OPERADORES (activos de la compañía) - LIMITADOS
         $operators = \App\Models\Operator::where('company_id', $company->id)
             ->where('active', true)
             ->selectRaw('id, CONCAT(first_name, " ", last_name) as full_name, position')
@@ -573,7 +552,6 @@ class VoyageController extends Controller
             ->limit($LIMIT)
             ->get();
         
-        // --- PAÍSES (activos) - Solo Argentina y Paraguay como en BL
         $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
 
         $countries = \App\Models\Country::where('active', true)
@@ -582,14 +560,12 @@ class VoyageController extends Controller
             ->orderBy('name')
             ->get();
         
-        // --- PUERTOS (activos) - TODOS los de Argentina y Paraguay (como en BL)
         $ports = \App\Models\Port::where('active', true)
             ->whereIn('country_id', $countryIds)
             ->select('id', 'name', 'code', 'city', 'country_id')
             ->orderBy('name')
             ->get();
 
-        // --- GIROS (activos) - LIMITADOS. Catálogo global; el resto se maneja con alta rápida.
         $giros = \App\Models\Giro::where('activo', true)
             ->select('id', 'codigo', 'descripcion')
             ->orderBy('codigo')
@@ -611,7 +587,6 @@ class VoyageController extends Controller
      */
     public function destroy(Voyage $voyage)
     {
-        // 1. Solo company-admin puede eliminar
         if (!$this->isCompanyAdmin()) {
             abort(403, 'No tiene permisos para eliminar viajes.');
         }
@@ -620,24 +595,20 @@ class VoyageController extends Controller
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
-        // 2. Verificar ownership
         if (!$this->canAccessCompany($voyage->company_id)) {
             abort(403, 'No tiene permisos para eliminar este viaje.');
         }
 
-        // 3. CORREGIDO: Usar el método canBeDeleted() del modelo (más completo)
         if (!$voyage->canBeDeleted()) {
             return redirect()->route('company.voyages.show', $voyage)
                 ->with('error', 'No se puede eliminar este viaje. Verifique que esté en estado eliminable y no tenga cargas, conocimientos de embarque o documentación asociada.');
         }
 
         try {
-            // 4. AGREGADO: Usar transacción para seguridad
             DB::beginTransaction();
 
             $voyageNumber = $voyage->voyage_number;
             
-            // 5. CORREGIDO: Verificación adicional de seguridad antes de eliminar
             if ($voyage->shipments()->count() > 0) {
                 DB::rollBack();
                 return redirect()->route('company.voyages.show', $voyage)
@@ -650,12 +621,10 @@ class VoyageController extends Controller
                     ->with('error', 'No se puede eliminar un viaje que tiene conocimientos de embarque asociados.');
             }
 
-            // 6. Eliminar el viaje
             $voyage->delete();
 
             DB::commit();
 
-            // 7. AGREGADO: Log para auditoría
             Log::info('Viaje eliminado', [
                 'voyage_id' => $voyage->id,
                 'voyage_number' => $voyageNumber,
@@ -685,7 +654,6 @@ class VoyageController extends Controller
      */
     public function updateStatus(Request $request, Voyage $voyage)
     {
-        // 1. Verificar permisos básicos
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para modificar viajes.');
         }
@@ -694,24 +662,20 @@ class VoyageController extends Controller
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
-        // 2. Verificar ownership
         if (!$this->canAccessCompany($voyage->company_id)) {
             abort(403, 'No tiene permisos para modificar este viaje.');
         }
 
-        // 3. Solo company-admin puede cambiar ciertos estados
         $restrictedStatuses = ['completed', 'cancelled'];
         if (in_array($request->status, $restrictedStatuses) && !$this->isCompanyAdmin()) {
             abort(403, 'No tiene permisos para cambiar a este estado.');
         }
 
-        // 4. Validar
         $request->validate([
             'status' => 'required|in:planning,loading,in_progress,arrived,completed,cancelled',
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        // 5. Actualizar
         $voyage->update([
             'status' => $request->status,
             'voyage_notes' => $request->notes,
@@ -723,9 +687,9 @@ class VoyageController extends Controller
             ->with('success', 'Estado del viaje actualizado exitosamente.');
     }
 
-   /**
- * Validar viaje para webservices aduaneros
- */
+    /**
+     * Validar viaje para webservices aduaneros
+     */
     public function validateForCustoms(Request $request, Voyage $voyage)
     {
         try {
@@ -736,9 +700,9 @@ class VoyageController extends Controller
 
             $validator = new \App\Actions\Customs\ValidateVoyageForCustoms();
             $result = $validator->validate(
-                $voyage, 
-                $request->webservice_type, 
-                $request->country, 
+                $voyage,
+                $request->webservice_type,
+                $request->country,
                 ['user' => auth()->user()]
             );
 
@@ -764,14 +728,10 @@ class VoyageController extends Controller
         }
     }
 
-    /**
-     * Obtener estadísticas de viajes para la empresa.
-     */
     private function getVoyageStats($company)
     {
         $baseQuery = Voyage::where('company_id', $company->id);
 
-        // Si es usuario operador, filtrar solo sus viajes
         if ($this->isUser() && $this->isOperator()) {
             $baseQuery->where('created_by_user_id', Auth::id());
         }
@@ -785,12 +745,8 @@ class VoyageController extends Controller
         ];
     }
 
-    /**
-     * Mostrar gestión de contenedores del viaje.
-     */
     public function containers(Voyage $voyage)
     {
-        // 1. Verificar permisos básicos
         if (!$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para gestionar contenedores.');
         }
@@ -799,23 +755,19 @@ class VoyageController extends Controller
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
-        // 2. Verificar ownership del viaje
         if (!$this->canAccessCompany($voyage->company_id)) {
             abort(403, 'No tiene permisos para gestionar contenedores de este viaje.');
         }
 
-        // 3. Verificar si el usuario puede gestionar este viaje específico
         if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
             abort(403, 'No tiene permisos para gestionar contenedores de este viaje.');
         }
 
-        // 4. Verificar que el viaje esté en estado editable
         if (!in_array($voyage->status, ['planning', 'loading'])) {
             return redirect()->route('company.voyages.show', $voyage)
                 ->with('error', 'Solo se pueden gestionar contenedores en viajes en estado de planificación o carga.');
         }
 
-        // 5. Cargar datos necesarios para la vista
         $voyage->load([
             'shipments.vessel',
             'shipments.captain',
@@ -825,10 +777,8 @@ class VoyageController extends Controller
             'destinationPort'
         ]);
 
-        // 6. Obtener contenedores existentes del viaje usando la relación existente
         $existingContainers = $voyage->getAllContainers()->get();
 
-        // 7. Obtener estadísticas de contenedores por shipment
         $shipmentStats = $voyage->shipments->map(function ($shipment) {
             return [
                 'id' => $shipment->id,
@@ -840,69 +790,27 @@ class VoyageController extends Controller
             ];
         });
 
-        // 8. Preparar datos para la vista
         return view('company.voyages.containers', compact(
             'voyage',
-            'existingContainers', 
+            'existingContainers',
             'shipmentStats'
         ));
     }
 
-    /**
-     * Mostrar el manifiesto del viaje.
-     */
     public function manifest(Voyage $voyage)
     {
-        // 1. Verificar permisos básicos
         if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
             abort(403, 'No tiene permisos para ver manifiestos.');
         }
 
-        // 2. Verificar que el viaje pertenece a la empresa del usuario
         if (!$this->canAccessCompany($voyage->company_id)) {
             abort(403, 'No tiene permisos para ver este manifiesto.');
         }
 
-        // 3. Verificar si el usuario puede ver este viaje específico
         if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
             abort(403, 'No tiene permisos para ver este manifiesto.');
         }
 
-        // 4. Cargar relaciones necesarias para el manifiesto
-        $voyage->load([
-            'shipments.billsOfLading.shipper',
-            'shipments.billsOfLading.consignee', 
-            'shipments.vessel',
-            'shipments.captain',
-            'originPort.country',
-            'destinationPort.country',
-            'company'
-        ]);
-
-        return view('company.voyages.manifest', compact('voyage'));
-    }
-
-    /**
-     * Generar PDF del manifiesto del viaje.
-     */
-    public function manifestPdf(Voyage $voyage)
-    {
-        // 1. Verificar permisos básicos
-        if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
-            abort(403, 'No tiene permisos para generar manifiestos.');
-        }
-
-        // 2. Verificar que el viaje pertenece a la empresa del usuario
-        if (!$this->canAccessCompany($voyage->company_id)) {
-            abort(403, 'No tiene permisos para generar este manifiesto.');
-        }
-
-        // 3. Verificar si el usuario puede ver este viaje específico
-        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
-            abort(403, 'No tiene permisos para generar este manifiesto.');
-        }
-
-        // 4. Cargar relaciones necesarias para el manifiesto
         $voyage->load([
             'shipments.billsOfLading.shipper',
             'shipments.billsOfLading.consignee',
@@ -913,7 +821,33 @@ class VoyageController extends Controller
             'company'
         ]);
 
-        // 5. Generar PDF (usando la vista del manifiesto)
+        return view('company.voyages.manifest', compact('voyage'));
+    }
+
+    public function manifestPdf(Voyage $voyage)
+    {
+        if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para generar manifiestos.');
+        }
+
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No tiene permisos para generar este manifiesto.');
+        }
+
+        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
+            abort(403, 'No tiene permisos para generar este manifiesto.');
+        }
+
+        $voyage->load([
+            'shipments.billsOfLading.shipper',
+            'shipments.billsOfLading.consignee',
+            'shipments.vessel',
+            'shipments.captain',
+            'originPort.country',
+            'destinationPort.country',
+            'company'
+        ]);
+
         $pdf = \PDF::loadView('company.voyages.manifest-pdf', compact('voyage'));
         
         $filename = "manifest-{$voyage->voyage_number}-" . date('Y-m-d') . ".pdf";
@@ -921,29 +855,18 @@ class VoyageController extends Controller
         return $pdf->download($filename);
     }
 
-    /**
-     * Mostrar vista detallada completa del viaje - "Cockpit" del viaje
-     * Incluye: Resumen ejecutivo + Shipments + Bills of Lading + Items + Contenedores
-     * 
-     * BASADO EN ESTRUCTURA VERIFICADA:
-     * Voyage → Shipments → Bills of Lading → Shipment Items → Containers
-     */
     public function showDetail($id)
     {
         try {
-            // 1. Cargar viaje con todas las relaciones verificadas
             $voyage = Voyage::with([
-                // Relaciones básicas del viaje
                 'company',
                 'leadVessel',
-                'captain', 
+                'captain',
                 'originCountry',
                 'destinationCountry',
                 'originPort',
                 'destinationPort',
                 'transshipmentPort',
-                
-                // Jerarquía completa de datos
                 'shipments' => function($query) {
                     $query->orderBy('sequence_in_voyage');
                 },
@@ -960,23 +883,17 @@ class VoyageController extends Controller
                 'shipments.billsOfLading.shipmentItems.containers'
             ])->findOrFail($id);
 
-            // 2. Verificar permisos (usar métodos existentes del controlador)
             if (!$this->canAccessCompany($voyage->company_id)) {
                 abort(403, 'No tiene permisos para ver este viaje.');
             }
 
-            // 3. Calcular estadísticas del viaje usando relaciones verificadas
             $stats = $this->calculateVoyageStats($voyage);
-            
-            // 4. Preparar datos de completitud para cada shipment
             $shipmentData = $this->prepareShipmentData($voyage->shipments);
-            
-            // 5. Calcular estado general del viaje
             $voyageStatus = $this->calculateVoyageStatus($voyage, $stats);
 
             return view('company.voyages.detail', compact(
                 'voyage',
-                'stats', 
+                'stats',
                 'shipmentData',
                 'voyageStatus'
             ));
@@ -986,9 +903,6 @@ class VoyageController extends Controller
         }
     }
 
-    /**
-     * Calcular estadísticas del viaje usando relaciones verificadas
-     */
     private function calculateVoyageStats(Voyage $voyage): array
     {
         $totalShipments = $voyage->shipments->count();
@@ -1006,7 +920,6 @@ class VoyageController extends Controller
                 $totalItems += $bl->shipmentItems->count();
                 $totalWeight += $bl->shipmentItems->sum('gross_weight_kg');
                 
-                // Contar contenedores únicos
                 foreach ($bl->shipmentItems as $item) {
                     foreach ($item->containers as $container) {
                         $uniqueContainers->push($container->id);
@@ -1023,18 +936,15 @@ class VoyageController extends Controller
             'total_items' => $totalItems,
             'total_weight_kg' => $totalWeight,
             'total_containers' => $totalContainers,
-            'capacity_utilization' => $voyage->total_cargo_capacity_tons > 0 
+            'capacity_utilization' => $voyage->total_cargo_capacity_tons > 0
                 ? round(($totalWeight / 1000) / $voyage->total_cargo_capacity_tons * 100, 2)
                 : 0,
             'container_utilization' => $voyage->total_container_capacity > 0
-                ? round($totalContainers / $voyage->total_container_capacity * 100, 2) 
+                ? round($totalContainers / $voyage->total_container_capacity * 100, 2)
                 : 0
         ];
     }
 
-    /**
-     * Preparar datos de completitud para cada shipment
-     */
     private function prepareShipmentData($shipments): array
     {
         $shipmentData = [];
@@ -1060,9 +970,6 @@ class VoyageController extends Controller
         return $shipmentData;
     }
 
-    /**
-     * Calcular estado general del viaje
-     */
     private function calculateVoyageStatus(Voyage $voyage, array $stats): array
     {
         $readyShipments = collect($this->prepareShipmentData($voyage->shipments))
@@ -1072,7 +979,6 @@ class VoyageController extends Controller
         $totalShipments = $voyage->shipments->count();
         $completionPercentage = $totalShipments > 0 ? round($readyShipments / $totalShipments * 100) : 0;
         
-        // Determinar estado general
         $overallStatus = 'draft';
         if ($completionPercentage === 100) {
             $overallStatus = 'ready';
@@ -1089,68 +995,57 @@ class VoyageController extends Controller
         ];
     }
 
-    /**
- * Generar PDF general del viaje (diferente al manifest PDF)
- * Este PDF muestra información completa del viaje para impresión/archivo
- */
-public function generatePdf(Voyage $voyage)
-{
-    // 1. Verificar permisos básicos
-    if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
-        abort(403, 'No tiene permisos para generar PDFs.');
+    public function generatePdf(Voyage $voyage)
+    {
+        if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para generar PDFs.');
+        }
+
+        if (!$this->canAccessCompany($voyage->company_id)) {
+            abort(403, 'No tiene permisos para generar este PDF.');
+        }
+
+        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
+            abort(403, 'No tiene permisos para generar este PDF.');
+        }
+
+        $voyage->load([
+            'company',
+            'leadVessel',
+            'captain',
+            'originCountry',
+            'destinationCountry',
+            'originPort',
+            'destinationPort',
+            'transshipmentPort',
+            'shipments' => function($query) {
+                $query->orderBy('sequence_in_voyage');
+            },
+            'shipments.vessel',
+            'shipments.captain',
+            'shipments.billsOfLading' => function($query) {
+                $query->orderBy('bill_number');
+            },
+            'shipments.billsOfLading.shipper',
+            'shipments.billsOfLading.consignee',
+            'shipments.billsOfLading.notifyParty',
+            'shipments.billsOfLading.shipmentItems.cargoType',
+            'shipments.billsOfLading.shipmentItems.packagingType',
+            'shipments.billsOfLading.shipmentItems.containers'
+        ]);
+
+        $stats = $this->calculateVoyageStats($voyage);
+
+        $pdf = \PDF::loadView('company.voyages.manifest-pdf', compact('voyage'));
+        $pdf->setPaper('A4', 'portrait');
+        $pdf->setOptions([
+            'defaultFont' => 'Arial',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled' => true
+        ]);
+        
+        $filename = "viaje-{$voyage->voyage_number}-" . date('Y-m-d') . ".pdf";
+        
+        return $pdf->download($filename);
     }
-
-    // 2. Verificar que el viaje pertenece a la empresa del usuario
-    if (!$this->canAccessCompany($voyage->company_id)) {
-        abort(403, 'No tiene permisos para generar este PDF.');
-    }
-
-    // 3. Verificar si el usuario puede ver este viaje específico
-    if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
-        abort(403, 'No tiene permisos para generar este PDF.');
-    }
-
-    // 4. Cargar relaciones necesarias para el PDF completo
-    $voyage->load([
-        'company',
-        'leadVessel',
-        'captain',
-        'originCountry',
-        'destinationCountry', 
-        'originPort',
-        'destinationPort',
-        'transshipmentPort',
-        'shipments' => function($query) {
-            $query->orderBy('sequence_in_voyage');
-        },
-        'shipments.vessel',
-        'shipments.captain',
-        'shipments.billsOfLading' => function($query) {
-            $query->orderBy('bill_number');
-        },
-        'shipments.billsOfLading.shipper',
-        'shipments.billsOfLading.consignee',
-        'shipments.billsOfLading.notifyParty',
-        'shipments.billsOfLading.shipmentItems.cargoType',
-        'shipments.billsOfLading.shipmentItems.packagingType',
-        'shipments.billsOfLading.shipmentItems.containers'
-    ]);
-
-    // 5. Calcular estadísticas para el PDF
-    $stats = $this->calculateVoyageStats($voyage);
-
-    // 6. Generar PDF usando vista específica
-    $pdf = \PDF::loadView('company.voyages.manifest-pdf', compact('voyage'));    
-    // 7. Configurar PDF
-    $pdf->setPaper('A4', 'portrait');
-    $pdf->setOptions([
-        'defaultFont' => 'Arial',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled' => true
-    ]);
-    
-    $filename = "viaje-{$voyage->voyage_number}-" . date('Y-m-d') . ".pdf";
-    
-    return $pdf->download($filename);
-}
 }
