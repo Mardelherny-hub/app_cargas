@@ -30,15 +30,16 @@ use InvalidArgumentException;
 class ManifestImportDateService
 {
     /**
-     * Estos formatos no poseen una fecha de carga explícita propia del BL.
+     * Formatos cuyo valor persistido de loading_date puede ser un default o una
+     * derivación y no una fecha de carga explícita propia del conocimiento.
      *
      * GUARAN / PARANA: BL_DATE es fecha documental, no loading_date.
      * LOGIN / NAVSUR / TFP: el formato no informa loading_date.
-     * K-LINE: el parser usa ETD del viaje como derivación del BL; si el operador
-     * informa loading_date, esa fecha explícita es más específica que la ETD.
+     * K-LINE: el parser deriva loading_date de ETD o de la fecha de importación.
      *
-     * G2Ocean queda fuera porque dateOfLoading sí es fuente explícita del BL.
-     * CMSP queda fuera porque puede aportar fecha de carga mediante DTM.
+     * Los formatos no incluidos conservan cualquier loading_date no nula que
+     * ya haya resuelto su parser. Si queda nula, la fecha manual funciona como
+     * respaldo igual que para el resto.
      */
     private const MANUAL_LOADING_WHEN_PROVIDED = [
         GuaranExcelParser::class,
@@ -124,7 +125,7 @@ class ManifestImportDateService
                 $newLoading = $manualLoading;
             }
 
-            // Si el archivo ya informó descarga, se conserva siempre.
+            // Si ya existe descarga persistida por el parser, se conserva.
             if ($manualDischarge !== null && $currentDischarge === null) {
                 $newDischarge = $manualDischarge;
             }
