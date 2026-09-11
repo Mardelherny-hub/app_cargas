@@ -92,6 +92,56 @@ class ManifestImportDateServiceTest extends TestCase
         );
     }
 
+    public function test_common_service_keeps_chronology_guards(): void
+    {
+        $source = file_get_contents(
+            app_path('Services/Imports/ManifestImportDateService.php')
+        );
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString(
+            'La fecha de salida no puede ser posterior a la fecha estimada de llegada informada por el archivo.',
+            $source
+        );
+        $this->assertStringContainsString(
+            'La fecha de descarga no puede ser anterior a la de carga en el conocimiento',
+            $source
+        );
+    }
+
+    public function test_import_form_presents_operational_dates_as_common_fallbacks(): void
+    {
+        $source = file_get_contents(
+            resource_path('views/company/manifests/import.blade.php')
+        );
+
+        $this->assertIsString($source);
+        $this->assertStringNotContainsString(
+            'Fecha de Carga (GUARAN)',
+            $source
+        );
+        $this->assertStringNotContainsString(
+            'Fecha de Descarga (GUARAN)',
+            $source
+        );
+        $this->assertStringContainsString(
+            'Si el archivo contiene una',
+            $source
+        );
+        $this->assertStringContainsString(
+            'fecha válida, esa fecha tendrá prioridad.',
+            $source
+        );
+        $this->assertStringContainsString(
+            'fecha de carga explícita, esa fecha tendrá prioridad.',
+            $source
+        );
+        $this->assertStringContainsString(
+            'fecha de descarga explícita, esa fecha tendrá prioridad.',
+            $source
+        );
+    }
+
     public function test_job_applies_operational_dates_inside_atomic_transaction(): void
     {
         $source = file_get_contents(
