@@ -185,7 +185,7 @@
                     <div>
                         <label for="loading_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Carga (GUARAN)
+                            📅 Fecha de Carga
                         </label>
 
                         <input type="date"
@@ -201,9 +201,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Sólo para archivos GUARAN. Se aplicará a los
-                            conocimientos importados porque este formato no
-                            informa una fecha de carga.
+                            Complete este dato cuando el formato no informe una
+                            fecha de carga propia del conocimiento. Si el archivo
+                            informa una fecha de carga explícita, esa fecha tendrá prioridad.
                         </p>
                     </div>
 
@@ -211,7 +211,7 @@
                     <div>
                         <label for="discharge_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Descarga (GUARAN)
+                            📅 Fecha de Descarga
                         </label>
 
                         <input type="date"
@@ -227,9 +227,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Sólo para archivos GUARAN. Se aplicará a los
-                            conocimientos importados porque este formato no
-                            informa una fecha de descarga.
+                            Complete este dato cuando el formato no informe una
+                            fecha de descarga propia del conocimiento. Si el archivo
+                            informa una fecha de descarga explícita, esa fecha tendrá prioridad.
                         </p>
                     </div>
 
