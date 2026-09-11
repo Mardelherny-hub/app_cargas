@@ -153,6 +153,28 @@
                             </div>
                         </div>
 
+                        {{-- Tipo de operación --}}
+                        <div>
+                            <label for="cargo_type" class="block text-sm font-medium text-gray-700 mb-1">
+                                Tipo de Operación <span class="text-red-500">*</span>
+                            </label>
+                            <select name="cargo_type"
+                                    id="cargo_type"
+                                    required
+                                    @if(!$userPermissions['can_edit']) disabled @endif
+                                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm @error('cargo_type') border-red-300 @enderror @if(!$userPermissions['can_edit']) bg-gray-100 @endif">
+                                <option value="">Seleccione tipo de operación</option>
+                                <option value="export" {{ old('cargo_type', $voyage->cargo_type) === 'export' ? 'selected' : '' }}>Exportación</option>
+                                <option value="import" {{ old('cargo_type', $voyage->cargo_type) === 'import' ? 'selected' : '' }}>Importación</option>
+                                <option value="transit" {{ old('cargo_type', $voyage->cargo_type) === 'transit' ? 'selected' : '' }}>Tránsito</option>
+                                <option value="transshipment" {{ old('cargo_type', $voyage->cargo_type) === 'transshipment' ? 'selected' : '' }}>Trasbordo</option>
+                                <option value="cabotage" {{ old('cargo_type', $voyage->cargo_type) === 'cabotage' ? 'selected' : '' }}>Cabotaje</option>
+                            </select>
+                            @error('cargo_type')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
                         {{-- Embarcación + Capitán --}}
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
