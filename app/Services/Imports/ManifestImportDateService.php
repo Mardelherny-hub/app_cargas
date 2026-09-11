@@ -80,6 +80,17 @@ class ManifestImportDateService
 
         // La fecha del archivo siempre conserva prioridad para la salida.
         if ($manualDeparture !== null && $voyage->departure_date === null) {
+            if (
+                $voyage->estimated_arrival_date !== null
+                && $manualDeparture->gt(
+                    Carbon::parse($voyage->estimated_arrival_date)
+                )
+            ) {
+                throw new InvalidArgumentException(
+                    'La fecha de salida no puede ser posterior a la fecha estimada de llegada informada por el archivo.'
+                );
+            }
+
             $voyage->departure_date = $manualDeparture;
             $voyage->save();
         }
