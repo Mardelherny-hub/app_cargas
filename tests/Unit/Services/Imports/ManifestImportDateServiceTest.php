@@ -87,7 +87,7 @@ class ManifestImportDateServiceTest extends TestCase
 
         $this->assertIsString($source);
         $this->assertStringNotContainsString(
-            "$changes['bill_date']",
+            "\$changes['bill_date']",
             $source
         );
     }
