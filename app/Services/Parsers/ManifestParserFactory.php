@@ -5,7 +5,7 @@ namespace App\Services\Parsers;
 use App\Contracts\ManifestParserInterface;
 use App\Services\Parsers\KlineDataParser;
 use App\Services\Parsers\ParanaExcelParser;
-use App\Services\Parsers\GuaranExcelParser;
+use App\Services\Parsers\GuaranExcelParserCompat;
 use App\Services\Parsers\LoginXmlParser;
 use App\Services\Parsers\TfpTextParser;
 use App\Services\Parsers\NavsurTextParser;
@@ -14,21 +14,12 @@ use App\Services\Parsers\G2OceanXmlParser;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
-/**
- * FACTORY PARA AUTO-DETECCIÓN Y CREACIÓN DE PARSERS
- *
- * Responsable de detectar automáticamente el tipo de archivo de manifiesto
- * y retornar el parser apropiado para procesarlo.
- */
 class ManifestParserFactory
 {
-    /**
-     * Lista de parsers disponibles en orden de prioridad
-     */
     protected array $parsers = [
         KlineDataParser::class,
         ParanaExcelParser::class,
-        GuaranExcelParser::class,
+        GuaranExcelParserCompat::class,
         LoginXmlParser::class,
         TfpTextParser::class,
         CmspEdiParserCompat::class,
@@ -36,21 +27,15 @@ class ManifestParserFactory
         G2OceanXmlParser::class,
     ];
 
-    /**
-     * Mapeo de extensiones a parsers esperados
-     */
     protected array $extensionMappings = [
         'dat' => [KlineDataParser::class],
         'txt' => [KlineDataParser::class, NavsurTextParser::class, TfpTextParser::class],
-        'xlsx' => [ParanaExcelParser::class, GuaranExcelParser::class],
-        'xls' => [ParanaExcelParser::class, GuaranExcelParser::class],
+        'xlsx' => [ParanaExcelParser::class, GuaranExcelParserCompat::class],
+        'xls' => [ParanaExcelParser::class, GuaranExcelParserCompat::class],
         'xml' => [LoginXmlParser::class, G2OceanXmlParser::class],
         'edi' => [CmspEdiParserCompat::class],
     ];
 
-    /**
-     * Obtener parser apropiado para un archivo
-     */
     public function getParser(string $filePath): ManifestParserInterface
     {
         if (!file_exists($filePath)) {
@@ -90,9 +75,6 @@ class ManifestParserFactory
         );
     }
 
-    /**
-     * Detectar parser basado en contenido del archivo
-     */
     protected function detectParserByContent(string $filePath): ?ManifestParserInterface
     {
         foreach ($this->parsers as $parserClass) {
@@ -119,9 +101,6 @@ class ManifestParserFactory
         return null;
     }
 
-    /**
-     * Detectar parser basado en extensión del archivo
-     */
     protected function detectParserByExtension(string $filePath): ?ManifestParserInterface
     {
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
