@@ -27,7 +27,7 @@ use Exception;
 
 /**
  * PARSER PARA TFP.TXT - FORMATO JERÁRQUICO CON MARCADORES **...**
- * 
+ *
  * Estructura:
  * - **BL** ... **FIN BL**
  * - **CONTENEDORES** ... **FIN CONTENEDORES**
@@ -91,10 +91,10 @@ class TfpTextParser implements ManifestParserInterface
                 // Crear voyage único
                 $voyageData = $this->extractVoyageData($blBlocks[0], $filePath);
                 $voyage = $this->findOrCreateVoyage($voyageData, $options);
-                
+
                 // Crear shipment
                 $shipment = $this->findOrCreateShipment($voyage, $voyageData);
-                
+
                 $allBills = [];
                 $allContainers = [];
                 $createdContainerIds = [];
@@ -115,7 +115,7 @@ class TfpTextParser implements ManifestParserInterface
                     $bill = $this->createBillOfLading($shipment, $header, !empty($containers), $containers, $lines);
                     $allBills[] = $bill;
                     $this->stats['processed_bls']++;
-                    
+
                     // Crear contenedores
                     $billContainers = [];
                     foreach ($containers as $containerData) {
@@ -132,7 +132,7 @@ class TfpTextParser implements ManifestParserInterface
                             $this->stats['processed_containers']++;
                         }
                     }
-                    
+
                     // Crear items
                     $billItems = [];
                     foreach ($lines as $lineData) {
@@ -406,8 +406,6 @@ class TfpTextParser implements ManifestParserInterface
                     'tipo_embalaje' => $this->extractValue($frag, 'TIPOEMBALAJE:'),
                     'cod_armonizado' => $this->extractValue($frag, 'CODARMONIZADO:'),
                     'volumen_total' => $this->extractValue($frag, 'VOLUMENTOTAL:'),
-                    // CONTENEDOR vincula la mercaderia con su contenedor; OBS trae
-                    // el permiso de embarque en este formato.
                     'contenedor' => $this->extractValue($frag, 'CONTENEDOR:'),
                     'obs' => $this->extractValue($frag, 'OBS:'),
                 ];
@@ -421,7 +419,7 @@ class TfpTextParser implements ManifestParserInterface
         return $rows;
     }
 
-protected function extractValue(string $scope, string $label): ?string
+    protected function extractValue(string $scope, string $label): ?string
     {
         $pattern = '/' . preg_quote($label, '/') . '\s*\/\*(.*?)\*\//is';
         if (preg_match($pattern, $scope, $m)) {
@@ -516,23 +514,18 @@ protected function extractValue(string $scope, string $label): ?string
             );
         }
 
-        if (
-            mb_strtoupper(trim($vessel->name)) !==
-            mb_strtoupper(trim($data['vessel_name']))
-        ) {
-            throw new Exception(
-                "TFP declara buque '{$data['vessel_name']}', "
-                . "pero se seleccionó '{$vessel->name}'."
-            );
-        }
-
         $originPort = $this->findOrCreatePort($data['pol']);
         $destPort = $this->findOrCreatePort($data['pod']);
 
-        $this->guardVoyageNumberIsFree($data['voyage_number']);
+        $voyageNumber = trim((string) ($options['voyage_number'] ?? ''));
+        if ($voyageNumber === '') {
+            $voyageNumber = $data['voyage_number'];
+        }
+
+        $this->guardVoyageNumberIsFree($voyageNumber);
 
         return Voyage::create([
-            'voyage_number' => $data['voyage_number'],
+            'voyage_number' => $voyageNumber,
             'company_id' => $companyId,
             'lead_vessel_id' => $vessel->id,
             'origin_port_id' => $originPort->id,
@@ -573,9 +566,6 @@ protected function extractValue(string $scope, string $label): ?string
 
     protected function createBillOfLading(Shipment $shipment, array $data, bool $hasContainers = false, array $containers = [], array $lines = []): BillOfLading
     {
-        // TFP no trae una columna de país propia para cada parte.
-        // Los puertos sí son datos estructurados del BL y aportan el
-        // contexto geográfico cuando la parte no declara identidad fiscal.
         $loadingPort = $this->findOrCreatePort($data['cod_puerto_carga'] ?? '');
         $dischargePort = $this->findOrCreatePort($data['cod_puerto_descarga'] ?? '');
 
@@ -602,10 +592,6 @@ protected function extractValue(string $scope, string $label): ?string
             (int) $dischargePort->country_id
         );
 
-        // Algunos generadores TFP emiten NOTIFICATARIO como "nombre del consignatario + dirección"
-        // pegados (verificado contra archivo real 13/07/2026). Si el notificatario empieza con el
-        // nombre del consignatario del MISMO BL y le sobra texto, es el mismo cliente y el
-        // sobrante es dirección: se evita crear un duplicado con nombre basura.
         $notifyName = trim($data['notificatario'] ?? '');
         $consigneeName = trim($data['consignatario'] ?? '');
         $notifyExtraAddr = null;
@@ -629,11 +615,6 @@ protected function extractValue(string $scope, string $label): ?string
             );
         }
 
-        // El permiso de embarque viene en el OBS de los contenedores, repetido en
-        // cada uno pero unico por conocimiento: verificado 07/08/2026 sobre
-        // DTY260626N (184 conocimientos, 370 OBS con dato, ninguno con dos
-        // permisos distintos). Formato "26001TRB3011733H". Se toma el primero
-        // que lo declare. La columna es string(100).
         $permisoEmbarque = null;
         foreach ($containers as $c) {
             $obs = trim($c['obs'] ?? '');
@@ -643,10 +624,6 @@ protected function extractValue(string $scope, string $label): ?string
             }
         }
 
-        // Respaldo: OBS del bloque LINEAS (Roberto 11/08/2026, BM ROSA lo trae
-        // ahi: "26001TRB3013247J"). Ese OBS tambien puede traer texto libre
-        // ("CARGOS IN TRANSIT TO VILLETA..."), asi que solo se acepta si tiene
-        // forma de permiso: digitos+letras+digitos, sin espacios.
         if ($permisoEmbarque === null) {
             foreach ($lines as $l) {
                 $obs = trim($l['obs'] ?? '');
@@ -667,13 +644,9 @@ protected function extractValue(string $scope, string $label): ?string
             'notify_party_id' => $notify->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
-            // Prioridad: campo TRB de la cabecera; si no viene, el OBS de los
-            // contenedores (ver arriba). Este archivo lo trae solo en OBS.
             'permiso_embarque' => !empty($data['trb']) ? $data['trb'] : $permisoEmbarque,
             'freight_terms' => null,
             'status' => 'draft',
-            // Si el BL trae contenedores: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR).
-            // Si no, se mantiene el default (1 = DOCUMENTOS / A GRANEL).
             'primary_cargo_type_id' => $hasContainers ? \App\Models\CargoType::where('code', 'CON001')->where('active', true)->firstOrFail()->id : null,
             'primary_packaging_type_id' => null,
             'gross_weight_kg' => 0,
@@ -683,8 +656,6 @@ protected function extractValue(string $scope, string $label): ?string
             'is_consolidated' => strtoupper($data['consolidado'] ?? 'N') === 'S',
         ]);
 
-        // Dirección del cliente: persistir en ficha (cliente nuevo/sin dirección)
-        // o guardar dirección específica del conocimiento (cliente existente con dirección distinta).
         foreach ([
             ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper'],
             ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee'],
@@ -707,8 +678,6 @@ protected function extractValue(string $scope, string $label): ?string
 
         $existing = Container::where('container_number', $data['numero'])->first();
         if ($existing) {
-            // Reutilizar un contenedor existente es normal: el contenedor es un activo
-            // físico que se repite entre viajes. No se expone como advertencia al usuario.
             Log::info('Contenedor reutilizado', ['container_number' => $data['numero']]);
             return $existing;
         }
@@ -730,31 +699,14 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    /**
-     * El campo CONDICION del formato TFP no tiene un unico significado: distintos
-     * emisores lo usan para cosas distintas. Verificado 05/08/2026 contra archivos
-     * reales en produccion:
-     *   - "P" en contenedores 20DV con 23.529 kg y 23 bultos, o sea llenos: no puede
-     *     ser "Parcial" del enum condition, es "muelle a muelle" del catalogo AFIP.
-     *   - "H" (casa a casa, AFIP) rompia la importacion: no existe en condition.
-     *   - "V" aparece en otros archivos y solo tiene sentido como vacio.
-     *
-     * Por eso no se elige un significado: cada valor va a la columna donde ese
-     * valor es valido. container_condition es el que el serializador transmite a
-     * AFIP como <condicion> (ver GuaranExcelParser L771).
-     *
-     * @return array{condition: string, container_condition: string}
-     */
     protected function mapTfpCondition(?string $raw): array
     {
         $valor = strtoupper(trim((string) $raw));
 
-        // Catalogo AFIP casa/muelle -> container_condition
         if (in_array($valor, ['H', 'P'], true)) {
             return ['condition' => 'L', 'container_condition' => $valor];
         }
 
-        // Catalogo de estado del contenedor -> condition
         if (in_array($valor, ['V', 'D', 'S', 'L', 'R'], true)) {
             return ['condition' => $valor, 'container_condition' => 'P'];
         }
@@ -777,35 +729,35 @@ protected function extractValue(string $scope, string $label): ?string
             throw new Exception('TFP: mercadería sin descripción.');
         }
 
-        if ($packagesRaw === '' || !is_numeric($packagesRaw) || (float) $packagesRaw <= 0) {
+        $isEmptyContainerItem = mb_strtoupper($description) === 'VACIO';
+
+        if (
+            !$isEmptyContainerItem
+            && ($packagesRaw === '' || !is_numeric($packagesRaw) || (float) $packagesRaw <= 0)
+        ) {
             throw new Exception('TFP: cantidad de bultos ausente o inválida.');
         }
 
-        if ($grossRaw === '' || !is_numeric($grossRaw) || (float) $grossRaw <= 0) {
+        if (
+            !$isEmptyContainerItem
+            && ($grossRaw === '' || !is_numeric($grossRaw) || (float) $grossRaw <= 0)
+        ) {
             throw new Exception('TFP: peso bruto ausente o inválido.');
         }
+
+        $packageQuantity = $isEmptyContainerItem ? 0 : (int) floatval($packagesRaw);
+        $grossWeight = $isEmptyContainerItem ? 0.0 : floatval($grossRaw);
 
         return ShipmentItem::create([
             'bill_of_lading_id' => $bill->id,
             'line_number' => $lineNumber,
             'item_description' => $description,
-            // CANTTOTALBULTOS viene vacio en parte de los contenedores (50 de 119
-            // en ASUNCION B, verificado 06/08/2026). extractValue devuelve '' y no
-            // null en ese caso, asi que el ?? no se activaba e intval('') daba 0:
-            // el item quedaba sin bultos y el total del conocimiento en cero.
-            // Criterio de Roberto (05/08): sin bultos declarados, 1 por contenedor.
-            // El total del conocimiento se recalcula desde los items, con lo cual
-            // termina siendo la cantidad de contenedores, como el pidio.
-            'package_quantity' => (int) floatval($packagesRaw),
-            'gross_weight_kg' => floatval($grossRaw),
+            'package_quantity' => $packageQuantity,
+            'gross_weight_kg' => $grossWeight,
             'net_weight_kg' => null,
             'volume_m3' => isset($data['volumen_total']) && trim((string) $data['volumen_total']) !== '' ? floatval($data['volumen_total']) : null,
-            // Mismo criterio que el BL: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR) si hay contenedores.
             'cargo_type_id' => $hasContainers ? \App\Models\CargoType::where('code', 'CON001')->where('active', true)->firstOrFail()->id : null,
             'packaging_type_id' => null,
-            // CODARMONIZADO normalizado a NNNN.NN; si viene vacio, se busca
-            // dentro de la descripcion ("NCM NO.: 3808.92.99" - Roberto
-            // 11/08/2026). Mismo criterio que CMSP.
             'commodity_code' => !empty($data['cod_armonizado'])
                 ? $this->normalizeNcm($data['cod_armonizado'])
                 : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
@@ -814,9 +766,6 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    /**
-     * Vincular un Container con un ShipmentItem en el pivote container_shipment_item.
-     */
     protected function attachContainerToItem(Container $container, ShipmentItem $item, array $containerData = []): void
     {
         $exists = DB::table('container_shipment_item')
@@ -831,12 +780,6 @@ protected function extractValue(string $scope, string $label): ?string
         DB::table('container_shipment_item')->insert([
             'container_id' => $container->id,
             'shipment_item_id' => $item->id,
-            // PESO y CANTIDAD del propio contenedor cuando el archivo los declara.
-            // Antes se copiaban los totales del item a CADA contenedor: con dos
-            // contenedores de 1100 y 1048 bultos, los dos quedaban en 2148 y la
-            // validacion del formulario rechazaba la edicion porque la suma (4296)
-            // no coincidia con el total del item (reportado por Roberto 07/08/2026).
-            // Si el archivo no los trae, se cae al total del item como antes.
             'package_quantity' => isset($containerData['cantidad']) && $containerData['cantidad'] !== ''
                 ? (int) floatval($containerData['cantidad'])
                 : $item->package_quantity,
@@ -853,9 +796,6 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    /**
-     * Registrar la importación en ManifestImport (con dup-check por hash).
-     */
     protected function createImportRecord(string $filePath): ManifestImport
     {
         $user = auth()->user();
@@ -894,12 +834,6 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    /**
-     * Extrae identidad fiscal únicamente cuando el propio texto declara
-     * el tipo. Nunca decide el tipo por longitud del número.
-     *
-     * @return array{tax_id:string,tax_type:?string}|null
-     */
     protected function extractTypedTaxIdentityFromText(?string $text): ?array
     {
         $text = trim((string) $text);
@@ -956,16 +890,6 @@ protected function extractValue(string $scope, string $label): ?string
         return null;
     }
 
-    /**
-     * Resuelve número y tipo fiscal de una parte TFP sin fabricar datos.
-     *
-     * Prioridad:
-     * 1. campo estructurado *RUC;
-     * 2. marcador fiscal explícito en nombre/domicilio;
-     * 3. marcador genérico reconocido por el trait.
-     *
-     * @return array{tax_id:?string,tax_type:?string}
-     */
     protected function resolveClientTaxIdentity(
         ?string $structuredTaxId,
         ?string $name,
@@ -1050,9 +974,6 @@ protected function extractValue(string $scope, string $label): ?string
         ];
     }
 
-    /**
-     * Jurisdicciones inequívocas de cada tipo fiscal soportado.
-     */
     protected function countryAlpha2ForTaxType(?string $taxType): ?string
     {
         return match ($taxType) {
@@ -1064,10 +985,6 @@ protected function extractValue(string $scope, string $label): ?string
         };
     }
 
-    /**
-     * Cuando existe un tipo fiscal explícito, manda su jurisdicción.
-     * Sin tipo explícito se utiliza únicamente el país contextual del BL.
-     */
     protected function resolveClientCountryId(
         ?string $taxType,
         int $fallbackCountryId
@@ -1130,8 +1047,6 @@ protected function extractValue(string $scope, string $label): ?string
             $fallbackCountryId
         );
 
-        // Con identificación fiscal, la identidad es tax_id + país.
-        // No se permite degradar a búsqueda por nombre.
         if ($normTaxId !== null) {
             $client = Client::query()
                 ->where('tax_id', $normTaxId)
@@ -1142,8 +1057,6 @@ protected function extractValue(string $scope, string $label): ?string
                 return $client;
             }
         } else {
-            // Sin identificación fiscal solo reutilizamos un cliente también
-            // sin tax_id, del mismo país y con nombre legal exacto.
             $client = Client::query()
                 ->whereNull('tax_id')
                 ->where('country_id', $countryId)
@@ -1192,14 +1105,6 @@ protected function extractValue(string $scope, string $label): ?string
         ]);
     }
 
-    /**
-     * Resolver puerto por código. NUNCA auto-crea puertos (política del proyecto:
-     * el catálogo tiene ~17.500; un código desconocido debe dar error claro).
-     * Los generadores TFP usan códigos propios que no son UN/LOCODE; se mapean
-     * con aliases verificados contra archivos reales (13/07/2026):
-     *   ARBAI ("BUENOS AIRES") -> ARBUE | PYTV ("TERPORT-VILLETA") -> PYTVT
-     *   PYSEF ("PUERTO SEGURO FLUVIAL") -> PYPSE (alta deliberada en catálogo)
-     */
     protected function findOrCreatePort(string $code): Port
     {
         $code = strtoupper(trim($code));
@@ -1208,8 +1113,8 @@ protected function extractValue(string $scope, string $label): ?string
             'ARBAI' => 'ARBUE',
             'PYTV'  => 'PYTVT',
             'PYSEF' => 'PYPSE',
-            'PYTVI' => 'PYTVT',   // "TERPORT VILLETA" (verificado 06/08/2026 contra archivo VICKY B)
-            'PYNNV' => 'PYVLL',   // "ANNP VILLETA" = puerto publico de Villeta (verificado 11/08/2026 contra BM ROSA V.468)
+            'PYTVI' => 'PYTVT',
+            'PYNNV' => 'PYVLL',
         ];
         $resolved = $aliases[$code] ?? $code;
 
@@ -1238,6 +1143,7 @@ protected function extractValue(string $scope, string $label): ?string
             '20GP' => '20GP',
             '40GP' => '40GP',
             '40HC' => '40HC',
+            '40RH' => '40RH',
         ];
 
         if (!isset($mapping[$code])) {
@@ -1280,11 +1186,6 @@ protected function extractValue(string $scope, string $label): ?string
         ];
     }
 
-    // =====================================================================
-    // Copiados de CmspEdiParser (L1415). Si se toca uno, tocar el otro.
-    // Deuda anotada 11/08/2026: unificar en un concern compartido.
-    // =====================================================================
-
     protected function extractNcmFromText(?string $text): ?string
     {
         if (empty($text)) {
@@ -1298,11 +1199,6 @@ protected function extractValue(string $scope, string $label): ?string
         return $this->normalizeNcm($m[1]);
     }
 
-    /**
-     * Formato de NCM definido por Roberto (03/08/2026): 4 digitos, punto y 2
-     * decimales. Si vienen mas digitos se descartan los sobrantes; si vienen
-     * 4 o 5 quedan los primeros 4 sin decimales; con menos de 4 se descarta.
-     */
     protected function normalizeNcm(?string $raw): ?string
     {
         $digits = preg_replace('/\D/', '', (string) $raw);
