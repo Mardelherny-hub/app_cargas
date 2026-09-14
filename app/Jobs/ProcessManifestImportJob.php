@@ -3,8 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\ImportTracking;
-use App\Services\Parsers\CmspEdiParser;
-use App\Services\Parsers\CmspEdiParserCompat;
 use App\Services\Parsers\ManifestParserFactory;
 use App\ValueObjects\ManifestParseResult;
 use Illuminate\Bus\Queueable;
@@ -13,7 +11,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -89,7 +86,6 @@ class ProcessManifestImportJob implements ShouldQueue
 
             if ($result->isSuccessful()) {
                 $this->applyOperationalImportDates($parser, $result);
-                $this->applyFormatPostProcessing($parser, $result);
 
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
@@ -149,8 +145,21 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * Completa únicamente datos operativos que el formato no aporta.
-     * Las fechas reales del archivo siempre tienen prioridad.
+     * Aplica las fechas operativas informadas explícitamente por el operador.
+     *
+     * Regla funcional confirmada por Roberto (14/09/2026):
+     * si una fecha fue completada en la pantalla de importación, ese dato
+     * tiene prioridad sobre cualquier fecha incluida en el archivo,
+     * independientemente del formato importado.
+     *
+     * Correspondencia:
+     * - departure_date  -> salida del viaje desde origen;
+     * - loading_date    -> fecha de carga de todos los conocimientos;
+     * - discharge_date  -> fecha de descarga de todos los conocimientos
+     *                      y llegada estimada del viaje.
+     *
+     * Si el operador no informa una fecha, se conserva lo resuelto por
+     * el parser a partir del archivo.
      */
     protected function applyOperationalImportDates(
         object $parser,
@@ -162,11 +171,19 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        if (
-            $this->departureDate !== null
-            && !$voyage->departure_date
-        ) {
+        $voyageChanged = false;
+
+        if ($this->departureDate !== null) {
             $voyage->departure_date = $this->departureDate;
+            $voyageChanged = true;
+        }
+
+        if ($this->dischargeDate !== null) {
+            $voyage->estimated_arrival_date = $this->dischargeDate;
+            $voyageChanged = true;
+        }
+
+        if ($voyageChanged) {
             $voyage->saveQuietly();
         }
 
@@ -179,10 +196,6 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        $sourceBillDate = $parser instanceof CmspEdiParserCompat
-            ? $parser->sourceDocumentDate()
-            : null;
-
         $bills = \App\Models\BillOfLading::whereIn(
             'shipment_id',
             $shipmentIds
@@ -191,30 +204,18 @@ class ProcessManifestImportJob implements ShouldQueue
         foreach ($bills as $bill) {
             $changed = false;
 
-            if ($parser instanceof CmspEdiParser) {
-                if (!$bill->loading_date && $voyage->departure_date) {
-                    $bill->loading_date = $voyage->departure_date;
-                    $changed = true;
-                }
-
-                if (!$bill->discharge_date && $voyage->estimated_arrival_date) {
-                    $bill->discharge_date = $voyage->estimated_arrival_date;
-                    $changed = true;
-                }
-            }
-
-            if ($this->loadingDate !== null && !$bill->loading_date) {
+            if ($this->loadingDate !== null) {
                 $bill->loading_date = $this->loadingDate;
                 $changed = true;
             }
 
-            if ($this->dischargeDate !== null && !$bill->discharge_date) {
+            if ($this->dischargeDate !== null) {
                 $bill->discharge_date = $this->dischargeDate;
                 $changed = true;
             }
 
             if (!$bill->bill_date) {
-                $bill->bill_date = $sourceBillDate ?? now()->toDateString();
+                $bill->bill_date = now()->toDateString();
                 $changed = true;
             }
 
@@ -222,71 +223,6 @@ class ProcessManifestImportJob implements ShouldQueue
                 $bill->save();
             }
         }
-    }
-
-    /**
-     * Normalización posterior específica de CUSCAR/CMSP.
-     */
-    protected function applyFormatPostProcessing(
-        object $parser,
-        ManifestParseResult $result
-    ): void {
-        if (!($parser instanceof CmspEdiParser)) {
-            return;
-        }
-
-        $voyage = $result->voyage;
-        if (!$voyage) {
-            return;
-        }
-
-        $shipmentIds = \App\Models\Shipment::where(
-            'voyage_id',
-            $voyage->id
-        )->pluck('id');
-
-        if ($shipmentIds->isEmpty()) {
-            return;
-        }
-
-        $bills = \App\Models\BillOfLading::whereIn(
-            'shipment_id',
-            $shipmentIds
-        )->get();
-
-        $billIds = $bills->pluck('id');
-
-        foreach ($bills as $bill) {
-            if ($bill->source_format !== 'CMSP_EDI_CUSCAR') {
-                $bill->source_format = 'CMSP_EDI_CUSCAR';
-                $bill->saveQuietly();
-            }
-
-            $bill->specificContacts()
-                ->where('use_specific_data', true)
-                ->update(['use_specific_data' => false]);
-        }
-
-        if ($billIds->isEmpty()) {
-            return;
-        }
-
-        $itemIds = \App\Models\ShipmentItem::whereIn(
-            'bill_of_lading_id',
-            $billIds
-        )->pluck('id');
-
-        if ($itemIds->isEmpty()) {
-            return;
-        }
-
-        DB::table('container_shipment_item')
-            ->whereIn('shipment_item_id', $itemIds)
-            ->whereNull('package_quantity')
-            ->update([
-                'package_quantity' => 0,
-                'updated_at' => now(),
-            ]);
     }
 
     protected function resolveManifestImportId(?int $voyageId): ?int
