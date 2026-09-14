@@ -55,12 +55,16 @@ class GuaranExcelParserCompat extends GuaranExcelParser
             );
         }
 
-        $manualVoyageNumber = trim(
-            (string) ($options['voyage_number'] ?? '')
+        $sourceVoyageNumber = trim(
+            (string) ($voyageData['voyage_number'] ?? '')
         );
 
-        if ($manualVoyageNumber !== '') {
-            $voyageData['voyage_number'] = $manualVoyageNumber;
+        if ($sourceVoyageNumber === '') {
+            $voyageData['voyage_number'] = trim(
+                (string) ($options['voyage_number'] ?? '')
+            );
+        } else {
+            $voyageData['voyage_number'] = $sourceVoyageNumber;
         }
 
         if (empty($voyageData['voyage_number'])) {
