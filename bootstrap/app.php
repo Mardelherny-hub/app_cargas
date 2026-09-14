@@ -6,8 +6,11 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Console\Scheduling\Schedule;
 
 return Application::configure(basePath: dirname(__DIR__))
-    ->withProviders([
-        App\Providers\AppServiceProvider::class,
+    ->withBindings([
+        App\Http\Controllers\Company\BillOfLadingController::class =>
+            App\Http\Controllers\Company\BillOfLadingControllerCompat::class,
+        App\Http\Controllers\Company\ShipmentItemController::class =>
+            App\Http\Controllers\Company\ShipmentItemControllerCompat::class,
     ])
     ->withRouting(
         web: __DIR__ . '/../routes/web.php',
