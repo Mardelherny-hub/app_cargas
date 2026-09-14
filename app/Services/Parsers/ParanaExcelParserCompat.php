@@ -72,13 +72,18 @@ class ParanaExcelParserCompat extends ParanaExcelParser
         }
 
         $voyageNumber = trim(
-            (string) ($options['voyage_number'] ?? '')
+            (string) ($data['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
-            $voyageNumber = $this->requireParanaSourceText(
-                $data['voyage_number'] ?? null,
-                'VOYAGE_NO'
+            $voyageNumber = trim(
+                (string) ($options['voyage_number'] ?? '')
+            );
+        }
+
+        if ($voyageNumber === '') {
+            throw new \Exception(
+                'PARANA no informa VOYAGE_NO y no se ingresó un número de viaje.'
             );
         }
 
