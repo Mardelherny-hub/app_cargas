@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Company;
 
 use App\Models\CargoType;
+use App\Models\Client;
+use App\Models\ContainerType;
+use App\Models\PackagingType;
 use App\Models\Shipment;
 use App\Models\ShipmentItem;
 use Illuminate\Http\Request;
@@ -16,6 +19,89 @@ use Illuminate\Support\Facades\Log;
  */
 class ShipmentItemControllerCompat extends ShipmentItemController
 {
+    public function edit(ShipmentItem $shipmentItem)
+    {
+        if (!$this->canPerform('view_cargas')) {
+            abort(403, 'No tiene permisos para editar items de shipments.');
+        }
+
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'Su empresa no tiene el rol de Cargas.');
+        }
+
+        if (!$this->canAccessCompany($shipmentItem->shipment->voyage->company_id)) {
+            abort(403, 'No tiene permisos para editar este item.');
+        }
+
+        if ($this->isUser() && $this->isOperator()) {
+            if ($shipmentItem->shipment->created_by_user_id !== Auth::id()) {
+                abort(403, 'No tiene permisos para editar este item.');
+            }
+        }
+
+        $cargoTypes = CargoType::where('active', true)
+            ->orderBy('name')
+            ->get();
+        $packagingTypes = PackagingType::where('active', true)
+            ->orderBy('name')
+            ->get();
+        $clients = Client::where('status', 'active')
+            ->orderBy('legal_name')
+            ->get();
+        $containerTypes = ContainerType::where('active', true)
+            ->orderBy('display_order')
+            ->orderBy('name')
+            ->get();
+
+        $containerData = [];
+
+        foreach ($shipmentItem->containers()->with('containerType')->get() as $container) {
+            $pivot = $container->pivot;
+            $sourceSeals = $this->decodeSourceSeals(
+                $pivot->source_seals ?? null
+            );
+            $sourceSealNumber = $this->firstSourceSealNumber($sourceSeals);
+
+            if ($container->carrier_seal) {
+                $sealNumber = $container->carrier_seal;
+                $sealSource = 'carrier';
+            } elseif ($container->shipper_seal) {
+                $sealNumber = $container->shipper_seal;
+                $sealSource = 'shipper';
+            } elseif ($sourceSealNumber !== null) {
+                $sealNumber = $sourceSealNumber;
+                $sealSource = 'source';
+            } else {
+                $sealNumber = null;
+                $sealSource = 'shipper';
+            }
+
+            $containerData[] = [
+                'id' => $container->id,
+                'container_number' => $container->container_number,
+                'container_type_id' => $container->container_type_id,
+                'seal_number' => $sealNumber,
+                'seal_source' => $sealSource,
+                'tare_weight' => $container->tare_weight_kg,
+                'condition' => $container->condition ?? 'L',
+                'package_quantity' => $pivot->package_quantity,
+                'gross_weight_kg' => $pivot->gross_weight_kg,
+                'net_weight_kg' => $pivot->net_weight_kg,
+                'volume_m3' => $pivot->volume_m3,
+                'loading_sequence' => $pivot->loading_sequence,
+            ];
+        }
+
+        return view('company.shipment-items.edit', compact(
+            'shipmentItem',
+            'cargoTypes',
+            'packagingTypes',
+            'clients',
+            'containerTypes',
+            'containerData'
+        ));
+    }
+
     public function update(Request $request, ShipmentItem $shipmentItem)
     {
         if (!$this->canPerform('view_cargas')) {
@@ -66,11 +152,6 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             $allContainersEmpty
             && ($isCmspItem || $isLoginItem);
 
-        /*
-         * Los vacíos importados ya poseen su representación fuente. Si el
-         * formulario no envía alguno de esos campos, se conserva el valor
-         * existente en vez de obligar al operador a inventarlo.
-         */
         if ($isImportedEmptyItem) {
             $request->merge([
                 'item_description' => $request->input('item_description')
@@ -253,13 +334,8 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                     ]);
             }
 
-            /*
-             * En CMSP el peso por contenedor es VGM cuando está informado.
-             * VGM incluye la tara y por definición no tiene que sumar el peso
-             * bruto de la mercadería del GID/CNI.
-             */
             if (
-                !$isCmspItem
+                !$allContainersEmpty
                 && abs($totalGrossWeight - $validated['gross_weight_kg']) > 0.01
             ) {
                 return redirect()->back()
@@ -390,6 +466,38 @@ class ShipmentItemControllerCompat extends ShipmentItemController
         return false;
     }
 
+    private function decodeSourceSeals(mixed $sourceSeals): array
+    {
+        if (is_array($sourceSeals)) {
+            return $sourceSeals;
+        }
+
+        if (!is_string($sourceSeals) || trim($sourceSeals) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($sourceSeals, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function firstSourceSealNumber(array $sourceSeals): ?string
+    {
+        $first = $sourceSeals[0] ?? null;
+
+        if (is_array($first)) {
+            $value = trim((string) ($first['seal_number'] ?? ''));
+            return $value !== '' ? $value : null;
+        }
+
+        if (is_string($first)) {
+            $value = trim($first);
+            return $value !== '' ? $value : null;
+        }
+
+        return null;
+    }
+
     private function updateItemContainersCompat(
         ShipmentItem $shipmentItem,
         array $containersData
@@ -465,21 +573,17 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             $sourceSeals = $preserved['source_seals'] ?? null;
 
             if ($source === 'source') {
-                $decoded = [];
-
-                if (is_string($sourceSeals) && $sourceSeals !== '') {
-                    $decoded = json_decode($sourceSeals, true) ?: [];
-                } elseif (is_array($sourceSeals)) {
-                    $decoded = $sourceSeals;
-                }
+                $decoded = $this->decodeSourceSeals($sourceSeals);
 
                 if ($decoded === []) {
                     $decoded[] = [
                         'seal_number' => $sealValue,
                         'issuer_code' => null,
                     ];
-                } else {
+                } elseif (is_array($decoded[0] ?? null)) {
                     $decoded[0]['seal_number'] = $sealValue;
+                } else {
+                    $decoded[0] = $sealValue;
                 }
 
                 $sourceSeals = json_encode(
