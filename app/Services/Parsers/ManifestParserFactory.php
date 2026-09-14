@@ -3,36 +3,36 @@
 namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
-use App\Services\Parsers\KlineDataParser;
-use App\Services\Parsers\ParanaExcelParser;
+use App\Services\Parsers\KlineDataParserCompat;
+use App\Services\Parsers\ParanaExcelParserCompat;
 use App\Services\Parsers\GuaranExcelParserCompat;
 use App\Services\Parsers\LoginXmlParserCompat;
 use App\Services\Parsers\TfpTextParser;
 use App\Services\Parsers\NavsurTextParserCompat;
 use App\Services\Parsers\CmspEdiParserCompat;
-use App\Services\Parsers\G2OceanXmlParser;
+use App\Services\Parsers\G2OceanXmlParserCompat;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
 class ManifestParserFactory
 {
     protected array $parsers = [
-        KlineDataParser::class,
-        ParanaExcelParser::class,
+        KlineDataParserCompat::class,
+        ParanaExcelParserCompat::class,
         GuaranExcelParserCompat::class,
         LoginXmlParserCompat::class,
         TfpTextParser::class,
         CmspEdiParserCompat::class,
         NavsurTextParserCompat::class,
-        G2OceanXmlParser::class,
+        G2OceanXmlParserCompat::class,
     ];
 
     protected array $extensionMappings = [
-        'dat' => [KlineDataParser::class],
-        'txt' => [KlineDataParser::class, NavsurTextParserCompat::class, TfpTextParser::class],
-        'xlsx' => [ParanaExcelParser::class, GuaranExcelParserCompat::class],
-        'xls' => [ParanaExcelParser::class, GuaranExcelParserCompat::class],
-        'xml' => [LoginXmlParserCompat::class, G2OceanXmlParser::class],
+        'dat' => [KlineDataParserCompat::class],
+        'txt' => [KlineDataParserCompat::class, NavsurTextParserCompat::class, TfpTextParser::class],
+        'xlsx' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class],
+        'xls' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class],
+        'xml' => [LoginXmlParserCompat::class, G2OceanXmlParserCompat::class],
         'edi' => [CmspEdiParserCompat::class],
     ];
 
