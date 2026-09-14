@@ -3,9 +3,9 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Console\Scheduling\Schedule; 
+use Illuminate\Console\Scheduling\Schedule;
 
-return Application::configure(basePath: dirname(__DIR__))
+$app = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__ . '/../routes/web.php',
         api: __DIR__ . '/../routes/api.php',
@@ -38,3 +38,15 @@ return Application::configure(basePath: dirname(__DIR__))
                  ->runInBackground()
                  ->appendOutputTo(storage_path('logs/wsaa-cleanup.log'));
     })->create();
+
+$app->bind(
+    App\Http\Controllers\Company\BillOfLadingController::class,
+    App\Http\Controllers\Company\BillOfLadingControllerCompat::class
+);
+
+$app->bind(
+    App\Http\Controllers\Company\ShipmentItemController::class,
+    App\Http\Controllers\Company\ShipmentItemControllerCompat::class
+);
+
+return $app;

@@ -97,6 +97,7 @@
                             Tamaño máximo: 10MB. El sistema detectará automáticamente el formato del archivo.
                         </p>
                     </div>
+
                     <!-- Selección de embarcación -->
                     <div>
                         <label for="vessel_id" class="block text-sm font-medium text-gray-700 mb-2">
@@ -121,10 +122,7 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            Esta selección funciona como respaldo. Si el archivo informa una embarcación,
-                            esa embarcación tendrá prioridad. Si no está registrada, se incorporará con los
-                            datos disponibles y se informará que su ficha debe completarse. Si el archivo no
-                            informa embarcación, se utilizará la seleccionada aquí.
+                            La embarcación seleccionada aquí tiene prioridad sobre la informada en el archivo.
                         </p>
                     </div>
 
