@@ -41,37 +41,48 @@ jobs:
               done
 
       - name: Load BillOfLadingControllerCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat") ? 0 : 1);'
 
       - name: Load ShipmentItemControllerCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat") ? 0 : 1);'
 
       - name: Load CmspEdiParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\CmspEdiParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\CmspEdiParserCompat") ? 0 : 1);'
 
       - name: Load G2OceanXmlParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\G2OceanXmlParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\G2OceanXmlParserCompat") ? 0 : 1);'
 
       - name: Load GuaranExcelParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\GuaranExcelParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\GuaranExcelParserCompat") ? 0 : 1);'
 
       - name: Load KlineDataParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\KlineDataParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\KlineDataParserCompat") ? 0 : 1);'
 
       - name: Load LoginXmlParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\LoginXmlParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\LoginXmlParserCompat") ? 0 : 1);'
 
       - name: Load NavsurTextParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\NavsurTextParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\NavsurTextParserCompat") ? 0 : 1);'
 
       - name: Load ParanaExcelParserCompat
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\ParanaExcelParserCompat") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\ParanaExcelParserCompat") ? 0 : 1);'
 
       - name: Load ManifestParserFactory
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\ManifestParserFactory") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\ManifestParserFactory") ? 0 : 1);'
 
       - name: Load ProcessManifestImportJob
-        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Jobs\\ProcessManifestImportJob") ? 0 : 1);'
+        run: |
+          php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Jobs\\ProcessManifestImportJob") ? 0 : 1);'
 
       - name: Bootstrap Laravel routes
         run: php artisan route:list >/dev/null
