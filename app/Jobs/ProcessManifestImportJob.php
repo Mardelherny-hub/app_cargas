@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ImportTracking;
 use App\Services\Parsers\CmspEdiParser;
+use App\Services\Parsers\CmspEdiParserCompat;
 use App\Services\Parsers\ManifestParserFactory;
 use App\ValueObjects\ManifestParseResult;
 use Illuminate\Bus\Queueable;
@@ -188,6 +189,10 @@ class ProcessManifestImportJob implements ShouldQueue
 
         $operatorDischargeIsSource = !($parser instanceof CmspEdiParser);
 
+        $sourceBillDate = $parser instanceof CmspEdiParserCompat
+            ? $parser->sourceDocumentDate()
+            : null;
+
         $bills = \App\Models\BillOfLading::whereIn(
             'shipment_id',
             $shipmentIds
@@ -195,6 +200,18 @@ class ProcessManifestImportJob implements ShouldQueue
 
         foreach ($bills as $bill) {
             $changed = false;
+
+            if ($parser instanceof CmspEdiParser) {
+                if (!$bill->loading_date && $voyage->departure_date) {
+                    $bill->loading_date = $voyage->departure_date;
+                    $changed = true;
+                }
+
+                if (!$bill->discharge_date && $voyage->estimated_arrival_date) {
+                    $bill->discharge_date = $voyage->estimated_arrival_date;
+                    $changed = true;
+                }
+            }
 
             if (
                 $this->loadingDate !== null
@@ -219,7 +236,7 @@ class ProcessManifestImportJob implements ShouldQueue
             }
 
             if (!$bill->bill_date) {
-                $bill->bill_date = now()->toDateString();
+                $bill->bill_date = $sourceBillDate ?? now()->toDateString();
                 $changed = true;
             }
 
