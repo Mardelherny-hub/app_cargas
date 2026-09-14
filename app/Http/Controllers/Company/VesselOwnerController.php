@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use App\Traits\UserHelper;
 
 class VesselOwnerController extends Controller
@@ -83,8 +84,19 @@ class VesselOwnerController extends Controller
      */
     public function store(Request $request)
     {
+        $company = $this->getUserCompany();
+        if (!$company) {
+            abort(403, 'No autorizado: usuario sin empresa asignada.');
+        }
+
         $validated = $request->validate([
-            'tax_id' => 'required|string|max:15|unique:vessel_owners',
+            'tax_id' => [
+                'required',
+                'string',
+                'max:15',
+                Rule::unique('vessel_owners', 'tax_id')
+                    ->where(fn ($query) => $query->where('company_id', $company->id)),
+            ],
             'legal_name' => 'required|string|max:200',
             'commercial_name' => 'nullable|string|max:200',
             'country_id' => 'required|exists:countries,id',
@@ -101,7 +113,6 @@ class VesselOwnerController extends Controller
         DB::beginTransaction();
 
         try {
-            $company = $this->getUserCompany();
             $validated['company_id'] = $company->id;
             $validated['created_by_user_id'] = Auth::id();
             $validated['status'] = 'active';
@@ -180,7 +191,14 @@ class VesselOwnerController extends Controller
         }
 
         $validated = $request->validate([
-            'tax_id' => 'required|string|max:15|unique:vessel_owners,tax_id,' . $vesselOwner->id,
+            'tax_id' => [
+                'required',
+                'string',
+                'max:15',
+                Rule::unique('vessel_owners', 'tax_id')
+                    ->where(fn ($query) => $query->where('company_id', $vesselOwner->company_id))
+                    ->ignore($vesselOwner->id),
+            ],
             'legal_name' => 'required|string|max:200',
             'commercial_name' => 'nullable|string|max:200',
             'country_id' => 'required|exists:countries,id',
