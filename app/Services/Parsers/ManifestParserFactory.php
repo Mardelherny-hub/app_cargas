@@ -7,7 +7,7 @@ use App\Services\Parsers\KlineDataParserCompat;
 use App\Services\Parsers\ParanaExcelParserCompat;
 use App\Services\Parsers\GuaranExcelParserCompat;
 use App\Services\Parsers\LoginXmlParserCompat;
-use App\Services\Parsers\TfpTextParser;
+use App\Services\Parsers\TfpTextParserCompat;
 use App\Services\Parsers\NavsurTextParserCompat;
 use App\Services\Parsers\CmspEdiParserCompat;
 use App\Services\Parsers\G2OceanXmlParserCompat;
@@ -21,7 +21,7 @@ class ManifestParserFactory
         ParanaExcelParserCompat::class,
         GuaranExcelParserCompat::class,
         LoginXmlParserCompat::class,
-        TfpTextParser::class,
+        TfpTextParserCompat::class,
         CmspEdiParserCompat::class,
         NavsurTextParserCompat::class,
         G2OceanXmlParserCompat::class,
@@ -29,7 +29,7 @@ class ManifestParserFactory
 
     protected array $extensionMappings = [
         'dat' => [KlineDataParserCompat::class],
-        'txt' => [KlineDataParserCompat::class, NavsurTextParserCompat::class, TfpTextParser::class],
+        'txt' => [KlineDataParserCompat::class, NavsurTextParserCompat::class, TfpTextParserCompat::class],
         'xlsx' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class],
         'xls' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class],
         'xml' => [LoginXmlParserCompat::class, G2OceanXmlParserCompat::class],
