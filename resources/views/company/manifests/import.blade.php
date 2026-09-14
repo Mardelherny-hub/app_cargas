@@ -147,7 +147,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Si lo completa, este número tendrá prioridad sobre el informado en el archivo.
+                            Complete este dato cuando el archivo no informe
+                            el número de viaje. Para K-Line es obligatorio
+                            cuando el DAT no lo contiene.
                         </p>
                     </div>
 
@@ -171,7 +173,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Si la completa, esta fecha tendrá prioridad sobre la informada en el archivo.
+                            Complete este dato cuando el archivo no informe
+                            la fecha de salida. Si el archivo contiene una
+                            fecha válida, esa fecha tendrá prioridad.
                         </p>
                     </div>
 
@@ -179,7 +183,7 @@
                     <div>
                         <label for="loading_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Carga
+                            📅 Fecha de Carga (GUARAN)
                         </label>
 
                         <input type="date"
@@ -195,7 +199,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Si la completa, se aplicará a todos los conocimientos importados y tendrá prioridad sobre el archivo.
+                            Sólo para archivos GUARAN. Se aplicará a los
+                            conocimientos importados porque este formato no
+                            informa una fecha de carga.
                         </p>
                     </div>
 
@@ -203,7 +209,7 @@
                     <div>
                         <label for="discharge_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Descarga
+                            📅 Fecha de Descarga (GUARAN)
                         </label>
 
                         <input type="date"
@@ -219,31 +225,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Si la completa, se aplicará a todos los conocimientos y a la llegada estimada del viaje, con prioridad sobre el archivo.
-                        </p>
-                    </div>
-
-                    <!-- Fecha de emisión de los conocimientos -->
-                    <div>
-                        <label for="bill_date"
-                               class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Emisión
-                        </label>
-
-                        <input type="date"
-                               id="bill_date"
-                               name="bill_date"
-                               value="{{ old('bill_date', now()->toDateString()) }}"
-                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-
-                        @error('bill_date')
-                            <p class="mt-1 text-sm text-red-600">
-                                {{ $message }}
-                            </p>
-                        @enderror
-
-                        <p class="mt-1 text-xs text-gray-500">
-                            Se aplicará a todos los conocimientos importados. Si no se modifica, se utilizará la fecha del día.
+                            Sólo para archivos GUARAN. Se aplicará a los
+                            conocimientos importados porque este formato no
+                            informa una fecha de descarga.
                         </p>
                     </div>
 
