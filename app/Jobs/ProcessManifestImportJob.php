@@ -49,6 +49,7 @@ class ProcessManifestImportJob implements ShouldQueue
     public ?string $voyageNumber = null;
     public ?string $loadingDate = null;
     public ?string $dischargeDate = null;
+    public ?string $billDate = null;
 
     public function __construct(
         public int $trackingId,
@@ -60,11 +61,13 @@ class ProcessManifestImportJob implements ShouldQueue
         ?string $voyageNumber = null,
         ?string $loadingDate = null,
         ?string $dischargeDate = null,
+        ?string $billDate = null,
     ) {
         $this->departureDate = $departureDate;
         $this->voyageNumber = $voyageNumber;
         $this->loadingDate = $loadingDate;
         $this->dischargeDate = $dischargeDate;
+        $this->billDate = $billDate;
         $this->onQueue('imports');
     }
 
@@ -106,20 +109,10 @@ class ProcessManifestImportJob implements ShouldQueue
                 'voyage_number' => $this->voyageNumber,
                 'loading_date' => $this->loadingDate,
                 'discharge_date' => $this->dischargeDate,
+                'bill_date' => $this->billDate,
             ]);
 
             if ($result->isSuccessful()) {
-                /*
-                 * Los datos opcionales de la pantalla de importación son comunes
-                 * a todos los formatos. Cada parser sigue siendo responsable de
-                 * respetar la información real de su archivo; acá solamente se
-                 * completa lo que el formato no aporta.
-                 *
-                 * Hay formatos que hoy guardan una fecha sintética ("hoy") aunque
-                 * el archivo no informe fecha de carga. Para esos formatos una
-                 * fecha de carga ingresada explícitamente por el operador es la
-                 * fuente real y debe reemplazar ese valor sintético.
-                 */
                 $this->applyOperationalImportDates($parser, $result);
 
                 // Import OK (con o sin advertencias). Guardamos voyage_id y el
@@ -173,7 +166,7 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * Aplica las fechas operativas informadas explícitamente por el operador.
+     * Aplica los datos operativos informados explícitamente por el operador.
      *
      * Regla funcional confirmada por Roberto (14/09/2026):
      * si una fecha fue completada en la pantalla de importación, ese dato
@@ -184,10 +177,12 @@ class ProcessManifestImportJob implements ShouldQueue
      * - departure_date  -> salida del viaje desde origen;
      * - loading_date    -> fecha de carga de todos los conocimientos;
      * - discharge_date  -> fecha de descarga de todos los conocimientos
-     *                      y llegada estimada del viaje.
+     *                      y llegada estimada del viaje;
+     * - bill_date       -> fecha de emisión de todos los conocimientos.
      *
-     * Si el operador no informa una fecha, se conserva lo resuelto por
-     * el parser a partir del archivo.
+     * La fecha de emisión es obligatoria en la operación. Si el operador no la
+     * informa, se completa con la fecha del procesamiento para evitar edición
+     * manual conocimiento por conocimiento.
      */
     protected function applyOperationalImportDates(
         object $parser,
@@ -202,32 +197,17 @@ class ProcessManifestImportJob implements ShouldQueue
         $voyageChanged = false;
 
         if ($this->departureDate !== null) {
-            $voyage->departure_date =
-                $this->departureDate;
-
+            $voyage->departure_date = $this->departureDate;
             $voyageChanged = true;
         }
 
-        /*
-         * La fecha de descarga ingresada en la importación representa
-         * la llegada/descarga en destino del mismo viaje.
-         */
         if ($this->dischargeDate !== null) {
-            $voyage->estimated_arrival_date =
-                $this->dischargeDate;
-
+            $voyage->estimated_arrival_date = $this->dischargeDate;
             $voyageChanged = true;
         }
 
         if ($voyageChanged) {
             $voyage->saveQuietly();
-        }
-
-        if (
-            $this->loadingDate === null
-            && $this->dischargeDate === null
-        ) {
-            return;
         }
 
         $shipmentIds = \App\Models\Shipment::where(
@@ -244,25 +224,23 @@ class ProcessManifestImportJob implements ShouldQueue
             $shipmentIds
         )->get();
 
+        $effectiveBillDate = $this->billDate ?? now()->toDateString();
+
         foreach ($bills as $bill) {
             $changed = false;
 
-            /*
-             * Las fechas escritas por el operador son autoritativas
-             * para TODOS los formatos. No se compara aquí qué parser
-             * produjo el conocimiento.
-             */
             if ($this->loadingDate !== null) {
-                $bill->loading_date =
-                    $this->loadingDate;
-
+                $bill->loading_date = $this->loadingDate;
                 $changed = true;
             }
 
             if ($this->dischargeDate !== null) {
-                $bill->discharge_date =
-                    $this->dischargeDate;
+                $bill->discharge_date = $this->dischargeDate;
+                $changed = true;
+            }
 
+            if ($bill->bill_date != $effectiveBillDate) {
+                $bill->bill_date = $effectiveBillDate;
                 $changed = true;
             }
 
