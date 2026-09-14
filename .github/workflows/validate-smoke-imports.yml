@@ -62,39 +62,39 @@ jobs:
           }
           '
 
+      - name: Verify Bill binding immediately after bootstrap file
+        run: |
+          php -r '
+          $app = require "bootstrap/app.php";
+          $abstract = \App\Http\Controllers\Company\BillOfLadingController::class;
+          exit($app->bound($abstract) ? 0 : 1);
+          '
+
+      - name: Verify Item binding immediately after bootstrap file
+        run: |
+          php -r '
+          $app = require "bootstrap/app.php";
+          $abstract = \App\Http\Controllers\Company\ShipmentItemController::class;
+          exit($app->bound($abstract) ? 0 : 1);
+          '
+
       - name: Bootstrap Laravel routes
         run: php artisan route:list >/dev/null
 
-      - name: Verify BillOfLading binding exists
+      - name: Verify BillOfLading controller resolution after app bootstrap
         run: |
           php -r '
           $app = require "bootstrap/app.php";
-          $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
-          exit($app->bound("App\\Http\\Controllers\\Company\\BillOfLadingController") ? 0 : 1);
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $controller = $app->make(\App\Http\Controllers\Company\BillOfLadingController::class);
+          exit($controller instanceof \App\Http\Controllers\Company\BillOfLadingControllerCompat ? 0 : 1);
           '
 
-      - name: Verify BillOfLading controller resolution
+      - name: Verify ShipmentItem controller resolution after app bootstrap
         run: |
           php -r '
           $app = require "bootstrap/app.php";
-          $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
-          $controller = $app->make("App\\Http\\Controllers\\Company\\BillOfLadingController");
-          exit(get_class($controller) === "App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat" ? 0 : 1);
-          '
-
-      - name: Verify ShipmentItem binding exists
-        run: |
-          php -r '
-          $app = require "bootstrap/app.php";
-          $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
-          exit($app->bound("App\\Http\\Controllers\\Company\\ShipmentItemController") ? 0 : 1);
-          '
-
-      - name: Verify ShipmentItem controller resolution
-        run: |
-          php -r '
-          $app = require "bootstrap/app.php";
-          $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
-          $controller = $app->make("App\\Http\\Controllers\\Company\\ShipmentItemController");
-          exit(get_class($controller) === "App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat" ? 0 : 1);
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $controller = $app->make(\App\Http\Controllers\Company\ShipmentItemController::class);
+          exit($controller instanceof \App\Http\Controllers\Company\ShipmentItemControllerCompat ? 0 : 1);
           '
