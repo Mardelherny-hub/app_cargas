@@ -179,16 +179,6 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        $operatorLoadingIsSource =
-            $parser instanceof \App\Services\Parsers\GuaranExcelParser
-            || $parser instanceof \App\Services\Parsers\LoginXmlParser
-            || $parser instanceof \App\Services\Parsers\ParanaExcelParser
-            || $parser instanceof \App\Services\Parsers\NavsurTextParser
-            || $parser instanceof \App\Services\Parsers\TfpTextParser
-            || $parser instanceof \App\Services\Parsers\KlineDataParser;
-
-        $operatorDischargeIsSource = !($parser instanceof CmspEdiParser);
-
         $sourceBillDate = $parser instanceof CmspEdiParserCompat
             ? $parser->sourceDocumentDate()
             : null;
@@ -213,24 +203,12 @@ class ProcessManifestImportJob implements ShouldQueue
                 }
             }
 
-            if (
-                $this->loadingDate !== null
-                && (
-                    $operatorLoadingIsSource
-                    || !$bill->loading_date
-                )
-            ) {
+            if ($this->loadingDate !== null && !$bill->loading_date) {
                 $bill->loading_date = $this->loadingDate;
                 $changed = true;
             }
 
-            if (
-                $this->dischargeDate !== null
-                && (
-                    $operatorDischargeIsSource
-                    || !$bill->discharge_date
-                )
-            ) {
+            if ($this->dischargeDate !== null && !$bill->discharge_date) {
                 $bill->discharge_date = $this->dischargeDate;
                 $changed = true;
             }
