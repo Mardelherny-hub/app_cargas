@@ -32,12 +32,27 @@ class CmspEdiParserCompat extends CmspEdiParser
             throw new Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
         }
 
-        $originPort = $this->findOrCreatePort(
-            $data['ports']['loading'] ?? 'ARBUE'
+        $originPortCode = trim(
+            (string) ($data['ports']['loading'] ?? '')
         );
-        $destPort = $this->findOrCreatePort(
-            $data['ports']['discharge'] ?? 'PYASU'
+        $destinationPortCode = trim(
+            (string) ($data['ports']['discharge'] ?? '')
         );
+
+        if ($originPortCode === '') {
+            throw new Exception(
+                'CMSP EDI: el archivo CUSCAR no informa puerto de carga.'
+            );
+        }
+
+        if ($destinationPortCode === '') {
+            throw new Exception(
+                'CMSP EDI: el archivo CUSCAR no informa puerto de descarga.'
+            );
+        }
+
+        $originPort = $this->findOrCreatePort($originPortCode);
+        $destPort = $this->findOrCreatePort($destinationPortCode);
 
         $vesselId = $options['vessel_id'] ?? null;
 
