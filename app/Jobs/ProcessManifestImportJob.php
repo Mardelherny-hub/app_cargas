@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ImportTracking;
+use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\ManifestParserFactory;
 use App\ValueObjects\ManifestParseResult;
 use Illuminate\Bus\Queueable;
@@ -11,26 +12,13 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
  * Procesa una importación de manifiesto en segundo plano.
- *
- * Envuelve el mismo $parser->parse(...) que corre hoy en el request, sin tocar
- * los parsers ni ManifestImport. La diferencia clave respecto a la primera
- * versión: LEE el ManifestParseResult que devuelve el parser y actualiza el
- * ImportTracking en consecuencia (completed / failed con mensaje real). Así el
- * caso "voyage duplicado" -que el parser devuelve como failure sin lanzar
- * excepción- deja de pasar como éxito silencioso, y el spinner sabe qué mostrar.
- *
- * El ImportTracking existe desde el encolado (lo crea el controller), así que el
- * polling nunca queda colgado aunque el parser aborte antes de crear su
- * ManifestImport.
- *
- * tries = 1: los parsers crean voyage/BL/clientes/items y no está verificado que
- * los 8 formatos sean idempotentes; un reintento podría duplicar registros.
  */
 class ProcessManifestImportJob implements ShouldQueue
 {
@@ -39,12 +27,6 @@ class ProcessManifestImportJob implements ShouldQueue
     public int $tries = 1;
     public int $timeout = 600;
 
-    /**
-     * Datos operativos opcionales de la importación.
-     *
-     * Se declaran con NULL por defecto para que jobs creados antes de este
-     * cambio puedan seguir deserializándose sin inventar información.
-     */
     public ?string $departureDate = null;
     public ?string $voyageNumber = null;
     public ?string $loadingDate = null;
@@ -81,22 +63,18 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        // Reconstruye el contexto de auth que todo el parse() espera.
         Auth::loginUsingId($this->userId);
-
         $tracking->markProcessing();
 
         $fullPath = Storage::path($this->storedPath);
 
         Log::info('ProcessManifestImportJob: iniciando', [
-            'tracking_id'   => $this->trackingId,
+            'tracking_id' => $this->trackingId,
             'original_name' => $this->originalName,
-            'stored_path'   => $this->storedPath,
-            'file_exists'   => is_file($fullPath),
+            'stored_path' => $this->storedPath,
+            'file_exists' => is_file($fullPath),
         ]);
 
-        // El archivo solo se borra si la importacion termino bien. Si fallo, se
-        // conserva para que soporte pueda diagnosticar sin pedirselo al cliente.
         $importacionExitosa = false;
 
         try {
@@ -113,10 +91,9 @@ class ProcessManifestImportJob implements ShouldQueue
             ]);
 
             if ($result->isSuccessful()) {
-                $this->applyOperationalImportDates($parser, $result);
+                $this->applyOperationalImportDates($result);
+                $this->applyFormatPostProcessing($parser, $result);
 
-                // Import OK (con o sin advertencias). Guardamos voyage_id y el
-                // ManifestImport asociado (buscado por voyage, si el parser lo creó).
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
 
@@ -128,64 +105,58 @@ class ProcessManifestImportJob implements ShouldQueue
 
                 Log::info('ProcessManifestImportJob: completado', [
                     'tracking_id' => $this->trackingId,
-                    'voyage_id'   => $voyageId,
-                    'warnings'    => $result->hasWarnings(),
+                    'voyage_id' => $voyageId,
+                    'warnings' => $result->hasWarnings(),
                 ]);
 
                 $importacionExitosa = true;
             } else {
-                // El parser devolvió failure (ej. voyage duplicado). NO es éxito.
-                $message = $result->getFirstError() ?? 'La importación no pudo completarse.';
+                $message = $result->getFirstError()
+                    ?? 'La importación no pudo completarse.';
+
                 $tracking->markFailed($message);
 
-                Log::warning('ProcessManifestImportJob: import fallido (result failure)', [
-                    'tracking_id' => $this->trackingId,
-                    'error'       => $message,
-                ]);
+                Log::warning(
+                    'ProcessManifestImportJob: import fallido (result failure)',
+                    [
+                        'tracking_id' => $this->trackingId,
+                        'error' => $message,
+                    ]
+                );
             }
         } catch (Throwable $e) {
-            // Excepción no controlada por el parser.
-            $tracking->markFailed('Error durante la importación: ' . $e->getMessage());
+            $tracking->markFailed(
+                'Error durante la importación: ' . $e->getMessage()
+            );
+
             Log::error('ProcessManifestImportJob: excepción', [
                 'tracking_id' => $this->trackingId,
-                'error'       => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
-            // Relanzar para que quede registro en failed_jobs también.
+
             throw $e;
         } finally {
             if ($importacionExitosa) {
                 Storage::delete($this->storedPath);
             } else {
-                Log::info('ProcessManifestImportJob: archivo conservado para diagnostico', [
-                    'tracking_id' => $this->trackingId,
-                    'stored_path' => $this->storedPath,
-                ]);
+                Log::info(
+                    'ProcessManifestImportJob: archivo conservado para diagnostico',
+                    [
+                        'tracking_id' => $this->trackingId,
+                        'stored_path' => $this->storedPath,
+                    ]
+                );
                 $this->limpiarImportacionesViejas();
             }
         }
     }
 
     /**
-     * Aplica los datos operativos informados explícitamente por el operador.
-     *
-     * Regla funcional confirmada por Roberto (14/09/2026):
-     * si una fecha fue completada en la pantalla de importación, ese dato
-     * tiene prioridad sobre cualquier fecha incluida en el archivo,
-     * independientemente del formato importado.
-     *
-     * Correspondencia:
-     * - departure_date  -> salida del viaje desde origen;
-     * - loading_date    -> fecha de carga de todos los conocimientos;
-     * - discharge_date  -> fecha de descarga de todos los conocimientos
-     *                      y llegada estimada del viaje;
-     * - bill_date       -> fecha de emisión de todos los conocimientos.
-     *
-     * La fecha de emisión es obligatoria en la operación. Si el operador no la
-     * informa, se completa con la fecha del procesamiento para evitar edición
-     * manual conocimiento por conocimiento.
+     * Las fechas ingresadas por el operador son autoritativas para todos los
+     * formatos. La fecha de emisión se completa con el día de procesamiento si
+     * el operador no informó otra.
      */
     protected function applyOperationalImportDates(
-        object $parser,
         ManifestParseResult $result
     ): void {
         $voyage = $result->voyage;
@@ -251,10 +222,84 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * Ubica el ManifestImport que el parser creó para este viaje (si lo creó),
-     * para enlazarlo al tracking y poder armar el reporte después. Se busca por
-     * voyage_id porque es el vínculo fiable; puede no existir (parser que abortó).
+     * Normalización posterior específica de CUSCAR/CMSP.
+     *
+     * - identifica el formato para que la edición conozca su semántica;
+     * - las direcciones fuente quedan guardadas pero no seleccionadas;
+     * - 0 bultos por contenedor significa distribución no informada;
+     * - cuando existe VGM fuente, ese es el peso mostrado para el contenedor.
      */
+    protected function applyFormatPostProcessing(
+        object $parser,
+        ManifestParseResult $result
+    ): void {
+        if (!($parser instanceof CmspEdiParser)) {
+            return;
+        }
+
+        $voyage = $result->voyage;
+        if (!$voyage) {
+            return;
+        }
+
+        $shipmentIds = \App\Models\Shipment::where(
+            'voyage_id',
+            $voyage->id
+        )->pluck('id');
+
+        if ($shipmentIds->isEmpty()) {
+            return;
+        }
+
+        $bills = \App\Models\BillOfLading::whereIn(
+            'shipment_id',
+            $shipmentIds
+        )->get();
+
+        $billIds = $bills->pluck('id');
+
+        foreach ($bills as $bill) {
+            if ($bill->source_format !== 'CMSP_EDI_CUSCAR') {
+                $bill->source_format = 'CMSP_EDI_CUSCAR';
+                $bill->saveQuietly();
+            }
+
+            $bill->specificContacts()
+                ->where('use_specific_data', true)
+                ->update(['use_specific_data' => false]);
+        }
+
+        if ($billIds->isEmpty()) {
+            return;
+        }
+
+        $itemIds = \App\Models\ShipmentItem::whereIn(
+            'bill_of_lading_id',
+            $billIds
+        )->pluck('id');
+
+        if ($itemIds->isEmpty()) {
+            return;
+        }
+
+        DB::table('container_shipment_item')
+            ->whereIn('shipment_item_id', $itemIds)
+            ->whereNull('package_quantity')
+            ->update([
+                'package_quantity' => 0,
+                'updated_at' => now(),
+            ]);
+
+        DB::table('container_shipment_item')
+            ->whereIn('shipment_item_id', $itemIds)
+            ->whereNotNull('verified_gross_mass_kg')
+            ->where('verified_gross_mass_kg', '>', 0)
+            ->update([
+                'gross_weight_kg' => DB::raw('verified_gross_mass_kg'),
+                'updated_at' => now(),
+            ]);
+    }
+
     protected function resolveManifestImportId(?int $voyageId): ?int
     {
         if (!$voyageId) {
@@ -266,14 +311,6 @@ class ProcessManifestImportJob implements ShouldQueue
             ->value('id');
     }
 
-    /**
-     * Los archivos solo se acumulan cuando una importacion falla (las exitosas
-     * borran el suyo), asi que la limpieza se dispara en ese mismo momento: no
-     * hace falta cron y se ejecuta exactamente cuando el directorio crecio.
-     *
-     * Nunca interrumpe el flujo: si la limpieza falla se loguea y se sigue. Es
-     * mantenimiento, y no puede tapar el error real de la importacion.
-     */
     protected function limpiarImportacionesViejas(int $dias = 30): void
     {
         try {
@@ -288,33 +325,34 @@ class ProcessManifestImportJob implements ShouldQueue
             }
 
             if ($borrados > 0) {
-                Log::info('ProcessManifestImportJob: limpieza de importaciones viejas', [
-                    'borrados' => $borrados,
-                    'dias'     => $dias,
-                ]);
+                Log::info(
+                    'ProcessManifestImportJob: limpieza de importaciones viejas',
+                    [
+                        'borrados' => $borrados,
+                        'dias' => $dias,
+                    ]
+                );
             }
         } catch (Throwable $e) {
-            Log::warning('ProcessManifestImportJob: fallo la limpieza de archivos viejos', [
-                'error' => $e->getMessage(),
-            ]);
+            Log::warning(
+                'ProcessManifestImportJob: fallo la limpieza de archivos viejos',
+                ['error' => $e->getMessage()]
+            );
         }
     }
 
-    /**
-     * Fallo duro (excepción no atrapada / timeout / OOM parcial): marca el
-     * tracking como failed si el finally no llegó. El archivo NO se borra:
-     * un job que muere asi es justo el caso donde mas se necesita.
-     */
     public function failed(Throwable $exception): void
     {
         $tracking = ImportTracking::find($this->trackingId);
         if ($tracking && !$tracking->isFinished()) {
-            $tracking->markFailed('La importación falló: ' . $exception->getMessage());
+            $tracking->markFailed(
+                'La importación falló: ' . $exception->getMessage()
+            );
         }
 
         Log::error('ProcessManifestImportJob: failed()', [
             'tracking_id' => $this->trackingId,
-            'error'       => $exception->getMessage(),
+            'error' => $exception->getMessage(),
         ]);
     }
 }
