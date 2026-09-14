@@ -67,13 +67,18 @@ class G2OceanXmlParserCompat extends G2OceanXmlParser
         );
 
         $voyageNumber = trim(
-            (string) ($options['voyage_number'] ?? '')
+            (string) ($blData['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
-            $voyageNumber = $this->requireG2OceanText(
-                $blData['voyage_number'] ?? null,
-                'voyageNo'
+            $voyageNumber = trim(
+                (string) ($options['voyage_number'] ?? '')
+            );
+        }
+
+        if ($voyageNumber === '') {
+            throw new Exception(
+                'G2Ocean no informa voyageNo y no se ingresó un número de viaje.'
             );
         }
 
