@@ -1,0 +1,119 @@
+name: Validate import compatibility
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, curl, zip, gd, intl, soap
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare Laravel environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: PHP syntax check
+        shell: bash
+        run: |
+          set -o pipefail
+          git fetch origin main:refs/remotes/origin/main
+          git diff --name-only origin/main...HEAD -- '*.php' \
+            | while IFS= read -r file; do
+                [ -f "$file" ] || continue
+                php -l "$file"
+              done
+
+      - name: Load compatibility classes
+        run: |
+          php -r '
+          require "vendor/autoload.php";
+          $classes = [
+            "App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat",
+            "App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat",
+            "App\\Services\\Parsers\\CmspEdiParserCompat",
+            "App\\Services\\Parsers\\G2OceanXmlParserCompat",
+            "App\\Services\\Parsers\\GuaranExcelParserCompat",
+            "App\\Services\\Parsers\\KlineDataParserCompat",
+            "App\\Services\\Parsers\\LoginXmlParserCompat",
+            "App\\Services\\Parsers\\NavsurTextParserCompat",
+            "App\\Services\\Parsers\\ParanaExcelParserCompat",
+            "App\\Services\\Parsers\\TfpTextParserCompat",
+            "App\\Services\\Parsers\\ManifestParserFactory",
+            "App\\Jobs\\ProcessManifestImportJob",
+          ];
+          foreach ($classes as $class) {
+              if (!class_exists($class)) {
+                  fwrite(STDERR, "No carga: {$class}\n");
+                  exit(1);
+              }
+          }
+          '
+
+      - name: Bootstrap Laravel routes
+        run: php artisan route:list >/dev/null
+
+      - name: Verify compatibility controller bindings
+        run: |
+          php -r '
+          require "vendor/autoload.php";
+          $app = require "bootstrap/app.php";
+          $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
+          $bill = $app->make("App\\Http\\Controllers\\Company\\BillOfLadingController");
+          $item = $app->make("App\\Http\\Controllers\\Company\\ShipmentItemController");
+          if (!($bill instanceof \App\Http\Controllers\Company\BillOfLadingControllerCompat)) exit(1);
+          if (!($item instanceof \App\Http\Controllers\Company\ShipmentItemControllerCompat)) exit(1);
+          '
+
+      - name: Verify factory uses compatibility parsers
+        run: |
+          php -r '
+          require "vendor/autoload.php";
+          $factory = new \App\Services\Parsers\ManifestParserFactory();
+          $actual = $factory->getAvailableParsers();
+          $expected = [
+            \App\Services\Parsers\KlineDataParserCompat::class,
+            \App\Services\Parsers\ParanaExcelParserCompat::class,
+            \App\Services\Parsers\GuaranExcelParserCompat::class,
+            \App\Services\Parsers\LoginXmlParserCompat::class,
+            \App\Services\Parsers\TfpTextParserCompat::class,
+            \App\Services\Parsers\CmspEdiParserCompat::class,
+            \App\Services\Parsers\NavsurTextParserCompat::class,
+            \App\Services\Parsers\G2OceanXmlParserCompat::class,
+          ];
+          exit($actual === $expected ? 0 : 1);
+          '
+
+      - name: Verify CUSCAR document date semantics
+        run: |
+          php -r '
+          require "vendor/autoload.php";
+          $parser = new \App\Services\Parsers\CmspEdiParserCompat();
+          $method = new \ReflectionMethod($parser, "parseCuscarDateTime");
+          $method->setAccessible(true);
+          $method->invoke($parser, ["elements" => ["137:2603031505:102"]]);
+          if ($parser->sourceDocumentDate() !== "2026-03-03") exit(1);
+          $property = new \ReflectionProperty(\App\Services\Parsers\CmspEdiParser::class, "parsedData");
+          $property->setAccessible(true);
+          $data = $property->getValue($parser);
+          if (($data["dates"]["document"] ?? null) !== "2026-03-03 15:05:00") exit(1);
+          if (array_key_exists("departure", $data["dates"] ?? [])) exit(1);
+          '
