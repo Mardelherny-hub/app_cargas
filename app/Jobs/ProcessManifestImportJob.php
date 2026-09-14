@@ -31,7 +31,6 @@ class ProcessManifestImportJob implements ShouldQueue
     public ?string $voyageNumber = null;
     public ?string $loadingDate = null;
     public ?string $dischargeDate = null;
-    public ?string $billDate = null;
 
     public function __construct(
         public int $trackingId,
@@ -43,13 +42,11 @@ class ProcessManifestImportJob implements ShouldQueue
         ?string $voyageNumber = null,
         ?string $loadingDate = null,
         ?string $dischargeDate = null,
-        ?string $billDate = null,
     ) {
         $this->departureDate = $departureDate;
         $this->voyageNumber = $voyageNumber;
         $this->loadingDate = $loadingDate;
         $this->dischargeDate = $dischargeDate;
-        $this->billDate = $billDate;
         $this->onQueue('imports');
     }
 
@@ -87,11 +84,10 @@ class ProcessManifestImportJob implements ShouldQueue
                 'voyage_number' => $this->voyageNumber,
                 'loading_date' => $this->loadingDate,
                 'discharge_date' => $this->dischargeDate,
-                'bill_date' => $this->billDate,
             ]);
 
             if ($result->isSuccessful()) {
-                $this->applyOperationalImportDates($result);
+                $this->applyOperationalImportDates($parser, $result);
                 $this->applyFormatPostProcessing($parser, $result);
 
                 $voyageId = $result->voyage?->id;
@@ -152,11 +148,11 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * Las fechas ingresadas por el operador son autoritativas para todos los
-     * formatos. La fecha de emisión se completa con el día de procesamiento si
-     * el operador no informó otra.
+     * Completa únicamente datos operativos que el formato no aporta.
+     * Las fechas reales del archivo siempre tienen prioridad.
      */
     protected function applyOperationalImportDates(
+        object $parser,
         ManifestParseResult $result
     ): void {
         $voyage = $result->voyage;
@@ -165,19 +161,11 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        $voyageChanged = false;
-
-        if ($this->departureDate !== null) {
+        if (
+            $this->departureDate !== null
+            && !$voyage->departure_date
+        ) {
             $voyage->departure_date = $this->departureDate;
-            $voyageChanged = true;
-        }
-
-        if ($this->dischargeDate !== null) {
-            $voyage->estimated_arrival_date = $this->dischargeDate;
-            $voyageChanged = true;
-        }
-
-        if ($voyageChanged) {
             $voyage->saveQuietly();
         }
 
@@ -190,28 +178,48 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
+        $operatorLoadingIsSource =
+            $parser instanceof \App\Services\Parsers\GuaranExcelParser
+            || $parser instanceof \App\Services\Parsers\LoginXmlParser
+            || $parser instanceof \App\Services\Parsers\ParanaExcelParser
+            || $parser instanceof \App\Services\Parsers\NavsurTextParser
+            || $parser instanceof \App\Services\Parsers\TfpTextParser
+            || $parser instanceof \App\Services\Parsers\KlineDataParser;
+
+        $operatorDischargeIsSource = !($parser instanceof CmspEdiParser);
+
         $bills = \App\Models\BillOfLading::whereIn(
             'shipment_id',
             $shipmentIds
         )->get();
 
-        $effectiveBillDate = $this->billDate ?? now()->toDateString();
-
         foreach ($bills as $bill) {
             $changed = false;
 
-            if ($this->loadingDate !== null) {
+            if (
+                $this->loadingDate !== null
+                && (
+                    $operatorLoadingIsSource
+                    || !$bill->loading_date
+                )
+            ) {
                 $bill->loading_date = $this->loadingDate;
                 $changed = true;
             }
 
-            if ($this->dischargeDate !== null) {
+            if (
+                $this->dischargeDate !== null
+                && (
+                    $operatorDischargeIsSource
+                    || !$bill->discharge_date
+                )
+            ) {
                 $bill->discharge_date = $this->dischargeDate;
                 $changed = true;
             }
 
-            if ($bill->bill_date != $effectiveBillDate) {
-                $bill->bill_date = $effectiveBillDate;
+            if (!$bill->bill_date) {
+                $bill->bill_date = now()->toDateString();
                 $changed = true;
             }
 
@@ -223,11 +231,6 @@ class ProcessManifestImportJob implements ShouldQueue
 
     /**
      * Normalización posterior específica de CUSCAR/CMSP.
-     *
-     * - identifica el formato para que la edición conozca su semántica;
-     * - las direcciones fuente quedan guardadas pero no seleccionadas;
-     * - 0 bultos por contenedor significa distribución no informada;
-     * - cuando existe VGM fuente, ese es el peso mostrado para el contenedor.
      */
     protected function applyFormatPostProcessing(
         object $parser,
@@ -287,15 +290,6 @@ class ProcessManifestImportJob implements ShouldQueue
             ->whereNull('package_quantity')
             ->update([
                 'package_quantity' => 0,
-                'updated_at' => now(),
-            ]);
-
-        DB::table('container_shipment_item')
-            ->whereIn('shipment_item_id', $itemIds)
-            ->whereNotNull('verified_gross_mass_kg')
-            ->where('verified_gross_mass_kg', '>', 0)
-            ->update([
-                'gross_weight_kg' => DB::raw('verified_gross_mass_kg'),
                 'updated_at' => now(),
             ]);
     }
