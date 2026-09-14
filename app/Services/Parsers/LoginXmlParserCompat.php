@@ -3,7 +3,6 @@
 namespace App\Services\Parsers;
 
 use App\Models\BillOfLading;
-use App\Models\Port;
 use App\Models\Vessel;
 use App\Models\Voyage;
 use App\ValueObjects\ManifestParseResult;
@@ -84,12 +83,12 @@ class LoginXmlParserCompat extends LoginXmlParser
         }
 
         $voyageNumber = trim(
-            (string) ($this->importOptions['voyage_number'] ?? '')
+            (string) ($data['voyage']['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($data['voyage']['voyage_number'] ?? '')
+                (string) ($this->importOptions['voyage_number'] ?? '')
             );
         }
 
@@ -135,10 +134,6 @@ class LoginXmlParserCompat extends LoginXmlParser
             $context
         );
 
-        /*
-         * La dirección del archivo se conserva como alternativa del BL, pero no
-         * debe quedar seleccionada automáticamente sobre la ficha del cliente.
-         */
         $bill->specificContacts()
             ->where('use_specific_data', true)
             ->update(['use_specific_data' => false]);
@@ -155,9 +150,6 @@ class LoginXmlParserCompat extends LoginXmlParser
         return $bill;
     }
 
-    /**
-     * Ejemplo real Login: "P.E.: 26037EC01007976D" dentro de la descripción.
-     */
     protected function extractPermisoEmbarqueFromDescription(
         ?string $description
     ): ?string {
