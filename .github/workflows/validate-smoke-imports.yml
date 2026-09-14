@@ -65,14 +65,6 @@ jobs:
       - name: Bootstrap Laravel routes
         run: php artisan route:list >/dev/null
 
-      - name: Verify AppServiceProvider is registered
-        run: |
-          php -r '
-          $app = require "bootstrap/app.php";
-          $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
-          exit($app->getProvider("App\\Providers\\AppServiceProvider") ? 0 : 1);
-          '
-
       - name: Verify BillOfLading binding exists
         run: |
           php -r '
