@@ -8,26 +8,17 @@ use App\Services\Parsers\ParanaExcelParser;
 use App\Services\Parsers\GuaranExcelParser;
 use App\Services\Parsers\LoginXmlParser;
 use App\Services\Parsers\TfpTextParser;
-// use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\NavsurTextParser;
-use App\Services\Parsers\CmspEdiParser;
+use App\Services\Parsers\CmspEdiParserCompat;
 use App\Services\Parsers\G2OceanXmlParser;
-
-
 use Exception;
 use Illuminate\Support\Facades\Log;
 
 /**
  * FACTORY PARA AUTO-DETECCIÓN Y CREACIÓN DE PARSERS
- * 
+ *
  * Responsable de detectar automáticamente el tipo de archivo de manifiesto
  * y retornar el parser apropiado para procesarlo.
- * 
- * CARACTERÍSTICAS:
- * - Auto-detección basada en contenido y extensión
- * - Registro de parsers disponibles
- * - Fallback a parser genérico si es necesario
- * - Logging detallado para debugging
  */
 class ManifestParserFactory
 {
@@ -37,10 +28,10 @@ class ManifestParserFactory
     protected array $parsers = [
         KlineDataParser::class,
         ParanaExcelParser::class,
-        GuaranExcelParser::class, 
+        GuaranExcelParser::class,
         LoginXmlParser::class,
         TfpTextParser::class,
-        CmspEdiParser::class,
+        CmspEdiParserCompat::class,
         NavsurTextParser::class,
         G2OceanXmlParser::class,
     ];
@@ -53,16 +44,12 @@ class ManifestParserFactory
         'txt' => [KlineDataParser::class, NavsurTextParser::class, TfpTextParser::class],
         'xlsx' => [ParanaExcelParser::class, GuaranExcelParser::class],
         'xls' => [ParanaExcelParser::class, GuaranExcelParser::class],
-        'xml' => [LoginXmlParser::class, G2OceanXmlParser::class], // LoginXmlParser::class
-        'edi' => [CmspEdiParser::class],
+        'xml' => [LoginXmlParser::class, G2OceanXmlParser::class],
+        'edi' => [CmspEdiParserCompat::class],
     ];
 
     /**
      * Obtener parser apropiado para un archivo
-     * 
-     * @param string $filePath Ruta completa al archivo
-     * @return ManifestParserInterface Parser que puede procesar el archivo
-     * @throws Exception Si no se encuentra parser compatible
      */
     public function getParser(string $filePath): ManifestParserInterface
     {
@@ -76,9 +63,8 @@ class ManifestParserFactory
             'extension' => pathinfo($filePath, PATHINFO_EXTENSION)
         ]);
 
-        // Intentar detección por contenido y extensión
         $detectedParser = $this->detectParserByContent($filePath);
-        
+
         if ($detectedParser) {
             Log::info('Parser detected successfully', [
                 'parser_class' => get_class($detectedParser),
@@ -87,9 +73,8 @@ class ManifestParserFactory
             return $detectedParser;
         }
 
-        // Si no se detecta, intentar por extensión
         $detectedParser = $this->detectParserByExtension($filePath);
-        
+
         if ($detectedParser) {
             Log::info('Parser detected by extension', [
                 'parser_class' => get_class($detectedParser),
@@ -99,9 +84,9 @@ class ManifestParserFactory
         }
 
         throw new Exception(
-            "No se pudo encontrar un parser compatible para el archivo: " . 
-            basename($filePath) . 
-            " (extensión: " . pathinfo($filePath, PATHINFO_EXTENSION) . ")"
+            "No se pudo encontrar un parser compatible para el archivo: "
+            . basename($filePath)
+            . " (extensión: " . pathinfo($filePath, PATHINFO_EXTENSION) . ")"
         );
     }
 
@@ -113,7 +98,7 @@ class ManifestParserFactory
         foreach ($this->parsers as $parserClass) {
             try {
                 $parser = new $parserClass();
-                
+
                 if ($parser instanceof ManifestParserInterface && $parser->canParse($filePath)) {
                     Log::debug('Parser can handle file', [
                         'parser_class' => $parserClass,
@@ -140,7 +125,7 @@ class ManifestParserFactory
     protected function detectParserByExtension(string $filePath): ?ManifestParserInterface
     {
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        
+
         if (!isset($this->extensionMappings[$extension])) {
             Log::warning('Unknown file extension', [
                 'extension' => $extension,
@@ -150,11 +135,11 @@ class ManifestParserFactory
         }
 
         $candidateParsers = $this->extensionMappings[$extension];
-        
+
         foreach ($candidateParsers as $parserClass) {
             try {
                 $parser = new $parserClass();
-                
+
                 if ($parser instanceof ManifestParserInterface && $parser->canParse($filePath)) {
                     Log::debug('Using parser based on extension', [
                         'parser_class' => $parserClass,
@@ -175,9 +160,6 @@ class ManifestParserFactory
         return null;
     }
 
-    /**
-     * Registrar nuevo parser en el factory
-     */
     public function registerParser(string $parserClass, array $extensions = []): void
     {
         if (!in_array($parserClass, $this->parsers)) {
@@ -188,7 +170,7 @@ class ManifestParserFactory
             if (!isset($this->extensionMappings[$extension])) {
                 $this->extensionMappings[$extension] = [];
             }
-            
+
             if (!in_array($parserClass, $this->extensionMappings[$extension])) {
                 $this->extensionMappings[$extension][] = $parserClass;
             }
@@ -200,35 +182,25 @@ class ManifestParserFactory
         ]);
     }
 
-    /**
-     * Obtener lista de parsers disponibles
-     */
     public function getAvailableParsers(): array
     {
         return $this->parsers;
     }
-    
 
-    /**
-     * Obtener información de parsers soportados
-     */
     public function getSupportedFormats(): array
     {
         $formats = [];
-        
+
         foreach ($this->parsers as $parserClass) {
             try {
                 $parser = new $parserClass();
-                
+
                 if ($parser instanceof ManifestParserInterface) {
-                    // Usar el método getFormatInfo() del parser
-                    $formatInfo = $parser->getFormatInfo();
-                    $formats[] = $formatInfo;
+                    $formats[] = $parser->getFormatInfo();
                 } else {
-                    // Fallback para parsers que no implementen la interface completa
                     $reflection = new \ReflectionClass($parserClass);
                     $docComment = $reflection->getDocComment();
-                    
+
                     $formats[] = [
                         'name' => $reflection->getShortName(),
                         'description' => $this->extractDescriptionFromDocComment($docComment),
@@ -247,16 +219,12 @@ class ManifestParserFactory
         return $formats;
     }
 
-    /**
-     * Extraer descripción del comentario de documentación
-     */
     protected function extractDescriptionFromDocComment(?string $docComment): string
     {
         if (!$docComment) {
             return 'Sin descripción disponible';
         }
 
-        // Buscar primera línea de descripción después de /**
         if (preg_match('/\/\*\*\s*\n\s*\*\s*(.+?)\s*\n/', $docComment, $matches)) {
             return trim($matches[1]);
         }
@@ -264,13 +232,10 @@ class ManifestParserFactory
         return 'Sin descripción disponible';
     }
 
-    /**
-     * Obtener extensiones soportadas por un parser
-     */
     protected function getExtensionsForParser(string $parserClass): array
     {
         $extensions = [];
-        
+
         foreach ($this->extensionMappings as $extension => $parsers) {
             if (in_array($parserClass, $parsers)) {
                 $extensions[] = $extension;
@@ -280,9 +245,6 @@ class ManifestParserFactory
         return $extensions;
     }
 
-    /**
-     * Validar que un archivo es procesable por algún parser
-     */
     public function canProcessFile(string $filePath): bool
     {
         try {
@@ -293,29 +255,23 @@ class ManifestParserFactory
         }
     }
 
-    /**
-     * Obtener estadísticas de formatos soportados
-     */
     public function getFormatStatistics(): array
     {
         return [
             'total_parsers' => count($this->parsers),
             'total_extensions' => count($this->extensionMappings),
             'extensions_supported' => array_keys($this->extensionMappings),
-            'parsers_available' => array_map(function($parser) {
+            'parsers_available' => array_map(function ($parser) {
                 return class_basename($parser);
             }, $this->parsers)
         ];
     }
 
-    /**
-     * Obtener configuración detallada de un parser específico
-     */
     public function getParserConfig(string $parserClass): array
     {
         try {
             $parser = new $parserClass();
-            
+
             if ($parser instanceof ManifestParserInterface) {
                 return [
                     'format_info' => $parser->getFormatInfo(),
@@ -323,25 +279,22 @@ class ManifestParserFactory
                     'class' => $parserClass
                 ];
             }
-            
+
             return ['error' => 'Parser does not implement ManifestParserInterface'];
         } catch (Exception $e) {
             return ['error' => $e->getMessage()];
         }
     }
 
-    /**
-     * Verificar si un parser específico puede procesar un archivo
-     */
     public function canParserProcessFile(string $parserClass, string $filePath): bool
     {
         try {
             $parser = new $parserClass();
-            
+
             if ($parser instanceof ManifestParserInterface) {
                 return $parser->canParse($filePath);
             }
-            
+
             return false;
         } catch (Exception $e) {
             Log::warning('Error checking parser capability', [
@@ -353,13 +306,10 @@ class ManifestParserFactory
         }
     }
 
-    /**
-     * Obtener lista de parsers que pueden procesar un archivo
-     */
     public function getCompatibleParsers(string $filePath): array
     {
         $compatibleParsers = [];
-        
+
         foreach ($this->parsers as $parserClass) {
             if ($this->canParserProcessFile($parserClass, $filePath)) {
                 try {
@@ -367,8 +317,8 @@ class ManifestParserFactory
                     $compatibleParsers[] = [
                         'class' => $parserClass,
                         'name' => class_basename($parserClass),
-                        'info' => $parser instanceof ManifestParserInterface 
-                            ? $parser->getFormatInfo() 
+                        'info' => $parser instanceof ManifestParserInterface
+                            ? $parser->getFormatInfo()
                             : ['name' => class_basename($parserClass)]
                     ];
                 } catch (Exception $e) {
@@ -379,7 +329,7 @@ class ManifestParserFactory
                 }
             }
         }
-        
+
         return $compatibleParsers;
     }
 }
