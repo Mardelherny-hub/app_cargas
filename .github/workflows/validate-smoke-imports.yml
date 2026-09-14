@@ -74,6 +74,7 @@ jobs:
       - name: Verify compatibility controller bindings
         run: |
           php -r '
+          require "vendor/autoload.php";
           $app = require "bootstrap/app.php";
           $app->make("Illuminate\\Contracts\\Console\\Kernel")->bootstrap();
           $bill = $app->make("App\\Http\\Controllers\\Company\\BillOfLadingController");
