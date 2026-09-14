@@ -1,0 +1,70 @@
+name: Validate smoke imports
+
+on:
+  push:
+    branches:
+      - fix/smoke-imports-2026-09-14
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, curl, zip, gd, intl, soap
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare Laravel environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: PHP syntax check
+        run: |
+          git diff --name-only origin/main...HEAD -- '*.php' \
+            | while IFS= read -r file; do
+                [ -f "$file" ] || continue
+                php -l "$file"
+              done
+
+      - name: Load changed compatibility classes
+        run: |
+          php -r '
+          require "vendor/autoload.php";
+          $classes = [
+              App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat::class,
+              App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat::class,
+              App\\Services\\Parsers\\CmspEdiParserCompat::class,
+              App\\Services\\Parsers\\G2OceanXmlParserCompat::class,
+              App\\Services\\Parsers\\GuaranExcelParserCompat::class,
+              App\\Services\\Parsers\\KlineDataParserCompat::class,
+              App\\Services\\Parsers\\LoginXmlParserCompat::class,
+              App\\Services\\Parsers\\NavsurTextParserCompat::class,
+              App\\Services\\Parsers\\ParanaExcelParserCompat::class,
+              App\\Services\\Parsers\\ManifestParserFactory::class,
+              App\\Jobs\\ProcessManifestImportJob::class,
+          ];
+          foreach ($classes as $class) {
+              if (!class_exists($class)) {
+                  fwrite(STDERR, "Class not loadable: {$class}\n");
+                  exit(1);
+              }
+              echo "OK {$class}\n";
+          }
+          '
+
+      - name: Bootstrap Laravel routes
+        run: php artisan route:list >/dev/null
