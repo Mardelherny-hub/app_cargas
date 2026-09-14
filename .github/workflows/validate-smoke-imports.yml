@@ -40,31 +40,50 @@ jobs:
                 php -l "$file"
               done
 
-      - name: Load changed compatibility classes
-        run: |
-          php -r '
-          require "vendor/autoload.php";
-          $classes = [
-              App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat::class,
-              App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat::class,
-              App\\Services\\Parsers\\CmspEdiParserCompat::class,
-              App\\Services\\Parsers\\G2OceanXmlParserCompat::class,
-              App\\Services\\Parsers\\GuaranExcelParserCompat::class,
-              App\\Services\\Parsers\\KlineDataParserCompat::class,
-              App\\Services\\Parsers\\LoginXmlParserCompat::class,
-              App\\Services\\Parsers\\NavsurTextParserCompat::class,
-              App\\Services\\Parsers\\ParanaExcelParserCompat::class,
-              App\\Services\\Parsers\\ManifestParserFactory::class,
-              App\\Jobs\\ProcessManifestImportJob::class,
-          ];
-          foreach ($classes as $class) {
-              if (!class_exists($class)) {
-                  fwrite(STDERR, "Class not loadable: {$class}\n");
-                  exit(1);
-              }
-              echo "OK {$class}\n";
-          }
-          '
+      - name: Load BillOfLadingControllerCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat") ? 0 : 1);'
+
+      - name: Load ShipmentItemControllerCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat") ? 0 : 1);'
+
+      - name: Load CmspEdiParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\CmspEdiParserCompat") ? 0 : 1);'
+
+      - name: Load G2OceanXmlParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\G2OceanXmlParserCompat") ? 0 : 1);'
+
+      - name: Load GuaranExcelParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\GuaranExcelParserCompat") ? 0 : 1);'
+
+      - name: Load KlineDataParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\KlineDataParserCompat") ? 0 : 1);'
+
+      - name: Load LoginXmlParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\LoginXmlParserCompat") ? 0 : 1);'
+
+      - name: Load NavsurTextParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\NavsurTextParserCompat") ? 0 : 1);'
+
+      - name: Load ParanaExcelParserCompat
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\ParanaExcelParserCompat") ? 0 : 1);'
+
+      - name: Load ManifestParserFactory
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Services\\Parsers\\ManifestParserFactory") ? 0 : 1);'
+
+      - name: Load ProcessManifestImportJob
+        run: php -r 'require "vendor/autoload.php"; exit(class_exists("App\\Jobs\\ProcessManifestImportJob") ? 0 : 1);'
 
       - name: Bootstrap Laravel routes
         run: php artisan route:list >/dev/null
+
+      - name: Verify controller bindings
+        run: |
+          php -r '
+          $app = require "bootstrap/app.php";
+          $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+          $bill = $app->make(App\\Http\\Controllers\\Company\\BillOfLadingController::class);
+          $item = $app->make(App\\Http\\Controllers\\Company\\ShipmentItemController::class);
+          if (!($bill instanceof App\\Http\\Controllers\\Company\\BillOfLadingControllerCompat)) exit(1);
+          if (!($item instanceof App\\Http\\Controllers\\Company\\ShipmentItemControllerCompat)) exit(1);
+          echo "Controller bindings OK\n";
+          '
