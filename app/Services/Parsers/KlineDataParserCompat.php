@@ -3,8 +3,8 @@
 namespace App\Services\Parsers;
 
 /**
- * K-Line conserva su parser base y sólo ajusta la prioridad del número de viaje
- * ingresado explícitamente por el operador.
+ * K-Line conserva su parser base y sólo completa el número de viaje desde la
+ * importación cuando el archivo no lo informa.
  */
 class KlineDataParserCompat extends KlineDataParser
 {
@@ -20,9 +20,9 @@ class KlineDataParserCompat extends KlineDataParser
             (string) ($voyageInfo['voyage_number'] ?? '')
         );
 
-        $number = $operatorNumber !== ''
-            ? $operatorNumber
-            : $sourceNumber;
+        $number = $sourceNumber !== ''
+            ? $sourceNumber
+            : $operatorNumber;
 
         if ($number === '') {
             throw new \DomainException(
