@@ -11,7 +11,7 @@ use Exception;
 
 /**
  * Compatibilidad TFP para los casos confirmados durante el smoke:
- * embarcación seleccionada, viaje fuente, vacíos y tipo 40RH.
+ * embarcación seleccionada, viaje operativo, vacíos y tipo 40RH.
  */
 class TfpTextParserCompat extends TfpTextParser
 {
@@ -52,19 +52,24 @@ class TfpTextParserCompat extends TfpTextParser
         $originPort = $this->findOrCreatePort($data['pol']);
         $destPort = $this->findOrCreatePort($data['pod']);
 
+        /*
+         * TFP no informa un número de viaje en la fuente. El parser base genera
+         * una clave técnica TFP-<hash> para mantener determinismo. Si el operador
+         * ingresó el número real, ese dato reemplaza únicamente esa clave técnica.
+         */
         $voyageNumber = trim(
-            (string) ($data['voyage_number'] ?? '')
+            (string) ($options['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($options['voyage_number'] ?? '')
+                (string) ($data['voyage_number'] ?? '')
             );
         }
 
         if ($voyageNumber === '') {
             throw new Exception(
-                'TFP no informa número de viaje y no se ingresó uno en la importación.'
+                'TFP no informa número de viaje y no se pudo generar una clave técnica.'
             );
         }
 
