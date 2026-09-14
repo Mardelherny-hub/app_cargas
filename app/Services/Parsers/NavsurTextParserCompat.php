@@ -53,12 +53,12 @@ class NavsurTextParserCompat extends NavsurTextParser
         }
 
         $voyageNumber = trim(
-            (string) ($this->importOptions['voyage_number'] ?? '')
+            (string) ($data['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($data['voyage_number'] ?? '')
+                (string) ($this->importOptions['voyage_number'] ?? '')
             );
         }
 
