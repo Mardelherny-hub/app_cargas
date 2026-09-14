@@ -97,6 +97,7 @@
                             Tamaño máximo: 10MB. El sistema detectará automáticamente el formato del archivo.
                         </p>
                     </div>
+
                     <!-- Selección de embarcación -->
                     <div>
                         <label for="vessel_id" class="block text-sm font-medium text-gray-700 mb-2">
@@ -121,10 +122,7 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            Esta selección funciona como respaldo. Si el archivo informa una embarcación,
-                            esa embarcación tendrá prioridad. Si no está registrada, se incorporará con los
-                            datos disponibles y se informará que su ficha debe completarse. Si el archivo no
-                            informa embarcación, se utilizará la seleccionada aquí.
+                            La embarcación seleccionada aquí tiene prioridad sobre la informada en el archivo.
                         </p>
                     </div>
 
@@ -149,9 +147,7 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Complete este dato cuando el archivo no informe
-                            el número de viaje. Para K-Line es obligatorio
-                            cuando el DAT no lo contiene.
+                            Si lo completa, este número tendrá prioridad sobre el informado en el archivo.
                         </p>
                     </div>
 
@@ -175,9 +171,7 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Complete este dato cuando el archivo no informe
-                            la fecha de salida. Si el archivo contiene una
-                            fecha válida, esa fecha tendrá prioridad.
+                            Si la completa, esta fecha tendrá prioridad sobre la informada en el archivo.
                         </p>
                     </div>
 
@@ -185,7 +179,7 @@
                     <div>
                         <label for="loading_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Carga (GUARAN)
+                            📅 Fecha de Carga
                         </label>
 
                         <input type="date"
@@ -201,9 +195,7 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Sólo para archivos GUARAN. Se aplicará a los
-                            conocimientos importados porque este formato no
-                            informa una fecha de carga.
+                            Si la completa, se aplicará a todos los conocimientos importados y tendrá prioridad sobre el archivo.
                         </p>
                     </div>
 
@@ -211,7 +203,7 @@
                     <div>
                         <label for="discharge_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Descarga (GUARAN)
+                            📅 Fecha de Descarga
                         </label>
 
                         <input type="date"
@@ -227,9 +219,31 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Sólo para archivos GUARAN. Se aplicará a los
-                            conocimientos importados porque este formato no
-                            informa una fecha de descarga.
+                            Si la completa, se aplicará a todos los conocimientos y a la llegada estimada del viaje, con prioridad sobre el archivo.
+                        </p>
+                    </div>
+
+                    <!-- Fecha de emisión de los conocimientos -->
+                    <div>
+                        <label for="bill_date"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            📅 Fecha de Emisión
+                        </label>
+
+                        <input type="date"
+                               id="bill_date"
+                               name="bill_date"
+                               value="{{ old('bill_date', now()->toDateString()) }}"
+                               class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+
+                        @error('bill_date')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            Se aplicará a todos los conocimientos importados. Si no se modifica, se utilizará la fecha del día.
                         </p>
                     </div>
 
