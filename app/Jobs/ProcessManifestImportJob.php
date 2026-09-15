@@ -86,6 +86,7 @@ class ProcessManifestImportJob implements ShouldQueue
 
             if ($result->isSuccessful()) {
                 $this->applyOperationalImportDates($parser, $result);
+                $this->applyContainerPrimaryTypes($result);
 
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
@@ -222,6 +223,81 @@ class ProcessManifestImportJob implements ShouldQueue
             if ($changed) {
                 $bill->save();
             }
+        }
+    }
+
+    /**
+     * Regla funcional confirmada por Roberto (15/09/2026): todo conocimiento
+     * que tenga contenedores vinculados debe quedar clasificado con tipo
+     * principal de carga CONTENEDORES y tipo principal de embalaje CONTENEDOR,
+     * independientemente del formato de origen.
+     */
+    protected function applyContainerPrimaryTypes(
+        ManifestParseResult $result
+    ): void {
+        $voyage = $result->voyage;
+
+        if (!$voyage) {
+            return;
+        }
+
+        $shipmentIds = \App\Models\Shipment::where(
+            'voyage_id',
+            $voyage->id
+        )->pluck('id');
+
+        if ($shipmentIds->isEmpty()) {
+            return;
+        }
+
+        $billIds = \App\Models\BillOfLading::whereIn(
+            'shipment_id',
+            $shipmentIds
+        )->pluck('id');
+
+        if ($billIds->isEmpty()) {
+            return;
+        }
+
+        $containerizedBillIds = \Illuminate\Support\Facades\DB::table(
+            'shipment_items'
+        )
+            ->join(
+                'container_shipment_item',
+                'container_shipment_item.shipment_item_id',
+                '=',
+                'shipment_items.id'
+            )
+            ->whereIn('shipment_items.bill_of_lading_id', $billIds)
+            ->distinct()
+            ->pluck('shipment_items.bill_of_lading_id');
+
+        if ($containerizedBillIds->isEmpty()) {
+            return;
+        }
+
+        $cargoTypeId = \App\Models\CargoType::where('code', 'CON001')
+            ->where('active', true)
+            ->value('id');
+        $packagingTypeId = \App\Models\PackagingType::where('code', 'T')
+            ->where('active', true)
+            ->value('id');
+
+        if (!$cargoTypeId || !$packagingTypeId) {
+            throw new \RuntimeException(
+                'No están disponibles los catálogos activos CONTENEDORES/CONTENEDOR.'
+            );
+        }
+
+        $bills = \App\Models\BillOfLading::whereIn(
+            'id',
+            $containerizedBillIds
+        )->get();
+
+        foreach ($bills as $bill) {
+            $bill->primary_cargo_type_id = $cargoTypeId;
+            $bill->primary_packaging_type_id = $packagingTypeId;
+            $bill->saveQuietly();
         }
     }
 
