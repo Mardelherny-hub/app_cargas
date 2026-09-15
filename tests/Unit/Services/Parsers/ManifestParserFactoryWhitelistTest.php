@@ -44,7 +44,7 @@ class ManifestParserFactoryWhitelistTest extends TestCase
         );
     }
 
-    public function test_historical_tfp_signature_is_detected(): void
+    public function test_factory_routes_historical_tfp_signature_to_tfp(): void
     {
         $path = $this->writeTemporaryImportFile(
             '.txt',
@@ -52,15 +52,18 @@ class ManifestParserFactoryWhitelistTest extends TestCase
         );
 
         try {
-            $this->assertTrue(
-                (new TfpTextParserCompat())->canParse($path)
+            $parser = (new ManifestParserFactory())->getParser($path);
+
+            $this->assertInstanceOf(
+                TfpTextParserCompat::class,
+                $parser
             );
         } finally {
             @unlink($path);
         }
     }
 
-    public function test_historical_login_signature_is_detected(): void
+    public function test_factory_routes_historical_login_signature_to_login(): void
     {
         $path = $this->writeTemporaryImportFile(
             '.xml',
@@ -80,15 +83,18 @@ class ManifestParserFactoryWhitelistTest extends TestCase
         );
 
         try {
-            $this->assertTrue(
-                (new LoginXmlParserCompat())->canParse($path)
+            $parser = (new ManifestParserFactory())->getParser($path);
+
+            $this->assertInstanceOf(
+                LoginXmlParserCompat::class,
+                $parser
             );
         } finally {
             @unlink($path);
         }
     }
 
-    public function test_cuscar_is_detected_by_content_with_dot_one_extension(): void
+    public function test_factory_routes_cuscar_by_content_with_dot_one_extension(): void
     {
         $path = $this->writeTemporaryImportFile(
             '.1',
@@ -97,8 +103,11 @@ class ManifestParserFactoryWhitelistTest extends TestCase
         );
 
         try {
-            $this->assertTrue(
-                (new CmspEdiParserCompat())->canParse($path)
+            $parser = (new ManifestParserFactory())->getParser($path);
+
+            $this->assertInstanceOf(
+                CmspEdiParserCompat::class,
+                $parser
             );
         } finally {
             @unlink($path);
