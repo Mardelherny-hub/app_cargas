@@ -53,8 +53,8 @@ class CmspEdiParserCompat extends CmspEdiParser
 
     /**
      * La embarcación seleccionada por el operador tiene prioridad. Para número
-     * de viaje y fechas se conserva primero lo informado por el CUSCAR y sólo se
-     * usa el dato manual cuando el archivo no lo aporta.
+     * de viaje se conserva primero lo informado por el CUSCAR. Las fechas
+     * operativas ingresadas por el operador tienen prioridad sobre el archivo.
      */
     protected function createVoyage(array $data, array $options = []): Voyage
     {
@@ -143,11 +143,11 @@ class CmspEdiParserCompat extends CmspEdiParser
 
         $this->guardVoyageNumberIsFree($voyageNumber);
 
-        $departureDate = $data['dates']['departure']
-            ?? ($options['departure_date'] ?? null);
+        $departureDate = $options['departure_date']
+            ?? ($data['dates']['departure'] ?? null);
 
-        $estimatedArrivalDate = $data['dates']['estimated_arrival']
-            ?? ($options['discharge_date'] ?? null);
+        $estimatedArrivalDate = $options['discharge_date']
+            ?? ($data['dates']['estimated_arrival'] ?? null);
 
         if ($estimatedArrivalDate === null) {
             throw new Exception(
