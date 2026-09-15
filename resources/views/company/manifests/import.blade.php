@@ -173,9 +173,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Complete este dato cuando el archivo no informe
-                            la fecha de salida. Si el archivo contiene una
-                            fecha válida, esa fecha tendrá prioridad.
+                            Salida del viaje desde el puerto de origen. Si completa
+                            este dato, tendrá prioridad sobre la fecha informada en
+                            el archivo. Si lo deja vacío, se conservará la fuente.
                         </p>
                     </div>
 
@@ -183,7 +183,7 @@
                     <div>
                         <label for="loading_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Carga (GUARAN)
+                            📅 Fecha de Carga
                         </label>
 
                         <input type="date"
@@ -199,9 +199,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Sólo para archivos GUARAN. Se aplicará a los
-                            conocimientos importados porque este formato no
-                            informa una fecha de carga.
+                            Opcional para todos los formatos. Si se completa, se
+                            aplicará a los conocimientos importados y tendrá
+                            prioridad sobre la fecha de carga de la fuente.
                         </p>
                     </div>
 
@@ -209,7 +209,7 @@
                     <div>
                         <label for="discharge_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Descarga (GUARAN)
+                            📅 Fecha de Descarga
                         </label>
 
                         <input type="date"
@@ -225,9 +225,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Sólo para archivos GUARAN. Se aplicará a los
-                            conocimientos importados porque este formato no
-                            informa una fecha de descarga.
+                            Opcional para todos los formatos. Si se completa, se
+                            aplicará a los conocimientos importados y como llegada
+                            estimada del viaje, con prioridad sobre la fuente.
                         </p>
                     </div>
 
