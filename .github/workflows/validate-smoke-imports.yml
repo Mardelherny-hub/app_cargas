@@ -102,6 +102,9 @@ jobs:
           exit($actual === $expected ? 0 : 1);
           '
 
+      - name: Verify historical parser detection regressions
+        run: ./vendor/bin/phpunit tests/Unit/Services/Parsers/ManifestParserFactoryWhitelistTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '
