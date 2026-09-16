@@ -52,9 +52,33 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * La embarcación seleccionada por el operador tiene prioridad. Para número
-     * de viaje se conserva primero lo informado por el CUSCAR. Las fechas
-     * operativas ingresadas por el operador tienen prioridad sobre el archivo.
+     * Conserva la dirección específica informada por el archivo dentro del
+     * conocimiento, pero no la activa automáticamente. El operador decide si
+     * corresponde usarla para ese conocimiento.
+     */
+    protected function resolveSpecificAddress(
+        ?Client $client,
+        ?string $fileAddress,
+        string $role
+    ): ?array {
+        $specific = parent::resolveSpecificAddress(
+            $client,
+            $fileAddress,
+            $role
+        );
+
+        if ($specific !== null) {
+            $specific['use_specific_data'] = false;
+        }
+
+        return $specific;
+    }
+
+    /**
+     * La embarcación seleccionada por el operador tiene prioridad. El número
+     * de viaje ingresado por el operador también tiene prioridad; si queda
+     * vacío, se utiliza el informado por el CUSCAR. Las fechas operativas
+     * ingresadas por el operador tienen prioridad sobre el archivo.
      */
     protected function createVoyage(array $data, array $options = []): Voyage
     {
@@ -121,12 +145,12 @@ class CmspEdiParserCompat extends CmspEdiParser
         }
 
         $voyageNumber = trim(
-            (string) ($data['vessel']['voyage_number'] ?? '')
+            (string) ($options['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($options['voyage_number'] ?? '')
+                (string) ($data['vessel']['voyage_number'] ?? '')
             );
         }
 
