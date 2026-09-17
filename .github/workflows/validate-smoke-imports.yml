@@ -108,6 +108,9 @@ jobs:
       - name: Verify historical parser detection regressions
         run: ./vendor/bin/phpunit tests/Unit/Services/Parsers/ManifestParserFactoryWhitelistTest.php
 
+      - name: Verify imported specific address regression
+        run: ./vendor/bin/phpunit tests/Unit/Services/Parsers/ResolvesClientAddressesTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '
