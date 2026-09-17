@@ -20,15 +20,15 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
             . 'ShipmentItemControllerCompat.php'
         );
 
-        // El runtime real usa el controller Compat. La fuente se reconoce
-        // primero por el BL y, como respaldo, por manifest_format del viaje.
+        // La distribución física por contenedor pertenece al contrato
+        // canónico del pivot y no depende del formato que originó el dato.
         $this->assertStringContainsString(
-            'optional($shipmentItem->shipment->voyage)->manifest_format',
+            '$allowsUnknownContainerDistribution = true;',
             $source
         );
 
         $this->assertStringContainsString(
-            "['LOGIN_XML', 'CMSP_EDI_CUSCAR']",
+            '$allowsUnknownContainerPackages = true;',
             $source
         );
 
@@ -109,6 +109,39 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
 
         $this->assertStringNotContainsString(
             'packageQuantity < minimumPackageQuantity',
+            $source
+        );
+    }
+
+    public function test_container_list_is_collapsible_and_can_save_in_place(): void
+    {
+        $source = $this->source(
+            'resources/views/company/'
+            . 'shipment-items/edit.blade.php'
+        );
+
+        $this->assertStringContainsString(
+            '<details class="container-item',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'class="container-title',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'Guardar cambios',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'refreshContainerTitles()',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "closest('details.container-item')",
             $source
         );
     }
