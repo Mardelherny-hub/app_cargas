@@ -180,11 +180,16 @@
                             {{-- Tipo de Embalaje --}}
                             <div>
                                 <label for="packaging_type_id" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Embalaje <span class="text-red-500">*</span>
+                                    Tipo de Embalaje
+                                    @unless($allowsUnknownContainerDistribution)
+                                        <span class="text-red-500">*</span>
+                                    @endunless
                                 </label>
                                 <select name="packaging_type_id" 
                                         id="packaging_type_id" 
-                                        required
+                                        @unless($allowsUnknownContainerDistribution)
+                                            required
+                                        @endunless
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('packaging_type_id') border-red-300 @enderror">
                                     <option value="">Seleccione tipo de embalaje</option>
                                     @foreach($packagingTypes as $packagingType)
@@ -193,6 +198,12 @@
                                         </option>
                                     @endforeach
                                 </select>
+                                @if($allowsUnknownContainerDistribution)
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        Puede quedar sin seleccionar cuando el archivo importado
+                                        no tiene una equivalencia fiel en el catálogo.
+                                    </p>
+                                @endif
                                 @error('packaging_type_id')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -307,21 +318,35 @@
                         {{-- Cantidad de Bultos --}}
                         <div>
                             <label class="block text-sm font-medium text-gray-700">
-                                Cantidad de Bultos <span class="text-red-500">*</span>
+                                Cantidad de Bultos
+                                @unless($allowsUnknownContainerDistribution)
+                                    <span class="text-red-500">*</span>
+                                @endunless
                             </label>
                             <input type="number" 
                                    name="containers[{{ $index }}][package_quantity]" 
                                    value="{{ old('containers.'.$index.'.package_quantity', $container['package_quantity']) }}"
                                    min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
-                                   placeholder="20"
-                                   required>
+                                   placeholder="{{ $allowsUnknownContainerDistribution ? 'No informado' : '20' }}"
+                                   @unless($allowsUnknownContainerDistribution)
+                                       required
+                                   @endunless>
+                            @if($allowsUnknownContainerDistribution)
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Vacío o 0 puede significar que el archivo no informó
+                                    la distribución de bultos por contenedor.
+                                </p>
+                            @endif
                         </div>
 
-                        {{-- Peso Bruto --}}
+                        {{-- Peso de carga / mercadería --}}
                         <div>
                             <label class="block text-sm font-medium text-gray-700">
-                                Peso Bruto (kg) <span class="text-red-500">*</span>
+                                Peso de carga / mercadería (kg)
+                                @unless($allowsUnknownContainerDistribution)
+                                    <span class="text-red-500">*</span>
+                                @endunless
                             </label>
                             <input type="number" 
                                    name="containers[{{ $index }}][gross_weight_kg]" 
@@ -329,9 +354,32 @@
                                    step="0.01"
                                    min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
-                                   placeholder="1000.00"
-                                   required>
+                                   placeholder="{{ $allowsUnknownContainerDistribution ? 'No informado' : '1000.00' }}"
+                                   @unless($allowsUnknownContainerDistribution)
+                                       required
+                                   @endunless>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Corresponde a la carga asociada al contenedor; no es el VGM.
+                            </p>
                         </div>
+
+                        @if(array_key_exists('verified_gross_mass_kg', $container)
+                            && $container['verified_gross_mass_kg'] !== null)
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    VGM importado (kg)
+                                </label>
+                                <input type="number"
+                                       value="{{ $container['verified_gross_mass_kg'] }}"
+                                       step="0.01"
+                                       readonly
+                                       class="mt-1 block w-full border-gray-200 bg-gray-100 text-gray-700 rounded-md shadow-sm">
+                                <p class="mt-1 text-xs text-gray-500">
+                                    Masa bruta verificada informada por el archivo de origen.
+                                    Se conserva separada del peso de la mercadería.
+                                </p>
+                            </div>
+                        @endif
 
                         {{-- Peso Neto --}}
                         <div>
@@ -1316,15 +1364,8 @@
                 }
             });
 
-            // Auto-calcular peso neto basado en peso bruto (85% por defecto) - Solo si no hay valor previo
-            document.getElementById('gross_weight_kg').addEventListener('input', function() {
-                const grossWeight = parseFloat(this.value);
-                const netWeightField = document.getElementById('net_weight_kg');
-                
-                if (grossWeight && !netWeightField.value) {
-                    netWeightField.value = (grossWeight * 0.85).toFixed(2);
-                }
-            });
+            // El peso neto sólo se conserva o edita cuando existe un dato real.
+            // No se deriva automáticamente a partir del peso bruto.
         });
     </script>
 
@@ -1332,6 +1373,8 @@
 // Cargar datos existentes desde PHP
 let containerIndex = {{ count($containerData ?? []) }};
 let existingContainers = @json($containerData ?? []);
+const allowsUnknownContainerDistribution =
+    @json((bool) ($allowsUnknownContainerDistribution ?? false));
 
 // Función para poblar contenedores existentes
 function populateExistingContainers() {
@@ -1452,9 +1495,9 @@ function addContainer() {
                     <input type="number" 
                            name="containers[${containerIndex}][tare_weight]" 
                            step="0.01"
-                           value="2200"
+                           min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                           placeholder="2200">
+                           placeholder="Tara en kg">
                 </div>
 
                 <div>
@@ -1472,25 +1515,28 @@ function addContainer() {
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">
-                        Cantidad de Bultos *
+                        Cantidad de Bultos${allowsUnknownContainerDistribution ? '' : ' *'}
                     </label>
                     <input type="number" 
                            name="containers[${containerIndex}][package_quantity]" 
                            min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-package-qty"
-                           required>
+                           ${allowsUnknownContainerDistribution ? '' : 'required'}>
                 </div>
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">
-                        Peso Bruto (kg) *
+                        Peso de carga / mercadería (kg)${allowsUnknownContainerDistribution ? '' : ' *'}
                     </label>
                     <input type="number" 
                            name="containers[${containerIndex}][gross_weight_kg]" 
                            step="0.01"
                            min="0"
                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
-                           required>
+                           ${allowsUnknownContainerDistribution ? '' : 'required'}>
+                    <p class="mt-1 text-xs text-gray-500">
+                        No corresponde al VGM del contenedor.
+                    </p>
                 </div>
 
                 <div>
