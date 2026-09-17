@@ -1966,6 +1966,60 @@ class CmspEdiParser implements ManifestParserInterface
             'container_count' => count(array_unique($containerNumbers)),
         ];
 
+        /*
+         * Mercancías peligrosas:
+         *
+         * DGS pertenece a los GID/items del CUSCAR. El item ya conserva
+         * is_dangerous_goods, imdg_class y un_number; el conocimiento debe
+         * reflejar que contiene mercancía peligrosa cuando al menos uno de
+         * sus items lo declara.
+         *
+         * Los campos escalares UN/IMDG del BL sólo se completan cuando todos
+         * los items peligrosos resuelven un único valor inequívoco. Si el
+         * conocimiento contiene distintos UN o clases, no se elige ninguno
+         * arbitrariamente.
+         */
+        $dangerousItems = array_values(array_filter(
+            $items,
+            static fn (array $item): bool =>
+                (bool) ($item['is_dangerous_goods'] ?? false)
+        ));
+
+        $attributes['contains_dangerous_goods'] = !empty($dangerousItems);
+
+        if (!empty($dangerousItems)) {
+            $unValues = array_map(
+                static fn (array $item): string =>
+                    trim((string) ($item['un_number'] ?? '')),
+                $dangerousItems
+            );
+
+            $imdgValues = array_map(
+                static fn (array $item): string =>
+                    trim((string) ($item['imdg_class'] ?? '')),
+                $dangerousItems
+            );
+
+            $allDangerousItemsHaveUn = !in_array('', $unValues, true);
+            $allDangerousItemsHaveImdg = !in_array('', $imdgValues, true);
+
+            $uniqueUnNumbers = array_values(array_unique($unValues));
+            $uniqueImdgClasses = array_values(array_unique($imdgValues));
+
+            $attributes['un_number'] =
+                $allDangerousItemsHaveUn && count($uniqueUnNumbers) === 1
+                    ? $uniqueUnNumbers[0]
+                    : null;
+
+            $attributes['imdg_class'] =
+                $allDangerousItemsHaveImdg && count($uniqueImdgClasses) === 1
+                    ? $uniqueImdgClasses[0]
+                    : null;
+        } else {
+            $attributes['un_number'] = null;
+            $attributes['imdg_class'] = null;
+        }
+
         if (array_key_exists('gross_weight_kg', $containerGroup)) {
             $attributes['gross_weight_kg'] =
                 round((float) $containerGroup['gross_weight_kg'], 2);
