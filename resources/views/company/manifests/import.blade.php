@@ -81,7 +81,7 @@
                     <!-- Selección de archivo -->
                     <div>
                         <label for="manifest_file" class="block text-sm font-medium text-gray-700 mb-2">
-                            📎 Archivo de Manifiesto
+                            📎 Archivo de Manifiesto *
                         </label>
                         <input type="file" 
                                id="manifest_file" 
@@ -122,7 +122,7 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            La embarcación seleccionada aquí tiene prioridad sobre la informada en el archivo.
+                            Este dato es obligatorio en el flujo de importación. La embarcación seleccionada aquí tiene prioridad sobre la informada en el archivo.
                         </p>
                     </div>
 
@@ -130,7 +130,7 @@
                     <div>
                         <label for="voyage_number"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            🧭 Número de viaje
+                            🧭 Número de viaje <span class="text-gray-500 font-normal">(opcional)</span>
                         </label>
 
                         <input type="text"
@@ -147,9 +147,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Complete este dato cuando el archivo no informe
-                            el número de viaje. Para K-Line es obligatorio
-                            cuando el DAT no lo contiene.
+                            Si lo deja vacío, se utilizará el número informado por el archivo.
+                            Si la fuente tampoco informa un número de viaje, la
+                            importación no podrá completarse en los formatos que lo requieren.
                         </p>
                     </div>
 
@@ -157,7 +157,7 @@
                     <div>
                         <label for="departure_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha y hora de salida
+                            📅 Fecha y hora de salida <span class="text-gray-500 font-normal">(opcional)</span>
                         </label>
 
                         <input type="datetime-local"
@@ -173,9 +173,10 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Salida del viaje desde el puerto de origen. Si completa
-                            este dato, tendrá prioridad sobre la fecha informada en
-                            el archivo. Si lo deja vacío, se conservará la fuente.
+                            Si lo deja completamente vacío, se conservará la fecha y hora
+                            informada por la fuente. Si la fuente tampoco informa la salida,
+                            quedará sin informar. Si decide reemplazarla, debe ingresar
+                            fecha y hora completas; el sistema no inventa una hora.
                         </p>
                     </div>
 
@@ -183,7 +184,7 @@
                     <div>
                         <label for="loading_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Carga
+                            📅 Fecha de Carga <span class="text-gray-500 font-normal">(opcional)</span>
                         </label>
 
                         <input type="date"
@@ -199,9 +200,9 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Opcional para todos los formatos. Si se completa, se
-                            aplicará a los conocimientos importados y tendrá
-                            prioridad sobre la fecha de carga de la fuente.
+                            Si lo deja vacío, se conservará la fecha de carga informada
+                            por la fuente. Si se completa, se aplicará a los
+                            conocimientos importados y tendrá prioridad sobre la fuente.
                         </p>
                     </div>
 
@@ -209,7 +210,7 @@
                     <div>
                         <label for="discharge_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
-                            📅 Fecha de Descarga
+                            📅 Fecha de Descarga <span class="text-gray-500 font-normal">(opcional)</span>
                         </label>
 
                         <input type="date"
@@ -225,9 +226,11 @@
                         @enderror
 
                         <p class="mt-1 text-xs text-gray-500">
-                            Opcional para todos los formatos. Si se completa, se
-                            aplicará a los conocimientos importados y como llegada
-                            estimada del viaje, con prioridad sobre la fuente.
+                            Si lo deja vacío, se conservará la fecha informada por la fuente.
+                            Si se completa, se aplicará a los conocimientos importados
+                            y como llegada estimada del viaje, con prioridad sobre la fuente.
+                            Algunos formatos pueden requerir este dato cuando el archivo
+                            no informa una fecha estimada de llegada.
                         </p>
                     </div>
 

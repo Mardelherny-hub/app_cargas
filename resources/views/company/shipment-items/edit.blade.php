@@ -223,15 +223,33 @@
     {{-- Contenedores existentes desde PHP --}}
     @if($containerData && count($containerData) > 0)
         @foreach($containerData as $index => $container)
-            <div class="container-item mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50" data-index="{{ $index }}">
-                <div class="flex justify-between items-center mb-4">
-                    <h4 class="text-md font-medium text-gray-900">Contenedor {{ $index + 1 }}</h4>
-                    @if(count($containerData) > 1)
-                        <button type="button" onclick="removeContainer({{ $index }})" class="text-red-600 hover:text-red-800">
-                            Eliminar
-                        </button>
-                    @endif
-                </div>
+            <details class="container-item mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50"
+                     data-index="{{ $index }}"
+                     {{ $index === 0 ? 'open' : '' }}>
+                <summary class="cursor-pointer mb-4">
+                    <span class="inline-flex w-full justify-between items-center gap-4">
+                        <span class="container-title text-md font-medium text-gray-900">
+                            Contenedor {{ $index + 1 }}
+                            · {{ $container['container_number'] ?? 'Sin número' }}
+                        </span>
+
+                        <span class="inline-flex items-center gap-3">
+                            <button type="submit"
+                                    onclick="event.stopPropagation();"
+                                    class="inline-flex items-center px-3 py-1.5 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition">
+                                Guardar cambios
+                            </button>
+
+                            @if(count($containerData) > 1)
+                                <button type="button"
+                                        onclick="event.stopPropagation(); removeContainer({{ $index }})"
+                                        class="text-red-600 hover:text-red-800">
+                                    Eliminar
+                                </button>
+                            @endif
+                        </span>
+                    </span>
+                </summary>
 
                 {{-- ID del contenedor (hidden para contenedores existentes) --}}
                 <input type="hidden" name="containers[{{ $index }}][id]" value="{{ $container['id'] ?? '' }}">
@@ -427,7 +445,7 @@
                        
                     </div>
                 </div>
-            </div>
+            </details>
         @endforeach
     @endif
 </div>
@@ -1452,13 +1470,30 @@ function addContainer() {
     const containersList = document.getElementById('containers-list');
     
     const containerHtml = `
-        <div class="container-item mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50" data-index="${containerIndex}">
-            <div class="flex justify-between items-center mb-4">
-                <h4 class="text-md font-medium text-gray-900">Contenedor ${containerIndex + 1}</h4>
-                <button type="button" onclick="removeContainer(${containerIndex})" class="text-red-600 hover:text-red-800">
-                    Eliminar
-                </button>
-            </div>
+        <details class="container-item mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50"
+                 data-index="${containerIndex}"
+                 open>
+            <summary class="cursor-pointer mb-4">
+                <span class="inline-flex w-full justify-between items-center gap-4">
+                    <span class="container-title text-md font-medium text-gray-900">
+                        Contenedor ${containerIndex + 1} · Sin número
+                    </span>
+
+                    <span class="inline-flex items-center gap-3">
+                        <button type="submit"
+                                onclick="event.stopPropagation();"
+                                class="inline-flex items-center px-3 py-1.5 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700">
+                            Guardar cambios
+                        </button>
+
+                        <button type="button"
+                                onclick="event.stopPropagation(); removeContainer(${containerIndex})"
+                                class="text-red-600 hover:text-red-800">
+                            Eliminar
+                        </button>
+                    </span>
+                </span>
+            </summary>
 
             <input type="hidden" name="containers[${containerIndex}][id]" value="">
 
@@ -1572,7 +1607,7 @@ function addContainer() {
                 </div>
 
             </div>
-        </div>
+        </details>
     `;
 
     containersList.insertAdjacentHTML('beforeend', containerHtml);
@@ -1598,14 +1633,28 @@ function removeContainer(index) {
 }
 
 // Función para renumerar contenedores
-function renumberContainers() {
+function refreshContainerTitles() {
     const containers = document.querySelectorAll('.container-item');
+
     containers.forEach((container, index) => {
-        const title = container.querySelector('h4');
-        if (title) {
-            title.textContent = `Contenedor ${index + 1}`;
+        const title = container.querySelector('.container-title');
+        const numberField = container.querySelector(
+            'input[name$="[container_number]"]'
+        );
+
+        if (!title) {
+            return;
         }
+
+        const number = numberField?.value?.trim() || 'Sin número';
+
+        title.textContent =
+            `Contenedor ${index + 1} · ${number}`;
     });
+}
+
+function renumberContainers() {
+    refreshContainerTitles();
 }
 
 // Función para actualizar totales
@@ -1674,9 +1723,18 @@ function updateTotals() {
 
 // Configurar event listeners para contenedores
 function setupContainerEventListeners() {
-    document.querySelectorAll('.container-package-qty, .container-gross-weight, .container-net-weight, .container-volume').forEach(input => {
-        input.removeEventListener('input', updateTotals); // Evitar duplicados
+    document.querySelectorAll(
+        '.container-package-qty, .container-gross-weight, .container-net-weight, .container-volume'
+    ).forEach(input => {
+        input.removeEventListener('input', updateTotals);
         input.addEventListener('input', updateTotals);
+    });
+
+    document.querySelectorAll(
+        '.container-item input[name$="[container_number]"]'
+    ).forEach(input => {
+        input.removeEventListener('input', refreshContainerTitles);
+        input.addEventListener('input', refreshContainerTitles);
     });
 }
 
@@ -1705,6 +1763,18 @@ function toggleContainersSection() {
 // Event listeners principales
 document.addEventListener('DOMContentLoaded', function() {
     console.log('=== INICIALIZANDO CONTENEDORES ===');
+
+    const itemForm = document.getElementById('itemForm');
+
+    if (itemForm) {
+        itemForm.addEventListener('invalid', function(event) {
+            const details = event.target.closest('details.container-item');
+
+            if (details) {
+                details.open = true;
+            }
+        }, true);
+    }
     console.log('Contenedores existentes:', existingContainers);
     console.log('Container index inicial:', containerIndex);
     

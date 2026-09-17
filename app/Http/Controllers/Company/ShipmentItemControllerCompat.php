@@ -53,16 +53,12 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             ->orderBy('name')
             ->get();
 
-        $sourceFormat = strtoupper(trim((string) (
-            optional($shipmentItem->billOfLading)->source_format
-            ?: optional($shipmentItem->shipment->voyage)->manifest_format
-        )));
-
-        $allowsUnknownContainerDistribution = in_array(
-            $sourceFormat,
-            ['LOGIN_XML', 'CMSP_EDI_CUSCAR'],
-            true
-        );
+        /*
+         * La distribución física por contenedor puede ser desconocida.
+         * El pivot container_shipment_item admite package_quantity y
+         * gross_weight_kg nulos; no depende del formato que originó el dato.
+         */
+        $allowsUnknownContainerDistribution = true;
 
         $containerData = [];
 
@@ -148,14 +144,20 @@ class ShipmentItemControllerCompat extends ShipmentItemController
         $isLoginItem = $sourceFormat === 'LOGIN_XML';
         $isCmspItem = $sourceFormat === 'CMSP_EDI_CUSCAR';
 
-        $allowsUnknownContainerDistribution =
-            $isLoginItem || $isCmspItem;
+        /*
+         * La distribución por contenedor es opcional en el modelo canónico.
+         * NULL o 0 no implica que el contenedor esté vacío: puede significar
+         * simplemente que no se conoce la distribución física de los bultos.
+         */
+        $allowsUnknownContainerDistribution = true;
+        $allowsUnknownContainerPackages = true;
 
-        $allowsUnknownContainerPackages =
-            $allowsUnknownContainerDistribution;
-
+        /*
+         * La excepción de tipo de embalaje conserva por ahora su comportamiento
+         * existente; es una regla distinta a la distribución por contenedor.
+         */
         $allowsUnknownPackaging =
-            $allowsUnknownContainerDistribution;
+            $isLoginItem || $isCmspItem;
 
         $containersInput = $request->input('containers', []);
         $isContainerCargoInput = $this->isContainerizedCargoCompat(
