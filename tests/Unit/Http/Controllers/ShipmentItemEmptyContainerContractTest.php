@@ -13,11 +13,23 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
         );
     }
 
-    public function test_backend_accepts_and_preserves_empty_container(): void
+    public function test_backend_accepts_and_preserves_imported_container_data(): void
     {
         $source = $this->source(
             'app/Http/Controllers/Company/'
-            . 'ShipmentItemController.php'
+            . 'ShipmentItemControllerCompat.php'
+        );
+
+        // El runtime real usa el controller Compat. La fuente se reconoce
+        // primero por el BL y, como respaldo, por manifest_format del viaje.
+        $this->assertStringContainsString(
+            'optional($shipmentItem->shipment->voyage)->manifest_format',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "['LOGIN_XML', 'CMSP_EDI_CUSCAR']",
+            $source
         );
 
         $this->assertStringContainsString(
@@ -25,33 +37,52 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
             $source
         );
 
+        // CMSP/Login pueden no declarar la distribución física de bultos
+        // o peso de carga por contenedor. NULL significa desconocido.
         $this->assertStringContainsString(
-            'required_with:containers|integer|min:0',
+            "'nullable|integer|min:0'",
             $source
         );
 
         $this->assertStringContainsString(
-            'required_with:containers|numeric|min:0',
+            "'nullable|numeric|min:0'",
             $source
         );
 
+        $this->assertStringContainsString(
+            "\$containerData['package_quantity'] ?? null",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "\$containerData['gross_weight_kg'] ?? null",
+            $source
+        );
+
+        // El tratamiento histórico de contenedor vacío del Compat se conserva.
         $this->assertStringContainsString(
             "if (\$condition === 'V')",
             $source
         );
 
         $this->assertStringContainsString(
-            "\$packages !== 0",
-            $source
-        );
-
-        $this->assertStringContainsString(
-            'abs($grossWeight) > 0.00001',
+            '!in_array($packages, [0, 1], true)',
             $source
         );
 
         $this->assertStringContainsString(
             "\$condition === 'V' ? 'empty' : 'loaded'",
+            $source
+        );
+
+        // El VGM importado debe sobrevivir una edición.
+        $this->assertStringContainsString(
+            "'verified_gross_mass_kg' => \$existing->pivot->verified_gross_mass_kg",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "'verified_gross_mass_kg' => \$preserved['verified_gross_mass_kg'] ?? null",
             $source
         );
     }

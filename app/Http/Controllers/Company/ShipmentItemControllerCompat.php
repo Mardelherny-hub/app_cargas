@@ -53,6 +53,17 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             ->orderBy('name')
             ->get();
 
+        $sourceFormat = strtoupper(trim((string) (
+            optional($shipmentItem->billOfLading)->source_format
+            ?: optional($shipmentItem->shipment->voyage)->manifest_format
+        )));
+
+        $allowsUnknownContainerDistribution = in_array(
+            $sourceFormat,
+            ['LOGIN_XML', 'CMSP_EDI_CUSCAR'],
+            true
+        );
+
         $containerData = [];
 
         foreach ($shipmentItem->containers()->with('containerType')->get() as $container) {
@@ -86,6 +97,7 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                 'condition' => $container->condition ?? 'L',
                 'package_quantity' => $pivot->package_quantity,
                 'gross_weight_kg' => $pivot->gross_weight_kg,
+                'verified_gross_mass_kg' => $pivot->verified_gross_mass_kg,
                 'net_weight_kg' => $pivot->net_weight_kg,
                 'volume_m3' => $pivot->volume_m3,
                 'loading_sequence' => $pivot->loading_sequence,
@@ -98,7 +110,8 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             'packagingTypes',
             'clients',
             'containerTypes',
-            'containerData'
+            'containerData',
+            'allowsUnknownContainerDistribution'
         ));
     }
 
@@ -127,13 +140,22 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             }
         }
 
-        $sourceFormat = strtoupper(trim(
-            (string) optional($shipmentItem->billOfLading)->source_format
-        ));
+        $sourceFormat = strtoupper(trim((string) (
+            optional($shipmentItem->billOfLading)->source_format
+            ?: optional($shipmentItem->shipment->voyage)->manifest_format
+        )));
 
         $isLoginItem = $sourceFormat === 'LOGIN_XML';
         $isCmspItem = $sourceFormat === 'CMSP_EDI_CUSCAR';
-        $allowsUnknownContainerPackages = $isLoginItem || $isCmspItem;
+
+        $allowsUnknownContainerDistribution =
+            $isLoginItem || $isCmspItem;
+
+        $allowsUnknownContainerPackages =
+            $allowsUnknownContainerDistribution;
+
+        $allowsUnknownPackaging =
+            $allowsUnknownContainerDistribution;
 
         $containersInput = $request->input('containers', []);
         $isContainerCargoInput = $this->isContainerizedCargoCompat(
@@ -177,7 +199,9 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                 ? 'nullable|string|max:5000'
                 : 'required|string|max:5000',
             'cargo_type_id' => 'required|exists:cargo_types,id,active,1',
-            'packaging_type_id' => 'required|exists:packaging_types,id,active,1',
+            'packaging_type_id' => $allowsUnknownPackaging
+                ? 'nullable|exists:packaging_types,id,active,1'
+                : 'required|exists:packaging_types,id,active,1',
             'package_quantity' => 'required|integer|min:' . $minPackageQuantity,
             'gross_weight_kg' => 'required|numeric|min:0',
             'net_weight_kg' => 'nullable|numeric|min:0',
@@ -233,21 +257,78 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             'containers.*.seal_source' => 'nullable|in:carrier,shipper,source',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
             'containers.*.condition' => 'nullable|in:L,V',
-            'containers.*.package_quantity' => 'required_with:containers|integer|min:0',
-            'containers.*.gross_weight_kg' => 'required_with:containers|numeric|min:0',
+            'containers.*.package_quantity' =>
+                $allowsUnknownContainerDistribution
+                    ? 'nullable|integer|min:0'
+                    : 'required_with:containers|integer|min:0',
+            'containers.*.gross_weight_kg' =>
+                $allowsUnknownContainerDistribution
+                    ? 'nullable|numeric|min:0'
+                    : 'required_with:containers|numeric|min:0',
             'containers.*.net_weight_kg' => 'nullable|numeric|min:0',
             'containers.*.volume_m3' => 'nullable|numeric|min:0',
             'containers.*.loading_sequence' => 'nullable|string|max:10',
             'containers.*.notes' => 'nullable|string|max:500',
         ];
 
-        $validated = $request->validate($rules);
+        $messages = [
+            'required' =>
+                'El campo :attribute es obligatorio.',
+            'required_with' =>
+                'El campo :attribute es obligatorio.',
+            'exists' =>
+                'El valor seleccionado para :attribute no es valido.',
+            'integer' =>
+                'El campo :attribute debe ser un numero entero.',
+            'numeric' =>
+                'El campo :attribute debe ser numerico.',
+            'min' =>
+                'El campo :attribute debe ser al menos :min.',
+            'in' =>
+                'El valor seleccionado para :attribute no es valido.',
+        ];
+
+        $attributes = [
+            'line_number' => 'numero de linea',
+            'item_description' => 'descripcion del item',
+            'cargo_type_id' => 'tipo de carga',
+            'packaging_type_id' => 'tipo de embalaje',
+            'package_quantity' => 'cantidad de bultos',
+            'gross_weight_kg' => 'peso bruto',
+            'currency_code' => 'moneda',
+            'unit_of_measure' => 'unidad de medida',
+            'containers.*.container_number' => 'numero de contenedor',
+            'containers.*.container_type_id' => 'tipo de contenedor',
+            'containers.*.package_quantity' =>
+                'cantidad de bultos del contenedor',
+            'containers.*.gross_weight_kg' =>
+                'peso de carga del contenedor',
+        ];
+
+        $validated = $request->validate(
+            $rules,
+            $messages,
+            $attributes
+        );
 
         if (!empty($validated['containers'])) {
             foreach ($validated['containers'] as $index => $containerData) {
                 $condition = $containerData['condition'] ?? 'L';
-                $packages = (int) $containerData['package_quantity'];
-                $grossWeight = (float) $containerData['gross_weight_kg'];
+
+                $packagesRaw =
+                    $containerData['package_quantity'] ?? null;
+                $grossWeightRaw =
+                    $containerData['gross_weight_kg'] ?? null;
+
+                $packages =
+                    $packagesRaw === null || $packagesRaw === ''
+                        ? null
+                        : (int) $packagesRaw;
+
+                $grossWeight =
+                    $grossWeightRaw === null || $grossWeightRaw === ''
+                        ? null
+                        : (float) $grossWeightRaw;
 
                 if ($condition === 'V') {
                     $tareWeight =
@@ -259,13 +340,17 @@ class ShipmentItemControllerCompat extends ShipmentItemController
 
                     $errors = [];
 
-                    if (!in_array($packages, [0, 1], true)) {
+                    if (
+                        $packages !== null
+                        && !in_array($packages, [0, 1], true)
+                    ) {
                         $errors["containers.{$index}.package_quantity"] =
                             'Un contenedor vacío debe tener 0 o 1 bulto.';
                     }
 
                     if (
-                        abs($grossWeight) > 0.00001
+                        $grossWeight !== null
+                        && abs($grossWeight) > 0.00001
                         && (
                             $tareWeight === null
                             || abs($grossWeight - $tareWeight) > 0.01
@@ -284,7 +369,10 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                     continue;
                 }
 
-                if (!$allowsUnknownContainerPackages && $packages < 1) {
+                if (
+                    !$allowsUnknownContainerPackages
+                    && ($packages === null || $packages < 1)
+                ) {
                     return redirect()->back()
                         ->withInput()
                         ->withErrors([
@@ -314,11 +402,34 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             $totalGrossWeight = $containers->sum('gross_weight_kg');
 
             $hasUnknownContainerPackages =
-                $isCmspItem
+                $allowsUnknownContainerDistribution
                 && $containers->contains(
                     fn ($container) =>
                         ($container['condition'] ?? 'L') !== 'V'
-                        && (int) ($container['package_quantity'] ?? 0) === 0
+                        && (
+                            !array_key_exists(
+                                'package_quantity',
+                                $container
+                            )
+                            || $container['package_quantity'] === null
+                            || $container['package_quantity'] === ''
+                            || (int) $container['package_quantity'] === 0
+                        )
+                );
+
+            $hasUnknownContainerGrossWeight =
+                $allowsUnknownContainerDistribution
+                && $containers->contains(
+                    fn ($container) =>
+                        ($container['condition'] ?? 'L') !== 'V'
+                        && (
+                            !array_key_exists(
+                                'gross_weight_kg',
+                                $container
+                            )
+                            || $container['gross_weight_kg'] === null
+                            || $container['gross_weight_kg'] === ''
+                        )
                 );
 
             if (
@@ -336,6 +447,7 @@ class ShipmentItemControllerCompat extends ShipmentItemController
 
             if (
                 !$allContainersEmpty
+                && !$hasUnknownContainerGrossWeight
                 && abs($totalGrossWeight - $validated['gross_weight_kg']) > 0.01
             ) {
                 return redirect()->back()
@@ -357,7 +469,10 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                 'item_description' => $validated['item_description']
                     ?? $shipmentItem->item_description,
                 'cargo_type_id' => $validated['cargo_type_id'],
-                'packaging_type_id' => $validated['packaging_type_id'],
+                'packaging_type_id' =>
+                    array_key_exists('packaging_type_id', $validated)
+                        ? $validated['packaging_type_id']
+                        : $shipmentItem->packaging_type_id,
                 'package_quantity' => $validated['package_quantity'],
                 'gross_weight_kg' => $validated['gross_weight_kg'],
                 'net_weight_kg' => $validated['net_weight_kg'] ?? null,
@@ -558,7 +673,7 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                     'current_gross_weight_kg' =>
                         $condition === 'V'
                             ? null
-                            : $containerData['gross_weight_kg'],
+                            : ($containerData['gross_weight_kg'] ?? null),
                     'condition' => $condition,
                     'carrier_seal' => $source === 'carrier' ? $sealValue : null,
                     'shipper_seal' => $source === 'shipper' ? $sealValue : null,
@@ -593,8 +708,10 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             }
 
             $shipmentItem->containers()->attach($container->id, [
-                'package_quantity' => $containerData['package_quantity'],
-                'gross_weight_kg' => $containerData['gross_weight_kg'],
+                'package_quantity' =>
+                    $containerData['package_quantity'] ?? null,
+                'gross_weight_kg' =>
+                    $containerData['gross_weight_kg'] ?? null,
                 'net_weight_kg' => $containerData['net_weight_kg'] ?? null,
                 'volume_m3' => $containerData['volume_m3'] ?? null,
                 'loading_sequence' => $containerData['loading_sequence'] ?? null,
