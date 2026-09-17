@@ -14,7 +14,9 @@ use Illuminate\Support\Facades\Log;
  * ETAPA 2 - resolveSpecificAddress():
  *   Si el cliente YA tiene dirección y la del archivo difiere (normalizada),
  *   devuelve el array para $bl->specificContacts()->create([...]) con la
- *   dirección específica de ese conocimiento, para ese rol. Si no, null.
+ *   dirección específica de ese conocimiento, para ese rol. La dirección se
+ *   conserva, pero queda inactiva: el operador decide si debe utilizarse.
+ *   Si no hay diferencia, devuelve null.
  *
  * NOTA: el vínculo del contacto primario es client_contact_data.is_primary,
  * NO clients.primary_contact_data_id (esa columna no existe en la tabla).
@@ -77,6 +79,7 @@ trait ResolvesClientAddresses
     /**
      * ETAPA 2: si el cliente ya tiene dirección y la del archivo difiere,
      * devuelve el array para crear la dirección específica del BL en ese rol.
+     * El dato se conserva sin activarlo automáticamente.
      */
     protected function resolveSpecificAddress(?Client $client, ?string $fileAddress, string $role): ?array
     {
@@ -106,11 +109,13 @@ trait ResolvesClientAddresses
             return null;
         }
 
-        // Difieren -> dirección específica del BL, colgada del contacto del cliente.
+        // Difieren -> conservar como dirección específica del BL, pero inactiva.
+        // Ningún importador debe decidir por el operador que esa dirección sustituya
+        // automáticamente a la dirección principal del cliente.
         return [
             'client_contact_data_id'  => $primary->id,
             'role'                    => $role,
-            'use_specific_data'       => true,
+            'use_specific_data'       => false,
             'specific_address_line_1' => trim($fileAddress),
             'created_by_user_id'      => auth()->id(),
         ];
