@@ -4,6 +4,7 @@ namespace Tests\Unit\Services\Parsers;
 
 use App\Models\Port;
 use App\Services\Parsers\TfpTextParser;
+use App\Services\Parsers\TfpTextParserCompat;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -82,6 +83,21 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         $this->invoke('findOrCreateContainerType', ['40FR']);
     }
 
+    public function test_compat_maps_real_bm_rosa_40ot_without_losing_size(): void
+    {
+        $parser = app(TfpTextParserCompat::class);
+        $ref = new ReflectionMethod(
+            TfpTextParserCompat::class,
+            'findOrCreateContainerType'
+        );
+        $ref->setAccessible(true);
+
+        $type = $ref->invoke($parser, '40OT');
+
+        $this->assertContains($type->code, ['40OT', '40GP']);
+        $this->assertSame('40', (string) $type->length_feet);
+    }
+
     public function test_tfp_condition_p_is_preserved_for_afip(): void
     {
         $this->assertSame(
@@ -95,5 +111,63 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         $this->expectException(\Exception::class);
 
         $this->invoke('mapTfpCondition', ['X']);
+    }
+
+    public function test_compat_restores_container_packaging_contract(): void
+    {
+        $compatSource = file_get_contents(
+            base_path('app/Services/Parsers/TfpTextParserCompat.php')
+        );
+
+        $this->assertStringContainsString(
+            "PackagingType::where('code', 'T')",
+            $compatSource
+        );
+
+        $this->assertStringContainsString(
+            "'package_type_description' => trim(",
+            $compatSource
+        );
+
+        $baseSource = file_get_contents(
+            base_path('app/Services/Parsers/TfpTextParser.php')
+        );
+
+        $this->assertStringContainsString(
+            "'primary_packaging_type_id' => \$hasContainers",
+            $baseSource
+        );
+
+        $this->assertStringContainsString(
+            "PackagingType::where('code', 'T')",
+            $baseSource
+        );
+    }
+
+    public function test_tfp_allows_missing_notify_without_fabricating_client(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/TfpTextParser.php')
+        );
+
+        $this->assertStringContainsString(
+            "'notify_party_id' => \$notify?->id",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'TFP: BL sin notificatario informado',
+            $source
+        );
+
+        $this->assertStringNotContainsString(
+            "TFP: notificatario ausente en el BL.",
+            $source
+        );
+
+        $this->assertStringNotContainsString(
+            "Notificatario TFP",
+            $source
+        );
     }
 }

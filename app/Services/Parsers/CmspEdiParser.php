@@ -499,6 +499,10 @@ class CmspEdiParser implements ManifestParserInterface
                     if (!empty($equipmentNumber)) {
                         $this->parsedData['equipment'][$equipmentNumber] = [
                             'iso_code'                => explode(':', $segment['elements'][2] ?? '')[0] ?? '',
+                            // UN/EDIFACT D.96B EQD/8169: 4 = vacío, 5 = lleno.
+                            // JOSAMO 350S declara así su reposicionamiento vacío
+                            // incluso cuando GID/FTX no trae descripción.
+                            'full_empty_indicator'    => trim((string) ($segment['elements'][5] ?? '')) ?: null,
                             'tare_weight_kg'          => null,
                             'shipper_seal'            => null,
                             'customs_seal'            => null,
@@ -1837,8 +1841,14 @@ class CmspEdiParser implements ManifestParserInterface
          * realmente por el archivo.
          */
         $cargoDescriptions = [];
+        $itemsDelGrupo = $containerGroup['items'] ?? [];
+        $allItemsEmpty = !empty($itemsDelGrupo);
 
-        foreach ($containerGroup['items'] ?? [] as $itemDelGrupo) {
+        foreach ($itemsDelGrupo as $itemDelGrupo) {
+            if (!$this->isEmptyContainerItem($itemDelGrupo)) {
+                $allItemsEmpty = false;
+            }
+
             $description = trim((string) ($itemDelGrupo['description'] ?? ''));
 
             if ($description === '') {
@@ -1858,12 +1868,21 @@ class CmspEdiParser implements ManifestParserInterface
         $cargoDescriptions = array_values(array_unique($cargoDescriptions));
 
         if (empty($cargoDescriptions)) {
-            throw new Exception(
-                "CMSP EDI: BL '{$billNumber}' sin descripción de mercadería."
-            );
-        }
+            if (!$allItemsEmpty) {
+                throw new Exception(
+                    "CMSP EDI: BL '{$billNumber}' sin descripción de mercadería."
+                );
+            }
 
-        $cargoDescription = implode(' | ', $cargoDescriptions);
+            /*
+             * shipment_items.item_description no admite NULL y el sistema ya
+             * usa VACIO como semántica canónica. Aquí no se inventa mercadería:
+             * se normaliza la condición explícita EQD/8169=4 de todos los SGP.
+             */
+            $cargoDescription = 'VACIO';
+        } else {
+            $cargoDescription = implode(' | ', $cargoDescriptions);
+        }
 
         $bill = BillOfLading::create([
             'shipment_id'               => $shipment->id,
@@ -1950,7 +1969,7 @@ class CmspEdiParser implements ManifestParserInterface
         $allEmpty = !empty($items);
 
         foreach ($items as $item) {
-            if (stripos((string) ($item['description'] ?? ''), 'VACIO') === false) {
+            if (!$this->isEmptyContainerItem($item)) {
                 $allEmpty = false;
             }
 
@@ -2137,9 +2156,46 @@ class CmspEdiParser implements ManifestParserInterface
      * el peso del item representa la mercadería lógica completa y para cada
      * contenedor se usa su VGM cuando el archivo lo proporciona.
      */
+    /**
+     * Un ítem CMSP es vacío sólo cuando la fuente lo declara inequívocamente:
+     * texto VACIO ya soportado, o todos sus SGP con EQD/8169 = 4.
+     * Si falta EQD/8169 para una unidad, no se infiere vacío.
+     */
+    protected function isEmptyContainerItem(array $itemData): bool
+    {
+        if (stripos((string) ($itemData['description'] ?? ''), 'VACIO') !== false) {
+            return true;
+        }
+
+        $containerNumbers = array_values(array_unique(array_filter(
+            array_map(
+                static fn ($number): string => trim((string) $number),
+                $itemData['containers'] ?? []
+            ),
+            static fn (string $number): bool => $number !== ''
+        )));
+
+        if ($containerNumbers === []) {
+            return false;
+        }
+
+        foreach ($containerNumbers as $containerNumber) {
+            $indicator = trim((string) (
+                $this->parsedData['equipment'][$containerNumber]['full_empty_indicator']
+                ?? ''
+            ));
+
+            if ($indicator !== '4') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     protected function cantidadBultosContenedor(array $itemData): ?int
     {
-        if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
+        if ($this->isEmptyContainerItem($itemData)) {
             return 0;
         }
 
@@ -2152,7 +2208,7 @@ class CmspEdiParser implements ManifestParserInterface
 
     protected function pesoContenedor(array $itemData): ?float
     {
-        if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
+        if ($this->isEmptyContainerItem($itemData)) {
             return 0.0;
         }
 
@@ -2175,14 +2231,14 @@ class CmspEdiParser implements ManifestParserInterface
     {
         // CMSP no informa peso neto por contenedor.
         // Para reposicionamiento vacío, la mercadería es explícitamente cero.
-        return stripos($itemData['description'] ?? '', 'VACIO') !== false
+        return $this->isEmptyContainerItem($itemData)
             ? 0.0
             : null;
     }
 
     protected function volumenContenedor(array $itemData): ?float
     {
-        if (stripos($itemData['description'] ?? '', 'VACIO') !== false) {
+        if ($this->isEmptyContainerItem($itemData)) {
             return 0.0;
         }
 
@@ -2352,13 +2408,21 @@ class CmspEdiParser implements ManifestParserInterface
                               ->max('line_number') ?? 0;
     $lineNumber++;
 
+    // La condición vacía puede venir en texto o explícitamente en EQD/8169.
+    $esVacio = $this->isEmptyContainerItem($itemData);
+
     // SANITIZAR descripción para evitar errores de codificación
     $description = trim((string) ($itemData['description'] ?? ''));
 
     if ($description === '') {
-        throw new Exception(
-            "Item CMSP sin descripción fuente en BL {$billOfLading->bill_number}."
-        );
+        if (!$esVacio) {
+            throw new Exception(
+                "Item CMSP sin descripción fuente en BL {$billOfLading->bill_number}."
+            );
+        }
+
+        // Normalización del estado fuente explícito, no mercadería inventada.
+        $description = 'VACIO';
     }
 
     $cleanDescription = mb_convert_encoding($description, 'UTF-8', 'UTF-8');
@@ -2370,8 +2434,6 @@ class CmspEdiParser implements ManifestParserInterface
     // Un contenedor vacio no lleva mercaderia: bultos, peso y volumen en cero
     // aunque el archivo los declare (Roberto 07/08/2026). Mismo criterio que
     // createContainer para la condicion V.
-    $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
-
     if (!$esVacio
         && (!array_key_exists('gross_weight_kg', $itemData)
             || $itemData['gross_weight_kg'] === null)) {
@@ -2483,7 +2545,7 @@ class CmspEdiParser implements ManifestParserInterface
 
         // Datos físicos declarados para este contenedor en su bloque EQD.
         $equipment = $this->parsedData['equipment'][$containerNumber] ?? null;
-        $esVacio = stripos($itemData['description'] ?? '', 'VACIO') !== false;
+        $esVacio = $this->isEmptyContainerItem($itemData);
 
         /*
          * Algunos CUSCAR históricos identifican contenedores vacíos mediante SGP
@@ -2536,30 +2598,45 @@ class CmspEdiParser implements ManifestParserInterface
 
         $isoCode = strtoupper(trim((string) ($equipment['iso_code'] ?? '')));
 
-        if ($isoCode === '') {
+        if ($isoCode === '' && !$esVacio) {
             throw new Exception(
                 "El contenedor {$containerNumber} tiene EQD pero no informa código ISO."
             );
         }
 
-        $typeCode = $this->mapIsoContainerType($isoCode);
+        $typeCode = $isoCode !== ''
+            ? $this->mapIsoContainerType($isoCode)
+            : null;
 
-        if ($typeCode === null) {
-            throw new Exception(
-                "Código ISO de contenedor desconocido en CMSP: {$isoCode} "
-                . "({$containerNumber}). No se asigna un tipo estándar por defecto."
-            );
-        }
+        $containerType = $typeCode !== null
+            ? ContainerType::where('code', $typeCode)
+                ->where('active', true)
+                ->first()
+            : null;
 
-        $containerType = ContainerType::where('code', $typeCode)
-            ->where('active', true)
-            ->first();
+        if (!$containerType && !$esVacio) {
+            if ($typeCode === null) {
+                throw new Exception(
+                    "Código ISO de contenedor desconocido en CMSP: {$isoCode} "
+                    . "({$containerNumber}). No se asigna un tipo estándar por defecto."
+                );
+            }
 
-        if (!$containerType) {
             throw new Exception(
                 "El código ISO {$isoCode} corresponde al tipo {$typeCode}, "
                 . "pero ese tipo no existe activo en el catálogo de contenedores."
             );
+        }
+
+        if (!$containerType && $esVacio) {
+            $warning = $isoCode === ''
+                ? 'CMSP: contenedores vacíos sin código ISO; se conserva tipo desconocido.'
+                : "CMSP: contenedores vacíos con ISO {$isoCode} "
+                    . 'sin tipo activo equivalente; se conserva tipo desconocido.';
+
+            if (!in_array($warning, $this->stats['warnings'], true)) {
+                $this->stats['warnings'][] = $warning;
+            }
         }
 
         $condition = $esVacio ? 'V' : 'L';
@@ -2615,7 +2692,7 @@ class CmspEdiParser implements ManifestParserInterface
 
         $container = Container::create([
             'container_number' => $containerNumber,
-            'container_type_id' => $containerType->id,
+            'container_type_id' => $containerType?->id,
             'condition' => $condition,
 
             // Precintos clasificados según el emisor declarado en SEL.
