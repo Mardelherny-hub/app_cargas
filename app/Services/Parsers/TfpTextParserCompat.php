@@ -184,7 +184,7 @@ class TfpTextParserCompat extends TfpTextParser
              * se fuerza a un catálogo que no lo representa fielmente.
              */
             'packaging_type_id' => $hasContainers
-                ? \\App\\Models\\PackagingType::where('code', 'T')
+                ? \App\Models\PackagingType::where('code', 'T')
                     ->where('active', true)
                     ->firstOrFail()
                     ->id
