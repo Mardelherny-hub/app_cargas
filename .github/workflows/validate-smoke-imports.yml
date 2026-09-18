@@ -111,6 +111,12 @@ jobs:
       - name: Verify imported specific address regression
         run: ./vendor/bin/phpunit tests/Unit/Services/Parsers/ResolvesClientAddressesTest.php
 
+      - name: Verify Roberto 17/09 regressions
+        run: |
+          ./vendor/bin/phpunit tests/Unit/Http/Controllers/ShipmentItemEmptyContainerContractTest.php
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/TfpTextParserCoreIntegrityTest.php
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/CmspEdiParserClientIdentityTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '
