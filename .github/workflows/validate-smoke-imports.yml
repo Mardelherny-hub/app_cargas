@@ -125,6 +125,8 @@ jobs:
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/KlineDataParserMultipleCommodityCodesTest.php
           ./vendor/bin/phpunit tests/Unit/Http/Controllers/VoyageImportedRouteUiContractTest.php
           ./vendor/bin/phpunit tests/Unit/Views/LoginSourceUiContractTest.php
+          php artisan view:clear
+          php artisan view:cache
 
       - name: Verify CUSCAR document date semantics
         run: |
