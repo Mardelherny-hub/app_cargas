@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Services\Parsers;
 
+use App\Models\Country;
 use App\Services\Parsers\CmspEdiParser;
+use App\Services\Parsers\CmspEdiParserCompat;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -15,6 +17,24 @@ class CmspEdiParserClientIdentityTest extends TestCase
     ): mixed {
         $reflection = new ReflectionMethod(
             CmspEdiParser::class,
+            $method
+        );
+
+        $reflection->setAccessible(true);
+
+        return $reflection->invokeArgs(
+            $parser,
+            $arguments
+        );
+    }
+
+    protected function invokeCompat(
+        CmspEdiParserCompat $parser,
+        string $method,
+        array $arguments = []
+    ): mixed {
+        $reflection = new ReflectionMethod(
+            CmspEdiParserCompat::class,
             $method
         );
 
@@ -166,5 +186,67 @@ class CmspEdiParserClientIdentityTest extends TestCase
                 )
             );
         }
+    }
+
+
+    public function test_compat_prefers_explicit_paraguay_when_nit_label_is_ambiguous(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $countryId = $this->invokeCompat(
+            $parser,
+            'resolveClientCountryId',
+            [[
+                'name' => 'DARNEL PARAGUAY S.A.',
+                'address' => 'NIT 801005175 MARIANO ROQUE ALONSO PARAGUAY',
+                'type' => 'consignee',
+                'tax_id' => '801005175',
+                'tax_type' => 'NIT',
+            ], 'NIT']
+        );
+
+        $this->assertSame(
+            (int) Country::where('alpha2_code', 'PY')->value('id'),
+            $countryId
+        );
+    }
+
+    public function test_compat_keeps_colombia_for_nit_when_source_declares_colombia(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $countryId = $this->invokeCompat(
+            $parser,
+            'resolveClientCountryId',
+            [[
+                'name' => 'AJOVER DARNEL S.A.S.',
+                'address' => 'NIT 860.013.771-7 BOGOTA - COLOMBIA',
+                'type' => 'shipper',
+                'tax_id' => '8600137717',
+                'tax_type' => 'NIT',
+            ], 'NIT']
+        );
+
+        $this->assertSame(
+            (int) Country::where('alpha2_code', 'CO')->value('id'),
+            $countryId
+        );
+    }
+
+    public function test_compat_does_not_invent_document_type_for_ambiguous_nit(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/CmspEdiParserCompat.php')
+        );
+
+        $this->assertStringContainsString(
+            "\$taxType !== 'NIT'",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'se conserva el identificador sin inventar tipo',
+            $source
+        );
     }
 }
