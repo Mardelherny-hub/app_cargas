@@ -256,4 +256,129 @@ class CmspEdiParserClientIdentityTest extends TestCase
             $source
         );
     }
+
+
+    public function test_real_josamo_eqd_8169_marks_blank_item_as_empty(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $segments = [
+            [
+                'tag' => 'EQD',
+                'elements' => [
+                    'CN',
+                    'BEAU6267394',
+                    '45G1::5',
+                    '2',
+                    '3',
+                    '4',
+                ],
+            ],
+            [
+                'tag' => 'CNI',
+                'elements' => ['39', 'JOSPSFV350S', '001PJSM35026'],
+            ],
+            [
+                'tag' => 'RFF',
+                'elements' => ['BM:001PJSM35026'],
+            ],
+            [
+                'tag' => 'GID',
+                'elements' => ['0', '0::::'],
+            ],
+            [
+                'tag' => 'FTX',
+                'elements' => ['AAA', '', '', ''],
+            ],
+            [
+                'tag' => 'MEA',
+                'elements' => ['AAY', 'G', 'KGM:0'],
+            ],
+            [
+                'tag' => 'SGP',
+                'elements' => ['BEAU6267394', '0'],
+            ],
+        ];
+
+        $edi = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'ediSegments'
+        );
+        $edi->setAccessible(true);
+        $edi->setValue($parser, $segments);
+
+        $this->invoke(
+            $parser,
+            'extractStructuredData'
+        );
+
+        $parsed = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'parsedData'
+        );
+        $parsed->setAccessible(true);
+        $data = $parsed->getValue($parser);
+
+        $this->assertSame(
+            '4',
+            $data['equipment']['BEAU6267394']['full_empty_indicator']
+        );
+
+        $item = $data['containers'][0]['items'][0];
+
+        $this->assertSame('', $item['description']);
+        $this->assertTrue(
+            $this->invoke(
+                $parser,
+                'isEmptyContainerItem',
+                [$item]
+            )
+        );
+    }
+
+    public function test_eqd_full_indicator_does_not_infer_empty(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $parsed = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'parsedData'
+        );
+        $parsed->setAccessible(true);
+        $parsed->setValue($parser, [
+            'equipment' => [
+                'FULL0000001' => [
+                    'full_empty_indicator' => '5',
+                ],
+            ],
+        ]);
+
+        $this->assertFalse(
+            $this->invoke(
+                $parser,
+                'isEmptyContainerItem',
+                [[
+                    'description' => '',
+                    'containers' => ['FULL0000001'],
+                ]]
+            )
+        );
+    }
+
+    public function test_empty_unknown_iso_keeps_type_unknown_instead_of_fabricating_one(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/CmspEdiParser.php')
+        );
+
+        $this->assertStringContainsString(
+            'if (!$containerType && !$esVacio)',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "'container_type_id' => \$containerType?->id",
+            $source
+        );
+    }
 }
