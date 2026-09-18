@@ -141,4 +141,40 @@ class G2OceanXmlParserCoreIntegrityTest extends TestCase
             )
         );
     }
+    public function test_g2ocean_normalizes_client_name_identity_without_punctuation_noise(): void
+    {
+        $this->assertSame(
+            $this->invoke(
+                'normalizeClientIdentityName',
+                ['HIERRO Y RUEDA S.A.']
+            ),
+            $this->invoke(
+                'normalizeClientIdentityName',
+                ['HIERRO Y RUEDA S.A.,']
+            )
+        );
+    }
+
+    public function test_g2ocean_enriches_unique_unidentified_client_before_creating_duplicate(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/G2OceanXmlParser.php')
+        );
+
+        $this->assertStringContainsString(
+            'findUnidentifiedClientByNameIdentity',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "'tax_id' => \$taxId",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'ficha histórica enriquecida con identidad fiscal',
+            $source
+        );
+    }
+
 }

@@ -170,4 +170,51 @@ class TfpTextParserCoreIntegrityTest extends TestCase
             $source
         );
     }
+    public function test_tfp_normalizes_client_name_identity_without_punctuation_noise(): void
+    {
+        $this->assertSame(
+            $this->invoke(
+                'normalizeClientIdentityName',
+                ['ONBOARD LOGISTICS PARAGUAY S.A.']
+            ),
+            $this->invoke(
+                'normalizeClientIdentityName',
+                ['ONBOARD LOGISTICS PARAGUAY SA']
+            )
+        );
+
+        $this->assertSame(
+            $this->invoke(
+                'normalizeClientIdentityName',
+                ['QUIMAFLEX S.R.L.']
+            ),
+            $this->invoke(
+                'normalizeClientIdentityName',
+                ['QUIMAFLEX SRL']
+            )
+        );
+    }
+
+    public function test_tfp_enriches_unique_unidentified_client_before_creating_duplicate(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/TfpTextParser.php')
+        );
+
+        $this->assertStringContainsString(
+            'findUnidentifiedClientByNameIdentity',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "'tax_id' => \$normTaxId",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'ficha histórica enriquecida con identidad fiscal',
+            $source
+        );
+    }
+
 }
