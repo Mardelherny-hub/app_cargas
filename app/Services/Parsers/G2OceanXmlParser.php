@@ -677,8 +677,8 @@ class G2OceanXmlParser implements ManifestParserInterface
      */
     protected function extractTariffPosition(string $description): ?string
     {
-        $labels = '(?:NCM(?:\s+NO\.?)?|HS[\s\-]?CODE|TARIFF\s+(?:NUMBER|CODE)|HARMONIZED\s+TARIFF\s+CODE)';
-        $code   = '([0-9]{4}\.[0-9]{2}(?:\.[0-9]{2})?(?:\.[0-9]{3}[A-Z]?)?|[0-9]{8,10})';
+        $labels = '(?:NCM(?:\s+NO\.?)?|HS[\s\-]?CODE|TARIFF\s+(?:NUMBER|CODE)|HARMONIZED\s+TARIFF\s+CODE|CUSTOM\s+CODE\s+OF\s+GOODS\s+SHIPPED)';
+        $code   = '([0-9]{4}\.[0-9]{2}(?:\.[0-9]{2})?(?:\.[0-9]{3}[A-Z]?)?|[0-9]{6,10})';
         $pattern = '/' . $labels . '[:\s]*' . $code . '/i';
 
         if (preg_match($pattern, $description, $matches)) {
