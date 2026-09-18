@@ -2598,13 +2598,15 @@ class CmspEdiParser implements ManifestParserInterface
 
         $isoCode = strtoupper(trim((string) ($equipment['iso_code'] ?? '')));
 
-        if ($isoCode === '') {
+        if ($isoCode === '' && !$esVacio) {
             throw new Exception(
                 "El contenedor {$containerNumber} tiene EQD pero no informa código ISO."
             );
         }
 
-        $typeCode = $this->mapIsoContainerType($isoCode);
+        $typeCode = $isoCode !== ''
+            ? $this->mapIsoContainerType($isoCode)
+            : null;
 
         $containerType = $typeCode !== null
             ? ContainerType::where('code', $typeCode)
@@ -2627,9 +2629,10 @@ class CmspEdiParser implements ManifestParserInterface
         }
 
         if (!$containerType && $esVacio) {
-            $warning =
-                "CMSP: contenedores vacíos con ISO {$isoCode} "
-                . 'sin tipo activo equivalente; se conserva tipo desconocido.';
+            $warning = $isoCode === ''
+                ? 'CMSP: contenedores vacíos sin código ISO; se conserva tipo desconocido.'
+                : "CMSP: contenedores vacíos con ISO {$isoCode} "
+                    . 'sin tipo activo equivalente; se conserva tipo desconocido.';
 
             if (!in_array($warning, $this->stats['warnings'], true)) {
                 $this->stats['warnings'][] = $warning;
