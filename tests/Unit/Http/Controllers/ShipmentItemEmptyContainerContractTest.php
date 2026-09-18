@@ -59,6 +59,25 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
             $source
         );
 
+        // Un ítem con todos sus contenedores vacíos se reconoce por
+        // el estado real V, sin depender de source_format/manifest_format.
+        $this->assertStringContainsString(
+            '$isImportedEmptyItem = $allContainersEmpty;',
+            $source
+        );
+
+        $this->assertStringNotContainsString(
+            '$allContainersEmpty'
+            . PHP_EOL
+            . '            && ($isCmspItem || $isLoginItem)',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            '$allContainersEmpty || $isLoginItem || $isCmspItem',
+            $source
+        );
+
         // El tratamiento histórico de contenedor vacío del Compat se conserva.
         $this->assertStringContainsString(
             "if (\$condition === 'V')",

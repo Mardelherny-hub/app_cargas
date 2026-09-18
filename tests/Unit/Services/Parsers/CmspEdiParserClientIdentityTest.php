@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Services\Parsers\CmspEdiParser;
+use App\Services\Parsers\CmspEdiParserCompat;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -15,6 +16,38 @@ class CmspEdiParserClientIdentityTest extends TestCase
     ): mixed {
         $reflection = new ReflectionMethod(
             CmspEdiParser::class,
+            $method
+        );
+
+        $reflection->setAccessible(true);
+
+        return $reflection->invokeArgs(
+            $parser,
+            $arguments
+        );
+    }
+
+    protected function compatWithoutDatabase(): CmspEdiParserCompat
+    {
+        return new class extends CmspEdiParserCompat {
+            protected function countryIdForAlpha2(string $alpha2): int
+            {
+                return match (strtoupper($alpha2)) {
+                    'PY' => 101,
+                    'CO' => 202,
+                    default => 999,
+                };
+            }
+        };
+    }
+
+    protected function invokeCompat(
+        CmspEdiParserCompat $parser,
+        string $method,
+        array $arguments = []
+    ): mixed {
+        $reflection = new ReflectionMethod(
+            CmspEdiParserCompat::class,
             $method
         );
 
@@ -166,5 +199,196 @@ class CmspEdiParserClientIdentityTest extends TestCase
                 )
             );
         }
+    }
+
+
+    public function test_compat_prefers_explicit_paraguay_when_nit_label_is_ambiguous(): void
+    {
+        $parser = $this->compatWithoutDatabase();
+
+        $countryId = $this->invokeCompat(
+            $parser,
+            'resolveClientCountryId',
+            [[
+                'name' => 'DARNEL PARAGUAY S.A.',
+                'address' => 'NIT 801005175 MARIANO ROQUE ALONSO PARAGUAY',
+                'type' => 'consignee',
+                'tax_id' => '801005175',
+                'tax_type' => 'NIT',
+            ], 'NIT']
+        );
+
+        $this->assertSame(101, $countryId);
+    }
+
+    public function test_compat_keeps_colombia_for_nit_when_source_declares_colombia(): void
+    {
+        $parser = $this->compatWithoutDatabase();
+
+        $countryId = $this->invokeCompat(
+            $parser,
+            'resolveClientCountryId',
+            [[
+                'name' => 'AJOVER DARNEL S.A.S.',
+                'address' => 'NIT 860.013.771-7 BOGOTA - COLOMBIA',
+                'type' => 'shipper',
+                'tax_id' => '8600137717',
+                'tax_type' => 'NIT',
+            ], 'NIT']
+        );
+
+        $this->assertSame(202, $countryId);
+    }
+
+    public function test_compat_does_not_invent_document_type_for_ambiguous_nit(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/CmspEdiParserCompat.php')
+        );
+
+        $this->assertStringContainsString(
+            "\$taxType !== 'NIT'",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'se conserva el identificador sin inventar tipo',
+            $source
+        );
+    }
+
+
+    public function test_real_josamo_eqd_8169_marks_blank_item_as_empty(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $segments = [
+            [
+                'tag' => 'EQD',
+                'elements' => [
+                    'CN',
+                    'BEAU6267394',
+                    '45G1::5',
+                    '2',
+                    '3',
+                    '4',
+                ],
+            ],
+            [
+                'tag' => 'CNI',
+                'elements' => ['39', 'JOSPSFV350S', '001PJSM35026'],
+            ],
+            [
+                'tag' => 'RFF',
+                'elements' => ['BM:001PJSM35026'],
+            ],
+            [
+                'tag' => 'GID',
+                'elements' => ['0', '0::::'],
+            ],
+            [
+                'tag' => 'FTX',
+                'elements' => ['AAA', '', '', ''],
+            ],
+            [
+                'tag' => 'MEA',
+                'elements' => ['AAY', 'G', 'KGM:0'],
+            ],
+            [
+                'tag' => 'SGP',
+                'elements' => ['BEAU6267394', '0'],
+            ],
+        ];
+
+        $edi = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'ediSegments'
+        );
+        $edi->setAccessible(true);
+        $edi->setValue($parser, $segments);
+
+        $this->invoke(
+            $parser,
+            'extractStructuredData'
+        );
+
+        $parsed = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'parsedData'
+        );
+        $parsed->setAccessible(true);
+        $data = $parsed->getValue($parser);
+
+        $this->assertSame(
+            '4',
+            $data['equipment']['BEAU6267394']['full_empty_indicator']
+        );
+
+        $item = $data['containers'][0]['items'][0];
+
+        $this->assertSame('', $item['description']);
+        $this->assertTrue(
+            $this->invoke(
+                $parser,
+                'isEmptyContainerItem',
+                [$item]
+            )
+        );
+    }
+
+    public function test_eqd_full_indicator_does_not_infer_empty(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $parsed = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'parsedData'
+        );
+        $parsed->setAccessible(true);
+        $parsed->setValue($parser, [
+            'equipment' => [
+                'FULL0000001' => [
+                    'full_empty_indicator' => '5',
+                ],
+            ],
+        ]);
+
+        $this->assertFalse(
+            $this->invoke(
+                $parser,
+                'isEmptyContainerItem',
+                [[
+                    'description' => '',
+                    'containers' => ['FULL0000001'],
+                ]]
+            )
+        );
+    }
+
+    public function test_empty_unknown_iso_keeps_type_unknown_instead_of_fabricating_one(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/CmspEdiParser.php')
+        );
+
+        $this->assertStringContainsString(
+            'if (!$containerType && !$esVacio)',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "'container_type_id' => \$containerType?->id",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            "if (\$isoCode === '' && !\$esVacio)",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'contenedores vacíos sin código ISO; se conserva tipo desconocido.',
+            $source
+        );
     }
 }

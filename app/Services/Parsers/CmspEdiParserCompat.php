@@ -411,6 +411,48 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
+     * En archivos CUSCAR reales el rótulo NIT no identifica de forma unívoca
+     * la jurisdicción: el mismo archivo usa NIT tanto para una empresa de
+     * Paraguay como para una de Colombia. Cuando el texto de NAD declara
+     * expresamente el país, ese dato de fuente prevalece y NIT se conserva
+     * únicamente como rótulo fiscal de origen.
+     */
+    protected function resolveClientCountryId(
+        array $partyData,
+        ?string $taxType
+    ): int {
+        $textAlpha2 = $this->countryAlpha2FromPartyText(
+            ($partyData['name'] ?? '')
+            . ' '
+            . ($partyData['address'] ?? '')
+        );
+
+        $taxAlpha2 = $this->countryAlpha2ForTaxType($taxType);
+
+        if (
+            $taxType === 'NIT'
+            && $textAlpha2 !== null
+            && $taxAlpha2 !== null
+            && $textAlpha2 !== $taxAlpha2
+        ) {
+            $warning =
+                "CMSP: NIT informado para una parte cuyo país explícito es {$textAlpha2}; "
+                . 'se conserva el identificador fiscal y prevalece el país declarado.';
+
+            if (!in_array($warning, $this->stats['warnings'], true)) {
+                $this->stats['warnings'][] = $warning;
+            }
+
+            return $this->countryIdForAlpha2($textAlpha2);
+        }
+
+        return parent::resolveClientCountryId(
+            $partyData,
+            $taxType
+        );
+    }
+
+    /**
      * Cuando el archivo declaró el tipo fiscal pero el número era inválido,
      * puede reutilizarse una única ficha exacta de mismo nombre y país. Si no
      * existe una coincidencia inequívoca, se mantiene el comportamiento base y
@@ -525,11 +567,27 @@ class CmspEdiParserCompat extends CmspEdiParser
                 ->where('active', true)
                 ->value('id');
 
-            if (!$documentTypeId) {
+            /*
+             * NIT aparece como rótulo fuente tanto en partes paraguayas como
+             * colombianas. Si el país explícito del NAD resolvió una jurisdicción
+             * donde no existe NIT en nuestro catálogo, no se inventa otro tipo
+             * documental: se conserva tax_id y país, y document_type_id queda NULL.
+             */
+            if (!$documentTypeId && $taxType !== 'NIT') {
                 throw new \DomainException(
                     "CMSP: no existe un tipo documental {$taxType} "
                     . 'activo y compatible con el país resuelto.'
                 );
+            }
+
+            if (!$documentTypeId && $taxType === 'NIT') {
+                $warning =
+                    'CMSP: NIT de fuente sin tipo documental equivalente '
+                    . 'para el país resuelto; se conserva el identificador sin inventar tipo.';
+
+                if (!in_array($warning, $this->stats['warnings'], true)) {
+                    $this->stats['warnings'][] = $warning;
+                }
             }
         }
 
