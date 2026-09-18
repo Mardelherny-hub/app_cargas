@@ -152,13 +152,6 @@ class ShipmentItemControllerCompat extends ShipmentItemController
         $allowsUnknownContainerDistribution = true;
         $allowsUnknownContainerPackages = true;
 
-        /*
-         * La excepción de tipo de embalaje conserva por ahora su comportamiento
-         * existente; es una regla distinta a la distribución por contenedor.
-         */
-        $allowsUnknownPackaging =
-            $isLoginItem || $isCmspItem;
-
         $containersInput = $request->input('containers', []);
         $isContainerCargoInput = $this->isContainerizedCargoCompat(
             (int) $request->input('cargo_type_id')
@@ -179,6 +172,14 @@ class ShipmentItemControllerCompat extends ShipmentItemController
          * los campos generales que legítimamente pueden quedar sin dato.
          */
         $isImportedEmptyItem = $allContainersEmpty;
+
+        /*
+         * Un ítem compuesto sólo por contenedores vacíos no tiene embalaje de
+         * mercadería que informar. La columna es nullable y no se fabrica uno.
+         * Para los demás casos se conserva la excepción histórica de formatos.
+         */
+        $allowsUnknownPackaging =
+            $allContainersEmpty || $isLoginItem || $isCmspItem;
 
         if ($isImportedEmptyItem) {
             $request->merge([
