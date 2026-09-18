@@ -11,7 +11,7 @@ use Exception;
 
 /**
  * Compatibilidad TFP para los casos confirmados durante el smoke:
- * embarcación seleccionada, viaje operativo, vacíos y tipo 40RH.
+ * embarcación seleccionada, viaje operativo, vacíos y tipos 40RH/40OT.
  */
 class TfpTextParserCompat extends TfpTextParser
 {
@@ -205,6 +205,29 @@ class TfpTextParserCompat extends TfpTextParser
     protected function findOrCreateContainerType(string $code): ContainerType
     {
         $code = strtoupper(trim($code));
+
+        /*
+         * BM ROSA V.468 trae 40OT real. El catálogo base de la aplicación no
+         * define 40OT, pero el criterio histórico ya usado por Guaran para un
+         * tipo comercial sin catálogo específico es conservar el tamaño y usar
+         * el tipo general de ese tamaño. Por eso 40OT cae a 40GP, nunca a 20GP.
+         *
+         * Si el catálogo del entorno sí incorporó 40OT, se conserva exacto.
+         */
+        if ($code === '40OT') {
+            $exactOpenTop = ContainerType::where('code', '40OT')
+                ->where('active', true)
+                ->first();
+
+            if ($exactOpenTop) {
+                return $exactOpenTop;
+            }
+
+            $this->stats['warnings'][] =
+                "Tipo contenedor '40OT' mapeado a '40GP' por catálogo sin 40OT.";
+
+            $code = '40GP';
+        }
 
         $mapping = [
             '20DV' => '20GP',
