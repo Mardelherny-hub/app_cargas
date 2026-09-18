@@ -1352,6 +1352,154 @@ class G2OceanXmlParser implements ManifestParserInterface
     /**
      * Buscar/crear cliente
      */
+    protected function normalizeClientIdentityName(string $name): string
+    {
+        $normalized = mb_strtoupper(trim($name), 'UTF-8');
+
+        return preg_replace('/[^\\p{L}\\p{N}]+/u', '', $normalized) ?? '';
+    }
+
+    protected function findClientByNameIdentity(
+        string $name,
+        int $countryId
+    ): ?Client {
+        $wantedExact = mb_strtoupper(trim($name), 'UTF-8');
+        $wantedNormalized = $this->normalizeClientIdentityName($name);
+
+        $rows = DB::table('clients')
+            ->where('country_id', $countryId)
+            ->get([
+                'id',
+                'legal_name',
+                'commercial_name',
+                'tax_id',
+            ]);
+
+        $exact = $rows->filter(function ($row) use ($wantedExact) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if (
+                    $candidate !== null
+                    && mb_strtoupper(trim((string) $candidate), 'UTF-8') === $wantedExact
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($exact->count() === 1) {
+            return Client::find($exact->first()->id);
+        }
+
+        $normalized = $rows->filter(function ($row) use ($wantedNormalized) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if (
+                    $candidate !== null
+                    && $this->normalizeClientIdentityName((string) $candidate)
+                        === $wantedNormalized
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($normalized->count() === 1) {
+            return Client::find($normalized->first()->id);
+        }
+
+        if ($normalized->count() > 1) {
+            $identified = $normalized
+                ->filter(fn ($row) => !empty($row->tax_id))
+                ->values();
+
+            if ($identified->count() === 1) {
+                Log::warning(
+                    'G2Ocean: nombre duplicado en maestro; se reutiliza la única ficha identificada',
+                    [
+                        'name' => $name,
+                        'country_id' => $countryId,
+                        'client_id' => $identified->first()->id,
+                    ]
+                );
+
+                return Client::find($identified->first()->id);
+            }
+
+            throw new \DomainException(
+                "G2Ocean: existen múltiples clientes para '{$name}' en el mismo país; "
+                . 'no se crea otro registro hasta resolver la identidad.'
+            );
+        }
+
+        return null;
+    }
+
+    protected function findUnidentifiedClientByNameIdentity(
+        string $name,
+        int $countryId
+    ): ?Client {
+        $wantedExact = mb_strtoupper(trim($name), 'UTF-8');
+        $wantedNormalized = $this->normalizeClientIdentityName($name);
+
+        $rows = DB::table('clients')
+            ->where('country_id', $countryId)
+            ->whereNull('tax_id')
+            ->get([
+                'id',
+                'legal_name',
+                'commercial_name',
+            ]);
+
+        $exact = $rows->filter(function ($row) use ($wantedExact) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if (
+                    $candidate !== null
+                    && mb_strtoupper(trim((string) $candidate), 'UTF-8') === $wantedExact
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($exact->count() === 1) {
+            return Client::find($exact->first()->id);
+        }
+
+        if ($exact->count() > 1) {
+            throw new \DomainException(
+                "G2Ocean: existen múltiples clientes sin identificador fiscal para '{$name}'."
+            );
+        }
+
+        $normalized = $rows->filter(
+            fn ($row) =>
+                $this->normalizeClientIdentityName((string) $row->legal_name)
+                    === $wantedNormalized
+                || (
+                    $row->commercial_name !== null
+                    && $this->normalizeClientIdentityName((string) $row->commercial_name)
+                        === $wantedNormalized
+                )
+        )->values();
+
+        if ($normalized->count() === 1) {
+            return Client::find($normalized->first()->id);
+        }
+
+        if ($normalized->count() > 1) {
+            throw new \DomainException(
+                "G2Ocean: existen múltiples clientes sin identificador fiscal equivalentes a '{$name}'."
+            );
+        }
+
+        return null;
+    }
+
     protected function findOrCreateClient(array $clientData, int $companyId, Port $defaultPort): Client
     {
         $name = $clientData['name'] ?? 'Cliente Desconocido';
@@ -1367,20 +1515,22 @@ class G2OceanXmlParser implements ManifestParserInterface
 
         // Buscar existente
         if ($taxId) {
-            // Con identificador: por (tax_id, country_id), coherente con el índice único
+            // Con identificador: por (tax_id, country_id), coherente con el índice único.
             $client = Client::where('tax_id', $taxId)
                 ->where('country_id', $countryId)
                 ->first();
+
             if ($client) {
                 return $client;
             }
         } else {
-            // Sin identificador: deduplicar por legal_name normalizado + country_id.
-            // NO se mezcla con clientes que sí tienen tax_id real aunque compartan nombre.
-            $client = Client::whereNull('tax_id')
-                ->where('country_id', $countryId)
-                ->whereRaw('UPPER(TRIM(legal_name)) = ?', [mb_strtoupper(trim($name))])
-                ->first();
+            // Sin identificador fiscal, reutilizar una identidad nominal
+            // inequívoca del mismo país. La puntuación no crea otra ficha.
+            $client = $this->findClientByNameIdentity(
+                $name,
+                $countryId
+            );
+
             if ($client) {
                 return $client;
             }
@@ -1400,6 +1550,31 @@ class G2OceanXmlParser implements ManifestParserInterface
                     "G2Ocean: no existe un tipo documental {$taxType} "
                     . 'activo y compatible con el país resuelto.'
                 );
+            }
+
+            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
+                $name,
+                $countryId
+            );
+
+            if ($legacyClient) {
+                $legacyClient->updateQuietly([
+                    'tax_id' => $taxId,
+                    'document_type_id' => $documentTypeId,
+                ]);
+
+                Log::info(
+                    'G2Ocean: ficha histórica enriquecida con identidad fiscal',
+                    [
+                        'client_id' => $legacyClient->id,
+                        'name' => $name,
+                        'tax_id' => $taxId,
+                        'country_id' => $countryId,
+                        'document_type_id' => $documentTypeId,
+                    ]
+                );
+
+                return $legacyClient;
             }
         }
 
