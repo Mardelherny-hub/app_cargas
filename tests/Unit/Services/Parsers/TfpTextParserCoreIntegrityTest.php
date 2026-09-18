@@ -4,6 +4,7 @@ namespace Tests\Unit\Services\Parsers;
 
 use App\Models\Port;
 use App\Services\Parsers\TfpTextParser;
+use App\Services\Parsers\TfpTextParserCompat;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -80,6 +81,21 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         $this->expectException(\Exception::class);
 
         $this->invoke('findOrCreateContainerType', ['40FR']);
+    }
+
+    public function test_compat_maps_real_bm_rosa_40ot_without_losing_size(): void
+    {
+        $parser = app(TfpTextParserCompat::class);
+        $ref = new ReflectionMethod(
+            TfpTextParserCompat::class,
+            'findOrCreateContainerType'
+        );
+        $ref->setAccessible(true);
+
+        $type = $ref->invoke($parser, '40OT');
+
+        $this->assertContains($type->code, ['40OT', '40GP']);
+        $this->assertSame('40', (string) $type->length_feet);
     }
 
     public function test_tfp_condition_p_is_preserved_for_afip(): void
