@@ -377,7 +377,7 @@ class VoyageController extends Controller
                 ->with('error', 'No se puede editar un viaje completado o cancelado.');
         }
 
-        $formData = $this->getFormData();
+        $formData = $this->getFormData($voyage);
 
         $userPermissions = [
             'can_edit' => $this->isCompanyAdmin() || (Auth::user()->can('voyages.edit') && $this->hasCompanyRole('Cargas')),
@@ -520,7 +520,7 @@ class VoyageController extends Controller
      * CORRECCIÓN DEFINITIVA - getFormData() optimizado
      * Aplicando EXACTAMENTE la misma solución que en BillOfLading
      */
-    private function getFormData()
+    private function getFormData(?Voyage $voyage = null)
     {
         $LIMIT = 10;
         
@@ -552,16 +552,63 @@ class VoyageController extends Controller
             ->limit($LIMIT)
             ->get();
         
-        $countryIds = \App\Models\Country::whereIn('alpha2_code', ['AR', 'PY', 'BO', 'UY', 'BR'])->pluck('id');
+        /*
+         * El formulario conserva el catálogo operativo reducido para uso manual,
+         * pero al editar un viaje importado debe incluir además la ruta que ya
+         * está persistida. K-Line puede originarse fuera de AR/PY/BO/UY/BR
+         * (China, México, EE.UU., etc.); ocultar esos IDs en los selects hacía
+         * aparecer "Seleccione país/puerto" aunque la importación los hubiera
+         * guardado correctamente.
+         */
+        $baseCountryIds = \App\Models\Country::whereIn(
+            'alpha2_code',
+            ['AR', 'PY', 'BO', 'UY', 'BR']
+        )->pluck('id');
 
-        $countries = \App\Models\Country::where('active', true)
+        $currentCountryIds = collect([
+            $voyage?->origin_country_id,
+            $voyage?->destination_country_id,
+        ])->filter()->map(fn ($id) => (int) $id);
+
+        $countryIds = $baseCountryIds
+            ->map(fn ($id) => (int) $id)
+            ->merge($currentCountryIds)
+            ->unique()
+            ->values();
+
+        $countries = \App\Models\Country::query()
             ->whereIn('id', $countryIds)
+            ->where(function ($query) use ($currentCountryIds) {
+                $query->where('active', true);
+
+                if ($currentCountryIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $currentCountryIds);
+                }
+            })
             ->select('id', 'name', 'alpha2_code')
             ->orderBy('name')
             ->get();
-        
-        $ports = \App\Models\Port::where('active', true)
-            ->whereIn('country_id', $countryIds)
+
+        $currentPortIds = collect([
+            $voyage?->origin_port_id,
+            $voyage?->destination_port_id,
+        ])->filter()->map(fn ($id) => (int) $id);
+
+        $ports = \App\Models\Port::query()
+            ->where(function ($query) use ($countryIds, $currentPortIds) {
+                $query->whereIn('country_id', $countryIds);
+
+                if ($currentPortIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $currentPortIds);
+                }
+            })
+            ->where(function ($query) use ($currentPortIds) {
+                $query->where('active', true);
+
+                if ($currentPortIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $currentPortIds);
+                }
+            })
             ->select('id', 'name', 'code', 'city', 'country_id')
             ->orderBy('name')
             ->get();
