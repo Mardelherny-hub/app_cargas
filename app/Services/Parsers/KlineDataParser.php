@@ -1408,7 +1408,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 );
 
                 if (!preg_match(
-                    '/\b(?:NCM|HS\s*CODE)\s*:?\s*(.+)$/i',
+                    '/\b(?:NCM|HS\s*CODE|CUSTOM\s+CODE\s+OF\s+GOODS\s+SHIPPED)\s*:?\s*(.+)$/i',
                     $line,
                     $matches
                 )) {
