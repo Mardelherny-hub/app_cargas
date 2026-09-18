@@ -2,7 +2,6 @@
 
 namespace Tests\Unit\Services\Parsers;
 
-use App\Models\Country;
 use App\Services\Parsers\CmspEdiParser;
 use App\Services\Parsers\CmspEdiParserCompat;
 use ReflectionMethod;
@@ -26,6 +25,20 @@ class CmspEdiParserClientIdentityTest extends TestCase
             $parser,
             $arguments
         );
+    }
+
+    protected function compatWithoutDatabase(): CmspEdiParserCompat
+    {
+        return new class extends CmspEdiParserCompat {
+            protected function countryIdForAlpha2(string $alpha2): int
+            {
+                return match (strtoupper($alpha2)) {
+                    'PY' => 101,
+                    'CO' => 202,
+                    default => 999,
+                };
+            }
+        };
     }
 
     protected function invokeCompat(
@@ -191,7 +204,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
 
     public function test_compat_prefers_explicit_paraguay_when_nit_label_is_ambiguous(): void
     {
-        $parser = new CmspEdiParserCompat();
+        $parser = $this->compatWithoutDatabase();
 
         $countryId = $this->invokeCompat(
             $parser,
@@ -205,15 +218,12 @@ class CmspEdiParserClientIdentityTest extends TestCase
             ], 'NIT']
         );
 
-        $this->assertSame(
-            (int) Country::where('alpha2_code', 'PY')->value('id'),
-            $countryId
-        );
+        $this->assertSame(101, $countryId);
     }
 
     public function test_compat_keeps_colombia_for_nit_when_source_declares_colombia(): void
     {
-        $parser = new CmspEdiParserCompat();
+        $parser = $this->compatWithoutDatabase();
 
         $countryId = $this->invokeCompat(
             $parser,
@@ -227,10 +237,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
             ], 'NIT']
         );
 
-        $this->assertSame(
-            (int) Country::where('alpha2_code', 'CO')->value('id'),
-            $countryId
-        );
+        $this->assertSame(202, $countryId);
     }
 
     public function test_compat_does_not_invent_document_type_for_ambiguous_nit(): void
