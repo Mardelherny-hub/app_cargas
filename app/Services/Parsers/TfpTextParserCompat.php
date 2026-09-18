@@ -176,7 +176,22 @@ class TfpTextParserCompat extends TfpTextParser
                     ->firstOrFail()
                     ->id
                 : null,
-            'packaging_type_id' => null,
+            /*
+             * Regresión confirmada contra el criterio ya aplicado en julio:
+             * si el ítem pertenece a un BL con contenedores, el tipo general de
+             * embalaje de la aplicación es CONTENEDOR. El detalle específico
+             * declarado por TFP (CARTONS, BAGS, etc.) se conserva aparte y no
+             * se fuerza a un catálogo que no lo representa fielmente.
+             */
+            'packaging_type_id' => $hasContainers
+                ? \\App\\Models\\PackagingType::where('code', 'T')
+                    ->where('active', true)
+                    ->firstOrFail()
+                    ->id
+                : null,
+            'package_type_description' => trim(
+                (string) ($data['tipo_embalaje'] ?? '')
+            ) ?: null,
             'commodity_code' => !empty($data['cod_armonizado'])
                 ? $this->normalizeNcm($data['cod_armonizado'])
                 : $this->extractNcmFromText(
