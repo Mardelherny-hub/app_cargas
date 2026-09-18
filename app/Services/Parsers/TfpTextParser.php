@@ -682,10 +682,20 @@ protected function extractValue(string $scope, string $label): ?string
             'permiso_embarque' => !empty($data['trb']) ? $data['trb'] : $permisoEmbarque,
             'freight_terms' => null,
             'status' => 'draft',
-            // Si el BL trae contenedores: CargoType 9 (CONTENEDORES) + Packaging 4 (CONTENEDOR).
-            // Si no, se mantiene el default (1 = DOCUMENTOS / A GRANEL).
-            'primary_cargo_type_id' => $hasContainers ? \App\Models\CargoType::where('code', 'CON001')->where('active', true)->firstOrFail()->id : null,
-            'primary_packaging_type_id' => null,
+            // Si el BL trae contenedores, ambos catálogos deben reflejarlo.
+            // Se resuelve por código estable y no por ID histórico.
+            'primary_cargo_type_id' => $hasContainers
+                ? \App\Models\CargoType::where('code', 'CON001')
+                    ->where('active', true)
+                    ->firstOrFail()
+                    ->id
+                : null,
+            'primary_packaging_type_id' => $hasContainers
+                ? PackagingType::where('code', 'T')
+                    ->where('active', true)
+                    ->firstOrFail()
+                    ->id
+                : null,
             'gross_weight_kg' => 0,
             'net_weight_kg' => 0,
             'total_packages' => 0,
