@@ -609,6 +609,8 @@ protected function extractValue(string $scope, string $label): ?string
         $notifyName = trim($data['notificatario'] ?? '');
         $consigneeName = trim($data['consignatario'] ?? '');
         $notifyExtraAddr = null;
+        $notify = null;
+
         if ($notifyName !== '' && $consigneeName !== ''
             && $notifyName !== $consigneeName
             && str_starts_with($notifyName, $consigneeName)) {
@@ -618,8 +620,7 @@ protected function extractValue(string $scope, string $label): ?string
                 'notificatario_archivo' => $notifyName,
                 'direccion_extraida' => $notifyExtraAddr,
             ]);
-        } else {
-            if ($notifyName === '') { throw new Exception('TFP: notificatario ausente en el BL.'); }
+        } elseif ($notifyName !== '') {
             $notify = $this->findOrCreateClient(
                 $notifyName,
                 'notify',
@@ -627,6 +628,15 @@ protected function extractValue(string $scope, string $label): ?string
                 $data['notificatario_domicilio'] ?? null,
                 (int) $dischargePort->country_id
             );
+        } else {
+            /*
+             * El formato TFP admite BL sin notificatario. La columna
+             * notify_party_id es nullable y no se fabrica un cliente genérico
+             * ni se supone que el consignatario cumple ese rol.
+             */
+            Log::info('TFP: BL sin notificatario informado', [
+                'bill_number' => $data['bl_numero'] ?? null,
+            ]);
         }
 
         // El permiso de embarque viene en el OBS de los contenedores, repetido en
@@ -664,7 +674,7 @@ protected function extractValue(string $scope, string $label): ?string
             'loading_date' => null,
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
-            'notify_party_id' => $notify->id,
+            'notify_party_id' => $notify?->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
             // Prioridad: campo TRB de la cabecera; si no viene, el OBS de los
@@ -685,11 +695,20 @@ protected function extractValue(string $scope, string $label): ?string
 
         // Dirección del cliente: persistir en ficha (cliente nuevo/sin dirección)
         // o guardar dirección específica del conocimiento (cliente existente con dirección distinta).
-        foreach ([
+        $parties = [
             ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper'],
             ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee'],
-            ['client' => $notify,    'addr' => $data['notificatario_domicilio'] ?? $notifyExtraAddr, 'role' => 'notify_party'],
-        ] as $p) {
+        ];
+
+        if ($notify !== null) {
+            $parties[] = [
+                'client' => $notify,
+                'addr' => $data['notificatario_domicilio'] ?? $notifyExtraAddr,
+                'role' => 'notify_party',
+            ];
+        }
+
+        foreach ($parties as $p) {
             $this->persistClientAddress($p['client'], $p['addr']);
             if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
                 $bill->specificContacts()->create($c);
