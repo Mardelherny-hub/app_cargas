@@ -172,9 +172,13 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                 fn ($container) => ($container['condition'] ?? 'L') === 'V'
             );
 
-        $isImportedEmptyItem =
-            $allContainersEmpty
-            && ($isCmspItem || $isLoginItem);
+        /*
+         * Un ítem cuyos contenedores están todos vacíos se valida como vacío
+         * por su estado real, no por el formato que originó la importación.
+         * Esto evita depender de source_format/manifest_format para permitir
+         * los campos generales que legítimamente pueden quedar sin dato.
+         */
+        $isImportedEmptyItem = $allContainersEmpty;
 
         if ($isImportedEmptyItem) {
             $request->merge([
