@@ -380,5 +380,15 @@ class CmspEdiParserClientIdentityTest extends TestCase
             "'container_type_id' => \$containerType?->id",
             $source
         );
+
+        $this->assertStringContainsString(
+            "if (\$isoCode === '' && !\$esVacio)",
+            $source
+        );
+
+        $this->assertStringContainsString(
+            'contenedores vacíos sin código ISO; se conserva tipo desconocido.',
+            $source
+        );
     }
 }
