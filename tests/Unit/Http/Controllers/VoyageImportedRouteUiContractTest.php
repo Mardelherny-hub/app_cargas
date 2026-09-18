@@ -28,8 +28,8 @@ class VoyageImportedRouteUiContractTest extends TestCase
             '$voyage?->destination_country_id',
             '$voyage?->origin_port_id',
             '$voyage?->destination_port_id',
-            "orWhereIn('id', $currentCountryIds)",
-            "orWhereIn('id', $currentPortIds)",
+            "orWhereIn('id', \$currentCountryIds)",
+            "orWhereIn('id', \$currentPortIds)",
         ] as $token) {
             $this->assertStringContainsString($token, $controller);
         }
