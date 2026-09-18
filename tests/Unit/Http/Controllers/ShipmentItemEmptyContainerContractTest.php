@@ -73,6 +73,11 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
             $source
         );
 
+        $this->assertStringContainsString(
+            '$allContainersEmpty || $isLoginItem || $isCmspItem',
+            $source
+        );
+
         // El tratamiento histórico de contenedor vacío del Compat se conserva.
         $this->assertStringContainsString(
             "if (\$condition === 'V')",
