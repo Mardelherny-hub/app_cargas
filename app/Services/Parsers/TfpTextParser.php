@@ -1126,6 +1126,168 @@ protected function extractValue(string $scope, string $label): ?string
         return (int) $countryId;
     }
 
+    /**
+     * Identidad nominal estable para evitar duplicados puramente tipográficos
+     * (S.A. / SA, S.R.L. / SRL, coma final, espacios).
+     */
+    protected function normalizeClientIdentityName(string $name): string
+    {
+        $normalized = mb_strtoupper(trim($name), 'UTF-8');
+
+        return preg_replace('/[^\\p{L}\\p{N}]+/u', '', $normalized) ?? '';
+    }
+
+    /**
+     * Cuando la fuente no trae tax_id, el nombre+país es la única identidad
+     * disponible. Se reutiliza una coincidencia inequívoca y nunca se crea una
+     * tercera ficha si el maestro ya es ambiguo.
+     */
+    protected function findClientByNameIdentity(
+        string $name,
+        int $countryId
+    ): ?Client {
+        $wantedExact = mb_strtoupper(trim($name), 'UTF-8');
+        $wantedNormalized = $this->normalizeClientIdentityName($name);
+
+        $rows = DB::table('clients')
+            ->where('country_id', $countryId)
+            ->get([
+                'id',
+                'legal_name',
+                'commercial_name',
+                'tax_id',
+            ]);
+
+        $exact = $rows->filter(function ($row) use ($wantedExact) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if (
+                    $candidate !== null
+                    && mb_strtoupper(trim((string) $candidate), 'UTF-8') === $wantedExact
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($exact->count() === 1) {
+            return Client::find($exact->first()->id);
+        }
+
+        $normalized = $rows->filter(function ($row) use ($wantedNormalized) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if (
+                    $candidate !== null
+                    && $this->normalizeClientIdentityName((string) $candidate)
+                        === $wantedNormalized
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($normalized->count() === 1) {
+            return Client::find($normalized->first()->id);
+        }
+
+        if ($normalized->count() > 1) {
+            $identified = $normalized
+                ->filter(fn ($row) => !empty($row->tax_id))
+                ->values();
+
+            if ($identified->count() === 1) {
+                Log::warning(
+                    'TFP: nombre duplicado en maestro; se reutiliza la única ficha identificada',
+                    [
+                        'name' => $name,
+                        'country_id' => $countryId,
+                        'client_id' => $identified->first()->id,
+                    ]
+                );
+
+                return Client::find($identified->first()->id);
+            }
+
+            throw new \DomainException(
+                "TFP: existen múltiples clientes para '{$name}' en el mismo país; "
+                . 'no se crea otro registro hasta resolver la identidad.'
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Si llega un tax_id real para una ficha histórica sin identificador,
+     * completar esa misma ficha cuando nombre+país la identifican de forma
+     * inequívoca. Un tax_id distinto ya existente nunca se pisa.
+     */
+    protected function findUnidentifiedClientByNameIdentity(
+        string $name,
+        int $countryId
+    ): ?Client {
+        $wantedExact = mb_strtoupper(trim($name), 'UTF-8');
+        $wantedNormalized = $this->normalizeClientIdentityName($name);
+
+        $rows = DB::table('clients')
+            ->where('country_id', $countryId)
+            ->whereNull('tax_id')
+            ->get([
+                'id',
+                'legal_name',
+                'commercial_name',
+            ]);
+
+        $exact = $rows->filter(function ($row) use ($wantedExact) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if (
+                    $candidate !== null
+                    && mb_strtoupper(trim((string) $candidate), 'UTF-8') === $wantedExact
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($exact->count() === 1) {
+            return Client::find($exact->first()->id);
+        }
+
+        if ($exact->count() > 1) {
+            throw new \DomainException(
+                "TFP: existen múltiples clientes sin identificador fiscal para '{$name}'."
+            );
+        }
+
+        $normalized = $rows->filter(
+            fn ($row) =>
+                $this->normalizeClientIdentityName((string) $row->legal_name)
+                    === $wantedNormalized
+                || (
+                    $row->commercial_name !== null
+                    && $this->normalizeClientIdentityName((string) $row->commercial_name)
+                        === $wantedNormalized
+                )
+        )->values();
+
+        if ($normalized->count() === 1) {
+            return Client::find($normalized->first()->id);
+        }
+
+        if ($normalized->count() > 1) {
+            throw new \DomainException(
+                "TFP: existen múltiples clientes sin identificador fiscal equivalentes a '{$name}'."
+            );
+        }
+
+        return null;
+    }
+
     protected function findOrCreateClient(
         string $name,
         string $type,
@@ -1159,8 +1321,7 @@ protected function extractValue(string $scope, string $label): ?string
             $fallbackCountryId
         );
 
-        // Con identificación fiscal, la identidad es tax_id + país.
-        // No se permite degradar a búsqueda por nombre.
+        // Con identificación fiscal, la identidad primaria es tax_id + país.
         if ($normTaxId !== null) {
             $client = Client::query()
                 ->where('tax_id', $normTaxId)
@@ -1171,13 +1332,12 @@ protected function extractValue(string $scope, string $label): ?string
                 return $client;
             }
         } else {
-            // Sin identificación fiscal solo reutilizamos un cliente también
-            // sin tax_id, del mismo país y con nombre legal exacto.
-            $client = Client::query()
-                ->whereNull('tax_id')
-                ->where('country_id', $countryId)
-                ->where('legal_name', $name)
-                ->first();
+            // Si la fuente no aporta tax_id, reutilizar una identidad nominal
+            // inequívoca del mismo país, incluso si el maestro ya fue enriquecido.
+            $client = $this->findClientByNameIdentity(
+                $name,
+                $countryId
+            );
 
             if ($client) {
                 return $client;
@@ -1197,6 +1357,31 @@ protected function extractValue(string $scope, string $label): ?string
                 throw new \DomainException(
                     "TFP: no existe un tipo documental {$taxType} activo y compatible con el país resuelto."
                 );
+            }
+
+            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
+                $name,
+                $countryId
+            );
+
+            if ($legacyClient) {
+                $legacyClient->updateQuietly([
+                    'tax_id' => $normTaxId,
+                    'document_type_id' => $documentTypeId,
+                ]);
+
+                Log::info(
+                    'TFP: ficha histórica enriquecida con identidad fiscal',
+                    [
+                        'client_id' => $legacyClient->id,
+                        'name' => $name,
+                        'tax_id' => $normTaxId,
+                        'country_id' => $countryId,
+                        'document_type_id' => $documentTypeId,
+                    ]
+                );
+
+                return $legacyClient;
             }
         }
 
