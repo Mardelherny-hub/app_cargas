@@ -35,12 +35,12 @@ class VoyageImportedRouteUiContractTest extends TestCase
         }
 
         $this->assertStringContainsString(
-            "old('origin_country_id', $voyage->origin_country_id)",
+            "old('origin_country_id', \$voyage->origin_country_id)",
             $view
         );
 
         $this->assertStringContainsString(
-            "old('origin_port_id', $voyage->origin_port_id)",
+            "old('origin_port_id', \$voyage->origin_port_id)",
             $view
         );
     }
