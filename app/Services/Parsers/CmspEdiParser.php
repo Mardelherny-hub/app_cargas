@@ -1807,9 +1807,6 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Crear BL para un grupo específico de CNI
-     */
-    /**
      * Resolver el peso bruto del conocimiento.
      *
      * CMSP tradicional informa MEA+AAX+G a nivel CNI. Hapag-Lloyd puede omitir
@@ -1900,6 +1897,9 @@ class CmspEdiParser implements ManifestParserInterface
         return round($total, 2);
     }
 
+    /**
+     * Crear BL para un grupo específico de CNI.
+     */
     protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
     {
         $resolvedGrossWeight = $this->resolveGroupGrossWeight(
