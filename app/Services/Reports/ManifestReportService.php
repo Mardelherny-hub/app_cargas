@@ -44,16 +44,21 @@ class ManifestReportService
         // Cargar todas las relaciones necesarias de una vez (eager loading)
         $this->voyage->load([
             'company',
-            'leadVessel',
+            'leadVessel.flagCountry',
             'captain',
             'originPort.country',
             'destinationPort.country',
             'transshipmentPort.country',
-            'billsOfLading.shipper',
-            'billsOfLading.consignee',
+            'billsOfLading.shipper.contactData',
+            'billsOfLading.consignee.contactData',
+            'billsOfLading.notifyParty.contactData',
+            'billsOfLading.specificContacts.contactData.client',
             'billsOfLading.loadingPort',
             'billsOfLading.dischargePort',
-            'billsOfLading.shipmentItems'
+            'billsOfLading.finalDestinationPort',
+            'billsOfLading.primaryPackagingType',
+            'billsOfLading.shipmentItems.packagingType',
+            'billsOfLading.shipmentItems.containers.containerType'
         ]);
 
         return [
@@ -82,6 +87,7 @@ class ManifestReportService
             'vessel_name' => $voyage->leadVessel->name ?? 'No especificado',
             'vessel_registration' => $voyage->leadVessel->registration_number ?? null,
             'vessel_imo' => $voyage->leadVessel->imo_number ?? null,
+            'vessel_flag' => $voyage->leadVessel?->flagCountry?->name ?? null,
             'captain_name' => $voyage->captain ? $voyage->captain->full_name : 'No asignado',
             'captain_license' => $voyage->captain->license_number ?? null,
             
@@ -139,6 +145,54 @@ class ManifestReportService
         }
 
         return $bills->map(function ($bill, $index) {
+            $shipper = $bill->getShipperCompleteData();
+            $consignee = $bill->getConsigneeCompleteData();
+            $notify = $bill->getNotifyPartyCompleteData();
+
+            $items = $bill->shipmentItems->map(function ($item) {
+                $containers = $item->containers->map(function ($container) {
+                    $seals = collect([
+                        $container->customs_seal,
+                        $container->shipper_seal,
+                        $container->carrier_seal,
+                    ])->merge(is_array($container->additional_seals) ? $container->additional_seals : [])
+                      ->filter()
+                      ->unique()
+                      ->values()
+                      ->implode(', ');
+
+                    return [
+                        'number' => $container->full_container_number ?: $container->container_number,
+                        'type' => $container->containerType?->iso_code
+                            ?: $container->containerType?->iso_size_type
+                            ?: $container->containerType?->code,
+                        'seals' => $seals,
+                        'packages' => $container->pivot?->package_quantity,
+                        'gross_weight_kg' => $container->pivot?->gross_weight_kg,
+                        'volume_m3' => $container->pivot?->volume_m3,
+                    ];
+                })->values()->all();
+
+                return [
+                    'quantity' => $item->package_quantity,
+                    'package_type' => $item->package_type_description
+                        ?: $item->packagingType?->name,
+                    'description' => $item->item_description ?: $item->commodity_description,
+                    'commodity_code' => $item->commodity_code,
+                    'gross_weight_kg' => $item->gross_weight_kg,
+                    'net_weight_kg' => $item->net_weight_kg,
+                    'volume_m3' => $item->volume_m3,
+                    'cargo_marks' => $item->cargo_marks,
+                    'containers' => $containers,
+                ];
+            })->values()->all();
+
+            $containers = collect($items)
+                ->flatMap(fn ($item) => $item['containers'])
+                ->unique('number')
+                ->values()
+                ->all();
+
             return [
                 // Identificación
                 'line_number' => $index + 1,
@@ -154,10 +208,16 @@ class ManifestReportService
                     ($bill->consignee->commercial_name ?: $bill->consignee->legal_name) : 
                     'No especificado',
                 'consignee_tax_id' => $bill->consignee->tax_id ?? null,
+                'shipper' => $shipper,
+                'consignee' => $consignee,
+                'notify' => $notify,
                 
                 // Puertos
                 'loading_port' => $bill->loadingPort->name ?? 'N/A',
                 'discharge_port' => $bill->dischargePort->name ?? 'N/A',
+                'final_destination_port' => $bill->finalDestinationPort->name
+                    ?? $bill->dischargePort->name
+                    ?? 'N/A',
                 
                 // Cantidades y medidas
                 'total_packages' => $bill->total_packages ?? 0,
@@ -169,6 +229,8 @@ class ManifestReportService
                 'cargo_description' => $bill->cargo_description ?? 'No especificado',
                 'cargo_marks' => $bill->cargo_marks ?? null,
                 'commodity_code' => $bill->commodity_code ?? null,
+                'items' => $items,
+                'containers' => $containers,
                 
                 // Características especiales
                 'contains_dangerous_goods' => $bill->contains_dangerous_goods ?? false,
@@ -256,7 +318,11 @@ class ManifestReportService
         $date = Carbon::now()->format('Ymd_His');
         $extension = $format === 'pdf' ? 'pdf' : 'xlsx';
         
-        return "Manifiesto_{$voyageNumber}_{$date}.{$extension}";
+        $prefix = ($this->filters['template'] ?? 'standard') === 'client'
+            ? 'CargoManifest'
+            : 'Manifiesto';
+
+        return "{$prefix}_{$voyageNumber}_{$date}.{$extension}";
     }
 
     /**

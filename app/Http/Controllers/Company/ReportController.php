@@ -689,7 +689,13 @@ class ReportController extends Controller
         } */
 
         $format = $request->input('format', 'pdf');
-        $filters = $request->except(['_token', 'format']);
+
+        // Las vistas de reportes envían los criterios bajo filters[...].
+        // Mantener además compatibilidad con parámetros top-level históricos.
+        $nestedFilters = $request->input('filters', []);
+        $nestedFilters = is_array($nestedFilters) ? $nestedFilters : [];
+        $legacyFilters = $request->except(['_token', 'format', 'filters']);
+        $filters = array_merge($legacyFilters, $nestedFilters);
 
         try {
             return $this->generateExport($reportType, $format, $filters, $company);
@@ -1429,10 +1435,16 @@ private function buildBillsOfLadingQuery($company)
         // Agregar logo a los datos
         $data['company_logo'] = $companyLogo;
 
-        // Generar PDF con DomPDF
-        $pdf = Pdf::loadView('company.reports.pdf.manifest', $data);
-        
-        // Configurar página landscape
+        // Mantener el reporte actual y ofrecer en paralelo el formato
+        // solicitado posteriormente por el cliente.
+        $template = $service->getFilters()['template'] ?? 'standard';
+        $view = $template === 'client'
+            ? 'company.reports.pdf.manifest-client'
+            : 'company.reports.pdf.manifest';
+
+        $pdf = Pdf::loadView($view, $data);
+
+        // Ambos manifiestos se imprimen en A4 horizontal.
         $pdf->setPaper('a4', 'landscape');
         
         // Nombre de archivo sugerido
@@ -2085,8 +2097,15 @@ private function generateMicDta(string $format, array $filters, $company)
 
     $data = $service->prepareData();
 
-    $pdf = \PDF::loadView('company.reports.pdf.micdta', $data);
-    $pdf->setPaper('A4', 'landscape');
+    // El informe MIC/DTA existente se conserva. El modelo basado en la
+    // muestra del cliente es una salida alternativa, no un reemplazo.
+    $template = $filters['template'] ?? 'standard';
+    $view = $template === 'client'
+        ? 'company.reports.pdf.micdta-client'
+        : 'company.reports.pdf.micdta';
+
+    $pdf = \PDF::loadView($view, $data);
+    $pdf->setPaper('A4', $template === 'client' ? 'portrait' : 'landscape');
     $pdf->setOptions([
         'defaultFont' => 'Arial',
         'isHtml5ParserEnabled' => true,
