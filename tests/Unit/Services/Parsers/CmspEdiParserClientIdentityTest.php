@@ -258,6 +258,49 @@ class CmspEdiParserClientIdentityTest extends TestCase
     }
 
 
+    public function test_fiscal_warning_includes_bill_party_and_name_context(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $this->invokeCompat(
+            $parser,
+            'extractExplicitTaxTypeFromText',
+            ['AGENCIA X CUIT 33-70504237-10']
+        );
+
+        $this->invokeCompat(
+            $parser,
+            'contextualizePartyWarnings',
+            [0, [
+                '_context_bl_number' => '001PJSM35026',
+                '_context_role' => 'consignee',
+                'name' => 'AGENCIA X',
+            ]]
+        );
+
+        $stats = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'stats'
+        );
+        $stats->setAccessible(true);
+        $warnings = $stats->getValue($parser)['warnings'];
+
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString(
+            'BL 001PJSM35026',
+            $warnings[0]
+        );
+        $this->assertStringContainsString(
+            'parte consignee',
+            $warnings[0]
+        );
+        $this->assertStringContainsString(
+            'AGENCIA X',
+            $warnings[0]
+        );
+    }
+
+
     public function test_cuscar_operation_type_is_explicit_and_not_inferred_from_ports(): void
     {
         $parser = new CmspEdiParserCompat();
