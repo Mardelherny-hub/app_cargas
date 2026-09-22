@@ -346,6 +346,43 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_container_type_resolution_prefers_exact_source_iso(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/CmspEdiParser.php')
+        );
+
+        $resolverStart = strpos(
+            $source,
+            'protected function resolveActiveContainerTypeByIso'
+        );
+
+        $resolverEnd = strpos(
+            $source,
+            'protected function findOrCreatePort',
+            $resolverStart
+        );
+
+        $this->assertNotFalse($resolverStart);
+        $this->assertNotFalse($resolverEnd);
+
+        $resolver = substr(
+            $source,
+            $resolverStart,
+            $resolverEnd - $resolverStart
+        );
+
+        $isoLookup = strpos($resolver, "UPPER(TRIM(iso_code))");
+        $mappingFallback = strpos(
+            $resolver,
+            '$this->mapIsoContainerType($normalized)'
+        );
+
+        $this->assertNotFalse($isoLookup);
+        $this->assertNotFalse($mappingFallback);
+        $this->assertLessThan($mappingFallback, $isoLookup);
+    }
+
     public function test_hapag_real_iso_variants_map_to_supported_catalog_types(): void
     {
         $parser = new CmspEdiParser();
