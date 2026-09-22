@@ -3101,12 +3101,34 @@ class CmspEdiParser implements ManifestParserInterface
             return null;
         }
 
+        /*
+         * Países escritos explícitamente en NAD de los CUSCAR reales.
+         *
+         * No se deduce jurisdicción desde el puerto cuando la propia parte
+         * declara su país: un shipper internacional puede viajar en un CUSCAR
+         * cuya ruta operativa final sea ARBUE -> PYASU. El puerto no describe
+         * la nacionalidad fiscal de la empresa.
+         */
         $patterns = [
             'AR' => '/\bARGENTINA\b/u',
-            'PY' => '/\bPARAGUAY\b/u',
+            'PY' => '/\b(?:PARAGUAY|PRY)\b/u',
             'UY' => '/\bURUGUAY\b/u',
             'BR' => '/\b(?:BRASIL|BRAZIL)\b/u',
             'CO' => '/\bCOLOMBIA\b/u',
+            'US' => '/\b(?:UNITED\s*STATES|USA|U\.S\.A\.?)\b/u',
+            'ES' => '/\b(?:SPAIN|ESPAÑA|MADRID)\b/u',
+            'TH' => '/\bTHAILAND\b/u',
+            'IN' => '/\bINDIA\b/u',
+            'AE' => '/\b(?:UNITED\s+ARAB\s+EMIRATES|UAE)\b/u',
+            'HK' => '/\bHONG\s*KONG\b/u',
+            'MX' => '/\b(?:MEXICO|MÉXICO)\b/u',
+            'CN' => '/\bCHINA\b/u',
+            'JP' => '/\bJAPAN\b/u',
+            'SG' => '/\bSINGAPORE\b/u',
+            'PA' => '/\bPANAMA\b/u',
+            'KR' => '/\b(?:SOUTH\s+KOREA|KOREA)\b/u',
+            'AU' => '/\bAUSTRALIA\b/u',
+            'VE' => '/\bVENEZUELA\b/u',
         ];
 
         foreach ($patterns as $alpha2 => $pattern) {
