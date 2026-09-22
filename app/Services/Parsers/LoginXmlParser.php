@@ -90,6 +90,18 @@ class LoginXmlParser implements ManifestParserInterface
     // Advertencias no bloqueantes originadas en datos explícitos del archivo.
     protected array $warnings = [];
 
+    protected function addWarningOnce(string $warning): void
+    {
+        $warning = trim($warning);
+
+        if (
+            $warning !== ''
+            && !in_array($warning, $this->warnings, true)
+        ) {
+            $this->warnings[] = $warning;
+        }
+    }
+
     /**
      * Verificar si el parser puede procesar el archivo XML
      */
@@ -2007,11 +2019,13 @@ class LoginXmlParser implements ManifestParserInterface
                 }
 
                 if ($taxMatches->count() > 1) {
-                    $this->warnings[] =
-                        "Identificación fiscal {$cleanTaxId}: "
-                        . 'ya existen clientes duplicados; '
-                        . 'se reutilizó el registro compatible '
-                        . "con {$countryCode}.";
+                    $this->addWarningOnce(
+                        "Identificación fiscal {$cleanTaxId} "
+                        . "({$cleanName}): ya existen clientes "
+                        . 'duplicados; se reutilizó el registro '
+                        . "#{$client->id} compatible con "
+                        . "{$countryCode}."
+                    );
                 }
 
                 return $client;
