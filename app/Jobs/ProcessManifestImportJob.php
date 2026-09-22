@@ -158,21 +158,21 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * Aplica las fechas operativas informadas explícitamente por el operador.
+     * Completa las fechas operativas ingresadas al importar sin reemplazar
+     * fechas reales que el formato sí informa.
      *
-     * Regla funcional confirmada por Roberto (14/09/2026):
-     * si una fecha fue completada en la pantalla de importación, ese dato
-     * tiene prioridad sobre cualquier fecha incluida en el archivo,
-     * independientemente del formato importado.
+     * Criterio operativo vigente: el archivo es la fuente primaria. Los datos
+     * ingresados en la pantalla completan lo que el formato no aporta; si un
+     * dato fuente debe corregirse, se edita después desde la aplicación.
      *
-     * Correspondencia:
-     * - departure_date  -> salida del viaje desde origen;
-     * - loading_date    -> fecha de carga de todos los conocimientos;
-     * - discharge_date  -> fecha de descarga de todos los conocimientos
-     *                      y llegada estimada del viaje.
+     * Auditoría de formatos:
+     * - GUARAN, Login, Paraná, Navsur y TFP no aportan fecha específica de carga.
+     * - K-Line usa ETD como referencia, no una fecha específica de carga del BL.
+     * - G2Ocean sí aporta dateOfLoading.
+     * - CMSP/CUSCAR aporta fechas operativas mediante DTM y debe preservarlas.
      *
-     * Si el operador no informa una fecha, se conserva lo resuelto por
-     * el parser a partir del archivo.
+     * Los parsers Compat heredan de los parsers base; se normaliza el nombre
+     * para que esta política no dependa de la clase wrapper elegida por Factory.
      */
     protected function applyOperationalImportDates(
         object $parser,
@@ -184,20 +184,56 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        $voyageChanged = false;
+        $parserName = preg_replace(
+            '/Compat$/',
+            '',
+            class_basename($parser)
+        );
 
-        if ($this->departureDate !== null) {
+        /*
+         * Salida: el valor del archivo gana. El formulario actúa sólo como
+         * fallback cuando el parser no pudo resolver departure_date.
+         */
+        if (
+            $this->departureDate !== null
+            && !$voyage->departure_date
+        ) {
             $voyage->departure_date = $this->departureDate;
-            $voyageChanged = true;
-        }
-
-        if ($this->dischargeDate !== null) {
-            $voyage->estimated_arrival_date = $this->dischargeDate;
-            $voyageChanged = true;
-        }
-
-        if ($voyageChanged) {
             $voyage->saveQuietly();
+        }
+
+        $operatorLoadingIsSource = in_array(
+            $parserName,
+            [
+                'GuaranExcelParser',
+                'LoginXmlParser',
+                'ParanaExcelParser',
+                'NavsurTextParser',
+                'TfpTextParser',
+                'KlineDataParser',
+            ],
+            true
+        );
+
+        /*
+         * CMSP/CUSCAR sí declara descarga/ETA operativa. En los demás formatos
+         * la descarga ingresada por el operador es el dato operativo disponible.
+         */
+        $operatorDischargeIsSource = $parserName !== 'CmspEdiParser';
+
+        if (
+            $this->dischargeDate !== null
+            && (
+                $operatorDischargeIsSource
+                || !$voyage->estimated_arrival_date
+            )
+        ) {
+            $voyage->estimated_arrival_date = $this->dischargeDate;
+            $voyage->saveQuietly();
+        }
+
+        if ($this->loadingDate === null && $this->dischargeDate === null) {
+            return;
         }
 
         $shipmentIds = \App\Models\Shipment::where(
@@ -217,18 +253,25 @@ class ProcessManifestImportJob implements ShouldQueue
         foreach ($bills as $bill) {
             $changed = false;
 
-            if ($this->loadingDate !== null) {
+            if (
+                $this->loadingDate !== null
+                && (
+                    $operatorLoadingIsSource
+                    || !$bill->loading_date
+                )
+            ) {
                 $bill->loading_date = $this->loadingDate;
                 $changed = true;
             }
 
-            if ($this->dischargeDate !== null) {
+            if (
+                $this->dischargeDate !== null
+                && (
+                    $operatorDischargeIsSource
+                    || !$bill->discharge_date
+                )
+            ) {
                 $bill->discharge_date = $this->dischargeDate;
-                $changed = true;
-            }
-
-            if (!$bill->bill_date) {
-                $bill->bill_date = now()->toDateString();
                 $changed = true;
             }
 

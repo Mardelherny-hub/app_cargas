@@ -126,7 +126,7 @@ jobs:
           ./vendor/bin/phpunit tests/Unit/Http/Controllers/VoyageImportedRouteUiContractTest.php
           ./vendor/bin/phpunit tests/Unit/Views/LoginSourceUiContractTest.php
           ./vendor/bin/phpunit tests/Unit/Http/Controllers/ManifestImportOperationTypeContractTest.php
-          ./vendor/bin/phpunit tests/Unit/Jobs/ProcessManifestImportJobDateFallbackContractTest.php --filter 'test_operation_type_is_forwarded_to_manifest_parser'
+          ./vendor/bin/phpunit tests/Unit/Jobs/ProcessManifestImportJobDateFallbackContractTest.php
           php artisan view:clear
           php artisan view:cache
 

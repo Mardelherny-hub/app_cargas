@@ -74,6 +74,23 @@ class ProcessManifestImportJobDateFallbackContractTest extends TestCase
         );
     }
 
+    public function test_compat_wrappers_follow_base_policy_without_fabricating_bill_date(): void
+    {
+        $source = file_get_contents(
+            dirname(__DIR__, 3) . '/app/Jobs/ProcessManifestImportJob.php'
+        );
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString(
+            "preg_replace(\n            '/Compat$/'",
+            $source
+        );
+        $this->assertStringNotContainsString(
+            '$bill->bill_date = now()->toDateString();',
+            $source
+        );
+    }
+
     public function test_operation_type_is_forwarded_to_manifest_parser(): void
     {
         $source = file_get_contents(
