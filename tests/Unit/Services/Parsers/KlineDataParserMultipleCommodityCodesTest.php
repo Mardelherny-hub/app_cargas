@@ -53,6 +53,20 @@ class KlineDataParserMultipleCommodityCodesTest extends TestCase
         ], $codes);
     }
 
+
+    public function test_custom_code_of_goods_shipped_is_imported_as_hs_code(): void
+    {
+        $codes = $this->codes([
+            'DESCREC0' => [
+                '0000011600 PIECES STEEL RAILWAY RAILS CUSTOM CODE OF GOODS SHIPPED: 730210 REMARKS',
+            ],
+        ]);
+
+        $this->assertSame([
+            '73021000',
+        ], $codes);
+    }
+
     public function test_repeated_code_is_stored_only_once(): void
     {
         $codes = $this->codes([

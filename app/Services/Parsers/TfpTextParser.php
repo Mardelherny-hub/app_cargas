@@ -788,6 +788,16 @@ protected function extractValue(string $scope, string $label): ?string
             return ['condition' => $valor, 'container_condition' => 'P'];
         }
 
+        /*
+         * Algunos emisores TFP dejan CONDICION vacío. Ese caso fue aceptado
+         * históricamente por este importador con los defaults operativos L/P.
+         * Se recupera sólo ese comportamiento: un valor no vacío desconocido
+         * sigue siendo error para no inventar semántica aduanera.
+         */
+        if ($valor === '') {
+            return ['condition' => 'L', 'container_condition' => 'P'];
+        }
+
         throw new Exception(
             "TFP: condición de contenedor '{$valor}' no soportada."
         );

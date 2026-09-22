@@ -130,18 +130,26 @@ class ProcessManifestImportJob implements ShouldQueue
 
             throw $e;
         } finally {
-            if ($importacionExitosa) {
-                Storage::delete($this->storedPath);
-            } else {
-                Log::info(
-                    'ProcessManifestImportJob: archivo conservado para diagnostico',
-                    [
-                        'tracking_id' => $this->trackingId,
-                        'stored_path' => $this->storedPath,
-                    ]
-                );
-                $this->limpiarImportacionesViejas();
-            }
+            /*
+             * Durante la etapa actual de auditoría/smoke se conserva SIEMPRE
+             * el archivo fuente, incluso cuando la importación termina bien.
+             * Esto permite reproducir observaciones detectadas después de una
+             * importación exitosa y también volver a analizar importaciones
+             * posteriormente revertidas.
+             *
+             * La retención sigue siendo acotada: la limpieza por antigüedad
+             * elimina archivos de más de 30 días.
+             */
+            Log::info(
+                'ProcessManifestImportJob: archivo conservado para trazabilidad',
+                [
+                    'tracking_id' => $this->trackingId,
+                    'stored_path' => $this->storedPath,
+                    'importacion_exitosa' => $importacionExitosa,
+                ]
+            );
+
+            $this->limpiarImportacionesViejas();
         }
     }
 

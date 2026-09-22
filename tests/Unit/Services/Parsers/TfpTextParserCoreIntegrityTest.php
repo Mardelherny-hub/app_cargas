@@ -98,6 +98,26 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         $this->assertSame('40', (string) $type->length_feet);
     }
 
+    public function test_empty_tfp_container_condition_keeps_historical_default(): void
+    {
+        $this->assertSame(
+            ['condition' => 'L', 'container_condition' => 'P'],
+            $this->invoke('mapTfpCondition', [''])
+        );
+
+        $this->assertSame(
+            ['condition' => 'L', 'container_condition' => 'P'],
+            $this->invoke('mapTfpCondition', [null])
+        );
+    }
+
+    public function test_non_empty_unknown_tfp_condition_is_still_rejected(): void
+    {
+        $this->expectException(\Exception::class);
+
+        $this->invoke('mapTfpCondition', ['X']);
+    }
+
     public function test_tfp_condition_p_is_preserved_for_afip(): void
     {
         $this->assertSame(
