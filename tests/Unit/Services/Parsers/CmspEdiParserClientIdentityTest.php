@@ -664,4 +664,56 @@ class CmspEdiParserClientIdentityTest extends TestCase
             $source
         );
     }
+    public function test_cuscar_source_dates_have_priority_over_form_fallback(): void
+    {
+        $parser = $this->compatWithoutDatabase();
+
+        $dates = $this->invokeCompat(
+            $parser,
+            'resolveCuscarOperationalDates',
+            [
+                [
+                    'dates' => [
+                        'departure' => '2026-09-20 08:00:00',
+                        'estimated_arrival' => '2026-09-21 16:00:00',
+                    ],
+                ],
+                [
+                    'departure_date' => '2026-09-19',
+                    'discharge_date' => '2026-09-22',
+                ],
+            ]
+        );
+
+        $this->assertSame(
+            '2026-09-20 08:00:00',
+            $dates['departure_date']
+        );
+        $this->assertSame(
+            '2026-09-21 16:00:00',
+            $dates['estimated_arrival_date']
+        );
+
+        $fallback = $this->invokeCompat(
+            $parser,
+            'resolveCuscarOperationalDates',
+            [
+                ['dates' => []],
+                [
+                    'departure_date' => '2026-09-19',
+                    'discharge_date' => '2026-09-22',
+                ],
+            ]
+        );
+
+        $this->assertSame(
+            '2026-09-19',
+            $fallback['departure_date']
+        );
+        $this->assertSame(
+            '2026-09-22',
+            $fallback['estimated_arrival_date']
+        );
+    }
+
 }
