@@ -80,6 +80,28 @@ class CmspEdiParserCompat extends CmspEdiParser
      * vacío, se utiliza el informado por el CUSCAR. Las fechas operativas
      * ingresadas por el operador tienen prioridad sobre el archivo.
      */
+    /**
+     * CUSCAR describe la ruta física (LOC+9 / LOC+11), no el sentido comercial
+     * de la operación para esta aplicación. Dos archivos de importación y
+     * exportación pueden declarar la misma ruta, por lo que no se infiere el
+     * tipo de operación desde los puertos.
+     */
+    protected function resolveCuscarOperationType(array $options): string
+    {
+        $operationType = strtolower(
+            trim((string) ($options['operation_type'] ?? ''))
+        );
+
+        if (!in_array($operationType, ['import', 'export'], true)) {
+            throw new \DomainException(
+                'CUSCAR requiere seleccionar explícitamente el tipo de operación '
+                . '(Importación o Exportación) al importar el archivo.'
+            );
+        }
+
+        return $operationType;
+    }
+
     protected function createVoyage(array $data, array $options = []): Voyage
     {
         $user = auth()->user();
@@ -160,10 +182,7 @@ class CmspEdiParserCompat extends CmspEdiParser
             );
         }
 
-        $cargoType = $this->determineCargoTypeFromPorts(
-            $originPort,
-            $destPort
-        );
+        $cargoType = $this->resolveCuscarOperationType($options);
 
         $this->guardVoyageNumberIsFree($voyageNumber);
 
