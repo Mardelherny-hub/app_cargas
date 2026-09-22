@@ -2885,9 +2885,11 @@ class CmspEdiParser implements ManifestParserInterface
             '45G1' => '40HC',
             '22R1' => '20RF',
             '45R1' => '40RH',
+            '45R5' => '40RH',
             '22T1' => '20TN',
             '22U1' => '20OT',
             '45U1' => '40OT',
+            'L5G1' => '45HC',
         ];
 
         return $map[strtoupper(trim($isoCode))] ?? null;
