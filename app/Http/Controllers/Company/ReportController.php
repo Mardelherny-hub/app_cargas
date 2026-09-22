@@ -175,7 +175,7 @@ class ReportController extends Controller
         $billsOfLading = $billsQuery->paginate(15);
 
         $stats = $this->getBillsOfLadingStats($company);
-        $filters = $this->getBillsOfLadingFilters();
+        $filters = $this->getBillsOfLadingFilters($company);
 
         return view('company.reports.bills-of-lading', compact(
             'billsOfLading',
@@ -1209,8 +1209,12 @@ private function buildBillsOfLadingQuery($company)
     /**
      * Obtener filtros para conocimientos de embarque.
      */
-    private function getBillsOfLadingFilters(): array
+    private function getBillsOfLadingFilters($company): array
     {
+        $ports = Port::where('active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
         return [
             'status' => ['pending', 'issued', 'in_transit', 'delivered'],
             'period' => ['today', 'week', 'month', 'quarter'],
@@ -1218,7 +1222,13 @@ private function buildBillsOfLadingQuery($company)
                 ->orderBy('legal_name')
                 ->pluck('legal_name', 'id')
                 ->toArray(),
-            ];
+            'voyages' => Voyage::where('company_id', $company->id)
+                ->whereHas('billsOfLading')
+                ->orderByDesc('departure_date')
+                ->orderByDesc('id')
+                ->get(['id', 'voyage_number', 'departure_date']),
+            'ports' => $ports,
+        ];
     }
 
     /**

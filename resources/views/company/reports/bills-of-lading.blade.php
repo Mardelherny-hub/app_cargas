@@ -108,6 +108,71 @@
                                 </select>
                             </div>
 
+                            {{-- VIAJE --}}
+                            <div>
+                                <label for="voyage_id" class="block text-sm font-medium text-gray-700">
+                                    Viaje
+                                </label>
+                                <select id="voyage_id"
+                                        name="filters[voyage_id]"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    <option value="">Todos los viajes</option>
+                                    @foreach($filters['voyages'] as $voyage)
+                                        <option value="{{ $voyage->id }}">
+                                            {{ $voyage->voyage_number }}
+                                            @if($voyage->departure_date)
+                                                - {{ $voyage->departure_date->format('d/m/Y') }}
+                                            @endif
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            {{-- PUERTO DE CARGA --}}
+                            <div>
+                                <label for="loading_port_id" class="block text-sm font-medium text-gray-700">
+                                    Puerto de carga
+                                </label>
+                                <select id="loading_port_id"
+                                        name="filters[loading_port_id]"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    <option value="">Todos los puertos de carga</option>
+                                    @foreach($filters['ports'] as $port)
+                                        <option value="{{ $port->id }}">{{ $port->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            {{-- PUERTO DE DESCARGA --}}
+                            <div>
+                                <label for="discharge_port_id" class="block text-sm font-medium text-gray-700">
+                                    Puerto de descarga
+                                </label>
+                                <select id="discharge_port_id"
+                                        name="filters[discharge_port_id]"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    <option value="">Todos los puertos de descarga</option>
+                                    @foreach($filters['ports'] as $port)
+                                        <option value="{{ $port->id }}">{{ $port->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            {{-- PUERTO DE DESTINO --}}
+                            <div>
+                                <label for="final_destination_port_id" class="block text-sm font-medium text-gray-700">
+                                    Puerto de destino
+                                </label>
+                                <select id="final_destination_port_id"
+                                        name="filters[final_destination_port_id]"
+                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                    <option value="">Todos los puertos de destino</option>
+                                    @foreach($filters['ports'] as $port)
+                                        <option value="{{ $port->id }}">{{ $port->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
                             {{-- CARGADOR --}}
                             <div>
                                 <label for="shipper_id" class="block text-sm font-medium text-gray-700">
