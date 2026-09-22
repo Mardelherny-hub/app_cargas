@@ -308,7 +308,25 @@ class ReportController extends Controller
         ->limit(50)
         ->get();
 
-        return view('company.reports.micdta', compact('voyages'));
+        // El formato basado en la muestra del cliente puede imprimirse desde
+        // los datos del viaje/BL aunque no exista una transacción MIC/DTA
+        // históricamente enlazada al voyage_id. Se mantiene separada la lista
+        // anterior para no alterar el reporte actual.
+        $printableVoyages = Voyage::with([
+            'leadVessel:id,name',
+            'originPort:id,name',
+            'destinationPort:id,name',
+            'shipments',
+            'billsOfLading',
+        ])
+        ->where('company_id', $company->id)
+        ->whereHas('billsOfLading')
+        ->whereNotIn('id', $voyages->pluck('id'))
+        ->orderBy('departure_date', 'desc')
+        ->limit(50)
+        ->get();
+
+        return view('company.reports.micdta', compact('voyages', 'printableVoyages'));
     }
 
     /**
