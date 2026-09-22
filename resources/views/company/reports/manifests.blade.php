@@ -146,6 +146,22 @@
                                 </select>
                             </div>
 
+                            {{-- PRESENTACIÓN PDF --}}
+                            <div>
+                                <label for="template" class="block text-sm font-medium text-gray-700">
+                                    Presentación
+                                </label>
+                                <select id="template"
+                                        name="filters[template]"
+                                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+                                    <option value="standard">Reporte del sistema (actual)</option>
+                                    <option value="client">Cargo Manifest - formato según muestra</option>
+                                </select>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    El formato según muestra se genera en paralelo y no reemplaza el reporte actual.
+                                </p>
+                            </div>
+
                             {{-- FILTROS OPCIONALES --}}
                             <div>
                                 <label for="status_filter" class="block text-sm font-medium text-gray-700">

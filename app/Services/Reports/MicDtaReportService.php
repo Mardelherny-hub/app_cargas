@@ -4,6 +4,7 @@ namespace App\Services\Reports;
 
 use App\Models\Voyage;
 use App\Models\Company;
+use App\Models\WebserviceTransaction;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -25,25 +26,32 @@ class MicdtaReportService
     public function prepareData(): array
     {
         $this->voyage->load([
-            'leadVessel',
+            'leadVessel.flagCountry',
             'originPort.country',
             'destinationPort.country',
             'transshipmentPort',
             'shipments.vessel',
-            'shipments.billsOfLading.shipper',
-            'shipments.billsOfLading.consignee',
+            'shipments.billsOfLading.shipper.contactData',
+            'shipments.billsOfLading.consignee.contactData',
+            'shipments.billsOfLading.notifyParty.contactData',
+            'shipments.billsOfLading.specificContacts.contactData.client',
             'shipments.billsOfLading.loadingPort',
             'shipments.billsOfLading.dischargePort',
+            'shipments.billsOfLading.finalDestinationPort',
             'shipments.billsOfLading.loadingCustoms',
             'shipments.billsOfLading.dischargeCustoms',
             'shipments.billsOfLading.primaryCargoType',
             'shipments.billsOfLading.primaryPackagingType',
+            'shipments.billsOfLading.shipmentItems.packagingType',
+            'shipments.billsOfLading.shipmentItems.containers.containerType',
         ]);
 
         return [
             'voyage' => $this->formatVoyageData(),
             'company' => $this->formatCompanyData(),
             'shipments' => $this->formatShipmentsData(),
+            'client_template_bills' => $this->formatClientTemplateBills(),
+            'micdta' => $this->formatMicDtaTransaction(),
             'totals' => $this->calculateTotals(),
             'metadata' => $this->generateMetadata(),
         ];
@@ -53,7 +61,11 @@ class MicdtaReportService
     {
         $date = now()->format('Ymd');
         $voyageNumber = str_replace(['/', ' '], '_', $this->voyage->voyage_number);
-        return "micdta_{$voyageNumber}_{$date}.{$format}";
+        $prefix = ($this->filters['template'] ?? 'standard') === 'client'
+            ? 'micdta_formato'
+            : 'micdta';
+
+        return "{$prefix}_{$voyageNumber}_{$date}.{$format}";
     }
 
     public function validate(): bool
@@ -79,6 +91,7 @@ class MicdtaReportService
             'vessel_name' => $this->voyage->leadVessel->name ?? 'N/A',
             'vessel_registration' => $this->voyage->leadVessel->registration_number ?? '',
             'imo_number' => $this->voyage->leadVessel->imo_number ?? '',
+            'vessel_flag' => $this->voyage->leadVessel?->flagCountry?->name ?? '',
             'departure_date' => $this->voyage->departure_date 
                 ? Carbon::parse($this->voyage->departure_date)->format('d/m/Y')
                 : 'N/A',
@@ -152,6 +165,121 @@ class MicdtaReportService
                 'is_transit_transshipment' => $bill->is_transit_transshipment ?? 'N',
             ];
         })->toArray();
+    }
+
+    private function formatClientTemplateBills(): array
+    {
+        return $this->voyage->shipments
+            ->flatMap(function ($shipment) {
+                return $shipment->billsOfLading->map(function ($bill) use ($shipment) {
+                    $shipper = $bill->getShipperCompleteData();
+                    $consignee = $bill->getConsigneeCompleteData();
+                    $notify = $bill->getNotifyPartyCompleteData();
+
+                    $items = $bill->shipmentItems->map(function ($item) {
+                        $containers = $item->containers->map(function ($container) {
+                            $seals = collect([
+                                $container->customs_seal,
+                                $container->shipper_seal,
+                                $container->carrier_seal,
+                            ])->merge(is_array($container->additional_seals) ? $container->additional_seals : [])
+                              ->filter()
+                              ->unique()
+                              ->values()
+                              ->implode(', ');
+
+                            return [
+                                'number' => $container->full_container_number ?: $container->container_number,
+                                'type' => $container->containerType?->iso_code
+                                    ?: $container->containerType?->iso_size_type
+                                    ?: $container->containerType?->code,
+                                'seals' => $seals,
+                            ];
+                        })->values()->all();
+
+                        return [
+                            'quantity' => $item->package_quantity,
+                            'package_type' => $item->package_type_description
+                                ?: $item->packagingType?->name,
+                            'description' => $item->item_description ?: $item->commodity_description,
+                            'commodity_code' => $item->commodity_code,
+                            'gross_weight_kg' => $item->gross_weight_kg,
+                            'net_weight_kg' => $item->net_weight_kg,
+                            'volume_m3' => $item->volume_m3,
+                            'declared_value' => $item->declared_value,
+                            'cargo_marks' => $item->cargo_marks,
+                            'containers' => $containers,
+                        ];
+                    })->values()->all();
+
+                    $containers = collect($items)
+                        ->flatMap(fn ($item) => $item['containers'])
+                        ->unique('number')
+                        ->values()
+                        ->all();
+
+                    return [
+                        'shipment_number' => $shipment->shipment_number ?? '',
+                        'bill_number' => $bill->bill_number ?? '',
+                        'bill_date' => $bill->bill_date?->format('d/m/Y'),
+                        'shipper' => $shipper,
+                        'consignee' => $consignee,
+                        'notify' => $notify,
+                        'loading_port' => $bill->loadingPort?->name ?? '',
+                        'discharge_port' => $bill->dischargePort?->name ?? '',
+                        'final_destination_port' => $bill->finalDestinationPort?->name
+                            ?? $bill->dischargePort?->name
+                            ?? '',
+                        'total_packages' => $bill->total_packages ?? 0,
+                        'gross_weight_kg' => $bill->gross_weight_kg ?? 0,
+                        'volume_m3' => $bill->volume_m3 ?? 0,
+                        'cargo_description' => $bill->cargo_description ?? '',
+                        'cargo_marks' => $bill->cargo_marks ?? '',
+                        'declared_value' => collect($bill->shipmentItems)->sum('declared_value'),
+                        'currency_code' => $bill->currency_code ?? 'USD',
+                        'customs_remarks' => $bill->customs_remarks ?? '',
+                        'is_transit' => $bill->is_transit_transshipment === 'S',
+                        'items' => $items,
+                        'containers' => $containers,
+                    ];
+                });
+            })
+            ->values()
+            ->all();
+    }
+
+    private function formatMicDtaTransaction(): array
+    {
+        $transaction = WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('voyage_id', $this->voyage->id)
+            ->where('webservice_type', 'micdta')
+            ->where('status', 'success')
+            ->latest('id')
+            ->first();
+
+        if (!$transaction) {
+            return [
+                'number' => '',
+                'date' => $this->voyage->departure_date
+                    ? Carbon::parse($this->voyage->departure_date)->format('d/m/Y')
+                    : '',
+                'customs_observation' => '',
+            ];
+        }
+
+        $tracking = collect($transaction->tracking_numbers ?? [])->flatten()->filter()->implode(', ');
+
+        return [
+            'number' => $transaction->confirmation_number
+                ?: $transaction->external_reference
+                ?: $transaction->transaction_id
+                ?: '',
+            'date' => ($transaction->response_at ?: $transaction->sent_at ?: $transaction->created_at)
+                ? Carbon::parse($transaction->response_at ?: $transaction->sent_at ?: $transaction->created_at)->format('d/m/Y')
+                : '',
+            'customs_observation' => $tracking,
+        ];
     }
 
     private function calculateTotals(): array
