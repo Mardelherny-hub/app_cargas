@@ -75,6 +75,28 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
+     * CUSCAR describe la ruta física (LOC+9 / LOC+11), no el sentido comercial
+     * de la operación para esta aplicación. Dos archivos de importación y
+     * exportación pueden declarar la misma ruta, por lo que no se infiere el
+     * tipo de operación desde los puertos.
+     */
+    protected function resolveCuscarOperationType(array $options): string
+    {
+        $operationType = strtolower(
+            trim((string) ($options['operation_type'] ?? ''))
+        );
+
+        if (!in_array($operationType, ['import', 'export'], true)) {
+            throw new \DomainException(
+                'CUSCAR requiere seleccionar explícitamente el tipo de operación '
+                . '(Importación o Exportación) al importar el archivo.'
+            );
+        }
+
+        return $operationType;
+    }
+
+    /**
      * La embarcación seleccionada por el operador tiene prioridad. El número
      * de viaje ingresado por el operador también tiene prioridad; si queda
      * vacío, se utiliza el informado por el CUSCAR. Las fechas operativas
@@ -160,10 +182,7 @@ class CmspEdiParserCompat extends CmspEdiParser
             );
         }
 
-        $cargoType = $this->determineCargoTypeFromPorts(
-            $originPort,
-            $destPort
-        );
+        $cargoType = $this->resolveCuscarOperationType($options);
 
         $this->guardVoyageNumberIsFree($voyageNumber);
 
@@ -452,6 +471,47 @@ class CmspEdiParserCompat extends CmspEdiParser
         );
     }
 
+    protected function contextualizePartyWarnings(
+        int $fromIndex,
+        array $partyData
+    ): void {
+        $billNumber = trim(
+            (string) ($partyData['_context_bl_number'] ?? '')
+        );
+        $role = trim(
+            (string) ($partyData['_context_role'] ?? $partyData['type'] ?? '')
+        );
+        $name = trim((string) ($partyData['name'] ?? ''));
+
+        if ($billNumber === '' && $role === '' && $name === '') {
+            return;
+        }
+
+        $context = array_filter([
+            $billNumber !== '' ? "BL {$billNumber}" : null,
+            $role !== '' ? "parte {$role}" : null,
+            $name !== '' ? $name : null,
+        ]);
+
+        $suffix = ' [' . implode(' · ', $context) . ']';
+
+        for (
+            $index = $fromIndex;
+            $index < count($this->stats['warnings']);
+            $index++
+        ) {
+            if (str_contains($this->stats['warnings'][$index], ' [BL ')) {
+                continue;
+            }
+
+            $this->stats['warnings'][$index] .= $suffix;
+        }
+
+        $this->stats['warnings'] = array_values(array_unique(
+            $this->stats['warnings']
+        ));
+    }
+
     /**
      * Cuando el archivo declaró el tipo fiscal pero el número era inválido,
      * puede reutilizarse una única ficha exacta de mismo nombre y país. Si no
@@ -478,12 +538,19 @@ class CmspEdiParserCompat extends CmspEdiParser
             );
         }
 
+        $warningStart = count($this->stats['warnings']);
+
         $identity = $this->resolvePartyTaxIdentity($partyData);
         $taxId = $identity['tax_id'];
         $taxType = $identity['tax_type'];
         $countryId = $this->resolveClientCountryId(
             $partyData,
             $taxType
+        );
+
+        $this->contextualizePartyWarnings(
+            $warningStart,
+            $partyData
         );
 
         if ($taxId !== null) {
@@ -590,6 +657,11 @@ class CmspEdiParserCompat extends CmspEdiParser
                 }
             }
         }
+
+        $this->contextualizePartyWarnings(
+            $warningStart,
+            $partyData
+        );
 
         $client = Client::create([
             'created_by_company_id' => $companyId,

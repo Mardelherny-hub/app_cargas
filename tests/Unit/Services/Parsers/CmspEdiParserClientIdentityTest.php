@@ -258,6 +258,242 @@ class CmspEdiParserClientIdentityTest extends TestCase
     }
 
 
+    public function test_fiscal_warning_includes_bill_party_and_name_context(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $this->invokeCompat(
+            $parser,
+            'extractExplicitTaxTypeFromText',
+            ['AGENCIA X CUIT 33-70504237-10']
+        );
+
+        $this->invokeCompat(
+            $parser,
+            'contextualizePartyWarnings',
+            [0, [
+                '_context_bl_number' => '001PJSM35026',
+                '_context_role' => 'consignee',
+                'name' => 'AGENCIA X',
+            ]]
+        );
+
+        $stats = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'stats'
+        );
+        $stats->setAccessible(true);
+        $warnings = $stats->getValue($parser)['warnings'];
+
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString(
+            'BL 001PJSM35026',
+            $warnings[0]
+        );
+        $this->assertStringContainsString(
+            'parte consignee',
+            $warnings[0]
+        );
+        $this->assertStringContainsString(
+            'AGENCIA X',
+            $warnings[0]
+        );
+    }
+
+
+    public function test_cuscar_operation_type_is_explicit_and_not_inferred_from_ports(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $this->assertSame(
+            'import',
+            $this->invokeCompat(
+                $parser,
+                'resolveCuscarOperationType',
+                [['operation_type' => 'IMPORT']]
+            )
+        );
+
+        $this->assertSame(
+            'export',
+            $this->invokeCompat(
+                $parser,
+                'resolveCuscarOperationType',
+                [['operation_type' => 'export']]
+            )
+        );
+
+        $this->expectException(\DomainException::class);
+
+        $this->invokeCompat(
+            $parser,
+            'resolveCuscarOperationType',
+            [[]]
+        );
+    }
+
+    public function test_real_josamo_45u1_maps_to_40ot(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $this->assertSame(
+            '40OT',
+            $this->invoke(
+                $parser,
+                'mapIsoContainerType',
+                ['45U1']
+            )
+        );
+    }
+
+    public function test_hapag_real_iso_variants_map_to_supported_catalog_types(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $this->assertSame(
+            '40RH',
+            $this->invoke(
+                $parser,
+                'mapIsoContainerType',
+                ['45R5']
+            )
+        );
+
+        $this->assertSame(
+            '45HC',
+            $this->invoke(
+                $parser,
+                'mapIsoContainerType',
+                ['L5G1']
+            )
+        );
+    }
+
+    public function test_cni_level_ftx_before_first_gid_is_not_lost(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $segments = [
+            [
+                'tag' => 'CNI',
+                'elements' => ['1'],
+            ],
+            [
+                'tag' => 'RFF',
+                'elements' => ['BM:BUEFNX26P104010'],
+            ],
+            [
+                'tag' => 'FTX',
+                'elements' => [
+                    'AAA',
+                    '',
+                    '',
+                    'TOTAL ITEMS: 17 PALLET BOX PRODUCTOS FARMACEUTICOS',
+                ],
+            ],
+            [
+                'tag' => 'GID',
+                'elements' => ['1', '17:PX:::PALLET BOX'],
+            ],
+        ];
+
+        $edi = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'ediSegments'
+        );
+        $edi->setAccessible(true);
+        $edi->setValue($parser, $segments);
+
+        $this->invoke(
+            $parser,
+            'extractStructuredData'
+        );
+
+        $parsed = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'parsedData'
+        );
+        $parsed->setAccessible(true);
+        $data = $parsed->getValue($parser);
+
+        $this->assertSame(
+            'TOTAL ITEMS: 17 PALLET BOX PRODUCTOS FARMACEUTICOS',
+            $data['containers'][0]['items'][0]['description']
+        );
+    }
+
+    public function test_hapag_group_without_aax_uses_distinct_item_weights(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $weight = $this->invoke(
+            $parser,
+            'resolveGroupGrossWeight',
+            [[
+                'items' => [
+                    [
+                        'sequence' => '1',
+                        'package_info' => '15:PX:::PALLET BOX',
+                        'description' => 'PRODUCTOS FARMACEUTICOS +20C',
+                        'gross_weight_kg' => 1706,
+                        'containers' => [],
+                    ],
+                    [
+                        'sequence' => '1',
+                        'package_info' => '15:PX:::PALLET BOX',
+                        'description' => 'PRODUCTOS FARMACEUTICOS +20C',
+                        'gross_weight_kg' => 1706,
+                        'containers' => ['CONT0000001'],
+                    ],
+                    [
+                        'sequence' => '2',
+                        'package_info' => '2:PX:::PALLET BOX',
+                        'description' => 'PRODUCTOS FARMACEUTICOS +20C',
+                        'gross_weight_kg' => 100,
+                        'containers' => [],
+                    ],
+                ],
+            ], 'HLCUBC1250954817']
+        );
+
+        $this->assertSame(1806.0, $weight);
+    }
+
+    public function test_real_hapag_party_country_names_are_resolved_from_source_text(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $cases = [
+            ['TH', 'CHONBURI 20230 THAILAND'],
+            ['IN', 'TELANGANA, INDIA-500084'],
+            ['US', 'MIAMI, FL 33172. UNITEDSTATES'],
+            ['US', 'HOUSTON, TEXAS 77060 USA'],
+            ['ES', 'FUENLABRADA - MADRID'],
+            ['AE', 'DUBAI, UNITED ARAB EMIRATES'],
+            ['HK', 'WAN CHAI DISTRICT, HONG KONG'],
+            ['MX', 'TLAQUEPAQUE, JAL, MEXICO 45500'],
+            ['CN', 'ZHEJIANG PROVINCE, CHINA'],
+            ['JP', 'SHIZUOKA 419-0201 JAPAN'],
+            ['SG', 'CECIL STREET SINGAPORE 069545'],
+            ['PA', 'COLON FREE ZONE, PANAMA'],
+            ['KR', 'SEOUL, KOREA'],
+            ['AU', 'KILSYTH VIC 3137 AUSTRALIA'],
+            ['PY', 'NEMBY CENTRAL 22210 PRY'],
+        ];
+
+        foreach ($cases as [$expected, $text]) {
+            $this->assertSame(
+                $expected,
+                $this->invoke(
+                    $parser,
+                    'countryAlpha2FromPartyText',
+                    [$text]
+                ),
+                $text
+            );
+        }
+    }
+
     public function test_real_josamo_eqd_8169_marks_blank_item_as_empty(): void
     {
         $parser = new CmspEdiParser();
@@ -387,7 +623,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'contenedores vacíos sin código ISO; se conserva tipo desconocido.',
+            'contenedor vacío {$containerNumber} sin código ISO; ',
             $source
         );
     }

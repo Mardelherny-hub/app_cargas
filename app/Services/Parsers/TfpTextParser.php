@@ -789,13 +789,13 @@ protected function extractValue(string $scope, string $label): ?string
         }
 
         /*
-         * Algunos emisores TFP dejan CONDICION vacío. Ese caso fue aceptado
-         * históricamente por este importador con los defaults operativos L/P.
-         * Se recupera sólo ese comportamiento: un valor no vacío desconocido
-         * sigue siendo error para no inventar semántica aduanera.
+         * Regla funcional confirmada por el cliente el 21/09/2026:
+         * cuando TFP no informa CONDICION, la condición aduanera debe ser
+         * House. El estado operativo continúa siendo L (lleno). Un valor
+         * desconocido no vacío sigue siendo error.
          */
         if ($valor === '') {
-            return ['condition' => 'L', 'container_condition' => 'P'];
+            return ['condition' => 'L', 'container_condition' => 'H'];
         }
 
         throw new Exception(
