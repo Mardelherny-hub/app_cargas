@@ -2768,10 +2768,8 @@ class CmspEdiParser implements ManifestParserInterface
             ? $this->mapIsoContainerType($isoCode)
             : null;
 
-        $containerType = $typeCode !== null
-            ? ContainerType::where('code', $typeCode)
-                ->where('active', true)
-                ->first()
+        $containerType = $isoCode !== ''
+            ? $this->resolveActiveContainerTypeByIso($isoCode)
             : null;
 
         if (!$containerType && !$esVacio) {
@@ -2920,6 +2918,53 @@ class CmspEdiParser implements ManifestParserInterface
         ];
 
         return $map[strtoupper(trim($isoCode))] ?? null;
+    }
+
+    /**
+     * Resolver primero por el ISO exacto declarado por la fuente.
+     *
+     * El catálogo puede contener un tipo válido con un code interno distinto
+     * del alias histórico del parser. Sólo si no existe una coincidencia ISO
+     * activa se usa el mapeo ISO -> code.
+     */
+    protected function resolveActiveContainerTypeByIso(
+        string $isoCode
+    ): ?ContainerType {
+        $normalized = strtoupper(trim($isoCode));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        $containerType = ContainerType::query()
+            ->where('active', true)
+            ->where(function ($query) use ($normalized) {
+                $query
+                    ->whereRaw(
+                        'UPPER(TRIM(iso_code)) = ?',
+                        [$normalized]
+                    )
+                    ->orWhereRaw(
+                        'UPPER(TRIM(iso_size_type)) = ?',
+                        [$normalized]
+                    );
+            })
+            ->first();
+
+        if ($containerType) {
+            return $containerType;
+        }
+
+        $typeCode = $this->mapIsoContainerType($normalized);
+
+        if ($typeCode === null) {
+            return null;
+        }
+
+        return ContainerType::query()
+            ->where('code', $typeCode)
+            ->where('active', true)
+            ->first();
     }
 
     /**
