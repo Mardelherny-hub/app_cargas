@@ -459,6 +459,41 @@ class CmspEdiParserClientIdentityTest extends TestCase
         $this->assertSame(1806.0, $weight);
     }
 
+    public function test_real_hapag_party_country_names_are_resolved_from_source_text(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $cases = [
+            ['TH', 'CHONBURI 20230 THAILAND'],
+            ['IN', 'TELANGANA, INDIA-500084'],
+            ['US', 'MIAMI, FL 33172. UNITEDSTATES'],
+            ['US', 'HOUSTON, TEXAS 77060 USA'],
+            ['ES', 'FUENLABRADA - MADRID'],
+            ['AE', 'DUBAI, UNITED ARAB EMIRATES'],
+            ['HK', 'WAN CHAI DISTRICT, HONG KONG'],
+            ['MX', 'TLAQUEPAQUE, JAL, MEXICO 45500'],
+            ['CN', 'ZHEJIANG PROVINCE, CHINA'],
+            ['JP', 'SHIZUOKA 419-0201 JAPAN'],
+            ['SG', 'CECIL STREET SINGAPORE 069545'],
+            ['PA', 'COLON FREE ZONE, PANAMA'],
+            ['KR', 'SEOUL, KOREA'],
+            ['AU', 'KILSYTH VIC 3137 AUSTRALIA'],
+            ['PY', 'NEMBY CENTRAL 22210 PRY'],
+        ];
+
+        foreach ($cases as [$expected, $text]) {
+            $this->assertSame(
+                $expected,
+                $this->invoke(
+                    $parser,
+                    'countryAlpha2FromPartyText',
+                    [$text]
+                ),
+                $text
+            );
+        }
+    }
+
     public function test_real_josamo_eqd_8169_marks_blank_item_as_empty(): void
     {
         $parser = new CmspEdiParser();
