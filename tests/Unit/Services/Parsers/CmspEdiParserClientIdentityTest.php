@@ -258,6 +258,60 @@ class CmspEdiParserClientIdentityTest extends TestCase
     }
 
 
+    public function test_invalid_tax_warning_is_contextualized_during_nad_parse(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function parsePartyForTest(
+                array $segment,
+                ?array &$currentContainer = null
+            ): void {
+                $this->parseParty(
+                    $segment,
+                    $currentContainer
+                );
+            }
+
+            public function warningsForTest(): array
+            {
+                return $this->stats['warnings'];
+            }
+        };
+
+        $container = [
+            'references' => [
+                'bill_number' => '001PJSM35026',
+            ],
+            'parties' => [],
+        ];
+
+        $parser->parsePartyForTest(
+            [
+                'elements' => [
+                    'CN',
+                    '',
+                    'AGENCIA X CUIT 33-70504237-10 PARAGUAY',
+                ],
+            ],
+            $container
+        );
+
+        $warnings = $parser->warningsForTest();
+
+        $this->assertCount(1, $warnings);
+        $this->assertStringContainsString(
+            'BL 001PJSM35026',
+            $warnings[0]
+        );
+        $this->assertStringContainsString(
+            'parte consignee',
+            $warnings[0]
+        );
+        $this->assertStringContainsString(
+            'AGENCIA X',
+            $warnings[0]
+        );
+    }
+
     public function test_fiscal_warning_includes_bill_party_and_name_context(): void
     {
         $parser = new CmspEdiParserCompat();
