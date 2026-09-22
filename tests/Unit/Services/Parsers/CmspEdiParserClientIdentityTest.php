@@ -459,6 +459,69 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_multiline_ftx_segment_is_not_dropped_before_description_parse(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $tmp = tempnam(sys_get_temp_dir(), 'cuscar-ftx-');
+
+        file_put_contents(
+            $tmp,
+            "UNH+1+CUSCAR:D:96B:UN'\n"
+            . "CNI+1++'\n"
+            . "RFF+BM:BUEFNX26P104010'\n"
+            . "GID+1+820:BG:::PLT'\n"
+            . "FTX+AAA+++TOTAL ITEMS: 17 PALLET BOX\r\n"
+            . "15 PALLET BOX\r\n"
+            . "PRODUCTOS FARMACEUTICOS +20C\r\n"
+            . "HS-CODE : 30 04 90\r\n"
+            . "100,000 KGM '\n"
+        );
+
+        try {
+            $this->invoke($parser, 'parseEdiFile', [$tmp]);
+
+            $segmentsProperty = new \ReflectionProperty(
+                CmspEdiParser::class,
+                'ediSegments'
+            );
+            $segmentsProperty->setAccessible(true);
+            $segments = $segmentsProperty->getValue($parser);
+
+            $ftx = collect($segments)
+                ->firstWhere('tag', 'FTX');
+
+            $this->assertNotNull($ftx);
+
+            $literal = $this->invoke(
+                $parser,
+                'extractFtxDescription',
+                [$ftx]
+            );
+
+            $this->assertStringContainsString(
+                'PRODUCTOS FARMACEUTICOS +20C',
+                $literal
+            );
+
+            $this->invoke($parser, 'extractStructuredData');
+
+            $parsedProperty = new \ReflectionProperty(
+                CmspEdiParser::class,
+                'parsedData'
+            );
+            $parsedProperty->setAccessible(true);
+            $data = $parsedProperty->getValue($parser);
+
+            $this->assertStringContainsString(
+                'PRODUCTOS FARMACEUTICOS +20C',
+                $data['containers'][0]['items'][0]['description']
+            );
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
     public function test_hapag_group_without_aax_uses_distinct_item_weights(): void
     {
         $parser = new CmspEdiParser();
