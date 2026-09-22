@@ -130,6 +130,7 @@ return new class extends Migration
         DB::table('container_types')
             ->where('code', '45HC')
             ->where('iso_code', 'L5G1')
+            ->where('description', 'Contenedor General Purpose de 45 pies High Cube (ISO L5G1)')
             ->delete();
     }
 };
