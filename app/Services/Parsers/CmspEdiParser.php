@@ -278,7 +278,7 @@ class CmspEdiParser implements ManifestParserInterface
             if (empty($line)) continue;
 
             // Parsear segmento EDI
-            if (preg_match('/^([A-Z]{3})\+(.+)$/', $line, $matches)) {
+            if (preg_match('/^([A-Z]{3})\+(.+)$/s', $line, $matches)) {
                 $segmentTag = $matches[1];
                 $segmentData = $matches[2];
 
@@ -615,8 +615,8 @@ class CmspEdiParser implements ManifestParserInterface
                         $currentContainer !== null
                         && strtoupper(trim((string) ($segment['elements'][0] ?? ''))) === 'AAA'
                     ) {
-                        $description = $this->cleanEdifactText(
-                            $segment['elements'][3] ?? ''
+                        $description = $this->extractFtxDescription(
+                            $segment
                         );
 
                         if ($description !== '') {
@@ -1237,6 +1237,35 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Extrae la descripción literal de FTX+AAA.
+     *
+     * Algunos CUSCAR reales incluyen saltos de línea y signos '+' sin escapar
+     * dentro del texto libre. Para AAA+++ se conserva el payload crudo posterior
+     * a esos tres separadores en vez de depender del array de elementos.
+     */
+    protected function extractFtxDescription(array $segment): string
+    {
+        $qualifier = strtoupper(
+            trim((string) ($segment['elements'][0] ?? ''))
+        );
+
+        $rawData = (string) ($segment['data'] ?? '');
+
+        if (
+            $qualifier === 'AAA'
+            && preg_match('/^AAA\+\+\+(.*)$/s', $rawData, $matches)
+        ) {
+            return $this->cleanEdifactText(
+                $matches[1] ?? ''
+            );
+        }
+
+        return $this->cleanEdifactText(
+            $segment['elements'][3] ?? ''
+        );
+    }
+
+    /**
      * Parsear texto libre (descripción)
      */
     protected function parseFreeText(array $segment, ?array &$currentItem): void
@@ -1253,8 +1282,8 @@ class CmspEdiParser implements ManifestParserInterface
              * parseEdiFile ya conserva esos caracteres dentro del mismo
              * elemento; acá se elimina únicamente el release character.
              */
-            $description = $this->cleanEdifactText(
-                $segment['elements'][3] ?? ''
+            $description = $this->extractFtxDescription(
+                $segment
             );
 
             if ($description !== '') {
