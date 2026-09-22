@@ -258,6 +258,141 @@ class CmspEdiParserClientIdentityTest extends TestCase
     }
 
 
+    public function test_cuscar_operation_type_is_explicit_and_not_inferred_from_ports(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $this->assertSame(
+            'import',
+            $this->invokeCompat(
+                $parser,
+                'resolveCuscarOperationType',
+                [['operation_type' => 'IMPORT']]
+            )
+        );
+
+        $this->assertSame(
+            'export',
+            $this->invokeCompat(
+                $parser,
+                'resolveCuscarOperationType',
+                [['operation_type' => 'export']]
+            )
+        );
+
+        $this->expectException(\DomainException::class);
+
+        $this->invokeCompat(
+            $parser,
+            'resolveCuscarOperationType',
+            [[]]
+        );
+    }
+
+    public function test_real_josamo_45u1_maps_to_40ot(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $this->assertSame(
+            '40OT',
+            $this->invoke(
+                $parser,
+                'mapIsoContainerType',
+                ['45U1']
+            )
+        );
+    }
+
+    public function test_cni_level_ftx_before_first_gid_is_not_lost(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $segments = [
+            [
+                'tag' => 'CNI',
+                'elements' => ['1'],
+            ],
+            [
+                'tag' => 'RFF',
+                'elements' => ['BM:BUEFNX26P104010'],
+            ],
+            [
+                'tag' => 'FTX',
+                'elements' => [
+                    'AAA',
+                    '',
+                    '',
+                    'TOTAL ITEMS: 17 PALLET BOX PRODUCTOS FARMACEUTICOS',
+                ],
+            ],
+            [
+                'tag' => 'GID',
+                'elements' => ['1', '17:PX:::PALLET BOX'],
+            ],
+        ];
+
+        $edi = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'ediSegments'
+        );
+        $edi->setAccessible(true);
+        $edi->setValue($parser, $segments);
+
+        $this->invoke(
+            $parser,
+            'extractStructuredData'
+        );
+
+        $parsed = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'parsedData'
+        );
+        $parsed->setAccessible(true);
+        $data = $parsed->getValue($parser);
+
+        $this->assertSame(
+            'TOTAL ITEMS: 17 PALLET BOX PRODUCTOS FARMACEUTICOS',
+            $data['containers'][0]['items'][0]['description']
+        );
+    }
+
+    public function test_hapag_group_without_aax_uses_distinct_item_weights(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $weight = $this->invoke(
+            $parser,
+            'resolveGroupGrossWeight',
+            [[
+                'items' => [
+                    [
+                        'sequence' => '1',
+                        'package_info' => '15:PX:::PALLET BOX',
+                        'description' => 'PRODUCTOS FARMACEUTICOS +20C',
+                        'gross_weight_kg' => 1706,
+                        'containers' => [],
+                    ],
+                    [
+                        'sequence' => '1',
+                        'package_info' => '15:PX:::PALLET BOX',
+                        'description' => 'PRODUCTOS FARMACEUTICOS +20C',
+                        'gross_weight_kg' => 1706,
+                        'containers' => ['CONT0000001'],
+                    ],
+                    [
+                        'sequence' => '2',
+                        'package_info' => '2:PX:::PALLET BOX',
+                        'description' => 'PRODUCTOS FARMACEUTICOS +20C',
+                        'gross_weight_kg' => 100,
+                        'containers' => [],
+                    ],
+                ],
+            ], 'HLCUBC1250954817']
+        );
+
+        $this->assertSame(1806.0, $weight);
+    }
+
     public function test_real_josamo_eqd_8169_marks_blank_item_as_empty(): void
     {
         $parser = new CmspEdiParser();
@@ -387,7 +522,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'contenedores vacíos sin código ISO; se conserva tipo desconocido.',
+            'contenedor vacío {$containerNumber} sin código ISO; ',
             $source
         );
     }
