@@ -99,9 +99,30 @@ class CmspEdiParserCompat extends CmspEdiParser
     /**
      * La embarcación seleccionada por el operador tiene prioridad. El número
      * de viaje ingresado por el operador también tiene prioridad; si queda
-     * vacío, se utiliza el informado por el CUSCAR. Las fechas operativas
-     * ingresadas por el operador tienen prioridad sobre el archivo.
+     * vacío, se utiliza el informado por el CUSCAR. En fechas operativas,
+     * el CUSCAR es la fuente primaria y los valores del formulario sólo
+     * completan lo que el archivo no informa.
      */
+    /**
+     * Resuelve fechas operativas preservando la fuente CUSCAR.
+     *
+     * Los campos del formulario son fallback únicamente cuando el archivo
+     * no aporta el dato correspondiente.
+     *
+     * @return array{departure_date:?string, estimated_arrival_date:?string}
+     */
+    protected function resolveCuscarOperationalDates(
+        array $data,
+        array $options = []
+    ): array {
+        return [
+            'departure_date' => $data['dates']['departure']
+                ?? ($options['departure_date'] ?? null),
+            'estimated_arrival_date' => $data['dates']['estimated_arrival']
+                ?? ($options['discharge_date'] ?? null),
+        ];
+    }
+
     protected function createVoyage(array $data, array $options = []): Voyage
     {
         $user = auth()->user();
@@ -186,11 +207,13 @@ class CmspEdiParserCompat extends CmspEdiParser
 
         $this->guardVoyageNumberIsFree($voyageNumber);
 
-        $departureDate = $options['departure_date']
-            ?? ($data['dates']['departure'] ?? null);
+        $operationalDates = $this->resolveCuscarOperationalDates(
+            $data,
+            $options
+        );
 
-        $estimatedArrivalDate = $options['discharge_date']
-            ?? ($data['dates']['estimated_arrival'] ?? null);
+        $departureDate = $operationalDates['departure_date'];
+        $estimatedArrivalDate = $operationalDates['estimated_arrival_date'];
 
         if ($estimatedArrivalDate === null) {
             throw new Exception(
