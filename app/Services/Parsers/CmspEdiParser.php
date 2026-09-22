@@ -147,7 +147,7 @@ class CmspEdiParser implements ManifestParserInterface
 
         try {
             // 0. Registrar la importación (con dup-check por hash)
-            $importRecord = $this->createImportRecord($filePath);
+            $importRecord = $this->createImportRecord($filePath, $options);
 
             // 1. Leer y parsear segmentos EDI
             $this->parseEdiFile($filePath);
@@ -450,10 +450,23 @@ class CmspEdiParser implements ManifestParserInterface
                     // Verificado en PHP 8.3: sin unset da 3,3,3; con unset da 1,2,3.
                     unset($currentItem);
 
+                    $pendingDescriptions = [];
+                    if ($currentContainer !== null) {
+                        $pendingDescriptions = array_values(array_unique(
+                            array_filter(
+                                $currentContainer['_pending_descriptions'] ?? [],
+                                static fn ($value): bool =>
+                                    trim((string) $value) !== ''
+                            )
+                        ));
+                    }
+
                     $currentItem = [
                         'sequence' => $segment['elements'][0] ?? '',
                         'package_info' => $segment['elements'][1] ?? '',
-                        'description' => '',
+                        'description' => $pendingDescriptions !== []
+                            ? implode(' ', $pendingDescriptions)
+                            : '',
                         'gross_weight_kg' => null,
                         'tare_weight_kg' => null,
                         'volume_m3' => null,
@@ -470,8 +483,12 @@ class CmspEdiParser implements ManifestParserInterface
                         'commodity_code' => null,
                     ];
                     
-                    // Agregar item al contenedor actual
+                    // Agregar item al contenedor actual.
+                    // Algunos CUSCAR ponen FTX+AAA a nivel CNI antes del primer
+                    // GID. Esa descripción pertenece al primer ítem del CNI y se
+                    // consume una sola vez al abrirlo.
                     if ($currentContainer !== null) {
+                        unset($currentContainer['_pending_descriptions']);
                         $currentContainer['items'][] = &$currentItem;
                     }
                     
@@ -582,7 +599,31 @@ class CmspEdiParser implements ManifestParserInterface
                     break;
 
                 case 'FTX':
-                    $this->parseFreeText($segment, $currentItem);
+                    if ($currentItem !== null) {
+                        $this->parseFreeText($segment, $currentItem);
+                        break;
+                    }
+
+                    /*
+                     * Variante CUSCAR observada en 250-22_315N:
+                     * FTX+AAA puede aparecer dentro del CNI antes del primer GID.
+                     * No se descarta: se conserva como descripción pendiente y
+                     * el siguiente GID la consume. Sólo AAA tiene semántica de
+                     * descripción de mercadería en este flujo.
+                     */
+                    if (
+                        $currentContainer !== null
+                        && strtoupper(trim((string) ($segment['elements'][0] ?? ''))) === 'AAA'
+                    ) {
+                        $description = $this->cleanEdifactText(
+                            $segment['elements'][3] ?? ''
+                        );
+
+                        if ($description !== '') {
+                            $currentContainer['_pending_descriptions'][] =
+                                $description;
+                        }
+                    }
                     break;
 
                 case 'PCI':
@@ -1225,7 +1266,7 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Registrar la importación en ManifestImport (con dup-check por hash).
      */
-    protected function createImportRecord(string $filePath): ManifestImport
+    protected function createImportRecord(string $filePath, array $options = []): ManifestImport
     {
         $user = auth()->user();
         if (!$user) {
@@ -1259,6 +1300,7 @@ class CmspEdiParser implements ManifestParserInterface
             'file_hash'       => $fileHash,
             'parser_config'   => [
                 'parser_class' => self::class,
+                'operation_type' => $options['operation_type'] ?? null,
             ],
         ]);
     }
@@ -1765,16 +1807,120 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Crear BL para un grupo específico de CNI
+     * Resolver el peso bruto del conocimiento.
+     *
+     * CMSP tradicional informa MEA+AAX+G a nivel CNI. Hapag-Lloyd puede omitir
+     * ese total y declarar pesos reales por GID mediante MEA+AAE/AAY+G. En ese
+     * caso se suman una sola vez los ítems lógicos distintos; si el mismo GID se
+     * repite por varios SGP no se multiplica su peso.
+     */
+    protected function resolveGroupGrossWeight(
+        array $containerGroup,
+        string $billNumber
+    ): float {
+        if (
+            array_key_exists('gross_weight_kg', $containerGroup)
+            && $containerGroup['gross_weight_kg'] !== null
+        ) {
+            return round((float) $containerGroup['gross_weight_kg'], 2);
+        }
+
+        $logicalItems = [];
+
+        foreach ($containerGroup['items'] ?? [] as $item) {
+            $signatureData = [
+                'sequence' => $item['sequence'] ?? '',
+                'package_info' => $item['package_info'] ?? '',
+                'description' => $item['description'] ?? '',
+                'cargo_marks' => $item['cargo_marks'] ?? null,
+                'gross_weight_kg' => $item['gross_weight_kg'] ?? null,
+                'volume_m3' => $item['volume_m3'] ?? null,
+                'commodity_code' => $item['commodity_code'] ?? null,
+            ];
+
+            $signature = sha1(json_encode(
+                $signatureData,
+                JSON_UNESCAPED_UNICODE
+            ));
+
+            $logicalItems[$signature] ??= $item;
+        }
+
+        if ($logicalItems === []) {
+            throw new Exception(
+                "El CNI {$billNumber} no informa peso bruto MEA+AAX+G "
+                . 'ni ítems con peso bruto utilizable.'
+            );
+        }
+
+        $total = 0.0;
+        $allEmpty = true;
+
+        foreach ($logicalItems as $item) {
+            if ($this->isEmptyContainerItem($item)) {
+                continue;
+            }
+
+            $allEmpty = false;
+            $raw = $item['gross_weight_kg'] ?? null;
+
+            if (
+                $raw === null
+                || $raw === ''
+                || !is_numeric($raw)
+                || (float) $raw <= 0
+            ) {
+                throw new Exception(
+                    "El CNI {$billNumber} no informa peso bruto MEA+AAX+G "
+                    . 'y al menos uno de sus ítems tampoco informa '
+                    . 'MEA+AAE/AAY+G válido.'
+                );
+            }
+
+            $total += (float) $raw;
+        }
+
+        if (!$allEmpty && $total <= 0) {
+            throw new Exception(
+                "El CNI {$billNumber} no permite resolver un peso bruto válido."
+            );
+        }
+
+        $warning =
+            "CMSP: BL {$billNumber} sin MEA+AAX+G; "
+            . 'peso bruto derivado de los pesos MEA+AAE/AAY+G de sus ítems.';
+
+        if (!in_array($warning, $this->stats['warnings'], true)) {
+            $this->stats['warnings'][] = $warning;
+        }
+
+        return round($total, 2);
+    }
+
+    protected function withPartyImportContext(
+        ?array $partyData,
+        string $billNumber,
+        string $role
+    ): ?array {
+        if ($partyData === null) {
+            return null;
+        }
+
+        $partyData['_context_bl_number'] = $billNumber;
+        $partyData['_context_role'] = $role;
+
+        return $partyData;
+    }
+
+    /**
+     * Crear BL para un grupo específico de CNI.
      */
     protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
     {
-        if (!array_key_exists('gross_weight_kg', $containerGroup)
-            || $containerGroup['gross_weight_kg'] === null) {
-            throw new Exception(
-                "El CNI {$billNumber} no informa peso bruto MEA+AAX+G."
-            );
-        }
+        $resolvedGrossWeight = $this->resolveGroupGrossWeight(
+            $containerGroup,
+            $billNumber
+        );
 
         // Partes propias del conocimiento. Las de $data son de cabecera y solo
         // sirven de respaldo para los CNI que no declaren las suyas: usarlas
@@ -1782,17 +1928,29 @@ class CmspEdiParser implements ManifestParserInterface
         // mismas partes (reportado por Roberto 06/08/2026).
         $partesDelGrupo = $containerGroup['parties'] ?? [];
 
-        $shipperData = $partesDelGrupo['shipper']
-            ?? $data['parties']['shipper']
-            ?? null;
+        $shipperData = $this->withPartyImportContext(
+            $partesDelGrupo['shipper']
+                ?? $data['parties']['shipper']
+                ?? null,
+            $billNumber,
+            'shipper'
+        );
 
-        $consigneeData = $partesDelGrupo['consignee']
-            ?? $data['parties']['consignee']
-            ?? null;
+        $consigneeData = $this->withPartyImportContext(
+            $partesDelGrupo['consignee']
+                ?? $data['parties']['consignee']
+                ?? null,
+            $billNumber,
+            'consignee'
+        );
 
-        $notifyData = $partesDelGrupo['notify']
-            ?? $data['parties']['notify']
-            ?? null;
+        $notifyData = $this->withPartyImportContext(
+            $partesDelGrupo['notify']
+                ?? $data['parties']['notify']
+                ?? null,
+            $billNumber,
+            'notify'
+        );
 
         $shipper = $this->findOrCreateClient($shipperData);
         $consignee = $this->findOrCreateClient($consigneeData);
@@ -1916,8 +2074,9 @@ class CmspEdiParser implements ManifestParserInterface
             // Descripción real informada en los GID/FTX de este CNI.
             'cargo_description'         => $cargoDescription,
             'total_packages'            => 0,
-            // Peso bruto del conocimiento tomado del MEA+AAX del CNI.
-            'gross_weight_kg'           => (float) $containerGroup['gross_weight_kg'],
+            // MEA+AAX del CNI o, si la fuente lo omite, suma validada de
+            // pesos MEA+AAE/AAY de los ítems lógicos.
+            'gross_weight_kg'           => $resolvedGrossWeight,
             'net_weight_kg'             => null,
             'volume_m3'                 => null,
             'status'                    => 'draft',
@@ -2039,10 +2198,11 @@ class CmspEdiParser implements ManifestParserInterface
             $attributes['imdg_class'] = null;
         }
 
-        if (array_key_exists('gross_weight_kg', $containerGroup)) {
-            $attributes['gross_weight_kg'] =
-                round((float) $containerGroup['gross_weight_kg'], 2);
-        }
+        $attributes['gross_weight_kg'] =
+            $this->resolveGroupGrossWeight(
+                $containerGroup,
+                (string) $bill->bill_number
+            );
 
         if ($allEmpty) {
             $attributes['total_packages'] = 0;
@@ -2630,8 +2790,9 @@ class CmspEdiParser implements ManifestParserInterface
 
         if (!$containerType && $esVacio) {
             $warning = $isoCode === ''
-                ? 'CMSP: contenedores vacíos sin código ISO; se conserva tipo desconocido.'
-                : "CMSP: contenedores vacíos con ISO {$isoCode} "
+                ? "CMSP: contenedor vacío {$containerNumber} sin código ISO; "
+                    . 'se conserva tipo desconocido.'
+                : "CMSP: contenedor vacío {$containerNumber} con ISO {$isoCode} "
                     . 'sin tipo activo equivalente; se conserva tipo desconocido.';
 
             if (!in_array($warning, $this->stats['warnings'], true)) {
@@ -2751,8 +2912,11 @@ class CmspEdiParser implements ManifestParserInterface
             '45G1' => '40HC',
             '22R1' => '20RF',
             '45R1' => '40RH',
+            '45R5' => '40RH',
             '22T1' => '20TN',
             '22U1' => '20OT',
+            '45U1' => '40OT',
+            'L5G1' => '45HC',
         ];
 
         return $map[strtoupper(trim($isoCode))] ?? null;
@@ -2937,12 +3101,34 @@ class CmspEdiParser implements ManifestParserInterface
             return null;
         }
 
+        /*
+         * Países escritos explícitamente en NAD de los CUSCAR reales.
+         *
+         * No se deduce jurisdicción desde el puerto cuando la propia parte
+         * declara su país: un shipper internacional puede viajar en un CUSCAR
+         * cuya ruta operativa final sea ARBUE -> PYASU. El puerto no describe
+         * la nacionalidad fiscal de la empresa.
+         */
         $patterns = [
             'AR' => '/\bARGENTINA\b/u',
-            'PY' => '/\bPARAGUAY\b/u',
+            'PY' => '/\b(?:PARAGUAY|PRY)\b/u',
             'UY' => '/\bURUGUAY\b/u',
             'BR' => '/\b(?:BRASIL|BRAZIL)\b/u',
             'CO' => '/\bCOLOMBIA\b/u',
+            'US' => '/\b(?:UNITED\s*STATES|USA|U\.S\.A\.?)\b/u',
+            'ES' => '/\b(?:SPAIN|ESPAÑA|MADRID)\b/u',
+            'TH' => '/\bTHAILAND\b/u',
+            'IN' => '/\bINDIA\b/u',
+            'AE' => '/\b(?:UNITED\s+ARAB\s+EMIRATES|UAE)\b/u',
+            'HK' => '/\bHONG\s*KONG\b/u',
+            'MX' => '/\b(?:MEXICO|MÉXICO)\b/u',
+            'CN' => '/\bCHINA\b/u',
+            'JP' => '/\bJAPAN\b/u',
+            'SG' => '/\bSINGAPORE\b/u',
+            'PA' => '/\bPANAMA\b/u',
+            'KR' => '/\b(?:SOUTH\s+KOREA|KOREA)\b/u',
+            'AU' => '/\bAUSTRALIA\b/u',
+            'VE' => '/\bVENEZUELA\b/u',
         ];
 
         foreach ($patterns as $alpha2 => $pattern) {

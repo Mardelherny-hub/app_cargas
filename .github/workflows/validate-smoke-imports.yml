@@ -120,11 +120,13 @@ jobs:
 
       - name: Verify final importer feedback 18/09
         run: |
-          ./vendor/bin/phpunit tests/Unit/Services/Parsers/TfpTextParserCoreIntegrityTest.php --filter 'test_empty_tfp_container_condition_keeps_historical_default|test_non_empty_unknown_tfp_condition_is_still_rejected'
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/TfpTextParserCoreIntegrityTest.php --filter 'test_empty_tfp_container_condition_defaults_to_house|test_non_empty_unknown_tfp_condition_is_still_rejected'
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/G2OceanXmlParserCoreIntegrityTest.php
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/KlineDataParserMultipleCommodityCodesTest.php
           ./vendor/bin/phpunit tests/Unit/Http/Controllers/VoyageImportedRouteUiContractTest.php
           ./vendor/bin/phpunit tests/Unit/Views/LoginSourceUiContractTest.php
+          ./vendor/bin/phpunit tests/Unit/Http/Controllers/ManifestImportOperationTypeContractTest.php
+          ./vendor/bin/phpunit tests/Unit/Jobs/ProcessManifestImportJobDateFallbackContractTest.php --filter 'test_operation_type_is_forwarded_to_manifest_parser'
           php artisan view:clear
           php artisan view:cache
 

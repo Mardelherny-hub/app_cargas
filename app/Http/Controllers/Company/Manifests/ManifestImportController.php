@@ -81,6 +81,7 @@ class ManifestImportController extends Controller
             'loading_date' => 'nullable|date',
             'discharge_date' => 'nullable|date',
             'voyage_number' => 'nullable|string|max:100',
+            'operation_type' => 'nullable|in:import,export',
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
             'manifest_file.file' => 'El archivo seleccionado no es válido.',
@@ -120,6 +121,34 @@ class ManifestImportController extends Controller
         ]);
 
         try {
+            /*
+             * El tipo comercial de CUSCAR no se puede deducir de LOC+9/LOC+11:
+             * archivos de importación y exportación pueden declarar la misma ruta
+             * física. Validarlo antes de encolar evita esperar al worker para
+             * descubrir que faltó una decisión obligatoria del operador.
+             */
+            $detectedParser = $this->parserFactory->getParser($fullPath);
+
+            if (
+                $detectedParser instanceof
+                    \App\Services\Parsers\CmspEdiParserCompat
+                && !in_array(
+                    $request->input('operation_type'),
+                    ['import', 'export'],
+                    true
+                )
+            ) {
+                Storage::delete($path);
+
+                return back()
+                    ->withInput()
+                    ->withErrors([
+                        'operation_type' =>
+                            'Para archivos CUSCAR debe seleccionar '
+                            . 'Importación o Exportación.',
+                    ]);
+            }
+
             // Registro de seguimiento: existe desde el encolado, lo sigue el spinner.
             // Independiente de si el parser llega a crear su ManifestImport.
             $tracking = \App\Models\ImportTracking::create([
@@ -144,7 +173,8 @@ class ManifestImportController extends Controller
                 $request->input('departure_date'),
                 $request->input('voyage_number'),
                 $request->input('loading_date'),
-                $request->input('discharge_date')
+                $request->input('discharge_date'),
+                $request->input('operation_type')
             );
 
             Log::info('Manifest import encolado', [
@@ -155,6 +185,7 @@ class ManifestImportController extends Controller
                 'vessel_id'     => $vessel->id,
                 'user_id'       => auth()->id(),
                 'company_id'    => $company->id,
+                'operation_type' => $request->input('operation_type'),
             ]);
 
             // Pantalla de espera con spinner (polling por uuid hasta que el worker termine).
