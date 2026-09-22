@@ -11,7 +11,7 @@ class LoginSourceUiContractTest extends TestCase
         return dirname(__DIR__, 3);
     }
 
-    public function test_login_source_truth_is_visible_in_show_and_edit(): void
+    public function test_login_source_truth_remains_persisted_without_special_ui_panel(): void
     {
         $show = file_get_contents(
             $this->root()
@@ -21,6 +21,11 @@ class LoginSourceUiContractTest extends TestCase
         $edit = file_get_contents(
             $this->root()
             . '/resources/views/livewire/bill-of-lading-edit-form.blade.php'
+        );
+
+        $parser = file_get_contents(
+            $this->root()
+            . '/app/Services/Parsers/LoginXmlParser.php'
         );
 
         foreach ([
@@ -34,17 +39,36 @@ class LoginSourceUiContractTest extends TestCase
         ] as $field) {
             $this->assertStringContainsString(
                 $field,
-                $show,
-                "show debe exponer {$field}"
-            );
-
-            $this->assertStringContainsString(
-                $field,
-                $edit,
-                "edit debe exponer {$field}"
+                $parser,
+                "parser debe seguir preservando {$field}"
             );
         }
 
+        $this->assertStringNotContainsString(
+            'Datos fuente Login',
+            $show
+        );
+
+        $this->assertStringNotContainsString(
+            'data-testid="login-source-data"',
+            $show
+        );
+
+        $this->assertStringNotContainsString(
+            'Datos fuente Login',
+            $edit
+        );
+
+        $this->assertStringNotContainsString(
+            'data-testid="login-source-data-readonly"',
+            $edit
+        );
+
+        /*
+         * El detalle técnico de contenedores Login sigue disponible donde ya
+         * forma parte de la tabla operativa; lo que se retira es el panel
+         * exclusivo por formato.
+         */
         $this->assertStringContainsString(
             'source_line_numbers',
             $show
@@ -58,25 +82,6 @@ class LoginSourceUiContractTest extends TestCase
         $this->assertStringContainsString(
             'container_condition',
             $show
-        );
-
-        $this->assertStringContainsString(
-            'Solo lectura',
-            $edit
-        );
-
-        /*
-         * Los datos crudos de proveniencia no se convierten en
-         * inputs editables: eso falsearía qué vino del archivo.
-         */
-        $this->assertStringNotContainsString(
-            'wire:model="booking_number"',
-            $edit
-        );
-
-        $this->assertStringNotContainsString(
-            'wire:model="source_email"',
-            $edit
         );
     }
 

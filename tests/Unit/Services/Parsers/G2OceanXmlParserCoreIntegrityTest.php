@@ -28,6 +28,17 @@ class G2OceanXmlParserCoreIntegrityTest extends TestCase
         return $ref->invokeArgs($this->parser, $args);
     }
 
+    public function test_custom_code_of_goods_shipped_is_preserved_as_hs_code(): void
+    {
+        $this->assertSame(
+            '730210',
+            $this->invoke(
+                'extractTariffPosition',
+                ['1600 PIECES STEEL RAILWAY RAILS CUSTOM CODE OF GOODS SHIPPED: 730210 REMARKS']
+            )
+        );
+    }
+
     public function test_date_only_has_no_runtime_time(): void
     {
         $date = $this->invoke(
