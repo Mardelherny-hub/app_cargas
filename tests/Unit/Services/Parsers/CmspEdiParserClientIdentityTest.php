@@ -613,6 +613,63 @@ class CmspEdiParserClientIdentityTest extends TestCase
         $this->assertSame(1806.0, $weight);
     }
 
+    public function test_gross_weight_fallback_warning_is_aggregated_per_file(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $group = static fn (float $weight): array => [
+            'items' => [[
+                'sequence' => '1',
+                'package_info' => '1:PX',
+                'description' => 'CARGA',
+                'gross_weight_kg' => $weight,
+                'containers' => [],
+            ]],
+        ];
+
+        $this->invoke(
+            $parser,
+            'resolveGroupGrossWeight',
+            [$group(100), 'BL-001']
+        );
+
+        $this->invoke(
+            $parser,
+            'resolveGroupGrossWeight',
+            [$group(200), 'BL-002']
+        );
+
+        $stats = new \ReflectionProperty(
+            CmspEdiParser::class,
+            'stats'
+        );
+        $stats->setAccessible(true);
+        $warnings = $stats->getValue($parser)['warnings'];
+
+        $derived = array_values(array_filter(
+            $warnings,
+            static fn (string $warning): bool =>
+                str_starts_with(
+                    $warning,
+                    'CMSP: pesos brutos derivados por ítems en '
+                )
+        ));
+
+        $this->assertCount(1, $derived);
+        $this->assertStringContainsString(
+            '2 BL sin MEA+AAX+G',
+            $derived[0]
+        );
+        $this->assertStringContainsString(
+            'BL-001',
+            $derived[0]
+        );
+        $this->assertStringContainsString(
+            'BL-002',
+            $derived[0]
+        );
+    }
+
     public function test_real_hapag_party_country_names_are_resolved_from_source_text(): void
     {
         $parser = new CmspEdiParser();

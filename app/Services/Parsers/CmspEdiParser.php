@@ -69,6 +69,12 @@ class CmspEdiParser implements ManifestParserInterface
         'warnings' => []
     ];
 
+    /**
+     * BL que resolvieron peso bruto desde MEA+AAE/AAY porque el CNI no trajo
+     * MEA+AAX+G. Se usa para emitir una sola advertencia agregada por archivo.
+     */
+    protected array $grossWeightFallbackBills = [];
+
     protected array $ediSegments = [];
     protected array $parsedData = [];
 
@@ -1915,15 +1921,53 @@ class CmspEdiParser implements ManifestParserInterface
             );
         }
 
-        $warning =
-            "CMSP: BL {$billNumber} sin MEA+AAX+G; "
-            . 'peso bruto derivado de los pesos MEA+AAE/AAY+G de sus ítems.';
-
-        if (!in_array($warning, $this->stats['warnings'], true)) {
-            $this->stats['warnings'][] = $warning;
-        }
+        $this->recordGrossWeightFallback(
+            $billNumber
+        );
 
         return round($total, 2);
+    }
+
+    /**
+     * Mantiene una única advertencia visible aunque el emisor omita AAX en
+     * muchos conocimientos. La derivación es exacta sólo cuando todos los ítems
+     * poseen MEA+AAE/AAY válido; de lo contrario resolveGroupGrossWeight falla.
+     */
+    protected function recordGrossWeightFallback(
+        string $billNumber
+    ): void {
+        $billNumber = trim($billNumber);
+
+        if ($billNumber !== '') {
+            $this->grossWeightFallbackBills[$billNumber] = true;
+        }
+
+        $prefix = 'CMSP: pesos brutos derivados por ítems en ';
+
+        $this->stats['warnings'] = array_values(array_filter(
+            $this->stats['warnings'],
+            static fn (string $warning): bool =>
+                !str_starts_with($warning, $prefix)
+        ));
+
+        $bills = array_keys(
+            $this->grossWeightFallbackBills
+        );
+        $count = count($bills);
+        $examples = array_slice($bills, 0, 3);
+
+        $warning = $prefix
+            . "{$count} BL sin MEA+AAX+G; "
+            . 'se usaron los pesos MEA+AAE/AAY+G de sus ítems.';
+
+        if ($examples !== []) {
+            $warning .= ' Ejemplos: '
+                . implode(', ', $examples)
+                . ($count > count($examples) ? ', …' : '')
+                . '.';
+        }
+
+        $this->stats['warnings'][] = $warning;
     }
 
     protected function withPartyImportContext(
