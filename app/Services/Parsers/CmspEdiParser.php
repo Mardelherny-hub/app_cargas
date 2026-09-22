@@ -1897,6 +1897,21 @@ class CmspEdiParser implements ManifestParserInterface
         return round($total, 2);
     }
 
+    protected function withPartyImportContext(
+        ?array $partyData,
+        string $billNumber,
+        string $role
+    ): ?array {
+        if ($partyData === null) {
+            return null;
+        }
+
+        $partyData['_context_bl_number'] = $billNumber;
+        $partyData['_context_role'] = $role;
+
+        return $partyData;
+    }
+
     /**
      * Crear BL para un grupo específico de CNI.
      */
@@ -1913,17 +1928,29 @@ class CmspEdiParser implements ManifestParserInterface
         // mismas partes (reportado por Roberto 06/08/2026).
         $partesDelGrupo = $containerGroup['parties'] ?? [];
 
-        $shipperData = $partesDelGrupo['shipper']
-            ?? $data['parties']['shipper']
-            ?? null;
+        $shipperData = $this->withPartyImportContext(
+            $partesDelGrupo['shipper']
+                ?? $data['parties']['shipper']
+                ?? null,
+            $billNumber,
+            'shipper'
+        );
 
-        $consigneeData = $partesDelGrupo['consignee']
-            ?? $data['parties']['consignee']
-            ?? null;
+        $consigneeData = $this->withPartyImportContext(
+            $partesDelGrupo['consignee']
+                ?? $data['parties']['consignee']
+                ?? null,
+            $billNumber,
+            'consignee'
+        );
 
-        $notifyData = $partesDelGrupo['notify']
-            ?? $data['parties']['notify']
-            ?? null;
+        $notifyData = $this->withPartyImportContext(
+            $partesDelGrupo['notify']
+                ?? $data['parties']['notify']
+                ?? null,
+            $billNumber,
+            'notify'
+        );
 
         $shipper = $this->findOrCreateClient($shipperData);
         $consignee = $this->findOrCreateClient($consigneeData);
