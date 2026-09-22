@@ -75,35 +75,111 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
             </div>
         </div>
 
-        {{-- FILTROS RÁPIDOS --}}
+        {{-- FILTROS DE CONOCIMIENTOS --}}
         <div class="bg-white rounded-lg shadow-sm mb-6 p-4">
-            <form method="GET" class="flex flex-wrap items-center gap-4">
-                <div class="flex items-center space-x-2">
-                    <input type="text" 
-                           name="search" 
-                           value="{{ request('search') }}"
-                           placeholder="🔍 Buscar por número, cargador..."
-                           class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
-                </div>
-                
-                <select name="status" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
-                    <option value="">Todos los estados</option>
-                    <option value="draft" {{ request('status') === 'draft' ? 'selected' : '' }}>Borrador</option>
-                    <option value="verified" {{ request('status') === 'verified' ? 'selected' : '' }}>Verificado</option>
-                    <option value="sent_to_customs" {{ request('status') === 'sent_to_customs' ? 'selected' : '' }}>Enviado</option>
-                </select>
+            <form method="GET">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <div>
+                        <label for="search" class="block text-xs font-medium text-gray-600 mb-1">Buscar</label>
+                        <input type="text"
+                               id="search"
+                               name="search"
+                               value="{{ request('search') }}"
+                               placeholder="Número, cargador, consignatario..."
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
 
-                <button type="submit" 
-                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                    Filtrar
-                </button>
-                
-                @if(request()->hasAny(['search', 'status', 'shipper_id', 'consignee_id']))
-                    <a href="{{ route('company.bills-of-lading.index') }}" 
-                       class="text-gray-600 hover:text-gray-900 text-sm">
-                        Limpiar filtros
-                    </a>
-                @endif
+                    <div>
+                        <label for="voyage_id" class="block text-xs font-medium text-gray-600 mb-1">Viaje</label>
+                        <select id="voyage_id" name="voyage_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Todos los viajes</option>
+                            @foreach($filterData['voyages'] as $voyage)
+                                <option value="{{ $voyage->id }}" {{ (string) request('voyage_id') === (string) $voyage->id ? 'selected' : '' }}>
+                                    {{ $voyage->voyage_number }}
+                                    @if($voyage->departure_date)
+                                        - {{ $voyage->departure_date->format('d/m/Y') }}
+                                    @endif
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="loading_port_id" class="block text-xs font-medium text-gray-600 mb-1">Puerto de carga</label>
+                        <select id="loading_port_id" name="loading_port_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Todos los puertos de carga</option>
+                            @foreach($filterData['loadingPorts'] as $port)
+                                <option value="{{ $port->id }}" {{ (string) request('loading_port_id') === (string) $port->id ? 'selected' : '' }}>
+                                    {{ $port->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="discharge_port_id" class="block text-xs font-medium text-gray-600 mb-1">Puerto de descarga</label>
+                        <select id="discharge_port_id" name="discharge_port_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Todos los puertos de descarga</option>
+                            @foreach($filterData['dischargePorts'] as $port)
+                                <option value="{{ $port->id }}" {{ (string) request('discharge_port_id') === (string) $port->id ? 'selected' : '' }}>
+                                    {{ $port->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="final_destination_port_id" class="block text-xs font-medium text-gray-600 mb-1">Puerto de destino</label>
+                        <select id="final_destination_port_id" name="final_destination_port_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Todos los puertos de destino</option>
+                            @foreach($filterData['destinationPorts'] as $port)
+                                <option value="{{ $port->id }}" {{ (string) request('final_destination_port_id') === (string) $port->id ? 'selected' : '' }}>
+                                    {{ $port->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="status" class="block text-xs font-medium text-gray-600 mb-1">Estado</label>
+                        <select id="status" name="status"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Todos los estados</option>
+                            @foreach($filterData['statuses'] as $status => $label)
+                                <option value="{{ $status }}" {{ request('status') === $status ? 'selected' : '' }}>
+                                    {{ $label }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex items-center justify-end gap-3">
+                    @if(request()->hasAny([
+                        'search',
+                        'status',
+                        'voyage_id',
+                        'loading_port_id',
+                        'discharge_port_id',
+                        'final_destination_port_id',
+                        'shipper_id',
+                        'consignee_id'
+                    ]))
+                        <a href="{{ route('company.bills-of-lading.index') }}"
+                           class="text-gray-600 hover:text-gray-900 text-sm">
+                            Limpiar filtros
+                        </a>
+                    @endif
+
+                    <button type="submit"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        Buscar conocimientos
+                    </button>
+                </div>
             </form>
         </div>
 
@@ -254,9 +330,14 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                                                         🏠 {{ $bill->loadingPort->name ?? 'N/A' }}
                                                     </div>
                                                     <div class="text-gray-600 flex items-center">
-                                                        <span class="mr-1">→</span> 
+                                                        <span class="mr-1">→</span>
                                                         {{ $bill->dischargePort->name ?? 'N/A' }}
                                                     </div>
+                                                    @if($bill->finalDestinationPort)
+                                                        <div class="text-gray-500 text-xs mt-1">
+                                                            Destino: {{ $bill->finalDestinationPort->name }}
+                                                        </div>
+                                                    @endif
                                                 </div>
                                             </div>
 
