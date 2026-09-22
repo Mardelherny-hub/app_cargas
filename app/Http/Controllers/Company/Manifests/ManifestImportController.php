@@ -121,6 +121,34 @@ class ManifestImportController extends Controller
         ]);
 
         try {
+            /*
+             * El tipo comercial de CUSCAR no se puede deducir de LOC+9/LOC+11:
+             * archivos de importación y exportación pueden declarar la misma ruta
+             * física. Validarlo antes de encolar evita esperar al worker para
+             * descubrir que faltó una decisión obligatoria del operador.
+             */
+            $detectedParser = $this->parserFactory->getParser($fullPath);
+
+            if (
+                $detectedParser instanceof
+                    \App\Services\Parsers\CmspEdiParserCompat
+                && !in_array(
+                    $request->input('operation_type'),
+                    ['import', 'export'],
+                    true
+                )
+            ) {
+                Storage::delete($path);
+
+                return back()
+                    ->withInput()
+                    ->withErrors([
+                        'operation_type' =>
+                            'Para archivos CUSCAR debe seleccionar '
+                            . 'Importación o Exportación.',
+                    ]);
+            }
+
             // Registro de seguimiento: existe desde el encolado, lo sigue el spinner.
             // Independiente de si el parser llega a crear su ManifestImport.
             $tracking = \App\Models\ImportTracking::create([
