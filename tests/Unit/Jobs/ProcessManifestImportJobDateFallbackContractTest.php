@@ -74,6 +74,23 @@ class ProcessManifestImportJobDateFallbackContractTest extends TestCase
         );
     }
 
+    public function test_operation_type_is_forwarded_to_manifest_parser(): void
+    {
+        $source = file_get_contents(
+            dirname(__DIR__, 3) . '/app/Jobs/ProcessManifestImportJob.php'
+        );
+
+        $this->assertIsString($source);
+        $this->assertStringContainsString(
+            'public ?string $operationType = null;',
+            $source
+        );
+        $this->assertStringContainsString(
+            "'operation_type' => \$this->operationType",
+            $source
+        );
+    }
+
     public function test_cmsp_preserves_source_discharge_and_other_formats_accept_operator_discharge(): void
     {
         $source = file_get_contents(
