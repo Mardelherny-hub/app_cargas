@@ -80,6 +80,59 @@ class LoginXmlParserStage1IntegrityTest extends TestCase
         ];
     }
 
+    public function test_warning_helper_deduplicates_identical_messages(): void
+    {
+        $parser = new LoginXmlParser();
+
+        $warning =
+            'Identificación fiscal 30710530196 (CLIENTE TEST): '
+            . 'ya existen clientes duplicados; se reutilizó el registro '
+            . '#123 compatible con AR.';
+
+        $this->invoke(
+            $parser,
+            'addWarningOnce',
+            [$warning]
+        );
+
+        $this->invoke(
+            $parser,
+            'addWarningOnce',
+            [$warning]
+        );
+
+        $this->assertSame(
+            [$warning],
+            $this->warnings($parser)
+        );
+    }
+
+    public function test_duplicate_warning_identifies_client_name_and_record_id(): void
+    {
+        $file = (
+            new ReflectionClass(
+                LoginXmlParser::class
+            )
+        )->getFileName();
+
+        $source = file_get_contents($file);
+
+        $this->assertStringContainsString(
+            '"({$cleanName})',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            '"#{$client->id} compatible con "',
+            $source
+        );
+
+        $this->assertStringContainsString(
+            '$this->addWarningOnce(',
+            $source
+        );
+    }
+
     public function test_optional_weight_preserves_explicit_zero_and_absence(): void
     {
         $parser = new LoginXmlParser();
