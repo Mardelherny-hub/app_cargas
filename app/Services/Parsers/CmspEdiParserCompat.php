@@ -376,6 +376,61 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
+     * Contextualiza inmediatamente los warnings fiscales generados por un NAD.
+     *
+     * Durante extractStructuredData() todavía tenemos el CNI abierto y su
+     * RFF+BM, por lo que este es el punto seguro para asociar un CUIT/RUC/NIT
+     * inválido al conocimiento, rol y nombre correctos.
+     */
+    protected function parseParty(
+        array $segment,
+        ?array &$currentContainer = null
+    ): void {
+        $warningStart = count($this->stats['warnings']);
+
+        parent::parseParty(
+            $segment,
+            $currentContainer
+        );
+
+        if (count($this->stats['warnings']) <= $warningStart) {
+            return;
+        }
+
+        $partyType = $segment['elements'][0] ?? '';
+
+        $role = match ($partyType) {
+            'CN' => 'consignee',
+            'CZ' => 'shipper',
+            'CX', 'N1' => 'notify',
+            default => null,
+        };
+
+        if ($role === null) {
+            return;
+        }
+
+        $partyData = $currentContainer !== null
+            ? ($currentContainer['parties'][$role] ?? null)
+            : ($this->parsedData['parties'][$role] ?? null);
+
+        if ($partyData === null) {
+            return;
+        }
+
+        $partyData['_context_bl_number'] = trim((string) (
+            $currentContainer['references']['bill_number']
+                ?? ''
+        ));
+        $partyData['_context_role'] = $role;
+
+        $this->contextualizePartyWarnings(
+            $warningStart,
+            $partyData
+        );
+    }
+
+    /**
      * Un identificador explícitamente rotulado pero con longitud imposible se
      * ignora como número fiscal y se informa como advertencia. Nunca se recorta
      * ni se transforma en otro CUIT/RUC.
