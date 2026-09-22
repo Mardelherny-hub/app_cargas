@@ -81,6 +81,7 @@ class ManifestImportController extends Controller
             'loading_date' => 'nullable|date',
             'discharge_date' => 'nullable|date',
             'voyage_number' => 'nullable|string|max:100',
+            'operation_type' => 'nullable|in:import,export',
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
             'manifest_file.file' => 'El archivo seleccionado no es válido.',
@@ -144,7 +145,8 @@ class ManifestImportController extends Controller
                 $request->input('departure_date'),
                 $request->input('voyage_number'),
                 $request->input('loading_date'),
-                $request->input('discharge_date')
+                $request->input('discharge_date'),
+                $request->input('operation_type')
             );
 
             Log::info('Manifest import encolado', [
@@ -155,6 +157,7 @@ class ManifestImportController extends Controller
                 'vessel_id'     => $vessel->id,
                 'user_id'       => auth()->id(),
                 'company_id'    => $company->id,
+                'operation_type' => $request->input('operation_type'),
             ]);
 
             // Pantalla de espera con spinner (polling por uuid hasta que el worker termine).
