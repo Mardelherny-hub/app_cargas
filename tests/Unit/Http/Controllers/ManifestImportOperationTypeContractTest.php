@@ -49,5 +49,15 @@ class ManifestImportOperationTypeContractTest extends TestCase
             "\$request->input('operation_type')",
             $controller
         );
+
+        $this->assertStringContainsString(
+            'CmspEdiParserCompat',
+            $controller
+        );
+
+        $this->assertStringContainsString(
+            'Para archivos CUSCAR debe seleccionar',
+            $controller
+        );
     }
 }
