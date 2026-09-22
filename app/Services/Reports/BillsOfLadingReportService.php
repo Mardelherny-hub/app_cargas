@@ -44,7 +44,7 @@ class BillsOfLadingReportService
             })
             ->with([
                 'shipper', 'consignee', 'notifyParty',
-                'loadingPort.country', 'dischargePort.country',
+                'loadingPort.country', 'dischargePort.country', 'finalDestinationPort.country',
                 'shipment.voyage', 'shipment.vessel',
                 'shipmentItems'
             ]);
@@ -55,6 +55,14 @@ class BillsOfLadingReportService
         }
         if (!empty($this->filters['date_to'])) {
             $query->where('bill_date', '<=', $this->filters['date_to']);
+        }
+
+        // Filtro por viaje
+        if (!empty($this->filters['voyage_id'])) {
+            $voyageId = $this->filters['voyage_id'];
+            $query->whereHas('shipment', function ($q) use ($voyageId) {
+                $q->where('voyage_id', $voyageId);
+            });
         }
 
         // Filtros de clientes
@@ -71,6 +79,9 @@ class BillsOfLadingReportService
         }
         if (!empty($this->filters['discharge_port_id'])) {
             $query->where('discharge_port_id', $this->filters['discharge_port_id']);
+        }
+        if (!empty($this->filters['final_destination_port_id'])) {
+            $query->where('final_destination_port_id', $this->filters['final_destination_port_id']);
         }
 
         // Filtro de estado
@@ -110,6 +121,12 @@ class BillsOfLadingReportService
                 'discharge_port' => $bill->dischargePort->name ?? 'N/A',
                 'discharge_port_code' => $bill->dischargePort->code ?? null,
                 'discharge_country' => $bill->dischargePort->country->name ?? null,
+                'final_destination_port' => $bill->finalDestinationPort->name
+                    ?? $bill->dischargePort->name
+                    ?? 'N/A',
+                'final_destination_country' => $bill->finalDestinationPort->country->name
+                    ?? $bill->dischargePort->country->name
+                    ?? null,
                 'total_packages' => $bill->total_packages ?? 0,
                 'gross_weight_kg' => $bill->gross_weight_kg ?? 0,
                 'net_weight_kg' => $bill->net_weight_kg ?? 0,
@@ -152,6 +169,24 @@ class BillsOfLadingReportService
         }
         if (!empty($this->filters['status'])) {
             $applied[] = 'Estado: ' . $this->getStatusLabel($this->filters['status']);
+        }
+        if (!empty($this->filters['voyage_id'])) {
+            $voyage = \App\Models\Voyage::where('company_id', $this->company->id)
+                ->find($this->filters['voyage_id']);
+            $applied[] = 'Viaje: ' . ($voyage?->voyage_number ?? $this->filters['voyage_id']);
+        }
+
+        $portFilters = [
+            'loading_port_id' => 'Puerto de carga',
+            'discharge_port_id' => 'Puerto de descarga',
+            'final_destination_port_id' => 'Puerto de destino',
+        ];
+
+        foreach ($portFilters as $key => $label) {
+            if (!empty($this->filters[$key])) {
+                $port = \App\Models\Port::find($this->filters[$key]);
+                $applied[] = $label . ': ' . ($port?->name ?? $this->filters[$key]);
+            }
         }
         
         return $applied;

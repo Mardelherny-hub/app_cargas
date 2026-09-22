@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Company;
 use App\Http\Controllers\Controller;
 use App\Models\BillOfLading;
 use App\Models\Shipment;
+use App\Models\Voyage;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
@@ -65,6 +66,7 @@ class BillOfLadingController extends Controller
             'consignee:id,legal_name,tax_id',
             'loadingPort:id,name,country_id',
             'dischargePort:id,name,country_id',
+            'finalDestinationPort:id,name,country_id',
             'primaryCargoType:id,name',
             'createdByUser:id,name'
         ])
@@ -91,6 +93,14 @@ class BillOfLadingController extends Controller
             $query->byStatus($request->get('status'));
         }
 
+        // Filtro por viaje
+        if ($request->filled('voyage_id')) {
+            $voyageId = $request->get('voyage_id');
+            $query->whereHas('shipment', function ($q) use ($voyageId) {
+                $q->where('voyage_id', $voyageId);
+            });
+        }
+
         // Filtro por envío específico
         if ($request->filled('shipment_id')) {
             $query->where('shipment_id', $request->get('shipment_id'));
@@ -114,6 +124,11 @@ class BillOfLadingController extends Controller
         // Filtro por puerto de descarga
         if ($request->filled('discharge_port_id')) {
             $query->where('discharge_port_id', $request->get('discharge_port_id'));
+        }
+
+        // Filtro por puerto de destino final
+        if ($request->filled('final_destination_port_id')) {
+            $query->where('final_destination_port_id', $request->get('final_destination_port_id'));
         }
 
         // === FILTROS NUEVOS AGREGADOS ===
@@ -887,6 +902,12 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
     private function getFilterData($company): array
     {
         return [
+            'voyages' => Voyage::where('company_id', $company->id)
+                ->whereHas('billsOfLading')
+                ->orderByDesc('departure_date')
+                ->orderByDesc('id')
+                ->get(['id', 'voyage_number', 'departure_date']),
+
             'shipments' => Shipment::whereHas('voyage', function ($q) use ($company) {
                 $q->where('company_id', $company->id);
             })->with('voyage:id,voyage_number')->get(['id', 'shipment_number', 'voyage_id']),
@@ -905,6 +926,10 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
                 ->get(['id', 'name', 'country_id']),
             
             'dischargePorts' => Port::where('active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'country_id']),
+
+            'destinationPorts' => Port::where('active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'country_id']),
             
