@@ -137,9 +137,10 @@
                             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                             </svg>
-                            <h3 class="mt-2 text-sm font-medium text-gray-900">No hay viajes con MIC/DTA registrado</h3>
+                            <h3 class="mt-2 text-sm font-medium text-gray-900">No hay viajes con MIC/DTA registrado y enlazado</h3>
                             <p class="mt-1 text-sm text-gray-500">
-                                Primero debe enviar un MIC/DTA a AFIP desde el módulo de Webservices.
+                                El reporte actual requiere una transacción MIC/DTA exitosa enlazada al viaje.
+                                Para generar el formato según muestra desde los conocimientos cargados, utilice la sección inferior.
                             </p>
                             <div class="mt-6">
                                 <a href="{{ route('company.webservices.index') }}" 
@@ -147,6 +148,68 @@
                                     Ir a Webservices
                                 </a>
                             </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Formato adicional basado en la muestra del cliente --}}
+            <div class="bg-white rounded-lg shadow-md overflow-hidden mt-6">
+                <div class="px-6 py-4 bg-gray-800">
+                    <h3 class="text-lg font-semibold text-white">
+                        Formato MIC/DTA según muestra - Viajes con conocimientos
+                    </h3>
+                    <p class="text-sm text-gray-200 mt-1">
+                        Salida alternativa. El reporte MIC/DTA existente se conserva sin cambios.
+                    </p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    @if($printableVoyages->count() > 0)
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Viaje</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Embarcación</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ruta</th>
+                                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Conocimientos</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                @foreach($printableVoyages as $voyage)
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            {{ $voyage->voyage_number }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            {{ $voyage->leadVessel->name ?? 'N/A' }}
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-900">
+                                            {{ $voyage->originPort->name ?? 'N/A' }} → {{ $voyage->destinationPort->name ?? 'N/A' }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
+                                            {{ $voyage->billsOfLading->count() }}
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <form method="POST" action="{{ route('company.reports.export', 'micdta') }}" class="inline">
+                                                @csrf
+                                                <input type="hidden" name="format" value="pdf">
+                                                <input type="hidden" name="filters[voyage_id]" value="{{ $voyage->id }}">
+                                                <input type="hidden" name="filters[template]" value="client">
+                                                <button type="submit"
+                                                        class="inline-flex items-center px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-md">
+                                                    Formato MIC/DTA
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @else
+                        <div class="p-6 text-sm text-gray-500">
+                            No hay otros viajes con conocimientos disponibles para esta salida.
                         </div>
                     @endif
                 </div>

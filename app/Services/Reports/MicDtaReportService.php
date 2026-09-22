@@ -222,6 +222,7 @@ class MicdtaReportService
                         'shipment_number' => $shipment->shipment_number ?? '',
                         'bill_number' => $bill->bill_number ?? '',
                         'bill_date' => $bill->bill_date?->format('d/m/Y'),
+                        'mic_dta_number' => $bill->id_mic_dta_pri_fracc ?? '',
                         'shipper' => $shipper,
                         'consignee' => $consignee,
                         'notify' => $notify,

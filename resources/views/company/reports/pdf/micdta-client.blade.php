@@ -75,7 +75,7 @@
             </td>
             <td style="width:22%">
                 <span class="label">3. Nro. MIC</span>
-                <div class="value">{{ $micdta['number'] }}</div>
+                <div class="value">{{ ($bill['mic_dta_number'] ?? '') ?: $micdta['number'] }}</div>
             </td>
             <td style="width:17%">
                 <span class="label">4. Fecha</span>
