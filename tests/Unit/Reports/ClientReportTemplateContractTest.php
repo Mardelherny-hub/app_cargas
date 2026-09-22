@@ -50,6 +50,11 @@ class ClientReportTemplateContractTest extends TestCase
         $this->assertStringContainsString('Formato MIC/DTA', $view);
         $this->assertStringContainsString('name="filters[template]" value="standard"', $view);
         $this->assertStringContainsString('name="filters[template]" value="client"', $view);
+        $this->assertStringContainsString('Formato MIC/DTA según muestra - Viajes con conocimientos', $view);
+
+        $controller = $this->source('app/Http/Controllers/Company/ReportController.php');
+        $this->assertStringContainsString('$printableVoyages = Voyage::with([', $controller);
+        $this->assertStringContainsString("->whereHas('billsOfLading')", $controller);
     }
 
     public function test_new_templates_keep_the_supplied_document_structure(): void
