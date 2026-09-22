@@ -111,6 +111,33 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         );
     }
 
+    public function test_compat_recognizes_vacio_and_vacios_as_empty_cargo(): void
+    {
+        $parser = app(TfpTextParserCompat::class);
+
+        $ref = new ReflectionMethod(
+            TfpTextParserCompat::class,
+            'isEmptyCargoDescription'
+        );
+        $ref->setAccessible(true);
+
+        $this->assertTrue(
+            $ref->invoke($parser, 'VACIO')
+        );
+
+        $this->assertTrue(
+            $ref->invoke($parser, 'VACIOS')
+        );
+
+        $this->assertTrue(
+            $ref->invoke($parser, '  vacios  ')
+        );
+
+        $this->assertFalse(
+            $ref->invoke($parser, 'CONTENEDORES')
+        );
+    }
+
     public function test_non_empty_unknown_tfp_condition_is_still_rejected(): void
     {
         $this->expectException(\Exception::class);

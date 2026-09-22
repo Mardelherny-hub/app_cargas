@@ -99,6 +99,26 @@ class TfpTextParserCompat extends TfpTextParser
         ]);
     }
 
+    /**
+     * TFP usa tanto VACIO como VACIOS para representar mercadería vacía.
+     *
+     * Caso real confirmado:
+     * DTY260626N.txt / BL DT0626BUESEG77
+     * CANTTOTALBULTOS=0 y PESOTOTALBULTOS=.000.
+     */
+    protected function isEmptyCargoDescription(?string $description): bool
+    {
+        $normalized = mb_strtoupper(
+            trim((string) $description)
+        );
+
+        return in_array(
+            $normalized,
+            ['VACIO', 'VACIOS'],
+            true
+        );
+    }
+
     protected function createShipmentItem(
         BillOfLading $bill,
         array $data,
@@ -124,7 +144,9 @@ class TfpTextParserCompat extends TfpTextParser
             throw new Exception('TFP: mercadería sin descripción.');
         }
 
-        $isEmptyContainerItem = mb_strtoupper($description) === 'VACIO';
+        $isEmptyContainerItem = $this->isEmptyCargoDescription(
+            $description
+        );
 
         if (
             !$isEmptyContainerItem
