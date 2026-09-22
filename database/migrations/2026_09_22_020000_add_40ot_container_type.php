@@ -131,6 +131,7 @@ return new class extends Migration
         DB::table('container_types')
             ->where('code', '40OT')
             ->where('iso_code', '45U1')
+            ->where('description', 'Contenedor Open Top de 40 pies High Cube (ISO 45U1)')
             ->delete();
     }
 };
