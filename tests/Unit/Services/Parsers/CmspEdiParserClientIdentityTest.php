@@ -303,6 +303,29 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_hapag_real_iso_variants_map_to_supported_catalog_types(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $this->assertSame(
+            '40RH',
+            $this->invoke(
+                $parser,
+                'mapIsoContainerType',
+                ['45R5']
+            )
+        );
+
+        $this->assertSame(
+            '45HC',
+            $this->invoke(
+                $parser,
+                'mapIsoContainerType',
+                ['L5G1']
+            )
+        );
+    }
+
     public function test_cni_level_ftx_before_first_gid_is_not_lost(): void
     {
         $parser = new CmspEdiParser();
