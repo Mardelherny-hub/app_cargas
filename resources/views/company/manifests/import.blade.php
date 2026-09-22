@@ -126,6 +126,41 @@
                         </p>
                     </div>
 
+                    <!-- Tipo de operación CUSCAR -->
+                    <div>
+                        <label for="operation_type"
+                               class="block text-sm font-medium text-gray-700 mb-2">
+                            ↔️ Tipo de operación
+                            <span class="text-gray-500 font-normal">(requerido para CUSCAR)</span>
+                        </label>
+
+                        <select name="operation_type"
+                                id="operation_type"
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Seleccione para archivos CUSCAR...</option>
+                            <option value="import" {{ old('operation_type') === 'import' ? 'selected' : '' }}>
+                                Importación
+                            </option>
+                            <option value="export" {{ old('operation_type') === 'export' ? 'selected' : '' }}>
+                                Exportación
+                            </option>
+                        </select>
+
+                        @error('operation_type')
+                            <p class="mt-1 text-sm text-red-600">
+                                {{ $message }}
+                            </p>
+                        @enderror
+
+                        <p class="mt-1 text-xs text-gray-500">
+                            CUSCAR informa los puertos físicos de carga y descarga, pero esos
+                            puertos no determinan por sí solos si la operación comercial es
+                            una importación o una exportación. Para CUSCAR debe seleccionar
+                            explícitamente el tipo de operación. Los demás formatos conservan
+                            su criterio propio.
+                        </p>
+                    </div>
+
                     <!-- Número de viaje -->
                     <div>
                         <label for="voyage_number"
