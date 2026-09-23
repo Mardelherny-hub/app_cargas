@@ -60,4 +60,37 @@ class ManifestImportOperationTypeContractTest extends TestCase
             $controller
         );
     }
+    public function test_cuscar_requires_manual_dates_as_a_complete_pair_before_queueing(): void
+    {
+        $root = dirname(__DIR__, 4);
+
+        $controller = file_get_contents(
+            $root . '/app/Http/Controllers/Company/Manifests/ManifestImportController.php'
+        );
+        $view = file_get_contents(
+            $root . '/resources/views/company/manifests/import.blade.php'
+        );
+
+        $this->assertStringContainsString(
+            "\$request->filled('departure_date')",
+            $controller
+        );
+        $this->assertStringContainsString(
+            "\$request->filled('discharge_date')",
+            $controller
+        );
+        $this->assertStringContainsString(
+            '$hasDeparture !== $hasDischarge',
+            $controller
+        );
+        $this->assertStringContainsString(
+            'deben completarse juntas o dejarse ambas vacías',
+            $controller
+        );
+        $this->assertStringContainsString(
+            'nunca se mezclan ambas fuentes',
+            $view
+        );
+    }
+
 }

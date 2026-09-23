@@ -129,9 +129,11 @@ class ManifestImportController extends Controller
              */
             $detectedParser = $this->parserFactory->getParser($fullPath);
 
+            $isCuscar = $detectedParser instanceof
+                \App\Services\Parsers\CmspEdiParserCompat;
+
             if (
-                $detectedParser instanceof
-                    \App\Services\Parsers\CmspEdiParserCompat
+                $isCuscar
                 && !in_array(
                     $request->input('operation_type'),
                     ['import', 'export'],
@@ -147,6 +149,27 @@ class ManifestImportController extends Controller
                             'Para archivos CUSCAR debe seleccionar '
                             . 'Importación o Exportación.',
                     ]);
+            }
+
+            if ($isCuscar) {
+                $hasDeparture = $request->filled('departure_date');
+                $hasDischarge = $request->filled('discharge_date');
+
+                if ($hasDeparture !== $hasDischarge) {
+                    Storage::delete($path);
+
+                    $message =
+                        'Para CUSCAR, la fecha de salida y la fecha de descarga '
+                        . 'deben completarse juntas o dejarse ambas vacías. '
+                        . 'No se mezclan fechas ingresadas con fechas del archivo.';
+
+                    return back()
+                        ->withInput()
+                        ->withErrors([
+                            'departure_date' => $message,
+                            'discharge_date' => $message,
+                        ]);
+                }
             }
 
             // Registro de seguimiento: existe desde el encolado, lo sigue el spinner.
