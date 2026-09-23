@@ -111,7 +111,10 @@ class LoginXmlParserCompat extends LoginXmlParser
             'departure_date' => $data['voyage']['departure_date'],
             'estimated_arrival_date' => $data['voyage']['estimated_arrival_date'],
             'voyage_type' => $this->determineVoyageType($data),
-            'cargo_type' => $this->determineCargoType($data),
+            'cargo_type' => $this->determineCargoType(
+                $data,
+                (int) $company->id
+            ),
             'status' => 'planning',
             'is_convoy' => false,
             'vessel_count' => 1,
