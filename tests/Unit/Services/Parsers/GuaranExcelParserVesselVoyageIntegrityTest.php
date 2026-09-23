@@ -104,7 +104,7 @@ class GuaranExcelParserVesselVoyageIntegrityTest extends TestCase
                 'agent_name' => null,
                 'pol' => 'PYASU',
                 'pod' => 'ARBUE',
-            ], 1008, $vessel, $origin, $destination]
+            ], 1008, $vessel, $origin, $destination, 'AR']
         );
 
         $this->assertSame('ABX 2525S', $data['voyage_number']);
@@ -145,7 +145,7 @@ class GuaranExcelParserVesselVoyageIntegrityTest extends TestCase
                 'agent_name' => 'AGENTE REAL',
                 'pol' => 'PYASU',
                 'pod' => 'ARBUE',
-            ], 1008, $vessel, $origin, $destination]
+            ], 1008, $vessel, $origin, $destination, 'AR']
         );
 
         $this->assertSame(

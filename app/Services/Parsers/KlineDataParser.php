@@ -16,6 +16,7 @@ use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,7 @@ class KlineDataParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
 
     protected array $lines;
     protected array $stats = [
@@ -564,7 +566,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'origin_country_id' => $originPort->country_id,
             'destination_country_id' => $destinationPort->country_id,
             'voyage_type' => 'single_vessel',
-            'cargo_type' => 'export',
+            'cargo_type' => $this->resolveVoyageCargoTypeForCompany(
+                $companyId,
+                $originPort,
+                $destinationPort
+            ),
             'status' => 'planning',
             'created_by_user_id' => $user->id,
         ];

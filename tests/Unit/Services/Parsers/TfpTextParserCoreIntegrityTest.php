@@ -2,7 +2,6 @@
 
 namespace Tests\Unit\Services\Parsers;
 
-use App\Models\Port;
 use App\Services\Parsers\TfpTextParser;
 use App\Services\Parsers\TfpTextParserCompat;
 use ReflectionMethod;
@@ -49,17 +48,28 @@ class TfpTextParserCoreIntegrityTest extends TestCase
 
     public function test_route_defines_voyage_cargo_type(): void
     {
-        $ar = Port::where('code', 'ARBUE')->firstOrFail();
-        $py = Port::where('code', 'PYPSE')->firstOrFail();
-
         $this->assertSame(
             'export',
-            $this->invoke('resolveTfpVoyageCargoType', [$ar, $py])
+            $this->invoke(
+                'resolveVoyageCargoTypeCodes',
+                ['AR', 'AR', 'PY']
+            )
         );
 
         $this->assertSame(
             'import',
-            $this->invoke('resolveTfpVoyageCargoType', [$py, $ar])
+            $this->invoke(
+                'resolveVoyageCargoTypeCodes',
+                ['AR', 'PY', 'AR']
+            )
+        );
+
+        $this->assertSame(
+            'import',
+            $this->invoke(
+                'resolveVoyageCargoTypeCodes',
+                ['PY', 'AR', 'PY']
+            )
         );
     }
 

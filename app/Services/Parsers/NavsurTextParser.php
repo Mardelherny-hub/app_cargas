@@ -17,6 +17,7 @@ use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\ResolvesPorts;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,7 @@ class NavsurTextParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
     use ResolvesPorts;
 
     protected array $stats = [
@@ -656,7 +658,11 @@ class NavsurTextParser implements ManifestParserInterface
                 $destinationPort->country_id ?: null,
 
             'voyage_type' => 'single_vessel',
-            'cargo_type' => 'export',
+            'cargo_type' => $this->resolveVoyageCargoTypeForCompany(
+                $companyId,
+                $originPort,
+                $destinationPort
+            ),
             'status' => 'planning',
 
             // Navsur no informa fechas operativas del viaje.
