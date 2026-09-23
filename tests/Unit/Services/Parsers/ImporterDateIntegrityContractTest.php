@@ -10,6 +10,8 @@ use App\Services\Parsers\NavsurTextParser;
 use App\Services\Parsers\ParanaExcelParser;
 use App\Services\Parsers\TfpTextParser;
 use PHPUnit\Framework\TestCase;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use ReflectionMethod;
 
 class ImporterDateIntegrityContractTest extends TestCase
@@ -103,6 +105,35 @@ class ImporterDateIntegrityContractTest extends TestCase
         $this->assertStringNotContainsString('today()', $block);
         $this->assertStringContainsString("'bill_date' => null", $block);
         $this->assertStringContainsString("'loading_date' => null", $block);
+    }
+
+    public function test_parana_can_parse_ignores_empty_header_cells_without_deprecation(): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->setCellValue('BR20', 'sentinel');
+
+        $path = tempnam(sys_get_temp_dir(), 'parana-canparse-') . '.xlsx';
+        (new Xlsx($spreadsheet))->save($path);
+        $spreadsheet->disconnectWorksheets();
+
+        $previous = set_error_handler(
+            static function (int $severity, string $message): bool {
+                if ($severity === E_DEPRECATED) {
+                    throw new \ErrorException($message);
+                }
+
+                return false;
+            }
+        );
+
+        try {
+            $this->assertFalse(
+                (new ParanaExcelParser())->canParse($path)
+            );
+        } finally {
+            restore_error_handler();
+            @unlink($path);
+        }
     }
 
     public function test_parana_missing_dates_remain_missing(): void
