@@ -123,6 +123,62 @@ class CmspEdiParserCompat extends CmspEdiParser
         ];
     }
 
+    /**
+     * La cronología CUSCAR no bloquea la importación.
+     *
+     * Criterio operativo acordado: las fechas que informa el archivo se
+     * preservan tal como vienen; si requieren corrección, se editan luego
+     * desde la aplicación. Las fechas ingresadas en el formulario son sólo
+     * fallback cuando falta el DTM correspondiente.
+     *
+     * Una inversión salida > llegada se conserva y se informa como warning
+     * trazable, en lugar de convertir un dato fuente en un error fatal.
+     */
+    protected function warnIfCuscarChronologyIsInverted(
+        string $departureDate,
+        string $estimatedArrivalDate,
+        array $data = []
+    ): void {
+        $departureTimestamp = strtotime($departureDate);
+        $estimatedArrivalTimestamp = strtotime($estimatedArrivalDate);
+
+        if (
+            $departureTimestamp === false
+            || $estimatedArrivalTimestamp === false
+        ) {
+            throw new Exception(
+                'No se pudo interpretar la fecha de salida o la fecha estimada de llegada del viaje.'
+            );
+        }
+
+        $departureDay = date('Y-m-d', $departureTimestamp);
+        $estimatedArrivalDay = date(
+            'Y-m-d',
+            $estimatedArrivalTimestamp
+        );
+
+        if ($departureDay <= $estimatedArrivalDay) {
+            return;
+        }
+
+        $departureSource = isset($data['dates']['departure'])
+            ? 'DTM+136'
+            : 'formulario';
+        $arrivalSource = isset($data['dates']['estimated_arrival'])
+            ? 'DTM+132'
+            : 'formulario';
+
+        $warning =
+            "CUSCAR: fecha de salida {$departureDay} ({$departureSource}) "
+            . "posterior a llegada estimada {$estimatedArrivalDay} "
+            . "({$arrivalSource}); se preservan las fechas informadas. "
+            . 'Si corresponde corregirlas, debe hacerse desde la aplicación.';
+
+        if (!in_array($warning, $this->stats['warnings'], true)) {
+            $this->stats['warnings'][] = $warning;
+        }
+    }
+
     protected function createVoyage(array $data, array $options = []): Voyage
     {
         $user = auth()->user();
@@ -222,28 +278,11 @@ class CmspEdiParserCompat extends CmspEdiParser
         }
 
         if ($departureDate !== null) {
-            $departureTimestamp = strtotime((string) $departureDate);
-            $estimatedArrivalTimestamp = strtotime(
-                (string) $estimatedArrivalDate
+            $this->warnIfCuscarChronologyIsInverted(
+                $departureDate,
+                $estimatedArrivalDate,
+                $data
             );
-
-            if (
-                $departureTimestamp === false
-                || $estimatedArrivalTimestamp === false
-            ) {
-                throw new Exception(
-                    'No se pudo validar la fecha de salida o la fecha estimada de llegada del viaje.'
-                );
-            }
-
-            if (
-                date('Y-m-d', $departureTimestamp)
-                > date('Y-m-d', $estimatedArrivalTimestamp)
-            ) {
-                throw new Exception(
-                    'La fecha de salida no puede ser posterior a la fecha estimada de llegada.'
-                );
-            }
         }
 
         return Voyage::create([
