@@ -29,7 +29,7 @@ class ProcessManifestImportJobDateFallbackContractTest extends TestCase
         $this->assertLessThan($completePosition, $applyPosition);
     }
 
-    public function test_source_departure_keeps_priority_over_manual_fallback(): void
+    public function test_operator_departure_replaces_parser_value_when_provided(): void
     {
         $source = file_get_contents(
             dirname(__DIR__, 3) . '/app/Jobs/ProcessManifestImportJob.php'
@@ -41,35 +41,32 @@ class ProcessManifestImportJobDateFallbackContractTest extends TestCase
             $source
         );
         $this->assertStringContainsString(
+            '$voyage->departure_date = $this->departureDate;',
+            $source
+        );
+        $this->assertStringNotContainsString(
             '&& !$voyage->departure_date',
             $source
         );
     }
 
-    public function test_formats_without_specific_loading_date_use_operator_value(): void
+    public function test_operator_loading_and_discharge_replace_source_values_when_provided(): void
     {
         $source = file_get_contents(
             dirname(__DIR__, 3) . '/app/Jobs/ProcessManifestImportJob.php'
         );
 
         $this->assertIsString($source);
-
-        foreach ([
-            'GuaranExcelParser',
-            'LoginXmlParser',
-            'ParanaExcelParser',
-            'NavsurTextParser',
-            'TfpTextParser',
-            'KlineDataParser',
-        ] as $parserName) {
-            $this->assertStringContainsString(
-                "'{$parserName}'",
-                $source
-            );
-        }
-
         $this->assertStringContainsString(
-            '$operatorLoadingIsSource',
+            '$bill->loading_date = $this->loadingDate;',
+            $source
+        );
+        $this->assertStringContainsString(
+            '$bill->discharge_date = $this->dischargeDate;',
+            $source
+        );
+        $this->assertStringContainsString(
+            '$voyage->estimated_arrival_date = $this->dischargeDate;',
             $source
         );
     }
@@ -108,19 +105,19 @@ class ProcessManifestImportJobDateFallbackContractTest extends TestCase
         );
     }
 
-    public function test_cmsp_preserves_source_discharge_and_other_formats_accept_operator_discharge(): void
+    public function test_job_no_longer_special_cases_cmsp_against_operator_discharge(): void
     {
         $source = file_get_contents(
             dirname(__DIR__, 3) . '/app/Jobs/ProcessManifestImportJob.php'
         );
 
         $this->assertIsString($source);
-        $this->assertStringContainsString(
-            '$operatorDischargeIsSource = $parserName !== \'CmspEdiParser\';',
+        $this->assertStringNotContainsString(
+            '$operatorDischargeIsSource',
             $source
         );
-        $this->assertStringContainsString(
-            '|| !$bill->discharge_date',
+        $this->assertStringNotContainsString(
+            '$operatorLoadingIsSource',
             $source
         );
     }
