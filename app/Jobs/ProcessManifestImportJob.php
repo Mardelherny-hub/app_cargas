@@ -183,12 +183,6 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        $parserName = preg_replace(
-            '/Compat$/',
-            '',
-            class_basename($parser)
-        );
-
         /*
          * Salida: un valor ingresado explícitamente en el formulario reemplaza
          * la fuente. Si quedó vacío, se conserva lo resuelto por el parser.
