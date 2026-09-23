@@ -838,7 +838,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
             $source
         );
     }
-    public function test_cuscar_source_dates_have_priority_over_form_fallback(): void
+    public function test_cuscar_operator_dates_override_source_when_completed(): void
     {
         $parser = $this->compatWithoutDatabase();
 
@@ -853,40 +853,45 @@ class CmspEdiParserClientIdentityTest extends TestCase
                     ],
                 ],
                 [
-                    'departure_date' => '2026-09-19',
-                    'discharge_date' => '2026-09-22',
+                    'departure_date' => '2026-09-19T10:01',
+                    'discharge_date' => '2026-09-23',
+                ],
+            ]
+        );
+
+        $this->assertSame(
+            '2026-09-19T10:01',
+            $dates['departure_date']
+        );
+        $this->assertSame(
+            '2026-09-23',
+            $dates['estimated_arrival_date']
+        );
+
+        $sourceFallback = $this->invokeCompat(
+            $parser,
+            'resolveCuscarOperationalDates',
+            [
+                [
+                    'dates' => [
+                        'departure' => '2026-09-20 08:00:00',
+                        'estimated_arrival' => '2026-09-21 16:00:00',
+                    ],
+                ],
+                [
+                    'departure_date' => null,
+                    'discharge_date' => null,
                 ],
             ]
         );
 
         $this->assertSame(
             '2026-09-20 08:00:00',
-            $dates['departure_date']
+            $sourceFallback['departure_date']
         );
         $this->assertSame(
             '2026-09-21 16:00:00',
-            $dates['estimated_arrival_date']
-        );
-
-        $fallback = $this->invokeCompat(
-            $parser,
-            'resolveCuscarOperationalDates',
-            [
-                ['dates' => []],
-                [
-                    'departure_date' => '2026-09-19',
-                    'discharge_date' => '2026-09-22',
-                ],
-            ]
-        );
-
-        $this->assertSame(
-            '2026-09-19',
-            $fallback['departure_date']
-        );
-        $this->assertSame(
-            '2026-09-22',
-            $fallback['estimated_arrival_date']
+            $sourceFallback['estimated_arrival_date']
         );
     }
 
