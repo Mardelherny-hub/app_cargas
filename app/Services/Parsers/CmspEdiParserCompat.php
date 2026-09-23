@@ -4,6 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Models\BillOfLading;
 use App\Models\Client;
+use App\Models\Company;
 use App\Models\Container;
 use App\Models\DocumentType;
 use App\Models\Vessel;
@@ -97,18 +98,21 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * Orienta la ruta según el tipo de operación seleccionado.
+     * Orienta la ruta respecto del país de la empresa importadora.
      *
-     * Los CUSCAR recibidos declaran LOC+9/LOC+11 con una orientación que no
-     * alcanza para definir el sentido comercial en la aplicación. Para una
-     * exportación se conserva LOC+9 -> LOC+11. Para una importación se invierte
-     * la pareja, de modo que el destino sea el puerto de ingreso.
+     * Algunos CUSCAR recibidos declaran LOC+9/LOC+11/60 con una orientación
+     * que no coincide con el sentido comercial seleccionado por el operador.
+     * No se hace un swap ciego: si exactamente uno de los dos puertos pertenece
+     * al país de la empresa, Importación debe terminar allí y Exportación debe
+     * salir desde allí. Si el país no permite desambiguar, se conserva la ruta
+     * física informada por la fuente.
      *
      * @return array{origin:string,destination:string}
      */
     protected function resolveCuscarRouteCodes(
         array $data,
-        array $options = []
+        array $options = [],
+        ?string $homeCountryCode = null
     ): array {
         $fileLoading = trim(
             (string) ($data['ports']['loading'] ?? '')
@@ -130,11 +134,33 @@ class CmspEdiParserCompat extends CmspEdiParser
         }
 
         $operationType = $this->resolveCuscarOperationType($options);
+        $homeCountryCode = strtoupper(trim((string) $homeCountryCode));
+        $loadingCountry = strtoupper(substr($fileLoading, 0, 2));
+        $dischargeCountry = strtoupper(substr($fileDischarge, 0, 2));
 
-        if ($operationType === 'import') {
+        $loadingIsHome = $homeCountryCode !== ''
+            && $loadingCountry === $homeCountryCode;
+        $dischargeIsHome = $homeCountryCode !== ''
+            && $dischargeCountry === $homeCountryCode;
+
+        if ($loadingIsHome xor $dischargeIsHome) {
+            $homePort = $loadingIsHome
+                ? $fileLoading
+                : $fileDischarge;
+            $foreignPort = $loadingIsHome
+                ? $fileDischarge
+                : $fileLoading;
+
+            if ($operationType === 'import') {
+                return [
+                    'origin' => $foreignPort,
+                    'destination' => $homePort,
+                ];
+            }
+
             return [
-                'origin' => $fileDischarge,
-                'destination' => $fileLoading,
+                'origin' => $homePort,
+                'destination' => $foreignPort,
             ];
         }
 
@@ -240,7 +266,13 @@ class CmspEdiParserCompat extends CmspEdiParser
         }
 
         $cargoType = $this->resolveCuscarOperationType($options);
-        $route = $this->resolveCuscarRouteCodes($data, $options);
+        $companyCountry = Company::where('id', $companyId)
+            ->value('country');
+        $route = $this->resolveCuscarRouteCodes(
+            $data,
+            $options,
+            $companyCountry
+        );
 
         $originPort = $this->findOrCreatePort($route['origin']);
         $destPort = $this->findOrCreatePort($route['destination']);
