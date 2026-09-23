@@ -137,7 +137,11 @@ class NavsurTextParserCompat extends NavsurTextParser
             'destination_country_id' =>
                 $destinationPort->country_id ?: null,
             'voyage_type' => 'single_vessel',
-            'cargo_type' => 'export',
+            'cargo_type' => $this->resolveVoyageCargoTypeForCompany(
+                $companyId,
+                $originPort,
+                $destinationPort
+            ),
             'status' => 'planning',
             'departure_date' => null,
             'estimated_arrival_date' => null,

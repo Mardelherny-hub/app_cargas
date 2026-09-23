@@ -98,7 +98,11 @@ class G2OceanXmlParserCompat extends G2OceanXmlParser
             'departure_date' => null,
             'estimated_arrival_date' => null,
             'voyage_type' => 'single_vessel',
-            'cargo_type' => 'import',
+            'cargo_type' => $this->resolveVoyageCargoTypeForCompany(
+                (int) $companyId,
+                $originPort,
+                $destinationPort
+            ),
             'status' => 'planning',
             'created_by_user_id' => $user->id,
         ]);
