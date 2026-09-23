@@ -20,6 +20,7 @@ use App\Models\PackagingType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class TfpTextParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -440,25 +442,15 @@ protected function extractValue(string $scope, string $label): ?string
     }
 
     protected function resolveTfpVoyageCargoType(
+        int $companyId,
         Port $origin,
         Port $destination
     ): string {
-        if ((int) $origin->country_id === (int) $destination->country_id) {
-            return 'cabotage';
-        }
-
-        $originIso = strtoupper((string) \App\Models\Country::find($origin->country_id)?->alpha2_code);
-        $destinationIso = strtoupper((string) \App\Models\Country::find($destination->country_id)?->alpha2_code);
-
-        if ($destinationIso === 'AR') {
-            return 'import';
-        }
-
-        if ($originIso === 'AR') {
-            return 'export';
-        }
-
-        return 'transit';
+        return $this->resolveVoyageCargoTypeForCompany(
+            $companyId,
+            $origin,
+            $destination
+        );
     }
 
     protected function extractVoyageData(
@@ -541,7 +533,11 @@ protected function extractValue(string $scope, string $label): ?string
             'destination_country_id' => $destPort->country_id,
             'status' => 'planning',
             'voyage_type' => 'single_vessel',
-            'cargo_type' => $this->resolveTfpVoyageCargoType($originPort, $destPort),
+            'cargo_type' => $this->resolveTfpVoyageCargoType(
+                $companyId,
+                $originPort,
+                $destPort
+            ),
             'departure_date' => null,
             'estimated_arrival_date' => null,
             'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons,

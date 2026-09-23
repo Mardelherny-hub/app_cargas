@@ -17,6 +17,7 @@ use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Models\ContainerType;
 use App\Services\Parsers\Concerns\ResolvesPorts;
 use Carbon\Carbon;
@@ -41,6 +42,7 @@ class ParanaExcelParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
     use ResolvesPorts;
 
     // Mapeo exacto de columnas según análisis real
@@ -449,7 +451,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'cargo_type' => $this->determineCargoType(
                 $data,
                 $originPort,
-                $destPort
+                $destPort,
+                (int) $companyId
             ),
             'created_by_user_id' => auth()->id(),
         ]);
@@ -477,7 +480,8 @@ class ParanaExcelParser implements ManifestParserInterface
     protected function determineCargoType(
         array $data,
         Port $originPort,
-        Port $destPort
+        Port $destPort,
+        int $companyId
     ): string {
         if (
             (int) $originPort->country_id
@@ -498,7 +502,11 @@ class ParanaExcelParser implements ManifestParserInterface
             return 'transit';
         }
 
-        return 'export';
+        return $this->resolveVoyageCargoTypeForCompany(
+            $companyId,
+            $originPort,
+            $destPort
+        );
     }
 
 

@@ -16,6 +16,7 @@ use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Models\ManifestImport;
 use App\Models\CargoType;
 use App\Models\PackagingType;
@@ -43,6 +44,7 @@ class G2OceanXmlParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
 
     protected array $stats = [
         'processed' => 0,
@@ -1011,7 +1013,11 @@ class G2OceanXmlParser implements ManifestParserInterface
             'estimated_arrival_date' => null,
 
             'voyage_type' => 'single_vessel',
-            'cargo_type' => 'import',
+            'cargo_type' => $this->resolveVoyageCargoTypeForCompany(
+                (int) $companyId,
+                $originPort,
+                $destinationPort
+            ),
             'status' => 'planning',
             'created_by_user_id' => $user->id,
         ]);
