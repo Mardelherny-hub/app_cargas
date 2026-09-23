@@ -97,17 +97,10 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * La embarcación seleccionada por el operador tiene prioridad. El número
-     * de viaje ingresado por el operador también tiene prioridad; si queda
-     * vacío, se utiliza el informado por el CUSCAR. En fechas operativas,
-     * el CUSCAR es la fuente primaria y los valores del formulario sólo
-     * completan lo que el archivo no informa.
-     */
-    /**
-     * Resuelve fechas operativas preservando la fuente CUSCAR.
-     *
-     * Los campos del formulario son fallback únicamente cuando el archivo
-     * no aporta el dato correspondiente.
+     * La embarcación y el número de viaje ingresados por el operador tienen
+     * prioridad. Lo mismo aplica a las fechas operativas cuando el formulario
+     * se completa expresamente: la pantalla las presenta como reemplazo de la
+     * fuente. Si el operador deja el campo vacío, se conserva el valor CUSCAR.
      *
      * @return array{departure_date:?string, estimated_arrival_date:?string}
      */
@@ -115,11 +108,20 @@ class CmspEdiParserCompat extends CmspEdiParser
         array $data,
         array $options = []
     ): array {
+        $operatorDeparture = trim(
+            (string) ($options['departure_date'] ?? '')
+        );
+        $operatorDischarge = trim(
+            (string) ($options['discharge_date'] ?? '')
+        );
+
         return [
-            'departure_date' => $data['dates']['departure']
-                ?? ($options['departure_date'] ?? null),
-            'estimated_arrival_date' => $data['dates']['estimated_arrival']
-                ?? ($options['discharge_date'] ?? null),
+            'departure_date' => $operatorDeparture !== ''
+                ? $operatorDeparture
+                : ($data['dates']['departure'] ?? null),
+            'estimated_arrival_date' => $operatorDischarge !== ''
+                ? $operatorDischarge
+                : ($data['dates']['estimated_arrival'] ?? null),
         ];
     }
 
@@ -133,7 +135,8 @@ class CmspEdiParserCompat extends CmspEdiParser
     protected function assertCuscarChronology(
         string $departureDate,
         string $estimatedArrivalDate,
-        array $data = []
+        array $data = [],
+        array $options = []
     ): void {
         $departureTimestamp = strtotime($departureDate);
         $estimatedArrivalTimestamp = strtotime($estimatedArrivalDate);
@@ -157,12 +160,16 @@ class CmspEdiParserCompat extends CmspEdiParser
             return;
         }
 
-        $departureSource = isset($data['dates']['departure'])
-            ? 'DTM+136'
-            : 'formulario';
-        $arrivalSource = isset($data['dates']['estimated_arrival'])
-            ? 'DTM+132'
-            : 'formulario';
+        $departureSource = trim(
+            (string) ($options['departure_date'] ?? '')
+        ) !== ''
+            ? 'formulario'
+            : 'DTM+136';
+        $arrivalSource = trim(
+            (string) ($options['discharge_date'] ?? '')
+        ) !== ''
+            ? 'formulario'
+            : 'DTM+132';
 
         throw new Exception(
             "La fecha de salida {$departureDay} ({$departureSource}) "
@@ -273,7 +280,8 @@ class CmspEdiParserCompat extends CmspEdiParser
             $this->assertCuscarChronology(
                 $departureDate,
                 $estimatedArrivalDate,
-                $data
+                $data,
+                $options
             );
         }
 
