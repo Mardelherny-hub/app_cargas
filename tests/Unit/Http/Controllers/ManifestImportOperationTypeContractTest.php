@@ -32,6 +32,28 @@ class ManifestImportOperationTypeContractTest extends TestCase
         );
     }
 
+    public function test_controller_rejects_inverted_manual_dates_before_queue(): void
+    {
+        $root = dirname(__DIR__, 4);
+
+        $controller = file_get_contents(
+            $root . '/app/Http/Controllers/Company/Manifests/ManifestImportController.php'
+        );
+
+        $this->assertStringContainsString(
+            "filled('departure_date')",
+            $controller
+        );
+        $this->assertStringContainsString(
+            "filled('discharge_date')",
+            $controller
+        );
+        $this->assertStringContainsString(
+            'La fecha de descarga no puede ser anterior a la fecha de salida.',
+            $controller
+        );
+    }
+
     public function test_controller_validates_and_forwards_operation_type(): void
     {
         $root = dirname(__DIR__, 4);
