@@ -124,17 +124,13 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * La cronología CUSCAR no bloquea la importación.
+     * Valida la cronología operativa del CUSCAR sin alterar las fechas fuente.
      *
-     * Criterio operativo acordado: las fechas que informa el archivo se
-     * preservan tal como vienen; si requieren corrección, se editan luego
-     * desde la aplicación. Las fechas ingresadas en el formulario son sólo
-     * fallback cuando falta el DTM correspondiente.
-     *
-     * Una inversión salida > llegada se conserva y se informa como warning
-     * trazable, en lugar de convertir un dato fuente en un error fatal.
+     * El archivo sigue siendo la fuente primaria y el formulario sólo completa
+     * datos ausentes. Si salida > llegada estimada, la importación se rechaza:
+     * respetar la fuente no implica persistir una cronología imposible.
      */
-    protected function warnIfCuscarChronologyIsInverted(
+    protected function assertCuscarChronology(
         string $departureDate,
         string $estimatedArrivalDate,
         array $data = []
@@ -168,15 +164,11 @@ class CmspEdiParserCompat extends CmspEdiParser
             ? 'DTM+132'
             : 'formulario';
 
-        $warning =
-            "CUSCAR: fecha de salida {$departureDay} ({$departureSource}) "
-            . "posterior a llegada estimada {$estimatedArrivalDay} "
-            . "({$arrivalSource}); se preservan las fechas informadas. "
-            . 'Si corresponde corregirlas, debe hacerse desde la aplicación.';
-
-        if (!in_array($warning, $this->stats['warnings'], true)) {
-            $this->stats['warnings'][] = $warning;
-        }
+        throw new Exception(
+            "La fecha de salida {$departureDay} ({$departureSource}) "
+            . "no puede ser posterior a la fecha estimada de llegada "
+            . "{$estimatedArrivalDay} ({$arrivalSource})."
+        );
     }
 
     protected function createVoyage(array $data, array $options = []): Voyage
@@ -278,7 +270,7 @@ class CmspEdiParserCompat extends CmspEdiParser
         }
 
         if ($departureDate !== null) {
-            $this->warnIfCuscarChronologyIsInverted(
+            $this->assertCuscarChronology(
                 $departureDate,
                 $estimatedArrivalDate,
                 $data
