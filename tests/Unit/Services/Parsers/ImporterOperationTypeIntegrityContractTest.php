@@ -40,6 +40,27 @@ class ImporterOperationTypeIntegrityContractTest extends TestCase
         $this->assertSame('import', $resolver->resolve('PY', 'AR', 'PY'));
     }
 
+    public function test_login_compat_passes_company_context_to_operation_resolver(): void
+    {
+        $source = file_get_contents(
+            dirname(__DIR__, 4)
+            . '/app/Services/Parsers/LoginXmlParserCompat.php'
+        );
+
+        $this->assertStringContainsString(
+            '$this->determineCargoType(',
+            $source
+        );
+        $this->assertStringContainsString(
+            '(int) $company->id',
+            $source
+        );
+        $this->assertStringNotContainsString(
+            "'cargo_type' => " . '$this->determineCargoType($data),',
+            $source
+        );
+    }
+
     public function test_missing_company_country_is_rejected(): void
     {
         $this->expectException(DomainException::class);
