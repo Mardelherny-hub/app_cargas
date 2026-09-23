@@ -1334,7 +1334,7 @@ class CmspEdiParser implements ManifestParserInterface
             'file_size_bytes' => $fileSize,
             'file_hash'       => $fileHash,
             'parser_config'   => [
-                'parser_class' => self::class,
+                'parser_class' => static::class,
                 'operation_type' => $options['operation_type'] ?? null,
             ],
         ]);
