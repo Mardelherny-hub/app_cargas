@@ -97,17 +97,10 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * La embarcación seleccionada por el operador tiene prioridad. El número
-     * de viaje ingresado por el operador también tiene prioridad; si queda
-     * vacío, se utiliza el informado por el CUSCAR. En fechas operativas,
-     * el CUSCAR es la fuente primaria y los valores del formulario sólo
-     * completan lo que el archivo no informa.
-     */
-    /**
-     * Resuelve fechas operativas preservando la fuente CUSCAR.
-     *
-     * Los campos del formulario son fallback únicamente cuando el archivo
-     * no aporta el dato correspondiente.
+     * La embarcación y el número de viaje ingresados por el operador tienen
+     * prioridad. Lo mismo aplica a las fechas operativas cuando el formulario
+     * se completa expresamente: la pantalla las presenta como reemplazo de la
+     * fuente. Si el operador deja el campo vacío, se conserva el valor CUSCAR.
      *
      * @return array{departure_date:?string, estimated_arrival_date:?string}
      */
@@ -115,29 +108,35 @@ class CmspEdiParserCompat extends CmspEdiParser
         array $data,
         array $options = []
     ): array {
+        $operatorDeparture = trim(
+            (string) ($options['departure_date'] ?? '')
+        );
+        $operatorDischarge = trim(
+            (string) ($options['discharge_date'] ?? '')
+        );
+
         return [
-            'departure_date' => $data['dates']['departure']
-                ?? ($options['departure_date'] ?? null),
-            'estimated_arrival_date' => $data['dates']['estimated_arrival']
-                ?? ($options['discharge_date'] ?? null),
+            'departure_date' => $operatorDeparture !== ''
+                ? $operatorDeparture
+                : ($data['dates']['departure'] ?? null),
+            'estimated_arrival_date' => $operatorDischarge !== ''
+                ? $operatorDischarge
+                : ($data['dates']['estimated_arrival'] ?? null),
         ];
     }
 
     /**
-     * La cronología CUSCAR no bloquea la importación.
+     * Valida la cronología operativa del CUSCAR sin alterar las fechas fuente.
      *
-     * Criterio operativo acordado: las fechas que informa el archivo se
-     * preservan tal como vienen; si requieren corrección, se editan luego
-     * desde la aplicación. Las fechas ingresadas en el formulario son sólo
-     * fallback cuando falta el DTM correspondiente.
-     *
-     * Una inversión salida > llegada se conserva y se informa como warning
-     * trazable, en lugar de convertir un dato fuente en un error fatal.
+     * El archivo sigue siendo la fuente primaria y el formulario sólo completa
+     * datos ausentes. Si salida > llegada estimada, la importación se rechaza:
+     * respetar la fuente no implica persistir una cronología imposible.
      */
-    protected function warnIfCuscarChronologyIsInverted(
+    protected function assertCuscarChronology(
         string $departureDate,
         string $estimatedArrivalDate,
-        array $data = []
+        array $data = [],
+        array $options = []
     ): void {
         $departureTimestamp = strtotime($departureDate);
         $estimatedArrivalTimestamp = strtotime($estimatedArrivalDate);
@@ -161,22 +160,22 @@ class CmspEdiParserCompat extends CmspEdiParser
             return;
         }
 
-        $departureSource = isset($data['dates']['departure'])
-            ? 'DTM+136'
-            : 'formulario';
-        $arrivalSource = isset($data['dates']['estimated_arrival'])
-            ? 'DTM+132'
-            : 'formulario';
+        $departureSource = trim(
+            (string) ($options['departure_date'] ?? '')
+        ) !== ''
+            ? 'formulario'
+            : 'DTM+136';
+        $arrivalSource = trim(
+            (string) ($options['discharge_date'] ?? '')
+        ) !== ''
+            ? 'formulario'
+            : 'DTM+132';
 
-        $warning =
-            "CUSCAR: fecha de salida {$departureDay} ({$departureSource}) "
-            . "posterior a llegada estimada {$estimatedArrivalDay} "
-            . "({$arrivalSource}); se preservan las fechas informadas. "
-            . 'Si corresponde corregirlas, debe hacerse desde la aplicación.';
-
-        if (!in_array($warning, $this->stats['warnings'], true)) {
-            $this->stats['warnings'][] = $warning;
-        }
+        throw new Exception(
+            "La fecha de salida {$departureDay} ({$departureSource}) "
+            . "no puede ser posterior a la fecha estimada de llegada "
+            . "{$estimatedArrivalDay} ({$arrivalSource})."
+        );
     }
 
     protected function createVoyage(array $data, array $options = []): Voyage
@@ -278,10 +277,11 @@ class CmspEdiParserCompat extends CmspEdiParser
         }
 
         if ($departureDate !== null) {
-            $this->warnIfCuscarChronologyIsInverted(
+            $this->assertCuscarChronology(
                 $departureDate,
                 $estimatedArrivalDate,
-                $data
+                $data,
+                $options
             );
         }
 

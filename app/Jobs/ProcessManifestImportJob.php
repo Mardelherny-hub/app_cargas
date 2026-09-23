@@ -158,12 +158,11 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * Completa las fechas operativas ingresadas al importar sin reemplazar
-     * fechas reales que el formato sí informa.
+     * Aplica las fechas operativas ingresadas al importar.
      *
-     * Criterio operativo vigente: el archivo es la fuente primaria. Los datos
-     * ingresados en la pantalla completan lo que el formato no aporta; si un
-     * dato fuente debe corregirse, se edita después desde la aplicación.
+     * Contrato de la pantalla: si el operador completa una fecha, ese valor
+     * reemplaza el valor de la fuente; si deja el campo vacío, se conserva lo
+     * informado por el archivo.
      *
      * Auditoría de formatos:
      * - GUARAN, Login, Paraná, Navsur y TFP no aportan fecha específica de carga.
@@ -184,50 +183,20 @@ class ProcessManifestImportJob implements ShouldQueue
             return;
         }
 
-        $parserName = preg_replace(
-            '/Compat$/',
-            '',
-            class_basename($parser)
-        );
-
         /*
-         * Salida: el valor del archivo gana. El formulario actúa sólo como
-         * fallback cuando el parser no pudo resolver departure_date.
+         * Salida: un valor ingresado explícitamente en el formulario reemplaza
+         * la fuente. Si quedó vacío, se conserva lo resuelto por el parser.
          */
-        if (
-            $this->departureDate !== null
-            && !$voyage->departure_date
-        ) {
+        if ($this->departureDate !== null) {
             $voyage->departure_date = $this->departureDate;
             $voyage->saveQuietly();
         }
 
-        $operatorLoadingIsSource = in_array(
-            $parserName,
-            [
-                'GuaranExcelParser',
-                'LoginXmlParser',
-                'ParanaExcelParser',
-                'NavsurTextParser',
-                'TfpTextParser',
-                'KlineDataParser',
-            ],
-            true
-        );
-
         /*
-         * CMSP/CUSCAR sí declara descarga/ETA operativa. En los demás formatos
-         * la descarga ingresada por el operador es el dato operativo disponible.
+         * Descarga/llegada estimada: mismo contrato. Si el operador la
+         * completa, reemplaza el dato de fuente para el viaje.
          */
-        $operatorDischargeIsSource = $parserName !== 'CmspEdiParser';
-
-        if (
-            $this->dischargeDate !== null
-            && (
-                $operatorDischargeIsSource
-                || !$voyage->estimated_arrival_date
-            )
-        ) {
+        if ($this->dischargeDate !== null) {
             $voyage->estimated_arrival_date = $this->dischargeDate;
             $voyage->saveQuietly();
         }
@@ -253,24 +222,12 @@ class ProcessManifestImportJob implements ShouldQueue
         foreach ($bills as $bill) {
             $changed = false;
 
-            if (
-                $this->loadingDate !== null
-                && (
-                    $operatorLoadingIsSource
-                    || !$bill->loading_date
-                )
-            ) {
+            if ($this->loadingDate !== null) {
                 $bill->loading_date = $this->loadingDate;
                 $changed = true;
             }
 
-            if (
-                $this->dischargeDate !== null
-                && (
-                    $operatorDischargeIsSource
-                    || !$bill->discharge_date
-                )
-            ) {
+            if ($this->dischargeDate !== null) {
                 $bill->discharge_date = $this->dischargeDate;
                 $changed = true;
             }
