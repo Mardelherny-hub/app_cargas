@@ -40,6 +40,86 @@ class ImporterOperationTypeIntegrityContractTest extends TestCase
         $this->assertSame('import', $resolver->resolve('PY', 'AR', 'PY'));
     }
 
+    public function test_login_compat_passes_company_context_to_operation_resolver(): void
+    {
+        $source = file_get_contents(
+            dirname(__DIR__, 4)
+            . '/app/Services/Parsers/LoginXmlParserCompat.php'
+        );
+
+        $this->assertStringContainsString(
+            '$this->determineCargoType(',
+            $source
+        );
+        $this->assertStringContainsString(
+            '(int) $company->id',
+            $source
+        );
+        $this->assertStringNotContainsString(
+            "'cargo_type' => " . '$this->determineCargoType($data),',
+            $source
+        );
+    }
+
+    public function test_compatibility_parsers_keep_operation_direction_contract(): void
+    {
+        $sources = [];
+
+        foreach ([
+            'LoginXmlParserCompat.php',
+            'ParanaExcelParserCompat.php',
+            'GuaranExcelParserCompat.php',
+            'TfpTextParserCompat.php',
+            'NavsurTextParserCompat.php',
+            'G2OceanXmlParserCompat.php',
+        ] as $file) {
+            $sources[$file] = file_get_contents(
+                dirname(__DIR__, 4)
+                . '/app/Services/Parsers/' . $file
+            );
+        }
+
+        $this->assertStringContainsString(
+            '(int) $company->id',
+            $sources['LoginXmlParserCompat.php']
+        );
+
+        $this->assertStringContainsString(
+            '(int) $companyId',
+            $sources['ParanaExcelParserCompat.php']
+        );
+
+        $this->assertStringContainsString(
+            '$companyCountryCode',
+            $sources['GuaranExcelParserCompat.php']
+        );
+
+        $this->assertStringContainsString(
+            '$companyId,',
+            $sources['TfpTextParserCompat.php']
+        );
+
+        $this->assertStringContainsString(
+            'resolveVoyageCargoTypeForCompany',
+            $sources['NavsurTextParserCompat.php']
+        );
+
+        $this->assertStringContainsString(
+            'resolveVoyageCargoTypeForCompany',
+            $sources['G2OceanXmlParserCompat.php']
+        );
+
+        $this->assertStringNotContainsString(
+            "'cargo_type' => 'export'",
+            $sources['NavsurTextParserCompat.php']
+        );
+
+        $this->assertStringNotContainsString(
+            "'cargo_type' => 'import'",
+            $sources['G2OceanXmlParserCompat.php']
+        );
+    }
+
     public function test_missing_company_country_is_rejected(): void
     {
         $this->expectException(DomainException::class);

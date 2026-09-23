@@ -86,6 +86,7 @@ class TfpTextParserCompat extends TfpTextParser
             'status' => 'planning',
             'voyage_type' => 'single_vessel',
             'cargo_type' => $this->resolveTfpVoyageCargoType(
+                $companyId,
                 $originPort,
                 $destPort
             ),

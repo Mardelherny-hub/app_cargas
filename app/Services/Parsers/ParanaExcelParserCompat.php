@@ -107,7 +107,8 @@ class ParanaExcelParserCompat extends ParanaExcelParser
             'cargo_type' => $this->determineCargoType(
                 $data,
                 $originPort,
-                $destPort
+                $destPort,
+                (int) $companyId
             ),
             'created_by_user_id' => auth()->id(),
         ]);
