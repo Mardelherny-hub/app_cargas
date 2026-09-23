@@ -76,6 +76,10 @@ class GuaranExcelParserCompat extends GuaranExcelParser
 
         $this->guardVoyageNumberIsFree($voyageData['voyage_number']);
 
+        $companyCountryCode = (string) \App\Models\Company::query()
+            ->whereKey($companyId)
+            ->value('country');
+
         return Voyage::create(
             $this->buildVoyageCreationData(
                 $voyageData,
@@ -83,6 +87,7 @@ class GuaranExcelParserCompat extends GuaranExcelParser
                 $vessel,
                 $originPort,
                 $destPort,
+                $companyCountryCode,
                 $options
             )
         );
