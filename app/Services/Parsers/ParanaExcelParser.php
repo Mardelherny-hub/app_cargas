@@ -144,9 +144,11 @@ class ParanaExcelParser implements ManifestParserInterface
 
             // Buscar indicadores PARANA/MAERSK en primeras filas
             for ($row = 1; $row <= 10; $row++) {
-                $locationName = $worksheet->getCell('A' . $row)->getCalculatedValue();
-                if (str_contains(strtoupper($locationName), 'MAERSK') || 
-                    str_contains(strtoupper($locationName), 'PARANA')) {
+                $locationName = strtoupper((string) $worksheet
+                    ->getCell('A' . $row)
+                    ->getCalculatedValue());
+                if (str_contains($locationName, 'MAERSK') ||
+                    str_contains($locationName, 'PARANA')) {
                     return true;
                 }
             }
