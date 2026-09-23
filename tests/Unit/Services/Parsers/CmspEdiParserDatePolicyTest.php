@@ -67,7 +67,7 @@ class CmspEdiParserDatePolicyTest extends TestCase
         $this->assertSame([], $warnings);
     }
 
-    public function test_cuscar_source_dates_keep_priority_over_form_fallbacks(): void
+    public function test_operator_dates_override_cuscar_source_when_completed(): void
     {
         $parser = new class extends CmspEdiParserCompat {
             public function dates(
@@ -95,12 +95,98 @@ class CmspEdiParserDatePolicyTest extends TestCase
         );
 
         $this->assertSame(
-            '2026-09-20 08:34:00',
+            '2026-10-01',
             $dates['departure_date']
         );
         $this->assertSame(
-            '2026-09-21 00:00:00',
+            '2026-10-02',
             $dates['estimated_arrival_date']
+        );
+    }
+
+    public function test_valid_operator_dates_bypass_inverted_source_dates(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function effectiveDates(
+                array $data,
+                array $options
+            ): array {
+                $dates = $this->resolveCuscarOperationalDates(
+                    $data,
+                    $options
+                );
+
+                $this->assertCuscarChronology(
+                    $dates['departure_date'],
+                    $dates['estimated_arrival_date'],
+                    $data,
+                    $options
+                );
+
+                return $dates;
+            }
+        };
+
+        $dates = $parser->effectiveDates(
+            [
+                'dates' => [
+                    'departure' => '2026-09-24 10:00:00',
+                    'estimated_arrival' => '2026-09-20 00:00:00',
+                ],
+            ],
+            [
+                'departure_date' => '2026-09-19T10:01',
+                'discharge_date' => '2026-09-23',
+            ]
+        );
+
+        $this->assertSame(
+            '2026-09-19T10:01',
+            $dates['departure_date']
+        );
+        $this->assertSame(
+            '2026-09-23',
+            $dates['estimated_arrival_date']
+        );
+    }
+
+    public function test_invalid_operator_dates_are_rejected_as_form_values(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function check(
+                array $data,
+                array $options
+            ): void {
+                $dates = $this->resolveCuscarOperationalDates(
+                    $data,
+                    $options
+                );
+
+                $this->assertCuscarChronology(
+                    $dates['departure_date'],
+                    $dates['estimated_arrival_date'],
+                    $data,
+                    $options
+                );
+            }
+        };
+
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage(
+            'La fecha de salida 2026-09-24 (formulario) no puede ser posterior a la fecha estimada de llegada 2026-09-23 (formulario).'
+        );
+
+        $parser->check(
+            [
+                'dates' => [
+                    'departure' => '2026-09-19 00:00:00',
+                    'estimated_arrival' => '2026-09-25 00:00:00',
+                ],
+            ],
+            [
+                'departure_date' => '2026-09-24T10:01',
+                'discharge_date' => '2026-09-23',
+            ]
         );
     }
 
