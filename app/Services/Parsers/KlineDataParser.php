@@ -463,23 +463,44 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         array $sourceDates,
         array $options = []
     ): array {
-        $sourceDeparture = $sourceDates['etd'] ?? null;
-        $sourceArrival = $sourceDates['eta'] ?? null;
+        $sourceDeparture = trim(
+            (string) ($sourceDates['etd'] ?? '')
+        );
+        $sourceArrival = trim(
+            (string) ($sourceDates['eta'] ?? '')
+        );
 
-        $operatorDeparture =
-            $options['departure_date'] ?? null;
+        $operatorDeparture = trim(
+            (string) ($options['departure_date'] ?? '')
+        );
+        $operatorArrival = trim(
+            (string) ($options['discharge_date'] ?? '')
+        );
 
-        $departure = !empty($sourceDeparture)
-            ? Carbon::parse($sourceDeparture)
-            : (
-                !empty($operatorDeparture)
-                    ? Carbon::parse($operatorDeparture)
-                    : null
-            );
+        $departureRaw = $operatorDeparture !== ''
+            ? $operatorDeparture
+            : ($sourceDeparture !== '' ? $sourceDeparture : null);
+        $arrivalRaw = $operatorArrival !== ''
+            ? $operatorArrival
+            : ($sourceArrival !== '' ? $sourceArrival : null);
 
-        $arrival = !empty($sourceArrival)
-            ? Carbon::parse($sourceArrival)
+        $departure = $departureRaw !== null
+            ? Carbon::parse($departureRaw)
             : null;
+        $arrival = $arrivalRaw !== null
+            ? Carbon::parse($arrivalRaw)
+            : null;
+
+        if (
+            $departure !== null
+            && $arrival !== null
+            && $departure->toDateString() > $arrival->toDateString()
+        ) {
+            throw new \DomainException(
+                'K-Line: la fecha de salida no puede ser posterior ' .
+                'a la fecha estimada de llegada/descarga.'
+            );
+        }
 
         return [
             'departure_date' => $departure,
@@ -654,8 +675,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             : null;
 
         // 3) Fechas + flete
-        $dates        = $this->extractDates($data);                // ['etd','eta','bl_date']
-        $importDate = now()->toDateString();
+        $dates        = $this->extractDates($data);                // ['etd','eta','bl_date','loading_date']
         $freightTerms = $this->extractFreightTerms($data);         // 'prepaid'|'collect'|default
         $freight      = $this->extractFreightCharges($data, $freightTerms); // ['terms','currency','amount']
 
@@ -713,10 +733,10 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $blAttrs = [
             'shipment_id'       => $shipment->id,
             'bill_number'       => $blNumber,
-            // Regla operativa: si K-Line no informa la fecha,
-            // usar la fecha del día de la importación.
-            'bill_date'         => $dates['bl_date'] ?? $importDate,
-            'loading_date'      => $dates['etd'] ?? $importDate,
+            // No sintetizar fechas ausentes. OP / ON BOARD alimenta sólo
+            // la fecha de carga del BL; ETD pertenece al viaje.
+            'bill_date'         => $dates['bl_date'] ?? null,
+            'loading_date'      => $dates['loading_date'] ?? null,
             // FIX bug #5: usar descripción real extraída de DESCREC en lugar de leyenda fija
             'cargo_description' => $this->resolveCargoDescription(
                 $data,
@@ -2810,6 +2830,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             'etd' => null,
             'eta' => null,
             'bl_date' => null,
+            'loading_date' => null,
         ];
 
         /*
@@ -2946,11 +2967,15 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             );
         }
 
-        $res['etd'] = $onBoardDate ?? $operationDate;
+        /*
+         * OP / ON BOARD describe la carga/embarque del conocimiento.
+         * No equivale por sí solo a la salida del viaje.
+         */
+        $res['loading_date'] = $onBoardDate ?? $operationDate;
 
         /*
-         * Mantener búsqueda contextual para ETA y fecha de emisión del BL.
-         * No interpretar cualquier YYYYMMDD de GNRLREC como bill_date.
+         * Mantener búsqueda contextual para ETD, ETA y fecha de emisión del BL.
+         * No interpretar cualquier YYYYMMDD de GNRLREC como bill_date ni ETD.
          */
         foreach ($data as $recordType => $lines) {
             if (!is_array($lines)) {
@@ -2977,6 +3002,16 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
                     if (!$date) {
                         continue;
+                    }
+
+                    if (
+                        !$res['etd']
+                        && (
+                            str_contains($u, ' ETD')
+                            || str_contains($u, 'DEPART')
+                        )
+                    ) {
+                        $res['etd'] = $date;
                     }
 
                     if (

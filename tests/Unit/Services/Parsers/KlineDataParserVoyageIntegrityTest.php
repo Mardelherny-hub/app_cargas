@@ -123,7 +123,7 @@ class KlineDataParserVoyageIntegrityTest extends TestCase
         );
     }
 
-    public function test_source_dates_override_operator_departure(): void
+    public function test_operator_dates_override_source_dates(): void
     {
         $dates = $this->invokeParser(
             'resolveVoyageDates',
@@ -134,19 +134,36 @@ class KlineDataParserVoyageIntegrityTest extends TestCase
                 ],
                 [
                     'departure_date' => '2026-08-17',
+                    'discharge_date' => '2026-08-20',
                 ],
             ]
         );
 
         $this->assertSame(
-            '2025-05-14',
+            '2026-08-17',
             $dates['departure_date']->toDateString()
         );
 
         $this->assertSame(
-            '2025-05-20',
+            '2026-08-20',
             $dates['estimated_arrival_date']
                 ->toDateString()
+        );
+    }
+
+    public function test_effective_kline_chronology_is_strict(): void
+    {
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage(
+            'fecha de salida no puede ser posterior'
+        );
+
+        $this->invokeParser(
+            'resolveVoyageDates',
+            [
+                ['eta' => '2026-08-20'],
+                ['departure_date' => '2026-08-21'],
+            ]
         );
     }
 }
