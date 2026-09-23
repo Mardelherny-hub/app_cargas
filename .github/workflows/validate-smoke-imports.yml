@@ -130,6 +130,11 @@ jobs:
           php artisan view:clear
           php artisan view:cache
 
+      - name: Verify importer date integrity audit
+        run: |
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/ImporterDateIntegrityContractTest.php
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/KlineDataParserVoyageIntegrityTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '

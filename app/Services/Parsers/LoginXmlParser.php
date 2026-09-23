@@ -1275,16 +1275,20 @@ class LoginXmlParser implements ManifestParserInterface
     /**
      * Parsear fecha desde string
      */
-    protected function parseDate(?string $dateStr, string $modifier = null): string
+    protected function parseDate(?string $dateStr, string $modifier = null): ?string
     {
-        if (empty($dateStr)) {
-            $date = now();
-        } else {
-            try {
-                $date = \Carbon\Carbon::parse($dateStr);
-            } catch (Exception $e) {
-                $date = now();
-            }
+        if ($dateStr === null || trim($dateStr) === '') {
+            return null;
+        }
+
+        try {
+            $date = \Carbon\Carbon::parse($dateStr);
+        } catch (Exception $e) {
+            throw new \DomainException(
+                "Login XML informa una fecha inválida: '{$dateStr}'.",
+                0,
+                $e
+            );
         }
 
         if ($modifier) {
@@ -1507,8 +1511,8 @@ class LoginXmlParser implements ManifestParserInterface
             'discharge_port_id' => $blDischargePort?->id ?? $shipment->voyage->destination_port_id,
             'primary_cargo_type_id' => $cargoType->id,
             'primary_packaging_type_id' => $packagingType->id,
-            'bill_date' => $blData['bill_date'] ?? now(),
-            'loading_date' => $blData['loading_date'] ?? now(),
+            'bill_date' => $blData['bill_date'] ?? null,
+            'loading_date' => $blData['loading_date'] ?? null,
             'cargo_description' => $blData['cargo_description'],
             'cargo_marks' => $blData['cargo_marks'] ?? null,
 

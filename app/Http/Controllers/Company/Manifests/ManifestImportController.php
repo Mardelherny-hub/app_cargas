@@ -88,6 +88,27 @@ class ManifestImportController extends Controller
             'manifest_file.max' => 'El archivo no puede ser mayor a 10MB.'
         ]);
 
+        /*
+         * Guard transversal antes de persistir/encolar: cuando el operador
+         * informa ambas fechas, la salida no puede quedar después de la
+         * descarga. Se compara por día porque descarga es un campo date y
+         * salida puede incluir hora.
+         */
+        if (
+            $request->filled('departure_date')
+            && $request->filled('discharge_date')
+            && \Carbon\Carbon::parse($request->input('departure_date'))
+                ->startOfDay()
+                ->gt(\Carbon\Carbon::parse($request->input('discharge_date'))->startOfDay())
+        ) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'discharge_date' =>
+                        'La fecha de descarga no puede ser anterior a la fecha de salida.',
+                ]);
+        }
+
         // Verificar que el vessel pertenece a la empresa del usuario
         $company = auth()->user()->company;
         $vessel = Vessel::where('id', $request->vessel_id)

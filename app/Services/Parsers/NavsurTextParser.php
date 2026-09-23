@@ -1091,8 +1091,6 @@ class NavsurTextParser implements ManifestParserInterface
             array_unique($commodityCodes)
         );
 
-        $importDate = today();
-
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['numero_bl'],
@@ -1101,9 +1099,9 @@ class NavsurTextParser implements ManifestParserInterface
             'internal_reference' =>
                 $data['cod_programacion'] ?? null,
 
-            // Regla operativa: Navsur no trae fechas.
-            'bill_date' => $importDate,
-            'loading_date' => $importDate,
+            // Navsur no informa estas fechas: conservar ausencia de dato.
+            'bill_date' => null,
+            'loading_date' => null,
 
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
