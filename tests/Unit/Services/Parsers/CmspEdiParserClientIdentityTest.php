@@ -400,7 +400,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
                 ],
             ], [
                 'operation_type' => 'import',
-            ]]
+            ], 'AR']
         );
 
         $this->assertSame('PYASU', $route['origin']);
@@ -421,10 +421,73 @@ class CmspEdiParserClientIdentityTest extends TestCase
                 ],
             ], [
                 'operation_type' => 'export',
-            ]]
+            ], 'AR']
         );
 
         $this->assertSame('ARBUE', $route['origin']);
+        $this->assertSame('PYASU', $route['destination']);
+    }
+
+    public function test_cuscar_import_keeps_route_when_file_already_points_to_home_country(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $route = $this->invokeCompat(
+            $parser,
+            'resolveCuscarRouteCodes',
+            [[
+                'ports' => [
+                    'loading' => 'PYASU',
+                    'discharge' => 'ARBUE',
+                ],
+            ], [
+                'operation_type' => 'import',
+            ], 'AR']
+        );
+
+        $this->assertSame('PYASU', $route['origin']);
+        $this->assertSame('ARBUE', $route['destination']);
+    }
+
+    public function test_cuscar_export_reorients_reverse_file_route_away_from_home_country(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $route = $this->invokeCompat(
+            $parser,
+            'resolveCuscarRouteCodes',
+            [[
+                'ports' => [
+                    'loading' => 'PYASU',
+                    'discharge' => 'ARBUE',
+                ],
+            ], [
+                'operation_type' => 'export',
+            ], 'AR']
+        );
+
+        $this->assertSame('ARBUE', $route['origin']);
+        $this->assertSame('PYASU', $route['destination']);
+    }
+
+    public function test_cuscar_route_preserves_source_when_company_country_does_not_disambiguate(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $route = $this->invokeCompat(
+            $parser,
+            'resolveCuscarRouteCodes',
+            [[
+                'ports' => [
+                    'loading' => 'BRSSZ',
+                    'discharge' => 'PYASU',
+                ],
+            ], [
+                'operation_type' => 'import',
+            ], 'AR']
+        );
+
+        $this->assertSame('BRSSZ', $route['origin']);
         $this->assertSame('PYASU', $route['destination']);
     }
 

@@ -3622,7 +3622,7 @@ class CmspEdiParser implements ManifestParserInterface
             'description' => 'Archivo EDI CUSCAR UN/EDIFACT D.96B de CMSP Paraguay',
             'extensions' => ['edi'],
             'version' => 'D.96B',
-            'parser_class' => self::class,
+            'parser_class' => static::class,
             'capabilities' => [
                 'multiple_containers' => true,
                 'weight_measurements' => true,
