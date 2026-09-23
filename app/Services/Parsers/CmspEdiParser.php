@@ -1368,7 +1368,13 @@ class CmspEdiParser implements ManifestParserInterface
                 }
                 
                 // Crear BL para este grupo
-                $billOfLading = $this->createBillOfLadingForGroup($shipment, $data, $billNumber, $containerGroup);
+                $billOfLading = $this->createBillOfLadingForGroup(
+                    $shipment,
+                    $data,
+                    $billNumber,
+                    $containerGroup,
+                    $options
+                );
                 $billsOfLading[] = $billOfLading;
                 
                 // Crear items y contenedores solo para este BL
@@ -1986,9 +1992,56 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Resuelve las fechas que se persistirán en el conocimiento CUSCAR.
+     *
+     * Fecha de Emisión acompaña a la fecha de descarga efectiva. La fecha de
+     * carga es un dato independiente y sólo se toma del formulario cuando fue
+     * informada expresamente.
+     *
+     * @return array{bill_date:?string,loading_date:?string,discharge_date:?string}
+     */
+    protected function resolveCuscarBillDates(
+        array $data,
+        array $options = []
+    ): array {
+        $operatorDischarge = trim(
+            (string) ($options['discharge_date'] ?? '')
+        );
+        $sourceDischarge = trim(
+            (string) ($data['dates']['estimated_arrival'] ?? '')
+        );
+
+        $dischargeDate = $operatorDischarge !== ''
+            ? substr($operatorDischarge, 0, 10)
+            : (
+                $sourceDischarge !== ''
+                    ? substr($sourceDischarge, 0, 10)
+                    : null
+            );
+
+        $operatorLoading = trim(
+            (string) ($options['loading_date'] ?? '')
+        );
+
+        return [
+            'bill_date' => $dischargeDate,
+            'loading_date' => $operatorLoading !== ''
+                ? substr($operatorLoading, 0, 10)
+                : null,
+            'discharge_date' => $dischargeDate,
+        ];
+    }
+
+    /**
      * Crear BL para un grupo específico de CNI.
      */
-    protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
+    protected function createBillOfLadingForGroup(
+        Shipment $shipment,
+        array $data,
+        string $billNumber,
+        array $containerGroup = [],
+        array $options = []
+    ): BillOfLading
     {
         $resolvedGrossWeight = $this->resolveGroupGrossWeight(
             $containerGroup,
@@ -2059,9 +2112,14 @@ class CmspEdiParser implements ManifestParserInterface
             }
         }
 
-        // El CUSCAR recibido no informa fecha propia del BL ni fecha de carga.
-        $billDate = null;
-        $loadingDate = null;
+        $billDates = $this->resolveCuscarBillDates(
+            $data,
+            $options
+        );
+
+        $billDate = $billDates['bill_date'];
+        $loadingDate = $billDates['loading_date'];
+        $dischargeDate = $billDates['discharge_date'];
 
         /*
          * Descripción real del conocimiento.
@@ -2155,6 +2213,7 @@ class CmspEdiParser implements ManifestParserInterface
             'status'                    => 'draft',
             'bill_date'                 => $billDate,
             'loading_date'              => $loadingDate,
+            'discharge_date'            => $dischargeDate,
             'created_by_user_id'        => auth()->id(),
         ]);
 

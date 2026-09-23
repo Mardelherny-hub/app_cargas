@@ -97,6 +97,54 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
+     * Orienta la ruta según el tipo de operación seleccionado.
+     *
+     * Los CUSCAR recibidos declaran LOC+9/LOC+11 con una orientación que no
+     * alcanza para definir el sentido comercial en la aplicación. Para una
+     * exportación se conserva LOC+9 -> LOC+11. Para una importación se invierte
+     * la pareja, de modo que el destino sea el puerto de ingreso.
+     *
+     * @return array{origin:string,destination:string}
+     */
+    protected function resolveCuscarRouteCodes(
+        array $data,
+        array $options = []
+    ): array {
+        $fileLoading = trim(
+            (string) ($data['ports']['loading'] ?? '')
+        );
+        $fileDischarge = trim(
+            (string) ($data['ports']['discharge'] ?? '')
+        );
+
+        if ($fileLoading === '') {
+            throw new Exception(
+                'CMSP EDI: el archivo CUSCAR no informa LOC+9.'
+            );
+        }
+
+        if ($fileDischarge === '') {
+            throw new Exception(
+                'CMSP EDI: el archivo CUSCAR no informa LOC+11/LOC+60.'
+            );
+        }
+
+        $operationType = $this->resolveCuscarOperationType($options);
+
+        if ($operationType === 'import') {
+            return [
+                'origin' => $fileDischarge,
+                'destination' => $fileLoading,
+            ];
+        }
+
+        return [
+            'origin' => $fileLoading,
+            'destination' => $fileDischarge,
+        ];
+    }
+
+    /**
      * La embarcación y el número de viaje ingresados por el operador tienen
      * prioridad. Lo mismo aplica a las fechas operativas cuando el formulario
      * se completa expresamente: la pantalla las presenta como reemplazo de la
@@ -191,27 +239,11 @@ class CmspEdiParserCompat extends CmspEdiParser
             throw new Exception("Usuario no tiene empresa asignada. User ID: {$user->id}");
         }
 
-        $originPortCode = trim(
-            (string) ($data['ports']['loading'] ?? '')
-        );
-        $destinationPortCode = trim(
-            (string) ($data['ports']['discharge'] ?? '')
-        );
+        $cargoType = $this->resolveCuscarOperationType($options);
+        $route = $this->resolveCuscarRouteCodes($data, $options);
 
-        if ($originPortCode === '') {
-            throw new Exception(
-                'CMSP EDI: el archivo CUSCAR no informa puerto de carga.'
-            );
-        }
-
-        if ($destinationPortCode === '') {
-            throw new Exception(
-                'CMSP EDI: el archivo CUSCAR no informa puerto de descarga.'
-            );
-        }
-
-        $originPort = $this->findOrCreatePort($originPortCode);
-        $destPort = $this->findOrCreatePort($destinationPortCode);
+        $originPort = $this->findOrCreatePort($route['origin']);
+        $destPort = $this->findOrCreatePort($route['destination']);
 
         $vesselId = $options['vessel_id'] ?? null;
 
@@ -257,8 +289,6 @@ class CmspEdiParserCompat extends CmspEdiParser
                 'CMSP EDI: TDT sin número de viaje y no se ingresó uno en la importación.'
             );
         }
-
-        $cargoType = $this->resolveCuscarOperationType($options);
 
         $this->guardVoyageNumberIsFree($voyageNumber);
 
