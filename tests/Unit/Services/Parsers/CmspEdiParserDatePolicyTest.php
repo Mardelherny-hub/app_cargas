@@ -7,7 +7,7 @@ use PHPUnit\Framework\TestCase;
 
 class CmspEdiParserDatePolicyTest extends TestCase
 {
-    public function test_inverted_source_dates_warn_but_do_not_block(): void
+    public function test_inverted_source_dates_are_rejected(): void
     {
         $parser = new class extends CmspEdiParserCompat {
             public function check(
@@ -15,7 +15,7 @@ class CmspEdiParserDatePolicyTest extends TestCase
                 string $arrival,
                 array $data
             ): array {
-                $this->warnIfCuscarChronologyIsInverted(
+                $this->assertCuscarChronology(
                     $departure,
                     $arrival,
                     $data
@@ -25,7 +25,12 @@ class CmspEdiParserDatePolicyTest extends TestCase
             }
         };
 
-        $warnings = $parser->check(
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage(
+            'La fecha de salida 2026-09-22 (DTM+136) no puede ser posterior a la fecha estimada de llegada 2026-09-21 (DTM+132).'
+        );
+
+        $parser->check(
             '2026-09-22 00:00:00',
             '2026-09-21 00:00:00',
             [
@@ -34,14 +39,6 @@ class CmspEdiParserDatePolicyTest extends TestCase
                     'estimated_arrival' => '2026-09-21 00:00:00',
                 ],
             ]
-        );
-
-        $this->assertCount(1, $warnings);
-        $this->assertStringContainsString('DTM+136', $warnings[0]);
-        $this->assertStringContainsString('DTM+132', $warnings[0]);
-        $this->assertStringContainsString(
-            'se preservan las fechas informadas',
-            $warnings[0]
         );
     }
 
@@ -52,7 +49,7 @@ class CmspEdiParserDatePolicyTest extends TestCase
                 string $departure,
                 string $arrival
             ): array {
-                $this->warnIfCuscarChronologyIsInverted(
+                $this->assertCuscarChronology(
                     $departure,
                     $arrival,
                     []
