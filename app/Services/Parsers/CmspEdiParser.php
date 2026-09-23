@@ -1992,6 +1992,47 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Resuelve las fechas que se persistirán en el conocimiento CUSCAR.
+     *
+     * Fecha de Emisión acompaña a la fecha de descarga efectiva. La fecha de
+     * carga es un dato independiente y sólo se toma del formulario cuando fue
+     * informada expresamente.
+     *
+     * @return array{bill_date:?string,loading_date:?string,discharge_date:?string}
+     */
+    protected function resolveCuscarBillDates(
+        array $data,
+        array $options = []
+    ): array {
+        $operatorDischarge = trim(
+            (string) ($options['discharge_date'] ?? '')
+        );
+        $sourceDischarge = trim(
+            (string) ($data['dates']['estimated_arrival'] ?? '')
+        );
+
+        $dischargeDate = $operatorDischarge !== ''
+            ? substr($operatorDischarge, 0, 10)
+            : (
+                $sourceDischarge !== ''
+                    ? substr($sourceDischarge, 0, 10)
+                    : null
+            );
+
+        $operatorLoading = trim(
+            (string) ($options['loading_date'] ?? '')
+        );
+
+        return [
+            'bill_date' => $dischargeDate,
+            'loading_date' => $operatorLoading !== ''
+                ? substr($operatorLoading, 0, 10)
+                : null,
+            'discharge_date' => $dischargeDate,
+        ];
+    }
+
+    /**
      * Crear BL para un grupo específico de CNI.
      */
     protected function createBillOfLadingForGroup(
@@ -2071,39 +2112,14 @@ class CmspEdiParser implements ManifestParserInterface
             }
         }
 
-        /*
-         * Fechas del conocimiento CUSCAR.
-         *
-         * Criterio operativo confirmado en pruebas: Fecha de Emisión del BL
-         * acompaña la fecha de descarga efectiva. La descarga ingresada por el
-         * operador tiene prioridad; si queda vacía, se conserva DTM+132.
-         *
-         * La fecha de carga del BL es independiente de la salida del viaje y
-         * sólo se completa si el operador la informó expresamente.
-         */
-        $operatorDischarge = trim(
-            (string) ($options['discharge_date'] ?? '')
-        );
-        $sourceDischarge = trim(
-            (string) ($data['dates']['estimated_arrival'] ?? '')
+        $billDates = $this->resolveCuscarBillDates(
+            $data,
+            $options
         );
 
-        $dischargeDate = $operatorDischarge !== ''
-            ? substr($operatorDischarge, 0, 10)
-            : (
-                $sourceDischarge !== ''
-                    ? substr($sourceDischarge, 0, 10)
-                    : null
-            );
-
-        $billDate = $dischargeDate;
-
-        $operatorLoading = trim(
-            (string) ($options['loading_date'] ?? '')
-        );
-        $loadingDate = $operatorLoading !== ''
-            ? substr($operatorLoading, 0, 10)
-            : null;
+        $billDate = $billDates['bill_date'];
+        $loadingDate = $billDates['loading_date'];
+        $dischargeDate = $billDates['discharge_date'];
 
         /*
          * Descripción real del conocimiento.
