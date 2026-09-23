@@ -139,6 +139,10 @@ jobs:
         run: |
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/ImporterOperationTypeIntegrityContractTest.php
 
+      - name: Verify Navsur port catalog contract
+        run: |
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/NavsurPortCatalogIntegrityContractTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '
