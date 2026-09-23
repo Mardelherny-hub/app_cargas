@@ -190,6 +190,166 @@ class CmspEdiParserDatePolicyTest extends TestCase
         );
     }
 
+    public function test_partial_operator_departure_is_rejected_even_if_source_has_arrival(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function dates(array $data, array $options): array
+            {
+                return $this->resolveCuscarOperationalDates(
+                    $data,
+                    $options
+                );
+            }
+        };
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage(
+            'deben completarse juntas o dejarse ambas vacías'
+        );
+
+        $parser->dates(
+            [
+                'dates' => [
+                    'departure' => '2026-09-18 08:00:00',
+                    'estimated_arrival' => '2026-09-23 00:00:00',
+                ],
+            ],
+            [
+                'departure_date' => '2026-09-19T10:01',
+                'discharge_date' => null,
+            ]
+        );
+    }
+
+    public function test_partial_operator_discharge_is_rejected_even_if_source_has_departure(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function dates(array $data, array $options): array
+            {
+                return $this->resolveCuscarOperationalDates(
+                    $data,
+                    $options
+                );
+            }
+        };
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage(
+            'deben completarse juntas o dejarse ambas vacías'
+        );
+
+        $parser->dates(
+            [
+                'dates' => [
+                    'departure' => '2026-09-18 08:00:00',
+                    'estimated_arrival' => '2026-09-23 00:00:00',
+                ],
+            ],
+            [
+                'departure_date' => null,
+                'discharge_date' => '2026-09-23',
+            ]
+        );
+    }
+
+    public function test_empty_operator_pair_never_invents_or_mixes_source_dates(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function dates(array $data): array
+            {
+                return $this->resolveCuscarOperationalDates(
+                    $data,
+                    [
+                        'departure_date' => null,
+                        'discharge_date' => null,
+                    ]
+                );
+            }
+        };
+
+        $both = $parser->dates([
+            'dates' => [
+                'departure' => '2026-09-19 10:01:00',
+                'estimated_arrival' => '2026-09-23 00:00:00',
+            ],
+        ]);
+
+        $this->assertSame(
+            '2026-09-19 10:01:00',
+            $both['departure_date']
+        );
+        $this->assertSame(
+            '2026-09-23 00:00:00',
+            $both['estimated_arrival_date']
+        );
+
+        $arrivalOnly = $parser->dates([
+            'dates' => [
+                'estimated_arrival' => '2026-09-23 00:00:00',
+            ],
+        ]);
+
+        $this->assertNull($arrivalOnly['departure_date']);
+        $this->assertSame(
+            '2026-09-23 00:00:00',
+            $arrivalOnly['estimated_arrival_date']
+        );
+
+        $departureOnly = $parser->dates([
+            'dates' => [
+                'departure' => '2026-09-19 10:01:00',
+            ],
+        ]);
+
+        $this->assertSame(
+            '2026-09-19 10:01:00',
+            $departureOnly['departure_date']
+        );
+        $this->assertNull(
+            $departureOnly['estimated_arrival_date']
+        );
+
+        $neither = $parser->dates(['dates' => []]);
+
+        $this->assertNull($neither['departure_date']);
+        $this->assertNull($neither['estimated_arrival_date']);
+    }
+
+    public function test_manual_pair_uses_only_form_values_even_when_source_has_both(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function dates(array $data, array $options): array
+            {
+                return $this->resolveCuscarOperationalDates(
+                    $data,
+                    $options
+                );
+            }
+        };
+
+        $dates = $parser->dates(
+            [
+                'dates' => [
+                    'departure' => '2026-03-03 15:05:00',
+                    'estimated_arrival' => '2026-03-02 00:00:00',
+                ],
+            ],
+            [
+                'departure_date' => '2026-09-19T10:01',
+                'discharge_date' => '2026-09-23',
+            ]
+        );
+
+        $this->assertSame(
+            '2026-09-19T10:01',
+            $dates['departure_date']
+        );
+        $this->assertSame(
+            '2026-09-23',
+            $dates['estimated_arrival_date']
+        );
+    }
+
     public function test_manifest_history_uses_late_static_binding_for_parser_class(): void
     {
         $source = file_get_contents(
