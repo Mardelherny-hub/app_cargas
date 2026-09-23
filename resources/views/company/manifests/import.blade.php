@@ -212,6 +212,8 @@
                             informada por la fuente. Si la fuente tampoco informa la salida,
                             quedará sin informar. Si decide reemplazarla, debe ingresar
                             fecha y hora completas; el sistema no inventa una hora.
+                            Para CUSCAR, salida y descarga deben completarse juntas o
+                            dejarse ambas vacías: nunca se mezclan ambas fuentes.
                         </p>
                     </div>
 
@@ -264,6 +266,8 @@
                             Si lo deja vacío, se conservará la fecha informada por la fuente.
                             Si se completa, se aplicará a los conocimientos importados
                             y como llegada estimada del viaje, con prioridad sobre la fuente.
+                            Para CUSCAR, salida y descarga deben completarse juntas o
+                            dejarse ambas vacías: nunca se mezclan ambas fuentes.
                             Algunos formatos pueden requerir este dato cuando el archivo
                             no informa una fecha estimada de llegada.
                         </p>
