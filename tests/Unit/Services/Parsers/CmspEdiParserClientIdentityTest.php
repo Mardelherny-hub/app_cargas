@@ -386,6 +386,89 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_cuscar_import_reorients_arbue_pysau_toward_argentina(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $route = $this->invokeCompat(
+            $parser,
+            'resolveCuscarRouteCodes',
+            [[
+                'ports' => [
+                    'loading' => 'ARBUE',
+                    'discharge' => 'PYASU',
+                ],
+            ], [
+                'operation_type' => 'import',
+            ]]
+        );
+
+        $this->assertSame('PYASU', $route['origin']);
+        $this->assertSame('ARBUE', $route['destination']);
+    }
+
+    public function test_cuscar_export_keeps_arbue_pysau_direction(): void
+    {
+        $parser = new CmspEdiParserCompat();
+
+        $route = $this->invokeCompat(
+            $parser,
+            'resolveCuscarRouteCodes',
+            [[
+                'ports' => [
+                    'loading' => 'ARBUE',
+                    'discharge' => 'PYASU',
+                ],
+            ], [
+                'operation_type' => 'export',
+            ]]
+        );
+
+        $this->assertSame('ARBUE', $route['origin']);
+        $this->assertSame('PYASU', $route['destination']);
+    }
+
+    public function test_cuscar_bill_emission_follows_effective_discharge(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $dates = $this->invoke(
+            $parser,
+            'resolveCuscarBillDates',
+            [[
+                'dates' => [
+                    'estimated_arrival' => '2026-03-02 00:00:00',
+                ],
+            ], [
+                'loading_date' => '2026-09-18',
+                'discharge_date' => '2026-09-23',
+            ]]
+        );
+
+        $this->assertSame('2026-09-23', $dates['bill_date']);
+        $this->assertSame('2026-09-18', $dates['loading_date']);
+        $this->assertSame('2026-09-23', $dates['discharge_date']);
+    }
+
+    public function test_cuscar_bill_dates_fall_back_to_source_discharge_without_inventing_loading(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $dates = $this->invoke(
+            $parser,
+            'resolveCuscarBillDates',
+            [[
+                'dates' => [
+                    'estimated_arrival' => '2026-03-02 00:00:00',
+                ],
+            ], []]
+        );
+
+        $this->assertSame('2026-03-02', $dates['bill_date']);
+        $this->assertNull($dates['loading_date']);
+        $this->assertSame('2026-03-02', $dates['discharge_date']);
+    }
+
     public function test_real_josamo_45u1_maps_to_40ot(): void
     {
         $parser = new CmspEdiParser();
