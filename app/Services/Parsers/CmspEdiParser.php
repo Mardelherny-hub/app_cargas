@@ -1368,7 +1368,13 @@ class CmspEdiParser implements ManifestParserInterface
                 }
                 
                 // Crear BL para este grupo
-                $billOfLading = $this->createBillOfLadingForGroup($shipment, $data, $billNumber, $containerGroup);
+                $billOfLading = $this->createBillOfLadingForGroup(
+                    $shipment,
+                    $data,
+                    $billNumber,
+                    $containerGroup,
+                    $options
+                );
                 $billsOfLading[] = $billOfLading;
                 
                 // Crear items y contenedores solo para este BL
@@ -1988,7 +1994,13 @@ class CmspEdiParser implements ManifestParserInterface
     /**
      * Crear BL para un grupo específico de CNI.
      */
-    protected function createBillOfLadingForGroup(Shipment $shipment, array $data, string $billNumber, array $containerGroup = []): BillOfLading
+    protected function createBillOfLadingForGroup(
+        Shipment $shipment,
+        array $data,
+        string $billNumber,
+        array $containerGroup = [],
+        array $options = []
+    ): BillOfLading
     {
         $resolvedGrossWeight = $this->resolveGroupGrossWeight(
             $containerGroup,
@@ -2059,9 +2071,39 @@ class CmspEdiParser implements ManifestParserInterface
             }
         }
 
-        // El CUSCAR recibido no informa fecha propia del BL ni fecha de carga.
-        $billDate = null;
-        $loadingDate = null;
+        /*
+         * Fechas del conocimiento CUSCAR.
+         *
+         * Criterio operativo confirmado en pruebas: Fecha de Emisión del BL
+         * acompaña la fecha de descarga efectiva. La descarga ingresada por el
+         * operador tiene prioridad; si queda vacía, se conserva DTM+132.
+         *
+         * La fecha de carga del BL es independiente de la salida del viaje y
+         * sólo se completa si el operador la informó expresamente.
+         */
+        $operatorDischarge = trim(
+            (string) ($options['discharge_date'] ?? '')
+        );
+        $sourceDischarge = trim(
+            (string) ($data['dates']['estimated_arrival'] ?? '')
+        );
+
+        $dischargeDate = $operatorDischarge !== ''
+            ? substr($operatorDischarge, 0, 10)
+            : (
+                $sourceDischarge !== ''
+                    ? substr($sourceDischarge, 0, 10)
+                    : null
+            );
+
+        $billDate = $dischargeDate;
+
+        $operatorLoading = trim(
+            (string) ($options['loading_date'] ?? '')
+        );
+        $loadingDate = $operatorLoading !== ''
+            ? substr($operatorLoading, 0, 10)
+            : null;
 
         /*
          * Descripción real del conocimiento.
@@ -2155,6 +2197,7 @@ class CmspEdiParser implements ManifestParserInterface
             'status'                    => 'draft',
             'bill_date'                 => $billDate,
             'loading_date'              => $loadingDate,
+            'discharge_date'            => $dischargeDate,
             'created_by_user_id'        => auth()->id(),
         ]);
 
