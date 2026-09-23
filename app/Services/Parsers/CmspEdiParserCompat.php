@@ -97,10 +97,14 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * La embarcación y el número de viaje ingresados por el operador tienen
-     * prioridad. Lo mismo aplica a las fechas operativas cuando el formulario
-     * se completa expresamente: la pantalla las presenta como reemplazo de la
-     * fuente. Si el operador deja el campo vacío, se conserva el valor CUSCAR.
+     * Resuelve las fechas operativas CUSCAR sin mezclar fuentes.
+     *
+     * Regla:
+     * - si el operador completa salida y descarga, ambas provienen del formulario;
+     * - si deja ambas vacías, ambas se resuelven exclusivamente desde el CUSCAR;
+     * - si completa sólo una, se rechaza la importación.
+     *
+     * La fecha de carga del BL es independiente y no integra este par.
      *
      * @return array{departure_date:?string, estimated_arrival_date:?string}
      */
@@ -115,22 +119,36 @@ class CmspEdiParserCompat extends CmspEdiParser
             (string) ($options['discharge_date'] ?? '')
         );
 
+        $hasOperatorDeparture = $operatorDeparture !== '';
+        $hasOperatorDischarge = $operatorDischarge !== '';
+
+        if ($hasOperatorDeparture !== $hasOperatorDischarge) {
+            throw new \DomainException(
+                'Para CUSCAR, la fecha de salida y la fecha de descarga '
+                . 'deben completarse juntas o dejarse ambas vacías. '
+                . 'No se mezclan fechas del formulario con fechas del archivo.'
+            );
+        }
+
+        if ($hasOperatorDeparture) {
+            return [
+                'departure_date' => $operatorDeparture,
+                'estimated_arrival_date' => $operatorDischarge,
+            ];
+        }
+
         return [
-            'departure_date' => $operatorDeparture !== ''
-                ? $operatorDeparture
-                : ($data['dates']['departure'] ?? null),
-            'estimated_arrival_date' => $operatorDischarge !== ''
-                ? $operatorDischarge
-                : ($data['dates']['estimated_arrival'] ?? null),
+            'departure_date' => $data['dates']['departure'] ?? null,
+            'estimated_arrival_date' =>
+                $data['dates']['estimated_arrival'] ?? null,
         ];
     }
 
     /**
-     * Valida la cronología operativa del CUSCAR sin alterar las fechas fuente.
+     * Valida la cronología del par efectivo ya resuelto.
      *
-     * El archivo sigue siendo la fuente primaria y el formulario sólo completa
-     * datos ausentes. Si salida > llegada estimada, la importación se rechaza:
-     * respetar la fuente no implica persistir una cronología imposible.
+     * A esta altura ambas fechas provienen de una sola fuente: formulario o
+     * CUSCAR. Si salida > llegada estimada, la importación se rechaza.
      */
     protected function assertCuscarChronology(
         string $departureDate,
