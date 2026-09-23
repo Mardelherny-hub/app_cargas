@@ -135,6 +135,10 @@ jobs:
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/ImporterDateIntegrityContractTest.php
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/KlineDataParserVoyageIntegrityTest.php
 
+      - name: Verify importer operation direction audit
+        run: |
+          ./vendor/bin/phpunit tests/Unit/Services/Parsers/ImporterOperationTypeIntegrityContractTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '

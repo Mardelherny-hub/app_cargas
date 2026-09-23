@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -51,6 +52,7 @@ class LoginXmlParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
     // Mapeo de tipos de contenedor del XML a tipos del sistema
     protected array $containerTypeMapping = [
         '40RH' => 'Reefer High Cube 40ft',
@@ -1337,7 +1339,10 @@ class LoginXmlParser implements ManifestParserInterface
             'departure_date' => $data['voyage']['departure_date'],
             'estimated_arrival_date' => $data['voyage']['estimated_arrival_date'],
             'voyage_type' => $this->determineVoyageType($data),
-            'cargo_type' => $this->determineCargoType($data),
+            'cargo_type' => $this->determineCargoType(
+                $data,
+                (int) $company->id
+            ),
             'status' => 'planning',
             'is_convoy' => false,
             'vessel_count' => 1,
@@ -2278,20 +2283,16 @@ class LoginXmlParser implements ManifestParserInterface
     }
 
     /**
-     * Determinar tipo de operación según los países reales de los puertos.
-     *
-     * Argentina es la referencia operativa de la aplicación:
-     * AR -> exterior = export
-     * exterior -> AR = import
-     * mismo país = cabotage
-     * exterior -> exterior = transit
+     * Determinar tipo de operación según los países reales de los puertos
+     * y el país configurado para la empresa importadora.
      */
-    protected function determineCargoType(array $data): string
-    {
+    protected function determineCargoType(
+        array $data,
+        int $companyId
+    ): string {
         $originPort = $this->findPortByName(
             $data['voyage']['origin_port']
         );
-
         $destinationPort = $this->findPortByName(
             $data['voyage']['destination_port']
         );
@@ -2302,38 +2303,11 @@ class LoginXmlParser implements ManifestParserInterface
             );
         }
 
-        $originCountry = Country::find($originPort->country_id);
-        $destinationCountry = Country::find(
-            $destinationPort->country_id
+        return $this->resolveVoyageCargoTypeForCompany(
+            $companyId,
+            $originPort,
+            $destinationPort
         );
-
-        $originCode = strtoupper(
-            trim((string) ($originCountry?->alpha2_code ?? ''))
-        );
-
-        $destinationCode = strtoupper(
-            trim((string) ($destinationCountry?->alpha2_code ?? ''))
-        );
-
-        if ($originCode === '' || $destinationCode === '') {
-            throw new Exception(
-                'No se puede determinar la operación: país de puerto no resuelto'
-            );
-        }
-
-        if ($originCode === $destinationCode) {
-            return 'cabotage';
-        }
-
-        if ($originCode === 'AR') {
-            return 'export';
-        }
-
-        if ($destinationCode === 'AR') {
-            return 'import';
-        }
-
-        return 'transit';
     }
 
     /**
