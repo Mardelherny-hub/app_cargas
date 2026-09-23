@@ -16,6 +16,7 @@ use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Models\User;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\ResolvesPorts;
@@ -52,6 +53,7 @@ class GuaranExcelParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesVoyageCargoType;
     use ResolvesPorts;
     /**
      * Mapeo columnas A-BT basado en análisis real del archivo
@@ -442,6 +444,10 @@ class GuaranExcelParser implements ManifestParserInterface
         // se bloquea la importación con un error claro en lugar de reusar el viaje.
         $this->guardVoyageNumberIsFree($voyageData['voyage_number']);
 
+        $companyCountryCode = (string) \App\Models\Company::query()
+            ->whereKey($companyId)
+            ->value('country');
+
         return Voyage::create(
             $this->buildVoyageCreationData(
                 $voyageData,
@@ -449,6 +455,7 @@ class GuaranExcelParser implements ManifestParserInterface
                 $vessel,
                 $originPort,
                 $destPort,
+                $companyCountryCode,
                 $options
             )
         );
@@ -464,6 +471,7 @@ class GuaranExcelParser implements ManifestParserInterface
         Vessel $vessel,
         Port $originPort,
         Port $destPort,
+        string $companyCountryCode,
         array $options = []
     ): array {
         $notes = 'Importado desde GUARAN Excel';
@@ -490,7 +498,10 @@ class GuaranExcelParser implements ManifestParserInterface
             'estimated_arrival_date' => null,
 
             'voyage_type' => $this->mapManifestType($voyageData['manifest_type']),
-            'cargo_type' => $this->mapCargoType($voyageData),
+            'cargo_type' => $this->mapCargoType(
+                $voyageData,
+                $companyCountryCode
+            ),
             'status' => 'planning',
             'is_consolidated' => true,
             'vessel_count' => 1,
@@ -521,36 +532,29 @@ class GuaranExcelParser implements ManifestParserInterface
     }
 
     /**
-     * Determina el tipo de operación aduanera para el Voyage.
-     * En Guaran: POL = Paraguay, POD = Argentina → import.
-     * Si más adelante querés ampliar lógica, podés hacerlo acá.
+     * Determina el tipo de operación del Voyage respecto del país
+     * configurado para la empresa importadora.
      */
-    protected function mapCargoType(array $voyageData): string
-    {
-        // 1) Caso simple y robusto para Guaran (PY → AR)
-        return 'import';
+    protected function mapCargoType(
+        array $voyageData,
+        string $companyCountryCode
+    ): string {
+        $originCountryCode = strtoupper(substr(
+            trim((string) ($voyageData['pol'] ?? '')),
+            0,
+            2
+        ));
+        $destinationCountryCode = strtoupper(substr(
+            trim((string) ($voyageData['pod'] ?? '')),
+            0,
+            2
+        ));
 
-        // ── Ejemplos de ampliación futura (dejar comentado para no romper hoy) ──
-        // $pol = strtoupper($voyageData['pol_code'] ?? '');   // ej. 'PYASU'
-        // $pod = strtoupper($voyageData['pod_code'] ?? '');   // ej. 'ARBUE'
-        // if ($pol && $pod && substr($pol, 0, 2) === substr($pod, 0, 2)) {
-        //     return 'cabotage';
-        // }
-        // $desc = strtolower(($voyageData['marks_description'] ?? '').' '.($voyageData['remarks'] ?? ''));
-        // if (str_contains($desc, 'tránsito') || str_contains($desc, 'transit')) {
-        //     return 'transit';
-        // }
-        // if (str_contains($desc, 'transbordo') || str_contains($desc, 'transshipment')) {
-        //     return 'transshipment';
-        // }
-        // // Por defecto, si POL≠AR y POD=AR → import; si POL=AR y POD≠AR → export.
-        // if ($pol && $pod) {
-        //     $isARFrom = str_starts_with($pol, 'AR');
-        //     $isARTo   = str_starts_with($pod, 'AR');
-        //     if (!$isARFrom && $isARTo) return 'import';
-        //     if ($isARFrom && !$isARTo) return 'export';
-        // }
-        // return 'import';
+        return $this->resolveVoyageCargoTypeCodes(
+            $companyCountryCode,
+            $originCountryCode,
+            $destinationCountryCode
+        );
     }
 
     /**
