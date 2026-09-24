@@ -143,55 +143,88 @@
     </table>
 
     @php
-        $containerChunks = collect($bill['containers'])->chunk(10);
-        $firstContainerChunk = $containerChunks->shift() ?? collect();
+        $chunkText = function (?string $text, int $maxLength = 650) {
+            $text = trim(preg_replace('/\s+/u', ' ', (string) $text));
+
+            if ($text === '') {
+                return collect(['']);
+            }
+
+            $chunks = [];
+            $current = '';
+
+            foreach (preg_split('/\s+/u', $text) ?: [] as $word) {
+                $candidate = $current === '' ? $word : $current.' '.$word;
+
+                if ($current !== '' && mb_strlen($candidate) > $maxLength) {
+                    $chunks[] = $current;
+                    $current = $word;
+                    continue;
+                }
+
+                $current = $candidate;
+            }
+
+            if ($current !== '') {
+                $chunks[] = $current;
+            }
+
+            return collect($chunks ?: ['']);
+        };
+
+        $descriptionChunks = $chunkText($bill['cargo_description'] ?? '', 650);
+        $containerChunks = collect($bill['containers'])->chunk(8)->values();
+        $cargoRowCount = max(1, $descriptionChunks->count(), $containerChunks->count());
     @endphp
     <table class="cargo">
-        <tr>
+        @for($cargoRow = 0; $cargoRow < $cargoRowCount; $cargoRow++)
+        @php
+            $descriptionChunk = $descriptionChunks->get($cargoRow, '');
+            $containerChunk = $containerChunks->get($cargoRow, collect());
+        @endphp
+        <tr @if($cargoRow > 0) class="cargo-continuation" @endif>
             <td style="width:14%">
-                <span class="label">10. Conocimiento</span>
-                <div class="value">{{ $bill['bill_number'] }}</div>
+                @if($cargoRow === 0)
+                    <span class="label">10. Conocimiento</span>
+                    <div class="value">{{ $bill['bill_number'] }}</div>
+                @endif
             </td>
             <td style="width:34%">
-                <span class="label">11. Cantidad, volumen y bultos</span>
-                <div class="value">{{ $bill['total_packages'] }} BULTOS
+                @if($cargoRow === 0)
+                    <span class="label">11. Cantidad, volumen y bultos</span>
+                    <div class="value">{{ $bill['total_packages'] }} BULTOS
 CONTENEDORES: {{ $bill['container_count'] }}
 VOLUMEN: {{ number_format((float)$bill['volume_m3'], 3, '.', '') }} M3
-{{ $bill['cargo_description'] }}</div>
+@if($descriptionChunk !== ''){{ $descriptionChunk }}@endif</div>
+                @elseif($descriptionChunk !== '')
+                    <div class="value">{{ $descriptionChunk }}</div>
+                @endif
             </td>
             <td style="width:16%" class="right">
-                <span class="label">12. Peso bruto Kg.</span>
-                <div class="value">{{ number_format((float)$bill['gross_weight_kg'], 3, '.', '') }}</div>
+                @if($cargoRow === 0)
+                    <span class="label">12. Peso bruto Kg.</span>
+                    <div class="value">{{ number_format((float)$bill['gross_weight_kg'], 3, '.', '') }}</div>
+                @endif
             </td>
             <td style="width:9%" class="right">
-                <span class="label">13. Valor FOB u$d</span>
-                <div class="value">@if((float)$bill['declared_value'] > 0){{ number_format((float)$bill['declared_value'], 2, '.', '') }}@endif</div>
+                @if($cargoRow === 0)
+                    <span class="label">13. Valor FOB u$d</span>
+                    <div class="value">@if((float)$bill['declared_value'] > 0){{ number_format((float)$bill['declared_value'], 2, '.', '') }}@endif</div>
+                @endif
             </td>
             <td style="width:27%">
-                <span class="label">14. Marcas &amp; números, descripción de la mercadería</span>
-                <div class="value">@if(!empty($bill['cargo_marks'])){{ $bill['cargo_marks'] }}
+                @if($cargoRow === 0)
+                    <span class="label">14. Marcas &amp; números, descripción de la mercadería</span>
+                @endif
+                <div class="value">@if($cargoRow === 0 && !empty($bill['cargo_marks'])){{ $bill['cargo_marks'] }}
 @endif
-@foreach($firstContainerChunk as $container)
-<div class="container-row">{{ $container['number'] }}@if(!empty($container['type'])) &nbsp; {{ $container['type'] }}@endif @if(!empty($container['seals'])) &nbsp; PRECINTO: {{ $container['seals'] }}@endif</div>
-@endforeach
-                </div>
-            </td>
-        </tr>
-        @foreach($containerChunks as $containerChunk)
-        <tr class="cargo-continuation">
-            <td style="width:14%"></td>
-            <td style="width:34%"></td>
-            <td style="width:16%"></td>
-            <td style="width:9%"></td>
-            <td style="width:27%">
-                <div class="value">
 @foreach($containerChunk as $container)
 <div class="container-row">{{ $container['number'] }}@if(!empty($container['type'])) &nbsp; {{ $container['type'] }}@endif @if(!empty($container['seals'])) &nbsp; PRECINTO: {{ $container['seals'] }}@endif</div>
 @endforeach
                 </div>
             </td>
         </tr>
-        @endforeach
+        @endfor
     </table>
 
     <table class="r6">
