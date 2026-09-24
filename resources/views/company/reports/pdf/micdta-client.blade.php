@@ -31,7 +31,9 @@
     .center { text-align: center; }
     .right { text-align: right; }
     .small { font-size: 5.7pt; }
-    .container-row { margin-top: .45mm; }
+    .container-row { margin-top: .12mm; }
+    .cargo-continuation td { padding-top: .45mm; padding-bottom: .45mm; }
+    .cargo-continuation .value { font-size: 5.8pt; line-height: 1.05; }
 </style>
 </head>
 <body>
@@ -140,6 +142,10 @@
         </tr>
     </table>
 
+    @php
+        $containerChunks = collect($bill['containers'])->chunk(10);
+        $firstContainerChunk = $containerChunks->shift() ?? collect();
+    @endphp
     <table class="cargo">
         <tr>
             <td style="width:14%">
@@ -165,20 +171,27 @@ VOLUMEN: {{ number_format((float)$bill['volume_m3'], 3, '.', '') }} M3
                 <span class="label">14. Marcas &amp; números, descripción de la mercadería</span>
                 <div class="value">@if(!empty($bill['cargo_marks'])){{ $bill['cargo_marks'] }}
 @endif
-@foreach($bill['containers'] as $container)
-<div class="container-row">
-{{ $container['number'] }}
-@if(!empty($container['type']))
-&nbsp; {{ $container['type'] }}
-@endif
-@if(!empty($container['seals']))
-&nbsp; PRECINTO: {{ $container['seals'] }}
-@endif
-</div>
+@foreach($firstContainerChunk as $container)
+<div class="container-row">{{ $container['number'] }}@if(!empty($container['type'])) &nbsp; {{ $container['type'] }}@endif @if(!empty($container['seals'])) &nbsp; PRECINTO: {{ $container['seals'] }}@endif</div>
 @endforeach
                 </div>
             </td>
         </tr>
+        @foreach($containerChunks as $containerChunk)
+        <tr class="cargo-continuation">
+            <td style="width:14%"></td>
+            <td style="width:34%"></td>
+            <td style="width:16%"></td>
+            <td style="width:9%"></td>
+            <td style="width:27%">
+                <div class="value">
+@foreach($containerChunk as $container)
+<div class="container-row">{{ $container['number'] }}@if(!empty($container['type'])) &nbsp; {{ $container['type'] }}@endif @if(!empty($container['seals'])) &nbsp; PRECINTO: {{ $container['seals'] }}@endif</div>
+@endforeach
+                </div>
+            </td>
+        </tr>
+        @endforeach
     </table>
 
     <table class="r6">
