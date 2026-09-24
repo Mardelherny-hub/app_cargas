@@ -148,6 +148,7 @@ jobs:
           ./vendor/bin/phpunit tests/Unit/Jobs/ProcessManifestImportJobDateFallbackContractTest.php
           ./vendor/bin/phpunit tests/Unit/Models/BillOfLadingReportPartyDataTest.php
           ./vendor/bin/phpunit tests/Unit/Reports/ClientReportTemplateContractTest.php
+          ./vendor/bin/phpunit tests/Unit/Reports/MicDtaClientPaginationTest.php
 
       - name: Verify CUSCAR document date semantics
         run: |
