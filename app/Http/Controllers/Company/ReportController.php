@@ -1474,6 +1474,23 @@ private function buildBillsOfLadingQuery($company)
 
         // Ambos manifiestos se imprimen en A4 horizontal.
         $pdf->setPaper('a4', 'landscape');
+
+        // El formato basado en la muestra del cliente repite su encabezado
+        // en cada hoja física. Numerar con el canvas evita confundir grupo
+        // de puertos con número real de página cuando una ruta desborda.
+        if ($template === 'client') {
+            $pdf->render();
+            $dompdf = $pdf->getDomPDF();
+            $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans Mono', 'normal');
+            $dompdf->getCanvas()->page_text(
+                666,
+                64,
+                '{PAGE_NUM}',
+                $font,
+                7,
+                [0.07, 0.07, 0.07]
+            );
+        }
         
         // Nombre de archivo sugerido
         $filename = $service->getSuggestedFilename('pdf');

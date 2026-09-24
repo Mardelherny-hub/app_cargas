@@ -102,6 +102,33 @@ class ClientReportTemplateContractTest extends TestCase
         $this->assertStringContainsString('$group[\'discharge_port\']', $template);
     }
 
+    public function test_manifest_repeats_full_document_header_on_physical_continuation_pages(): void
+    {
+        $manifest = $this->source('resources/views/company/reports/pdf/manifest-client.blade.php');
+
+        $theadPosition = strpos($manifest, '<thead>');
+        $titlePosition = strpos($manifest, '<div class="title">Cargo Manifest</div>');
+        $shipPosition = strpos($manifest, 'Name of Ship');
+        $tbodyPosition = strpos($manifest, '<tbody>');
+
+        $this->assertNotFalse($theadPosition);
+        $this->assertNotFalse($titlePosition);
+        $this->assertNotFalse($shipPosition);
+        $this->assertNotFalse($tbodyPosition);
+        $this->assertGreaterThan($theadPosition, $titlePosition);
+        $this->assertGreaterThan($theadPosition, $shipPosition);
+        $this->assertLessThan($tbodyPosition, $titlePosition);
+        $this->assertLessThan($tbodyPosition, $shipPosition);
+        $this->assertStringContainsString('display: table-header-group', $manifest);
+        $this->assertStringContainsString('page-number-placeholder', $manifest);
+        $this->assertStringNotContainsString('{{ $loop->iteration }}', $manifest);
+
+        $controller = $this->source('app/Http/Controllers/Company/ReportController.php');
+        $this->assertStringContainsString("if (\$template === 'client')", $controller);
+        $this->assertStringContainsString("'{PAGE_NUM}'", $controller);
+        $this->assertStringContainsString('->getCanvas()->page_text(', $controller);
+    }
+
     public function test_mic_client_template_keeps_cargo_compact_and_moves_seals_next_to_containers(): void
     {
         $service = $this->source('app/Services/Reports/MicDtaReportService.php');

@@ -20,9 +20,16 @@
     .label { display: block; font-size: 5.7pt; margin-bottom: .6mm; }
     .value { font-size: 7pt; font-weight: normal; }
     .manifest { margin-top: 1.5mm; table-layout: fixed; }
-    .manifest th, .manifest td { border: 0.45pt solid #222; padding: 1.2mm; vertical-align: top; }
-    .manifest th { text-align: center; font-weight: normal; font-size: 5.8pt; }
-    .manifest tbody td { font-size: 6.2pt; }
+    .manifest > thead > tr > th, .manifest > tbody > tr > td { border: 0.45pt solid #222; padding: 1.2mm; vertical-align: top; }
+    .manifest > thead > tr.column-header > th { text-align: center; font-weight: normal; font-size: 5.8pt; }
+    .manifest > tbody > tr > td { font-size: 6.2pt; }
+    .manifest > thead > tr.page-header-row > th.page-header-cell {
+        border: 0;
+        padding: 0 0 1.5mm;
+        text-align: left;
+        font-weight: normal;
+    }
+    .manifest .header td { padding: 1.2mm 1.5mm; }
     .parties { width: 24%; }
     .bl { width: 10%; text-align: center; }
     .marks { width: 17%; }
@@ -40,6 +47,10 @@
 <body>
 @forelse($port_groups as $group)
 <section class="manifest-group">
+<table class="manifest">
+    <thead>
+        <tr class="page-header-row">
+            <th colspan="6" class="page-header-cell">
 <div class="title">Cargo Manifest</div>
 
 <table class="header">
@@ -66,7 +77,7 @@
         </td>
         <td style="width:7%">
             <span class="label">Page No.</span>
-            <span class="value">{{ $loop->iteration }}</span>
+            <span class="value page-number-placeholder">&nbsp;</span>
         </td>
         <td rowspan="2" style="width:13%; text-align:center; vertical-align:middle">
             <div style="font-size:8pt; font-weight:bold">{{ $voyage['company_name'] }}</div>
@@ -111,10 +122,9 @@
         </td>
     </tr>
 </table>
-
-<table class="manifest">
-    <thead>
-        <tr>
+            </th>
+        </tr>
+        <tr class="column-header">
             <th class="parties">Shippers (Sh)<br>Consignee (Co)<br>Notify Address (No)</th>
             <th class="bl">B/L No.</th>
             <th class="marks">Marks &amp; Nos. (M)<br>Container Nos. (CN)<br>Seal Nos. (SN)</th>
