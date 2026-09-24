@@ -13,6 +13,7 @@
         line-height: 1.15;
         color: #111;
     }
+    .manifest-group + .manifest-group { page-break-before: always; }
     .title { text-align: center; font-size: 13pt; font-weight: bold; margin: 0 0 2mm; }
     table { width: 100%; border-collapse: collapse; }
     .header td { border: 0.45pt solid #222; padding: 1.2mm 1.5mm; vertical-align: top; }
@@ -37,6 +38,8 @@
 </style>
 </head>
 <body>
+@forelse($port_groups as $group)
+<section class="manifest-group">
 <div class="title">Cargo Manifest</div>
 
 <table class="header">
@@ -51,7 +54,7 @@
         </td>
         <td style="width:26%">
             <span class="label">Place of Receipt</span>
-            <span class="value">{{ $voyage['origin_port'] }}</span>
+            <span class="value">{{ $group['loading_port'] }}</span>
         </td>
         <td style="width:11%">
             <span class="label">Arrival</span>
@@ -63,7 +66,7 @@
         </td>
         <td style="width:7%">
             <span class="label">Page No.</span>
-            <span class="value">1</span>
+            <span class="value">{{ $loop->iteration }}</span>
         </td>
         <td rowspan="2" style="width:13%; text-align:center; vertical-align:middle">
             <div style="font-size:8pt; font-weight:bold">{{ $voyage['company_name'] }}</div>
@@ -83,15 +86,15 @@
         </td>
         <td>
             <span class="label">Port of Loading</span>
-            <span class="value">{{ $bills_of_lading->pluck('loading_port')->filter()->unique()->implode(' / ') }}</span>
+            <span class="value">{{ $group['loading_port'] }}</span>
         </td>
         <td>
             <span class="label">Port of Discharge</span>
-            <span class="value">{{ $bills_of_lading->pluck('discharge_port')->filter()->unique()->implode(' / ') }}</span>
+            <span class="value">{{ $group['discharge_port'] }}</span>
         </td>
         <td colspan="2">
             <span class="label">Port of Destination</span>
-            <span class="value">{{ $bills_of_lading->pluck('final_destination_port')->filter()->unique()->implode(' / ') }}</span>
+            <span class="value">{{ $group['final_destination_port'] }}</span>
         </td>
     </tr>
     <tr>
@@ -121,7 +124,7 @@
         </tr>
     </thead>
     <tbody>
-    @forelse($bills_of_lading as $bill)
+    @foreach($group['bills'] as $bill)
         <tr>
             <td class="parties">
                 <div><strong>Sh)</strong> <span class="party-name">{{ $bill['shipper']['company_name'] ?? $bill['shipper_name'] }}</span></div>
@@ -172,10 +175,12 @@
             <td class="weight">{{ number_format((float)$bill['gross_weight_kg'], 3, '.', '') }}</td>
             <td class="measure">{{ number_format((float)$bill['volume_m3'], 3, '.', '') }}</td>
         </tr>
-    @empty
-        <tr><td colspan="6" style="text-align:center;padding:8mm">No hay conocimientos para el viaje seleccionado.</td></tr>
-    @endforelse
+    @endforeach
     </tbody>
 </table>
+</section>
+@empty
+<div style="padding:8mm;text-align:center">No hay conocimientos para el viaje seleccionado.</div>
+@endforelse
 </body>
 </html>

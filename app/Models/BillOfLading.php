@@ -1190,29 +1190,32 @@ class BillOfLading extends Model
     }
 
     /**
-     * Obtener datos completos del cargador para exportación/PDFs
+     * Obtener datos completos del cargador para exportación/PDFs.
      */
     public function getShipperCompleteData(): array
     {
-        $specificContact = $this->shipperContact;
-        
+        $specificContact = $this->relationLoaded('specificContacts')
+            ? $this->specificContacts->firstWhere('role', 'shipper')
+            : $this->shipperContact;
+
         if ($specificContact && $specificContact->use_specific_data) {
             return $specificContact->getCompleteDataForExport();
         }
-        
-        // Fallback: datos del cliente base
-        $shipperContact = $this->shipper?->contactData?->first();
-        if ($shipperContact) {
+
+        $client = $this->shipper;
+        $contact = $client?->contactData?->first();
+
+        if ($client) {
             return [
-                'company_name' => $this->shipper->legal_name,
-                'address' => $this->getShipperDisplayAddress(),
-                'contact_person' => $shipperContact->contact_person_name ?? '',
-                'phone' => $shipperContact->phone ?? '',
-                'email' => $shipperContact->email ?? '',
-                'tax_id' => $this->shipper->tax_id ?? '',
+                'company_name' => $client->commercial_name ?: $client->legal_name,
+                'address' => $contact ? $this->getShipperDisplayAddress() : '',
+                'contact_person' => $contact?->contact_person_name ?? '',
+                'phone' => $contact?->phone ?? '',
+                'email' => $contact?->email ?? '',
+                'tax_id' => $client->tax_id ?? '',
             ];
         }
-        
+
         return [
             'company_name' => 'Sin cliente asignado',
             'address' => '',
@@ -1224,29 +1227,32 @@ class BillOfLading extends Model
     }
 
     /**
-     * Obtener datos completos del consignatario para exportación/PDFs
+     * Obtener datos completos del consignatario para exportación/PDFs.
      */
     public function getConsigneeCompleteData(): array
     {
-        $specificContact = $this->consigneeContact;
-        
+        $specificContact = $this->relationLoaded('specificContacts')
+            ? $this->specificContacts->firstWhere('role', 'consignee')
+            : $this->consigneeContact;
+
         if ($specificContact && $specificContact->use_specific_data) {
             return $specificContact->getCompleteDataForExport();
         }
-        
-        // Fallback: datos del cliente base
-        $consigneeContact = $this->consignee?->contactData?->first();
-        if ($consigneeContact) {
+
+        $client = $this->consignee;
+        $contact = $client?->contactData?->first();
+
+        if ($client) {
             return [
-                'company_name' => $this->consignee->legal_name,
-                'address' => $this->getConsigneeDisplayAddress(),
-                'contact_person' => $consigneeContact->contact_person_name ?? '',
-                'phone' => $consigneeContact->phone ?? '',
-                'email' => $consigneeContact->email ?? '',
-                'tax_id' => $this->consignee->tax_id ?? '',
+                'company_name' => $client->commercial_name ?: $client->legal_name,
+                'address' => $contact ? $this->getConsigneeDisplayAddress() : '',
+                'contact_person' => $contact?->contact_person_name ?? '',
+                'phone' => $contact?->phone ?? '',
+                'email' => $contact?->email ?? '',
+                'tax_id' => $client->tax_id ?? '',
             ];
         }
-        
+
         return [
             'company_name' => 'Sin cliente asignado',
             'address' => '',
@@ -1258,31 +1264,43 @@ class BillOfLading extends Model
     }
 
     /**
-     * Obtener datos completos de la parte a notificar para exportación/PDFs
+     * Obtener datos completos de la parte a notificar para exportación/PDFs.
      */
     public function getNotifyPartyCompleteData(): array
     {
-        $specificContact = $this->specificContacts()->where('role', 'notify_party')->first();
-        
+        $specificContact = $this->relationLoaded('specificContacts')
+            ? $this->specificContacts->firstWhere('role', 'notify_party')
+            : $this->specificContacts()->where('role', 'notify_party')->first();
+
         if ($specificContact && $specificContact->use_specific_data) {
             return $specificContact->getCompleteDataForExport();
         }
-        
-        // Fallback: datos del cliente base
-        if ($this->notify_party_id) {
-            $notifyPartyContact = $this->notifyParty?->contactData?->first();
-            if ($notifyPartyContact) {
-                return [
-                    'company_name' => $this->notifyParty->legal_name,
-                    'address' => $this->getNotifyPartyDisplayAddress(),
-                    'contact_person' => $notifyPartyContact->contact_person_name ?? '',
-                    'phone' => $notifyPartyContact->phone ?? '',
-                    'email' => $notifyPartyContact->email ?? '',
-                    'tax_id' => $this->notifyParty->tax_id ?? '',
-                ];
-            }
+
+        if (!empty($this->notify_party_text)) {
+            return [
+                'company_name' => $this->notify_party_text,
+                'address' => '',
+                'contact_person' => '',
+                'phone' => '',
+                'email' => '',
+                'tax_id' => '',
+            ];
         }
-        
+
+        $client = $this->notifyParty;
+        $contact = $client?->contactData?->first();
+
+        if ($client) {
+            return [
+                'company_name' => $client->commercial_name ?: $client->legal_name,
+                'address' => $contact ? $this->getNotifyPartyDisplayAddress() : '',
+                'contact_person' => $contact?->contact_person_name ?? '',
+                'phone' => $contact?->phone ?? '',
+                'email' => $contact?->email ?? '',
+                'tax_id' => $client->tax_id ?? '',
+            ];
+        }
+
         return [
             'company_name' => 'No aplica',
             'address' => '',
