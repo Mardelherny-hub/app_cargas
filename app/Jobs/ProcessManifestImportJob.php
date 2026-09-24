@@ -169,6 +169,8 @@ class ProcessManifestImportJob implements ShouldQueue
      * - K-Line usa ETD como referencia, no una fecha específica de carga del BL.
      * - G2Ocean sí aporta dateOfLoading.
      * - CMSP/CUSCAR aporta fechas operativas mediante DTM y debe preservarlas.
+     * - Una descarga informada explícitamente por el operador es también la
+     *   fecha de emisión de los conocimientos para este flujo operativo.
      *
      * Los parsers Compat heredan de los parsers base; se normaliza el nombre
      * para que esta política no dependa de la clase wrapper elegida por Factory.
@@ -229,6 +231,7 @@ class ProcessManifestImportJob implements ShouldQueue
 
             if ($this->dischargeDate !== null) {
                 $bill->discharge_date = $this->dischargeDate;
+                $bill->bill_date = $this->dischargeDate;
                 $changed = true;
             }
 

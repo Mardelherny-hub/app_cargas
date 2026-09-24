@@ -227,7 +227,9 @@ class MicdtaReportService
                         'consignee' => $consignee,
                         'notify' => $notify,
                         'loading_port' => $bill->loadingPort?->name ?? '',
+                        'loading_port_code' => $bill->loadingPort?->code ?? '',
                         'discharge_port' => $bill->dischargePort?->name ?? '',
+                        'discharge_port_code' => $bill->dischargePort?->code ?? '',
                         'final_destination_port' => $bill->finalDestinationPort?->name
                             ?? $bill->dischargePort?->name
                             ?? '',
@@ -242,8 +244,16 @@ class MicdtaReportService
                         'is_transit' => $bill->is_transit_transshipment === 'S',
                         'items' => $items,
                         'containers' => $containers,
+                        'container_count' => count($containers),
                     ];
                 });
+            })
+            ->sortBy(function (array $bill) {
+                return implode('|', [
+                    mb_strtoupper((string) ($bill['loading_port_code'] ?? '')),
+                    mb_strtoupper((string) ($bill['discharge_port_code'] ?? '')),
+                    mb_strtoupper((string) ($bill['bill_number'] ?? '')),
+                ]);
             })
             ->values()
             ->all();

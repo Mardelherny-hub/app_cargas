@@ -4,31 +4,34 @@
 <meta charset="UTF-8">
 <title>MIC / DTA - {{ $voyage['voyage_number'] }}</title>
 <style>
-    @page { size: A4 portrait; margin: 7mm; }
+    @page { size: A4 portrait; margin: 5mm 6mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 7.2pt; }
+    body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #111;
+        font-size: 6.3pt;
+        line-height: 1.08;
+    }
     .page { width: 100%; page-break-after: always; }
     .page:last-child { page-break-after: auto; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    td, th { border: 0.6pt solid #111; vertical-align: top; padding: 1.2mm; }
-    .top-title td { height: 11mm; }
-    .mic-title { font-size: 20pt; font-weight: bold; white-space: nowrap; }
-    .form-title { font-size: 8.5pt; font-weight: bold; line-height: 1.15; }
-    .page-no { text-align: right; vertical-align: bottom; font-size: 7pt; }
-    .label { display: block; font-size: 5.4pt; font-weight: normal; margin-bottom: 1mm; }
-    .value { font-family: "DejaVu Sans Mono", "Courier New", monospace; font-size: 7.3pt; line-height: 1.25; white-space: pre-line; }
-    .r1 td { height: 22mm; }
-    .r2 td { height: 23mm; }
-    .r3 td { height: 23mm; }
-    .r4 td { height: 20mm; }
-    .cargo td { height: 64mm; }
-    .r6 td { height: 15mm; }
-    .declaration td { height: 9mm; }
-    .sign td { height: 12mm; }
-    .transport td { height: 10mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
+    td, th { border: 0.55pt solid #111; vertical-align: top; padding: .75mm 1mm; }
+    .top-title td { padding-top: .8mm; padding-bottom: .8mm; }
+    .mic-title { font-size: 17pt; font-weight: bold; white-space: nowrap; }
+    .form-title { font-size: 7.2pt; font-weight: bold; line-height: 1.08; }
+    .page-no { text-align: right; vertical-align: bottom; font-size: 6.3pt; }
+    .label { display: block; font-size: 5pt; font-weight: normal; margin-bottom: .45mm; }
+    .value {
+        font-family: "DejaVu Sans Mono", "Courier New", monospace;
+        font-size: 6.3pt;
+        line-height: 1.12;
+        white-space: pre-line;
+    }
     .center { text-align: center; }
     .right { text-align: right; }
-    .small { font-size: 6.5pt; }
+    .small { font-size: 5.7pt; }
+    .container-row { margin-top: .45mm; }
 </style>
 </head>
 <body>
@@ -43,6 +46,16 @@
         ]);
         return implode("\n", $lines);
     };
+
+
+    $normalizeTransportUnit = function (?string $value): string {
+        return mb_strtoupper(preg_replace('/[^A-Z0-9]/i', '', trim((string) $value)));
+    };
+
+    $vesselName = trim((string) ($voyage['vessel_name'] ?? ''));
+    $vesselRegistration = trim((string) ($voyage['vessel_registration'] ?? ''));
+    $showVesselRegistration = $vesselRegistration !== ''
+        && $normalizeTransportUnit($vesselRegistration) !== $normalizeTransportUnit($vesselName);
 @endphp
 
 @forelse($client_template_bills as $bill)
@@ -88,8 +101,11 @@
         <tr>
             <td style="width:48%">
                 <span class="label">4. Identificación de las unidades de transporte</span>
-                <div class="value">{{ $voyage['vessel_name'] }}
-@if(!empty($voyage['vessel_registration'])){{ $voyage['vessel_registration'] }}@endif</div>
+                <div class="value">{{ $vesselName }}
+@if($showVesselRegistration)
+{{ $vesselRegistration }}
+@endif
+                </div>
             </td>
             <td style="width:52%">
                 <span class="label">5. Nombre y domicilio del remitente</span>
@@ -133,6 +149,7 @@
             <td style="width:34%">
                 <span class="label">11. Cantidad, volumen y bultos</span>
                 <div class="value">{{ $bill['total_packages'] }} BULTOS
+CONTENEDORES: {{ $bill['container_count'] }}
 VOLUMEN: {{ number_format((float)$bill['volume_m3'], 3, '.', '') }} M3
 {{ $bill['cargo_description'] }}</div>
             </td>
@@ -149,7 +166,15 @@ VOLUMEN: {{ number_format((float)$bill['volume_m3'], 3, '.', '') }} M3
                 <div class="value">@if(!empty($bill['cargo_marks'])){{ $bill['cargo_marks'] }}
 @endif
 @foreach($bill['containers'] as $container)
-<div>{{ $container['number'] }}@if(!empty($container['type'])) &nbsp; {{ $container['type'] }}@endif</div>
+<div class="container-row">
+{{ $container['number'] }}
+@if(!empty($container['type']))
+&nbsp; {{ $container['type'] }}
+@endif
+@if(!empty($container['seals']))
+&nbsp; PRECINTO: {{ $container['seals'] }}
+@endif
+</div>
 @endforeach
                 </div>
             </td>
@@ -160,13 +185,7 @@ VOLUMEN: {{ number_format((float)$bill['volume_m3'], 3, '.', '') }} M3
         <tr>
             <td style="width:48%">
                 <span class="label">15. Números de los precintos</span>
-                <div class="value">
-@foreach($bill['containers'] as $container)
-@if(!empty($container['seals']))
-{{ $container['number'] }}: {{ $container['seals'] }}
-@endif
-@endforeach
-                </div>
+                <div class="value"></div>
             </td>
             <td style="width:52%">
                 <span class="label">16. Observaciones de la Aduana de partida</span>

@@ -61,9 +61,12 @@ class ManifestReportService
             'billsOfLading.shipmentItems.containers.containerType'
         ]);
 
+        $formattedBills = $this->formatBillsOfLading();
+
         return [
             'voyage' => $this->formatVoyageData(),
-            'bills_of_lading' => $this->formatBillsOfLading(),
+            'bills_of_lading' => $formattedBills,
+            'port_groups' => $this->groupBillsByPorts($formattedBills),
             'totals' => $this->calculateTotals(),
             'metadata' => $this->generateMetadata(),
         ];
@@ -144,6 +147,16 @@ class ManifestReportService
             $bills = $bills->where('consignee_id', $this->filters['consignee_id']);
         }
 
+        $bills = $bills
+            ->sortBy(function ($bill) {
+                return implode('|', [
+                    mb_strtoupper((string) ($bill->loadingPort?->code ?? '')),
+                    mb_strtoupper((string) ($bill->dischargePort?->code ?? '')),
+                    mb_strtoupper((string) ($bill->bill_number ?? '')),
+                ]);
+            })
+            ->values();
+
         return $bills->map(function ($bill, $index) {
             $shipper = $bill->getShipperCompleteData();
             $consignee = $bill->getConsigneeCompleteData();
@@ -214,10 +227,15 @@ class ManifestReportService
                 
                 // Puertos
                 'loading_port' => $bill->loadingPort->name ?? 'N/A',
+                'loading_port_code' => $bill->loadingPort?->code ?? '',
                 'discharge_port' => $bill->dischargePort->name ?? 'N/A',
+                'discharge_port_code' => $bill->dischargePort?->code ?? '',
                 'final_destination_port' => $bill->finalDestinationPort->name
                     ?? $bill->dischargePort->name
                     ?? 'N/A',
+                'final_destination_port_code' => $bill->finalDestinationPort?->code
+                    ?? $bill->dischargePort?->code
+                    ?? '',
                 
                 // Cantidades y medidas
                 'total_packages' => $bill->total_packages ?? 0,
@@ -245,6 +263,35 @@ class ManifestReportService
                     Carbon::parse($bill->loading_date)->format('d/m/Y') : null,
             ];
         });
+    }
+
+    /**
+     * Agrupar por ruta para que cada cambio de puertos tenga su encabezado.
+     */
+    private function groupBillsByPorts(Collection $bills): Collection
+    {
+        return $bills
+            ->groupBy(function (array $bill) {
+                return implode('|', [
+                    $bill['loading_port_code'] ?? $bill['loading_port'],
+                    $bill['discharge_port_code'] ?? $bill['discharge_port'],
+                    $bill['final_destination_port_code'] ?? $bill['final_destination_port'],
+                ]);
+            })
+            ->map(function (Collection $group) {
+                $first = $group->first();
+
+                return [
+                    'loading_port' => $first['loading_port'],
+                    'loading_port_code' => $first['loading_port_code'],
+                    'discharge_port' => $first['discharge_port'],
+                    'discharge_port_code' => $first['discharge_port_code'],
+                    'final_destination_port' => $first['final_destination_port'],
+                    'final_destination_port_code' => $first['final_destination_port_code'],
+                    'bills' => $group->values(),
+                ];
+            })
+            ->values();
     }
 
     /**
