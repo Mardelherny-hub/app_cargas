@@ -71,13 +71,17 @@ class ProcessManifestImportJobDateFallbackContractTest extends TestCase
         );
     }
 
-    public function test_job_does_not_fabricate_bill_date(): void
+    public function test_explicit_discharge_is_also_bill_emission_date(): void
     {
         $source = file_get_contents(
             dirname(__DIR__, 3) . '/app/Jobs/ProcessManifestImportJob.php'
         );
 
         $this->assertIsString($source);
+        $this->assertStringContainsString(
+            '$bill->bill_date = $this->dischargeDate;',
+            $source
+        );
         $this->assertStringNotContainsString(
             '$bill->bill_date = now()->toDateString();',
             $source

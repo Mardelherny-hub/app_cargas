@@ -143,6 +143,12 @@ jobs:
         run: |
           ./vendor/bin/phpunit tests/Unit/Services/Parsers/NavsurPortCatalogIntegrityContractTest.php
 
+      - name: Verify Roberto 23/09 import and report closure
+        run: |
+          ./vendor/bin/phpunit tests/Unit/Jobs/ProcessManifestImportJobDateFallbackContractTest.php
+          ./vendor/bin/phpunit tests/Unit/Models/BillOfLadingReportPartyDataTest.php
+          ./vendor/bin/phpunit tests/Unit/Reports/ClientReportTemplateContractTest.php
+
       - name: Verify CUSCAR document date semantics
         run: |
           php -r '
