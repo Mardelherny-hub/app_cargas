@@ -87,4 +87,38 @@ class ClientReportTemplateContractTest extends TestCase
             $this->assertStringContainsString($label, $mic);
         }
     }
+
+    public function test_manifest_is_ordered_and_grouped_by_ports_before_bill_number(): void
+    {
+        $service = $this->source('app/Services/Reports/ManifestReportService.php');
+        $template = $this->source('resources/views/company/reports/pdf/manifest-client.blade.php');
+
+        $this->assertStringContainsString("'port_groups' =>", $service);
+        $this->assertStringContainsString('loadingPort?->code', $service);
+        $this->assertStringContainsString('dischargePort?->code', $service);
+        $this->assertStringContainsString('bill_number', $service);
+        $this->assertStringContainsString('@forelse($port_groups as $group)', $template);
+        $this->assertStringContainsString('$group[\'loading_port\']', $template);
+        $this->assertStringContainsString('$group[\'discharge_port\']', $template);
+    }
+
+    public function test_mic_client_template_keeps_cargo_compact_and_moves_seals_next_to_containers(): void
+    {
+        $service = $this->source('app/Services/Reports/MicDtaReportService.php');
+        $template = $this->source('resources/views/company/reports/pdf/micdta-client.blade.php');
+
+        $this->assertStringContainsString("'container_count' =>", $service);
+        $this->assertStringContainsString('CONTENEDORES:', $template);
+        $this->assertStringContainsString('PRECINTO:', $template);
+        $this->assertStringContainsString('$showVesselRegistration', $template);
+        $this->assertStringNotContainsString('.cargo td { height: 64mm; }', $template);
+
+        $field15 = strstr($template, '15. Números de los precintos');
+        $this->assertIsString($field15);
+        $field16 = strstr($field15, '16. Observaciones de la Aduana');
+        $this->assertIsString($field16);
+        $field15Only = substr($field15, 0, strlen($field15) - strlen($field16));
+        $this->assertStringNotContainsString('$container[\'seals\']', $field15Only);
+    }
+
 }
