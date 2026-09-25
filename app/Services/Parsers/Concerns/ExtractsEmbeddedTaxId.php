@@ -25,8 +25,9 @@ trait ExtractsEmbeddedTaxId
         // (RUC / TAX ID antes que RUC suelto).
         $prefixes = 'RUT\s*\/\s*VAT|RUC\s*\/\s*TAX\s?ID|TAX\s?ID|TAXID|VAT|R\.U\.C\.|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
 
-        // prefijo + separador opcional (: # espacios) + dígitos con . - /
-        $pattern = '/(?:' . $prefixes . ')\s*[:#.]?\s*([0-9][0-9.\-\/]{5,})/i';
+        // prefijo + separadores EDIFACT opcionales (: # . ? - espacios)
+        // + dígitos con . - /. Ejemplo real: RUC:? 80052134-0.
+        $pattern = '/(?:' . $prefixes . ')\s*[:#.?-]*\s*([0-9][0-9.\-\/]{5,})/i';
 
         if (!preg_match($pattern, $text, $m)) {
             return null;

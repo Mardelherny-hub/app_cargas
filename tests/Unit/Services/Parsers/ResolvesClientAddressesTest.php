@@ -57,6 +57,47 @@ class ResolvesClientAddressesTest extends TestCase
         );
     }
 
+    public function test_known_tax_id_is_removed_from_start_of_imported_address(): void
+    {
+        $client = new Client();
+        $client->tax_id = '800521340';
+
+        $this->assertSame(
+            'LUQYE, PARAGUAY T',
+            $this->resolver()->cleanForClient(
+                $client,
+                '80052134-0 LUQYE, PARAGUAY T'
+            )
+        );
+    }
+
+    public function test_tax_prefixed_fragment_is_not_promoted_to_master_address(): void
+    {
+        $client = new Client();
+        $client->tax_id = '800521340';
+
+        $this->assertFalse(
+            $this->resolver()->persist(
+                $client,
+                '80052134-0 LUQYE, PARAGUAY T'
+            )
+        );
+    }
+
+    public function test_unrelated_leading_number_is_preserved_as_address(): void
+    {
+        $client = new Client();
+        $client->tax_id = '800521340';
+
+        $this->assertSame(
+            '674 MADAME LINCH, LUQUE',
+            $this->resolver()->cleanForClient(
+                $client,
+                '674 MADAME LINCH, LUQUE'
+            )
+        );
+    }
+
     public function test_same_address_does_not_create_specific_contact(): void
     {
         $primary = new ClientContactData();
@@ -103,6 +144,28 @@ class ResolvesClientAddressesTest extends TestCase
                     $client,
                     $fileAddress,
                     $role
+                );
+            }
+
+            public function cleanForClient(
+                Client $client,
+                ?string $fileAddress
+            ): ?string {
+                $cleaned = $this->cleanFileAddress($fileAddress);
+
+                return $this->removeLeadingKnownTaxId(
+                    $client,
+                    $cleaned
+                );
+            }
+
+            public function persist(
+                Client $client,
+                ?string $fileAddress
+            ): bool {
+                return $this->persistClientAddress(
+                    $client,
+                    $fileAddress
                 );
             }
         };

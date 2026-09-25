@@ -1041,4 +1041,58 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_blank_adz_does_not_erase_tax_id_extracted_from_nad(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function parsePartyForTest(
+                array $segment,
+                array &$currentContainer
+            ): void {
+                $this->parseParty($segment, $currentContainer);
+            }
+
+            public function parseReferenceForTest(
+                array $segment,
+                array &$currentContainer
+            ): void {
+                $this->parseReference($segment, $currentContainer);
+            }
+        };
+
+        $container = [
+            'references' => [
+                'bill_number' => 'BL-CASAS-TRUCK',
+            ],
+            'parties' => [],
+        ];
+
+        $parser->parsePartyForTest(
+            [
+                'elements' => [
+                    'CN',
+                    '',
+                    'CASAS TRUCK S.A. IMPORT EXPORT CALLE MADAME LINCH #674  RUC:? 80052134-0 LUQYE, PARAGUAY T:? 021-507663',
+                ],
+            ],
+            $container
+        );
+
+        $this->assertSame(
+            '800521340',
+            $container['parties']['consignee']['tax_id']
+        );
+
+        $parser->parseReferenceForTest(
+            [
+                'elements' => ['ADZ:'],
+            ],
+            $container
+        );
+
+        $this->assertSame(
+            '800521340',
+            $container['parties']['consignee']['tax_id']
+        );
+    }
+
 }

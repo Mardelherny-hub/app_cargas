@@ -37,6 +37,7 @@ class ExtractsEmbeddedTaxIdTest extends TestCase
             'CNPJ con barra'       => ['CNPJ: 00.913.443/0001-73', '00913443000173'],
             'CUIT normal'          => ['CUIT: 30-59742920-3', '30597429203'],
             'RUC paraguayo'        => ['RUC: 80078410-3 Asuncion', '800784103'],
+            'RUC EDIFACT con release ?' => ['RUC:? 80052134-0 LUQYE, PARAGUAY', '800521340'],
             'NIT colombiano'       => ['NIT 860.025.792-3', '8600257923'],
             'solo ceros -> null'   => ['CUIT: 00000000000', null],
             'NCM no es tax'        => ['NCM: 0202.30', null],
