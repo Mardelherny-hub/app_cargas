@@ -322,7 +322,7 @@ class CmspEdiParserCompat extends CmspEdiParser
             );
         }
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         $operationalDates = $this->resolveCuscarOperationalDates(
             $data,

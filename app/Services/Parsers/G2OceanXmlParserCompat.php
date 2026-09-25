@@ -82,7 +82,7 @@ class G2OceanXmlParserCompat extends G2OceanXmlParser
             );
         }
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         $voyage = Voyage::create([
             'company_id' => $companyId,

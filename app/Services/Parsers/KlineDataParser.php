@@ -544,9 +544,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             $options
         );
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de reusar el viaje.
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        // El número de viaje es único por empresa y embarcación.
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         $resolvedDates = $this->resolveVoyageDates(
             $extractedDates,

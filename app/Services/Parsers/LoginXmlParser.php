@@ -1324,9 +1324,11 @@ class LoginXmlParser implements ManifestParserInterface
         $vesselName = $data['voyage']['vessel_name'];
         $leadVessel = $this->findOrCreateVessel($vesselName, $company->id);
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de chocar el índice.
-        $this->guardVoyageNumberIsFree($data['voyage']['voyage_number']);
+        // El número de viaje es único por empresa y embarcación.
+        $this->guardVoyageNumberIsFree(
+            $data['voyage']['voyage_number'],
+            (int) $leadVessel->id
+        );
 
         return Voyage::create([
             'voyage_number' => $data['voyage']['voyage_number'],

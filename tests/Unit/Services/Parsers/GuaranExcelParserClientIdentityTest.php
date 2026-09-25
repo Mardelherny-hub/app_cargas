@@ -207,6 +207,20 @@ class GuaranExcelParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_street_name_republica_argentina_does_not_override_trailing_paraguay_country(): void
+    {
+        $parser = new GuaranExcelParser();
+
+        $this->assertSame(
+            'PY',
+            $this->invoke(
+                $parser,
+                'countryAlpha2FromPartyText',
+                ['PARAMAR S.A. AVDA. REPUBLICA ARGENTINA N 1412 ESQ. PROFESOR MIGUEL TORRES. ASUNCION/PARAGUAY PHONE: (595) 21 662 412']
+            )
+        );
+    }
+
     public function test_conflicting_explicit_fiscal_identities_are_rejected(): void
     {
         $parser = new GuaranExcelParser();

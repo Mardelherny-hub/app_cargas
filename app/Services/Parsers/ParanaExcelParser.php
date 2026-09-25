@@ -431,7 +431,7 @@ class ParanaExcelParser implements ManifestParserInterface
             'VOYAGE_NO'
         );
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         $timing = $this->buildParanaVoyageTiming();
 

@@ -68,8 +68,6 @@ class NavsurTextParserCompat extends NavsurTextParser
             );
         }
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
-
         $originPort = $this->resolvePortStrict($data['pol']);
         $destinationPort = $this->resolvePortStrict($data['pod']);
 
@@ -126,6 +124,11 @@ class NavsurTextParserCompat extends NavsurTextParser
                 ]);
             }
         }
+
+        $this->guardVoyageNumberIsFree(
+            $voyageNumber,
+            (int) $vessel->id
+        );
 
         return Voyage::create([
             'voyage_number' => $voyageNumber,

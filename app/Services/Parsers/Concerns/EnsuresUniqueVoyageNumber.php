@@ -7,25 +7,19 @@ use App\Models\Voyage;
 use Exception;
 
 /**
- * Garantiza que un número de viaje no se repita dentro de la misma empresa.
+ * Garantiza que un número de viaje no se repita para la misma embarcación
+ * dentro de una empresa.
  *
- * La UI de creación manual ya aplica esta misma regla. Dos empresas distintas
- * pueden usar el mismo voyage_number sin colisionar entre sí.
- *
- * La clave 'voyages_voyage_number_unique' se conserva en el mensaje para que
- * los parsers puedan traducir de forma uniforme una colisión de unicidad.
+ * Dos empresas pueden usar el mismo voyage_number y una misma empresa puede
+ * usarlo en barcos distintos. Sólo colisiona la terna:
+ * company_id + lead_vessel_id + voyage_number.
  */
 trait EnsuresUniqueVoyageNumber
 {
-    /**
-     * Lanza una excepción controlada si el voyage_number ya existe en la
-     * empresa del usuario autenticado.
-     *
-     * @param  string  $voyageNumber  Número de viaje YA calculado por el parser.
-     * @throws Exception  Si el viaje ya existe en la misma empresa.
-     */
-    protected function guardVoyageNumberIsFree(string $voyageNumber): void
-    {
+    protected function guardVoyageNumberIsFree(
+        string $voyageNumber,
+        int $vesselId
+    ): void {
         $user = auth()->user();
 
         $companyId = $user?->company_id
@@ -43,11 +37,12 @@ trait EnsuresUniqueVoyageNumber
 
         if (
             Voyage::where('company_id', $companyId)
+                ->where('lead_vessel_id', $vesselId)
                 ->where('voyage_number', $voyageNumber)
                 ->exists()
         ) {
             throw new Exception(
-                "El viaje {$voyageNumber} ya existe en su empresa. "
+                "El viaje {$voyageNumber} ya existe para esta embarcación en su empresa. "
                 . 'voyages_voyage_number_unique'
             );
         }

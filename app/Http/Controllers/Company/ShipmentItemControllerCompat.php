@@ -260,7 +260,7 @@ class ShipmentItemControllerCompat extends ShipmentItemController
             'containers.*.id' => 'nullable|integer',
             'containers.*.container_number' => 'required_with:containers|string|max:20',
             'containers.*.container_type_id' => 'required_with:containers|exists:container_types,id',
-            'containers.*.seal_number' => 'nullable|string|max:50',
+            'containers.*.seal_number' => 'nullable|string|max:255',
             'containers.*.seal_source' => 'nullable|in:carrier,shipper,source',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
             'containers.*.condition' => 'nullable|in:L,V',

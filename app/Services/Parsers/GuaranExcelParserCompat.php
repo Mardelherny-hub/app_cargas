@@ -74,7 +74,10 @@ class GuaranExcelParserCompat extends GuaranExcelParser
         $originPort = $this->resolvePortStrict($voyageData['pol']);
         $destPort = $this->resolvePortStrict($voyageData['pod']);
 
-        $this->guardVoyageNumberIsFree($voyageData['voyage_number']);
+        $this->guardVoyageNumberIsFree(
+            $voyageData['voyage_number'],
+            (int) $vessel->id
+        );
 
         $companyCountryCode = (string) \App\Models\Company::query()
             ->whereKey($companyId)

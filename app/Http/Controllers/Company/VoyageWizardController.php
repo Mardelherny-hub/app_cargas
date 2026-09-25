@@ -85,8 +85,10 @@ class VoyageWizardController extends Controller
                 'required',
                 'string',
                 'max:50',
-                Rule::unique('voyages', 'voyage_number')->where(function ($query) {
-                    return $query->where('company_id', $this->getUserCompany()->id);
+                Rule::unique('voyages', 'voyage_number')->where(function ($query) use ($request) {
+                    return $query
+                        ->where('company_id', $this->getUserCompany()->id)
+                        ->where('lead_vessel_id', (int) $request->input('lead_vessel_id'));
                 }),
             ],
             'internal_reference' => 'nullable|string|max:100',
@@ -118,7 +120,7 @@ class VoyageWizardController extends Controller
             'operational_notes' => 'nullable|string|max:500',
         ], [
             // Mensajes personalizados
-            'voyage_number.unique' => 'El número de viaje ya existe en su empresa.',
+            'voyage_number.unique' => 'El número de viaje ya existe para esta embarcación en su empresa.',
             'estimated_arrival_date.after' => 'La fecha de llegada debe ser posterior a la salida.',
             'destination_port_id.different' => 'El puerto de destino debe ser diferente al de origen.',
             'vessel_count.max' => 'Máximo 20 embarcaciones por convoy.',
