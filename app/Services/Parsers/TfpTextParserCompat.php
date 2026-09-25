@@ -73,7 +73,7 @@ class TfpTextParserCompat extends TfpTextParser
             );
         }
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         return Voyage::create([
             'voyage_number' => $voyageNumber,

@@ -440,9 +440,11 @@ class GuaranExcelParser implements ManifestParserInterface
         $originPort = $this->resolvePortStrict($voyageData['pol']);
         $destPort = $this->resolvePortStrict($voyageData['pod']);
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de reusar el viaje.
-        $this->guardVoyageNumberIsFree($voyageData['voyage_number']);
+        // El número de viaje es único por empresa y embarcación.
+        $this->guardVoyageNumberIsFree(
+            $voyageData['voyage_number'],
+            (int) $vessel->id
+        );
 
         $companyCountryCode = (string) \App\Models\Company::query()
             ->whereKey($companyId)
@@ -1627,13 +1629,32 @@ class GuaranExcelParser implements ManifestParserInterface
             'CO' => '/\bCOLOMBIA\b/u',
         ];
 
+        // Un domicilio real puede incluir un país dentro del nombre de una
+        // calle antes del país postal verdadero. Ejemplo de Roberto:
+        // "AVDA. REPUBLICA ARGENTINA ... ASUNCION/PARAGUAY".
+        // La última mención de país es la que cierra el domicilio.
+        $resolved = null;
+        $lastOffset = -1;
+
         foreach ($patterns as $alpha2 => $pattern) {
-            if (preg_match($pattern, $text)) {
-                return $alpha2;
+            if (
+                preg_match(
+                    $pattern,
+                    $text,
+                    $matches,
+                    PREG_OFFSET_CAPTURE
+                )
+            ) {
+                $offset = $matches[0][1];
+
+                if ($offset > $lastOffset) {
+                    $lastOffset = $offset;
+                    $resolved = $alpha2;
+                }
             }
         }
 
-        return null;
+        return $resolved;
     }
 
     protected function countryAlpha2FromDeclaredValue(

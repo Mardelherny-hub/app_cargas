@@ -98,7 +98,7 @@ class LoginXmlParserCompat extends LoginXmlParser
             );
         }
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $leadVessel->id);
 
         return Voyage::create([
             'voyage_number' => $voyageNumber,

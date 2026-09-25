@@ -521,7 +521,10 @@ protected function extractValue(string $scope, string $label): ?string
         $originPort = $this->findOrCreatePort($data['pol']);
         $destPort = $this->findOrCreatePort($data['pod']);
 
-        $this->guardVoyageNumberIsFree($data['voyage_number']);
+        $this->guardVoyageNumberIsFree(
+            $data['voyage_number'],
+            (int) $vessel->id
+        );
 
         return Voyage::create([
             'voyage_number' => $data['voyage_number'],

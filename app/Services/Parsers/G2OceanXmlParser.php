@@ -651,6 +651,7 @@ class G2OceanXmlParser implements ManifestParserInterface
     {
         // Patrones para extraer NCM/HS Code del texto
         $patterns = [
+            '/NCM\s+CODE[:\s]+([0-9]{4}\.[0-9]{2}(?:\.[0-9]{2})?)/i', // NCM CODE:7214.99
             '/NCM[:\s]+([0-9]{4}\.[0-9]{2}\.[0-9]{2})/i',           // NCM: 8705.10.30
             '/NCM[:\s]+([0-9]{4}\.[0-9]{2})/i',                      // NCM: 7213.91
             '/NCM\s+([0-9]{4}\.[0-9]{2}\.[0-9]{2})/i',               // NCM 8705.10.30
@@ -679,7 +680,7 @@ class G2OceanXmlParser implements ManifestParserInterface
      */
     protected function extractTariffPosition(string $description): ?string
     {
-        $labels = '(?:NCM(?:\s+NO\.?)?|HS[\s\-]?CODE|TARIFF\s+(?:NUMBER|CODE)|HARMONIZED\s+TARIFF\s+CODE|CUSTOM\s+CODE\s+OF\s+GOODS\s+SHIPPED)';
+        $labels = '(?:NCM(?:\s+(?:NO\.?|CODE))?|HS[\s\-]?CODE|TARIFF\s+(?:NUMBER|CODE)|HARMONIZED\s+TARIFF\s+CODE|CUSTOM\s+CODE\s+OF\s+GOODS\s+SHIPPED)';
         $code   = '([0-9]{4}\.[0-9]{2}(?:\.[0-9]{2})?(?:\.[0-9]{3}[A-Z]?)?|[0-9]{6,10})';
         $pattern = '/' . $labels . '[:\s]*' . $code . '/i';
 
@@ -991,7 +992,7 @@ class G2OceanXmlParser implements ManifestParserInterface
             'voyageNo'
         );
 
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         $voyage = Voyage::create([
             'company_id' => $companyId,

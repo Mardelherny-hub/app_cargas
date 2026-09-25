@@ -205,7 +205,21 @@ class VoyageController extends Controller
 
         // 3. Validar — valores directos de BD, sin mapeo intermedio
         $request->validate([
-            'voyage_number'          => 'required|string|max:50|unique:voyages,voyage_number',
+            'voyage_number' => [
+                'required',
+                'string',
+                'max:50',
+                function ($attribute, $value, $fail) use ($company, $request) {
+                    $exists = Voyage::where('company_id', $company->id)
+                        ->where('lead_vessel_id', (int) $request->lead_vessel_id)
+                        ->where('voyage_number', $value)
+                        ->exists();
+
+                    if ($exists) {
+                        $fail('El número de viaje ya existe para esta embarcación.');
+                    }
+                },
+            ],
             'internal_reference'     => 'nullable|string|max:100',
             'lead_vessel_id'         => 'required|exists:vessels,id',
             'captain_id'             => 'nullable|exists:captains,id',

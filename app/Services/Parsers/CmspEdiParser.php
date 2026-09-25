@@ -1565,9 +1565,8 @@ class CmspEdiParser implements ManifestParserInterface
         // Clasificar el viaje según los países reales de los puertos resueltos.
         $cargoType = $this->determineCargoTypeFromPorts($originPort, $destPort);
 
-        // El voyage_number es único global. Si ya existe (en cualquier empresa),
-        // se bloquea la importación con un error claro en lugar de reusar el viaje.
-        $this->guardVoyageNumberIsFree($voyageNumber);
+        // El número de viaje es único por empresa y embarcación.
+        $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 
         /*
          * Fecha de salida:

@@ -604,8 +604,6 @@ class NavsurTextParser implements ManifestParserInterface
             );
         }
 
-        $this->guardVoyageNumberIsFree($data['voyage_number']);
-
         $originPort = $this->resolvePortStrict($data['pol']);
         $destinationPort = $this->resolvePortStrict($data['pod']);
 
@@ -646,6 +644,11 @@ class NavsurTextParser implements ManifestParserInterface
                 'flag_country_id' => $flagCountryId,
             ]);
         }
+
+        $this->guardVoyageNumberIsFree(
+            $data['voyage_number'],
+            (int) $vessel->id
+        );
 
         return Voyage::create([
             'voyage_number' => $data['voyage_number'],

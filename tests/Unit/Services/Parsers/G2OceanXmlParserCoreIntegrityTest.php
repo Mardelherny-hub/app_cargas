@@ -28,6 +28,21 @@ class G2OceanXmlParserCoreIntegrityTest extends TestCase
         return $ref->invokeArgs($this->parser, $args);
     }
 
+    public function test_real_tanchou_arrow_ncm_code_variant_is_extracted(): void
+    {
+        $description = '99 99 PACKAGES HOT ROLLED STEEL ROUND BAR NCM CODE:7214.99 HOT ROLLED ALLOY STEEL ROUND BARS NCM  CODE:7228.30 SHIPPED ON BOARD FREIGHT PREPAID';
+
+        $this->assertSame(
+            '7214.99',
+            $this->invoke('extractTariffPosition', [$description])
+        );
+
+        $this->assertSame(
+            '721499',
+            $this->invoke('extractCommodityCode', [$description])
+        );
+    }
+
     public function test_custom_code_of_goods_shipped_is_preserved_as_hs_code(): void
     {
         $this->assertSame(
