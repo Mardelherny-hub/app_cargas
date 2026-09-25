@@ -176,11 +176,32 @@ class CmspEdiParser implements ManifestParserInterface
         } catch (Exception $e) {
             $this->stats['errors']++;
 
+            $exceptionMessage = $e->getMessage();
+
+            // Un número de viaje repetido es un conflicto de la empresa, no
+            // una prueba de que el archivo ya haya sido importado. Mantener
+            // ambos casos separados evita el mensaje engañoso que veía el
+            // operador cuando otra empresa ya usaba ese número.
+            if (strpos($exceptionMessage, 'voyages_voyage_number_unique') !== false) {
+                $friendlyMessage = trim((string) preg_replace(
+                    '/\\s*voyages_voyage_number_unique\\s*$/',
+                    '',
+                    $exceptionMessage
+                ));
+
+                if (isset($importRecord)) {
+                    $importRecord->markAsFailed([$friendlyMessage], [
+                        'import_statistics' => $this->stats,
+                    ]);
+                }
+
+                return ManifestParseResult::failure([$friendlyMessage]);
+            }
+
             // Archivo ya importado: el viaje y su envío ya existen (choca el índice
             // único voyage_id + vessel_id). Mensaje amable en lugar del error SQL.
-            if (strpos($e->getMessage(), 'uk_shipments_voyage_vessel') !== false
-                || strpos($e->getMessage(), 'voyages_voyage_number_unique') !== false
-                || strpos($e->getMessage(), 'ya fue importado anteriormente') !== false) {
+            if (strpos($exceptionMessage, 'uk_shipments_voyage_vessel') !== false
+                || strpos($exceptionMessage, 'ya fue importado anteriormente') !== false) {
                 if (isset($importRecord)) {
                     $importRecord->markAsFailed([
                         'Este archivo ya fue importado anteriormente. El viaje ya existe en el sistema y no se duplicó ningún dato.'
@@ -950,12 +971,20 @@ class CmspEdiParser implements ManifestParserInterface
             // de como cada emisor lo escriba ("... S.A. CUIT:? 30-69318494-7 ...").
             // Los roles CZ y CX no lo traen: para esos sigue el texto libre.
             if ($refType === 'ADZ' && $this->lastPartyRole !== null) {
-                if ($currentContainer !== null
-                    && isset($currentContainer['parties'][$this->lastPartyRole])) {
-                    $currentContainer['parties'][$this->lastPartyRole]['tax_id'] = $refValue;
-                } elseif (isset($this->parsedData['parties'][$this->lastPartyRole])) {
-                    $this->parsedData['parties'][$this->lastPartyRole]['tax_id'] = $refValue;
+                $normalizedRefValue = trim((string) $refValue);
+
+                // Algunos CUSCAR emiten RFF+ADZ: vacío inmediatamente después
+                // de un NAD que ya contiene el RUC/CUIT. Un ADZ vacío no puede
+                // borrar un identificador fiscal válido extraído del NAD.
+                if ($normalizedRefValue !== '') {
+                    if ($currentContainer !== null
+                        && isset($currentContainer['parties'][$this->lastPartyRole])) {
+                        $currentContainer['parties'][$this->lastPartyRole]['tax_id'] = $normalizedRefValue;
+                    } elseif (isset($this->parsedData['parties'][$this->lastPartyRole])) {
+                        $this->parsedData['parties'][$this->lastPartyRole]['tax_id'] = $normalizedRefValue;
+                    }
                 }
+
                 $this->lastPartyRole = null;
             }
 

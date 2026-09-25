@@ -46,6 +46,14 @@ trait ResolvesClientAddresses
             return false;
         }
         $fileAddress = $this->cleanFileAddress($fileAddress);
+
+        // Si el domicilio comienza con el mismo identificador fiscal del cliente,
+        // proviene de una separación ambigua del campo fuente (p. ej. CUSCAR
+        // "RUC:? ..."). No promover una cola parcial a dirección maestra.
+        if ($this->startsWithKnownTaxId($client, $fileAddress)) {
+            return false;
+        }
+
         if ($this->normalizeAddress($fileAddress) === '') {
             return false;
         }
@@ -87,6 +95,7 @@ trait ResolvesClientAddresses
             return null;
         }
         $fileAddress = $this->cleanFileAddress($fileAddress);
+        $fileAddress = $this->removeLeadingKnownTaxId($client, $fileAddress);
         $fileNorm = $this->normalizeAddress($fileAddress);
         if ($fileNorm === '') {
             return null;
@@ -131,6 +140,59 @@ trait ResolvesClientAddresses
             $line1 = $client->contactData()->value('address_line_1');
         }
         return $this->normalizeAddress($line1);
+    }
+
+    /**
+     * Quita un identificador fiscal al inicio de la dirección únicamente cuando
+     * coincide exactamente con el tax_id ya resuelto del cliente. Esto cubre
+     * CUSCAR donde el ':' de "RUC:? 80052134-0" separa la etiqueta del número
+     * antes de construir el domicilio, sin arriesgar números reales de calle.
+     */
+    protected function startsWithKnownTaxId(
+        ?Client $client,
+        ?string $address
+    ): bool {
+        if (!$client || $address === null || trim($address) === '') {
+            return false;
+        }
+
+        $expectedTaxId = preg_replace('/\\D/', '', (string) $client->tax_id);
+        if ($expectedTaxId === '') {
+            return false;
+        }
+
+        if (!preg_match(
+            '/^([0-9][0-9.\\-\\/]{5,})(?:\\s+|$)/u',
+            trim($address),
+            $matches
+        )) {
+            return false;
+        }
+
+        return preg_replace('/\\D/', '', $matches[1]) === $expectedTaxId;
+    }
+
+    protected function removeLeadingKnownTaxId(
+        ?Client $client,
+        ?string $address
+    ): ?string {
+        if (!$this->startsWithKnownTaxId($client, $address)) {
+            return $address;
+        }
+
+        $candidate = trim((string) $address);
+
+        if (!preg_match(
+            '/^[0-9][0-9.\\-\\/]{5,}\\s+(.*)$/u',
+            $candidate,
+            $matches
+        )) {
+            return null;
+        }
+
+        $cleaned = trim($matches[1]);
+
+        return $cleaned === '' ? null : $cleaned;
     }
 
     /**
