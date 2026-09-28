@@ -251,7 +251,7 @@ class BillOfLadingController extends Controller
         $billsOfLading = $query->paginate($perPage)->appends($request->query());
 
         // Datos adicionales para filtros
-        $filterData = $this->getFilterData($company);
+        $filterData = $this->getFilterData($company, $request);
 
         // Estadísticas rápidas para el dashboard
         $stats = $this->getIndexStats($company);
@@ -897,10 +897,65 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
 
 
     /**
+     * Buscar puertos activos para selectores con carga remota.
+     */
+    public function searchPorts(Request $request)
+    {
+        if (!$this->canPerform('view_cargas') && !$this->hasCompanyRole('Desconsolidador') && !$this->hasCompanyRole('Transbordos')) {
+            abort(403, 'No tiene permisos para consultar puertos.');
+        }
+
+        $term = trim((string) $request->get('q', ''));
+
+        if (mb_strlen($term) < 2) {
+            return response()->json(['results' => []]);
+        }
+
+        $ports = Port::where('active', true)
+            ->where(function ($query) use ($term) {
+                $query->where('name', 'like', "%{$term}%")
+                    ->orWhere('code', 'like', "%{$term}%")
+                    ->orWhere('city', 'like', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->limit(20)
+            ->get(['id', 'code', 'name', 'city']);
+
+        return response()->json([
+            'results' => $ports->map(fn ($port) => [
+                'id' => $port->id,
+                'code' => $port->code,
+                'name' => $port->name,
+                'city' => $port->city,
+                'label' => trim(($port->code ? $port->code . ' - ' : '') . $port->name),
+            ])->values(),
+        ]);
+    }
+
+    /**
      * Obtener datos para filtros (CORREGIDO - SIN CLIENT_ROLES)
      */
-    private function getFilterData($company): array
+    private function getFilterData($company, Request $request): array
     {
+        $selectedPortIds = collect([
+            $request->get('loading_port_id'),
+            $request->get('discharge_port_id'),
+            $request->get('final_destination_port_id'),
+        ])->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        $selectedPorts = Port::where('active', true)
+            ->whereIn('id', $selectedPortIds)
+            ->get(['id', 'code', 'name', 'country_id'])
+            ->keyBy('id');
+
+        $selectedPort = function (string $field) use ($request, $selectedPorts) {
+            $id = (int) $request->get($field);
+
+            return $id && $selectedPorts->has($id)
+                ? collect([$selectedPorts->get($id)])
+                : collect();
+        };
+
         return [
             'voyages' => Voyage::where('company_id', $company->id)
                 ->whereHas('billsOfLading')
@@ -921,17 +976,11 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
                 ->orderBy('legal_name')
                 ->get(['id', 'legal_name']),
             
-            'loadingPorts' => Port::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'country_id']),
-            
-            'dischargePorts' => Port::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'country_id']),
-
-            'destinationPorts' => Port::where('active', true)
-                ->orderBy('name')
-                ->get(['id', 'name', 'country_id']),
+            // Los puertos se buscan por AJAX. Solo mantener en memoria los
+            // valores ya seleccionados para reconstruir correctamente el filtro.
+            'loadingPorts' => $selectedPort('loading_port_id'),
+            'dischargePorts' => $selectedPort('discharge_port_id'),
+            'destinationPorts' => $selectedPort('final_destination_port_id'),
             
             'statuses' => [
                 'draft' => 'Borrador',
