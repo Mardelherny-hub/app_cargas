@@ -105,6 +105,10 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
     Route::get('/', [BillOfLadingController::class, 'index'])->name('index');
     Route::get('/create', [BillOfLadingController::class, 'create'])->name('create');
     Route::post('/', [BillOfLadingController::class, 'store'])->name('store');
+
+    // Búsqueda remota de puertos para filtros (debe ir antes de /{bill_of_lading})
+    Route::get('/ports/search', [BillOfLadingController::class, 'searchPorts'])->name('ports.search');
+
     Route::get('/{bill_of_lading}', [BillOfLadingController::class, 'show'])->name('show');
     Route::get('/{bill_of_lading}/check-items', [BillOfLadingController::class, 'checkItems'])->name('check-items');
     Route::get('/{bill_of_lading}/edit', [BillOfLadingController::class, 'edit'])->name('edit');
