@@ -105,43 +105,52 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                         </select>
                     </div>
 
-                    <div>
-                        <label for="loading_port_id" class="block text-xs font-medium text-gray-600 mb-1">Puerto de carga</label>
-                        <select id="loading_port_id" name="loading_port_id"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">Todos los puertos de carga</option>
-                            @foreach($filterData['loadingPorts'] as $port)
-                                <option value="{{ $port->id }}" {{ (string) request('loading_port_id') === (string) $port->id ? 'selected' : '' }}>
-                                    {{ $port->name }}
-                                </option>
-                            @endforeach
-                        </select>
+                    @php
+                        $selectedLoadingPort = $filterData['loadingPorts']->first();
+                        $selectedDischargePort = $filterData['dischargePorts']->first();
+                        $selectedDestinationPort = $filterData['destinationPorts']->first();
+                    @endphp
+
+                    <div class="relative" data-port-filter>
+                        <label for="loading_port_search" class="block text-xs font-medium text-gray-600 mb-1">Puerto de carga</label>
+                        <input type="hidden" id="loading_port_id" name="loading_port_id" value="{{ request('loading_port_id') }}">
+                        <input type="text"
+                               id="loading_port_search"
+                               value="{{ $selectedLoadingPort ? trim(($selectedLoadingPort->code ? $selectedLoadingPort->code . ' - ' : '') . $selectedLoadingPort->name) : '' }}"
+                               placeholder="Código, puerto o ciudad..."
+                               autocomplete="off"
+                               data-port-search-input
+                               data-port-hidden="loading_port_id"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <div data-port-results class="hidden absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
                     </div>
 
-                    <div>
-                        <label for="discharge_port_id" class="block text-xs font-medium text-gray-600 mb-1">Puerto de descarga</label>
-                        <select id="discharge_port_id" name="discharge_port_id"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">Todos los puertos de descarga</option>
-                            @foreach($filterData['dischargePorts'] as $port)
-                                <option value="{{ $port->id }}" {{ (string) request('discharge_port_id') === (string) $port->id ? 'selected' : '' }}>
-                                    {{ $port->name }}
-                                </option>
-                            @endforeach
-                        </select>
+                    <div class="relative" data-port-filter>
+                        <label for="discharge_port_search" class="block text-xs font-medium text-gray-600 mb-1">Puerto de descarga</label>
+                        <input type="hidden" id="discharge_port_id" name="discharge_port_id" value="{{ request('discharge_port_id') }}">
+                        <input type="text"
+                               id="discharge_port_search"
+                               value="{{ $selectedDischargePort ? trim(($selectedDischargePort->code ? $selectedDischargePort->code . ' - ' : '') . $selectedDischargePort->name) : '' }}"
+                               placeholder="Código, puerto o ciudad..."
+                               autocomplete="off"
+                               data-port-search-input
+                               data-port-hidden="discharge_port_id"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <div data-port-results class="hidden absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
                     </div>
 
-                    <div>
-                        <label for="final_destination_port_id" class="block text-xs font-medium text-gray-600 mb-1">Puerto de destino</label>
-                        <select id="final_destination_port_id" name="final_destination_port_id"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">Todos los puertos de destino</option>
-                            @foreach($filterData['destinationPorts'] as $port)
-                                <option value="{{ $port->id }}" {{ (string) request('final_destination_port_id') === (string) $port->id ? 'selected' : '' }}>
-                                    {{ $port->name }}
-                                </option>
-                            @endforeach
-                        </select>
+                    <div class="relative" data-port-filter>
+                        <label for="final_destination_port_search" class="block text-xs font-medium text-gray-600 mb-1">Puerto de destino</label>
+                        <input type="hidden" id="final_destination_port_id" name="final_destination_port_id" value="{{ request('final_destination_port_id') }}">
+                        <input type="text"
+                               id="final_destination_port_search"
+                               value="{{ $selectedDestinationPort ? trim(($selectedDestinationPort->code ? $selectedDestinationPort->code . ' - ' : '') . $selectedDestinationPort->name) : '' }}"
+                               placeholder="Código, puerto o ciudad..."
+                               autocomplete="off"
+                               data-port-search-input
+                               data-port-hidden="final_destination_port_id"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <div data-port-results class="hidden absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg"></div>
                     </div>
 
                     <div>
@@ -488,6 +497,105 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
 {{-- JavaScript para interactividad --}}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const portSearchUrl = @json(route('company.bills-of-lading.ports.search'));
+
+    document.querySelectorAll('[data-port-filter]').forEach(function(wrapper) {
+        const input = wrapper.querySelector('[data-port-search-input]');
+        const hidden = document.getElementById(input.dataset.portHidden);
+        const results = wrapper.querySelector('[data-port-results]');
+        let timer = null;
+        let activeRequest = null;
+
+        const closeResults = function() {
+            results.classList.add('hidden');
+            results.innerHTML = '';
+        };
+
+        const renderMessage = function(message) {
+            results.innerHTML = '';
+            const row = document.createElement('div');
+            row.className = 'px-3 py-2 text-sm text-gray-500';
+            row.textContent = message;
+            results.appendChild(row);
+            results.classList.remove('hidden');
+        };
+
+        input.addEventListener('input', function() {
+            hidden.value = '';
+            const term = input.value.trim();
+
+            clearTimeout(timer);
+            if (activeRequest) {
+                activeRequest.abort();
+                activeRequest = null;
+            }
+
+            if (term.length < 2) {
+                closeResults();
+                return;
+            }
+
+            timer = setTimeout(async function() {
+                activeRequest = new AbortController();
+                renderMessage('Buscando puertos...');
+
+                try {
+                    const response = await fetch(portSearchUrl + '?q=' + encodeURIComponent(term), {
+                        headers: { 'Accept': 'application/json' },
+                        signal: activeRequest.signal
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+
+                    const payload = await response.json();
+                    const ports = Array.isArray(payload.results) ? payload.results : [];
+
+                    results.innerHTML = '';
+
+                    if (ports.length === 0) {
+                        renderMessage('No se encontraron puertos.');
+                        return;
+                    }
+
+                    ports.forEach(function(port) {
+                        const option = document.createElement('button');
+                        option.type = 'button';
+                        option.className = 'block w-full px-3 py-2 text-left text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none';
+                        option.textContent = port.label + (port.city ? ' · ' + port.city : '');
+                        option.addEventListener('click', function() {
+                            hidden.value = port.id;
+                            input.value = port.label;
+                            closeResults();
+                        });
+                        results.appendChild(option);
+                    });
+
+                    results.classList.remove('hidden');
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        renderMessage('No se pudo buscar puertos.');
+                    }
+                } finally {
+                    activeRequest = null;
+                }
+            }, 250);
+        });
+
+        input.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeResults();
+            }
+        });
+
+        document.addEventListener('click', function(event) {
+            if (!wrapper.contains(event.target)) {
+                closeResults();
+            }
+        });
+    });
+
     // Estado de vista compacta
     let isCompactView = false;
 
