@@ -6,7 +6,7 @@
     <title>Conocimiento de Embarque - {{ $billOfLading->bill_number }}</title>
     <style>
         @page {
-            margin: 10mm 15mm;
+            margin: 40mm 15mm 30mm;
             size: A4 portrait;
         }
         
@@ -21,19 +21,23 @@
             font-size: 10px;
             line-height: 1.4;
             color: #1a1a1a;
-            padding: 10px 20px;
-            margin: 0 30px;
+            padding: 0;
+            margin: 0;
         }
         
         /* Header con gradiente */
         .header {
+            position: fixed;
+            top: -34mm;
+            left: 0;
+            right: 0;
+            height: 30mm;
             background: #1e40af;
             color: white;
-            padding: 20px;
+            padding: 10px 14px;
             text-align: center;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 6px;
+            margin: 0;
         }
         
         .company-name {
@@ -82,6 +86,15 @@
             border-radius: 6px;
             overflow: hidden;
             page-break-inside: avoid;
+        }
+
+        .cargo-info-section,
+        .cargo-detail-section {
+            page-break-inside: auto;
+        }
+
+        .cargo-detail-section .section-content {
+            padding-top: 6px;
         }
         
         .section-header {
@@ -146,8 +159,13 @@
         }
         
         .table thead {
+            display: table-header-group;
             background: linear-gradient(to bottom, #3b82f6, #2563eb);
             color: white;
+        }
+
+        .table tr {
+            page-break-inside: avoid;
         }
         
         .table th {
@@ -241,10 +259,14 @@
         
         /* Footer */
         .footer {
-            margin-top: 20px;
-            padding-top: 12px;
-            border-top: 2px solid #e5e7eb;
-            font-size: 8px;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: -24mm;
+            height: 20mm;
+            padding-top: 4px;
+            border-top: 1px solid #d1d5db;
+            font-size: 7px;
             color: #6b7280;
         }
         
@@ -504,7 +526,7 @@
     @endif
 
     {{-- INFORMACIÓN DE CARGA --}}
-    <div class="section">
+    <div class="section cargo-info-section">
         <div class="section-header">INFORMACION DE CARGA</div>
         <div class="section-content">
             <div class="row">
@@ -547,9 +569,9 @@
     </div>
 
     {{-- DETALLE DE MERCADERÍAS --}}
-    @if($billOfLading->shipment && $billOfLading->shipment->shipmentItems->count() > 0)
-    <div class="section">
-        <div class="section-header">DETALLE DE MERCADERIAS ({{ $billOfLading->shipment->shipmentItems->count() }} items)</div>
+    @if($billOfLading->shipmentItems->count() > 0)
+    <div class="section cargo-detail-section">
+        <div class="section-header">DETALLE DE MERCADERIAS ({{ $billOfLading->shipmentItems->count() }} items)</div>
         <div class="section-content">
             <table class="table">
                 <thead>
@@ -564,7 +586,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($billOfLading->shipment->shipmentItems as $item)
+                    @foreach($billOfLading->shipmentItems as $item)
                     <tr>
                         <td class="text-center font-bold">{{ $item->line_number }}</td>
                         <td>

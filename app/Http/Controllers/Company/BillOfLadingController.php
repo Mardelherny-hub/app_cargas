@@ -1288,8 +1288,8 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
             'dischargeCustoms',
             'primaryCargoType',
             'primaryPackagingType',
-            'shipment.shipmentItems.cargoType',
-            'shipment.shipmentItems.packagingType',
+            'shipmentItems.cargoType',
+            'shipmentItems.packagingType',
             'createdByUser',
             'verifiedByUser'
         ]);
@@ -1304,6 +1304,19 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
             'isHtml5ParserEnabled' => true,
             'isRemoteEnabled' => true
         ]);
+
+        // Numeración real de páginas, también en continuaciones por descripciones largas.
+        $pdf->render();
+        $dompdf = $pdf->getDomPDF();
+        $font = $dompdf->getFontMetrics()->getFont('Arial', 'normal');
+        $dompdf->getCanvas()->page_text(
+            485,
+            815,
+            'Página {PAGE_NUM} de {PAGE_COUNT}',
+            $font,
+            7,
+            [0.42, 0.45, 0.50]
+        );
         
         // Nombre del archivo
         $filename = "BL-{$billOfLading->bill_number}-" . date('Y-m-d') . ".pdf";

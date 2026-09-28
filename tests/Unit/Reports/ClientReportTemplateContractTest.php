@@ -129,16 +129,27 @@ class ClientReportTemplateContractTest extends TestCase
         $this->assertStringContainsString('->getCanvas()->page_text(', $controller);
     }
 
-    public function test_mic_client_template_keeps_cargo_compact_and_moves_seals_next_to_containers(): void
+    public function test_mic_client_template_aligns_items_with_containers_and_keeps_footer_on_each_page(): void
     {
         $service = $this->source('app/Services/Reports/MicDtaReportService.php');
         $template = $this->source('resources/views/company/reports/pdf/micdta-client.blade.php');
 
         $this->assertStringContainsString("'container_count' =>", $service);
-        $this->assertStringContainsString('CONTENEDORES:', $template);
-        $this->assertStringContainsString('PRECINTO:', $template);
+        $this->assertStringContainsString("\$item['containers']", $template);
+        $this->assertStringContainsString("\$row['gross_weight_kg']", $template);
+        $this->assertStringContainsString("\$row['quantity']", $template);
+        $this->assertStringContainsString("\$row['description']", $template);
+        $this->assertStringContainsString("\$row['containers']", $template);
+        $this->assertStringContainsString("'CONTENEDOR' : 'CONTENEDORES'", $template);
+        $this->assertStringNotContainsString('PRECINTO:', $template);
         $this->assertStringContainsString('$showVesselRegistration', $template);
-        $this->assertStringNotContainsString('.cargo td { height: 64mm; }', $template);
+
+        $this->assertStringContainsString('$documentPages', $template);
+        $this->assertStringContainsString('->chunk(4)', $template);
+        $this->assertStringContainsString('Page: &nbsp; {{ $pageIndex + 1 }}', $template);
+        $this->assertStringContainsString('.page-footer', $template);
+        $this->assertStringContainsString('position: absolute;', $template);
+        $this->assertStringContainsString('bottom: 0;', $template);
 
         $field15 = strstr($template, '15. Números de los precintos');
         $this->assertIsString($field15);
