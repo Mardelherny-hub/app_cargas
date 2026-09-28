@@ -38,7 +38,27 @@ class BillsOfLadingSearchFilterContractTest extends TestCase
         $this->assertStringContainsString("filled('loading_port_id')", $controller);
         $this->assertStringContainsString("filled('discharge_port_id')", $controller);
         $this->assertStringContainsString("filled('final_destination_port_id')", $controller);
-        $this->assertStringContainsString("'destinationPorts' => Port::where('active', true)", $controller);
+        $this->assertStringContainsString("'destinationPorts' => \$selectedPort('final_destination_port_id')", $controller);
+    }
+
+    public function test_main_bl_port_filters_use_remote_search_instead_of_full_catalog(): void
+    {
+        $controller = $this->source('app/Http/Controllers/Company/BillOfLadingController.php');
+        $view = $this->source('resources/views/company/bills-of-lading/index.blade.php');
+        $routes = $this->source('routes/company.php');
+
+        $this->assertStringContainsString('public function searchPorts(Request $request)', $controller);
+        $this->assertStringContainsString('mb_strlen($term) < 2', $controller);
+        $this->assertStringContainsString('->limit(20)', $controller);
+        $this->assertStringContainsString("->whereIn('id', \$selectedPortIds)", $controller);
+
+        $this->assertStringNotContainsString("'loadingPorts' => Port::where('active', true)", $controller);
+        $this->assertStringNotContainsString("'dischargePorts' => Port::where('active', true)", $controller);
+        $this->assertStringNotContainsString("'destinationPorts' => Port::where('active', true)", $controller);
+
+        $this->assertStringContainsString('data-port-search-input', $view);
+        $this->assertStringContainsString("route('company.bills-of-lading.ports.search')", $view);
+        $this->assertStringContainsString("Route::get('/ports/search'", $routes);
     }
 
     public function test_report_export_exposes_and_applies_same_four_filters(): void
