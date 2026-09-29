@@ -95,6 +95,14 @@ class LoginXmlManifestExporterTest extends TestCase
             'private function generateLoginXml',
             $controller
         );
+        $this->assertStringContainsString(
+            '$this->getAuthenticatedCompanyId()',
+            $controller
+        );
+        $this->assertStringNotContainsString(
+            'auth()->user()->company_id',
+            $controller
+        );
     }
 
     public function test_multiple_items_are_rejected_instead_of_merged(): void
