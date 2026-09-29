@@ -20,6 +20,8 @@ use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use SimpleXMLElement;
 
+require_once dirname(__DIR__, 4) . '/app/Services/Exports/LoginXmlManifestExporter.php';
+
 class LoginXmlManifestExporterTest extends TestCase
 {
     public function test_generated_xml_is_readable_by_current_login_parser(): void
