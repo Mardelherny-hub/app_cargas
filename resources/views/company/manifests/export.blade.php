@@ -43,7 +43,7 @@
                         Seleccionar Viaje para Exportar
                     </h3>
                     <p class="text-sm text-gray-600 mt-1">
-                        Solo se muestran viajes con cargas completadas
+                        Se muestran viajes con cargas disponibles para exportar
                     </p>
                 </div>
 
