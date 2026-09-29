@@ -103,6 +103,32 @@ class LoginXmlManifestExporterTest extends TestCase
             'auth()->user()->company_id',
             $controller
         );
+        $this->assertStringContainsString(
+            "'originPort.country'",
+            $controller
+        );
+        $this->assertStringContainsString(
+            "'destinationPort.country'",
+            $controller
+        );
+        $this->assertStringNotContainsString(
+            "'origin_port.country'",
+            $controller
+        );
+
+        $view = file_get_contents(
+            dirname(__DIR__, 4)
+            . '/resources/views/company/manifests/export.blade.php'
+        );
+
+        $this->assertStringContainsString(
+            '$voyage->originPort->name',
+            $view
+        );
+        $this->assertStringContainsString(
+            '$voyage->destinationPort->name',
+            $view
+        );
     }
 
     public function test_multiple_items_are_rejected_instead_of_merged(): void
