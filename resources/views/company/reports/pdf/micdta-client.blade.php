@@ -169,7 +169,7 @@
         foreach ($cargoPages as $rows) {
             $documentPages->push([
                 'bill' => $bill,
-                'rows' => $rows,
+                'rows' => $rows->values(),
             ]);
         }
     }
