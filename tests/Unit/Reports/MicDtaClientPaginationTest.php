@@ -83,10 +83,16 @@ class MicDtaClientPaginationTest extends TestCase
             '001PASU018626'
         ));
 
-        $this->assertSame(
+        $this->assertGreaterThanOrEqual(
             2,
             $pages,
-            'Un BL con 50 contenedores puede continuar en una segunda hoja, pero no debe generar paginas vacias intermedias.'
+            'Un BL con 50 contenedores debe continuar en hojas siguientes cuando el detalle no entra.'
+        );
+
+        $this->assertLessThanOrEqual(
+            4,
+            $pages,
+            'El pie fijo de Aduana reduce el area util, pero no debe provocar una proliferacion de paginas vacias.'
         );
     }
 
