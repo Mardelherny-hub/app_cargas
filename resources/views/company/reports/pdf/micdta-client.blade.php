@@ -282,7 +282,7 @@
                     @endif
                     <div class="value">@if($row['first_part'] && $row['container_count'] > 0){{ $row['container_count'] }} {{ $row['container_count'] === 1 ? 'CONTENEDOR' : 'CONTENEDORES' }}
 @endif
-@if($row['quantity'] !== null){{ $row['quantity'] }} {{ $row['package_type'] ?: 'BULTOS' }}
+@if($row['quantity'] !== null){{ $row['quantity'] }} BULTOS
 @endif
 @if($row['description'] !== ''){{ $row['description'] }}
 @endif
