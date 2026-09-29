@@ -115,6 +115,14 @@ class LoginXmlManifestExporterTest extends TestCase
             "'origin_port.country'",
             $controller
         );
+        $this->assertStringContainsString(
+            "->where('status', '!=', 'cancelled')",
+            $controller
+        );
+        $this->assertStringNotContainsString(
+            "['completed', 'in_progress']",
+            $controller
+        );
 
         $view = file_get_contents(
             dirname(__DIR__, 4)
