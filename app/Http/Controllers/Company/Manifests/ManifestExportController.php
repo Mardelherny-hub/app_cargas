@@ -31,7 +31,7 @@ class ManifestExportController extends Controller
     public function index()
     {
         // Obtener viajes con cargas completadas para exportar
-        $voyages = Voyage::with(['shipments.billsOfLading', 'origin_port', 'destination_port'])
+        $voyages = Voyage::with(['shipments.billsOfLading', 'originPort', 'destinationPort'])
             ->where('company_id', $this->getAuthenticatedCompanyId())
             ->whereHas('shipments') // Solo viajes con cargas
             ->whereIn('status', ['completed', 'in_progress']) // Solo viajes listos
@@ -162,8 +162,8 @@ class ManifestExportController extends Controller
             'shipments.billsOfLading.shipmentItems.cargoType',
             'shipments.billsOfLading.shipmentItems.packagingType',
             'shipments.vessel',
-            'origin_port.country',
-            'destination_port.country',
+            'originPort.country',
+            'destinationPort.country',
             'company'
         ])
         ->where('company_id', $this->getAuthenticatedCompanyId())
@@ -192,8 +192,8 @@ class ManifestExportController extends Controller
         $content[] = "**VOYAGE**";
         $content[] = "VOYAGE_NUMBER: /*{$voyage->voyage_number}*/";
         $content[] = "VESSEL_NAME: /*" . ($voyage->shipments->first()->vessel->name ?? 'N/A') . "*/";
-        $content[] = "ORIGIN_PORT: /*" . ($voyage->origin_port->name ?? 'N/A') . "*/";
-        $content[] = "DESTINATION_PORT: /*" . ($voyage->destination_port->name ?? 'N/A') . "*/";
+        $content[] = "ORIGIN_PORT: /*" . ($voyage->originPort->name ?? 'N/A') . "*/";
+        $content[] = "DESTINATION_PORT: /*" . ($voyage->destinationPort->name ?? 'N/A') . "*/";
         $content[] = "";
         
         // Procesar cada BL
@@ -255,8 +255,8 @@ class ManifestExportController extends Controller
         $segments[] = "TDT+20+{$voyage->voyage_number}++3:{$vesselName}'";
         
         // LOC - Place/Location Identification
-        $originCode = $voyage->origin_port->code ?? 'ARUNKNOWN';
-        $destCode = $voyage->destination_port->code ?? 'PYUNKNOWN';
+        $originCode = $voyage->originPort->code ?? 'ARUNKNOWN';
+        $destCode = $voyage->destinationPort->code ?? 'PYUNKNOWN';
         $segments[] = "LOC+5+{$originCode}:139:6'";
         $segments[] = "LOC+61+{$destCode}:139:6'";
         
