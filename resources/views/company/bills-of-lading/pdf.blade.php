@@ -575,12 +575,12 @@
                 <thead>
                     <tr>
                         <th width="5%">Linea</th>
-                        <th width="40%">Descripcion</th>
-                        <th width="12%">Tipo</th>
+                        <th width="24%">Contenedor / Sellos</th>
+                        <th width="29%">Descripcion</th>
                         <th width="8%">Bultos</th>
                         <th width="12%">Peso Bruto</th>
                         <th width="12%">Peso Neto</th>
-                        <th width="11%">Volumen</th>
+                        <th width="10%">Volumen</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -588,12 +588,32 @@
                     <tr>
                         <td class="text-center font-bold">{{ $item->line_number }}</td>
                         <td>
+                            @forelse($item->containers as $container)
+                                @php
+                                    $containerSeals = collect([
+                                        $container->customs_seal,
+                                        $container->shipper_seal,
+                                        $container->carrier_seal,
+                                    ])->merge(is_array($container->additional_seals) ? $container->additional_seals : [])
+                                      ->filter()
+                                      ->unique()
+                                      ->values();
+                                @endphp
+                                <strong>{{ $container->full_container_number ?: $container->container_number }}</strong>
+                                @foreach($containerSeals as $seal)
+                                    <br>{{ $seal }}
+                                @endforeach
+                                @unless($loop->last)<br>@endunless
+                            @empty
+                                -
+                            @endforelse
+                        </td>
+                        <td>
                             <strong>{{ $item->item_description }}</strong>
                             @if($item->item_reference)
                                 <br><span style="font-size: 8px; color: #6b7280;">Ref: {{ $item->item_reference }}</span>
                             @endif
                         </td>
-                        <td>{{ $item->cargoType->name ?? '-' }}</td>
                         <td class="text-right">{{ number_format($item->package_quantity ?? 0) }}</td>
                         <td class="text-right">{{ number_format($item->gross_weight_kg ?? 0, 2) }} kg</td>
                         <td class="text-right">{{ number_format($item->net_weight_kg ?? 0, 2) }} kg</td>
