@@ -6,13 +6,11 @@
     <title>Conocimiento de Embarque - {{ $billOfLading->bill_number }}</title>
     <style>
         @page {
-            margin: 40mm 15mm 30mm;
+            margin: 50mm 15mm 30mm;
             size: A4 portrait;
         }
         
         * {
-            margin: 0;
-            padding: 0;
             box-sizing: border-box;
         }
         
@@ -28,7 +26,7 @@
         /* Header con gradiente */
         .header {
             position: fixed;
-            top: -34mm;
+            top: -44mm;
             left: 0;
             right: 0;
             height: 30mm;
