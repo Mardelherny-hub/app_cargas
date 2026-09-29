@@ -487,6 +487,11 @@ class ManifestExportController extends Controller
                 $shipper = $this->requiredParty($bill, 'shipper');
                 $consignee = $this->requiredParty($bill, 'consignee');
                 $notify = $bill->getNotifyPartyCompleteData();
+
+                $shipperTfp = $this->tfpPartyData($bill->shipper, $shipper);
+                $consigneeTfp = $this->tfpPartyData($bill->consignee, $consignee);
+                $notifyTfp = $this->tfpPartyData($bill->notifyParty, $notify);
+
                 $loadingPort = $bill->loadingPort ?: $voyage->originPort;
                 $dischargePort = $bill->dischargePort ?: $voyage->destinationPort;
 
@@ -508,11 +513,11 @@ class ManifestExportController extends Controller
                 );
                 $lines[] = $this->tfpLine(
                     'CONSIGNATARIODOMICILIO',
-                    $consignee['address'] ?? ''
+                    $consigneeTfp['address']
                 );
                 $lines[] = $this->tfpLine(
                     'CONSIGNATARIORUC',
-                    $this->digitsOnly($consignee['tax_id'] ?? '')
+                    $consigneeTfp['structured_ruc']
                 );
                 $lines[] = $this->tfpLine(
                     'CARGADOR',
@@ -520,11 +525,11 @@ class ManifestExportController extends Controller
                 );
                 $lines[] = $this->tfpLine(
                     'CARGADORDOMICILIO',
-                    $shipper['address'] ?? ''
+                    $shipperTfp['address']
                 );
                 $lines[] = $this->tfpLine(
                     'CARGADORRUC',
-                    $this->digitsOnly($shipper['tax_id'] ?? '')
+                    $shipperTfp['structured_ruc']
                 );
 
                 $notifyName = ($notify['company_name'] ?? '') === 'No aplica'
@@ -534,12 +539,12 @@ class ManifestExportController extends Controller
                 $lines[] = $this->tfpLine('NOTIFICATARIO', $notifyName);
                 $lines[] = $this->tfpLine(
                     'NOTIFICATARIODOMICILIO',
-                    $notifyName !== '' ? ($notify['address'] ?? '') : ''
+                    $notifyName !== '' ? $notifyTfp['address'] : ''
                 );
                 $lines[] = $this->tfpLine(
                     'NOTIFICATARIORUC',
                     $notifyName !== ''
-                        ? $this->digitsOnly($notify['tax_id'] ?? '')
+                        ? $notifyTfp['structured_ruc']
                         : ''
                 );
                 $lines[] = $this->tfpLine('MEDIOTRANSP', $vessel->name);
@@ -1081,6 +1086,52 @@ class ManifestExportController extends Controller
         }
 
         return $party;
+    }
+
+    private function tfpPartyData($client, array $party): array
+    {
+        $address = trim((string) ($party['address'] ?? ''));
+        $taxId = $this->digitsOnly($party['tax_id'] ?? '');
+        $country = strtoupper(trim((string) ($client?->country?->alpha2_code ?? '')));
+
+        if ($taxId === '') {
+            return [
+                'address' => $address,
+                'structured_ruc' => '',
+            ];
+        }
+
+        if ($country === 'PY') {
+            return [
+                'address' => $address,
+                'structured_ruc' => $taxId,
+            ];
+        }
+
+        $identityText = trim(
+            (string) ($party['company_name'] ?? '') . ' ' . $address
+        );
+
+        if (!str_contains($this->digitsOnly($identityText), $taxId)) {
+            $label = match ($country) {
+                'AR' => 'CUIT',
+                'BR' => 'CNPJ',
+                default => 'TAX ID',
+            };
+
+            $address = trim(
+                $address
+                . ($address !== '' ? ' - ' : '')
+                . $label
+                . ': '
+                . $taxId
+            );
+        }
+
+        return [
+            'address' => $address,
+            'structured_ruc' => '',
+        ];
     }
 
     private function partyAddressWithTax(array $party): string
