@@ -20,7 +20,10 @@ class BillOfLadingPdfPaginationContractTest extends TestCase
         $controller = $this->source('app/Http/Controllers/Company/BillOfLadingController.php');
 
         $this->assertStringContainsString('position: fixed;', $template);
-        $this->assertStringContainsString('top: -34mm;', $template);
+        $this->assertStringContainsString('margin: 50mm 15mm 30mm;', $template);
+        $this->assertStringContainsString('top: -44mm;', $template);
+        $this->assertStringNotContainsString("* {
+            margin: 0;", $template);
         $this->assertStringContainsString('bottom: -24mm;', $template);
         $this->assertStringContainsString('display: table-header-group;', $template);
 
