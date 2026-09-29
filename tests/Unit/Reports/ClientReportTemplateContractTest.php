@@ -146,6 +146,7 @@ class ClientReportTemplateContractTest extends TestCase
 
         $this->assertStringContainsString('$documentPages', $template);
         $this->assertStringContainsString('->chunk(4)', $template);
+        $this->assertStringContainsString("'rows' => \$rows->values()", $template);
         $this->assertStringContainsString('Page: &nbsp; {{ $pageIndex + 1 }}', $template);
         $this->assertStringContainsString('.page-footer', $template);
         $this->assertStringContainsString('position: absolute;', $template);
