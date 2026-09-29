@@ -702,16 +702,16 @@ class ManifestCustomsController extends Controller
     /**
      * Obtener servicio webservice según tipo - MÉTODO HELPER
      */
-    private function getWebserviceByType(string $webserviceType, Voyage $voyage = null)
+    private function getWebserviceByType(string $webserviceType, Voyage $voyage = null, array $config = [])
     {
-        $company = $voyage ? $voyage->company : auth()->user()->company;
+        $company = $voyage ? $voyage->company : auth()->user()->getUserCompany();
         $user = auth()->user();
         
         switch ($webserviceType) {
             case 'anticipada':
-                return new \App\Services\Simple\ArgentinaAnticipatedService($company, $user);
+                return new \App\Services\Simple\ArgentinaAnticipatedService($company, $user, $config);
             case 'micdta':
-                return new \App\Services\Simple\ArgentinaMicDtaService($company, $user);
+                return new \App\Services\Simple\ArgentinaMicDtaService($company, $user, $config);
             case 'desconsolidado':
                 return new ArgentinaDeconsolidationService($company, $user);            
             case 'paraguay_customs':
@@ -739,9 +739,9 @@ class ManifestCustomsController extends Controller
         try {
             switch ($webserviceType) {
                 case 'anticipada':
-                    Log::info('🔥 CASO ANTICIPADA - Llamando registerVoyage');
-                    $response = $service->registerVoyage($voyage);
-                    Log::info('🔥 RESPUESTA RECIBIDA de registerVoyage', [
+                    Log::info('🔥 CASO ANTICIPADA - Llamando registrarViaje');
+                    $response = $service->registrarViaje($voyage, $options);
+                    Log::info('🔥 RESPUESTA RECIBIDA de registrarViaje', [
                         'success' => $response['success'] ?? 'no_definido',
                     ]);
                     return $response;
@@ -826,7 +826,7 @@ class ManifestCustomsController extends Controller
                 default:
                     throw new \Exception("Método de envío no implementado para: {$webserviceType}");
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Error en sendToWebservice', [
                 'webservice_type' => $webserviceType,
                 'voyage_id' => $voyage->id,
@@ -961,7 +961,11 @@ class ManifestCustomsController extends Controller
             );
 
             // Seleccionar servicio según país y tipo
-            $service = $this->getWebserviceByType($request->webservice_type, $voyage);
+            $service = $this->getWebserviceByType(
+                $request->webservice_type,
+                $voyage,
+                ['environment' => $request->environment]
+            );
             Log::info('🔥 SERVICIO CREADO', [
                     'service_class' => get_class($service),
                     'webservice_type' => $request->webservice_type
@@ -1008,7 +1012,7 @@ class ManifestCustomsController extends Controller
                 return back()->with('error', "Error en envío {$request->webservice_type} a " . strtoupper($country) . ': ' . $errorMessage);
             }
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Error en envío de manifiesto específico', [
                 'voyage_id' => $voyageId,
                 'webservice_type' => $request->webservice_type,
@@ -1016,30 +1020,14 @@ class ManifestCustomsController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // ✅ SI HAY EXCEPCIÓN, actualizar estado específico a error
-            if (isset($country) && isset($request->webservice_type)) {
+            if (isset($country)) {
                 $this->updateSpecificWebserviceStatus(
-                    $voyage, 
-                    $request->webservice_type, 
-                    $country, 
+                    $voyage,
+                    $request->webservice_type,
+                    $country,
                     'error',
                     ['error_message' => $e->getMessage()]
                 );
-            }
-
-            DB::commit(); // Si usas DB::beginTransaction()
-
-            // Al final del método send(), antes del return
-            $finalTransactionLevel = \DB::transactionLevel();
-            Log::info('🔧 NIVEL FINAL DE TRANSACCIONES', [
-                'final_transaction_level' => $finalTransactionLevel,
-                'transaction_id' => $transaction->id
-            ]);
-
-            // ✅ SI HAY TRANSACCIÓN ACTIVA, HACER COMMIT EXPLÍCITO
-            if ($finalTransactionLevel > 0) {
-                Log::info('🔧 HACIENDO COMMIT EXPLÍCITO');
-                \DB::commit();
             }
 
             return back()->with('error', 'Error crítico en envío: ' . $e->getMessage());
@@ -1135,6 +1123,7 @@ class ManifestCustomsController extends Controller
             ->where('webservice_type', $webserviceType)
             ->first();
 
+        if ($webserviceStatus) {
             Log::info('Webservice status found', [
                 'voyage_id' => $voyage->id,
                 'webservice_type' => $webserviceType,
@@ -1143,7 +1132,6 @@ class ManifestCustomsController extends Controller
                 'can_send' => $webserviceStatus->canSend(),
             ]);
 
-        if ($webserviceStatus) {
             return [
                 'allowed' => $webserviceStatus->canSend(),
                 'status' => $webserviceStatus->status,
