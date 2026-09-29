@@ -33,8 +33,8 @@ class ManifestExportController extends Controller
         // Obtener viajes con cargas completadas para exportar
         $voyages = Voyage::with(['shipments.billsOfLading', 'originPort', 'destinationPort'])
             ->where('company_id', $this->getAuthenticatedCompanyId())
-            ->whereHas('shipments') // Solo viajes con cargas
-            ->whereIn('status', ['completed', 'in_progress']) // Solo viajes listos
+            ->whereHas('shipments')
+            ->where('status', '!=', 'cancelled')
             ->latest()
             ->paginate(15);
 
