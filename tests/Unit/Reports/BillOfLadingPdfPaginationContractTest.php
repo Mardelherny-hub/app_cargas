@@ -48,7 +48,21 @@ class BillOfLadingPdfPaginationContractTest extends TestCase
 
         $this->assertStringContainsString("'shipmentItems.cargoType'", $pdfMethodOnly);
         $this->assertStringContainsString("'shipmentItems.packagingType'", $pdfMethodOnly);
+        $this->assertStringContainsString("'shipmentItems.containers.containerType'", $pdfMethodOnly);
         $this->assertStringNotContainsString("'shipment.shipmentItems.cargoType'", $pdfMethodOnly);
+    }
+
+    public function test_bill_pdf_aligns_each_item_with_its_containers_and_seals(): void
+    {
+        $template = $this->source('resources/views/company/bills-of-lading/pdf.blade.php');
+
+        $this->assertStringContainsString('Contenedor / Sellos', $template);
+        $this->assertStringContainsString('@forelse($item->containers as $container)', $template);
+        $this->assertStringContainsString('$container->full_container_number', $template);
+        $this->assertStringContainsString('$container->customs_seal', $template);
+        $this->assertStringContainsString('$container->shipper_seal', $template);
+        $this->assertStringContainsString('$container->carrier_seal', $template);
+        $this->assertStringNotContainsString('PRECINTO:', $template);
     }
 
     public function test_long_cargo_sections_are_allowed_to_continue_on_following_pages(): void

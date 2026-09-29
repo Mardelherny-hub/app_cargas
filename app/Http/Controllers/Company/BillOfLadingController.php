@@ -1290,6 +1290,7 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
             'primaryPackagingType',
             'shipmentItems.cargoType',
             'shipmentItems.packagingType',
+            'shipmentItems.containers.containerType',
             'createdByUser',
             'verifiedByUser'
         ]);
