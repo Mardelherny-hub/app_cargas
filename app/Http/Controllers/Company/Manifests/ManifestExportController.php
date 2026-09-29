@@ -232,6 +232,7 @@ class ManifestExportController extends Controller
 
         if ($format === 'parana') {
             $sheet->fromArray($columns, null, 'A1');
+            $sheet->setCellValue('A1', 'LOCATION NAME');
 
             $metadata = array_fill_keys($columns, '');
             $metadata['LOCATION_NAME'] = 'PARANA';
@@ -735,6 +736,24 @@ class ManifestExportController extends Controller
         $message[] = "UNH+1+CUSCAR:D:96B:UN'";
         $message[] = "BGM+85+" . $this->ediReference($voyageNumber) . "+9'";
         $message[] = "DTM+137:" . now()->format('YmdHi') . ":203'";
+
+        if (!$voyage->estimated_arrival_date) {
+            throw new RuntimeException(
+                "El viaje {$voyageNumber} no tiene fecha estimada de llegada "
+                . 'requerida por CUSCAR.'
+            );
+        }
+
+        $message[] = "DTM+132:"
+            . $voyage->estimated_arrival_date->format('Ymd')
+            . ":102'";
+
+        if ($voyage->departure_date) {
+            $message[] = "DTM+136:"
+                . $voyage->departure_date->format('Ymd')
+                . ":102'";
+        }
+
         $message[] = "TDT+20+"
             . $this->ediReference($voyageNumber)
             . "+1++"
