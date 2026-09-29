@@ -19,8 +19,11 @@ class LoginXmlManifestExporter
                 'leadVessel',
                 'shipments.vessel',
                 'shipments.billsOfLading.shipper.contactData',
+                'shipments.billsOfLading.shipper.country',
                 'shipments.billsOfLading.consignee.contactData',
+                'shipments.billsOfLading.consignee.country',
                 'shipments.billsOfLading.notifyParty.contactData',
+                'shipments.billsOfLading.notifyParty.country',
                 'shipments.billsOfLading.specificContacts',
                 'shipments.billsOfLading.loadingPort',
                 'shipments.billsOfLading.dischargePort',
@@ -135,7 +138,7 @@ class LoginXmlManifestExporter
             $document,
             $header,
             'ShipperExporter',
-            $this->partyText($shipper)
+            $this->partyText($shipper, $bill->shipper)
         );
         $this->addText(
             $document,
@@ -147,7 +150,7 @@ class LoginXmlManifestExporter
             $document,
             $header,
             'Consignee',
-            $this->partyText($consignee)
+            $this->partyText($consignee, $bill->consignee)
         );
         $this->addText(
             $document,
@@ -155,7 +158,7 @@ class LoginXmlManifestExporter
             'NotifyParty',
             ($notify['company_name'] ?? '') === 'No aplica'
                 ? ''
-                : $this->partyText($notify)
+                : $this->partyText($notify, $bill->notifyParty)
         );
         $this->addText(
             $document,
@@ -507,31 +510,47 @@ class LoginXmlManifestExporter
         );
     }
 
-    private function partyText(array $party): string
+    private function partyText(array $party, $client = null): string
     {
         $name = trim((string) ($party['company_name'] ?? ''));
         $address = trim((string) ($party['address'] ?? ''));
         $taxId = $this->cleanTaxId($party['tax_id'] ?? null);
 
+        $countryCode = strtoupper(trim((string) (
+            $client?->country?->alpha2_code ?? ''
+        )));
+
+        $countryName = trim((string) (
+            $client?->country?->name ?? ''
+        ));
+
         $lines = array_values(array_filter([
             $name,
             $address,
-            $this->taxLine($taxId),
+            $countryName,
+            $this->taxLine($taxId, $countryCode),
         ], fn ($line) => trim((string) $line) !== ''));
 
         return implode("\n", array_unique($lines));
     }
 
-    private function taxLine(string $taxId): string
-    {
+    private function taxLine(
+        string $taxId,
+        string $countryCode = ''
+    ): string {
         if ($taxId === '') {
             return '';
         }
 
-        return match (strlen($taxId)) {
-            11 => 'CUIT: ' . $taxId,
-            14 => 'CNPJ: ' . $taxId,
-            default => 'CUIT/RUC: ' . $taxId,
+        return match ($countryCode) {
+            'AR' => 'CUIT: ' . $taxId,
+            'BR' => 'CNPJ: ' . $taxId,
+            'PY' => 'RUC: ' . $taxId,
+            default => match (strlen($taxId)) {
+                11 => 'CUIT: ' . $taxId,
+                14 => 'CNPJ: ' . $taxId,
+                default => 'TAX ID: ' . $taxId,
+            },
         };
     }
 
