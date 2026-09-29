@@ -81,10 +81,10 @@
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <div class="text-sm text-gray-900">
-                                        {{ $voyage->origin_port->name ?? 'N/A' }} → {{ $voyage->destination_port->name ?? 'N/A' }}
+                                        {{ $voyage->originPort->name ?? 'N/A' }} → {{ $voyage->destinationPort->name ?? 'N/A' }}
                                     </div>
                                     <div class="text-sm text-gray-500">
-                                        {{ $voyage->origin_port->country->name ?? '' }} - {{ $voyage->destination_port->country->name ?? '' }}
+                                        {{ $voyage->originPort->country->name ?? '' }} - {{ $voyage->destinationPort->country->name ?? '' }}
                                     </div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
