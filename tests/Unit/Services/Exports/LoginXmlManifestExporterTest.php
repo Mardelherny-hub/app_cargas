@@ -16,7 +16,7 @@ use App\Services\Parsers\LoginXmlParser;
 use DomainException;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Collection;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 use ReflectionMethod;
 use SimpleXMLElement;
 
