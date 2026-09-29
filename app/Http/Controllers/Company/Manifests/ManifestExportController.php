@@ -32,7 +32,7 @@ class ManifestExportController extends Controller
     {
         // Obtener viajes con cargas completadas para exportar
         $voyages = Voyage::with(['shipments.billsOfLading', 'origin_port', 'destination_port'])
-            ->where('company_id', auth()->user()->company_id)
+            ->where('company_id', $this->getAuthenticatedCompanyId())
             ->whereHas('shipments') // Solo viajes con cargas
             ->whereIn('status', ['completed', 'in_progress']) // Solo viajes listos
             ->latest()
@@ -166,8 +166,19 @@ class ManifestExportController extends Controller
             'destination_port.country',
             'company'
         ])
-        ->where('company_id', auth()->user()->company_id)
+        ->where('company_id', $this->getAuthenticatedCompanyId())
         ->findOrFail($voyageId);
+    }
+
+    private function getAuthenticatedCompanyId(): int
+    {
+        $company = auth()->user()?->company;
+
+        if (!$company) {
+            abort(403, 'No tiene una empresa asignada.');
+        }
+
+        return (int) $company->id;
     }
 
     /**
