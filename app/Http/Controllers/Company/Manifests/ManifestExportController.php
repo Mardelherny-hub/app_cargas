@@ -7,11 +7,11 @@ use Illuminate\Http\Request;
 use App\Models\Voyage;
 use App\Exports\ParanaExport;
 use App\Exports\GuaranExport;
-use App\Exports\LoginXmlExport;
 use App\Exports\TfpTextExport;
 use App\Exports\EdiCuscarExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Response;
+use App\Services\Exports\LoginXmlManifestExporter;
 
 /**
  * COMPLETADO: ManifestExportController
@@ -87,9 +87,8 @@ class ManifestExportController extends Controller
         $voyage = $this->getVoyageForExport($voyageId);
         
         try {
-            // Generar XML usando servicio especializado
-            $xmlContent = $this->generateLoginXml($voyage);
-            
+            $xmlContent = (new LoginXmlManifestExporter())->generate($voyage);
+
             $filename = 'LOGIN_' . $voyage->voyage_number . '.xml';
             
             return Response::make($xmlContent, 200, [
@@ -169,54 +168,6 @@ class ManifestExportController extends Controller
         ])
         ->where('company_id', auth()->user()->company_id)
         ->findOrFail($voyageId);
-    }
-
-    /**
-     * Generar contenido XML para formato Login
-     */
-    private function generateLoginXml(Voyage $voyage): string
-    {
-        $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><BillOfLadingRoot></BillOfLadingRoot>');
-        
-        // Header información del viaje
-        $voyageInfo = $xml->addChild('VoyageInfo');
-        $voyageInfo->addChild('VoyageNumber', htmlspecialchars($voyage->voyage_number));
-        $voyageInfo->addChild('VesselName', htmlspecialchars($voyage->shipments->first()->vessel->name ?? 'N/A'));
-        $voyageInfo->addChild('OriginPort', htmlspecialchars($voyage->origin_port->name ?? 'N/A'));
-        $voyageInfo->addChild('DestinationPort', htmlspecialchars($voyage->destination_port->name ?? 'N/A'));
-        $voyageInfo->addChild('GeneratedAt', now()->toISOString());
-        
-        // Bills of Lading
-        $billsContainer = $xml->addChild('BillsOfLading');
-        
-        foreach ($voyage->shipments as $shipment) {
-            foreach ($shipment->billsOfLading as $bl) {
-                $billElement = $billsContainer->addChild('BillOfLading');
-                
-                // Información básica del BL
-                $billElement->addChild('BLNumber', htmlspecialchars($bl->bl_number));
-                $billElement->addChild('BLDate', $bl->bl_date ? $bl->bl_date->format('Y-m-d') : '');
-                $billElement->addChild('ShipperName', htmlspecialchars($bl->shipper->legal_name ?? 'N/A'));
-                $billElement->addChild('ConsigneeName', htmlspecialchars($bl->consignee->legal_name ?? 'N/A'));
-                
-                // Items del shipment
-                if ($bl->shipmentItems && $bl->shipmentItems->count() > 0) {
-                    $itemsContainer = $billElement->addChild('Items');
-                    
-                    foreach ($bl->shipmentItems as $item) {
-                        $itemElement = $itemsContainer->addChild('Item');
-                        $itemElement->addChild('Description', htmlspecialchars($item->item_description ?? ''));
-                        $itemElement->addChild('CommodityCode', htmlspecialchars($item->commodity_code ?? ''));
-                        $itemElement->addChild('PackageQuantity', $item->package_quantity ?? 0);
-                        $itemElement->addChild('GrossWeight', $item->gross_weight_kg ?? 0);
-                        $itemElement->addChild('NetWeight', $item->net_weight_kg ?? 0);
-                        $itemElement->addChild('Volume', $item->volume_m3 ?? 0);
-                    }
-                }
-            }
-        }
-        
-        return $xml->asXML();
     }
 
     /**
