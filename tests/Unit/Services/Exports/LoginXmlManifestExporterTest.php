@@ -76,6 +76,27 @@ class LoginXmlManifestExporterTest extends TestCase
         }
     }
 
+    public function test_manifest_export_controller_uses_roundtrip_exporter(): void
+    {
+        $controller = file_get_contents(
+            dirname(__DIR__, 4)
+            . '/app/Http/Controllers/Company/Manifests/ManifestExportController.php'
+        );
+
+        $this->assertStringContainsString(
+            'LoginXmlManifestExporter',
+            $controller
+        );
+        $this->assertStringContainsString(
+            '(new LoginXmlManifestExporter())->generate($voyage)',
+            $controller
+        );
+        $this->assertStringNotContainsString(
+            'private function generateLoginXml',
+            $controller
+        );
+    }
+
     public function test_multiple_items_are_rejected_instead_of_merged(): void
     {
         $voyage = $this->makeVoyage();
