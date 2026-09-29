@@ -137,7 +137,7 @@ class ClientReportTemplateContractTest extends TestCase
         $this->assertStringContainsString("'container_count' =>", $service);
         $this->assertStringContainsString("\$item['containers']", $template);
         $this->assertStringContainsString("\$row['gross_weight_kg']", $template);
-        $this->assertStringContainsString("\$row['quantity']", $template);
+        $this->assertStringContainsString("\$row['quantity'] }} BULTOS", $template);
         $this->assertStringContainsString("\$row['description']", $template);
         $this->assertStringContainsString("\$row['containers']", $template);
         $this->assertStringContainsString("'CONTENEDOR' : 'CONTENEDORES'", $template);
