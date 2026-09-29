@@ -14,17 +14,19 @@ class LoginXmlManifestExporter
 {
     public function generate(Voyage $voyage): string
     {
-        $voyage->loadMissing([
-            'leadVessel',
-            'shipments.vessel',
-            'shipments.billsOfLading.shipper.contactData',
-            'shipments.billsOfLading.consignee.contactData',
-            'shipments.billsOfLading.notifyParty.contactData',
-            'shipments.billsOfLading.specificContacts',
-            'shipments.billsOfLading.loadingPort',
-            'shipments.billsOfLading.dischargePort',
-            'shipments.billsOfLading.shipmentItems.containers.containerType',
-        ]);
+        if ($voyage->exists) {
+            $voyage->loadMissing([
+                'leadVessel',
+                'shipments.vessel',
+                'shipments.billsOfLading.shipper.contactData',
+                'shipments.billsOfLading.consignee.contactData',
+                'shipments.billsOfLading.notifyParty.contactData',
+                'shipments.billsOfLading.specificContacts',
+                'shipments.billsOfLading.loadingPort',
+                'shipments.billsOfLading.dischargePort',
+                'shipments.billsOfLading.shipmentItems.containers.containerType',
+            ]);
+        }
 
         $billsCount = $voyage->shipments->sum(
             fn ($shipment) => $shipment->billsOfLading->count()
