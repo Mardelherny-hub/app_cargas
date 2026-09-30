@@ -327,7 +327,16 @@ class ArgentinaAnticipatedService
         }
 
         $customsCode = trim((string) ($country->customs_code ?? ''));
-        return preg_match('/^\\d{3}$/', $customsCode) === 1;
+        if (preg_match('/^\\d{3}$/', $customsCode)) {
+            return true;
+        }
+
+        $numericCode = trim((string) ($country->numeric_code ?? ''));
+        if ($numericCode !== '' && ctype_digit($numericCode)) {
+            $numericCode = str_pad($numericCode, 3, '0', STR_PAD_LEFT);
+        }
+
+        return preg_match('/^\\d{3}$/', $numericCode) === 1;
     }
 
     private function resolveThreeDigitCustomsCode(...$customsSources): ?string
@@ -675,7 +684,15 @@ class ArgentinaAnticipatedService
 
         return \App\Models\Country::query()
             ->get()
-            ->contains(fn ($country) => trim((string) ($country->codigo_afip ?? '')) === $value);
+            ->contains(function ($country) use ($value) {
+                $codes = [
+                    trim((string) ($country->codigo_afip ?? '')),
+                    trim((string) ($country->customs_code ?? '')),
+                    str_pad(trim((string) ($country->numeric_code ?? '')), 3, '0', STR_PAD_LEFT),
+                ];
+
+                return in_array($value, $codes, true);
+            });
     }
 
     /**
